@@ -1,0 +1,17 @@
+query repoOgpMeta($org: String!, $repo: String!) {
+  repo(orgUsername: $org, repoUsername: $repo) {
+    id
+    name
+    description
+    isPublic
+    tags
+    policies {
+      userId
+    }
+    dataList {
+      paginator {
+        totalItems
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+-- Create tags table
+CREATE TABLE IF NOT EXISTS library.tags (
+    id VARCHAR(255) NOT NULL PRIMARY KEY,
+    repo_id VARCHAR(255) NOT NULL,
+    tag VARCHAR(255) NOT NULL,
+    platform_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (repo_id) REFERENCES library.repos(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_repo_tag_platform_id (repo_id, tag, platform_id)
+);
+
+-- Create sources table
+CREATE TABLE IF NOT EXISTS library.sources (
+    id VARCHAR(255) NOT NULL PRIMARY KEY,
+    repo_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    url VARCHAR(2048),
+    platform_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (repo_id) REFERENCES library.repos(id) ON DELETE CASCADE
+);

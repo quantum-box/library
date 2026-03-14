@@ -1,0 +1,26 @@
+mutation createAPIKey($input: CreateApiKeyInput!) {
+  createApiKey(input: $input) {
+    apiKey {
+      id
+      value
+      name
+    }
+    serviceAccount {
+      id
+    }
+  }
+}
+
+query getApiKeys($orgUsername: String!) {
+  apiKeys(orgUsername: $orgUsername) {
+    id
+    name
+    createdAt
+  }
+}
+
+fragment ApiKeyItem on PublicApiKey {
+  id
+  name
+  createdAt
+}

@@ -1,0 +1,35 @@
+query properties($orgUsername: String!, $repoUsername: String!) {
+  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...PropertyForPropertiesUi
+  }
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    policies {
+      userId
+      role
+    }
+  }
+}
+
+mutation addProperty($input: PropertyInput!) {
+  addProperty(input: $input) {
+    ...PropertyForPropertiesUi
+  }
+}
+
+mutation updateProperty($id: String!, $input: PropertyInput!) {
+  updateProperty(id: $id, input: $input) {
+    ...PropertyForPropertiesUi
+  }
+}
+
+mutation deleteProperty(
+  $orgUsername: String!
+  $repoUsername: String!
+  $id: String!
+) {
+  deleteProperty(
+    orgUsername: $orgUsername
+    repoUsername: $repoUsername
+    propertyId: $id
+  )
+}

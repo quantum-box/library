@@ -1,0 +1,4 @@
+fragment WritePermissionHooksPolicyFields on RepoPolicy {
+  role
+  userId
+}

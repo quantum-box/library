@@ -1,0 +1,1086 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Library API v1alpha", "version": "" },
+  "paths": {
+    "/repos/search": {
+      "get": {
+        "tags": ["repo"],
+        "summary": "Search all repos.",
+        "description": "Search all repos in the Library.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": { "type": ["integer", "null"], "format": "int64" },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": { "type": ["string", "null"] },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/search": {
+      "get": {
+        "tags": ["repo"],
+        "summary": "Search all repos in the org.(not implemented yet)",
+        "description": "Search all repos in the org.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": { "type": ["integer", "null"], "format": "int64" },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": { "type": ["string", "null"] },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/{repo}": {
+      "get": {
+        "tags": ["repo"],
+        "summary": "Get a repo.",
+        "description": "Get a repo by id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "A repo.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Repo" },
+                "example": {
+                  "id": "1",
+                  "name": "repo1",
+                  "properties": [
+                    {
+                      "id": "1",
+                      "name": "property1",
+                      "property_type": "string"
+                    },
+                    {
+                      "id": "2",
+                      "name": "property2",
+                      "property_type": "string"
+                    }
+                  ],
+                  "data": [
+                    {
+                      "id": "1",
+                      "name": "data1",
+                      "property_data": [
+                        {
+                          "property_id": "1",
+                          "value": "value1",
+                          "property_type": "string"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "2",
+                      "name": "data2",
+                      "property_data": [
+                        {
+                          "property_id": "1",
+                          "value": "value1",
+                          "property_type": "string"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["repo"],
+        "summary": "Delete a repo.",
+        "description": "Delete a repo by id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/{repo}/data": {
+      "get": {
+        "tags": ["data"],
+        "description": "get all data in repo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": { "type": ["string", "null"] },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithPaginator_for_Array_of_Data"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
+                      "name": "data name",
+                      "property_data": [
+                        {
+                          "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
+                          "value": "string value",
+                          "property_type": "String"
+                        }
+                      ]
+                    }
+                  ],
+                  "paginator": { "total": 1, "page": 1, "page_size": 10 }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["data"],
+        "description": "create data",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateDataInput" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "create data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Data" },
+                "example": {
+                  "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
+                  "name": "data name",
+                  "property_data": [
+                    {
+                      "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
+                      "value": "data",
+                      "property_type": "String"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/{repo}/data/search": {
+      "get": {
+        "tags": ["data"],
+        "description": "Search data by name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithPaginator_for_Array_of_Data"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
+                      "name": "data name",
+                      "property_data": [
+                        {
+                          "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
+                          "value": "data value",
+                          "property_type": "String"
+                        }
+                      ]
+                    }
+                  ],
+                  "paginator": { "total": 1, "page": 1, "page_size": 10 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/{repo}/data/{data_id}": {
+      "get": {
+        "tags": ["data"],
+        "description": "get data by id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_id",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Data" },
+                "example": {
+                  "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
+                  "name": "data name",
+                  "property_data": [
+                    {
+                      "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
+                      "value": "string value",
+                      "property_type": "String"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["data"],
+        "description": "Update data by id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_id",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateDataInput" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "update data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Data" },
+                "example": {
+                  "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
+                  "name": "data name",
+                  "property_data": [
+                    {
+                      "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
+                      "value": "data value",
+                      "property_type": "String"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["data"],
+        "description": "delete data by id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_id",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "204": { "description": "delete data" }
+        }
+      }
+    },
+    "/repos/{org}/{repo}/properties": {
+      "get": {
+        "tags": ["Database"],
+        "summary": "Get properties",
+        "description": "Get properties",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Property2" }
+                },
+                "example": [
+                  {
+                    "id": "property_id",
+                    "name": "property_name",
+                    "property_type": "property_type"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Database"],
+        "summary": "Add property",
+        "description": "Add property",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AddPropertyInput" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Property2" },
+                "example": {
+                  "id": "property_id",
+                  "name": "property_name",
+                  "property_type": "property_type"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{org}/{repo}/properties/{property_id}": {
+      "delete": {
+        "tags": ["Database"],
+        "summary": "Delete property",
+        "description": "Delete property",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": { "type": "string" },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Property2" },
+                "example": {
+                  "id": "property_id",
+                  "name": "property_name",
+                  "property_type": "property_type"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs/": {
+      "get": {
+        "description": "This documentation page.",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "example": {
+                  "error": "some error happened",
+                  "error_id": "00000000-0000-0000-0000-000000000000"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "HTML content",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          }
+        },
+        "security": [{ "ApiKey": [] }]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "apiKey", "in": "header", "name": "x-api-key" }
+    },
+    "schemas": {
+      "AddPropertyInput": {
+        "type": "object",
+        "required": ["property_name", "property_type"],
+        "properties": {
+          "property_name": { "type": "string" },
+          "property_type": { "type": "string" }
+        }
+      },
+      "AddPropertyInputPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "AppError": {
+        "description": "A default error response for most API errors.",
+        "type": "object",
+        "required": ["error", "error_id"],
+        "properties": {
+          "error": { "description": "An error message.", "type": "string" },
+          "error_details": {
+            "description": "Optional Additional error details."
+          },
+          "error_id": {
+            "description": "A unique error ID.",
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CreateDataInput": {
+        "type": "object",
+        "required": ["name", "property_data"],
+        "properties": {
+          "name": { "type": "string" },
+          "property_data": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "CreateDataPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "Data": {
+        "type": "object",
+        "required": ["id", "name", "property_data"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "property_data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PropertyData" }
+          }
+        }
+      },
+      "DeleteDataPath": {
+        "type": "object",
+        "required": ["data_id", "org", "repo"],
+        "properties": {
+          "data_id": { "type": "string" },
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "DeletePropertyInputPath": {
+        "type": "object",
+        "required": ["org", "property_id", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "property_id": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "DeleteRepoPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "GetDataListPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "GetDataListQuery": {
+        "type": "object",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "page": {
+            "type": ["integer", "null"],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_size": {
+            "type": ["integer", "null"],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "GetDataPath": {
+        "type": "object",
+        "required": ["data_id", "org", "repo"],
+        "properties": {
+          "data_id": { "type": "string" },
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "GetPropertiesInputPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "GetRepoPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "Paginator": {
+        "type": "object",
+        "required": ["page", "page_size", "total"],
+        "properties": {
+          "page": { "type": "integer", "format": "uint32", "minimum": 0.0 },
+          "page_size": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total": { "type": "integer", "format": "uint32", "minimum": 0.0 }
+        }
+      },
+      "Property": {
+        "type": "object",
+        "required": ["id", "name", "property_type"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "property_type": { "type": "string" }
+        }
+      },
+      "Property2": {
+        "type": "object",
+        "required": ["id", "name", "property_type"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "property_type": { "type": "string" }
+        }
+      },
+      "PropertyData": {
+        "type": "object",
+        "required": ["property_id", "property_type", "value"],
+        "properties": {
+          "property_id": { "type": "string" },
+          "property_type": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      },
+      "Repo": {
+        "type": "object",
+        "required": ["data", "id", "name", "properties"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Data" }
+          },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "properties": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Property" }
+          }
+        }
+      },
+      "SearchDataPath": {
+        "type": "object",
+        "required": ["org", "repo"],
+        "properties": {
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "SearchDataQuery": {
+        "type": "object",
+        "required": ["search"],
+        "properties": {
+          "page": {
+            "type": ["integer", "null"],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_size": {
+            "type": ["integer", "null"],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "search": { "type": "string" }
+        }
+      },
+      "SearchInOrgPath": {
+        "type": "object",
+        "required": ["org"],
+        "properties": { "org": { "type": "string" } }
+      },
+      "SearchInOrgQuery": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": ["integer", "null"], "format": "int64" },
+          "name": { "type": ["string", "null"] }
+        }
+      },
+      "SearchQuery": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": ["integer", "null"], "format": "int64" },
+          "name": { "type": ["string", "null"] }
+        }
+      },
+      "UpdateDataInput": {
+        "type": "object",
+        "required": ["data", "name"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UpdatePropertyDataInput" }
+          },
+          "name": { "type": "string" }
+        }
+      },
+      "UpdateDataPath": {
+        "type": "object",
+        "required": ["data_id", "org", "repo"],
+        "properties": {
+          "data_id": { "type": "string" },
+          "org": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "UpdatePropertyDataInput": {
+        "type": "object",
+        "required": ["data", "property_id"],
+        "properties": {
+          "data": { "type": "string" },
+          "property_id": { "type": "string" }
+        }
+      },
+      "WithPaginator_for_Array_of_Data": {
+        "type": "object",
+        "required": ["items", "paginator"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Data" }
+          },
+          "paginator": { "$ref": "#/components/schemas/Paginator" }
+        }
+      }
+    }
+  }
+}

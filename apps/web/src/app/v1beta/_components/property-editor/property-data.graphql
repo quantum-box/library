@@ -1,0 +1,102 @@
+fragment PropertyDataForEditor on PropertyData {
+  propertyId
+  value {
+    ...StringValueForEditor
+    ...IntegerValueForEditor
+    ...IdValueForEditor
+    ...HtmlValueForEditor
+    ...MarkdownValueForEditor
+    ...RelationValueForEditor
+    ...SelectValueForEditor
+    ...MultiSelectValueForEditor
+    ...LocationValueForEditor
+    ...DateValueForEditor
+    ...ImageValueForEditor
+  }
+}
+
+fragment IdValueForEditor on IdValue {
+  id
+}
+
+fragment StringValueForEditor on StringValue {
+  string
+}
+
+fragment IntegerValueForEditor on IntegerValue {
+  number
+}
+
+fragment HtmlValueForEditor on HtmlValue {
+  html
+}
+
+fragment MarkdownValueForEditor on MarkdownValue {
+  markdown
+}
+
+fragment RelationValueForEditor on RelationValue {
+  databaseId
+  dataIds
+}
+
+fragment SelectValueForEditor on SelectValue {
+  optionId
+}
+
+fragment MultiSelectValueForEditor on MultiSelectValue {
+  optionIds
+}
+
+fragment LocationValueForEditor on LocationValue {
+  latitude
+  longitude
+}
+
+fragment DateValueForEditor on DateValue {
+  date
+}
+
+fragment ImageValueForEditor on ImageValue {
+  url
+}
+
+fragment PropertyForEditor on Property {
+  id
+  name
+  typ
+  meta {
+    ...PropertyTypeMetaForEditor
+  }
+}
+
+fragment PropertyTypeMetaForEditor on PropertyTypeMeta {
+  ...RelationTypeMetaForEditor
+  ...SelectTypeMetaForEditor
+  ...MultiSelectTypeMetaForEditor
+  ...JsonTypeMetaForEditor
+}
+
+fragment JsonTypeMetaForEditor on JsonType {
+  json
+}
+
+fragment RelationTypeMetaForEditor on RelationType {
+  databaseId
+}
+
+fragment SelectTypeMetaForEditor on SelectType {
+  options {
+    id
+    key
+    name
+  }
+}
+
+fragment MultiSelectTypeMetaForEditor on MultiSelectType {
+  options {
+    id
+    key
+    name
+  }
+}

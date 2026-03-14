@@ -1,0 +1,23 @@
+query dataOgpMeta(
+  $orgUsername: String!
+  $repoUsername: String!
+  $dataId: String!
+) {
+  data(
+    orgUsername: $orgUsername
+    repoUsername: $repoUsername
+    dataId: $dataId
+  ) {
+    id
+    name
+    updatedAt
+    propertyData {
+      propertyId
+      value {
+        ... on StringValue {
+          string
+        }
+      }
+    }
+  }
+}

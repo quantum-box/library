@@ -1,0 +1,26 @@
+[package]
+name = "errors"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["sqlx"]
+axum-extension = ["axum", "serde", "utoipa"]
+graphql = ["async-graphql"]
+sqlx = ["dep:sqlx"]
+
+[dependencies]
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+email_address = { workspace = true }
+url = { workspace = true }
+axum = { workspace = true, optional = true }
+async-graphql = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+serde_json = { workspace = true }
+serde = { workspace = true, optional = true }
+utoipa = { workspace = true, optional = true }

@@ -1,0 +1,54 @@
+[package]
+name = "inbound_sync"
+version = "0.1.0"
+edition = "2021"
+description = "Inbound webhook synchronization engine for database context"
+
+[dependencies]
+async-graphql.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+chrono.workspace = true
+derive-getters.workspace = true
+derive-new.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# Cryptographic operations for webhook signature verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Content parsing
+base64 = "0.22"
+serde_yaml = "0.9"
+regex = "1"
+
+# ID generation
+ulid = "1.1"
+
+# URL encoding for OAuth redirects
+urlencoding = "2.1"
+
+errors = { path = "../../../../packages/errors" }
+integration_domain = { path = "../../../../packages/integration_domain" }
+value_object = { path = "../../../../packages/value_object" }
+persistence = { path = "../../../../packages/persistence" }
+inbound_sync_domain = { path = "domain" }
+tachyon-sdk = { path = "../../../../sdk/rust", features = ["auth"] }
+
+[dev-dependencies]
+rstest.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+mockall.workspace = true
+
+[features]
+default = []
+test = ["tachyon-sdk/test"]

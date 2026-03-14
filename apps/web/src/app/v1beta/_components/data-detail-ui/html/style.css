@@ -1,0 +1,71 @@
+[data-content-type="heading"][data-level="1"] {
+	font-size: 24px !important;
+}
+[data-content-type="heading"][data-level="2"] {
+	font-size: 20px !important;
+}
+[data-content-type="heading"][data-level="3"] {
+	font-size: 16px !important;
+}
+
+/* 空の段落要素に最小の高さを設定 */
+[data-content-type="paragraph"] {
+	min-height: 1em; /* または具体的なピクセル値、例えば20px */
+	margin-bottom: 1em; /* 段落間の間隔を確保 */
+}
+
+/* 空の段落要素内の<p>タグにも最小の高さを設定 */
+[data-content-type="paragraph"] p {
+	min-height: inherit;
+	margin: 0; /* デフォルトのマージンを削除 */
+}
+
+/* Make BlockNote background transparent to match parent */
+.bn-container {
+	--bn-colors-editor-background: transparent !important;
+}
+
+.bn-container[data-color-scheme="dark"] {
+	--bn-colors-editor-background: transparent !important;
+}
+
+/* Reduce BlockNote editor internal left/right padding (default is 54px) */
+.bn-editor {
+	padding-left: 12px !important;
+	padding-right: 12px !important;
+}
+
+@media (min-width: 640px) {
+	.bn-editor {
+		padding-left: 20px !important;
+		padding-right: 20px !important;
+	}
+}
+
+/* Code block styles for viewer */
+pre {
+	background-color: #1e1e1e;
+	border-radius: 6px;
+	padding: 16px;
+	overflow-x: auto;
+	margin: 8px 0;
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+pre code {
+	background: none;
+	padding: 0;
+	font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+	font-size: inherit;
+	color: #d4d4d4;
+}
+
+/* Inline code */
+code {
+	background-color: rgba(127, 127, 127, 0.15);
+	border-radius: 3px;
+	padding: 2px 4px;
+	font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+	font-size: 0.9em;
+}

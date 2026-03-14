@@ -1,0 +1,39 @@
+fragment PropertyForPropertiesUi on Property {
+  id
+  name
+  typ
+  meta {
+    ...PropertyTypeMetaForPropertiesUi
+  }
+}
+
+fragment PropertyTypeMetaForPropertiesUi on PropertyTypeMeta {
+  ...RelationTypeMetaForPropertiesUi
+  ...SelectTypeMetaForPropertiesUi
+  ...MultiSelectTypeMetaForPropertiesUi
+  ...JsonTypeMetaForPropertiesUi
+}
+
+fragment JsonTypeMetaForPropertiesUi on JsonType {
+  json
+}
+
+fragment RelationTypeMetaForPropertiesUi on RelationType {
+  databaseId
+}
+
+fragment SelectTypeMetaForPropertiesUi on SelectType {
+  options {
+    id
+    key
+    name
+  }
+}
+
+fragment MultiSelectTypeMetaForPropertiesUi on MultiSelectType {
+  options {
+    id
+    key
+    name
+  }
+}

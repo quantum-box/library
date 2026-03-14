@@ -1,0 +1,45 @@
+runners:
+  req: http://0.0.0.0:50053
+  db: mysql://root:root@localhost:15000/tachyon_apps_auth
+steps:
+  insertTenant:
+    desc: insert tenant test data
+    include:
+      path: ./seed/tenant.yaml
+      skipTest: true
+  testSuccessTenant:
+    desc: Fetch tenant
+    req:
+      /v1/graphql:
+        post:
+          body:
+            application/json:
+              query: |-
+                {
+                  tenant(id: "tn_01HJRYXYSGEY07H5JZ5WAGQJ0M") {
+                    id
+                    userName
+                  }
+                }
+    test:  
+      current.res.status == 200
+      && current.res.body.data.tenant.id == "tn_01HJRYXYSGEY07H5JZ5WAGQJ0M"
+      && current.res.body.data.tenant.userName == "tachyon_stg"
+  testFailTenantNotFound:
+    desc: Fetch tenant
+    req:
+      /v1/graphql:
+        post:
+          body:
+            application/json:
+              query: |-
+                {
+                  tenant(id: "tn_01HJRYXYS") {
+                    id
+                    userName
+                  }
+                }
+    test:  
+      current.res.status == 200
+      && current.res.body.data == nil
+      && current.res.body.errors[0].extensions.code == "NOT_FOUND_ERROR"

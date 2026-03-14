@@ -1,0 +1,76 @@
+query getRepoSettings($orgUsername: String!, $repoUsername: String!) {
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    id
+  }
+}
+
+query GetOrgSettings($orgUsername: String!) {
+  organization(username: $orgUsername) {
+    id
+  }
+}
+
+mutation UpdateRepoSettings($input: UpdateRepoInput!) {
+  updateRepo(input: $input) {
+    ...RepoFieldOnRepoSettingsPage
+  }
+}
+
+mutation DeleteRepo($orgUsername: String!, $repoUsername: String!) {
+  deleteRepo(orgUsername: $orgUsername, repoUsername: $repoUsername)
+}
+
+mutation ChangeRepoUsername($input: ChangeRepoUsernameInput!) {
+  changeRepoUsername(input: $input) {
+    ...RepoFieldOnRepoSettingsPage
+  }
+}
+
+query getRepoSettingsPage($orgUsername: String!, $repoUsername: String!) {
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...RepoFieldOnRepoSettingsPage
+    policies {
+      userId
+      role
+    }
+  }
+  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...PropertyForSettingsPage
+  }
+}
+
+fragment RepoFieldOnRepoSettingsPage on Repo {
+  id
+  name
+  username
+  description
+  isPublic
+  tags
+}
+
+fragment PropertyForSettingsPage on Property {
+  id
+  name
+  typ
+}
+
+mutation EnableGitHubSync($input: EnableGitHubSyncInput!) {
+  enableGithubSync(input: $input) {
+    success
+    propertyId
+  }
+}
+
+mutation DisableGitHubSync($input: DisableGitHubSyncInput!) {
+  disableGithubSync(input: $input) {
+    success
+    deleted
+  }
+}
+
+mutation EnableLinearSync($input: EnableLinearSyncInput!) {
+  enableLinearSync(input: $input) {
+    success
+    propertyId
+  }
+}

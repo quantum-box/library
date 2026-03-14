@@ -1,0 +1,11 @@
+# PurchaseOrderListResponse
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**items** | [**Vec<models::PurchaseOrderResponse>**](PurchaseOrderResponse.md) | Purchase order items | 
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
+

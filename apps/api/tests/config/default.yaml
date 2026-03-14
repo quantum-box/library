@@ -1,0 +1,57 @@
+server:
+  binary: library-api
+  address: 127.0.0.1:50063
+  health_check:
+    path: /health
+    timeout_seconds: 30
+    interval_seconds: 1
+
+dependencies:
+  database_url: mysql://root:@127.0.0.1:15000/library
+  database_root_url: mysql://root:@127.0.0.1:15000
+  auth_database_url: mysql://root:@127.0.0.1:15000/tachyon_apps_auth
+  database_manager_url: mysql://root:@127.0.0.1:15000/tachyon_apps_database_manager
+  # library-api は固定プラットフォーム (Library Sandbox) 上で動作するため、
+  # ルートテナント ID も同じ値に揃える
+  root_id: tn_01j702qf86pc2j35s0kv0gv3gy
+  additional_env:
+    AWS_EC2_METADATA_DISABLED: "true"
+    ENVIRONMENT: test
+    PORT: "50063"
+    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json
+    # Must align with seeded tenant ids in scripts/seeds/n1-seed/001-auth-tenants.yaml
+    LIBRARY_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
+    DATABASE_URL: mysql://root:@127.0.0.1:15000/library
+    AUTH_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_auth
+    PROCESS_MANAGER_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_process_manager
+    DB_MANAGER_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_database_manager
+    LIBRARY_DATABASE_URL: mysql://root:@127.0.0.1:15000/library
+
+tachyon_api:
+  binary: tachyon-api
+  address: 127.0.0.1:50050
+  health_path: /
+  health_timeout_seconds: 30
+  health_interval_seconds: 1
+  env:
+    DATABASE_URL: mysql://root:@127.0.0.1:15000
+    AUTH_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_auth
+    PAYMENT_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_payment
+    DB_MANAGER_DATABASE_URL: mysql://root:@127.0.0.1:15000/tachyon_apps_database_manager
+    ENVIRONMENT: test
+    PORT: "50050"
+    ROOT_ID: tn_01hjryxysgey07h5jz5wagqj0m
+    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json
+    COGNITO_USER_POOL_ID: ap-northeast-1_8Ga4bK5M4
+    AWS_EC2_METADATA_DISABLED: "true"
+    PAYMENT_SKIP_BILLING: "true"
+    USE_MOCK_LLM_PROVIDER: "true"
+
+logging:
+  forward_stdout: true
+  forward_stderr: true
+
+scenario:
+  default_base_url: http://127.0.0.1:50063
+  allow_cli_override: true
+  include: []

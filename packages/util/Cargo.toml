@@ -1,0 +1,51 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+default = ["axum", "sqlx"]
+graphql = []
+grpc = ["tonic", "prost", "tonic-reflection", "tonic-health"]
+axum = ["dep:axum", "dep:utoipa"]
+sqlx = ["dep:sqlx"]
+
+[dependencies]
+errors = { path = "../errors", default-features = false }
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+smart-default = { workspace = true }
+smol_str = { workspace = true }
+sqlx = { workspace = true, optional = true }
+rust-i18n = { workspace = true }
+async-trait = { workspace = true }
+async-graphql = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }
+mockall = { workspace = true }
+derive-getters = { workspace = true }
+rstest = { workspace = true }
+
+ulid = { version = "0.4.1", features = ["serde"] }
+
+# grpc (NOTE: grpc feature is not currently used by any package)
+tonic = { workspace = true, optional = true }
+tonic-reflection = { version = "0.6", optional = true }
+tonic-health = { version = "0.7", optional = true }
+prost = { workspace = true, optional = true }
+
+aws-config = { version = "1", default-features = false, features = [
+    "rustls",
+] }
+aws-sdk-sesv2 = "1"
+
+# feature: axum
+axum = { workspace = true, optional = true }
+utoipa = { workspace = true, optional = true }
+
+
+# NOTE: grpc feature is not used, so tonic-build is not needed
+# [build-dependencies]
+# tonic-build = { workspace = true }

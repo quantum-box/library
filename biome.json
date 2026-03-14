@@ -1,0 +1,79 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
+  "organizeImports": {
+    "enabled": true,
+    "ignore": [".next", "node_modules", "./src/components/ui/*.tsx"]
+  },
+  "formatter": {
+    "enabled": true,
+    "include": [
+      "./src/**/*.ts",
+      "./src/**/*.tsx",
+      "./tsconfig.json",
+      "./src/**/*.graphql"
+    ],
+    "ignore": [".next", "node_modules", "./src/components/ui/*", "./src/gen/*"]
+  },
+  "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    },
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "single",
+      "trailingCommas": "all",
+      "semicolons": "asNeeded",
+      "arrowParentheses": "asNeeded"
+    }
+  },
+  "json": {
+    "parser": { "allowComments": true },
+    "formatter": {
+      "enabled": true,
+      "indentStyle": "space",
+      "indentWidth": 2,
+      "lineWidth": 80
+    }
+  },
+  "graphql": {
+    "linter": {
+      "enabled": true
+    },
+    "formatter": {
+      "enabled": true,
+      "indentStyle": "space"
+    }
+  },
+  "linter": {
+    "ignore": [
+      ".next",
+      "node_modules",
+      "graphql.ts",
+      "./src/components/ui/*",
+      "./src/gen/*",
+      "./src/ui/*.tsx",
+      "./src/hooks/use-toast.ts"
+    ],
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "noSvgWithoutTitle": "off",
+        "useSemanticElements": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useImportType": "off"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "off"
+      },
+      "complexity": {
+        "useLiteralKeys": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off"
+      }
+    }
+  }
+}

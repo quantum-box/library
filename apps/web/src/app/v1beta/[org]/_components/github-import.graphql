@@ -1,0 +1,52 @@
+query GitHubListDirectoryContents($input: ListGitHubDirectoryInput!) {
+  githubListDirectoryContents(input: $input) {
+    files {
+      name
+      path
+      sha
+      size
+      fileType
+      htmlUrl
+    }
+    truncated
+  }
+}
+
+query GitHubGetMarkdownPreviews($input: GetMarkdownPreviewsInput!) {
+  githubGetMarkdownPreviews(input: $input) {
+    path
+    sha
+    frontmatterJson
+    frontmatterKeys
+    suggestedName
+    bodyPreview
+    parseError
+  }
+}
+
+query GitHubAnalyzeFrontmatter($input: GetMarkdownPreviewsInput!) {
+  githubAnalyzeFrontmatter(input: $input) {
+    properties {
+      key
+      suggestedType
+      uniqueValues
+      suggestSelect
+    }
+    totalFiles
+    validFiles
+  }
+}
+
+mutation ImportMarkdownFromGitHub($input: ImportMarkdownFromGitHubInput!) {
+  importMarkdownFromGithub(input: $input) {
+    importedCount
+    updatedCount
+    skippedCount
+    errors {
+      path
+      message
+    }
+    dataIds
+    repoId
+  }
+}

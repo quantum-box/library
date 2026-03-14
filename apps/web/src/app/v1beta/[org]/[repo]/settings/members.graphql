@@ -1,0 +1,36 @@
+# Query to get repository members with resource-based access
+
+query GetRepoMembers($orgUsername: String!, $repoUsername: String!) {
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    id
+    members {
+      userId
+      policyId
+      policyName
+      resourceScope
+      assignedAt
+      permissionSource
+      user {
+        id
+        name
+        email
+        image
+      }
+    }
+  }
+}
+
+fragment RepoMemberFields on RepoMember {
+  userId
+  policyId
+  policyName
+  resourceScope
+  assignedAt
+  permissionSource
+  user {
+    id
+    name
+    email
+    image
+  }
+}

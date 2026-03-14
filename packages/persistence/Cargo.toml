@@ -1,0 +1,35 @@
+[package]
+name = "persistence"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+integration_tests = []
+
+[dependencies]
+util = { path = "../util" }
+errors = { path = "../errors" }
+value_object = { path = "../value_object" }
+
+tracing = { workspace = true }
+url = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+derive-getters = { workspace = true }
+tokio = { workspace = true }
+rust-s3 = "0.34.0"
+async-trait = { workspace = true }
+sqlx = { workspace = true, features = ["mysql", "runtime-tokio-rustls"] }
+dotenvy = "0.15"
+
+[dev-dependencies]
+dotenvy = { workspace = true }
+bytes = "1.5"
+
+[[example]]
+name = "r2_create_bucket"
+path = "examples/r2_create_bucket.rs"
+
+[[example]]
+name = "r2_presigned_get"
+path = "examples/r2_presigned_get.rs"

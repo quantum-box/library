@@ -1,0 +1,14 @@
+fragment DataForDataDetail on Data {
+  id
+  name
+  propertyData {
+    ...PropertyDataForEditor
+  }
+}
+
+fragment DataListForDataListCard on DataList {
+  items {
+    id
+    name
+  }
+}

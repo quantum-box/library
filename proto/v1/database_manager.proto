@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package database_manager;
+
+service DatabaseManager {
+  rpc CreateDatabase(CreateDatabaseRequest) returns (Database);
+  rpc AddProperty(AddPropertyRequest) returns (Property);
+  rpc FindDatabases(Empty) returns (FindDatabasesResponse);
+  rpc GetDatabaseDefinition(GetDatabaseDefinitionRequest) returns (GetDatabaseDefinitionResponse);
+  rpc GetDatabase(GetDatabaseRequest) returns (GetDatabaseResponse);
+  rpc GetData(GetDataRequest) returns (Data);
+}
+
+message Empty {}
+
+// entities
+message Database {
+  string id = 1;
+  string name = 2;
+}
+
+message Property {
+  string id = 1;
+  string database_id = 2;
+  string name = 3;
+  string type = 4;
+  bool is_indexed = 5;
+  uint32 property_num = 6;
+}
+
+// ## data
+// ### html
+// value: `html`
+//
+// ### string
+// value: `string`
+//
+// ### integer
+// value: `integer`
+//
+// ### relation
+// value: `{data_id1},{data_id2},{data_id3}...`
+//
+// ### select
+// value: `option1`
+//
+// ### multi_select
+// value: `option1,option2,option3`
+message PropertyData {
+  string property_id = 1;
+  string value = 2;
+}
+
+message Data {
+  string id = 1;
+  string database_id = 2;
+  string name = 3;
+  repeated PropertyData property_data = 4;
+}
+
+// request and response
+message CreateDatabaseRequest {
+  // if name is empty, set Untitled as default
+  string name = 1;
+}
+
+message AddPropertyRequest {
+  string database_id = 1;
+  // If name is empty, set propertyN name as default
+  string name = 2;
+  
+  // ## type
+  // ### html
+  // `html`
+  //
+  // ### string
+  // `string|{min_length},{max_length}`
+  //
+  // ### integer
+  // `integer|{min},{max}`
+  //
+  // ### relation
+  // `relation|{database_id}`
+  // 
+  // ### select
+  // 文字列リテラルで定義された選択肢を持つプロパティ
+  // `select|{option1},{option2},{option3}`
+  //
+  // ### multi_select
+  // 文字列リテラルで定義された複数の選択肢を持つプロパティ
+  // `multi_select|{option1},{option2},{option3}`
+  string property_type = 3;
+}
+
+message GetDatabaseDefinitionRequest {
+  string database_id = 1;
+}
+
+message GetDatabaseDefinitionResponse {
+  Database database = 1;
+  repeated Property properties = 2;
+}
+
+message GetDatabaseRequest {
+  string database_id = 1;
+}
+
+message GetDatabaseResponse {
+  Database database = 1;
+  repeated Property properties = 2;
+  repeated Data data = 3;
+}
+
+message FindDatabasesResponse {
+  repeated Database databases = 1;
+}
+
+message GetDataRequest {
+  string database_id = 1;
+  string data_id = 2;
+}

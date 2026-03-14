@@ -1,0 +1,11 @@
+{
+  "name": "library",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev": "yarn workspace library dev",
+    "build": "yarn workspace library build",
+    "lint": "yarn workspace library lint",
+    "tsc": "yarn workspace library ts"
+  }
+}

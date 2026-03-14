@@ -1,0 +1,37 @@
+mutation verify($token: String!) {
+  verify(token: $token) {
+    id
+    email
+    role
+    createdAt
+    updatedAt
+  }
+}
+
+mutation signInOrSignUp(
+  $platformId: String!
+  $accessToken: String!
+  $allowSignUp: Boolean
+) {
+  signIn(
+    platformId: $platformId
+    accessToken: $accessToken
+    allowSignUp: $allowSignUp
+  ) {
+    id
+    email
+    role
+    createdAt
+    updatedAt
+  }
+}
+
+query me {
+  me {
+    id
+    email
+    role
+    createdAt
+    updatedAt
+  }
+}

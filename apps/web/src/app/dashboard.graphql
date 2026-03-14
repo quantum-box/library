@@ -1,0 +1,37 @@
+query dashboard {
+  me {
+    ...meOnDashboard
+  }
+}
+
+query dashboardOrgRepos($username: String!) {
+  organization(username: $username) {
+    id
+    username
+    repos {
+      ...repoItemOnDashboard
+    }
+  }
+}
+
+fragment meOnDashboard on User {
+  name
+  tenantIdList
+  organizations {
+    ...organizationListItem
+  }
+}
+
+fragment organizationListItem on Operator {
+  id
+  operatorName
+  platformTenantId
+}
+
+fragment repoItemOnDashboard on Repo {
+  id
+  name
+  username
+  description
+  isPublic
+}

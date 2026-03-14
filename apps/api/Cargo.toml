@@ -1,0 +1,121 @@
+[package]
+name = "library-api"
+version = "1.11.0"
+edition = "2021"
+
+
+[dependencies]
+database-manager = { path = "../../packages/database-manager" }
+outbound_sync = { path = "./packages/outbound_sync" }
+inbound_sync = { path = "./packages/inbound_sync" }
+inbound_sync_domain = { path = "./packages/inbound_sync/domain" }
+
+persistence = { path = "../../packages/persistence" }
+value_object = { path = "../../packages/value_object", features = ["axum"] }
+util = { path = "../../packages/util" }
+errors = { path = "../../packages/errors", features = ["axum-extension", "graphql"] }
+telemetry = { path = "../../packages/telemetry", features = ["axum"] }
+csv_importer = { path = "../../packages/csv_importer" }
+
+github_provider = { path = "./packages/github_provider" }
+
+reqwest = { workspace = true }
+tachyon-sdk = { path = "../../sdk/rust", features = ["auth", "graphql"] }
+
+# essential crates?
+async-recursion = "1.1"
+chrono = { workspace = true }
+clap.workspace = true
+tracing = { workspace = true }
+validator = { version = "0.18", features = ["derive"] }
+anyhow = { workspace = true }
+serde = { workspace = true }
+derive-getters.workspace = true
+derive-new = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+], default-features = false }
+async-trait = "0.1.68"
+rand = { workspace = true }
+
+axum = { workspace = true, features = ["ws"] }
+axum-extra = { workspace = true }
+# aide = { version = "0.13.4", features = ["axum", "redoc", "macros"] }
+# axum-jsonschema = { version = "0.8.0", features = ["aide"] }
+dotenvy = { workspace = true }
+# http-body = "0.4.3"
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+utoipa-rapidoc = { workspace = true }
+utoipa-redoc = { workspace = true }
+utoipa-axum = { workspace = true }
+
+
+tonic.workspace = true
+strum.workspace = true
+
+hyper = { workspace = true }
+tower = "0.5.1"
+mime = "0.3.16"
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+bytes = { workspace = true }
+arrow = "57.2.0"
+parquet = "57.2.0"
+sqlx = { workspace = true, features = [
+    "runtime-tokio-rustls",
+    "any",
+    "postgres",
+] }
+
+yrs = "0.21"
+futures-util = "0.3"
+once_cell.workspace = true
+
+schemars = { version = "0.8.15", features = ["uuid1", "chrono"] }
+uuid = { version = "1.5.0", features = ["v4", "serde"] }
+axum-macros = "0.4.1"
+tower-http = { workspace = true, features = ["cors"] }
+async-graphql.workspace = true
+
+
+# lambda
+lambda_http = { workspace = true }
+lambda_runtime = { workspace = true }
+
+# crypto for OAuth state signing
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# test
+mockall = "0.13"
+rstest = { workspace = true }
+regex = "1.10.3"
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[features]
+default = []
+integration_tests = []
+
+[[bin]]
+name = "library_codegen"
+path = "./bin/codegen.rs"
+
+[[bin]]
+name = "lambda-library-api"
+path = "./bin/lambda.rs"
+
+[[bin]]
+name = "library_api_migrate"
+path = "./bin/migrate.rs"
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+tracing-subscriber = { workspace = true }
+futures.workspace = true
