@@ -1,0 +1,21 @@
+[package]
+name = "github_provider"
+version = "0.1.0"
+edition = "2021"
+description = "GitHub OAuth provider for authentication and API access"
+
+[dependencies]
+errors = { path = "../../../../packages/errors" }
+
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+urlencoding = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+

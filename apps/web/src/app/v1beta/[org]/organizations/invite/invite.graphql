@@ -1,0 +1,23 @@
+query orgInvitePage($orgUsername: String!) {
+  organization(username: $orgUsername) {
+    id
+  }
+}
+
+mutation inviteUser(
+  $platformId: String
+  $tenantId: String!
+  $invitee: IdOrEmail!
+  $notifyUser: Boolean
+) {
+  inviteUser(
+    platformId: $platformId
+    tenantId: $tenantId
+    invitee: $invitee
+    notifyUser: $notifyUser
+  ) {
+    id
+    email
+    name
+  }
+}

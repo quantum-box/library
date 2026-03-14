@@ -1,0 +1,11 @@
+mutation InviteRepoMember($input: InviteRepoMemberInput!) {
+  inviteRepoMember(input: $input)
+}
+
+mutation RemoveRepoMember($input: RemoveRepoMemberInput!) {
+  removeRepoMember(input: $input)
+}
+
+mutation ChangeRepoMemberRole($input: ChangeRepoMemberRoleInput!) {
+  changeRepoMemberRole(input: $input)
+}

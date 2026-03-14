@@ -1,0 +1,13 @@
+query newRepoPage {
+  me {
+    tenantIdList
+    organizations {
+      ...organizationOption
+    }
+  }
+}
+
+fragment organizationOption on Operator {
+  id
+  operatorName
+}

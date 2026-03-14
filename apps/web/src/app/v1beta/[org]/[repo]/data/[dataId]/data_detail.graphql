@@ -1,0 +1,31 @@
+query dataDetailPage(
+  $orgUsername: String!
+  $repoUsername: String!
+  $dataId: String!
+) {
+  data(
+    orgUsername: $orgUsername
+    repoUsername: $repoUsername
+    dataId: $dataId
+  ) {
+    ...DataForDataDetail
+  }
+  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...PropertyForEditor
+  }
+  dataList(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...DataListForDataListCard
+  }
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    policies {
+      userId
+      role
+    }
+  }
+}
+
+mutation updateData($input: UpdateDataInputData!) {
+  updateData(input: $input) {
+    ...DataForDataDetail
+  }
+}

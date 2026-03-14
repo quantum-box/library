@@ -1,0 +1,6 @@
+mutation createOperator($input: CreateOperatorInput!) {
+  createOperator(input: $input) {
+    id
+    operatorName
+  }
+}

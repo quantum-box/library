@@ -1,0 +1,36 @@
+[package]
+name = "tachyon-sdk"
+version = "0.1.0"
+authors = ["OpenAPI Generator team and contributors"]
+description = "Tachyon Platform REST API"
+# Override this license by providing a License Object in the OpenAPI.
+license = "Unlicense"
+edition = "2021"
+
+[dependencies]
+serde = { version = "^1.0", features = ["derive"] }
+serde_with = { version = "^3.8", default-features = false, features = ["base64", "std", "macros"] }
+serde_json = "^1.0"
+serde_repr = "^0.1"
+url = "^2.5"
+reqwest = { version = "^0.12", default-features = false, features = ["json", "multipart"] }
+
+# auth feature dependencies
+async-trait = { version = "0.1", optional = true }
+chrono = { version = "0.4", features = ["serde"], optional = true }
+mockall = { version = "0.13", optional = true }
+async-graphql = { version = ">=7.0.11, <8.0.0", optional = true }
+
+# When used inside a workspace with local value_object/errors,
+# these paths are resolved. For standalone use, override with
+# git or registry deps.
+value_object = { path = "../../packages/value_object", optional = true }
+errors = { path = "../../packages/errors", default-features = false, optional = true }
+
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls-tls"]
+auth = ["async-trait", "chrono", "value_object", "errors"]
+graphql = ["auth", "async-graphql"]
+test = ["auth", "mockall"]

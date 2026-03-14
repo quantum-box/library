@@ -1,0 +1,1318 @@
+components:
+  schemas:
+    AddDataRequest:
+      properties:
+        name:
+          type: string
+        property_data:
+          items:
+            $ref: '#/components/schemas/PropertyDataRequest'
+          type: array
+      required:
+      - name
+      - property_data
+      type: object
+    AddPropertyRequest:
+      properties:
+        name:
+          type: string
+        property_type:
+          type: string
+      required:
+      - name
+      - property_type
+      type: object
+    ChangeRepoUsernameRequest:
+      properties:
+        new_username:
+          type: string
+      required:
+      - new_username
+      type: object
+    CreateOrganizationRequest:
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        username:
+          type: string
+        website:
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      - username
+      type: object
+    CreateRepoRequest:
+      properties:
+        database_id:
+          type:
+          - string
+          - 'null'
+        description:
+          type:
+          - string
+          - 'null'
+        is_public:
+          type: boolean
+        name:
+          type: string
+        username:
+          type: string
+      required:
+      - name
+      - username
+      - is_public
+      type: object
+    CreateSourceRequest:
+      properties:
+        name:
+          type: string
+        url:
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      type: object
+    DataResponse:
+      properties:
+        id:
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PropertyDataResponse'
+          type: array
+        name:
+          type: string
+      required:
+      - id
+      - name
+      - items
+      type: object
+    Location:
+      description: |-
+        # Location
+        TODO: add English documentation
+      properties:
+        latitude:
+          description: 'TODO: add English documentation'
+          format: double
+          type: number
+        longitude:
+          description: 'TODO: add English documentation'
+          format: double
+          type: number
+      required:
+      - latitude
+      - longitude
+      type: object
+    OrganizationResponse:
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+        id:
+          type: string
+        name:
+          type: string
+        repos:
+          items:
+            $ref: '#/components/schemas/RepoResponse'
+          type: array
+        username:
+          type: string
+        website:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - name
+      - username
+      - repos
+      type: object
+    ParquetResponse:
+      properties:
+        presigned_url:
+          type: string
+      required:
+      - presigned_url
+      type: object
+    PropertyDataRequest:
+      properties:
+        property_id:
+          type: string
+        value: {}
+      required:
+      - property_id
+      - value
+      type: object
+    PropertyDataResponse:
+      properties:
+        key:
+          type: string
+        property_id:
+          type: string
+        value:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/PropertyDataValue'
+      required:
+      - property_id
+      - key
+      type: object
+    PropertyDataValue:
+      oneOf:
+      - properties:
+          string:
+            type: string
+        required:
+        - string
+        type: object
+      - properties:
+          integer:
+            format: int32
+            type: integer
+        required:
+        - integer
+        type: object
+      - properties:
+          html:
+            type: string
+        required:
+        - html
+        type: object
+      - properties:
+          markdown:
+            type: string
+        required:
+        - markdown
+        type: object
+      - properties:
+          relation:
+            properties:
+              data_id:
+                items:
+                  type: string
+                type: array
+              database_id:
+                type: string
+            required:
+            - database_id
+            - data_id
+            type: object
+        required:
+        - relation
+        type: object
+      - properties:
+          id:
+            type: string
+        required:
+        - id
+        type: object
+      - properties:
+          select:
+            type: string
+        required:
+        - select
+        type: object
+      - properties:
+          multiSelect:
+            items:
+              type: string
+            type: array
+        required:
+        - multiSelect
+        type: object
+      - properties:
+          location:
+            $ref: '#/components/schemas/Location'
+        required:
+        - location
+        type: object
+      - properties:
+          date:
+            type: string
+        required:
+        - date
+        type: object
+      - properties:
+          image:
+            type: string
+        required:
+        - image
+        type: object
+    PropertyResponse:
+      properties:
+        deprecation:
+          type:
+          - string
+          - 'null'
+        id:
+          type: string
+        name:
+          type: string
+        property_type:
+          type: string
+      required:
+      - id
+      - name
+      - property_type
+      type: object
+    RepoResponse:
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+        id:
+          type: string
+        is_public:
+          type: boolean
+        name:
+          type: string
+        organization_id:
+          type: string
+        username:
+          type: string
+      required:
+      - id
+      - name
+      - username
+      - is_public
+      - organization_id
+      type: object
+    SearchDataQuery:
+      properties:
+        name:
+          type: string
+        page:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        page_size:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      required:
+      - name
+      type: object
+    SearchRepoQuery:
+      properties:
+        limit:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        name:
+          type:
+          - string
+          - 'null'
+      type: object
+    SignInRequest:
+      description: Request body for sign-in endpoint
+      properties:
+        access_token:
+          description: Access token from authentication provider (e.g., Cognito)
+          type: string
+        allow_sign_up:
+          description: |-
+            Whether to allow sign up if user doesn't exist.
+            If not provided, defaults to None (sign-in only, no auto sign-up).
+          type:
+          - boolean
+          - 'null'
+        platform_id:
+          description: Platform ID (tenant ID)
+          type: string
+      required:
+      - platform_id
+      - access_token
+      type: object
+    SignInResponse:
+      description: Response for sign-in endpoint
+      properties:
+        user:
+          $ref: '#/components/schemas/UserResponse'
+      required:
+      - user
+      type: object
+    SourceResponse:
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        repo_id:
+          type: string
+        url:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - repo_id
+      - name
+      type: object
+    UpdateDataRequest:
+      properties:
+        name:
+          type: string
+        property_data:
+          items:
+            $ref: '#/components/schemas/PropertyDataRequest'
+          type: array
+      required:
+      - name
+      - property_data
+      type: object
+    UpdateOrganizationRequest:
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        website:
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      type: object
+    UpdatePropertyRequest:
+      properties:
+        name:
+          type: string
+      required:
+      - name
+      type: object
+    UpdateRepoRequest:
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+        is_public:
+          type:
+          - boolean
+          - 'null'
+        name:
+          type:
+          - string
+          - 'null'
+        tags:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+      type: object
+    UpdateSourceRequest:
+      properties:
+        name:
+          type:
+          - string
+          - 'null'
+        url:
+          type:
+          - string
+          - 'null'
+      type: object
+    UserResponse:
+      description: User information in sign-in response
+      properties:
+        email:
+          type:
+          - string
+          - 'null'
+        id:
+          type: string
+        name:
+          type:
+          - string
+          - 'null'
+        role:
+          type: string
+        tenants:
+          items:
+            type: string
+          type: array
+        username:
+          type: string
+      required:
+      - id
+      - username
+      - role
+      - tenants
+      type: object
+info:
+  description: ''
+  license:
+    name: ''
+  title: library-api
+  version: 1.11.0
+openapi: 3.1.0
+paths:
+  /auth/v1beta/sign-in:
+    post:
+      description: |-
+        This endpoint authenticates a user using an access token from the
+        authentication provider (e.g., Cognito) and returns user information.
+      operationId: sign_in
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInResponse'
+          description: User signed in successfully
+        '400':
+          description: Bad request - invalid input
+        '401':
+          description: Unauthorized - invalid token
+        '404':
+          description: User not found and sign up not allowed
+        '500':
+          description: Internal server error
+      summary: Sign in with platform access token.
+      tags:
+      - auth
+  /health:
+    get:
+      operationId: health_check
+      responses:
+        '200':
+          description: OK
+      tags: []
+  /v1beta/orgs:
+    post:
+      operationId: create_organization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+          description: Organization created
+        '400':
+          description: Invalid request
+        '409':
+          description: Organization already exists
+      tags: []
+  /v1beta/orgs/{org}:
+    get:
+      operationId: view_organization
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+          description: Organization found
+        '404':
+          description: Organization not found
+      tags: []
+    put:
+      operationId: update_organization
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+          description: Organization updated
+        '400':
+          description: Invalid request
+        '404':
+          description: Organization not found
+      tags: []
+  /v1beta/repos:
+    get:
+      operationId: search_repo
+      parameters:
+      - description: Repository name to search for
+        in: query
+        name: name
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+      - description: Maximum number of results to return
+        in: query
+        name: limit
+        required: false
+        schema:
+          format: int64
+          type:
+          - integer
+          - 'null'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RepoResponse'
+                type: array
+          description: Repositories found
+      tags: []
+  /v1beta/repos/{org}:
+    post:
+      operationId: create_repo
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepoRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepoResponse'
+          description: Repository created
+        '400':
+          description: Invalid request
+        '409':
+          description: Repository already exists
+      tags: []
+  /v1beta/repos/{org}/{repo}:
+    delete:
+      operationId: delete_repo
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Repository deleted
+        '404':
+          description: Repository not found
+      tags: []
+    get:
+      operationId: view_repo
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepoResponse'
+          description: Repository found
+        '404':
+          description: Repository not found
+      tags: []
+    put:
+      operationId: update_repo
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepoRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepoResponse'
+          description: Repository updated
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/change-username:
+    put:
+      operationId: change_repo_username
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Current repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRepoUsernameRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepoResponse'
+          description: Repository username changed
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository not found
+        '409':
+          description: Repository with new username already exists
+      tags: []
+  /v1beta/repos/{org}/{repo}/data:
+    get:
+      operationId: search_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data name to search for
+        in: query
+        name: name
+        required: true
+        schema:
+          type: string
+      - description: Page number
+        in: query
+        name: page
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      - description: Page size
+        in: query
+        name: page_size
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DataResponse'
+                type: array
+          description: Data found
+        '404':
+          description: Repository not found
+      tags: []
+    post:
+      operationId: add_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddDataRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Data created
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/data-list:
+    get:
+      operationId: view_data_list
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DataResponse'
+                type: array
+          description: Data list found
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/parquet:
+    get:
+      operationId: view_data_parquet
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParquetResponse'
+          description: Parquet file URL
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}:
+    delete:
+      operationId: delete_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Data deleted
+        '404':
+          description: Data not found
+      tags: []
+    get:
+      operationId: view_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      tags: []
+    put:
+      operationId: update_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDataRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Data updated
+        '400':
+          description: Invalid request
+        '404':
+          description: Data not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/md:
+    get:
+      operationId: view_data_markdown
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      tags: []
+  /v1beta/repos/{org}/{repo}/properties:
+    get:
+      operationId: get_properties
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PropertyResponse'
+                type: array
+          description: Properties found
+        '404':
+          description: Repository not found
+      tags: []
+    post:
+      operationId: add_property
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPropertyRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyResponse'
+          description: Property created
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/properties/{property_id}:
+    delete:
+      operationId: delete_property
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Property ID
+        in: path
+        name: property_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Property deleted
+        '404':
+          description: Property not found
+      tags: []
+    get:
+      operationId: get_property
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Property ID
+        in: path
+        name: property_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyResponse'
+          description: Property found
+        '404':
+          description: Property not found
+      tags: []
+    put:
+      operationId: update_property
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Property ID
+        in: path
+        name: property_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePropertyRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyResponse'
+          description: Property updated
+        '400':
+          description: Invalid request
+        '404':
+          description: Property not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/sources:
+    get:
+      operationId: find_sources
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SourceResponse'
+                type: array
+          description: Sources found
+      tags: []
+    post:
+      operationId: create_source
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSourceRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+          description: Source created
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/sources/{source_id}:
+    delete:
+      operationId: delete_source
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Source ID
+        in: path
+        name: source_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Source deleted
+        '404':
+          description: Source not found
+      tags: []
+    get:
+      operationId: get_source
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Source ID
+        in: path
+        name: source_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+          description: Source found
+        '404':
+          description: Source not found
+      tags: []
+    put:
+      operationId: update_source
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Source ID
+        in: path
+        name: source_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSourceRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+          description: Source updated
+        '400':
+          description: Invalid request
+        '404':
+          description: Source not found
+      tags: []

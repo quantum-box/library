@@ -1,0 +1,14 @@
+query orgOgpMeta($username: String!) {
+  organization(username: $username) {
+    id
+    name
+    username
+    description
+    repos {
+      id
+    }
+    users {
+      id
+    }
+  }
+}

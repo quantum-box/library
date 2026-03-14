@@ -1,0 +1,166 @@
+query repositoryPageWithTags(
+  $org: String!
+  $repo: String!
+  $page: Int
+  $pageSize: Int
+) {
+  repo(orgUsername: $org, repoUsername: $repo) {
+    ...RepoFieldOnRepoPage
+
+    dataList(page: $page, pageSize: $pageSize) {
+      items {
+        ...DataFieldOnRepoPage
+      }
+      paginator {
+        ...PaginationField
+      }
+    }
+
+    properties {
+      ...PropertyFieldOnRepoPage
+    }
+
+    sources {
+      ...SourceFieldOnRepoPage
+    }
+  }
+}
+
+fragment RepoFieldOnRepoPage on Repo {
+  id
+  name
+  description
+  isPublic
+  tags
+  policies {
+    userId
+    role
+    user {
+      id
+      username
+      name
+      image
+    }
+  }
+}
+
+query repositoryPage(
+  $org: String!
+  $repo: String!
+  $page: Int
+  $pageSize: Int
+) {
+  repo(orgUsername: $org, repoUsername: $repo) {
+    ...RepoFieldOnRepoPageWithoutTags
+
+    dataList(page: $page, pageSize: $pageSize) {
+      items {
+        ...DataFieldOnRepoPage
+      }
+      paginator {
+        ...PaginationField
+      }
+    }
+
+    properties {
+      ...PropertyFieldOnRepoPage
+    }
+
+    sources {
+      ...SourceFieldOnRepoPage
+    }
+  }
+}
+
+fragment RepoFieldOnRepoPageWithoutTags on Repo {
+  id
+  name
+  description
+  isPublic
+  policies {
+    userId
+    role
+    user {
+      id
+      username
+      name
+      image
+    }
+  }
+}
+
+fragment SourceFieldOnRepoPage on Source {
+  id
+  name
+  url
+}
+
+fragment DataFieldOnRepoPage on Data {
+  id
+  name
+  createdAt
+  updatedAt
+  propertyData {
+    propertyId
+    value {
+      ... on StringValue {
+        string
+      }
+      ... on IntegerValue {
+        number
+      }
+      ... on HtmlValue {
+        html
+      }
+      ... on RelationValue {
+        dataIds
+        databaseId
+      }
+      ... on SelectValue {
+        optionId
+      }
+      ... on MultiSelectValue {
+        optionIds
+      }
+      ... on IdValue {
+        id
+      }
+      ... on LocationValue {
+        latitude
+        longitude
+      }
+      ... on DateValue {
+        date
+      }
+    }
+  }
+}
+
+fragment PaginationField on Paginator {
+  currentPage
+  totalItems
+  itemsPerPage
+  totalPages
+}
+
+fragment PropertyFieldOnRepoPage on Property {
+  id
+  name
+  typ
+  meta {
+    ... on SelectType {
+      options {
+        id
+        key
+        name
+      }
+    }
+    ... on MultiSelectType {
+      options {
+        id
+        key
+        name
+      }
+    }
+  }
+}

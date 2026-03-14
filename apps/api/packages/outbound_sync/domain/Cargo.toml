@@ -1,0 +1,16 @@
+[package]
+name = "outbound_sync_domain"
+version = "0.1.0"
+edition = "2021"
+description = "Domain models for outbound data synchronization"
+
+[dependencies]
+errors = { path = "../../../../../packages/errors" }
+value_object = { path = "../../../../../packages/value_object" }
+
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+derive-new = "0.6"
+derive-getters = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

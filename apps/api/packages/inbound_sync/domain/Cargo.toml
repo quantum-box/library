@@ -1,0 +1,22 @@
+[package]
+name = "inbound_sync_domain"
+version = "0.1.0"
+edition = "2021"
+description = "Domain models for inbound webhook synchronization"
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+derive-getters.workspace = true
+derive-new.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smol_str.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+ulid = "1.1"
+
+errors = { path = "../../../../../packages/errors" }
+integration_domain = { path = "../../../../../packages/integration_domain" }
+util = { path = "../../../../../packages/util" }
+value_object = { path = "../../../../../packages/value_object" }

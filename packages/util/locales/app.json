@@ -1,0 +1,38 @@
+{
+  "err.empty_type": {
+    "en": "%{typ} must not be empty",
+    "ja": "%{typ}は空にできません"
+  },
+  "err.invalid_type": {
+    "en": "%{typ} is invalid",
+    "ja": "%{typ}は無効です"
+  },
+  "err.invalid_format": {
+    "en": "%{typ} is invalid format",
+    "ja": "%{typ}の形式が無効です"
+  },
+  "err.too_long_type": {
+    "en": "%{typ} must be less than %{max} characters",
+    "ja": "%{typ}は%{max}文字以下で入力してください"
+  },
+  "err.too_short_type": {
+    "en": "%{typ} must be more than %{min} characters",
+    "ja": "%{typ}は%{min}文字以上で入力してください"
+  },
+  "err.too_long_or_too_short_type": {
+    "en": "%{typ} must be between %{min} and %{max} characters",
+    "ja": "%{typ}は%{min}文字以上%{max}文字以下で入力してください"
+  },
+  "err.unknown_prefix": {
+    "en": "Unknown prefix %{prefix}",
+    "ja": "不明な接頭辞%{prefix}"
+  },
+  "err.prefix_needed": {
+    "en": "id to start with a prefix (as in 'prefix_')",
+    "ja": "idは接頭辞（'prefix_'のような）で始める必要があります"
+  },
+  "err.invalid_id": {
+    "en": "id is invalid",
+    "ja": "idは無効です"
+  }
+}

@@ -1,0 +1,20 @@
+query newData($orgUsername: String!, $repoUsername: String!) {
+  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...PropertyForEditor
+  }
+  dataList(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...DataListForDataListCard
+  }
+  repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    policies {
+      userId
+      role
+    }
+  }
+}
+
+mutation addData($input: AddDataInputData!) {
+  addData(input: $input) {
+    ...DataForDataDetail
+  }
+}

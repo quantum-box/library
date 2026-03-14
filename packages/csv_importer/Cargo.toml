@@ -1,0 +1,40 @@
+[package]
+name = "csv_importer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+value_object = { path = "../value_object" }
+database-manager = { path = "../database-manager" }
+persistence = { path = "../persistence" }
+
+tachyon-sdk = { path = "../../sdk/rust", features = ["auth"] }
+
+csv = "1.1.6"
+encoding_rs = "0.8.34"
+
+# essential crates?
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+derive-getters = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+reqwest = { workspace = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "import_csv_from_url"
+path = "examples/import_csv_from_url.rs"
+
+[[test]]
+name = "import"
+path = "tests/import.rs"

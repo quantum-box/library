@@ -1,0 +1,21 @@
+query newDatabase {
+  me {
+    tenantIdList
+    organizations {
+      ...organizationOption
+    }
+  }
+}
+
+fragment organizationOption on Operator {
+  id
+  operatorName
+}
+
+mutation createRepoOnOrgNewDatabasePage($input: CreateRepoInput!) {
+  createRepo(input: $input) {
+    id
+    username
+    databases
+  }
+}

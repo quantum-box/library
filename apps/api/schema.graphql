@@ -1,0 +1,2141 @@
+input AddDataInputData {
+	actor: String!
+	orgUsername: String!
+	repoUsername: String!
+	dataName: String!
+	propertyData: [PropertyDataInputData!]!
+}
+
+type ApiKeyResponse {
+	apiKey: PublicApiKey!
+	serviceAccount: ServiceAccount!
+}
+
+
+"""
+Input for bulk syncing ext_github property
+"""
+input BulkSyncExtGithubInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+	"""
+	ext_github property ID
+	"""
+	extGithubPropertyId: String!
+	"""
+	Repository configurations
+	"""
+	repoConfigs: [ExtGithubRepoConfigInput!]!
+}
+
+"""
+Result of bulk sync operation
+"""
+type BulkSyncExtGithubResult {
+	"""
+	Number of data items updated
+	"""
+	updatedCount: Int!
+	"""
+	Number of data items skipped (already configured)
+	"""
+	skippedCount: Int!
+	"""
+	Total number of data items
+	"""
+	totalCount: Int!
+}
+
+"""
+Input for changing a user's role in an organization
+"""
+input ChangeOrgMemberRoleInput {
+	"""
+	Tenant/Organization ID
+	"""
+	tenantId: String!
+	"""
+	User ID whose role to change
+	"""
+	userId: String!
+	"""
+	New role to assign
+	"""
+	newRole: OrgRole!
+}
+
+"""
+Input for changing a user's role in a repository
+"""
+input ChangeRepoMemberRoleInput {
+	"""
+	Repository ID
+	"""
+	repoId: String!
+	"""
+	User ID whose role to change
+	"""
+	userId: String!
+	"""
+	New role: "owner", "writer", or "reader"
+	"""
+	newRole: String!
+}
+
+input ChangeRepoUsernameInput {
+	orgUsername: String!
+	oldRepoUsername: String!
+	newRepoUsername: String!
+}
+
+"""
+Input for connecting to an integration.
+"""
+input ConnectIntegrationInput {
+	"""
+	Integration ID to connect to
+	"""
+	integrationId: String!
+	"""
+	OAuth authorization code (for OAuth integrations)
+	"""
+	authCode: String
+	"""
+	API key or token (for non-OAuth integrations)
+	"""
+	apiKey: String
+}
+
+input CreateApiKeyInput {
+	"""
+	TODO: add English documentation
+	"""
+	organizationUsername: String!
+	"""
+	TODO: add English documentation
+	"""
+	name: String!
+	"""
+	TODO: add English documentation
+	"""
+	serviceAccountName: String
+}
+
+input CreateOperatorInput {
+	"""
+	TODO: add English documentation
+	"""
+	platformId: String!
+	"""
+	TODO: add English documentation
+	"""
+	operatorAlias: String
+	"""
+	TODO: add English documentation
+	"""
+	operatorName: String!
+	"""
+	TODO: add English documentation
+	"""
+	newOperatorOwnerMethod: NewOperatorOwnerMethod!
+	"""
+	TODO: add English documentation
+	"""
+	newOperatorOwnerId: String!
+	"""
+	TODO: add English documentation
+	"""
+	newOperatorOwnerPassword: String
+}
+
+input CreateOrganizationInput {
+	name: String!
+	username: String!
+	description: String
+	website: String
+}
+
+input CreateRepoInput {
+	orgUsername: String!
+	repoName: String!
+	repoUsername: String!
+	userId: String!
+	isPublic: Boolean!
+	"""
+	TODO: add English documentation
+	TODO: add English documentation
+	"""
+	databaseId: String
+	description: String
+}
+
+input CreateSourceInput {
+	orgUsername: String!
+	repoUsername: String!
+	name: String!
+	url: String
+}
+
+"""
+Input for creating a webhook endpoint.
+"""
+input CreateWebhookEndpointInput {
+	name: String!
+	provider: GqlProvider!
+	"""
+	Provider-specific configuration as JSON string
+	"""
+	config: String!
+	"""
+	Events to listen for (empty = all events)
+	"""
+	events: [String!]!
+	"""
+	Target repository ID (optional)
+	"""
+	repositoryId: String
+	"""
+	Property mapping as JSON string (optional)
+	"""
+	mapping: String
+}
+
+"""
+Output for creating a webhook endpoint.
+"""
+type CreateWebhookEndpointOutput {
+	endpoint: GqlWebhookEndpoint!
+	webhookUrl: String!
+	"""
+	The secret (only returned on creation)
+	"""
+	secret: String!
+}
+
+type Data {
+	id: String!
+	tenantId: String!
+	databaseId: String!
+	name: String!
+	propertyData: [PropertyData!]!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+type DataList {
+	items: [Data!]!
+	paginator: Paginator!
+}
+
+"""
+Implement the DateTime<Utc> scalar
+
+The input/output is a string in RFC3339 format.
+"""
+scalar DateTime
+
+type DateValue {
+	"""
+	Date in ISO 8601 format (YYYY-MM-DD)
+	"""
+	date: String!
+}
+
+enum DefaultRole {
+	OWNER
+	MANAGER
+	GENERAL
+}
+
+"""
+Input for disabling GitHub sync
+"""
+input DisableGitHubSyncInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+}
+
+"""
+Result of disabling GitHub sync
+"""
+type DisableGitHubSyncResult {
+	"""
+	Whether the operation succeeded
+	"""
+	success: Boolean!
+	"""
+	Whether the property was actually deleted
+	"""
+	deleted: Boolean!
+}
+
+"""
+Input for enabling GitHub sync
+"""
+input EnableGitHubSyncInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+}
+
+"""
+Result of enabling GitHub sync
+"""
+type EnableGitHubSyncResult {
+	"""
+	Whether the operation succeeded
+	"""
+	success: Boolean!
+	"""
+	The created ext_github property ID
+	"""
+	propertyId: String!
+}
+
+"""
+Input for enabling Linear sync
+"""
+input EnableLinearSyncInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+}
+
+"""
+Result of enabling Linear sync
+"""
+type EnableLinearSyncResult {
+	"""
+	Whether the operation succeeded
+	"""
+	success: Boolean!
+	"""
+	The created ext_linear property ID
+	"""
+	propertyId: String!
+}
+
+"""
+Input for exchanging OAuth authorization code.
+"""
+input ExchangeOAuthCodeInput {
+	"""
+	Integration ID
+	"""
+	integrationId: String!
+	"""
+	Authorization code from OAuth callback
+	"""
+	code: String!
+	"""
+	State parameter for CSRF verification
+	"""
+	state: String
+	"""
+	Redirect URI used in authorization
+	"""
+	redirectUri: String!
+}
+
+"""
+Repository configuration for ext_github
+"""
+input ExtGithubRepoConfigInput {
+	"""
+	GitHub repository (owner/repo)
+	"""
+	repo: String!
+	"""
+	Display label (optional)
+	"""
+	label: String
+	"""
+	Default path (optional, supports {{name}} placeholder)
+	"""
+	defaultPath: String
+}
+
+
+"""
+Result of analyzing frontmatter across multiple files
+"""
+type FrontmatterAnalysis {
+	"""
+	List of suggested properties
+	"""
+	properties: [SuggestedProperty!]!
+	"""
+	Total files analyzed
+	"""
+	totalFiles: Int!
+	"""
+	Files with valid frontmatter
+	"""
+	validFiles: Int!
+}
+
+"""
+Input for getting Markdown import previews
+"""
+input GetMarkdownPreviewsInput {
+	"""
+	GitHub repository in "owner/repo" format
+	"""
+	githubRepo: String!
+	"""
+	List of file paths to preview
+	"""
+	paths: [String!]!
+	"""
+	Branch/tag/commit (optional)
+	"""
+	refName: String
+}
+
+"""
+GitHub OAuth authorization URL response
+"""
+type GitHubAuthUrl {
+	"""
+	The URL to redirect the user to for authorization
+	"""
+	url: String!
+	"""
+	State parameter for CSRF protection
+	"""
+	state: String!
+}
+
+"""
+GitHub OAuth connection status
+"""
+type GitHubConnection {
+	"""
+	Whether GitHub is connected
+	"""
+	connected: Boolean!
+	"""
+	GitHub username (if connected)
+	"""
+	username: String
+	"""
+	When the token was last refreshed
+	"""
+	connectedAt: DateTime
+	"""
+	When the token expires (if applicable)
+	"""
+	expiresAt: DateTime
+}
+
+"""
+Result of listing directory contents
+"""
+type GitHubDirectoryContents {
+	"""
+	List of files and directories
+	"""
+	files: [GitHubFileInfo!]!
+	"""
+	Whether the listing was truncated (more than 1000 items)
+	"""
+	truncated: Boolean!
+}
+
+"""
+GitHub file/directory information
+"""
+type GitHubFileInfo {
+	"""
+	File/directory name
+	"""
+	name: String!
+	"""
+	Full path in the repository
+	"""
+	path: String!
+	"""
+	SHA hash of the content
+	"""
+	sha: String!
+	"""
+	Size in bytes (0 for directories)
+	"""
+	size: Int!
+	"""
+	Type: "file" or "dir"
+	"""
+	fileType: String!
+	"""
+	HTML URL to view on GitHub
+	"""
+	htmlUrl: String
+}
+
+"""
+GitHub repository information
+"""
+type GitHubRepository {
+	"""
+	Repository ID
+	"""
+	id: String!
+	"""
+	Repository name
+	"""
+	name: String!
+	"""
+	Full name (owner/repo format)
+	"""
+	fullName: String!
+	"""
+	Repository description
+	"""
+	description: String
+	"""
+	Whether the repository is private
+	"""
+	private: Boolean!
+	"""
+	HTML URL to the repository
+	"""
+	htmlUrl: String!
+	"""
+	Default branch name
+	"""
+	defaultBranch: String
+}
+
+"""
+Tenant's connection to an integration.
+"""
+type GqlConnection {
+	"""
+	Unique identifier
+	"""
+	id: String!
+	"""
+	Tenant ID that owns this connection
+	"""
+	tenantId: String!
+	"""
+	Integration ID this connection is for
+	"""
+	integrationId: String!
+	"""
+	Provider name
+	"""
+	provider: GqlProvider!
+	"""
+	Current status
+	"""
+	status: GqlConnectionStatus!
+	"""
+	External account identifier (e.g., GitHub username)
+	"""
+	externalAccountId: String
+	"""
+	External account name for display
+	"""
+	externalAccountName: String
+	"""
+	When OAuth token expires (if applicable)
+	"""
+	tokenExpiresAt: DateTime
+	"""
+	Error message if status is Error
+	"""
+	errorMessage: String
+	"""
+	When the connection was created
+	"""
+	connectedAt: DateTime!
+	"""
+	When the connection was last synced
+	"""
+	lastSyncedAt: DateTime
+}
+
+"""
+Actions for connection status changes.
+"""
+enum GqlConnectionAction {
+	"""
+	Pause the connection
+	"""
+	PAUSE
+	"""
+	Resume a paused connection
+	"""
+	RESUME
+	"""
+	Disconnect/remove the connection
+	"""
+	DISCONNECT
+	"""
+	Re-authorize (refresh OAuth token)
+	"""
+	REAUTHORIZE
+}
+
+"""
+Connection status for GraphQL.
+"""
+enum GqlConnectionStatus {
+	"""
+	Connection is active and working
+	"""
+	ACTIVE
+	"""
+	OAuth token has expired, needs re-authorization
+	"""
+	EXPIRED
+	"""
+	Connection is paused by the user
+	"""
+	PAUSED
+	"""
+	Connection has been disconnected
+	"""
+	DISCONNECTED
+	"""
+	Connection has an error
+	"""
+	ERROR
+}
+
+"""
+Endpoint status enum for GraphQL.
+"""
+enum GqlEndpointStatus {
+	ACTIVE
+	PAUSED
+	DISABLED
+}
+
+"""
+Integration available in the marketplace.
+"""
+type GqlIntegration {
+	"""
+	Unique identifier
+	"""
+	id: String!
+	"""
+	The provider this integration is for
+	"""
+	provider: GqlProvider!
+	"""
+	Display name
+	"""
+	name: String!
+	"""
+	Description of the integration
+	"""
+	description: String!
+	"""
+	Icon URL or identifier
+	"""
+	icon: String
+	"""
+	Category
+	"""
+	category: GqlIntegrationCategory!
+	"""
+	Sync capabilities
+	"""
+	syncCapability: GqlSyncCapability!
+	"""
+	Supported object types (e.g., "customers", "orders", "products")
+	"""
+	supportedObjects: [String!]!
+	"""
+	Whether OAuth is required for this integration
+	"""
+	requiresOauth: Boolean!
+	"""
+	OAuth configuration (if applicable)
+	"""
+	oauthConfig: GqlOAuthConfig
+	"""
+	Whether this integration is enabled in the marketplace
+	"""
+	isEnabled: Boolean!
+	"""
+	Whether this is a featured/recommended integration
+	"""
+	isFeatured: Boolean!
+}
+
+"""
+Integration category for GraphQL.
+"""
+enum GqlIntegrationCategory {
+	"""
+	Code and repository management (GitHub, GitLab)
+	"""
+	CODE_MANAGEMENT
+	"""
+	Issue and project tracking (Linear, Jira)
+	"""
+	PROJECT_MANAGEMENT
+	"""
+	Customer relationship management (HubSpot, Salesforce)
+	"""
+	CRM
+	"""
+	Payment processing (Stripe, Square)
+	"""
+	PAYMENTS
+	"""
+	Databases and content (Notion, Airtable)
+	"""
+	CONTENT_MANAGEMENT
+	"""
+	E-commerce and inventory (Square, Shopify)
+	"""
+	ECOMMERCE
+	"""
+	Custom/generic integrations
+	"""
+	CUSTOM
+}
+
+"""
+OAuth configuration for an integration.
+"""
+type GqlOAuthConfig {
+	"""
+	Required OAuth scopes for this integration
+	"""
+	scopes: [String!]!
+	"""
+	OAuth authorization URL
+	"""
+	authUrl: String!
+	"""
+	OAuth token URL
+	"""
+	tokenUrl: String!
+	"""
+	Whether refresh tokens are supported
+	"""
+	supportsRefresh: Boolean!
+}
+
+"""
+Processing stats GraphQL type.
+"""
+type GqlProcessingStats {
+	created: Int!
+	updated: Int!
+	deleted: Int!
+	skipped: Int!
+	total: Int!
+}
+
+"""
+Processing status enum for GraphQL.
+"""
+enum GqlProcessingStatus {
+	PENDING
+	PROCESSING
+	COMPLETED
+	FAILED
+	SKIPPED
+}
+
+"""
+Provider type enum for GraphQL.
+"""
+enum GqlProvider {
+	GITHUB
+	LINEAR
+	HUBSPOT
+	STRIPE
+	SQUARE
+	NOTION
+	AIRTABLE
+	GENERIC
+	CUSTOM
+}
+
+"""
+Sync capability for GraphQL.
+"""
+enum GqlSyncCapability {
+	"""
+	Can receive data from external service (webhooks)
+	"""
+	INBOUND
+	"""
+	Can push data to external service
+	"""
+	OUTBOUND
+	"""
+	Can both receive and push data
+	"""
+	BIDIRECTIONAL
+}
+
+"""
+Sync operation for GraphQL.
+"""
+type GqlSyncOperation {
+	id: String!
+	endpointId: String!
+	operationType: GqlSyncOperationType!
+	status: GqlSyncOperationStatus!
+	startedAt: DateTime!
+	completedAt: DateTime
+	stats: GqlProcessingStats
+	errorMessage: String
+	progress: String
+}
+
+"""
+Sync operation status enum for GraphQL.
+"""
+enum GqlSyncOperationStatus {
+	QUEUED
+	RUNNING
+	COMPLETED
+	FAILED
+	CANCELLED
+}
+
+"""
+Sync operation type enum for GraphQL.
+"""
+enum GqlSyncOperationType {
+	WEBHOOK
+	INITIAL_SYNC
+	ON_DEMAND_PULL
+	SCHEDULED_SYNC
+}
+
+"""
+Webhook endpoint GraphQL type.
+"""
+type GqlWebhookEndpoint {
+	id: String!
+	tenantId: String!
+	repositoryId: String
+	name: String!
+	provider: GqlProvider!
+	config: String!
+	events: [String!]!
+	mapping: String
+	status: GqlEndpointStatus!
+	webhookUrl: String!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+"""
+Webhook event GraphQL type.
+"""
+type GqlWebhookEvent {
+	id: String!
+	endpointId: String!
+	provider: GqlProvider!
+	eventType: String!
+	payload: String!
+	signatureValid: Boolean!
+	status: GqlProcessingStatus!
+	errorMessage: String
+	retryCount: Int!
+	stats: GqlProcessingStats
+	receivedAt: DateTime!
+	processedAt: DateTime
+}
+
+type HtmlValue {
+	html: String!
+}
+
+
+input IdOrEmail @oneOf {
+	id: String
+	email: String
+}
+
+type IdType {
+	autoGenerate: Boolean!
+}
+
+type IdValue {
+	id: String!
+}
+
+type ImageValue {
+	"""
+	Image URL
+	"""
+	url: String!
+}
+
+"""
+Error during import
+"""
+type ImportError {
+	"""
+	File path that caused the error
+	"""
+	path: String!
+	"""
+	Error message
+	"""
+	message: String!
+}
+
+"""
+Input for importing Markdown files from GitHub
+"""
+input ImportMarkdownFromGitHubInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username (will be created if it doesn't exist)
+	"""
+	repoUsername: String!
+	"""
+	Repository name (for creating new repo)
+	"""
+	repoName: String
+	"""
+	GitHub repository in "owner/repo" format
+	"""
+	githubRepo: String!
+	"""
+	List of file paths to import
+	"""
+	paths: [String!]!
+	"""
+	Branch/tag/commit (optional)
+	"""
+	refName: String
+	"""
+	Property mappings from frontmatter
+	"""
+	propertyMappings: [PropertyMappingInput!]!
+	"""
+	Property name for markdown content
+	"""
+	contentPropertyName: String!
+	"""
+	Whether to skip files that already exist (by ext_github path)
+	"""
+	skipExisting: Boolean
+	"""
+	Whether to enable GitHub sync (default: true)
+	If false, ext_github property will be created but without repo config
+	"""
+	enableGithubSync: Boolean
+}
+
+"""
+Result of importing Markdown files
+"""
+type ImportMarkdownResult {
+	"""
+	Number of files successfully imported
+	"""
+	importedCount: Int!
+	"""
+	Number of files updated (already existed)
+	"""
+	updatedCount: Int!
+	"""
+	Number of files skipped
+	"""
+	skippedCount: Int!
+	"""
+	List of errors encountered
+	"""
+	errors: [ImportError!]!
+	"""
+	IDs of created/updated data items
+	"""
+	dataIds: [String!]!
+	"""
+	ID of the repository (created or existing)
+	"""
+	repoId: String!
+}
+
+"""
+Input for initializing OAuth authorization.
+"""
+input InitOAuthInput {
+	"""
+	Integration ID to connect
+	"""
+	integrationId: String!
+	"""
+	Optional redirect URI (defaults to backend callback URL if not provided)
+	"""
+	redirectUri: String
+	"""
+	Optional custom state for CSRF protection (will be generated if not provided).
+	Frontend can encode additional data (e.g., tenant_id, integration_id) in this field.
+	"""
+	state: String
+}
+
+
+type IntegerValue {
+	number: String!
+}
+
+"""
+Input for inviting a user to a repository
+"""
+input InviteRepoMemberInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+	"""
+	Repository ID
+	"""
+	repoId: String!
+	"""
+	Username or email of the user to invite
+	"""
+	usernameOrEmail: String!
+	"""
+	Role to assign: "owner", "writer", or "reader"
+	"""
+	role: String!
+}
+
+type JsonType {
+	"""
+	TODO: add English documentation
+	"""
+	json: String!
+}
+
+"""
+Linear Issue for GraphQL
+"""
+type LinearIssue {
+	"""
+	Issue ID
+	"""
+	id: String!
+	"""
+	Issue identifier (e.g., "ENG-123")
+	"""
+	identifier: String!
+	"""
+	Issue title
+	"""
+	title: String!
+	"""
+	Issue state name
+	"""
+	stateName: String
+	"""
+	Assignee name
+	"""
+	assigneeName: String
+	"""
+	Issue URL
+	"""
+	url: String
+}
+
+"""
+Linear Project for GraphQL
+"""
+type LinearProject {
+	"""
+	Project ID
+	"""
+	id: String!
+	"""
+	Project name
+	"""
+	name: String!
+}
+
+"""
+Linear Team for GraphQL
+"""
+type LinearTeam {
+	"""
+	Team ID
+	"""
+	id: String!
+	"""
+	Team name
+	"""
+	name: String!
+	"""
+	Team key (e.g., "ENG")
+	"""
+	key: String!
+}
+
+"""
+Input for listing GitHub directory contents
+"""
+input ListGitHubDirectoryInput {
+	"""
+	GitHub repository in "owner/repo" format
+	"""
+	githubRepo: String!
+	"""
+	Path to the directory (empty for root)
+	"""
+	path: String!
+	"""
+	Branch/tag/commit (optional, defaults to default branch)
+	"""
+	refName: String
+	"""
+	Whether to include subdirectories recursively
+	"""
+	recursive: Boolean
+}
+
+"""
+# Location
+TODO: add English documentation
+"""
+input Location {
+	"""
+	TODO: add English documentation
+	"""
+	latitude: Float!
+	"""
+	TODO: add English documentation
+	"""
+	longitude: Float!
+}
+
+type LocationValue {
+	"""
+	TODO: add English documentation
+	-90.0 ~ 90.0
+	"""
+	latitude: Float!
+	"""
+	TODO: add English documentation
+	-180.0 ~ 180.0
+	"""
+	longitude: Float!
+}
+
+"""
+Preview of a Markdown file for import
+"""
+type MarkdownImportPreview {
+	"""
+	File path in the repository
+	"""
+	path: String!
+	"""
+	SHA hash for change detection
+	"""
+	sha: String!
+	"""
+	Parsed frontmatter as JSON string
+	"""
+	frontmatterJson: String
+	"""
+	List of frontmatter keys found
+	"""
+	frontmatterKeys: [String!]!
+	"""
+	Suggested data name (from title, h1, or filename)
+	"""
+	suggestedName: String!
+	"""
+	Preview of the markdown body (first 500 chars)
+	"""
+	bodyPreview: String!
+	"""
+	Error message if parsing failed
+	"""
+	parseError: String
+}
+
+type MarkdownValue {
+	markdown: String!
+}
+
+type MultiSelectType {
+	options: [SelectItem!]!
+}
+
+type MultiSelectValue {
+	optionIds: [String!]!
+}
+
+type Mutation {
+	"""
+	TODO: add English documentation
+	"""
+	check: String!
+	"""
+	[AUTH] Verify the token and return the user
+	"""
+	verify(token: String!): User!
+	"""
+	[AUTH] Sign in or sign up via platform access token (library)
+	"""
+	signIn(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
+	"""
+	[AUTH] Create operator via SDK REST call
+	"""
+	createOperator(input: CreateOperatorInput!): Operator!
+	"""
+	[LIBRARY-API] Invite a user to an organization with library-specific policy setup
+	
+	This wraps auth's InviteUser and additionally:
+	- Attaches LibraryUserPolicy to the invited user
+	- If the invited user becomes org owner, attaches repo owner policy
+	"""
+	inviteUser(platformId: String, tenantId: String!, invitee: IdOrEmail!, notifyUser: Boolean, role: OrgRole): User!
+	"""
+	[LIBRARY-API] Change a user's role in an organization
+	
+	Updates the user's DefaultRole and manages library-specific policies:
+	- If upgrading to Owner, attaches repo owner policy for full repo access
+	- If downgrading from Owner, detaches repo owner policy
+	"""
+	changeOrgMemberRole(input: ChangeOrgMemberRoleInput!): User!
+	"""
+	TODO: add English documentation
+	"""
+	createRepo(input: CreateRepoInput!): Repo!
+	"""
+	TODO: add English documentation
+	"""
+	updateRepo(input: UpdateRepoInput!): Repo!
+	"""
+	TODO: add English documentation
+	"""
+	deleteRepo(orgUsername: String!, repoUsername: String!): String!
+	"""
+	TODO: add English documentation
+	"""
+	changeRepoUsername(input: ChangeRepoUsernameInput!): Repo!
+	"""
+	TODO: add English documentation
+	"""
+	createData(input: AddDataInputData!): Data!
+	addData(input: AddDataInputData!): Data!
+	"""
+	TODO: add English documentation
+	"""
+	updateData(input: UpdateDataInputData!): Data!
+	"""
+	TODO: add English documentation
+	"""
+	addProperty(input: PropertyInput!): Property!
+	"""
+	TODO: add English documentation
+	"""
+	updateProperty(id: String!, input: PropertyInput!): Property!
+	"""
+	TODO: add English documentation
+	"""
+	deleteProperty(orgUsername: String!, repoUsername: String!, propertyId: String!): String!
+	"""
+	TODO: add English documentation
+	"""
+	updateOrganization(input: UpdateOrganizationInput!): Organization!
+	"""
+	TODO: add English documentation
+	"""
+	createOrganization(input: CreateOrganizationInput!): Organization!
+	"""
+	TODO: add English documentation
+	"""
+	createApiKey(input: CreateApiKeyInput!): ApiKeyResponse!
+	"""
+	TODO: add English documentation
+	"""
+	createSource(input: CreateSourceInput!): Source!
+	"""
+	TODO: add English documentation
+	"""
+	updateSource(input: UpdateSourceInput!): Source!
+	"""
+	TODO: add English documentation
+	"""
+	deleteSource(orgUsername: String!, repoUsername: String!, sourceId: String!): String!
+	"""
+	[LIBRARY-API] Get GitHub OAuth authorization URL
+	
+	Signs the state parameter with HMAC-SHA256 for CSRF protection.
+	The signed state will be validated in github_exchange_token.
+	"""
+	githubAuthUrl(
+		"""
+		State parameter containing encoded return URL
+		"""
+		state: String!
+	): GitHubAuthUrl!
+	"""
+	[LIBRARY-API] Exchange GitHub OAuth code for token
+	
+	Validates the signed state parameter for CSRF protection before
+	exchanging the code.
+	"""
+	githubExchangeToken(		code: String!,
+		"""
+		State parameter for CSRF verification
+		"""
+		state: String!
+	): GitHubConnection!
+	"""
+	[LIBRARY-API] Disconnect GitHub OAuth
+	"""
+	githubDisconnect: Boolean!
+	"""
+	[LIBRARY-API] Sync data to GitHub
+	"""
+	syncDataToGithub(input: SyncToGitHubInput!): SyncResult!
+	"""
+	[LIBRARY-API] Bulk sync ext_github property for all data items
+	"""
+	bulkSyncExtGithub(input: BulkSyncExtGithubInput!): BulkSyncExtGithubResult!
+	"""
+	[LIBRARY-API] Enable GitHub sync by creating the ext_github property (system use only)
+	"""
+	enableGithubSync(input: EnableGitHubSyncInput!): EnableGitHubSyncResult!
+	"""
+	[LIBRARY-API] Enable Linear sync by creating the ext_linear property (system use only)
+	"""
+	enableLinearSync(input: EnableLinearSyncInput!): EnableLinearSyncResult!
+	"""
+	[LIBRARY-API] Disable GitHub sync by deleting the ext_github property
+	"""
+	disableGithubSync(input: DisableGitHubSyncInput!): DisableGitHubSyncResult!
+	"""
+	[LIBRARY-API] Invite a user to a repository with a specific role (owner/writer/reader)
+	"""
+	inviteRepoMember(input: InviteRepoMemberInput!): Boolean!
+	"""
+	[LIBRARY-API] Remove a user from a repository
+	"""
+	removeRepoMember(input: RemoveRepoMemberInput!): Boolean!
+	"""
+	[LIBRARY-API] Change a user's role in a repository
+	"""
+	changeRepoMemberRole(input: ChangeRepoMemberRoleInput!): Boolean!
+	"""
+	[LIBRARY-API] Import Markdown files from GitHub
+	"""
+	importMarkdownFromGithub(input: ImportMarkdownFromGitHubInput!): ImportMarkdownResult!
+	"""
+	Create a new webhook endpoint.
+	
+	Returns the created endpoint along with the webhook URL and secret.
+	**Important**: The secret is only returned once. Store it securely.
+	"""
+	createWebhookEndpoint(input: CreateWebhookEndpointInput!): CreateWebhookEndpointOutput!
+	"""
+	Update webhook endpoint status.
+	"""
+	updateWebhookEndpointStatus(input: UpdateEndpointStatusInput!): GqlWebhookEndpoint!
+	"""
+	Update webhook endpoint events.
+	"""
+	updateWebhookEndpointEvents(input: UpdateEndpointEventsInput!): GqlWebhookEndpoint!
+	"""
+	Update webhook endpoint property mapping.
+	"""
+	updateWebhookEndpointMapping(input: UpdateEndpointMappingInput!): GqlWebhookEndpoint!
+	"""
+	Update webhook endpoint configuration.
+	"""
+	updateWebhookEndpointConfig(input: UpdateEndpointConfigInput!): GqlWebhookEndpoint!
+	"""
+	Delete a webhook endpoint.
+	"""
+	deleteWebhookEndpoint(endpointId: String!): Boolean!
+	"""
+	Send a test webhook to an endpoint.
+	"""
+	sendTestWebhook(endpointId: String!, eventType: String!): SendTestWebhookOutput!
+	"""
+	Retry a failed webhook event.
+	"""
+	retryWebhookEvent(eventId: String!): GqlWebhookEvent!
+	"""
+	Connect to an integration.
+	
+	Creates a new connection to the specified integration.
+	For OAuth integrations, provide the authorization code.
+	For API key integrations, provide the API key.
+	"""
+	connectIntegration(input: ConnectIntegrationInput!): GqlConnection!
+	"""
+	Update a connection's status.
+	
+	Allows pausing, resuming, disconnecting, or reauthorizing a connection.
+	"""
+	updateConnection(connectionId: String!, action: GqlConnectionAction!): GqlConnection!
+	"""
+	Delete a connection permanently.
+	"""
+	deleteConnection(connectionId: String!): Boolean!
+	"""
+	Initialize OAuth authorization flow.
+	
+	Returns the authorization URL to redirect the user to.
+	"""
+	initOauth(input: InitOAuthInput!): OauthInitOutput!
+	"""
+	Exchange OAuth authorization code for tokens.
+	
+	Creates or updates a connection with the tokens from the OAuth provider.
+	"""
+	exchangeOauthCode(input: ExchangeOAuthCodeInput!): GqlConnection!
+	"""
+	Start initial sync operation.
+	"""
+	startInitialSync(input: StartInitialSyncInput!): GqlSyncOperation!
+	"""
+	Complete GitHub App installation.
+	
+	Called after the user installs the GitHub App. GitHub redirects to the
+	callback URL with `installation_id` and `state` (hex-encoded
+	`tenant_id:integration_id`). This mutation creates a Connection with
+	`installation_id` stored in metadata.
+	"""
+	completeGithubInstall(installationId: Int!, integrationId: String!): GqlConnection!
+	"""
+	Trigger on-demand pull sync.
+	"""
+	triggerSync(input: TriggerSyncInput!): GqlSyncOperation!
+}
+
+"""
+Owner information passed when creating a new Operator
+"""
+enum NewOperatorOwnerMethod {
+	INHERIT
+	CREATE
+}
+
+"""
+Output for OAuth authorization initialization.
+"""
+type OauthInitOutput {
+	"""
+	URL to redirect user to for authorization
+	"""
+	authorizationUrl: String!
+	"""
+	State parameter for CSRF protection
+	"""
+	state: String!
+}
+
+type Operator {
+	id: String!
+	name: String!
+	operatorName: String!
+	platformTenantId: String!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+input OptionInput {
+	identifier: String!
+	label: String!
+}
+
+"""
+Role for library organization members.
+"""
+enum OrgRole {
+	"""
+	Organization owner with full access to all repositories.
+	"""
+	OWNER
+	"""
+	Manager with elevated permissions.
+	"""
+	MANAGER
+	"""
+	General member with basic permissions.
+	"""
+	GENERAL
+}
+
+type Organization {
+	id: String!
+	name: String!
+	username: String!
+	description: String
+	website: String
+	repos: [Repo!]!
+	users: [User!]!
+}
+
+type Paginator {
+	currentPage: Int!
+	itemsPerPage: Int!
+	totalItems: Int!
+	totalPages: Int!
+}
+
+"""
+Source of a repository permission
+
+Indicates whether a permission was explicitly assigned to the repository
+or inherited from the organization-level role.
+"""
+enum PermissionSource {
+	"""
+	Permission explicitly assigned to this repository
+	"""
+	REPO
+	"""
+	Permission inherited from organization-level role (org owner)
+	"""
+	ORG
+}
+
+type Property {
+	id: String!
+	tenantId: String!
+	databaseId: String!
+	name: String!
+	"""
+	TODO: add English documentation
+	STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT
+	"""
+	typ: PropertyType!
+	"""
+	TODO: add English documentation
+	"""
+	meta: PropertyTypeMeta
+	isIndexed: Boolean!
+	propertyNum: Int!
+}
+
+type PropertyData {
+	propertyId: String!
+	value: PropertyDataValue!
+}
+
+input PropertyDataInputData {
+	propertyId: String!
+	value: PropertyDataValueInputData!
+}
+
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
+
+input PropertyDataValueInputData @oneOf {
+	string: String
+	integer: String
+	html: String
+	markdown: String
+	relation: [String!]
+	select: String
+	multiSelect: [String!]
+	location: Location
+	date: String
+	image: String
+}
+
+input PropertyInput {
+	orgUsername: String!
+	repoUsername: String!
+	propertyName: String!
+	propertyType: PropertyType!
+	meta: PropertyMetaInput
+}
+
+"""
+Property mapping for import
+"""
+input PropertyMappingInput {
+	"""
+	Frontmatter key name
+	"""
+	frontmatterKey: String!
+	"""
+	Property name to create/use
+	"""
+	propertyName: String!
+	"""
+	Property type
+	"""
+	propertyType: PropertyType!
+	"""
+	Select options (if type is Select)
+	"""
+	selectOptions: [String!]
+}
+
+input PropertyMetaInput @oneOf {
+	"""
+	TODO: add English documentation
+	"""
+	relation: String
+	"""
+	TODO: add English documentation
+	"""
+	select: [OptionInput!]
+	"""
+	TODO: add English documentation
+	"""
+	multiSelect: [OptionInput!]
+	"""
+	TODO: add English documentation
+	"""
+	id: Boolean
+	"""
+	TODO: add English documentation
+	"""
+	json: String
+}
+
+enum PropertyType {
+	STRING
+	INTEGER
+	HTML @deprecated(reason: "Use MARKDOWN instead of HTML.")
+	MARKDOWN
+	RELATION
+	SELECT
+	MULTI_SELECT
+	ID
+	LOCATION
+	DATE
+	IMAGE
+}
+
+union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | JsonType
+
+type PublicApiKey {
+	id: String!
+	tenantId: String!
+	serviceAccountId: String!
+	name: String!
+	value: String!
+	createdAt: DateTime!
+}
+
+type Query {
+	errTest: String!
+	me: User!
+	organization(username: String!): Organization!
+	repo(orgUsername: String!, repoUsername: String!): Repo!
+	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!
+	dataList(orgUsername: String!, repoUsername: String!, pageSize: Int, page: Int): DataList!
+	properties(orgUsername: String!, repoUsername: String!): [Property!]!
+	source(orgUsername: String!, repoUsername: String!, sourceId: String!): Source!
+	apiKeys(orgUsername: String!): [PublicApiKey!]!
+	"""
+	[LIBRARY-API] Get GitHub connection status
+	"""
+	githubConnection: GitHubConnection!
+	"""
+	[LIBRARY-API] List GitHub repositories accessible to the user
+	"""
+	githubListRepositories(
+		"""
+		Search query to filter repositories
+		"""
+		search: String,
+		"""
+		Number of repositories per page (max 100)
+		"""
+		perPage: Int,
+		"""
+		Page number (1-indexed)
+		"""
+		page: Int
+	): [GitHubRepository!]!
+	"""
+	[LIBRARY-API] List directory contents from a GitHub repository
+	"""
+	githubListDirectoryContents(input: ListGitHubDirectoryInput!): GitHubDirectoryContents!
+	"""
+	[LIBRARY-API] Get previews of Markdown files for import
+	"""
+	githubGetMarkdownPreviews(input: GetMarkdownPreviewsInput!): [MarkdownImportPreview!]!
+	"""
+	[LIBRARY-API] Analyze frontmatter across multiple files
+	"""
+	githubAnalyzeFrontmatter(input: GetMarkdownPreviewsInput!): FrontmatterAnalysis!
+	"""
+	Get all available integrations in the marketplace.
+	"""
+	integrations(category: GqlIntegrationCategory, featuredOnly: Boolean): [GqlIntegration!]!
+	"""
+	Get all connections for a tenant.
+	"""
+	connections(tenantId: String!, activeOnly: Boolean): [GqlConnection!]!
+	"""
+	[LIBRARY-API] List Linear teams
+	"""
+	linearListTeams: [LinearTeam!]!
+	"""
+	[LIBRARY-API] List Linear projects
+	"""
+	linearListProjects(teamId: String): [LinearProject!]!
+	"""
+	[LIBRARY-API] List Linear issues
+	"""
+	linearListIssues(teamId: String, projectId: String): [LinearIssue!]!
+	"""
+	Get a webhook endpoint by ID.
+	"""
+	webhookEndpoint(id: String!): GqlWebhookEndpoint
+	"""
+	List webhook endpoints for a tenant.
+	"""
+	webhookEndpoints(tenantId: String!, provider: GqlProvider, repositoryId: String): [GqlWebhookEndpoint!]!
+	"""
+	Get webhook events for an endpoint.
+	"""
+	webhookEvents(endpointId: String!, limit: Int! = 50, offset: Int! = 0): [GqlWebhookEvent!]!
+	"""
+	Get a single webhook event by ID.
+	"""
+	webhookEvent(id: String!): GqlWebhookEvent
+	"""
+	Get a single integration by ID.
+	"""
+	integration(id: String!): GqlIntegration
+	"""
+	Get an integration by provider.
+	"""
+	integrationByProvider(provider: GqlProvider!): GqlIntegration
+	"""
+	Get a single connection by ID.
+	"""
+	connection(id: String!): GqlConnection
+	"""
+	Get a single sync operation by ID.
+	"""
+	syncOperation(id: String!): GqlSyncOperation
+	"""
+	Get sync operations for an endpoint.
+	"""
+	syncOperations(endpointId: String!, limit: Int, offset: Int): [GqlSyncOperation!]!
+}
+
+type RelationType {
+	databaseId: String!
+}
+
+type RelationValue {
+	databaseId: String!
+	dataIds: [String!]!
+}
+
+"""
+Input for removing a user from a repository
+"""
+input RemoveRepoMemberInput {
+	"""
+	Repository ID
+	"""
+	repoId: String!
+	"""
+	User ID to remove
+	"""
+	userId: String!
+}
+
+type Repo {
+	id: String!
+	organizationId: String!
+	orgUsername: String!
+	name: String!
+	username: String!
+	description: String
+	"""
+	Whether the repository is public
+	"""
+	isPublic: Boolean!
+	databases: [String!]!
+	tags: [String!]!
+	dataList(pageSize: Int, page: Int): DataList!
+	properties: [Property!]!
+	sources: [Source!]!
+	"""
+	Get policies for this repository
+	
+	Returns resource-based policies scoped to this repository.
+	
+	For authenticated requests the handler injects a
+	request-scoped `AuthApp` carrying the caller's JWT,
+	so we build a fresh `GetRepoPolicies` with it instead
+	of using the schema-level one (which may hold a
+	placeholder token that production tachyon-api rejects).
+	"""
+	policies: [RepoPolicy!]!
+	"""
+	Get members who have access to this repository
+	
+	Returns users with resource-based policies scoped to this repository,
+	including org owners who have implicit owner access.
+	"""
+	members: [RepoMember!]!
+}
+
+"""
+Repository member with resource-based access control
+
+Represents a user who has been granted access to a repository
+via a scoped policy assignment.
+"""
+type RepoMember {
+	"""
+	User ID
+	"""
+	userId: String!
+	"""
+	Policy ID that grants access
+	"""
+	policyId: String!
+	"""
+	Policy name (e.g., "LibraryRepoOwnerPolicy", "LibraryRepoWriterPolicy")
+	"""
+	policyName: String
+	"""
+	TRN resource scope (e.g., "trn:library:repo:rp_xxx")
+	"""
+	resourceScope: String
+	"""
+	When the policy was assigned
+	"""
+	assignedAt: DateTime!
+	"""
+	User details (if available)
+	"""
+	user: User
+	"""
+	Source of this permission (Repo or Org level)
+	"""
+	permissionSource: PermissionSource!
+}
+
+type RepoPolicy {
+	userId: String!
+	role: String!
+	user: User
+	"""
+	Source of this permission (Repo or Org level)
+	"""
+	permissionSource: PermissionSource!
+}
+
+type SelectItem {
+	id: String!
+	key: String!
+	name: String!
+}
+
+type SelectType {
+	options: [SelectItem!]!
+}
+
+type SelectValue {
+	optionId: String!
+}
+
+"""
+Output for send test webhook mutation.
+"""
+type SendTestWebhookOutput {
+	"""
+	Whether the test was sent successfully
+	"""
+	success: Boolean!
+	"""
+	ID of the created event
+	"""
+	eventId: String
+}
+
+type ServiceAccount {
+	id: String!
+	tenantId: String!
+	name: String!
+	createdAt: DateTime!
+}
+
+type Source {
+	id: String!
+	repoId: String!
+	name: String!
+	url: String
+}
+
+"""
+Input for starting initial sync.
+"""
+input StartInitialSyncInput {
+	endpointId: String!
+}
+
+
+type StringValue {
+	string: String!
+}
+
+"""
+Suggested property type and options for a frontmatter key
+"""
+type SuggestedProperty {
+	"""
+	Frontmatter key name
+	"""
+	key: String!
+	"""
+	Suggested property type
+	"""
+	suggestedType: PropertyType!
+	"""
+	Unique values found (for Select type suggestion)
+	"""
+	uniqueValues: [String!]!
+	"""
+	Whether this should be a Select type (<=5 unique values)
+	"""
+	suggestSelect: Boolean!
+}
+
+"""
+Result of a sync operation
+"""
+type SyncResult {
+	"""
+	Whether the sync succeeded
+	"""
+	success: Boolean!
+	"""
+	Sync status after operation
+	"""
+	status: SyncStatus!
+	"""
+	Result ID (commit SHA, etc.)
+	"""
+	resultId: String
+	"""
+	URL to the synced resource
+	"""
+	url: String
+	"""
+	Diff preview (for dry-run)
+	"""
+	diff: String
+}
+
+"""
+Sync status enum
+"""
+enum SyncStatus {
+	"""
+	Never synchronized
+	"""
+	NEVER_SYNCED
+	"""
+	Successfully synchronized
+	"""
+	SYNCED
+	"""
+	Synchronization pending
+	"""
+	PENDING
+	"""
+	Synchronization failed
+	"""
+	FAILED
+}
+
+input SyncToGitHubInput {
+	"""
+	Organization username
+	"""
+	orgUsername: String!
+	"""
+	Repository username
+	"""
+	repoUsername: String!
+	"""
+	Data ID to sync
+	"""
+	dataId: String!
+	"""
+	Target GitHub repository (owner/repo format)
+	"""
+	targetRepo: String!
+	"""
+	Target path in the repository
+	"""
+	targetPath: String!
+	"""
+	Target branch (defaults to "main")
+	"""
+	targetBranch: String
+	"""
+	Custom commit message
+	"""
+	commitMessage: String
+	"""
+	If true, only calculate diff without syncing
+	"""
+	dryRun: Boolean
+}
+
+"""
+Input for triggering on-demand sync.
+"""
+input TriggerSyncInput {
+	endpointId: String!
+	externalIds: [String!]
+}
+
+input UpdateDataInputData {
+	"""
+	user_id
+	"""
+	actor: String!
+	orgUsername: String!
+	repoUsername: String!
+	dataId: String!
+	dataName: String!
+	propertyData: [PropertyDataInputData!]!
+}
+
+"""
+Input for updating webhook endpoint configuration.
+"""
+input UpdateEndpointConfigInput {
+	endpointId: String!
+	"""
+	Provider-specific configuration as JSON string
+	"""
+	config: String!
+}
+
+"""
+Input for updating webhook endpoint events.
+"""
+input UpdateEndpointEventsInput {
+	endpointId: String!
+	events: [String!]!
+}
+
+"""
+Input for updating webhook endpoint mapping.
+"""
+input UpdateEndpointMappingInput {
+	endpointId: String!
+	"""
+	Property mapping as JSON string (null to remove mapping)
+	"""
+	mapping: String
+}
+
+"""
+Input for updating webhook endpoint status.
+"""
+input UpdateEndpointStatusInput {
+	endpointId: String!
+	status: GqlEndpointStatus!
+}
+
+input UpdateOrganizationInput {
+	username: String!
+	name: String!
+	description: String
+	website: String
+}
+
+input UpdateRepoInput {
+	orgUsername: String!
+	repoUsername: String!
+	name: String
+	"""
+	Description of the repository
+	not allow empty string, but can be null
+	"""
+	description: String
+	"""
+	Whether the repository is public
+	"""
+	isPublic: Boolean
+	"""
+	Tags associated with the repository
+	"""
+	tags: [String!]
+}
+
+input UpdateSourceInput {
+	orgUsername: String!
+	repoUsername: String!
+	sourceId: String!
+	name: String
+	url: String
+}
+
+type User {
+	id: String!
+	email: String
+	name: String
+	username: String
+	emailVerified: DateTime
+	image: String
+	role: DefaultRole!
+	tenantIdList: [String!]!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+	"""
+	Resolve operator organizations accessible to this user
+	"""
+	organizations: [Operator!]!
+}
+
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @oneOf on INPUT_OBJECT
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @specifiedBy(url: String!) on SCALAR
+schema {
+	query: Query
+	mutation: Mutation
+}

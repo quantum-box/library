@@ -1,0 +1,42 @@
+query orgPage($username: String!) {
+  organization(username: $username) {
+    ...OrganizationForm
+    ...DatabaseOnOrg
+  }
+}
+
+mutation updateOrgOnForm($input: UpdateOrganizationInput!) {
+  updateOrganization(input: $input) {
+    id
+  }
+}
+
+fragment DatabaseOnOrg on Organization {
+  id
+  name
+  username
+  description
+  website
+  repos {
+    ...RepoItemOnOrgPage
+  }
+  users {
+    ...UserOnOrgPage
+  }
+}
+
+fragment RepoItemOnOrgPage on Repo {
+  id
+  name
+  username
+  description
+  isPublic
+}
+
+fragment UserOnOrgPage on User {
+  id
+  name
+  image
+  email
+  role
+}

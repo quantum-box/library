@@ -1,0 +1,19 @@
+# Query to get total data count for bulk sync confirmation
+query DataCountForBulkSync($org: String!, $repo: String!) {
+  repo(orgUsername: $org, repoUsername: $repo) {
+    dataList(pageSize: 1) {
+      paginator {
+        totalItems
+      }
+    }
+  }
+}
+
+# Mutation for bulk syncing ext_github property
+mutation BulkSyncExtGithub($input: BulkSyncExtGithubInput!) {
+  bulkSyncExtGithub(input: $input) {
+    updatedCount
+    skippedCount
+    totalCount
+  }
+}

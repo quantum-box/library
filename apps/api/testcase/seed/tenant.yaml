@@ -1,0 +1,34 @@
+desc: Insert test data for tenant
+if: included
+vars:
+  id: 'tn_01HJRYXYSGEY07H5JZ5WAGQJ0M' # test用のrootテナントID
+  name: 'Tachyon stg'
+  user_name: 'tachyon_stg'
+  createdAt: '2023-09-02 09:39:41'
+  updatedAt: '2023-09-02 09:39:41'
+steps:
+  insert:
+    db:
+      query: |
+        insert ignore into `Tenant` 
+        (
+          id,
+          name,
+          created_at,
+          updated_at,
+          user_name
+        ) 
+        values 
+        (
+          '{{ vars.id }}',
+          '{{ vars.name }}', 
+          '{{ vars.createdAt }}',
+          '{{ vars.updatedAt }}',
+          '{{ vars.user_name }}'
+        );
+    bind:
+      id: vars.id
+      name: vars.name
+      user_name: vars.user_name
+      createdAt: vars.createdAt
+      updatedAt: vars.updatedAt

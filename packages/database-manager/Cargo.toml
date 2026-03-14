@@ -1,0 +1,75 @@
+[package]
+name = "database-manager"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+database_domain = { path = "./domain" }
+value_object = { path = "../value_object" }
+util = { path = "../util" }
+persistence = { path = "../persistence" }
+errors = { path = "../errors" }
+telemetry = { path = "../telemetry" }
+tachyon-sdk = { path = "../../sdk/rust", features = ["auth"] }
+
+# Sync engines
+inbound_sync = { path = "../../apps/api/packages/inbound_sync" }
+outbound_sync = { path = "../../apps/api/packages/outbound_sync" }
+
+# essential crates?
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+derive-new = { workspace = true }
+derive-getters = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+], default-features = false }
+async-trait = { workspace = true }
+strum = { workspace = true }
+chrono = { workspace = true }
+
+sqlx = { workspace = true }
+scraper = "0.20.0"
+
+# grpc
+prost = "0.11.2"
+tonic = { version = "0.8.3", features = [
+    "rustls-native-certs",
+    "tokio-rustls",
+    "async-trait",
+] }
+async-graphql = { workspace = true }
+
+[dev-dependencies]
+mockall.workspace = true
+rstest = { workspace = true }
+dotenvy = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[[bin]]
+name = "database_manager_migrate"
+path = "bin/migrate.rs"
+
+[features]
+default = ["graphql", "grpc"]
+integration_tests = []
+graphql = []
+grpc = []
+# async-graphql = ["async-graphql"]
+
+[[test]]
+name = "relation"
+path = "tests/relation.rs"
+
+[[test]]
+name = "paging"
+path = "tests/paging.rs"
