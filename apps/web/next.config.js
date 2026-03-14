@@ -3,7 +3,7 @@ const path = require("node:path");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['awesome_module', 'react-gantt-flow', '@tachyon-apps/agent-chat'],
+  transpilePackages: ['awesome_module', 'react-gantt-flow'],
   output: "standalone",
   experimental: {
     outputFileTracingRoot: path.join(__dirname, "../../"),
