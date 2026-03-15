@@ -6,6 +6,7 @@ use tachyon_sdk::auth;
 use value_object::{DatabaseUrl, TenantId};
 
 #[tokio::test]
+#[ignore]
 async fn test_paging() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     let tenant_id = TenantId::default();

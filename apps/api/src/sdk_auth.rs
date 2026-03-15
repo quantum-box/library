@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_closure)]
 //! SDK-based implementation of the AuthApp trait.
 //!
 //! Calls tachyon-api REST endpoints via the auto-generated
@@ -1579,10 +1580,7 @@ impl AuthApp for SdkAuthApp {
         .await
         .map_err(sdk_api_err)?;
 
-        resp.users
-            .iter()
-            .map(user_from_sdk_user_response)
-            .collect()
+        resp.users.iter().map(user_from_sdk_user_response).collect()
     }
 
     async fn get_policy_by_id<'a>(

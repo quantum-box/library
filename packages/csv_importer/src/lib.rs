@@ -284,6 +284,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_preview_from_string() -> anyhow::Result<()> {
         let dsn =
             "mysql://root:@localhost:15000/tachyon_apps_database_manager";

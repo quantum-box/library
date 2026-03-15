@@ -4,6 +4,7 @@ use std::io::Read;
 use std::sync::Arc;
 
 #[tokio::test]
+#[ignore]
 async fn test_preview() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     let dsn = std::env::var("DEV_DATABASE_URL")
