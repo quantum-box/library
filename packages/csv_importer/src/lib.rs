@@ -256,7 +256,7 @@ impl CSVImporterClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use auth::{Executor, MultiTenancy};
+    use tachyon_sdk::auth::{Executor, MultiTenancy};
 
     const URL: &str = "https://firebasestorage.googleapis.com/v0/b/tachyon-4d47.appspot.com/o/tenant%2Fairsales%2F9e937f820b248a92.xlsx%20-%20%E5%BE%97%E6%84%8F%E5%85%88%E6%83%85%E5%A0%B1220621.csv?alt=media&token=414dcbc8-667d-4757-a8c0-184ff5bef74f";
 
@@ -271,7 +271,7 @@ mod tests {
         csv_importer
             .import_from_url(
                 &Executor::SystemUser,
-                &MultiTenancy::new_operator(&tenant_id),
+                &MultiTenancy::new_operator(tenant_id.clone()),
                 URL,
                 DatabaseConfig {
                     name: "test",

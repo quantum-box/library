@@ -88,7 +88,6 @@ impl PropertyType {
     }
 }
 
-
 def_id!(SelectItemId, "op_");
 
 #[derive(Debug, Clone, Getters, Serialize, Deserialize, new)]

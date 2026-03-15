@@ -53,6 +53,7 @@ pub enum OAuthProvider {
 /// For new code, consider using `StoredOAuthToken` which provides additional
 /// metadata and functionality.
 #[derive(Debug, Clone, Getters, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct OAuthToken {
     operator_id: OperatorId,
     provider: String,
