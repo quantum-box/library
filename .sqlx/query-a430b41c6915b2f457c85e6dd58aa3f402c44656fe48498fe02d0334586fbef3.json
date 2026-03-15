@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_database_manager.objects (id, tenant_id, object_name) \n            VALUES (?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                object_name = VALUES(object_name);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a430b41c6915b2f457c85e6dd58aa3f402c44656fe48498fe02d0334586fbef3"
+}

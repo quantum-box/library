@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.user_platform_consents (id, user_id, platform_id, client_id, granted_scopes, consented_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE granted_scopes = VALUES(granted_scopes), consented_at = VALUES(consented_at), revoked_at = VALUES(revoked_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "51f5c678ef4ed6b237d224d243ff4fdbc33ca4b7faa0e351000c5b21cf5b7782"
+}

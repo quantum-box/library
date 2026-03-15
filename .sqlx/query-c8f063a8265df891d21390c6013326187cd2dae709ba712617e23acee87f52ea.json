@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE tachyon_apps_auth.oauth2_refresh_tokens SET revoked = TRUE WHERE client_id = ? AND user_id = ? AND revoked = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "c8f063a8265df891d21390c6013326187cd2dae709ba712617e23acee87f52ea"
+}

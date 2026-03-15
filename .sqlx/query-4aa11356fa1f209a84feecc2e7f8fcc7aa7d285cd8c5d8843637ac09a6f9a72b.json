@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO credit_transactions (\n                id, tenant_id, transaction_type, amount, balance_after, \n                currency, description, metadata, stripe_payment_intent_id, created_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "4aa11356fa1f209a84feecc2e7f8fcc7aa7d285cd8c5d8843637ac09a6f9a72b"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_compute.deployments SET\n            status = ?, cloud_run_service_name = ?,\n            cloud_run_revision = ?,\n            pages_project_name = ?,\n            pages_deployment_id = ?,\n            url = ?,\n            public_url = ?,\n            scaling_min_instances = ?,\n            scaling_max_instances = ?, scaling_cpu = ?,\n            scaling_memory = ?, scaling_concurrency = ?,\n            updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "b5d282259e279676352604bf352a8df3271b4610ec45dbd26d5ecfb12b652abc"
+}

@@ -1,0 +1,94 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, tenant_id, user_id, session_id,\n                status, expires_at, created_at, updated_at\n            FROM tachyon_apps_order.carts\n            WHERE tenant_id = ? AND user_id = ? AND status = 'active'\n            ORDER BY created_at DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "session_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM",
+          "max_size": 36
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP | ON_UPDATE_NOW",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "0ae46556bb6ade163a3e6afedc79bc602b9233fdd67b5c6df010ba690fb670ea"
+}

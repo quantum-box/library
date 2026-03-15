@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_order.product_stocks\n            SET quantity_reserved = quantity_reserved - ?,\n                quantity_available = quantity_available + ?,\n                updated_at = NOW()\n            WHERE tenant_id = ? AND product_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "8e7563b35715eb88b53e083ec7d774e52c1488e3ad0ab483dae0a1afa5b44f19"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT IGNORE INTO `tachyon_apps_auth`.`user_policies` \n            (`user_id`, `tenant_id`, `policy_id`, `resource_scope`) \n            VALUES (?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "5e03a9dd672952b708048dab3ecff1b7495d959c3e9fedf0a367e981238ac416"
+}

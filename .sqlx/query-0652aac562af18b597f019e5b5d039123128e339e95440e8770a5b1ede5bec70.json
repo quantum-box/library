@@ -1,0 +1,84 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT id, created_at, user_id, role, content, chatroom_id, deleted_at\n            FROM tachyon_apps_llms.messages\n            WHERE chatroom_id = ? AND deleted_at IS NULL\n            ORDER BY created_at ASC\n            LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 36
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "content",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "chatroom_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "deleted_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "MULTIPLE_KEY | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0652aac562af18b597f019e5b5d039123128e339e95440e8770a5b1ede5bec70"
+}

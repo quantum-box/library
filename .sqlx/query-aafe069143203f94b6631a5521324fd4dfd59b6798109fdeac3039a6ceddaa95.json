@@ -1,0 +1,104 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, tenant_id, code, discount_type,\n                discount_value,\n                currency,\n                is_active as \"is_active: bool\",\n                created_at, updated_at\n            FROM tachyon_apps_order.coupons\n            WHERE tenant_id = ?\n              AND (? = FALSE OR is_active = TRUE)\n            ORDER BY created_at DESC\n            LIMIT ? OFFSET ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "code",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "discount_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "discount_value",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 12
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active: bool",
+        "type_info": {
+          "type": "Tiny",
+          "flags": "NOT_NULL",
+          "max_size": 1
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP | ON_UPDATE_NOW",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "aafe069143203f94b6631a5521324fd4dfd59b6798109fdeac3039a6ceddaa95"
+}

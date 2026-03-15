@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_pricing.pricing_rate_cards\n                (id, tenant_id, sku_id, strategy,\n                 floor_price, ceiling_price,\n                 effective_from, effective_until,\n                 description, created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                strategy = VALUES(strategy),\n                floor_price = VALUES(floor_price),\n                ceiling_price = VALUES(ceiling_price),\n                effective_from = VALUES(effective_from),\n                effective_until = VALUES(effective_until),\n                description = VALUES(description),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "241321a68bbafd0114ea6359879f62a3c0458cd08a3efaba08f0670b42477358"
+}

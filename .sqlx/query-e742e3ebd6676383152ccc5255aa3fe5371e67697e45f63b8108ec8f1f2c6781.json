@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM tachyon_apps_crm.provider_object_mappings\n            WHERE entity_id = ? AND tenant_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e742e3ebd6676383152ccc5255aa3fe5371e67697e45f63b8108ec8f1f2c6781"
+}

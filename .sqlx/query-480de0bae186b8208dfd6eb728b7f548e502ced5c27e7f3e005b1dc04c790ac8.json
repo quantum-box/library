@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_compute.custom_domains\n            (id, app_id, domain, status,\n             cloudflare_zone_id, cloudflare_record_id,\n             cloudflare_custom_hostname_id,\n             tls_status, created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                status = VALUES(status),\n                cloudflare_zone_id = VALUES(cloudflare_zone_id),\n                cloudflare_record_id =\n                    VALUES(cloudflare_record_id),\n                cloudflare_custom_hostname_id =\n                    VALUES(cloudflare_custom_hostname_id),\n                tls_status = VALUES(tls_status),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "480de0bae186b8208dfd6eb728b7f548e502ced5c27e7f3e005b1dc04c790ac8"
+}

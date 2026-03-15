@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.agent_protocols\n            SET title = ?,\n                protocol_name = ?,\n                description = ?,\n                markdown = ?,\n                updated_at = ?\n            WHERE tenant_id = ? AND id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "1604f82a1e05ac80c0da3a317389990bc80eb0b1f6d6debcc770b8a412cb02c9"
+}

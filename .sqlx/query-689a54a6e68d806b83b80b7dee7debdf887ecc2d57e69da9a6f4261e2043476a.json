@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.product_stocks (\n                id, tenant_id, product_id,\n                quantity_on_hand, quantity_reserved,\n                quantity_available, low_stock_threshold,\n                track_inventory, created_at, updated_at\n            ) VALUES (?, ?, ?, 0, 0, 0, 5, 1, ?, ?)\n            ON DUPLICATE KEY UPDATE id = id\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "689a54a6e68d806b83b80b7dee7debdf887ecc2d57e69da9a6f4261e2043476a"
+}

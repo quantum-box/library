@@ -1,0 +1,114 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT id, tenant_id, user_id, memory_type, content,\n                   context, importance_score, created_at, last_accessed_at,\n                   expires_at\n            FROM tachyon_apps_llms.memories\n            WHERE tenant_id = ? AND user_id = ?\n            ORDER BY last_accessed_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "memory_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "content",
+        "type_info": {
+          "type": "Blob",
+          "flags": "NOT_NULL | BLOB | NO_DEFAULT_VALUE",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "context",
+        "type_info": {
+          "type": "Blob",
+          "flags": "NOT_NULL | BLOB | NO_DEFAULT_VALUE",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "importance_score",
+        "type_info": {
+          "type": "Float",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 12
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_accessed_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | MULTIPLE_KEY | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "expires_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "MULTIPLE_KEY | BINARY",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "87ef7fbeef5f1eec5fdad812c8cb1496736d5d3d551dec178b3400df139b2ace"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_llms.chatrooms\n                (id, tenant_id, owner_id, name, metadata, created_at, updated_at)\n                VALUES (?, ?, ?, ?, ?, ?, ?)\n                ON DUPLICATE KEY UPDATE\n                tenant_id = VALUES(tenant_id),\n                owner_id = VALUES(owner_id),\n                name = VALUES(name),\n                metadata = VALUES(metadata),\n                updated_at = VALUES(updated_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "7429542dfcf109948e5b33c196fbdcf9c558b39ed2f804f2f26000865cc4764a"
+}

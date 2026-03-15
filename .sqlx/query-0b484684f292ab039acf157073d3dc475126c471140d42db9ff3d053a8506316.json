@@ -1,0 +1,104 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id,\n                tenant_id,\n                object_id,\n                field_name,\n                datatype,\n                datatype_meta,\n                is_indexed as `is_indexed: bool`,\n                field_num,\n                meta_json\n            FROM\n                tachyon_apps_database_manager.fields\n            WHERE\n                object_id = ? and tenant_id = ?\n            ORDER BY\n                field_num ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 124
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "object_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "field_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "datatype",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "datatype_meta",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "is_indexed: bool",
+        "type_info": {
+          "type": "Tiny",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "field_num",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | UNSIGNED | NO_DEFAULT_VALUE",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "meta_json",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0b484684f292ab039acf157073d3dc475126c471140d42db9ff3d053a8506316"
+}

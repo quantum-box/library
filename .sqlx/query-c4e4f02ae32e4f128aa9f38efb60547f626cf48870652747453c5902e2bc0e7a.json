@@ -1,0 +1,114 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, code, display_name, category, unit_type,\n                description, status,\n                metadata as \"metadata: Value\",\n                created_at, updated_at\n            FROM tachyon_apps_pricing.pricing_skus\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | UNIQUE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 512
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1024
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "category",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "unit_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "metadata: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c4e4f02ae32e4f128aa9f38efb60547f626cf48870652747453c5902e2bc0e7a"
+}

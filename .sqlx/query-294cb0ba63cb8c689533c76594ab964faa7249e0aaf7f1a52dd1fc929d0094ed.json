@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.quotes (\n                id, tenant_id, client_id, title, software_tenant_id,\n                status, currency, subtotal, tax, total,\n                order_date, expiration_date, url,\n                delivery_date, billing_info_id, invoice_address_id,\n                created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                client_id = VALUES(client_id),\n                title = VALUES(title),\n                software_tenant_id = VALUES(software_tenant_id),\n                status = VALUES(status),\n                currency = VALUES(currency),\n                subtotal = VALUES(subtotal),\n                tax = VALUES(tax),\n                total = VALUES(total),\n                order_date = VALUES(order_date),\n                expiration_date = VALUES(expiration_date),\n                url = VALUES(url),\n                delivery_date = VALUES(delivery_date),\n                billing_info_id = VALUES(billing_info_id),\n                invoice_address_id = VALUES(invoice_address_id),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 18
+    },
+    "nullable": []
+  },
+  "hash": "294cb0ba63cb8c689533c76594ab964faa7249e0aaf7f1a52dd1fc929d0094ed"
+}

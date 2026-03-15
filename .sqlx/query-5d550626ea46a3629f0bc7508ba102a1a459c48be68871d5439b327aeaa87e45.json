@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.prompts (\n                id, name, description, template, parameters,\n                version, tags, created_at, updated_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "5d550626ea46a3629f0bc7508ba102a1a459c48be68871d5439b327aeaa87e45"
+}

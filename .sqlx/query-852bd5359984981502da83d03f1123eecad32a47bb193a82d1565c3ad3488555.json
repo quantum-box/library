@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT `policy_id`\n            FROM `tachyon_apps_auth`.`user_policies`\n            WHERE `user_id` = ? AND `tenant_id` = ?\n            ORDER BY `assigned_at` ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "852bd5359984981502da83d03f1123eecad32a47bb193a82d1565c3ad3488555"
+}

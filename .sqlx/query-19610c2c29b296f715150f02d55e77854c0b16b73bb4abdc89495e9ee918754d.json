@@ -1,0 +1,104 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, order_id, tenant_id, product_id,\n                product_name,\n                quantity as \"quantity: u32\",\n                unit_price_nanodollar,\n                subtotal_nanodollar,\n                created_at\n            FROM tachyon_apps_order.consumer_order_items\n            WHERE order_id = ?\n            ORDER BY created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "order_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "product_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "product_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "quantity: u32",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | UNSIGNED",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "unit_price_nanodollar",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "subtotal_nanodollar",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "19610c2c29b296f715150f02d55e77854c0b16b73bb4abdc89495e9ee918754d"
+}

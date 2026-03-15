@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.tenants\n             WHERE parent_tenant_id = ? AND id = ? AND parent_tenant_id IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "1bb17088a3665143d914285990db373eb7f2994aa05bcd13b844b42717d73abc"
+}

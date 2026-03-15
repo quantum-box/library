@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT tag FROM library.tags WHERE platform_id = ? AND repo_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "72b9ba16667f1e264008662c4900be8e3de07be8e3ac1f917262b182e12f5906"
+}

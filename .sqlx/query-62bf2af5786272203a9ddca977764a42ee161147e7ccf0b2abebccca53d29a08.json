@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.oauth2_refresh_tokens (id, client_id, user_id, token_hash, scopes, expires_at, revoked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "62bf2af5786272203a9ddca977764a42ee161147e7ccf0b2abebccca53d29a08"
+}

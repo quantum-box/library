@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT COUNT(*) as count\n            FROM `tachyon_apps_auth`.`service_account_policies` \n            WHERE `service_account_id` = ? AND `policy_id` = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 21
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aa71eadbbea74bbbc32499a6641b94fd444dab7c9df78b6fbb01813ddc514792"
+}

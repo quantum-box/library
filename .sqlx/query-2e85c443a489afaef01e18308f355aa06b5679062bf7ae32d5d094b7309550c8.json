@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE feature_flags\n            SET name = ?, description = ?, enabled = ?,\n                tags = ?, valid_from = ?, valid_until = ?,\n                evaluation_strategy = ?, variants = ?,\n                default_value = ?, updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "2e85c443a489afaef01e18308f355aa06b5679062bf7ae32d5d094b7309550c8"
+}

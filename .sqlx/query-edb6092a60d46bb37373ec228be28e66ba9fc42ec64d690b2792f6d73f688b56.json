@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM tachyon_apps_auth.service_account_policies\n            WHERE service_account_id = ? AND policy_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "edb6092a60d46bb37373ec228be28e66ba9fc42ec64d690b2792f6d73f688b56"
+}

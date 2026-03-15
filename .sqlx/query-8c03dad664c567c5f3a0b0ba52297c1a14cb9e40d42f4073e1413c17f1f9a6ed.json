@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT COUNT(*) as count\n            FROM feature_flag_evaluations\n            WHERE flag_id = ? AND tenant_id = ?\n              AND evaluated_at >= ? AND evaluated_at < ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 21
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8c03dad664c567c5f3a0b0ba52297c1a14cb9e40d42f4073e1413c17f1f9a6ed"
+}

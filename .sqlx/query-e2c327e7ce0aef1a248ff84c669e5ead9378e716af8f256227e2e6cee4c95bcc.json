@@ -1,0 +1,44 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                c.tenant_id,\n                m.user_id,\n                MAX(m.created_at) AS last_activity\n            FROM tachyon_apps_llms.messages m\n            INNER JOIN tachyon_apps_llms.chatrooms c\n                ON c.id = m.chatroom_id\n            WHERE m.role = 'USER'\n              AND m.deleted_at IS NULL\n              AND m.user_id IS NOT NULL\n              AND (? IS NULL OR m.created_at >= ?)\n            GROUP BY c.tenant_id, m.user_id\n            ORDER BY last_activity DESC\n            LIMIT ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_activity",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "",
+          "max_size": 104
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e2c327e7ce0aef1a248ff84c669e5ead9378e716af8f256227e2e6cee4c95bcc"
+}

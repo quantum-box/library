@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_crm.deals (\n                id, tenant_id, client_id, name, amount, pipeline, stage, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                client_id = VALUES(client_id),\n                name = VALUES(name),\n                amount = VALUES(amount),\n                pipeline = VALUES(pipeline),\n                stage = VALUES(stage),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "f12b1ac515a6c2719f0ce7296be1af748be9976bb81f17cf4afdac95dcbd55cc"
+}

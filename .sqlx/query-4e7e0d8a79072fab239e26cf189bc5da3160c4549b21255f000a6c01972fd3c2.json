@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO service_price_history (\n                id, mapping_id, changed_by, change_type, \n                previous_value, new_value, change_reason, created_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "4e7e0d8a79072fab239e26cf189bc5da3160c4549b21255f000a6c01972fd3c2"
+}

@@ -1,0 +1,154 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT id, tenant_id, `key`, name, description, enabled,\n                   tags as \"tags: Value\", valid_from, valid_until,\n                   evaluation_strategy as \"evaluation_strategy: Value\",\n                   variants as \"variants: Value\",\n                   default_value as \"default_value: Value\",\n                   created_at, updated_at\n            FROM feature_flags\n            WHERE tenant_id = ?\n            ORDER BY created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "key",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 400
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "enabled",
+        "type_info": {
+          "type": "Tiny",
+          "flags": "NOT_NULL",
+          "max_size": 1
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "tags: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "valid_from",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "valid_until",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "evaluation_strategy: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "variants: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "default_value: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP | ON_UPDATE_NOW",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cb58990187e141cbd56a72429cd66cc2ee6a748ee52eae666fde9d27c2ecd5d4"
+}

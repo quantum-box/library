@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.model_metrics (\n                id, model_id, average_latency_ms, p95_latency_ms,\n                error_rate, throughput, measured_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "73fc255ce3494fbdfbbd939743593057cc719ae98a72ce88c4c81f1c4966563c"
+}

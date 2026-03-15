@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                UPDATE tachyon_apps_iac.manifests\n                SET manifest = ?, updated_at = ?\n                WHERE id = ?\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "4d69e85996a353ca9564e9a6e1b15a7c26edc39c653c62a48adcaf9e2ab91bb0"
+}

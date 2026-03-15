@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.saved_memories\n            SET status = ?, updated_at = ?\n            WHERE tenant_id = ? AND id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "b6b32b4472ad8585af54366b76e112717ee876140c3cea32701a3b24dda0913a"
+}

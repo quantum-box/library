@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_order.consumer_orders\n            SET stripe_checkout_session_id = ?\n            WHERE tenant_id = ? AND id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "7a2db60d370d59b63d6e369b297a903287b9e1b45f84144f789f0664021fa410"
+}

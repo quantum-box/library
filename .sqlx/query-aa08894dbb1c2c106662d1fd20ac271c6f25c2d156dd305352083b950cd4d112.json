@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO product_service_specs (\n                id,\n                product_id,\n                tenant_id,\n                api_limits,\n                sla,\n                technical_specs,\n                support_info,\n                created_at,\n                updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                api_limits = VALUES(api_limits),\n                sla = VALUES(sla),\n                technical_specs = VALUES(technical_specs),\n                support_info = VALUES(support_info),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "aa08894dbb1c2c106662d1fd20ac271c6f25c2d156dd305352083b950cd4d112"
+}

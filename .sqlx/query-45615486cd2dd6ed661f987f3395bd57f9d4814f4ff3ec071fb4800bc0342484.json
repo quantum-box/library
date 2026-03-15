@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO suppliers (\n                id, name, supplier_type, api_endpoint, currency, status,\n                description, contact_email, contact_phone, contact_person,\n                created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                name = VALUES(name),\n                supplier_type = VALUES(supplier_type),\n                api_endpoint = VALUES(api_endpoint),\n                currency = VALUES(currency),\n                status = VALUES(status),\n                description = VALUES(description),\n                contact_email = VALUES(contact_email),\n                contact_phone = VALUES(contact_phone),\n                contact_person = VALUES(contact_person),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "45615486cd2dd6ed661f987f3395bd57f9d4814f4ff3ec071fb4800bc0342484"
+}

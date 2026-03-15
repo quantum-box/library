@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_delivery.software_deliveries\n            SET\n                order_id = ?,\n                delivery_type = ?,\n                status = ?,\n                delivered_at = ?,\n                created_at = ?,\n                updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "c4306f9f499dee0ed6a7304f65ca20b352080d195354f13de2edf8a8eae3c3bd"
+}

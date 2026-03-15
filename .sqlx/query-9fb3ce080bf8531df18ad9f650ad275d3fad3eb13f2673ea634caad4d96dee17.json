@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM tachyon_apps_crm.provider_tenant_mappings\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "9fb3ce080bf8531df18ad9f650ad275d3fad3eb13f2673ea634caad4d96dee17"
+}

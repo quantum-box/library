@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "insert into tachyon_apps_delivery.shipping_order (\n            id,\n            delivery_slip_id,\n            contract_id,\n            shipping_status,\n            expected_shipping_date,\n            expected_delivery_date,\n            expected_delivery_time_slot,\n            timezone,\n            shipping_destination_id\n\n            )\n            values (\n            ?, ?, ?, ?, ?, ?, ?, ?, ?\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "564f7fbfe3d94c6468182b442b80242104aea33f7e5a8352340c49ed7fe3eba6"
+}

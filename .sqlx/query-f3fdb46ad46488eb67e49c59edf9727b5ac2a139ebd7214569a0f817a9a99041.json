@@ -1,0 +1,124 @@
+{
+  "db_name": "MySQL",
+  "query": "select\n                id,\n                delivery_slip_id,\n                item_name,\n                product_id,\n                quantity,\n                unit_price,\n                discount_amount,\n                discount_rate,\n                discount_type,\n                contract_id,\n                shipping_destination_id\n            from tachyon_apps_delivery.delivery_line_items where delivery_slip_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "delivery_slip_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "item_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "product_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "quantity",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | UNSIGNED | NO_DEFAULT_VALUE",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "unit_price",
+        "type_info": {
+          "type": "Double",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 22
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "discount_amount",
+        "type_info": {
+          "type": "Long",
+          "flags": "UNSIGNED",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "discount_rate",
+        "type_info": {
+          "type": "Double",
+          "flags": "",
+          "max_size": 22
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "discount_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "contract_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "shipping_destination_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f3fdb46ad46488eb67e49c59edf9727b5ac2a139ebd7214569a0f817a9a99041"
+}

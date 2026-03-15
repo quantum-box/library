@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO collaborative_documents (document_key, operator_id, yjs_state) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE yjs_state = VALUES(yjs_state), updated_at = CURRENT_TIMESTAMP(6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "fa9be644e3129fc6a0c26552bce757a63575f8043bbad1db4dc606057efc62f9"
+}

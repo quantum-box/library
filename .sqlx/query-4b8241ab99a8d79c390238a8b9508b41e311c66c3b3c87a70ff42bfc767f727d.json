@@ -1,0 +1,114 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT \n                id, tenant_id, transaction_type, amount, balance_after,\n                currency, description, metadata, stripe_payment_intent_id, created_at\n            FROM credit_transactions\n            WHERE tenant_id = ?\n            ORDER BY created_at DESC\n            LIMIT ? OFFSET ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "transaction_type",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM | NO_DEFAULT_VALUE",
+          "max_size": 40
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "amount",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "balance_after",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM | NO_DEFAULT_VALUE",
+          "max_size": 12
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": {
+          "type": "Blob",
+          "flags": "NOT_NULL | BLOB | NO_DEFAULT_VALUE",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "metadata",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "stripe_payment_intent_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "4b8241ab99a8d79c390238a8b9508b41e311c66c3b3c87a70ff42bfc767f727d"
+}

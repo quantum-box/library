@@ -1,0 +1,74 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT *\n            FROM tachyon_apps_llms.model_evaluations\n            WHERE model_id = ?\n            ORDER BY evaluated_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 148
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "model_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 144
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "performance_metrics",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "test_results",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "evaluated_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | MULTIPLE_KEY | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "028f29c42f95739fd3c634eb6d2d1b7c5dadd704546278ee48f67192e78b37a6"
+}

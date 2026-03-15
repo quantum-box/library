@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.users WHERE id IN (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "92e7571e0d4427b716e5b0fe2e33c9158c7718e7b69f2f98e9249810ffe51f5f"
+}

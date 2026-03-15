@@ -1,0 +1,54 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                m.id,\n                m.chatroom_id,\n                m.created_at,\n                CAST(JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS CHAR) AS text\n            FROM tachyon_apps_llms.messages m\n            INNER JOIN tachyon_apps_llms.chatrooms c\n                ON c.id = m.chatroom_id\n            WHERE c.tenant_id = ?\n              AND m.user_id = ?\n              AND m.role = 'USER'\n              AND m.deleted_at IS NULL\n              AND JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.type')) = 'text'\n              AND (? IS NULL OR m.created_at >= ?)\n            ORDER BY m.created_at DESC\n            LIMIT ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "chatroom_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": {
+          "type": "LongBlob",
+          "flags": "",
+          "max_size": 4294967295
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "03013eb48017be7da8f8e6d49efd2b1db5dcd5c5974d2817e4528fe45e2b5f9c"
+}

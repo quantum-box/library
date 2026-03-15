@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_auth.tenant_policy_overrides (tenant_id, policy_id, action_id, effect, created_at)\n            VALUES (?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                effect = VALUES(effect),\n                created_at = VALUES(created_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "cfbaa32ae8fbff550dc93c2c3e33d865117ed61508e76d037a7a5b39b98b5955"
+}

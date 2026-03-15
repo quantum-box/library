@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_order.consumer_orders\n            SET status = ?,\n                confirmed_at = COALESCE(?, confirmed_at),\n                shipped_at = COALESCE(?, shipped_at),\n                delivered_at = COALESCE(?, delivered_at),\n                cancelled_at = COALESCE(?, cancelled_at)\n            WHERE tenant_id = ? AND id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "bc1207602ea313bf9d5cfe433e5f8a261fa00bcd898f823c3888200a9174f71a"
+}

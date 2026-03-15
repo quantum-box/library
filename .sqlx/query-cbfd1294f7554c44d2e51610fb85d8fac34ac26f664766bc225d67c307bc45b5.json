@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT yjs_state FROM collaborative_documents WHERE document_key = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "yjs_state",
+        "type_info": {
+          "type": "Blob",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cbfd1294f7554c44d2e51610fb85d8fac34ac26f664766bc225d67c307bc45b5"
+}

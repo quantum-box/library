@@ -1,0 +1,44 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT policy_id, action_id, effect\n            FROM tachyon_apps_auth.policy_actions\n            WHERE policy_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "effect",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM",
+          "max_size": 20
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "99ff2038f9036e436af4cc16e5db21d889d1016ab30ba4190baecfbeb825cdc0"
+}

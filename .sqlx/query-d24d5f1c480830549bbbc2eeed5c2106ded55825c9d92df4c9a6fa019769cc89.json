@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO library.repos (id, org_id, org_username, username, name, description, is_public, platform_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE org_id = VALUES(org_id), org_username = VALUES(org_username), username = VALUES(username), name = VALUES(name), description = VALUES(description), is_public = VALUES(is_public), platform_id = VALUES(platform_id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "d24d5f1c480830549bbbc2eeed5c2106ded55825c9d92df4c9a6fa019769cc89"
+}

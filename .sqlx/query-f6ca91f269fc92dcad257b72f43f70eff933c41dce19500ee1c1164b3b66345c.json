@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "insert into tachyon_apps_delivery.subscription_lists (\n            id,\n            contract_id\n            )\n            values (\n            ?,\n            ?\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f6ca91f269fc92dcad257b72f43f70eff933c41dce19500ee1c1164b3b66345c"
+}

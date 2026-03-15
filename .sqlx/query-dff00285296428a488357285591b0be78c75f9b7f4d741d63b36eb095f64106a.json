@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_pricing.pricing_adjustments\n                (id, tenant_id, sku_id, name, adjustment_type,\n                 priority, conditions, status,\n                 effective_from, effective_until,\n                 created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                name = VALUES(name),\n                adjustment_type = VALUES(adjustment_type),\n                priority = VALUES(priority),\n                conditions = VALUES(conditions),\n                status = VALUES(status),\n                effective_from = VALUES(effective_from),\n                effective_until = VALUES(effective_until),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "dff00285296428a488357285591b0be78c75f9b7f4d741d63b36eb095f64106a"
+}

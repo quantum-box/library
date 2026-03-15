@@ -1,0 +1,204 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, app_id, build_id, environment,\n                pr_number, status, cloud_run_service_name,\n                cloud_run_revision,\n                pages_project_name, pages_deployment_id,\n                url, public_url,\n                scaling_min_instances,\n                scaling_max_instances, scaling_cpu,\n                scaling_memory, scaling_concurrency,\n                created_at, updated_at\n            FROM tachyon_apps_compute.deployments\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "app_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "build_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "environment",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "pr_number",
+        "type_info": {
+          "type": "Long",
+          "flags": "",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "cloud_run_service_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "MULTIPLE_KEY",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "cloud_run_revision",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "pages_project_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 512
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "pages_deployment_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 512
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "url",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "public_url",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "scaling_min_instances",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "scaling_max_instances",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "scaling_cpu",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 40
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "scaling_memory",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "scaling_concurrency",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b114e5d68ded5a902c6a8d02314d088b7c8f2875e1e2728a6e3309034c25466f"
+}

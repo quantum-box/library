@@ -1,0 +1,104 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT \n                id,\n                product_id,\n                tenant_id,\n                api_limits,\n                sla,\n                technical_specs,\n                support_info,\n                created_at as \"created_at: chrono::DateTime<chrono::Utc>\",\n                updated_at as \"updated_at: chrono::DateTime<chrono::Utc>\"\n            FROM product_service_specs\n            WHERE product_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "product_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "api_limits",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sla",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "technical_specs",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "support_info",
+        "type_info": {
+          "type": "Json",
+          "flags": "BLOB | BINARY",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at: chrono::DateTime<chrono::Utc>",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at: chrono::DateTime<chrono::Utc>",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP | ON_UPDATE_NOW",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "83efb6f5673274feb900eb6a0b0ff6542297161b3aff66ad67babb0a6f6d77d3"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_delivery.shipped_items (\n                shipped_info_id,\n                item_type,\n                product_id,\n                quantity,\n                shipping_date,\n                warranty_expiration_date,\n                warranty_status,\n                position_status,\n                serial_number\n                )\n                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "6336203f94b52a37fc561a59a2745b7d747a0b1da134afcebc0ecaa530629913"
+}

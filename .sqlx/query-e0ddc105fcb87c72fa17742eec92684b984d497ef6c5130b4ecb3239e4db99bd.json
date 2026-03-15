@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.authorization_codes (id, client_id, user_id, code, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "e0ddc105fcb87c72fa17742eec92684b984d497ef6c5130b4ecb3239e4db99bd"
+}

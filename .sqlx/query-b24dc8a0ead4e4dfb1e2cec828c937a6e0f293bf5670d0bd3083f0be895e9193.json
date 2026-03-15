@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.workflow_executions (\n                id, workflow_id, status, steps,\n                input, output, started_at, completed_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "b24dc8a0ead4e4dfb1e2cec828c937a6e0f293bf5670d0bd3083f0be895e9193"
+}

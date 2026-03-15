@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.prompt_logs\n            SET prompt = ?, result = ?\n            WHERE id = ? AND tenant_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "75d7aaa67f3981e0ed925a65326641b0a88705cbfbb1acabdb521ddc1310892e"
+}

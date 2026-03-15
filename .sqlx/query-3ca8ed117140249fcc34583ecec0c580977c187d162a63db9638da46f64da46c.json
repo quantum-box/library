@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_delivery.software_deliveries (\n                id,\n                order_id,\n                delivery_type,\n                status,\n                delivered_at,\n                created_at,\n                updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "3ca8ed117140249fcc34583ecec0c580977c187d162a63db9638da46f64da46c"
+}

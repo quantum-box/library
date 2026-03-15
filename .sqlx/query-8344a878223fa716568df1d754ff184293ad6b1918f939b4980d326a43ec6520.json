@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.prompts\n            SET name = ?,\n                description = ?,\n                template = ?,\n                parameters = ?,\n                version = ?,\n                tags = ?,\n                updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "8344a878223fa716568df1d754ff184293ad6b1918f939b4980d326a43ec6520"
+}

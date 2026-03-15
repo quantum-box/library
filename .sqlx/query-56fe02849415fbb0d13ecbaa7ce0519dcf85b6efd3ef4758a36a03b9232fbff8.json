@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT statement_id, action_id\n            FROM tachyon_apps_auth.policy_statement_actions\n            WHERE statement_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "statement_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "56fe02849415fbb0d13ecbaa7ce0519dcf85b6efd3ef4758a36a03b9232fbff8"
+}

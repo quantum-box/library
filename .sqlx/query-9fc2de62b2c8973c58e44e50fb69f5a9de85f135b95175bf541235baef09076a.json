@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT name, url FROM library.sources WHERE repo_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 8192
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "9fc2de62b2c8973c58e44e50fb69f5a9de85f135b95175bf541235baef09076a"
+}

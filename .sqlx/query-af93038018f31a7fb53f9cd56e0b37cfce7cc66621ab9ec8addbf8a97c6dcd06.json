@@ -1,0 +1,94 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, cart_id, tenant_id, product_id,\n                quantity, unit_price_nanodollar,\n                created_at, updated_at\n            FROM tachyon_apps_order.cart_items\n            WHERE cart_id = ? AND tenant_id = ?\n                AND product_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "cart_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "product_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 136
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "quantity",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | UNSIGNED",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "unit_price_nanodollar",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Timestamp",
+          "flags": "NOT_NULL | BINARY | TIMESTAMP | ON_UPDATE_NOW",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "af93038018f31a7fb53f9cd56e0b37cfce7cc66621ab9ec8addbf8a97c6dcd06"
+}

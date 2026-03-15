@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                INSERT INTO feature_flag_evaluations (\n                    id, flag_id, tenant_id, user_id,\n                    evaluated_at, evaluated_value, variant, context\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "9f0974e05d1252b91a990e87b42ad700fb25e108fc06de62deb4aa75a3368b91"
+}

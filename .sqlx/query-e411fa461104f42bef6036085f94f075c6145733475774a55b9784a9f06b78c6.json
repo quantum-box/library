@@ -1,0 +1,134 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, tenant_id, sku_id, name,\n                adjustment_type as \"adjustment_type: Value\",\n                priority,\n                conditions as \"conditions: Value\",\n                status,\n                effective_from, effective_until,\n                created_at, updated_at\n            FROM tachyon_apps_pricing.pricing_adjustments\n            WHERE tenant_id = ?\n              AND (sku_id IS NULL OR sku_id = ?)\n              AND status = 'ACTIVE'\n              AND effective_from <= ?\n              AND (effective_until IS NULL\n                   OR effective_until > ?)\n            ORDER BY priority ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sku_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1024
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "adjustment_type: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "priority",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "conditions: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "effective_from",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "effective_until",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e411fa461104f42bef6036085f94f075c6145733475774a55b9784a9f06b78c6"
+}

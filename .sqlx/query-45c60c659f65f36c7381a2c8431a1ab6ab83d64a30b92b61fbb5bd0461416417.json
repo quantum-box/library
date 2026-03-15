@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO library.tags (id, repo_id, tag, platform_id) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "45c60c659f65f36c7381a2c8431a1ab6ab83d64a30b92b61fbb5bd0461416417"
+}

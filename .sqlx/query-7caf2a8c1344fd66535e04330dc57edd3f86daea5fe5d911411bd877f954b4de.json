@@ -1,0 +1,194 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, app_id, trigger_type, source_branch,\n                commit_sha, commit_message, pr_number,\n                status, cloud_build_id, container_image,\n                artifact_path, duration_secs,\n                error_message, github_check_run_id,\n                github_installation_id, iac_plan_output,\n                created_at, updated_at\n            FROM tachyon_apps_compute.builds\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "app_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "trigger_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_branch",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "commit_sha",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "commit_message",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "pr_number",
+        "type_info": {
+          "type": "Long",
+          "flags": "",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cloud_build_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "MULTIPLE_KEY",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "container_image",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "artifact_path",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2048
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "duration_secs",
+        "type_info": {
+          "type": "Long",
+          "flags": "",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "error_message",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "github_check_run_id",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "github_installation_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "iac_plan_output",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 262140
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "7caf2a8c1344fd66535e04330dc57edd3f86daea5fe5d911411bd877f954b4de"
+}

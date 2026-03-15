@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE users FROM tachyon_apps_auth.users users\n            JOIN tachyon_apps_auth._tenant_to_user ON users.id = tachyon_apps_auth._tenant_to_user.b\n            WHERE users.id = ? AND tachyon_apps_auth._tenant_to_user.a = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f397ddd9afc9f13e6cfa8f1e43e96da5a3561f5de97ca2162d414439b657ae98"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.tenants (id, name, user_name, parent_tenant_id, created_at, updated_at) \n             VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "ba3a3c35d5e041ca1a660fe56d42736177a54e9186f6c5dd7e08b9cea531f5a6"
+}

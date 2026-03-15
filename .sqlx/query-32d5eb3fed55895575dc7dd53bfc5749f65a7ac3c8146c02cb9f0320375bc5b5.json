@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.accounts WHERE id = ? AND tenant_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "32d5eb3fed55895575dc7dd53bfc5749f65a7ac3c8146c02cb9f0320375bc5b5"
+}

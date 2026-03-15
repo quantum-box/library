@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.cart_items (\n                id, cart_id, tenant_id, product_id,\n                quantity, unit_price_nanodollar,\n                created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                quantity = VALUES(quantity),\n                unit_price_nanodollar = VALUES(unit_price_nanodollar),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "f5148e1488eafc9fdd4a07bdce6c8d3b9fd3971323ec2313df853ad19c2bcf6d"
+}

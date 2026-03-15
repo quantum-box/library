@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.order_coupons (\n                id, tenant_id, order_id, coupon_id,\n                discount_amount_nanodollar\n            ) VALUES (?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "e7741a003b0ca620580349e87687def1b313f6aa182ce0e747230fe78c6692d0"
+}

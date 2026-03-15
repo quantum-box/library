@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.oauth2_refresh_tokens WHERE expires_at < NOW(6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "34e07163798828a9da907da09582d96ece14dd9cf24b43d27346ae2be029ff6f"
+}

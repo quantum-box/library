@@ -1,0 +1,134 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id,\n                tenant_id,\n                user_id,\n                summary,\n                confidence,\n                started_at,\n                ended_at,\n                message_count,\n                cluster_keywords as \"cluster_keywords: Value\",\n                last_generated_at,\n                created_at,\n                updated_at\n            FROM tachyon_apps_llms.user_insights\n            WHERE tenant_id = ? AND user_id = ?\n            ORDER BY confidence DESC, last_generated_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "summary",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1600
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "confidence",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM",
+          "max_size": 24
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "started_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "ended_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "message_count",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cluster_keywords: Value",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_generated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7678ed552e3f25df737ab87da37e4315603104e44342c2153401810385965b14"
+}

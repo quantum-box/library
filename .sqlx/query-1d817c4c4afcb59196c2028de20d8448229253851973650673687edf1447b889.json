@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM\n                tachyon_apps_compute.environment_variables\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1d817c4c4afcb59196c2028de20d8448229253851973650673687edf1447b889"
+}

@@ -1,0 +1,124 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT\n                id,\n                shipped_info_id,\n                item_type,\n                name,\n                product_id,\n                quantity,\n                shipping_date,\n                warranty_expiration_date,\n                warranty_status,\n                position_status,\n                serial_number\n            FROM tachyon_apps_delivery.shipped_items WHERE shipped_info_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | PRIMARY_KEY | AUTO_INCREMENT",
+          "max_size": 20
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "shipped_info_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "item_type",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "product_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "quantity",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | UNSIGNED | NO_DEFAULT_VALUE",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "shipping_date",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "warranty_expiration_date",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "warranty_status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "position_status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "serial_number",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 400
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "6e9bb772d379743c9ff7e84cba0c2dfdee3bdb10d9f78ad31def54bdfcfb5c17"
+}

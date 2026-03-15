@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_source_explore.sources \n            (id, tenant_id, name, file_type, url)\n            VALUES (?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n            name = VALUES(name),\n            file_type = VALUES(file_type),\n            url = VALUES(url)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "dfce4b8597ff3b091a26e29f55644098b6fcf08e40214ee81446d62226539d83"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.consumer_orders (\n                id, tenant_id, cart_id, user_id, session_id,\n                status, fulfillment_method, payment_method,\n                shipping_name, shipping_address,\n                shipping_phone, subtotal_nanodollar,\n                shipping_fee_nanodollar, total_nanodollar,\n                stripe_checkout_session_id, pickup_deadline\n            ) VALUES (\n                ?, ?, ?, ?, ?,\n                ?, ?, ?,\n                ?, ?,\n                ?, ?,\n                ?, ?,\n                ?, ?\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 16
+    },
+    "nullable": []
+  },
+  "hash": "701c37dc5cbb45195cef368015f64357aab39a2592ef8483fa36caacfe0d56ca"
+}

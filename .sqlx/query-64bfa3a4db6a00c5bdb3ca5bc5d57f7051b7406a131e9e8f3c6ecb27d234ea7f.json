@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "CREATE TABLE IF NOT EXISTS library.sources (\n                            id VARCHAR(255) NOT NULL PRIMARY KEY,\n                            repo_id VARCHAR(255) NOT NULL,\n                            name VARCHAR(255) NOT NULL,\n                            url VARCHAR(255),\n                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n                            INDEX (repo_id)\n                        )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "64bfa3a4db6a00c5bdb3ca5bc5d57f7051b7406a131e9e8f3c6ecb27d234ea7f"
+}

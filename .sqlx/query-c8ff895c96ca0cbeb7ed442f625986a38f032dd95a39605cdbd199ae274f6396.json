@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_order.product_categories (\n                id, tenant_id, name, slug, parent_id,\n                sort_order, image_url, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                name = VALUES(name),\n                slug = VALUES(slug),\n                parent_id = VALUES(parent_id),\n                sort_order = VALUES(sort_order),\n                image_url = VALUES(image_url),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "c8ff895c96ca0cbeb7ed442f625986a38f032dd95a39605cdbd199ae274f6396"
+}

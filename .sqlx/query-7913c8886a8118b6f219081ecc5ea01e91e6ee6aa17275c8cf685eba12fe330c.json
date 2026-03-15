@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.users (id, username, role, metadata, created_at, updated_at) VALUES (?, ?, 'OWNER', '{}', NOW(), NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7913c8886a8118b6f219081ecc5ea01e91e6ee6aa17275c8cf685eba12fe330c"
+}

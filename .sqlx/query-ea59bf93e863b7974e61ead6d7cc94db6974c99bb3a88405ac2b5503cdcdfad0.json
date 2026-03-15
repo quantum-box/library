@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_auth.oauth_tokens (\n                tenant_id, provider, provider_user_id,\n                access_token, token_type, expires_at,\n                refresh_token, scope\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                access_token = VALUES(access_token),\n                token_type = VALUES(token_type),\n                expires_at = VALUES(expires_at),\n                refresh_token = VALUES(refresh_token),\n                scope = VALUES(scope)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "ea59bf93e863b7974e61ead6d7cc94db6974c99bb3a88405ac2b5503cdcdfad0"
+}

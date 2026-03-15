@@ -1,0 +1,214 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                id, operator_id, name, repository_url,\n                repository_owner, repository_name,\n                default_branch, framework,\n                deployment_target, connection_id,\n                root_directory, build_command,\n                install_command, output_directory,\n                node_version, status,\n                production_deployment_id,\n                CAST(d1_bindings AS CHAR) AS d1_bindings,\n                created_at, updated_at\n            FROM tachyon_apps_compute.compute_apps\n            WHERE repository_owner = ?\n              AND repository_name = ?\n              AND status != 'deleted'\n            ORDER BY created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "operator_id",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | UNIQUE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 252
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "repository_url",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "repository_owner",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "repository_name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "default_branch",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "framework",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 200
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "deployment_target",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 128
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "connection_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "MULTIPLE_KEY",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "root_directory",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "build_command",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "install_command",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "output_directory",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 2000
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "node_version",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 80
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "production_deployment_id",
+        "type_info": {
+          "type": "String",
+          "flags": "",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "d1_bindings",
+        "type_info": {
+          "type": "LongBlob",
+          "flags": "",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "created_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "updated_at",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 26
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a0a78ab83eacf8914a296d4fc85779fefa11168b6d94d5c9d9c15a5add226bbb"
+}
