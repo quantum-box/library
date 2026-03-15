@@ -61,3 +61,7 @@ pub use traits::MockAuthApp;
 
 #[cfg(feature = "test")]
 pub use executor::{MockExecutorAction, MockMultiTenancyAction};
+
+// Test helpers
+#[cfg(feature = "test")]
+pub mod test_helper;
