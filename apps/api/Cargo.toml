@@ -73,6 +73,7 @@ sqlx = { workspace = true, features = [
 yrs = "0.21"
 futures-util = "0.3"
 once_cell.workspace = true
+pulldown-cmark = "0.12"
 
 schemars = { version = "0.8.15", features = ["uuid1", "chrono"] }
 uuid = { version = "1.5.0", features = ["v4", "serde"] }

@@ -126,6 +126,7 @@ impl std::str::FromStr for SyncOperationStatus {
 /// Represents an API pull synchronization operation.
 /// Operations are tracked for progress monitoring and history.
 #[derive(Debug, Clone, Getters, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct SyncOperation {
     /// Unique identifier
     id: SyncOperationId,

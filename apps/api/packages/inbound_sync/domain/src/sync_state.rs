@@ -65,6 +65,7 @@ impl std::str::FromStr for SyncDirection {
 /// - Conflict detection via version tracking
 /// - Preventing duplicate processing
 #[derive(Debug, Clone, Getters, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct SyncState {
     /// Unique identifier
     id: SyncStateId,

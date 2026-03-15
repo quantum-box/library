@@ -614,7 +614,7 @@ impl SdkAuthApp {
             .map(|m| {
                 let assigned_at =
                     chrono::DateTime::parse_from_rfc3339(&m.assigned_at)
-                        .map_err(|e| sdk_err(e))?
+                        .map_err(sdk_err)?
                         .with_timezone(&chrono::Utc);
 
                 let policy_id: PolicyId =
@@ -1032,7 +1032,7 @@ fn service_account_from_sdk(
     let id: ServiceAccountId = resp.id.clone().into();
     let tenant_id = TenantId::new(&resp.tenant_id)?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(|e| sdk_err(e))?
+        .map_err(sdk_err)?
         .with_timezone(&chrono::Utc);
     Ok(ServiceAccount {
         id,
@@ -1056,7 +1056,7 @@ fn api_key_from_sdk(
         .parse()
         .map_err(|e| sdk_err(format!("Invalid api key value: {e}")))?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(|e| sdk_err(e))?
+        .map_err(sdk_err)?
         .with_timezone(&chrono::Utc);
     Ok(PublicApiKey {
         id,
@@ -1235,7 +1235,7 @@ impl AuthApp for SdkAuthApp {
             Ok(resp) => {
                 let expires_at =
                     chrono::DateTime::parse_from_rfc3339(&resp.expires_at)
-                        .map_err(|e| sdk_err(e))?
+                        .map_err(sdk_err)?
                         .with_timezone(&chrono::Utc);
 
                 Ok(Some(auth::OAuthTokenDetail {

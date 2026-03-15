@@ -173,6 +173,7 @@ impl ProviderConfig {
 /// Represents a configured webhook receiver for a specific external provider.
 /// Each endpoint has a unique URL and secret for signature verification.
 #[derive(Debug, Clone, Getters, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct WebhookEndpoint {
     /// Unique identifier
     id: WebhookEndpointId,
