@@ -1,2 +1,0 @@
-ALTER TABLE tachyon_apps_database_manager.fields
-ADD COLUMN datatype_meta JSON;
