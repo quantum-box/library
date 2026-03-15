@@ -119,3 +119,4 @@ pretty_assertions.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 tracing-subscriber = { workspace = true }
 futures.workspace = true
+tachyon-sdk = { path = "../../sdk/rust", features = ["auth", "graphql", "test"] }

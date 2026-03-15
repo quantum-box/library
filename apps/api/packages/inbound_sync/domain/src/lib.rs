@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 //! Domain models for Library inbound webhook synchronization.
 //!
 //! This module provides abstractions for receiving webhooks from external SaaS

@@ -48,6 +48,7 @@ tachyon-sdk = { path = "../../../../sdk/rust", features = ["auth"] }
 rstest.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 mockall.workspace = true
+tachyon-sdk = { path = "../../../../sdk/rust", features = ["auth", "test"] }
 
 [features]
 default = []
