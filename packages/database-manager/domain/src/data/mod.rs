@@ -88,7 +88,7 @@ impl Data {
         {
             anyhow::bail!(
                 "PropertyData with property_id {} already exists",
-                property_data.property_id().to_string()
+                property_data.property_id()
             );
         }
         self.property_data.push(property_data);
@@ -122,7 +122,7 @@ impl Data {
             .position(|pd| pd.property_id() == data.property_id())
             .ok_or(anyhow::anyhow!(
                 "PropertyData with property_id {} does not exist",
-                data.property_id().to_string()
+                data.property_id()
             ))?;
         self.property_data[index] = data.clone();
         self.updated_at = Utc::now();

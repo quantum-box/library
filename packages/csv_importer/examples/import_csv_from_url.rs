@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         CSVImporterClient::new(Arc::new(db_manager.clone()));
 
     let executor = &Executor::SystemUser;
-    let multi_tenancy = &MultiTenancy::new_operator(&tenant_id);
+    let multi_tenancy = &MultiTenancy::new_operator(tenant_id.clone());
 
     let url = r2
         .presigned_get("test-bucket", "meisai_20200915204146828.csv", 300)

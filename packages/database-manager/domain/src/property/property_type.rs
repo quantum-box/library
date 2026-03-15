@@ -8,9 +8,10 @@ use util::def_id;
 use util::macros::*;
 use value_object::{Identifier, Text};
 
-#[derive(Debug, Clone, EnumString, Display)]
+#[derive(Debug, Clone, Default, EnumString, Display)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PropertyType {
+    #[default]
     String,
     Integer,
     Html,
@@ -87,11 +88,6 @@ impl PropertyType {
     }
 }
 
-impl Default for PropertyType {
-    fn default() -> Self {
-        Self::String
-    }
-}
 
 def_id!(SelectItemId, "op_");
 

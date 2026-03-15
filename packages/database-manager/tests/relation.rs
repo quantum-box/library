@@ -19,7 +19,8 @@ async fn test_create_new_database() {
     let tenant_id = TenantId::default();
 
     let executor = &auth::Executor::SystemUser;
-    let multi_tenancy = &auth::MultiTenancy::new_operator(tenant_id.clone());
+    let multi_tenancy =
+        &auth::MultiTenancy::new_operator(tenant_id.clone());
 
     // TODO: add English comment
     // TODO: add English comment
