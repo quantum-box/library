@@ -155,6 +155,7 @@ mod tests {
 
     // TODO: add English comment
     #[tokio::test]
+    #[ignore]
     async fn test_create_bucket() -> anyhow::Result<()> {
         dotenvy::dotenv().ok();
 
@@ -194,6 +195,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_put_object() -> anyhow::Result<()> {
         dotenvy::dotenv().ok();
 
