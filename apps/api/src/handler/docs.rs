@@ -72,7 +72,7 @@ pub async fn list_docs(
             </li>"#,
             org = html_escape(&org),
             repo = html_escape(&repo),
-            id = html_escape(&data.id().to_string()),
+            id = html_escape(data.id().as_ref()),
             title = html_escape(&data.name().to_string()),
         ));
     }

@@ -4,6 +4,7 @@
 #![allow(clippy::derivable_impls)]
 #![allow(clippy::empty_docs)]
 #![allow(clippy::into_iter_on_ref)]
+#![allow(clippy::to_string_trait_impl)]
 
 pub extern crate reqwest;
 extern crate serde;

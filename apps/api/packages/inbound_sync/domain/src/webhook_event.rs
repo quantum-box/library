@@ -98,6 +98,7 @@ impl ProcessingStats {
 /// Represents a received webhook from an external provider.
 /// Events are queued and processed asynchronously.
 #[derive(Debug, Clone, Getters, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct WebhookEvent {
     /// Unique identifier
     id: WebhookEventId,
