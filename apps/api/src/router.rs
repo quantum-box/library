@@ -567,6 +567,18 @@ pub async fn router(
     let webhook_router =
         inbound_sync::adapter::create_webhook_router(webhook_handler_state);
 
+    // Public docs routes (no authentication required)
+    let docs_router = axum::Router::new()
+        .route("/docs/:org/:repo", get(handler::docs::list_docs))
+        .route(
+            "/docs/:org/:repo/:data_id",
+            get(handler::docs::view_doc),
+        )
+        .route(
+            "/docs/:org/:repo/:data_id/md",
+            get(handler::docs::view_doc_markdown),
+        );
+
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
         .route("/version", get(version))
@@ -577,6 +589,7 @@ pub async fn router(
             get(graphql::graphql_introspection),
         )
         .merge(handler::create_router())
+        .merge(docs_router)
         .merge(collab_router)
         .merge(webhook_router)
         // Layer order matters: outermost (first in chain) to innermost

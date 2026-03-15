@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod data;
+pub mod docs;
 pub mod graphql;
 pub mod library_executor_extractor;
 pub mod library_org_extractor;
