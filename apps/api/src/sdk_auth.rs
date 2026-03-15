@@ -164,7 +164,7 @@ impl SdkAuthApp {
 
         if let Some(ref platform_id) = multi_tenancy.platform_id() {
             let same_as_operator =
-                resolved_op.as_ref().map_or(false, |op| op == platform_id);
+                resolved_op.as_ref() == Some(platform_id);
             if !same_as_operator {
                 if let Ok(val) = platform_id.to_string().parse() {
                     headers.insert("x-platform-id", val);
@@ -227,7 +227,7 @@ impl SdkAuthApp {
             .get(format!("{}{}", config.base_path, path))
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
         handle_rest_response(resp).await
     }
 
@@ -243,7 +243,7 @@ impl SdkAuthApp {
             .query(query)
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
         handle_rest_response(resp).await
     }
 
@@ -259,7 +259,7 @@ impl SdkAuthApp {
             .json(body)
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
         handle_rest_response(resp).await
     }
 
@@ -275,7 +275,7 @@ impl SdkAuthApp {
             .json(body)
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
         handle_rest_response(resp).await
     }
 
@@ -289,7 +289,7 @@ impl SdkAuthApp {
             .delete(format!("{}{}", config.base_path, path))
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -313,7 +313,7 @@ impl SdkAuthApp {
             .query(&[("tenant_id", tenant_id.as_str())])
             .send()
             .await
-            .map_err(|e| sdk_err(&e))?;
+            .map_err(|e| sdk_err(e))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -324,7 +324,7 @@ impl SdkAuthApp {
         }
 
         let body: OAuthProvidersResp =
-            resp.json().await.map_err(|e| sdk_err(&e))?;
+            resp.json().await.map_err(|e| sdk_err(e))?;
 
         let mut bootstrap = OAuthBootstrapConfig::default();
 
@@ -613,7 +613,7 @@ impl SdkAuthApp {
             .map(|m| {
                 let assigned_at =
                     chrono::DateTime::parse_from_rfc3339(&m.assigned_at)
-                        .map_err(|e| sdk_err(&e))?
+                        .map_err(|e| sdk_err(e))?
                         .with_timezone(&chrono::Utc);
 
                 let policy_id: PolicyId =
@@ -861,7 +861,7 @@ async fn handle_rest_response<T: serde::de::DeserializeOwned>(
         let body = resp.text().await.unwrap_or_default();
         return Err(map_http_error(status, &body));
     }
-    resp.json::<T>().await.map_err(|e| sdk_err(&e))
+    resp.json::<T>().await.map_err(|e| sdk_err(e))
 }
 
 /// Check if an error is a 404 not-found error.
@@ -1031,7 +1031,7 @@ fn service_account_from_sdk(
     let id: ServiceAccountId = resp.id.clone().into();
     let tenant_id = TenantId::new(&resp.tenant_id)?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(|e| sdk_err(&e))?
+        .map_err(|e| sdk_err(e))?
         .with_timezone(&chrono::Utc);
     Ok(ServiceAccount {
         id,
@@ -1055,7 +1055,7 @@ fn api_key_from_sdk(
         .parse()
         .map_err(|e| sdk_err(format!("Invalid api key value: {e}")))?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(|e| sdk_err(&e))?
+        .map_err(|e| sdk_err(e))?
         .with_timezone(&chrono::Utc);
     Ok(PublicApiKey {
         id,
@@ -1234,7 +1234,7 @@ impl AuthApp for SdkAuthApp {
             Ok(resp) => {
                 let expires_at =
                     chrono::DateTime::parse_from_rfc3339(&resp.expires_at)
-                        .map_err(|e| sdk_err(&e))?
+                        .map_err(|e| sdk_err(e))?
                         .with_timezone(&chrono::Utc);
 
                 Ok(Some(auth::OAuthTokenDetail {
@@ -1320,7 +1320,7 @@ impl AuthApp for SdkAuthApp {
         let resp =
             tachyon_sdk::apis::auth_service_accounts_api::list_service_accounts(
                 &config,
-                &input.tenant_id.to_string(),
+                input.tenant_id.as_ref(),
             )
             .await
             .map_err(sdk_api_err)?;
@@ -1342,7 +1342,7 @@ impl AuthApp for SdkAuthApp {
 
         tachyon_sdk::apis::auth_service_accounts_api::delete_service_account(
             &config,
-            &input.service_account_id.to_string(),
+            input.service_account_id.as_ref(),
         )
         .await
         .map_err(sdk_api_err)?;
@@ -1363,7 +1363,7 @@ impl AuthApp for SdkAuthApp {
 
         let resp = tachyon_sdk::apis::auth_api_keys_api::create_api_key(
             &config,
-            &input.service_account_id.to_string(),
+            input.service_account_id.as_ref(),
             req,
         )
         .await
@@ -1381,8 +1381,8 @@ impl AuthApp for SdkAuthApp {
 
         let resp = tachyon_sdk::apis::auth_api_keys_api::list_api_keys(
             &config,
-            &input.service_account_id.to_string(),
-            &input.operator_id.to_string(),
+            input.service_account_id.as_ref(),
+            input.operator_id.as_ref(),
         )
         .await
         .map_err(sdk_api_err)?;
@@ -1551,7 +1551,7 @@ impl AuthApp for SdkAuthApp {
 
         match tachyon_sdk::apis::auth_users_api::get_user(
             &config,
-            &input.user_id.to_string(),
+            input.user_id.as_ref(),
         )
         .await
         {
@@ -1574,14 +1574,14 @@ impl AuthApp for SdkAuthApp {
 
         let resp = tachyon_sdk::apis::auth_users_api::list_users(
             &config,
-            &input.tenant_id.to_string(),
+            input.tenant_id.as_ref(),
         )
         .await
         .map_err(sdk_api_err)?;
 
         resp.users
             .iter()
-            .map(|u| user_from_sdk_user_response(u))
+            .map(user_from_sdk_user_response)
             .collect()
     }
 
@@ -1594,7 +1594,7 @@ impl AuthApp for SdkAuthApp {
 
         match tachyon_sdk::apis::auth_policies_api::get_policy(
             &config,
-            &input.policy_id.to_string(),
+            input.policy_id.as_ref(),
         )
         .await
         {
@@ -1880,7 +1880,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
             Some(token.scopes.join(" "))
         };
 
-        let sdk_tenant_id = TenantId::new(&token.tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(token.tenant_id.as_ref())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let body = serde_json::json!({
             "provider": token.provider.to_string(),
@@ -1905,7 +1905,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         tenant_id: &value_object::TenantId,
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<Option<inbound_sync_domain::StoredOAuthToken>> {
-        let sdk_tenant_id = TenantId::new(&tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(tenant_id.as_ref())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         match SdkAuthApp::rest_get::<RestOAuthTokenDetail>(&config, &path)
@@ -1943,7 +1943,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         tenant_id: &value_object::TenantId,
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<()> {
-        let sdk_tenant_id = TenantId::new(&tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(tenant_id.as_ref())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         SdkAuthApp::rest_delete(&config, &path).await

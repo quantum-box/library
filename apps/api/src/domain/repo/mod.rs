@@ -58,6 +58,7 @@ pub struct Repo {
 }
 
 impl Repo {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: &RepoId,
         organization_id: &OperatorId,
@@ -82,6 +83,7 @@ impl Repo {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         id: &RepoId,
         organization_id: &OperatorId,

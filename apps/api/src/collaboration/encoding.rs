@@ -2,7 +2,7 @@
 ///
 /// The y-websocket protocol uses lib0 encoding for message
 /// framing. Values 0-127 encode as a single byte.
-
+///
 /// Read a variable-length unsigned integer from `buf` starting
 /// at `pos`. Advances `pos` past the consumed bytes.
 pub fn read_var_uint(buf: &[u8], pos: &mut usize) -> u64 {

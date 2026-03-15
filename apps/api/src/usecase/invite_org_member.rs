@@ -106,7 +106,7 @@ impl InviteOrgMemberInputPort for InviteOrgMember {
                 .update_user_role(
                     input.executor,
                     input.multi_tenancy,
-                    &user.id().to_string(),
+                    user.id().as_ref(),
                     &tenant_id,
                     &auth_role_str,
                 )

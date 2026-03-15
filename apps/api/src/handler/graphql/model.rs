@@ -90,11 +90,11 @@ impl From<auth_domain::User> for User {
     fn from(user: auth_domain::User) -> Self {
         Self {
             id: user.id().to_string(),
-            email: user.email().clone().map(|e| e.to_string()),
-            name: user.name().clone().map(|n| n.to_string()),
+            email: user.email().map(|e| e.to_string()),
+            name: user.name().map(|n| n.to_string()),
             username: Some(user.username().to_string()),
             email_verified: *user.email_verified(),
-            image: user.image().clone().map(|i| i.to_string()),
+            image: user.image().map(|i| i.to_string()),
             role: *user.role(),
             tenant_id_list: user
                 .tenants()

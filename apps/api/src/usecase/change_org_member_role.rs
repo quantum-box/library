@@ -76,7 +76,7 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
         let tenant = TenantId::new(input.tenant_id.as_ref())?;
         let user = self
             .sdk
-            .get_user_by_id_full(&tenant, &input.target_user_id.to_string())
+            .get_user_by_id_full(&tenant, input.target_user_id.as_ref())
             .await?
             .ok_or_else(|| {
                 errors::not_found!("User not found in tenant")
@@ -93,7 +93,7 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
             .update_user_role(
                 input.executor,
                 input.multi_tenancy,
-                &input.target_user_id.to_string(),
+                input.target_user_id.as_ref(),
                 &tenant,
                 &auth_role.to_string(),
             )
