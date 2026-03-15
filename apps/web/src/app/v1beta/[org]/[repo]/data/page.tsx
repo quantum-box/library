@@ -8,6 +8,8 @@ import { RepositoryPageQuery, RepositoryPageWithTagsQuery } from '@/gen/graphql'
 import { notFound } from 'next/navigation'
 import { DataViewComponent } from './components/data-view'
 
+export const runtime = 'edge'
+
 export default async function DataPage({
 	params: { org, repo },
 	searchParams,

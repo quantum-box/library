@@ -1,6 +1,8 @@
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'edge'
+
 const InitOAuthMutation = graphql(`
   mutation InitOAuth($input: InitOAuthInput!) {
     initOauth(input: $input) {

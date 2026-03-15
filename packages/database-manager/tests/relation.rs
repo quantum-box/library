@@ -2,6 +2,7 @@ use database_manager::{
     domain::PropertyType, AddPropertyInputData, CreateDatabaseInputData,
 };
 use persistence::tests::clean_up;
+use tachyon_sdk::auth;
 use value_object::TenantId;
 
 #[tokio::test]

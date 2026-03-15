@@ -271,11 +271,7 @@ impl TryFrom<async_graphql::UploadValue> for InMemoryFile {
     fn try_from(
         value: async_graphql::UploadValue,
     ) -> Result<Self, Self::Error> {
-        InMemoryFile::new(
-            value.filename,
-            value.content_type,
-            value.content,
-        )
+        InMemoryFile::new(value.filename, value.content_type, value.content)
     }
 }
 

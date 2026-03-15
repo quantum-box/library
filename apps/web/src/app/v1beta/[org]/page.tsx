@@ -8,6 +8,8 @@ import { updateOrgAction } from './_components/action'
 import { ApiKeyListServer } from './_components/api-key-list-server'
 import { OrganizationPageUi } from './_components/organization-page-ui'
 
+export const runtime = 'edge'
+
 const ConnectionsQuery = graphql(`
   query GetConnectionsForOrg($tenantId: String!) {
     connections(tenantId: $tenantId) {

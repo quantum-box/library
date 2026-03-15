@@ -16,6 +16,8 @@ import {
 } from '../../_lib/platform-action'
 import { canEdit } from '../../_lib/repo-permissions'
 
+export const runtime = 'edge'
+
 type Props = {
 	params: { org: string; repo: string }
 }

@@ -11,7 +11,7 @@ const inter = Inter({ subsets: ['latin'] })
 // https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config
 export const fetchCache = 'force-no-store'
 export const revalidate = 10
-// export const runtime = 'edge'
+export const runtime = 'edge'
 
 export const viewport: Viewport = {
 	width: 'device-width',

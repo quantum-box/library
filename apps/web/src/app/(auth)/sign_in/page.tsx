@@ -2,6 +2,8 @@ import { auth, signIn } from '@/app/(auth)/auth'
 import { redirect } from 'next/navigation'
 import { SignInForm } from './form'
 
+export const runtime = 'edge'
+
 export default async function SignInPage() {
 	const session = await auth()
 	if (session) {

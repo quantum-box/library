@@ -2,6 +2,8 @@ import { executeGraphQL, graphql } from '@/lib/graphql'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+export const runtime = 'edge'
+
 const CompleteGitHubInstallMutation = graphql(`
   mutation CompleteGithubInstall($installationId: Int!, $integrationId: String!) {
     completeGithubInstall(installationId: $installationId, integrationId: $integrationId) {

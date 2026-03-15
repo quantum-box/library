@@ -1,5 +1,7 @@
 'use server'
 
+export const runtime = 'edge'
+
 import { redirect } from 'next/navigation'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { OAuthCallbackUI } from './components/oauth-callback-ui'

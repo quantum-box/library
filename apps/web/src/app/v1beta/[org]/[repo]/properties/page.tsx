@@ -14,6 +14,8 @@ import { createSdkPlatform } from '@/lib/api-action'
 import { notFound } from 'next/navigation'
 import { getGitHubConnection } from '../../_components/github-settings-actions'
 
+export const runtime = 'edge'
+
 export default async function PropertiesPage({
 	params: { org, repo },
 }: { params: { org: string; repo: string } }) {

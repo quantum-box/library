@@ -22,6 +22,8 @@ import {
 import Image from 'next/image'
 import Link from 'next/link'
 
+export const runtime = 'edge'
+
 export default function GitHubSyncLandingPage() {
 	return (
 		<div className='min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950'>

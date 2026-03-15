@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { ErrorCode, platformAction } from '../v1beta/_lib/platform-action'
 
+export const runtime = 'edge'
+
 export default async function ErrTest() {
 	await platformAction(
 		async sdk => {

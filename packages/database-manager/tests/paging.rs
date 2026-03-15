@@ -2,6 +2,7 @@ use database_manager::{
     domain::PropertyType, AddDataInputData, AddPropertyInputData,
     CreateDatabaseInputData, PropertyDataInputData, SearchDataInputData,
 };
+use tachyon_sdk::auth;
 use value_object::{DatabaseUrl, TenantId};
 
 #[tokio::test]

@@ -3,6 +3,8 @@ import { authWithCheck } from '../(auth)/auth'
 import { ErrorCode, platformAction } from '../v1beta/_lib/platform-action'
 import { NewRepoForm } from './form'
 
+export const runtime = 'edge'
+
 export default async function NewRepo() {
 	const session = await authWithCheck()
 	const { me } = await platformAction(async sdk => sdk.newRepoPage(), {

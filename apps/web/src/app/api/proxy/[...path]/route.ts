@@ -1,6 +1,8 @@
 import { baseURL } from '@/lib/apiClient'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'edge'
+
 /**
  * Proxy API requests to the backend (library-api)
  *

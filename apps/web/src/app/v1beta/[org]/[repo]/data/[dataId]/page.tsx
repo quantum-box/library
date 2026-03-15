@@ -6,6 +6,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { updateData } from './action'
 
+export const runtime = 'edge'
+
 type Props = {
 	params: { org: string; repo: string; dataId: string }
 }

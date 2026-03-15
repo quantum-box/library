@@ -10,6 +10,8 @@ import { I18nProvider } from './i18n/i18n-provider'
 import LP from './lp'
 import { ErrorCode, platformAction } from './v1beta/_lib/platform-action'
 
+export const runtime = 'edge'
+
 export default async function App({
 	searchParams: { lang },
 }: {
