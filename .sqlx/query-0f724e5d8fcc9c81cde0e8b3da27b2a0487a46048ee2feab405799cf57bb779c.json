@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO feature_flags (\n                id, tenant_id, `key`, name, description, enabled,\n                tags, valid_from, valid_until, evaluation_strategy,\n                variants, default_value, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "0f724e5d8fcc9c81cde0e8b3da27b2a0487a46048ee2feab405799cf57bb779c"
+}

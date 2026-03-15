@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM tachyon_apps_llms.memories\n            WHERE tenant_id = ? AND expires_at IS NOT NULL AND expires_at < NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8d1033fabd84cbf487e48ed2c46072285268255c7255f7c8b4834e0ccab9b07a"
+}

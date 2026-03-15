@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT COUNT(*) as \"count!\"\n            FROM tachyon_apps_llms.saved_memories\n            WHERE tenant_id = ?\n              AND user_id = ?\n              AND status = 'ACTIVE'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 21
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cd0efdaf4ebe8f34aaffc3abfd801a41c792af068ef93c1f0ad368e9118104b0"
+}

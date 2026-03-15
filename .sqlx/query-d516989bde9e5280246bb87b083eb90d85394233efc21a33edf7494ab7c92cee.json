@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_database_manager.fields\n            SET field_name = ?, datatype = ?, is_indexed = ?, datatype_meta = ?, meta_json = ?\n            WHERE tenant_id = ? AND object_id = ? AND id = ?;\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "d516989bde9e5280246bb87b083eb90d85394233efc21a33edf7494ab7c92cee"
+}

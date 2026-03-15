@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_llms.messages \n            (id, created_at, user_id, role, content, chatroom_id) \n            VALUES (?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n            created_at = VALUES(created_at),\n            user_id = VALUES(user_id),\n            role = VALUES(role),\n            content = VALUES(content),\n            chatroom_id = VALUES(chatroom_id)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "12e3212a2ca614287746e78500c890c63e328b59f49571a29bb104773721cd02"
+}

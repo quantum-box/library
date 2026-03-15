@@ -37,7 +37,7 @@ async fn test_big_csv_preview() -> anyhow::Result<()> {
 #[tokio::test]
 #[ignore]
 async fn test_import_and_create_database() -> anyhow::Result<()> {
-    std::env::set_var("COGNITO_JWK_URL", "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json");
+    std::env::set_var("COGNITO_JWK_URL", "https://cognito-idp.ap-northeast-1.amazonaws.com/your-cognito-user-pool-id/.well-known/jwks.json");
     dotenvy::dotenv().ok();
 
     let aws_provider = Arc::new(aws::Aws::new().await?);

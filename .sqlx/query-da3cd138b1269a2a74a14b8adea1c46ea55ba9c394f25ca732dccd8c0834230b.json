@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_auth.actions\n            SET context = ?, name = ?, description = ?, resource_pattern = ?, updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "da3cd138b1269a2a74a14b8adea1c46ea55ba9c394f25ca732dccd8c0834230b"
+}

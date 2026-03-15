@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_crm.provider_object_mappings (\n                entity_id, tenant_id, provider_name,\n                provider_primary_id, object_name,\n                created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                provider_name = VALUES(provider_name),\n                provider_primary_id = VALUES(provider_primary_id),\n                object_name = VALUES(object_name),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "d08f4734d54439ba325a0d67e43d8a359e8f6bebe5aba0a1ff60ab44f82afc46"
+}

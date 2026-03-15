@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_pricing.pricing_skus\n                (id, code, display_name, category, unit_type,\n                 description, status, metadata,\n                 created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                display_name = VALUES(display_name),\n                category = VALUES(category),\n                unit_type = VALUES(unit_type),\n                description = VALUES(description),\n                status = VALUES(status),\n                metadata = VALUES(metadata),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "239775b40bf6c38f13853e09d287d22ec377ce61a4b32462ab4352aee210e318"
+}

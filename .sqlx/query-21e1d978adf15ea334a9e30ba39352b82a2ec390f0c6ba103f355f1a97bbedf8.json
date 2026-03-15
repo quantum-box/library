@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_auth.policies (id, name, description, is_system, tenant_id, created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "21e1d978adf15ea334a9e30ba39352b82a2ec390f0c6ba103f355f1a97bbedf8"
+}

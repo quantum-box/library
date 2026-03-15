@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO library.sources (id, repo_id, name, url) \n             VALUES (?, ?, ?, ?) \n             ON DUPLICATE KEY UPDATE \n                name = VALUES(name), \n                url = VALUES(url)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "6d464674b1f88fb27278a984f83e2245aaedffcf4f93d3f6af783028f5c226b7"
+}

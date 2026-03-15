@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO supply_contracts (\n                id, supplier_id, contract_name, contract_number,\n                effective_from, effective_until, base_currency,\n                payment_due_days, early_payment_discount, early_payment_days,\n                minimum_invoice_amount, billing_cycle, volume_discounts,\n                status, notes, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                contract_name = VALUES(contract_name),\n                contract_number = VALUES(contract_number),\n                effective_from = VALUES(effective_from),\n                effective_until = VALUES(effective_until),\n                base_currency = VALUES(base_currency),\n                payment_due_days = VALUES(payment_due_days),\n                early_payment_discount = VALUES(early_payment_discount),\n                early_payment_days = VALUES(early_payment_days),\n                minimum_invoice_amount = VALUES(minimum_invoice_amount),\n                billing_cycle = VALUES(billing_cycle),\n                volume_discounts = VALUES(volume_discounts),\n                status = VALUES(status),\n                notes = VALUES(notes),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": []
+  },
+  "hash": "f3ef376e3681e2a8ed5e757c3dbb870aca00704fa91d05f79b2a72618327fc99"
+}

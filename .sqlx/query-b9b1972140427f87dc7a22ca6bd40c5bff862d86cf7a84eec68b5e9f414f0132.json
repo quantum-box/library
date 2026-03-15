@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.terminologies (\n                id, tenant_id, user_id, original_term, preferred_term,\n                context, created_at, last_used_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                original_term = VALUES(original_term),\n                preferred_term = VALUES(preferred_term),\n                context = VALUES(context),\n                last_used_at = VALUES(last_used_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "b9b1972140427f87dc7a22ca6bd40c5bff862d86cf7a84eec68b5e9f414f0132"
+}

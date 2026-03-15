@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE tachyon_apps_llms.chatrooms\n            SET name = ?, metadata = ?, updated_at = ?\n            WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "6a67d9636eaa3f454fd511c3717b43e144cfbb8d51b0e962dc2c08b7c4136afc"
+}

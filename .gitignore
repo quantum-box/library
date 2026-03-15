@@ -22,8 +22,8 @@ deploy.value.run.yaml
 .DS_Store
 Thumbs.db
 
-# SQLx offline cache (generated)
-.sqlx/
+# SQLx offline cache - tracked for SQLX_OFFLINE=true in CI
+# .sqlx/
 
 # Playwright
 .playwright-mcp/

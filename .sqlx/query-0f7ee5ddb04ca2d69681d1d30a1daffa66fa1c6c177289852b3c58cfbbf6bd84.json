@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_iac.manifest_revisions\n                (id, manifest_id, tenant_id, name, kind, revision,\n                 manifest, content_hash, applied_by,\n                 applied_at, created_at, updated_at)\n            VALUES\n                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "0f7ee5ddb04ca2d69681d1d30a1daffa66fa1c6c177289852b3c58cfbbf6bd84"
+}

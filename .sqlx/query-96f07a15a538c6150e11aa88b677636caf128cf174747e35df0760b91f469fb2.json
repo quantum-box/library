@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.model_evaluations (\n                id, model_id, performance_metrics, test_results,\n                evaluated_at, created_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "96f07a15a538c6150e11aa88b677636caf128cf174747e35df0760b91f469fb2"
+}

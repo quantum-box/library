@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_llms.agentcore_sessions\n             (external_session_id, tenant_id, chatroom_id)\n             VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "49943877965ffe6d269c055d8bd311eec81734f02036fe71f2440b6b287fd9c6"
+}

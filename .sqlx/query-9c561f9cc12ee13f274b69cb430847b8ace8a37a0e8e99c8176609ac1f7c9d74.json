@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_compute.builds SET\n            status = ?, cloud_build_id = ?,\n            container_image = ?, artifact_path = ?,\n            duration_secs = ?,\n            error_message = ?, github_check_run_id = ?,\n            github_installation_id = ?,\n            iac_plan_output = ?,\n            updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "9c561f9cc12ee13f274b69cb430847b8ace8a37a0e8e99c8176609ac1f7c9d74"
+}

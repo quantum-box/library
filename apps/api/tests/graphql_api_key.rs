@@ -20,11 +20,11 @@ fn resolve_library_tenant_id() -> TenantId {
 #[tokio::test]
 async fn test_graphql_create_api_key() -> anyhow::Result<()> {
     // TODO: add English comment
-    std::env::set_var("COGNITO_JWK_URL", "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json");
+    std::env::set_var("COGNITO_JWK_URL", "https://cognito-idp.ap-northeast-1.amazonaws.com/your-cognito-user-pool-id/.well-known/jwks.json");
     if std::env::var("COGNITO_USER_POOL_ID").is_err() {
         std::env::set_var(
             "COGNITO_USER_POOL_ID",
-            "ap-northeast-1_8Ga4bK5M4",
+            "your-cognito-user-pool-id",
         );
     }
     dotenvy::dotenv().ok();

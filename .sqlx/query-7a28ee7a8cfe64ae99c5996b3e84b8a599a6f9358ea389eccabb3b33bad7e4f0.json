@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT\n                COUNT(*)\n            FROM\n                tachyon_apps_database_manager.data\n            WHERE\n                tenant_id = ? and object_id = ? and name = ?    \n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "COUNT(*)",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 21
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7a28ee7a8cfe64ae99c5996b3e84b8a599a6f9358ea389eccabb3b33bad7e4f0"
+}

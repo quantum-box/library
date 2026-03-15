@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.user_preferences (\n                id, tenant_id, user_id, preference_type, value,\n                confidence_score, last_updated_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                value = VALUES(value),\n                confidence_score = VALUES(confidence_score),\n                last_updated_at = VALUES(last_updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "1a1cca6dcfe049162db2a0effb7ef63409c85e544deade55f4fb8d0201ea15da"
+}

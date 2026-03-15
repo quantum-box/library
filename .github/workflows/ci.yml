@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   fmt:
+    name: Rust Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +25,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
+    name: Rust Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +36,7 @@ jobs:
       - run: cargo clippy --workspace -- -D warnings
 
   check:
+    name: Rust Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +45,7 @@ jobs:
       - run: cargo check --workspace
 
   test:
+    name: Rust Tests
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -63,13 +67,81 @@ jobs:
       - uses: taiki-e/install-action@cargo-nextest
       - run: cargo nextest run --workspace
 
-  node:
+  node-lint:
+    name: Node Lint & TypeCheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn lint
       - run: yarn tsc
+
+  node-build:
+    name: Node Build
+    runs-on: ubuntu-latest
+    needs: node-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn build
+        env:
+          NEXTAUTH_SECRET: ci-dummy-secret
+          NEXT_PUBLIC_BACKEND_API_URL: http://localhost:50053
+
+  storybook:
+    name: Storybook Build
+    runs-on: ubuntu-latest
+    needs: node-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn workspace library build-storybook
+        env:
+          NEXTAUTH_SECRET: ci-dummy-secret
+          NEXT_PUBLIC_BACKEND_API_URL: http://localhost:50053
+
+  chromatic:
+    name: Chromatic Visual Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: storybook
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: apps/web
+          exitOnceUploaded: true
+        env:
+          NEXTAUTH_SECRET: ci-dummy-secret
+          NEXT_PUBLIC_BACKEND_API_URL: http://localhost:50053
+
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

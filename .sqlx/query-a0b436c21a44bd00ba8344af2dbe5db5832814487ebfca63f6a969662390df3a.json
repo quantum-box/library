@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                    DELETE FROM tachyon_apps_order.line_items \n                    WHERE id = ? AND tenant_id = ?\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "a0b436c21a44bd00ba8344af2dbe5db5832814487ebfca63f6a969662390df3a"
+}

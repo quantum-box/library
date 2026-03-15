@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO library.databases (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "f5d9ddb29653c78a3e98026c8df43f9a7024e8fe37e1907bbb41598ade911417"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                SELECT manifest\n                FROM tachyon_apps_iac.manifests\n                WHERE tenant_id = ? AND kind = ? AND name = ?\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifest",
+        "type_info": {
+          "type": "Json",
+          "flags": "NOT_NULL | BLOB | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 4294967295
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "140dd2137386053d044e72ac40dfe2cd65d3f7f619eb8b49e42d67b2acc6c764"
+}

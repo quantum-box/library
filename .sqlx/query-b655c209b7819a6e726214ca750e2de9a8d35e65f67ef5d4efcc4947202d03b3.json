@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.oauth2_clients (id, tenant_id, name, client_id, client_secret_hash, redirect_uris, allowed_scopes, grant_types, use_tachyon_user_pool, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), redirect_uris = VALUES(redirect_uris), allowed_scopes = VALUES(allowed_scopes), grant_types = VALUES(grant_types), use_tachyon_user_pool = VALUES(use_tachyon_user_pool), status = VALUES(status)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "b655c209b7819a6e726214ca750e2de9a8d35e65f67ef5d4efcc4947202d03b3"
+}

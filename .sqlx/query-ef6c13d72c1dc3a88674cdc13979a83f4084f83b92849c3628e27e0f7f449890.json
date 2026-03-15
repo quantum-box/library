@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT chatroom_id\n             FROM tachyon_apps_llms.agentcore_sessions\n             WHERE external_session_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chatroom_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ef6c13d72c1dc3a88674cdc13979a83f4084f83b92849c3628e27e0f7f449890"
+}

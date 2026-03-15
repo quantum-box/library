@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.accounts (id, tenant_id, provider_account_id, provider, user_id, created_at, updated_at) \n             VALUES (?, ?, ?, ?, ?, ?, ?)\n             ON DUPLICATE KEY UPDATE provider = VALUES(provider), user_id = VALUES(user_id), updated_at = VALUES(updated_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "7ef60eb1c3b59b0171a1b94667f9d3e12c4fc0087571757170af7db2c77bf5ae"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.memories (\n                id, tenant_id, user_id, memory_type, content,\n                context, importance_score, created_at, last_accessed_at,\n                expires_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                memory_type = VALUES(memory_type),\n                content = VALUES(content),\n                context = VALUES(context),\n                importance_score = VALUES(importance_score),\n                last_accessed_at = VALUES(last_accessed_at),\n                expires_at = VALUES(expires_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "d0137f8046ba5c16c72e26a15eff7200902960114bc5e63486a15652cea12e3f"
+}

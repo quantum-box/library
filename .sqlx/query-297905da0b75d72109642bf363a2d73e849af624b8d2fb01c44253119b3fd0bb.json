@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT COUNT(*) as count\n            FROM `tachyon_apps_auth`.`user_policies` \n            WHERE `user_id` = ? AND `tenant_id` = ? AND `policy_id` = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 21
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "297905da0b75d72109642bf363a2d73e849af624b8d2fb01c44253119b3fd0bb"
+}

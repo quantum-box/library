@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM library.sources WHERE repo_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2e588f6ccc94a418332794fb5c0bcd9e0b5a3e4c083611320e0351629145f7b4"
+}

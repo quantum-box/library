@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.workflow_executions\n            SET status = ?,\n                steps = ?,\n                output = ?,\n                completed_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "3ecc14a15866d1607fbb3ea5c18c9ede38ee5969bda70bfd0535771489870d81"
+}

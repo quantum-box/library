@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_auth.users (id, username, name, email, image, role, metadata, created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n            username = VALUES(username),\n            name = VALUES(name),\n            email = VALUES(email),\n            image = VALUES(image),\n            role = VALUES(role),\n            metadata = VALUES(metadata),\n            updated_at = VALUES(updated_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "f45433e0c76276bb38741e0b89c24fc03e67382ace295616b782457f42bf83f6"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO procurement_prices (\n                id, contract_id, resource_type, unit_type,\n                base_cost, currency, tier_pricing,\n                effective_from, effective_until, description,\n                created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                resource_type = VALUES(resource_type),\n                unit_type = VALUES(unit_type),\n                base_cost = VALUES(base_cost),\n                currency = VALUES(currency),\n                tier_pricing = VALUES(tier_pricing),\n                effective_from = VALUES(effective_from),\n                effective_until = VALUES(effective_until),\n                description = VALUES(description),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "2f241405a5d1c98275194610897c32fe0df5ca3250cf3d988ca4a27daffe8f43"
+}

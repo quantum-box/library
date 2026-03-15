@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE tachyon_apps_auth.authorization_codes SET used = TRUE WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "9fd8e9a39519161c0061716a33947721b071cf33f6ba54e67b790ff7d059d034"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_payment.provider_object_mappings (\n                entity_id, \n                tenant_id, \n                provider_primary_id, \n                provider_name, \n                object_name, \n                created_at, \n                updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "f117f4565319256e7bd3092e0b6f0ee7b975d817885c5422ab2b05278433e689"
+}

@@ -1,0 +1,42 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "${DB_HOST_PORT:-3306}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: mysql://root:@db:3306/library
+      RUST_BACKTRACE: "1"
+    ports:
+      - "${API_HOST_PORT:-50053}:50053"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_API_URL: http://localhost:${API_HOST_PORT:-50053}
+    ports:
+      - "${WEB_HOST_PORT:-5010}:3000"
+    depends_on:
+      - api
+
+volumes:
+  db-data:

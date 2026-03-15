@@ -1,0 +1,36 @@
+# gitleaks configuration for public repository
+title = "Library Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "chromatic-project-token"
+description = "Chromatic Project Token"
+regex = '''chpt_[a-zA-Z0-9]{15,}'''
+tags = ["chromatic", "token"]
+
+[[rules]]
+id = "aws-lambda-url"
+description = "AWS Lambda Function URL"
+regex = '''[a-z0-9]{26}\.lambda-url\.[a-z0-9-]+\.on\.aws'''
+tags = ["aws", "lambda"]
+
+[[rules]]
+id = "cognito-user-pool-id"
+description = "AWS Cognito User Pool ID"
+regex = '''[a-z]{2}-[a-z]+-\d_[A-Za-z0-9]{9}'''
+tags = ["aws", "cognito"]
+
+[allowlist]
+paths = [
+  '''.env\.sample$''',
+  '''\.gitleaks\.toml$''',
+  '''\.sqlx/''',
+  '''target/''',
+]
+regexTarget = "match"
+regexes = [
+  # AWS example key from documentation
+  '''AKIAIOSFODNN7EXAMPLE''',
+]

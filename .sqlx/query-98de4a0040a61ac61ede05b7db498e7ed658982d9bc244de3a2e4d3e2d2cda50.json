@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM tachyon_apps_pricing.pricing_skus\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "98de4a0040a61ac61ede05b7db498e7ed658982d9bc244de3a2e4d3e2d2cda50"
+}

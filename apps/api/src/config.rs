@@ -32,7 +32,7 @@ pub struct Config {
     #[clap(
         long = "cognito_user_pool_id",
         env = "COGNITO_USER_POOL_ID",
-        default_value = "ap-northeast-1_8Ga4bK5M4"
+        default_value = "your-cognito-user-pool-id"
     )]
     pub cognito_user_pool_id: String,
 

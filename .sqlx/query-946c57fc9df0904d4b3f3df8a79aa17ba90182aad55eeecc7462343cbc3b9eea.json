@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                INSERT INTO tachyon_apps_order.line_items (\n                    id, tenant_id, shipping_destination_id, product_id,\n                    name, quantity, unit_price, discount, billing_cycle,\n                    quotes_id\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n                ON DUPLICATE KEY UPDATE\n                    shipping_destination_id = VALUES(shipping_destination_id),\n                    name = VALUES(name),\n                    quantity = VALUES(quantity),\n                    unit_price = VALUES(unit_price),\n                    discount = VALUES(discount),\n                    billing_cycle = VALUES(billing_cycle)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "946c57fc9df0904d4b3f3df8a79aa17ba90182aad55eeecc7462343cbc3b9eea"
+}

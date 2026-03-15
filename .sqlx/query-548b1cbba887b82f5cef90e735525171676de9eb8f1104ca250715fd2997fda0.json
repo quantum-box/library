@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO product_usage_pricing (\n                id,\n                product_id,\n                tenant_id,\n                variant_id,\n                usage_rates,\n                metadata,\n                created_at,\n                updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                usage_rates = VALUES(usage_rates),\n                metadata = VALUES(metadata),\n                updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "548b1cbba887b82f5cef90e735525171676de9eb8f1104ca250715fd2997fda0"
+}

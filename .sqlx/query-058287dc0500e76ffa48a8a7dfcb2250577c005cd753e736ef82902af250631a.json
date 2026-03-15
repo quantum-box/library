@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_order.coupons\n            SET code = ?,\n                discount_type = ?,\n                discount_value = ?,\n                currency = ?,\n                is_active = ?\n            WHERE tenant_id = ? AND id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "058287dc0500e76ffa48a8a7dfcb2250577c005cd753e736ef82902af250631a"
+}

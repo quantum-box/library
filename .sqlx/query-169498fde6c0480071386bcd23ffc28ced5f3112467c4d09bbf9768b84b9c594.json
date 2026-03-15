@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM `tachyon_apps_auth`.`user_policies` \n            WHERE `user_id` = ? AND `tenant_id` = ? AND `policy_id` = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "169498fde6c0480071386bcd23ffc28ced5f3112467c4d09bbf9768b84b9c594"
+}

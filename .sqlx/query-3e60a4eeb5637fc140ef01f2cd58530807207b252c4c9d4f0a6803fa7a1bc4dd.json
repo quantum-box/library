@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO agent_tool_jobs (\n                id, provider, status, prompt, context_paths, output_profile,\n                environment, metadata, created_at, updated_at,\n                operator_id, user_id, platform_id,\n                result, error_message, resume_session_id,\n                assigned_worker_id\n            ) VALUES (\n                ?, ?, ?, ?, ?, ?,\n                ?, ?, ?, ?,\n                ?, ?, ?,\n                ?, ?, ?,\n                ?\n            )\n            ON DUPLICATE KEY UPDATE\n                provider = VALUES(provider),\n                status = VALUES(status),\n                prompt = VALUES(prompt),\n                context_paths = VALUES(context_paths),\n                output_profile = VALUES(output_profile),\n                environment = VALUES(environment),\n                metadata = VALUES(metadata),\n                updated_at = VALUES(updated_at),\n                operator_id = VALUES(operator_id),\n                user_id = VALUES(user_id),\n                platform_id = VALUES(platform_id),\n                result = VALUES(result),\n                error_message = VALUES(error_message),\n                resume_session_id = VALUES(resume_session_id),\n                assigned_worker_id = VALUES(assigned_worker_id)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": []
+  },
+  "hash": "3e60a4eeb5637fc140ef01f2cd58530807207b252c4c9d4f0a6803fa7a1bc4dd"
+}

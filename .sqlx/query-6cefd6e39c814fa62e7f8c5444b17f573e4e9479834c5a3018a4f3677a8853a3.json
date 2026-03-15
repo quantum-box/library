@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_llms.agent_protocols (\n                id,\n                tenant_id,\n                title,\n                protocol_name,\n                description,\n                markdown,\n                created_at,\n                updated_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "6cefd6e39c814fa62e7f8c5444b17f573e4e9479834c5a3018a4f3677a8853a3"
+}

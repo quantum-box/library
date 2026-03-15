@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "insert into tachyon_apps_delivery.delivery_line_items (\n                    id,\n                    delivery_slip_id,\n                    item_name,\n                    product_id,\n                    quantity,\n                    unit_price,\n                    discount_amount,\n                    discount_rate,\n                    discount_type,\n                    contract_id,\n                    shipping_destination_id\n                )\n                values (\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?,\n                    ?\n                )\n                ON DUPLICATE KEY UPDATE\n                    delivery_slip_id = VALUES(delivery_slip_id),\n                    item_name = VALUES(item_name),\n                    product_id = VALUES(product_id),\n                    quantity = VALUES(quantity),\n                    unit_price = VALUES(unit_price),\n                    discount_amount = VALUES(discount_amount),\n                    discount_rate = VALUES(discount_rate),\n                    discount_type = VALUES(discount_type)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "cd3f6a91a8160de41d7962e665f77663dae89e1efb1633e97744b4dee067217b"
+}

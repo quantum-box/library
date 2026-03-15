@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT a AS tenant_id, b AS user_id\n            FROM tachyon_apps_auth._tenant_to_user\n            WHERE b IN (SELECT b FROM tachyon_apps_auth._tenant_to_user WHERE a = ?)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | MULTIPLE_KEY | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bf119e6598a92edb4ec6200b478c6155616ca8267c0e417ac888982769703238"
+}

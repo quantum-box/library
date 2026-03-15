@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO output_quality_feedbacks (\n                evaluation_id,\n                feedback_text,\n                feedback_type,\n                created_at\n            )\n            VALUES (?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "5db886df51d703cdc4dcbbf4ab9e6baffb5adeb5772e720ab8d239e60087ba7d"
+}

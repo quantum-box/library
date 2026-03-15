@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_compute.deployments\n            (id, app_id, build_id, environment, pr_number,\n             status, cloud_run_service_name,\n             cloud_run_revision,\n             pages_project_name, pages_deployment_id,\n             url, public_url,\n             scaling_min_instances, scaling_max_instances,\n             scaling_cpu, scaling_memory,\n             scaling_concurrency, created_at, updated_at)\n            VALUES\n            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,\n             ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 19
+    },
+    "nullable": []
+  },
+  "hash": "6710be8cc88a0bff2d4574a28f373dcce9c61991ed09109d35fc6a711a575a97"
+}

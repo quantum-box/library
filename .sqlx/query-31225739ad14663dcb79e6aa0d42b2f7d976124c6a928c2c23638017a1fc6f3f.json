@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_llms.models\n            SET provider_id = ?,\n                name = ?,\n                version = ?,\n                capabilities = ?,\n                performance_metrics = ?,\n                pricing = ?,\n                updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "31225739ad14663dcb79e6aa0d42b2f7d976124c6a928c2c23638017a1fc6f3f"
+}

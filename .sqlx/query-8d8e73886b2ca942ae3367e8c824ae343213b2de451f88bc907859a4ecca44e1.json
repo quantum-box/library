@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                INSERT INTO tachyon_apps_order.consumer_order_items (\n                    id, order_id, tenant_id, product_id,\n                    product_name, quantity,\n                    unit_price_nanodollar, subtotal_nanodollar\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "8d8e73886b2ca942ae3367e8c824ae343213b2de451f88bc907859a4ecca44e1"
+}

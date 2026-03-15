@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_order.clients (\n            id, tenant_id, name, corporation_number, address, representative,\n            capital, industry, listed, founded, email, phone_number, fax_number,\n            created_at, updated_at\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON DUPLICATE KEY UPDATE\n            name = VALUES(name), corporation_number = VALUES(corporation_number), address = VALUES(address), representative = VALUES(representative),\n            capital = VALUES(capital), industry = VALUES(industry), listed = VALUES(listed), founded = VALUES(founded), email = VALUES(email),\n            phone_number = VALUES(phone_number), fax_number = VALUES(fax_number), updated_at = VALUES(updated_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 15
+    },
+    "nullable": []
+  },
+  "hash": "5bdecdea6db8c33e24c787c111e29a8aa65c79f6a2c1fef37d8aca553e84a92f"
+}

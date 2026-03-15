@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO\n                tachyon_apps_compute.environment_variables\n            (id, app_id, env_key, encrypted_value, target,\n             is_secret, created_at, updated_at)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n            encrypted_value = VALUES(encrypted_value),\n            is_secret = VALUES(is_secret),\n            updated_at = VALUES(updated_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "57e7ce1b1f6d32e840a529c09d7658df798ce2cccc1f0702777d2ce49695700b"
+}

@@ -4,9 +4,10 @@ import { createGrpcWebTransport } from "@bufbuild/connect-web";
 import { DatabaseManager } from "./gen/v1/database_manager_connect";
 
 const baseUrl =
-  process.env.NODE_ENV === "production"
-    ? "https://sfa-service.tachy.one"
-    : "http://localhost:50051";
+  process.env.NEXT_PUBLIC_GRPC_API_URL ??
+  (process.env.NODE_ENV === "production"
+    ? "/api/grpc"
+    : "http://localhost:50051");
 
 const webTransport = createGrpcWebTransport({ baseUrl });
 

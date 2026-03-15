@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.oauth2_clients WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "a9cd06de54ac3efd220ca2bbf54c05e0fde355ba4b93157d0a76e111f82e1f90"
+}

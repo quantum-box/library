@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT\n                a as id\n            FROM\n                tachyon_apps_auth._tenant_to_user\n            WHERE b = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 116
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2eb9c37e8d32f47be8ba7304e9252b82e55aa160ec0efed23f43f7c23fa13993"
+}

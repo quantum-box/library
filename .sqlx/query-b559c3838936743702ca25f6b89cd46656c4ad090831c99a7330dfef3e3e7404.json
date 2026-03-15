@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE tachyon_apps_auth.user_platform_consents SET revoked_at = NOW(6) WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "b559c3838936743702ca25f6b89cd46656c4ad090831c99a7330dfef3e3e7404"
+}

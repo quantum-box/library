@@ -91,7 +91,7 @@ impl outbound_sync::SyncDataInputPort for MockSyncData {
 pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
     std::env::set_var(
         "COGNITO_JWK_URL",
-        "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json",
+        "https://cognito-idp.ap-northeast-1.amazonaws.com/your-cognito-user-pool-id/.well-known/jwks.json",
     );
     std::env::set_var("ENVIRONMENT", "test");
     std::env::set_var("SKIP_MINIO_SETUP", "1");

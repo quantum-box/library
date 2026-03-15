@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tachyon_apps_delivery.shipping_destinations (\n            id,\n            name_first,\n            name_last,\n            email,\n            corporate_name,\n            department_name,\n            position_name,\n            postal_code,\n            state,\n            city,\n            address1,\n            address2,\n            phone_number\n        )\n        values (\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?,\n        ?\n        )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 13
+    },
+    "nullable": []
+  },
+  "hash": "34aad04852d1874ed19421d4afd04411f2d2d980353575ecde005e08d480447d"
+}

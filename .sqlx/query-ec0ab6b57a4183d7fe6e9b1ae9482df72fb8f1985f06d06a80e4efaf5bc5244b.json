@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "insert into tachyon_apps_delivery.delivery_slips (\n                id,\n                client_id,\n                purchase_order_id,\n                quotes_id,\n                tenant_id,\n                delivery_date,\n                timezone,\n                currency,\n                billing_info_id,\n                invoice_address_id\n            )\n            values (\n                ?,\n                ?,\n                ?,\n                ?,\n                ?,\n                ?,\n                ?,\n                ?,\n                ?,\n                ?\n            )\n            ON DUPLICATE KEY UPDATE\n                client_id = VALUES(client_id),\n                purchase_order_id = VALUES(purchase_order_id),\n                quotes_id = VALUES(quotes_id),\n                tenant_id = VALUES(tenant_id),\n                delivery_date = VALUES(delivery_date),\n                timezone = VALUES(timezone),\n                currency = VALUES(currency),\n                billing_info_id = VALUES(billing_info_id),\n                invoice_address_id = VALUES(invoice_address_id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "ec0ab6b57a4183d7fe6e9b1ae9482df72fb8f1985f06d06a80e4efaf5bc5244b"
+}

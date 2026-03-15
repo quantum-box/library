@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            DELETE FROM product_service_specs\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "cc39d1a0c155f72cfacaa7bbb4e07b2b873e1c1aeb0da3ec249225bfca0ceeb7"
+}

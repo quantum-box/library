@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_database_manager.fields \n                (id, tenant_id, object_id, field_name, datatype, datatype_meta, is_indexed, field_num, meta_json)\n            VALUES\n                (?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                field_name = VALUES(field_name),\n                datatype = VALUES(datatype),\n                datatype_meta = VALUES(datatype_meta),\n                is_indexed = VALUES(is_indexed),\n                field_num = VALUES(field_num),\n                meta_json = VALUES(meta_json);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "bed64ea6b8f87a4b042dbb7dd19dfc8a651803c2e225b2a7abc318c552be0d3d"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            SELECT EXISTS(\n                SELECT 1 FROM tachyon_apps_iac.manifest_templates\n                WHERE platform_id = ?\n            ) as exists_flag\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists_flag",
+        "type_info": {
+          "type": "LongLong",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 1
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "201521b05ca2b607a4c5deed2d42344ae5b75fd2f859dcdde9e0a25ea39a1d96"
+}

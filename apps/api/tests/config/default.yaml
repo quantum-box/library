@@ -18,7 +18,7 @@ dependencies:
     AWS_EC2_METADATA_DISABLED: "true"
     ENVIRONMENT: test
     PORT: "50063"
-    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json
+    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/your-cognito-user-pool-id/.well-known/jwks.json
     # Must align with seeded tenant ids in scripts/seeds/n1-seed/001-auth-tenants.yaml
     LIBRARY_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
     DATABASE_URL: mysql://root:@127.0.0.1:15000/library
@@ -41,8 +41,8 @@ tachyon_api:
     ENVIRONMENT: test
     PORT: "50050"
     ROOT_ID: tn_01hjryxysgey07h5jz5wagqj0m
-    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json
-    COGNITO_USER_POOL_ID: ap-northeast-1_8Ga4bK5M4
+    COGNITO_JWK_URL: https://cognito-idp.ap-northeast-1.amazonaws.com/your-cognito-user-pool-id/.well-known/jwks.json
+    COGNITO_USER_POOL_ID: your-cognito-user-pool-id
     AWS_EC2_METADATA_DISABLED: "true"
     PAYMENT_SKIP_BILLING: "true"
     USE_MOCK_LLM_PROVIDER: "true"

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_crm.incoming_webhook_events (\n                event_id, portal_id, created_at\n            ) VALUES (?, ?, ?)\n            ON DUPLICATE KEY UPDATE\n                created_at = VALUES(created_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "607d29ae179a10d254a29162f16cebe2c0ba608c5546ca0f8024881c1d59e6c8"
+}

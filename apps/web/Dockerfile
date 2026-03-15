@@ -1,59 +1,35 @@
-# This Dockerfile is copy-pasted into our main docs at /docs/handbook/deploying-with-docker.
-# Make sure you update both files!
-
 FROM node:20-alpine AS builder
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat
 RUN apk update
-# Set working directory
 WORKDIR /app
-RUN yarn global add turbo
+
+# Install dependencies
+COPY package.json yarn.lock ./
+COPY apps/web/package.json ./apps/web/
+RUN yarn install --frozen-lockfile --network-timeout 600000
+
+# Copy source
 COPY . .
-RUN turbo prune library --docker
 
-# Add lockfile and package.json's of isolated subworkspace
-FROM node:20-alpine AS installer
-RUN apk add --no-cache libc6-compat
-RUN apk update
-WORKDIR /app
-
-# First install the dependencies (as they change less often)
-COPY .gitignore .gitignore
-COPY --from=builder /app/out/json/ .
-COPY --from=builder /app/out/yarn.lock ./yarn.lock
-RUN yarn install --network-timeout 600000
-
-# Build the project
-COPY --from=builder /app/out/full/ .
-COPY ./turbo.json ./turbo.json
-
-# Uncomment and use build args to enable remote caching
-# ARG TURBO_TEAM
-# ENV TURBO_TEAM=$TURBO_TEAM
-
-# ARG TURBO_TOKEN
-# ENV TURBO_TOKEN=$TURBO_TOKEN
+# Build args for public env vars
 ARG NEXT_PUBLIC_BACKEND_API_URL
-RUN touch .env.production
-RUN echo "NEXT_PUBLIC_BACKEND_API_URL=$NEXT_PUBLIC_BACKEND_API_URL" >> .env.production
+ENV NEXT_PUBLIC_BACKEND_API_URL=$NEXT_PUBLIC_BACKEND_API_URL
 
-RUN yarn turbo run build --filter=library...
+RUN yarn workspace library build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Don't run production as root
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 USER nextjs
 
-COPY --from=installer /app/apps/library/next.config.js .
-COPY --from=installer /app/apps/library/package.json .
+COPY --from=builder /app/apps/web/next.config.js .
+COPY --from=builder /app/apps/web/package.json .
 
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=installer --chown=nextjs:nodejs /app/apps/library/.next/standalone .
-COPY --from=installer --chown=nextjs:nodejs /app/apps/library/.next/static ./apps/library/.next/static
-COPY --from=installer --chown=nextjs:nodejs /app/apps/library/public ./apps/library/public
+# Leverage output traces to reduce image size
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone .
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 
-CMD node ./apps/library/server.js
+CMD node ./apps/web/server.js

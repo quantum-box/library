@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM tachyon_apps_auth.authorization_codes WHERE expires_at < NOW(6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "969e16d31f35c000c56334d79713959d46e4b3c6aec2f1d3c760ceaeffae5623"
+}

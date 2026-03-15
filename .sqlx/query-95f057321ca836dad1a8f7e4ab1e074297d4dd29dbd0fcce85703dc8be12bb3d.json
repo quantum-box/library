@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            UPDATE tachyon_apps_compute.compute_apps SET\n            name = ?, repository_url = ?,\n            repository_owner = ?, repository_name = ?,\n            default_branch = ?, framework = ?,\n            deployment_target = ?,\n            connection_id = ?, root_directory = ?,\n            build_command = ?, install_command = ?,\n            output_directory = ?, node_version = ?,\n            status = ?, production_deployment_id = ?,\n            d1_bindings = ?, updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 18
+    },
+    "nullable": []
+  },
+  "hash": "95f057321ca836dad1a8f7e4ab1e074297d4dd29dbd0fcce85703dc8be12bb3d"
+}

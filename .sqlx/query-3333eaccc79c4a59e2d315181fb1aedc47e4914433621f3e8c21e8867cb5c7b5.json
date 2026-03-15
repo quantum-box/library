@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n            INSERT INTO tachyon_apps_auth.policy_statement_action_patterns \n                (statement_id, context_pattern, name_pattern)\n            VALUES (?, ?, ?)\n            ON DUPLICATE KEY UPDATE statement_id = VALUES(statement_id)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "3333eaccc79c4a59e2d315181fb1aedc47e4914433621f3e8c21e8867cb5c7b5"
+}
