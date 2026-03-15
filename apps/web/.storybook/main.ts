@@ -64,9 +64,6 @@ const config: StorybookConfig = {
 			'node:process': require.resolve('process/browser'),
 			'node:path': require.resolve('path-browserify'),
 			'node:os': require.resolve('os-browserify/browser'),
-			// Use built dist files for monorepo packages
-			// Note: packages/react must be built before running storybook build
-			'@tachyon-apps/react': resolve(__dirname, '../../../packages/react/dist'),
 		}
 
 		updatedConfig.module = updatedConfig.module || {}

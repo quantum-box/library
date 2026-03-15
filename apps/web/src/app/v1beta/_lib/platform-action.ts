@@ -1,6 +1,5 @@
 import { auth } from '@/app/(auth)/auth'
 import { type GraphqlSdk, getSdkPlatform } from '@/lib/apiClient'
-import { extractJsonFromErrorMessage } from '@tachyon-apps/react'
 import { ClientError } from 'graphql-request'
 import { RedirectType, redirect } from 'next/navigation'
 import 'server-only'
@@ -150,9 +149,17 @@ export const platformAction = async <T>(
 				)
 			}
 		} else {
-			const extractedJson = extractJsonFromErrorMessage(
-				err,
-			) as ErrorResponse | null
+			const errorMessage =
+				err instanceof Error ? err.message : String(err ?? '')
+			let extractedJson: ErrorResponse | null = null
+			try {
+				const jsonMatch = errorMessage.match(/\{[\s\S]*\}/)
+				if (jsonMatch) {
+					extractedJson = JSON.parse(jsonMatch[0]) as ErrorResponse
+				}
+			} catch {
+				// ignore parse failures
+			}
 
 			if (extractedJson?.response?.errors?.[0]) {
 				const graphqlError = extractedJson.response.errors[0]
