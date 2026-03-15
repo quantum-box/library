@@ -37,6 +37,7 @@ jobs:
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: apps/web
+          autoAcceptChanges: main
           onlyChanged: true
           exitOnceUploaded: true
           skip: "@(renovate/**|dependabot/**)"

@@ -1,10 +1,8 @@
-use super::domain::{
-    NewOperatorOwnerMethod, PolicyActionRequest,
-};
+use super::domain::{NewOperatorOwnerMethod, PolicyActionRequest};
 use super::executor::{ExecutorAction, MultiTenancyAction};
 use super::types::{
-    Identifier, OperatorId, PlatformId, PolicyId,
-    ServiceAccountId, TenantId, UserId,
+    Identifier, OperatorId, PlatformId, PolicyId, ServiceAccountId,
+    TenantId, UserId,
 };
 
 // ─────────────── Policy check inputs ──────────────────

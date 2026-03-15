@@ -285,7 +285,6 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct ParseIdError {
     pub typename: &'static str,

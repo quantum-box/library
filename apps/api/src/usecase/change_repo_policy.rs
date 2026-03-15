@@ -60,9 +60,7 @@ impl ChangeRepoPolicyInputPort for ChangeRepoPolicy {
                     executor: input.executor,
                     multi_tenancy: input.multi_tenancy,
                     user_id: &input.target_user_id.parse()?,
-                    policy_id: &tachyon_sdk::auth::PolicyId::new(
-                        policy_id,
-                    ),
+                    policy_id: &tachyon_sdk::auth::PolicyId::new(policy_id),
                     tenant_id: &tenant_id,
                     resource_scope: &resource_trn,
                 },

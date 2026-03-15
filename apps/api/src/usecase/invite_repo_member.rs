@@ -129,9 +129,7 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
                     executor: input.executor,
                     multi_tenancy: input.multi_tenancy,
                     user_id: user.id(),
-                    policy_id: &tachyon_sdk::auth::PolicyId::new(
-                        policy_id,
-                    ),
+                    policy_id: &tachyon_sdk::auth::PolicyId::new(policy_id),
                     tenant_id: &tenant_id,
                     resource_scope: &resource_trn,
                 },

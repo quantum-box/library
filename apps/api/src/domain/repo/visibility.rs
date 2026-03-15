@@ -63,7 +63,8 @@ mod tests {
         let visibility_service = VisibilityService::new();
 
         // TODO: add English comment
-        let mut mock_executor = tachyon_sdk::auth::MockExecutorAction::new();
+        let mut mock_executor =
+            tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(true);
 
         // TODO: add English comment
@@ -78,7 +79,8 @@ mod tests {
         let visibility_service = VisibilityService::new();
 
         // TODO: add English comment
-        let mut mock_executor = tachyon_sdk::auth::MockExecutorAction::new();
+        let mut mock_executor =
+            tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(true);
 
         // TODO: add English comment
@@ -93,7 +95,8 @@ mod tests {
         let visibility_service = VisibilityService::new();
 
         // TODO: add English comment
-        let mut mock_executor = tachyon_sdk::auth::MockExecutorAction::new();
+        let mut mock_executor =
+            tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(false);
         mock_executor.expect_has_tenant_id().return_once(|_| true);
 
@@ -109,7 +112,8 @@ mod tests {
         let visibility_service = VisibilityService::new();
 
         // TODO: add English comment
-        let mut mock_executor = tachyon_sdk::auth::MockExecutorAction::new();
+        let mut mock_executor =
+            tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(false);
         mock_executor.expect_has_tenant_id().return_once(|_| true);
 

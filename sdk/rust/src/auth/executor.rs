@@ -1,7 +1,5 @@
 use super::domain::{ServiceAccount, User};
-use super::types::{
-    OperatorId, PlatformId, TenantId, UserId,
-};
+use super::types::{OperatorId, PlatformId, TenantId, UserId};
 use std::fmt::Debug;
 
 // ─────────────── ExecutorAction trait ──────────────────
@@ -18,9 +16,7 @@ pub trait ExecutorAction: Debug + Send + Sync + 'static {
     fn is_none(&self) -> bool;
     fn get_user_id(&self) -> errors::Result<UserId> {
         if self.get_id().is_empty() {
-            Err(errors::Error::business_logic(
-                "User id is empty",
-            ))
+            Err(errors::Error::business_logic("User id is empty"))
         } else {
             Ok(self.get_id().parse()?)
         }
@@ -32,9 +28,7 @@ pub trait ExecutorAction: Debug + Send + Sync + 'static {
 /// Trait representing a multi-tenancy context for a
 /// request.
 #[cfg_attr(feature = "test", mockall::automock)]
-pub trait MultiTenancyAction:
-    Debug + Send + Sync + 'static
-{
+pub trait MultiTenancyAction: Debug + Send + Sync + 'static {
     fn platform_id(&self) -> Option<PlatformId>;
     fn operator_id(&self) -> Option<OperatorId>;
     fn get_operator_id(&self) -> errors::Result<OperatorId>;
@@ -64,12 +58,8 @@ impl ExecutorAction for Executor {
     fn has_tenant_id(&self, tenant_id: &TenantId) -> bool {
         match self {
             Self::SystemUser => true,
-            Self::User(u) => {
-                u.tenants.iter().any(|t| t == tenant_id)
-            }
-            Self::ServiceAccount(sa) => {
-                sa.tenant_id == *tenant_id
-            }
+            Self::User(u) => u.tenants.iter().any(|t| t == tenant_id),
+            Self::ServiceAccount(sa) => sa.tenant_id == *tenant_id,
             Self::None => false,
         }
     }
@@ -141,13 +131,9 @@ impl MultiTenancyAction for MultiTenancy {
         self.operator.clone()
     }
 
-    fn get_operator_id(
-        &self,
-    ) -> errors::Result<OperatorId> {
+    fn get_operator_id(&self) -> errors::Result<OperatorId> {
         self.operator.clone().ok_or_else(|| {
-            errors::Error::business_logic(
-                "Operator ID is required",
-            )
+            errors::Error::business_logic("Operator ID is required")
         })
     }
 }

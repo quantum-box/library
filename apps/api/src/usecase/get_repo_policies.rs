@@ -47,10 +47,7 @@ impl GetRepoPoliciesInputPort for GetRepoPolicies {
         // Get user policies scoped to this resource
         let user_policies = self
             .user_policy_mapping_repo
-            .find_by_resource_scope(
-                input.tenant_id,
-                input.resource_trn,
-            )
+            .find_by_resource_scope(input.tenant_id, input.resource_trn)
             .await?;
 
         tracing::info!(

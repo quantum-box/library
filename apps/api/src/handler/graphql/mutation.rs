@@ -153,7 +153,8 @@ impl LibraryMutation {
         input: input::CreateOperatorInput,
     ) -> Result<Operator> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
 
         let resp = sdk
@@ -206,7 +207,8 @@ impl LibraryMutation {
         role: Option<crate::domain::OrgRole>,
     ) -> Result<User> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let platform_id = platform_id
@@ -247,7 +249,8 @@ impl LibraryMutation {
         input: ChangeOrgMemberRoleInput,
     ) -> Result<User> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let tenant_id = input.tenant_id.parse::<OperatorId>()?;
@@ -282,7 +285,8 @@ impl LibraryMutation {
         input: CreateRepoInput,
     ) -> Result<Repo> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -315,7 +319,8 @@ impl LibraryMutation {
         input: input::UpdateRepoInput,
     ) -> Result<Repo> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let input::UpdateRepoInput {
             org_username,
@@ -364,7 +369,8 @@ impl LibraryMutation {
         repo_username: String,
     ) -> Result<String> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
 
         ctx.delete_repo
@@ -386,7 +392,8 @@ impl LibraryMutation {
         input: ChangeRepoUsernameInput,
     ) -> Result<Repo> {
         let _executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let _multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let _multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -408,7 +415,8 @@ impl LibraryMutation {
         input: AddDataInputData,
     ) -> Result<Data> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -433,7 +441,8 @@ impl LibraryMutation {
         input: AddDataInputData,
     ) -> Result<Data> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let (data, properties) = ctx
             .data::<Arc<LibraryApp>>()?
@@ -520,7 +529,8 @@ impl LibraryMutation {
         input: UpdateDataInputData,
     ) -> Result<Data> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         // GitHub sync is handled in the usecase layer
         let (data, _properties) = ctx
@@ -557,7 +567,8 @@ impl LibraryMutation {
         }
 
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -583,7 +594,8 @@ impl LibraryMutation {
         input: PropertyInput,
     ) -> Result<Property> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Validate that property name doesn't start with "ext_" (reserved for system extensions)
@@ -657,7 +669,8 @@ impl LibraryMutation {
         property_id: String,
     ) -> Result<String> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         ctx.data::<Arc<LibraryApp>>()?
             .delete_property
@@ -681,7 +694,8 @@ impl LibraryMutation {
         input: input::UpdateOrganizationInput,
     ) -> Result<Organization> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -707,7 +721,8 @@ impl LibraryMutation {
         input: input::CreateOrganizationInput,
     ) -> Result<Organization> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -736,7 +751,8 @@ impl LibraryMutation {
         input: input::CreateApiKeyInput,
     ) -> Result<ApiKeyResponse> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         // TODO: add English comment
         let result = ctx
@@ -765,7 +781,8 @@ impl LibraryMutation {
         input: input::CreateSourceInput,
     ) -> Result<Source> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
@@ -811,7 +828,8 @@ impl LibraryMutation {
         input: input::UpdateSourceInput,
     ) -> Result<Source> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
@@ -858,7 +876,8 @@ impl LibraryMutation {
         source_id: String,
     ) -> Result<String> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
@@ -941,9 +960,9 @@ impl LibraryMutation {
         state: String,
     ) -> Result<GitHubConnection> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let auth_app =
-            ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
 
         // Get secret from GitHub client (IAC) or environment
@@ -1004,18 +1023,16 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
     ) -> Result<bool> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let auth_app =
-            ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
 
         auth_app
-            .delete_oauth_token(
-                &tachyon_sdk::auth::DeleteOAuthTokenInput {
-                    executor,
-                    multi_tenancy,
-                    provider: "github",
-                },
-            )
+            .delete_oauth_token(&tachyon_sdk::auth::DeleteOAuthTokenInput {
+                executor,
+                multi_tenancy,
+                provider: "github",
+            })
             .await
             .map_err(|e| {
                 tracing::error!("Failed to delete GitHub token: {:?}", e);
@@ -1035,7 +1052,8 @@ impl LibraryMutation {
         input: SyncToGitHubInput,
     ) -> Result<SyncResult> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Get data and properties
@@ -1113,7 +1131,8 @@ impl LibraryMutation {
         input: BulkSyncExtGithubInput,
     ) -> Result<BulkSyncExtGithubResult> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let repo_configs = input
@@ -1159,7 +1178,8 @@ impl LibraryMutation {
         input: EnableGitHubSyncInput,
     ) -> Result<EnableGitHubSyncResult> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Create ext_github property (bypassing the ext_ validation since this is system use)
@@ -1197,7 +1217,8 @@ impl LibraryMutation {
         input: EnableLinearSyncInput,
     ) -> Result<EnableLinearSyncResult> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let properties = app
@@ -1254,7 +1275,8 @@ impl LibraryMutation {
         input: DisableGitHubSyncInput,
     ) -> Result<DisableGitHubSyncResult> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Find and delete ext_github property
@@ -1310,7 +1332,8 @@ impl LibraryMutation {
         input: InviteRepoMemberInput,
     ) -> Result<bool> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         app.invite_repo_member
@@ -1340,7 +1363,8 @@ impl LibraryMutation {
         input: RemoveRepoMemberInput,
     ) -> Result<bool> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         app.remove_repo_member
@@ -1370,7 +1394,8 @@ impl LibraryMutation {
         input: ChangeRepoMemberRoleInput,
     ) -> Result<bool> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         app.change_repo_member_role
@@ -1406,7 +1431,8 @@ impl LibraryMutation {
         use super::model::{ImportError, ImportMarkdownResult};
 
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Build property mappings

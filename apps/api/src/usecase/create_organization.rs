@@ -88,7 +88,8 @@ impl CreateOrganizationInputPort for CreateOrganization {
                 .auth_app
                 .attach_user_policy(&AttachUserPolicyInput {
                     executor: &tachyon_sdk::auth::Executor::SystemUser,
-                    multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
+                    multi_tenancy:
+                        &tachyon_sdk::auth::MultiTenancy::default(),
                     user_id: &user_id,
                     policy_id: &policy_id,
                     tenant_id: &tenant_id,

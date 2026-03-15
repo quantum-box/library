@@ -126,7 +126,9 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
                         executor: input.executor,
                         multi_tenancy: input.multi_tenancy,
                         user_id: &user_id,
-                        policy_id: &tachyon_sdk::auth::PolicyId::new(policy_id),
+                        policy_id: &tachyon_sdk::auth::PolicyId::new(
+                            policy_id,
+                        ),
                         tenant_id: &tenant_id,
                         resource_scope: &resource_trn,
                     },
@@ -141,7 +143,9 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
                     executor: input.executor,
                     multi_tenancy: input.multi_tenancy,
                     user_id: &user_id,
-                    policy_id: &tachyon_sdk::auth::PolicyId::new(new_policy_id),
+                    policy_id: &tachyon_sdk::auth::PolicyId::new(
+                        new_policy_id,
+                    ),
                     tenant_id: &tenant_id,
                     resource_scope: &resource_trn,
                 },

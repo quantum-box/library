@@ -8,13 +8,12 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tachyon_sdk::auth::{
-    self, AuthApp, Identifier, Operator, Policy,
-    PolicyId, PublicApiKey, PublicApiKeyId, PublicApiKeyValue,
-    ServiceAccount, ServiceAccountId, TenantHierarchy, TenantId, User,
-    UserId,
-};
 use tachyon_sdk::apis::configuration::Configuration;
+use tachyon_sdk::auth::{
+    self, AuthApp, Identifier, Operator, Policy, PolicyId, PublicApiKey,
+    PublicApiKeyId, PublicApiKeyValue, ServiceAccount, ServiceAccountId,
+    TenantHierarchy, TenantId, User, UserId,
+};
 
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
@@ -101,10 +100,8 @@ impl SdkAuthApp {
         tenant_id: &TenantId,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "x-operator-id",
-            tenant_id.as_str().parse().unwrap(),
-        );
+        headers
+            .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
@@ -367,10 +364,7 @@ impl SdkAuthApp {
         let resp: SdkOperatorListResp = Self::rest_get_query(
             &config,
             "/v1/auth/operators/by-user",
-            &[
-                ("platform_id", platform_id.as_str()),
-                ("user_id", user_id),
-            ],
+            &[("platform_id", platform_id.as_str()), ("user_id", user_id)],
         )
         .await?;
 
@@ -932,18 +926,14 @@ fn user_from_sdk_model(
         .parse()
         .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
     let username = id.to_string();
-    let email: Option<String> = user
-        .email
-        .as_ref()
-        .and_then(|e| e.as_ref())
-        .cloned();
-    let name: Option<String> = user
-        .name
-        .as_ref()
-        .and_then(|n| n.as_ref())
-        .cloned();
-    let role: tachyon_sdk::auth::DefaultRole =
-        user.role.parse().unwrap_or(tachyon_sdk::auth::DefaultRole::General);
+    let email: Option<String> =
+        user.email.as_ref().and_then(|e| e.as_ref()).cloned();
+    let name: Option<String> =
+        user.name.as_ref().and_then(|n| n.as_ref()).cloned();
+    let role: tachyon_sdk::auth::DefaultRole = user
+        .role
+        .parse()
+        .unwrap_or(tachyon_sdk::auth::DefaultRole::General);
 
     Ok(User {
         id,
@@ -970,18 +960,14 @@ fn user_from_sdk_user_response(
         .parse()
         .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
     let username = id.to_string();
-    let email: Option<String> = resp
-        .email
-        .as_ref()
-        .and_then(|e| e.as_ref())
-        .cloned();
-    let name: Option<String> = resp
-        .name
-        .as_ref()
-        .and_then(|n| n.as_ref())
-        .cloned();
-    let role: tachyon_sdk::auth::DefaultRole =
-        resp.role.parse().unwrap_or(tachyon_sdk::auth::DefaultRole::General);
+    let email: Option<String> =
+        resp.email.as_ref().and_then(|e| e.as_ref()).cloned();
+    let name: Option<String> =
+        resp.name.as_ref().and_then(|n| n.as_ref()).cloned();
+    let role: tachyon_sdk::auth::DefaultRole = resp
+        .role
+        .parse()
+        .unwrap_or(tachyon_sdk::auth::DefaultRole::General);
     let tenants: Vec<TenantId> = resp
         .tenants
         .iter()
@@ -1014,8 +1000,10 @@ fn user_from_rest_user_response(
     let username = id.to_string();
     let email: Option<String> = resp.email.clone();
     let name: Option<String> = resp.name.clone();
-    let role: tachyon_sdk::auth::DefaultRole =
-        resp.role.parse().unwrap_or(tachyon_sdk::auth::DefaultRole::General);
+    let role: tachyon_sdk::auth::DefaultRole = resp
+        .role
+        .parse()
+        .unwrap_or(tachyon_sdk::auth::DefaultRole::General);
     let tenants: Vec<TenantId> = resp
         .tenants
         .iter()
@@ -1057,13 +1045,15 @@ fn api_key_from_sdk(
     resp: &tachyon_sdk::models::ApiKeyResponse,
     tenant_id: &TenantId,
 ) -> errors::Result<PublicApiKey> {
-    let id: PublicApiKeyId = resp.id.parse().map_err(|e| {
-        sdk_err(format!("Invalid api key id: {e}"))
-    })?;
+    let id: PublicApiKeyId = resp
+        .id
+        .parse()
+        .map_err(|e| sdk_err(format!("Invalid api key id: {e}")))?;
     let sa_id: ServiceAccountId = resp.service_account_id.clone().into();
-    let value: PublicApiKeyValue = resp.value.parse().map_err(|e| {
-        sdk_err(format!("Invalid api key value: {e}"))
-    })?;
+    let value: PublicApiKeyValue = resp
+        .value
+        .parse()
+        .map_err(|e| sdk_err(format!("Invalid api key value: {e}")))?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
         .map_err(|e| sdk_err(&e))?
         .with_timezone(&chrono::Utc);
@@ -1657,8 +1647,7 @@ impl AuthApp for SdkAuthApp {
         _input: &auth::FindPolicyByNameInput<'a>,
     ) -> errors::Result<Option<Policy>> {
         Err(errors::Error::internal_server_error(
-            "find_policy_by_name not implemented in SdkAuthApp"
-                .to_string(),
+            "find_policy_by_name not implemented in SdkAuthApp".to_string(),
         ))
     }
 
@@ -1891,8 +1880,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
             Some(token.scopes.join(" "))
         };
 
-        let sdk_tenant_id =
-            TenantId::new(&token.tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(&token.tenant_id.to_string())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let body = serde_json::json!({
             "provider": token.provider.to_string(),
@@ -1917,8 +1905,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         tenant_id: &value_object::TenantId,
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<Option<inbound_sync_domain::StoredOAuthToken>> {
-        let sdk_tenant_id =
-            TenantId::new(&tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(&tenant_id.to_string())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         match SdkAuthApp::rest_get::<RestOAuthTokenDetail>(&config, &path)
@@ -1956,11 +1943,9 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         tenant_id: &value_object::TenantId,
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<()> {
-        let sdk_tenant_id =
-            TenantId::new(&tenant_id.to_string())?;
+        let sdk_tenant_id = TenantId::new(&tenant_id.to_string())?;
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
-        SdkAuthApp::rest_delete(&config, &path)
-            .await
+        SdkAuthApp::rest_delete(&config, &path).await
     }
 }

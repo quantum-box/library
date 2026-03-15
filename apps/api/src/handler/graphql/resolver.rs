@@ -34,7 +34,8 @@ impl LibraryQuery {
     #[tracing::instrument(name = "library_me", skip(self, ctx))]
     async fn me(&self, ctx: &Context<'_>) -> Result<User> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
 
         // Resolve operator_id from multi_tenancy
@@ -61,7 +62,8 @@ impl LibraryQuery {
         username: String,
     ) -> Result<Organization> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         let output = ctx
             .view_org
@@ -90,7 +92,8 @@ impl LibraryQuery {
         repo_username: String,
     ) -> Result<Repo> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         let output = ctx
             .view_repo
@@ -117,7 +120,8 @@ impl LibraryQuery {
         data_id: String,
     ) -> Result<Data> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         let output = ctx
             .view_data
@@ -146,7 +150,8 @@ impl LibraryQuery {
         page: Option<u32>,
     ) -> Result<DataList> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         let output = ctx
             .view_data_list
@@ -177,7 +182,8 @@ impl LibraryQuery {
         repo_username: String,
     ) -> Result<Vec<Property>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         Ok(ctx
             .get_properties
@@ -206,7 +212,8 @@ impl LibraryQuery {
         source_id: String,
     ) -> Result<Source> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
@@ -236,7 +243,8 @@ impl LibraryQuery {
         org_username: String,
     ) -> Result<Vec<PublicApiKey>> {
         let executor = ctx.data_unchecked::<tachyon_sdk::auth::Executor>();
-        let multi_tenancy = ctx.data_unchecked::<tachyon_sdk::auth::MultiTenancy>();
+        let multi_tenancy =
+            ctx.data_unchecked::<tachyon_sdk::auth::MultiTenancy>();
         let app = ctx.data_unchecked::<Arc<LibraryApp>>();
 
         // TODO: add English comment
@@ -263,9 +271,9 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<GitHubConnection> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let auth_app =
-            ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
 
         let token = auth_app
             .get_oauth_token_by_provider(
@@ -314,9 +322,9 @@ impl LibraryQuery {
         #[graphql(desc = "Page number (1-indexed)")] page: Option<i32>,
     ) -> Result<Vec<GitHubRepository>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let auth_app =
-            ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
 
         // Get the OAuth token
         let token = auth_app
@@ -370,7 +378,8 @@ impl LibraryQuery {
         input: ListGitHubDirectoryInput,
     ) -> Result<GitHubDirectoryContents> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let output = app
@@ -421,7 +430,8 @@ impl LibraryQuery {
         input: GetMarkdownPreviewsInput,
     ) -> Result<Vec<MarkdownImportPreview>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let previews = app
@@ -464,7 +474,8 @@ impl LibraryQuery {
         input: GetMarkdownPreviewsInput,
     ) -> Result<FrontmatterAnalysis> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let analysis = app
@@ -515,7 +526,8 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<Vec<Integration>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let database_app = ctx.data::<Arc<database_manager::App>>()?;
 
         let output = database_app
@@ -561,7 +573,8 @@ impl LibraryQuery {
         _tenant_id: String,
     ) -> Result<Vec<Connection>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let database_app = ctx.data::<Arc<database_manager::App>>()?;
 
         let output = database_app
@@ -620,7 +633,8 @@ impl LibraryQuery {
         &self,
         ctx: &Context<'_>,
     ) -> Result<Vec<LinearTeam>> {
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let oauth_token_repo = ctx
             .data::<Arc<dyn inbound_sync_domain::OAuthTokenRepository>>()?;
 
@@ -677,7 +691,8 @@ impl LibraryQuery {
         ctx: &Context<'_>,
         team_id: Option<String>,
     ) -> Result<Vec<LinearProject>> {
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let oauth_token_repo = ctx
             .data::<Arc<dyn inbound_sync_domain::OAuthTokenRepository>>()?;
 
@@ -733,7 +748,8 @@ impl LibraryQuery {
         team_id: Option<String>,
         project_id: Option<String>,
     ) -> Result<Vec<LinearIssue>> {
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let oauth_token_repo = ctx
             .data::<Arc<dyn inbound_sync_domain::OAuthTokenRepository>>()?;
 
@@ -800,13 +816,13 @@ impl Organization {
     #[tracing::instrument(skip(ctx))]
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         if executor.is_none() {
             return Ok(vec![]);
         }
-        let auth_app =
-            ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
+        let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
         let tenant_id: value_object::TenantId =
             value_object::TenantId::new(&self.id)
                 .map_err(|e| e.extend())?;
@@ -839,7 +855,8 @@ impl Repo {
         let org_username = self.org_username.clone();
         let repo_username = self.username.clone();
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         let output = ctx
             .view_data_list
@@ -867,7 +884,8 @@ impl Repo {
         let org_username = self.org_username.clone();
         let repo_username = self.username.clone();
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let ctx = ctx.data::<Arc<LibraryApp>>()?;
         Ok(ctx
             .get_properties
@@ -890,7 +908,8 @@ impl Repo {
     #[tracing::instrument(name = "library_sources", skip(self, ctx))]
     async fn sources(&self, ctx: &Context<'_>) -> Result<Vec<Source>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
@@ -925,7 +944,8 @@ impl Repo {
         tracing::info!("[Repo::policies] Called for repo_id: {}", self.id);
 
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // Build TRN for this repository
@@ -1006,7 +1026,8 @@ impl Repo {
         use tachyon_sdk::auth::MultiTenancyAction;
 
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let resource_trn = format!("trn:library:repo:{}", self.id);

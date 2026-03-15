@@ -267,11 +267,9 @@ impl DatabaseApp for DatabaseAppImpl {
                         AppPropertyType::Markdown
                     }
                     domain::PropertyType::Id(type_id) => {
-                        AppPropertyType::Id(
-                            AppTypeId {
-                                auto_generate: type_id.auto_generate,
-                            },
-                        )
+                        AppPropertyType::Id(AppTypeId {
+                            auto_generate: type_id.auto_generate,
+                        })
                     }
                     _ => AppPropertyType::String,
                 },

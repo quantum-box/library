@@ -6,17 +6,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    Identifier, OperatorId, PlatformId, PolicyId,
-    PublicApiKeyId, PublicApiKeyValue, ServiceAccountId,
-    TenantId, UserId,
+    Identifier, OperatorId, PlatformId, PolicyId, PublicApiKeyId,
+    PublicApiKeyValue, ServiceAccountId, TenantId, UserId,
 };
 
 // ───────────────────── DefaultRole ─────────────────────
 
 /// Default role assigned to users within an operator.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "graphql", derive(async_graphql::Enum))]
 pub enum DefaultRole {
     Owner,
@@ -45,9 +42,7 @@ impl FromStr for DefaultRole {
             "Manager" => Ok(Self::Manager),
             "General" => Ok(Self::General),
             "Store" => Ok(Self::Store),
-            other => Err(format!(
-                "unknown DefaultRole: `{other}`"
-            )),
+            other => Err(format!("unknown DefaultRole: `{other}`")),
         }
     }
 }
@@ -99,9 +94,7 @@ impl User {
         &self.email_verified
     }
 
-    pub fn metadata(
-        &self,
-    ) -> Option<&HashMap<String, String>> {
+    pub fn metadata(&self) -> Option<&HashMap<String, String>> {
         self.metadata.as_ref()
     }
 
@@ -350,9 +343,7 @@ pub struct OAuth2ClientCreated {
 // ─────────────────── NewOperatorOwnerMethod ────────────
 
 /// How the owner of a new operator is determined.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "graphql", derive(async_graphql::Enum))]
 pub enum NewOperatorOwnerMethod {
     Inherit,
@@ -383,10 +374,8 @@ pub struct EvaluatePoliciesBatchOutcome {
 /// Trait for querying user information.
 #[async_trait::async_trait]
 pub trait UserQuery: std::fmt::Debug + Send + Sync {
-    async fn find_by_id(
-        &self,
-        id: &UserId,
-    ) -> errors::Result<Option<User>>;
+    async fn find_by_id(&self, id: &UserId)
+        -> errors::Result<Option<User>>;
 
     async fn find_by_tenant(
         &self,

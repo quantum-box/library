@@ -15,7 +15,8 @@ impl User {
     ) -> Result<Vec<Operator>> {
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let _executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let user_id = &self.id;
 

@@ -2,8 +2,7 @@
 //! compatibility with the rest of the workspace.
 
 pub use value_object::{
-    Identifier, OperatorId, PlatformId, ServiceAccountId,
-    TenantId, UserId,
+    Identifier, OperatorId, PlatformId, ServiceAccountId, TenantId, UserId,
 };
 
 use serde::{Deserialize, Serialize};
@@ -12,14 +11,7 @@ use std::str::FromStr;
 
 /// Policy identifier.
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Hash,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
+    Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize,
 )]
 #[serde(transparent)]
 pub struct PolicyId(String);
@@ -35,19 +27,13 @@ impl PolicyId {
 }
 
 impl fmt::Debug for PolicyId {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PolicyId({})", self.0)
     }
 }
 
 impl fmt::Display for PolicyId {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
@@ -86,14 +72,7 @@ impl std::ops::Deref for PolicyId {
 
 /// Public API key identifier.
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Hash,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
+    Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize,
 )]
 #[serde(transparent)]
 pub struct PublicApiKeyId(String);
@@ -109,19 +88,13 @@ impl PublicApiKeyId {
 }
 
 impl fmt::Debug for PublicApiKeyId {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PublicApiKeyId({})", self.0)
     }
 }
 
 impl fmt::Display for PublicApiKeyId {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
@@ -161,10 +134,7 @@ impl PublicApiKeyValue {
 }
 
 impl fmt::Display for PublicApiKeyValue {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

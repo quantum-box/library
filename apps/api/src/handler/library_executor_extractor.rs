@@ -22,7 +22,9 @@ use super::extract_org_username;
 impl From<LibraryExecutor> for tachyon_sdk::auth::Executor {
     fn from(le: LibraryExecutor) -> Self {
         match le.inner {
-            LibraryExecutorKind::User(u) => tachyon_sdk::auth::Executor::User(u),
+            LibraryExecutorKind::User(u) => {
+                tachyon_sdk::auth::Executor::User(u)
+            }
             LibraryExecutorKind::ServiceAccount(sa) => {
                 tachyon_sdk::auth::Executor::ServiceAccount(sa)
             }
@@ -236,7 +238,8 @@ where
                     .view_org
                     .execute(&crate::usecase::ViewOrgInputData {
                         executor: &SystemExecutor,
-                        multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
+                        multi_tenancy:
+                            &tachyon_sdk::auth::MultiTenancy::default(),
                         organization_username: org_username,
                     })
                     .await?;
@@ -295,7 +298,8 @@ where
                     .view_org
                     .execute(&crate::usecase::ViewOrgInputData {
                         executor: &SystemExecutor,
-                        multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
+                        multi_tenancy:
+                            &tachyon_sdk::auth::MultiTenancy::default(),
                         organization_username: org_username,
                     })
                     .await?;

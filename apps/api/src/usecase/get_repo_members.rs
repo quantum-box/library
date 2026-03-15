@@ -45,10 +45,7 @@ impl GetRepoMembersInputPort for GetRepoMembers {
     ) -> errors::Result<Vec<RepoMemberInfo>> {
         let user_policies = self
             .user_policy_mapping_repo
-            .find_by_resource_scope(
-                input.tenant_id,
-                input.resource_trn,
-            )
+            .find_by_resource_scope(input.tenant_id, input.resource_trn)
             .await?;
 
         let mut seen_user_ids = HashSet::new();
@@ -91,9 +88,7 @@ impl GetRepoMembersInputPort for GetRepoMembers {
                 user_id,
                 policy_id: up.policy_id().to_string(),
                 policy_name: policy.map(|p| p.name().to_string()),
-                resource_scope: up
-                    .resource_scope()
-                    .map(|s| s.to_string()),
+                resource_scope: up.resource_scope().map(|s| s.to_string()),
                 assigned_at: *up.assigned_at(),
                 user,
                 permission_source: PermissionSource::Repo,

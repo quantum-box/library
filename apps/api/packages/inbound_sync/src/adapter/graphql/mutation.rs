@@ -76,7 +76,8 @@ impl LibrarySyncMutation {
     ) -> Result<CreateWebhookEndpointOutput> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         // Parse provider config from JSON
         let config: ProviderConfig = serde_json::from_str(&input.config)
@@ -133,7 +134,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlWebhookEndpoint> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 
@@ -160,7 +162,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlWebhookEndpoint> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 
@@ -187,7 +190,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlWebhookEndpoint> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 
@@ -225,7 +229,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlWebhookEndpoint> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 
@@ -260,7 +265,8 @@ impl LibrarySyncMutation {
     ) -> Result<bool> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let id = WebhookEndpointId::from(endpoint_id);
 
@@ -336,7 +342,8 @@ impl LibrarySyncMutation {
         input: ConnectIntegrationInput,
     ) -> Result<GqlConnection> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let tenant = multi_tenancy
             .get_operator_id()
@@ -495,7 +502,8 @@ impl LibrarySyncMutation {
         input: InitOAuthInput,
     ) -> Result<OAuthInitOutput> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let oauth = state.oauth_service.as_ref().ok_or_else(|| {
             async_graphql::Error::new("OAuth service is not configured")
@@ -547,7 +555,8 @@ impl LibrarySyncMutation {
         input: ExchangeOAuthCodeInput,
     ) -> Result<GqlConnection> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let oauth = state.oauth_service.as_ref().ok_or_else(|| {
             async_graphql::Error::new("OAuth service is not configured")
@@ -623,7 +632,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlSyncOperation> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 
@@ -662,7 +672,8 @@ impl LibrarySyncMutation {
         integration_id: String,
     ) -> Result<GqlConnection> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let tenant = multi_tenancy
             .get_operator_id()
@@ -714,7 +725,8 @@ impl LibrarySyncMutation {
     ) -> Result<GqlSyncOperation> {
         let state = ctx.data::<LibrarySyncMutationState>()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         let endpoint_id = WebhookEndpointId::from(input.endpoint_id);
 

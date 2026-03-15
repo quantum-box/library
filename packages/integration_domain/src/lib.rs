@@ -13,8 +13,7 @@ pub use marketplace::*;
 pub use oauth::{
     ExchangeOAuthCodeInput, InitOAuthInput, InitOAuthOutput,
     OAuthClientCredentials, OAuthProvider, OAuthService,
-    OAuthTokenResponse, StoredOAuthToken,
-    StoredOAuthTokenRepository,
+    OAuthTokenResponse, StoredOAuthToken, StoredOAuthTokenRepository,
 };
 
 // Re-export StoredOAuthTokenRepository as OAuthTokenRepository

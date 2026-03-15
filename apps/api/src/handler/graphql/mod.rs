@@ -56,8 +56,7 @@ pub async fn graphql_handler(
     let original_token = executor.original_token.clone();
     let auth_executor: tachyon_sdk::auth::Executor = executor.into();
 
-    let mut req =
-        gql_req.data(auth_executor).data(multi_tenancy.0);
+    let mut req = gql_req.data(auth_executor).data(multi_tenancy.0);
 
     // If the caller provided a Bearer token, create a
     // request-scoped SdkAuthApp that forwards it to
@@ -71,8 +70,9 @@ pub async fn graphql_handler(
     }
 
     let resp = schema.execute(req).await;
-    let body = serde_json::to_string(&resp)
-        .unwrap_or_else(|_| r#"{"errors":[{"message":"serialization failed"}]}"#.to_string());
+    let body = serde_json::to_string(&resp).unwrap_or_else(|_| {
+        r#"{"errors":[{"message":"serialization failed"}]}"#.to_string()
+    });
 
     axum::response::Response::builder()
         .status(StatusCode::OK)
