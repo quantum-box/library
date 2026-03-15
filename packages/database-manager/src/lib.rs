@@ -100,6 +100,7 @@ impl Debug for App {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         create_database_usecase: Arc<dyn CreateDatabaseInputPort>,
         add_property_usecase: Arc<dyn AddPropertyInputPort>,

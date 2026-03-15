@@ -120,3 +120,44 @@ reqwest = { workspace = true, features = ["json"] }
 tracing-subscriber = { workspace = true }
 futures.workspace = true
 tachyon-sdk = { path = "../../sdk/rust", features = ["auth", "graphql", "test"] }
+
+# Integration tests that depend on external auth/notification crates
+[[test]]
+name = "run_tests"
+path = "tests/run_tests.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "import"
+path = "tests/import.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "api_key"
+path = "tests/api_key.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "graphql_api_key"
+path = "tests/graphql_api_key.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "data"
+path = "tests/data.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "organization"
+path = "tests/organization.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "properties"
+path = "tests/properties.rs"
+required-features = ["integration_tests"]
+
+[[test]]
+name = "repos"
+path = "tests/repos.rs"
+required-features = ["integration_tests"]
