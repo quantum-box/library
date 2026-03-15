@@ -271,18 +271,10 @@ impl TryFrom<async_graphql::UploadValue> for InMemoryFile {
     fn try_from(
         value: async_graphql::UploadValue,
     ) -> Result<Self, Self::Error> {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        let mut file = value.content;
-        file.read_to_end(&mut buf).map_err(|e| {
-            Error::parse_from_string(format!(
-                "Failed to read upload content: {e}"
-            ))
-        })?;
         InMemoryFile::new(
             value.filename,
             value.content_type,
-            bytes::Bytes::from(buf),
+            value.content,
         )
     }
 }
