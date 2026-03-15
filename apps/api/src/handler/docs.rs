@@ -20,7 +20,9 @@ use crate::handler::library_executor_extractor::{
     LibraryExecutor, LibraryExecutorKind,
 };
 use crate::usecase::markdown_composer::compose_markdown;
-use crate::usecase::{LibraryOrg, ViewDataInputData, ViewDataListInputData};
+use crate::usecase::{
+    LibraryOrg, ViewDataInputData, ViewDataListInputData,
+};
 
 /// Anonymous executor for unauthenticated public access.
 fn anonymous_executor() -> LibraryExecutor {
@@ -150,8 +152,7 @@ pub async fn view_doc(
         data_id,
     };
 
-    let (data, properties) =
-        library_app.view_data.execute(&input).await?;
+    let (data, properties) = library_app.view_data.execute(&input).await?;
     let markdown = compose_markdown(&data, &properties);
 
     // Strip YAML frontmatter before rendering
@@ -209,8 +210,7 @@ pub async fn view_doc_markdown(
         data_id,
     };
 
-    let (data, properties) =
-        library_app.view_data.execute(&input).await?;
+    let (data, properties) = library_app.view_data.execute(&input).await?;
     let markdown = compose_markdown(&data, &properties);
 
     Ok((

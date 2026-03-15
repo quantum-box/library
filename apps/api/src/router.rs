@@ -570,10 +570,7 @@ pub async fn router(
     // Public docs routes (no authentication required)
     let docs_router = axum::Router::new()
         .route("/docs/:org/:repo", get(handler::docs::list_docs))
-        .route(
-            "/docs/:org/:repo/:data_id",
-            get(handler::docs::view_doc),
-        )
+        .route("/docs/:org/:repo/:data_id", get(handler::docs::view_doc))
         .route(
             "/docs/:org/:repo/:data_id/md",
             get(handler::docs::view_doc_markdown),
