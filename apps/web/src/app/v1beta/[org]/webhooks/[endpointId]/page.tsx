@@ -1,6 +1,5 @@
 'use server'
 
-export const runtime = 'edge'
 
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { EndpointDetailUI } from './components/endpoint-detail-ui'

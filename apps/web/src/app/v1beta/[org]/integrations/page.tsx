@@ -1,6 +1,5 @@
 'use server'
 
-export const runtime = 'edge'
 
 import { authWithCheck } from '@/app/(auth)/auth'
 import { detectLocale } from '@/app/i18n/detect-locale'

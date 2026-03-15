@@ -1,4 +1,3 @@
-export const runtime = 'edge'
 
 import { signOut } from '@/app/(auth)/auth'
 import { detectLocale } from '@/app/i18n/detect-locale'

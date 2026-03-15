@@ -2,7 +2,6 @@ import { NAV_ITEMS } from '@/app/v1beta/_components/constant'
 import { Navigation } from '@/app/v1beta/_components/navigation'
 import { isOwner } from '@/app/v1beta/_lib/repo-permissions'
 
-export const runtime = 'edge'
 
 export default async function V1BetaLayout({
 	children,

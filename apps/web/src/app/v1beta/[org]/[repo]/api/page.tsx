@@ -6,7 +6,6 @@ import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
 import { notFound } from 'next/navigation'
 import { ApiPageUi } from './_components/api-page-ui'
 
-export const runtime = 'edge'
 
 export default async function ApiPage({
 	params: { org, repo },

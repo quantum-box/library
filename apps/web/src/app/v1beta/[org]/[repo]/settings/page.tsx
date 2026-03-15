@@ -7,7 +7,6 @@ import { executeGraphQL, graphql } from '@/lib/graphql'
 import { notFound } from 'next/navigation'
 import { SettingsForm } from './form'
 
-export const runtime = 'edge'
 
 const OrganizationQuery = graphql(`
   query GetOrganization($username: String!) {

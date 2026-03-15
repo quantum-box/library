@@ -1,4 +1,3 @@
-export const runtime = 'edge'
 
 import { signIn } from '@/app/(auth)/auth'
 import { ActionButton } from '@/components/action-button'

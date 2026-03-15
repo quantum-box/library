@@ -1,7 +1,6 @@
 import { authWithCheck } from '../../../(auth)/auth'
 import { NewOrgForm } from './form'
 
-export const runtime = 'edge'
 
 export default async function NewOrg() {
 	const session = await authWithCheck()

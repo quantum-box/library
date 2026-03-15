@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { signUp } from './action'
 import { SignUpForm } from './form'
 
-export const runtime = 'edge'
 
 export default async function SignUpPage() {
 	const session = await auth()

@@ -3,7 +3,6 @@ import { requireOwnerPermission } from '@/app/v1beta/_lib/repo-permissions'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { LinearExtensionSettings } from './linear-extension-settings'
 
-export const runtime = 'edge'
 
 const OrganizationQuery = graphql(`
   query GetOrganization($username: String!) {

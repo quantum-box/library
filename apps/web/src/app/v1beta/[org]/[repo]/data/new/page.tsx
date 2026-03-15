@@ -9,7 +9,6 @@ import {
 import { notFound } from 'next/navigation'
 import { createData } from './action'
 
-export const runtime = 'edge'
 
 export default async function NewDataPage({
 	params: { org, repo },

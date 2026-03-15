@@ -1,6 +1,5 @@
 'use client'
 
-export const runtime = 'edge'
 
 import { Button } from '@/components/ui/button'
 import {

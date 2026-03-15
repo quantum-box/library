@@ -2,7 +2,6 @@ import { auth } from '@/app/(auth)/auth'
 import { baseURL, platformId } from '@/lib/apiClient'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export const runtime = 'edge'
 
 type Params = {
 	params: { org: string; repo: string; dataId: string }
