@@ -177,7 +177,7 @@ export default async function RepositoryPage({
 				allowAnonymous: true,
 			},
 		)
-		repoDataWithTags = resWithTags.repo
+		repoDataWithTags = resWithTags?.repo ?? null
 	} catch (error: unknown) {
 		if (
 			error instanceof PlatformActionError &&
@@ -209,7 +209,7 @@ export default async function RepositoryPage({
 					allowAnonymous: true,
 				},
 			)
-			repoDataWithoutTags = resWithoutTags.repo
+			repoDataWithoutTags = resWithoutTags?.repo ?? null
 		} else {
 			throw error
 		}
