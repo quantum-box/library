@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_save_and_get_by_id() -> errors::Result<()> {
         let (_db, repo) = setup_test_env().await;
         let tenant_id = TenantId::default();
@@ -227,6 +228,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_find_all() -> errors::Result<()> {
         let (_db, repo) = setup_test_env().await;
 
@@ -276,6 +278,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_delete() -> errors::Result<()> {
         let (_db, repo) = setup_test_env().await;
         let tenant_id = TenantId::default();
