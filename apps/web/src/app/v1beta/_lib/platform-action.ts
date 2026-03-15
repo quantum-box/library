@@ -186,9 +186,16 @@ export const platformAction = async <T>(
 		})
 
 		// エラーハンドリング
+		// When onError completes without throwing, the error is
+		// considered handled — return undefined so callers can
+		// fall back to alternative logic instead of crashing
+		// with a 500.
 		if (options?.onError) {
 			await options.onError(platformError)
-		} else if (options?.redirectOnError !== false) {
+			return undefined as unknown as T
+		}
+
+		if (options?.redirectOnError !== false) {
 			const errorState = {
 				message: platformError.message,
 				code: platformError.code,
