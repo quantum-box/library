@@ -32,7 +32,9 @@ export default async function GitHubCallbackPage({ searchParams }: PageProps) {
 	let tenantId: string
 	let integrationId: string
 	try {
-		const decoded = Buffer.from(state, 'hex').toString('utf-8')
+		const decoded = new TextDecoder().decode(
+			new Uint8Array(state.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))),
+		)
 		const parts = decoded.split(':')
 		if (parts.length < 2 || !parts[0] || !parts[1])
 			throw new Error('Invalid state')

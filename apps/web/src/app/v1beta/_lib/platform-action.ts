@@ -200,9 +200,7 @@ export const platformAction = async <T>(
 				message: platformError.message,
 				code: platformError.code,
 			}
-			const encodedError = Buffer.from(JSON.stringify(errorState)).toString(
-				'base64',
-			)
+			const encodedError = btoa(JSON.stringify(errorState))
 			redirect(`?e=${encodedError}`, RedirectType.replace)
 		}
 

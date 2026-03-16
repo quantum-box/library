@@ -65,7 +65,7 @@ export async function GET(
 		orgUsername,
 		returnUrl,
 	}
-	const customState = Buffer.from(JSON.stringify(stateData)).toString('base64')
+	const customState = btoa(JSON.stringify(stateData))
 
 	try {
 		const result = await executeGraphQL<InitOAuthResponse>(InitOAuthMutation, {
