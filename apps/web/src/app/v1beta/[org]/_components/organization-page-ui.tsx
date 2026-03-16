@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DefaultRole, UpdateOrganizationInput } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import {
+	BarChart3,
+	Clock,
 	Database,
 	Globe,
 	Globe2,
@@ -83,6 +86,28 @@ export function OrganizationPageUi({
 	apiKeyListSlot,
 }: OrganizationPageUiProps) {
 	const { t } = useTranslation()
+	const [repoSearch, setRepoSearch] = useState('')
+	const [memberSearch, setMemberSearch] = useState('')
+
+	const filteredRepos = useMemo(() => {
+		if (!repoSearch.trim()) return organization.repos
+		const q = repoSearch.toLowerCase()
+		return organization.repos.filter(
+			r =>
+				r.username.toLowerCase().includes(q) ||
+				(r.description?.toLowerCase().includes(q) ?? false),
+		)
+	}, [repoSearch, organization.repos])
+
+	const filteredMembers = useMemo(() => {
+		if (!memberSearch.trim()) return organization.users
+		const q = memberSearch.toLowerCase()
+		return organization.users.filter(
+			m =>
+				(m.name?.toLowerCase().includes(q) ?? false) ||
+				(m.email?.toLowerCase().includes(q) ?? false),
+		)
+	}, [memberSearch, organization.users])
 
 	return (
 		<div className='flex flex-col min-h-screen'>
@@ -185,6 +210,8 @@ export function OrganizationPageUi({
 											<Input
 												placeholder={t.v1beta.organization.searchRepositories}
 												className='w-full sm:w-64'
+												value={repoSearch}
+												onChange={e => setRepoSearch(e.target.value)}
 											/>
 											{!isViewOnly && (
 												<>
@@ -210,8 +237,8 @@ export function OrganizationPageUi({
 										</div>
 									</div>
 									<div className='grid gap-4'>
-										{organization.repos.length ? (
-											organization.repos.map(db => (
+										{filteredRepos.length ? (
+											filteredRepos.map(db => (
 												<Card key={db.id}>
 													<CardHeader>
 														<CardTitle className='text-lg break-words'>
@@ -295,15 +322,35 @@ export function OrganizationPageUi({
 											<h2 className='text-lg font-semibold mb-4'>
 												{t.v1beta.organization.recentActivity}
 											</h2>
-											<p>{t.v1beta.organization.recentActivityDescription}</p>
+											<Card className='flex flex-col items-center justify-center py-16'>
+												<CardContent className='text-center space-y-3'>
+													<Clock className='w-12 h-12 mx-auto text-muted-foreground/50' />
+													<h3 className='text-lg font-semibold'>
+														{t.v1beta.organization.recentActivity}
+													</h3>
+													<p className='text-sm text-muted-foreground max-w-md'>
+														{t.v1beta.organization.recentActivityDescription}
+													</p>
+													<Badge variant='secondary'>Coming Soon</Badge>
+												</CardContent>
+											</Card>
 										</TabsContent>
 										<TabsContent value='insights'>
 											<h2 className='text-lg font-semibold mb-4'>
 												{t.v1beta.organization.organizationInsights}
 											</h2>
-											<p>
-												{t.v1beta.organization.organizationInsightsDescription}
-											</p>
+											<Card className='flex flex-col items-center justify-center py-16'>
+												<CardContent className='text-center space-y-3'>
+													<BarChart3 className='w-12 h-12 mx-auto text-muted-foreground/50' />
+													<h3 className='text-lg font-semibold'>
+														{t.v1beta.organization.organizationInsights}
+													</h3>
+													<p className='text-sm text-muted-foreground max-w-md'>
+														{t.v1beta.organization.organizationInsightsDescription}
+													</p>
+													<Badge variant='secondary'>Coming Soon</Badge>
+												</CardContent>
+											</Card>
 										</TabsContent>
 										<TabsContent value='members'>
 											<div className='space-y-4'>
@@ -321,6 +368,8 @@ export function OrganizationPageUi({
 												<Input
 													placeholder={t.v1beta.organization.searchMembers}
 													className='w-full max-w-sm'
+													value={memberSearch}
+													onChange={e => setMemberSearch(e.target.value)}
 												/>
 												<Card>
 													<CardContent className='p-0'>
@@ -345,7 +394,7 @@ export function OrganizationPageUi({
 																</TableRow>
 															</TableHeader>
 															<TableBody>
-																{organization.users.map(member => (
+																{filteredMembers.map(member => (
 																	<TableRow key={member.id}>
 																		<TableCell>
 																			<Avatar>
@@ -490,7 +539,7 @@ export function OrganizationPageUi({
 												className='text-sm text-blue-500 flex items-center hover:underline'
 											>
 												<Globe className='w-4 h-4 mr-1' />
-												{organization.website.replace(/^https?:\/\//, '')}
+												{organization.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
 											</a>
 										</div>
 									)}
@@ -520,7 +569,7 @@ export function OrganizationPageUi({
 															src={member.image ?? ''}
 															alt={member.name ?? 'user-avatar'}
 														/>
-														<AvatarFallback>U{i + 1}</AvatarFallback>
+														<AvatarFallback>{member.name?.charAt(0)?.toUpperCase() ?? 'U'}</AvatarFallback>
 													</Avatar>
 												))}
 											</div>
