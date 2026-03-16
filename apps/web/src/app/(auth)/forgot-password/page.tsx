@@ -1,6 +1,6 @@
-export const runtime = 'edge'
-
 'use client'
+
+export const runtime = 'edge'
 
 
 import { AuthLayout } from '@/components/auth-layout'
