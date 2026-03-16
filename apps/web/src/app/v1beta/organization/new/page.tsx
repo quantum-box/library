@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { authWithCheck } from '../../../(auth)/auth'
 import { NewOrgForm } from './form'
 

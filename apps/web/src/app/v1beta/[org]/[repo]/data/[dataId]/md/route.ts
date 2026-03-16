@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { auth } from '@/app/(auth)/auth'
 import { baseURL, platformId } from '@/lib/apiClient'
 import { NextResponse, type NextRequest } from 'next/server'

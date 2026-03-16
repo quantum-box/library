@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import {
 	ReviewListUi,
 	type ReviewListUiProps,

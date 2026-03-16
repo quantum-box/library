@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { PropertiesUi } from '@/app/v1beta/_components/properties-ui'
 import type { GitHubRepoConfig } from '@/app/v1beta/_components/properties-ui/github-repos-editor'
 import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'

@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { Dashboard } from '@/app/dashboard'
 import type { RepoItemOnDashboardFragment } from '@/gen/graphql'
 import { platformId } from '@/lib/apiClient'

@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
 import { getBaseUrl } from '@/app/v1beta/_lib/get-base-url'
 import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'

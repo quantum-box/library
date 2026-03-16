@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { baseURL } from '@/lib/apiClient'
 import { NextRequest, NextResponse } from 'next/server'
 

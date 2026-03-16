@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { handlers } from '@/app/(auth)/auth'
 
 

@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { auth } from '@/app/(auth)/auth'
 import { getBaseUrl } from '@/app/v1beta/_lib/get-base-url'
 import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'

@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { NextRequest, NextResponse } from 'next/server'
 
