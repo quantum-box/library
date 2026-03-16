@@ -189,5 +189,5 @@ export async function generateSecretHash(
 		key,
 		encoder.encode(username + clientId),
 	)
-	return btoa(String.fromCharCode(...new Uint8Array(signature)))
+	return btoa(String.fromCharCode(...Array.from(new Uint8Array(signature))))
 }
