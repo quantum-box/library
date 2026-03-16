@@ -1,8 +1,5 @@
 export const runtime = 'edge'
 
-'use server'
-
-
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { WebhooksPageUI } from './components/webhooks-page-ui'
 
