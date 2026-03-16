@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { authWithCheck } from '@/app/(auth)/auth'
 import { requireOwnerPermission } from '@/app/v1beta/_lib/repo-permissions'
 import { executeGraphQL, graphql } from '@/lib/graphql'

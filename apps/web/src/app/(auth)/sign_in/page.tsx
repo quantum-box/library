@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { auth, signIn } from '@/app/(auth)/auth'
 import { redirect } from 'next/navigation'
 import { SignInForm } from './form'

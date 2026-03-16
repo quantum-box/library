@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -65,7 +67,7 @@ export async function GET(
 		orgUsername,
 		returnUrl,
 	}
-	const customState = Buffer.from(JSON.stringify(stateData)).toString('base64')
+	const customState = btoa(JSON.stringify(stateData))
 
 	try {
 		const result = await executeGraphQL<InitOAuthResponse>(InitOAuthMutation, {

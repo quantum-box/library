@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { auth } from '@/app/(auth)/auth'
 import { createApiKeyAction } from '@/app/v1beta/[org]/_components/action'
 import { ApiKeyDialog } from '@/app/v1beta/[org]/_components/api-key-dialog'

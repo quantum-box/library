@@ -40,7 +40,7 @@ export async function signUpWithCognito(input: {
 		ClientId: clientId,
 		Username: input.username,
 		Password: input.password,
-		SecretHash: generateSecretHash(input.username, clientId, clientSecret),
+		SecretHash: await generateSecretHash(input.username, clientId, clientSecret),
 		UserAttributes: [{ Name: 'email', Value: input.email }],
 	})
 
@@ -58,7 +58,7 @@ export async function confirmSignUpWithCognito(input: {
 		ClientId: clientId,
 		Username: input.username,
 		ConfirmationCode: input.code,
-		SecretHash: generateSecretHash(input.username, clientId, clientSecret),
+		SecretHash: await generateSecretHash(input.username, clientId, clientSecret),
 	})
 
 	return client.send(command)
@@ -71,7 +71,7 @@ export async function resendConfirmationCode(input: { username: string }) {
 	const command = new ResendConfirmationCodeCommand({
 		ClientId: clientId,
 		Username: input.username,
-		SecretHash: generateSecretHash(input.username, clientId, clientSecret),
+		SecretHash: await generateSecretHash(input.username, clientId, clientSecret),
 	})
 
 	return client.send(command)
@@ -87,7 +87,7 @@ export async function forgotPassword(input: { username: string }) {
 	const command = new ForgotPasswordCommand({
 		ClientId: clientId,
 		Username: input.username,
-		SecretHash: generateSecretHash(input.username, clientId, clientSecret),
+		SecretHash: await generateSecretHash(input.username, clientId, clientSecret),
 	})
 
 	return client.send(command)
@@ -109,7 +109,7 @@ export async function confirmForgotPassword(input: {
 		Username: input.username,
 		ConfirmationCode: input.code,
 		Password: input.newPassword,
-		SecretHash: generateSecretHash(input.username, clientId, clientSecret),
+		SecretHash: await generateSecretHash(input.username, clientId, clientSecret),
 	})
 
 	return client.send(command)

@@ -7,7 +7,6 @@ import {
 import type { JWT } from 'next-auth/jwt'
 import CognitoProvider from 'next-auth/providers/cognito'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { createHmac as nodeCreateHmac } from 'node:crypto'
 
 export async function cognitoRefreshAccessToken(token: JWT): Promise<JWT> {
 	try {
@@ -31,7 +30,7 @@ export async function cognitoRefreshAccessToken(token: JWT): Promise<JWT> {
 					ClientId: client_id,
 					AuthParameters: {
 						REFRESH_TOKEN: token.refreshToken,
-						SECRET_HASH: generateSecretHash(username, client_id, client_secret),
+						SECRET_HASH: await generateSecretHash(username, client_id, client_secret),
 					},
 				}),
 			)
@@ -104,7 +103,7 @@ export const cognitoCredentialsProvider = CredentialsProvider({
 					AuthParameters: {
 						USERNAME: credentials.username as string,
 						PASSWORD: password,
-						SECRET_HASH: generateSecretHash(
+						SECRET_HASH: await generateSecretHash(
 							credentials.username as string,
 							process.env.COGNITO_CLIENT_ID!,
 							process.env.COGNITO_CLIENT_SECRET!,
@@ -172,12 +171,23 @@ export const cognitoProvider = CognitoProvider({
 	},
 })
 
-export function generateSecretHash(
+export async function generateSecretHash(
 	username: string,
 	clientId: string,
 	clientSecret: string,
-): string {
-	return nodeCreateHmac('sha256', clientSecret)
-		.update(username + clientId)
-		.digest('base64')
+): Promise<string> {
+	const encoder = new TextEncoder()
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(clientSecret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	)
+	const signature = await crypto.subtle.sign(
+		'HMAC',
+		key,
+		encoder.encode(username + clientId),
+	)
+	return btoa(String.fromCharCode(...new Uint8Array(signature)))
 }

@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
 import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
 import { requireEditPermission } from '@/app/v1beta/_lib/repo-permissions'

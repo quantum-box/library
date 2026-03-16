@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
 import { notFound } from 'next/navigation'
 import { CreateDatabase } from './form'

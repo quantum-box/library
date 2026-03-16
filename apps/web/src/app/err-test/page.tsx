@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { notFound } from 'next/navigation'
 import { ErrorCode, platformAction } from '../v1beta/_lib/platform-action'
 
