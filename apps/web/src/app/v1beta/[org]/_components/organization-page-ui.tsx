@@ -26,6 +26,7 @@ import { DefaultRole, UpdateOrganizationInput } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import {
 	BarChart3,
+	BookOpen,
 	Clock,
 	Database,
 	Globe,
@@ -34,6 +35,7 @@ import {
 	Mail,
 	Plug,
 	Plus,
+	Search,
 	Settings,
 	Users,
 	Webhook,
@@ -110,61 +112,64 @@ export function OrganizationPageUi({
 	}, [memberSearch, organization.users])
 
 	return (
-		<div className='flex flex-col min-h-screen'>
-			<header className='border-b dark:border-gray-700'>
-				<div className='container mx-auto py-4 px-4'>
-					<div className='flex flex-col space-y-4 sm:space-y-0 sm:flex-row sm:items-center justify-between'>
-						<div className='flex items-center space-x-4'>
-							<Avatar className='w-10 h-10'>
+		<div className='flex flex-col min-h-screen bg-background'>
+			{/* Header */}
+			<header className='border-b bg-card'>
+				<div className='container mx-auto py-6 px-4 sm:px-6'>
+					<div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+						<div className='flex items-center gap-4'>
+							<Avatar className='h-12 w-12 border'>
 								<AvatarImage alt={organization.name} />
-								<AvatarFallback>
+								<AvatarFallback className='text-lg font-semibold'>
 									{organization.name.slice(0, 2).toUpperCase()}
 								</AvatarFallback>
 							</Avatar>
-							<div>
-								<h1 className='text-xl font-bold dark:text-white'>
+							<div className='min-w-0'>
+								<h1 className='text-2xl font-bold tracking-tight truncate'>
 									{organization.name}
 								</h1>
-								<p className='text-sm text-muted-foreground dark:text-gray-400'>
-									{organization.description}
-								</p>
+								{organization.description && (
+									<p className='text-sm text-muted-foreground mt-0.5 line-clamp-1'>
+										{organization.description}
+									</p>
+								)}
 							</div>
 						</div>
-						<div className='flex items-center space-x-2 sm:space-x-4'>
-							{!isViewOnly && (
-								<>
-									<Button
-										variant='outline'
-										size='sm'
-										className='dark:border-gray-600 dark:text-gray-200'
-									>
-										<Settings className='w-4 h-4 sm:mr-2' />
+						{!isViewOnly && (
+							<div className='flex items-center gap-2 shrink-0'>
+								<Button variant='outline' size='sm' asChild>
+									<Link href={`/v1beta/${org}?tab=settings`}>
+										<Settings className='h-4 w-4 mr-1.5' />
 										<span className='hidden sm:inline'>
 											{t.v1beta.common.settings}
 										</span>
-									</Button>
-									<Button size='sm' asChild>
-										<Link href={`/v1beta/${org}/organizations/invite`}>
-											<Users className='w-4 h-4 sm:mr-2' />
-											<span className='hidden sm:inline'>
-												{t.v1beta.common.inviteMember}
-											</span>
-										</Link>
-									</Button>
-								</>
-							)}
-						</div>
+									</Link>
+								</Button>
+								<Button size='sm' asChild>
+									<Link href={`/v1beta/${org}/organizations/invite`}>
+										<Users className='h-4 w-4 mr-1.5' />
+										<span className='hidden sm:inline'>
+											{t.v1beta.common.inviteMember}
+										</span>
+									</Link>
+								</Button>
+							</div>
+						)}
 					</div>
 				</div>
 			</header>
-			<main className='flex-1 container mx-auto py-6 px-4'>
-				<div className='flex flex-col space-y-6 lg:space-y-0 lg:flex-row lg:gap-6'>
-					<div className='w-full lg:w-3/4'>
+
+			{/* Main Content */}
+			<main className='flex-1 container mx-auto py-6 px-4 sm:px-6'>
+				<div className='flex flex-col gap-6 lg:flex-row'>
+					{/* Left: Tabs */}
+					<div className='w-full lg:w-3/4 min-w-0'>
 						<Tabs value={activeTab} className='w-full'>
 							<div className='overflow-x-auto scrollbar-hide -mx-1 px-1'>
 								<TabsList className='inline-flex w-max min-w-full'>
 									<TabsTrigger value='repositories' asChild>
 										<Link href={`/v1beta/${org}?tab=repositories`}>
+											<BookOpen className='h-4 w-4 mr-1.5' />
 											{t.v1beta.common.repositories}
 										</Link>
 									</TabsTrigger>
@@ -172,27 +177,31 @@ export function OrganizationPageUi({
 										<>
 											<TabsTrigger value='integrations' asChild>
 												<Link href={`/v1beta/${org}?tab=integrations`}>
-													<Plug className='w-4 h-4 mr-1.5 inline-block' />
+													<Plug className='h-4 w-4 mr-1.5' />
 													Integrations
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='activity' asChild>
 												<Link href={`/v1beta/${org}?tab=activity`}>
+													<Clock className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.activity}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='insights' asChild>
 												<Link href={`/v1beta/${org}?tab=insights`}>
+													<BarChart3 className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.insights}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='members' asChild>
 												<Link href={`/v1beta/${org}?tab=members`}>
+													<Users className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.members}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='settings' asChild>
 												<Link href={`/v1beta/${org}?tab=settings`}>
+													<Settings className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.settings}
 												</Link>
 											</TabsTrigger>
@@ -200,21 +209,29 @@ export function OrganizationPageUi({
 									)}
 								</TabsList>
 							</div>
+
 							<div className='mt-6'>
+								{/* Repositories Tab */}
 								<TabsContent value='repositories'>
-									<div className='flex flex-col space-y-4 sm:space-y-0 sm:flex-row sm:justify-between sm:items-center mb-4'>
+									<div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6'>
 										<h2 className='text-lg font-semibold'>
 											{t.v1beta.common.repositories}
+											<span className='ml-2 text-sm font-normal text-muted-foreground'>
+												({organization.repos.length})
+											</span>
 										</h2>
-										<div className='flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2'>
-											<Input
-												placeholder={t.v1beta.organization.searchRepositories}
-												className='w-full sm:w-64'
-												value={repoSearch}
-												onChange={e => setRepoSearch(e.target.value)}
-											/>
+										<div className='flex flex-col gap-2 sm:flex-row'>
+											<div className='relative'>
+												<Search className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+												<Input
+													placeholder={t.v1beta.organization.searchRepositories}
+													className='pl-9 w-full sm:w-64'
+													value={repoSearch}
+													onChange={e => setRepoSearch(e.target.value)}
+												/>
+											</div>
 											{!isViewOnly && (
-												<>
+												<div className='flex gap-2'>
 													<GitHubImportDialog
 														org={org}
 														existingRepos={organization.repos}
@@ -228,76 +245,77 @@ export function OrganizationPageUi({
 													)}
 													<Button className='w-full sm:w-auto' asChild>
 														<Link href={`/v1beta/${org}/databases/new`}>
-															<Plus className='w-4 h-4 mr-2' />
+															<Plus className='h-4 w-4 mr-1.5' />
 															{t.v1beta.common.createNew}
 														</Link>
 													</Button>
-												</>
+												</div>
 											)}
 										</div>
 									</div>
-									<div className='grid gap-4'>
+
+									<div className='space-y-3'>
 										{filteredRepos.length ? (
 											filteredRepos.map(db => (
-												<Card key={db.id}>
-													<CardHeader>
-														<CardTitle className='text-lg break-words'>
-															<Link
-																href={`/v1beta/${org}/${db.username}`}
-																className='hover:underline hover:text-blue-500'
-															>
-																{db.username}
-															</Link>
-														</CardTitle>
-														<CardDescription className='line-clamp-2'>
-															{db.description}
-														</CardDescription>
-													</CardHeader>
-													<CardContent>
-														<div className='flex flex-col space-y-3 sm:space-y-0 sm:flex-row sm:justify-between sm:items-center'>
-															<div className='flex flex-wrap gap-2'>
-																<Badge variant='secondary'>
-																	<Database className='w-3 h-3 mr-1' />
-																	{t.v1beta.common.repository}
-																</Badge>
+												<Card
+													key={db.id}
+													className='transition-colors hover:bg-muted/50'
+												>
+													<div className='flex items-start justify-between gap-4 p-4 sm:p-5'>
+														<div className='min-w-0 flex-1'>
+															<div className='flex items-center gap-2 flex-wrap'>
+																<Link
+																	href={`/v1beta/${org}/${db.username}`}
+																	className='text-base font-semibold hover:underline hover:text-primary truncate'
+																>
+																	{db.username}
+																</Link>
 																<Badge
 																	variant={
-																		db.isPublic ? 'default' : 'secondary'
+																		db.isPublic ? 'secondary' : 'outline'
 																	}
+																	className='text-xs shrink-0'
 																>
 																	{db.isPublic ? (
-																		<Globe2 className='w-3 h-3 mr-1' />
+																		<Globe2 className='h-3 w-3 mr-1' />
 																	) : (
-																		<Lock className='w-3 h-3 mr-1' />
+																		<Lock className='h-3 w-3 mr-1' />
 																	)}
 																	{db.isPublic
 																		? t.v1beta.common.public
 																		: t.v1beta.common.private}
 																</Badge>
 															</div>
-															<Button
-																variant='outline'
-																size='sm'
-																className='w-full sm:w-auto'
-															>
-																<Link href={`/v1beta/${org}/${db.username}`}>
-																	{t.v1beta.common.view}
-																</Link>
-															</Button>
+															{db.description && (
+																<p className='text-sm text-muted-foreground mt-1 line-clamp-2'>
+																	{db.description}
+																</p>
+															)}
 														</div>
-													</CardContent>
+														<Button
+															variant='ghost'
+															size='sm'
+															className='shrink-0'
+															asChild
+														>
+															<Link href={`/v1beta/${org}/${db.username}`}>
+																{t.v1beta.common.view}
+															</Link>
+														</Button>
+													</div>
 												</Card>
 											))
 										) : (
-											<Card className='flex flex-col items-center justify-center h-[400px]'>
-												<CardContent className='text-center'>
-													<h3 className='text-lg font-semibold mb-2'>
+											<Card>
+												<CardContent className='flex flex-col items-center justify-center py-16'>
+													<Database className='h-12 w-12 text-muted-foreground/40 mb-4' />
+													<h3 className='text-lg font-semibold mb-1'>
 														{t.v1beta.organization.noRepositoriesYet}
 													</h3>
-													<p className='text-muted-foreground mb-4'>
+													<p className='text-sm text-muted-foreground mb-6 text-center max-w-sm'>
 														{t.v1beta.organization.noRepositoriesDescription}
 													</p>
-													<div className='flex flex-col sm:flex-row gap-2 justify-center'>
+													<div className='flex flex-col sm:flex-row gap-2'>
 														{!isViewOnly && (
 															<GitHubImportDialog
 																org={org}
@@ -306,7 +324,7 @@ export function OrganizationPageUi({
 														)}
 														<Button asChild>
 															<Link href={`/v1beta/${org}/databases/new`}>
-																<Plus className='w-4 h-4 mr-2' />
+																<Plus className='h-4 w-4 mr-1.5' />
 																{t.v1beta.organization.createNewRepository}
 															</Link>
 														</Button>
@@ -316,67 +334,89 @@ export function OrganizationPageUi({
 										)}
 									</div>
 								</TabsContent>
+
 								{!isViewOnly && (
 									<>
+										{/* Activity Tab */}
 										<TabsContent value='activity'>
 											<h2 className='text-lg font-semibold mb-4'>
 												{t.v1beta.organization.recentActivity}
 											</h2>
-											<Card className='flex flex-col items-center justify-center py-16'>
-												<CardContent className='text-center space-y-3'>
-													<Clock className='w-12 h-12 mx-auto text-muted-foreground/50' />
-													<h3 className='text-lg font-semibold'>
+											<Card>
+												<CardContent className='flex flex-col items-center justify-center py-16'>
+													<Clock className='h-10 w-10 text-muted-foreground/40 mb-4' />
+													<h3 className='text-base font-semibold mb-1'>
 														{t.v1beta.organization.recentActivity}
 													</h3>
-													<p className='text-sm text-muted-foreground max-w-md'>
+													<p className='text-sm text-muted-foreground max-w-md text-center mb-4'>
 														{t.v1beta.organization.recentActivityDescription}
 													</p>
 													<Badge variant='secondary'>Coming Soon</Badge>
 												</CardContent>
 											</Card>
 										</TabsContent>
+
+										{/* Insights Tab */}
 										<TabsContent value='insights'>
 											<h2 className='text-lg font-semibold mb-4'>
 												{t.v1beta.organization.organizationInsights}
 											</h2>
-											<Card className='flex flex-col items-center justify-center py-16'>
-												<CardContent className='text-center space-y-3'>
-													<BarChart3 className='w-12 h-12 mx-auto text-muted-foreground/50' />
-													<h3 className='text-lg font-semibold'>
+											<Card>
+												<CardContent className='flex flex-col items-center justify-center py-16'>
+													<BarChart3 className='h-10 w-10 text-muted-foreground/40 mb-4' />
+													<h3 className='text-base font-semibold mb-1'>
 														{t.v1beta.organization.organizationInsights}
 													</h3>
-													<p className='text-sm text-muted-foreground max-w-md'>
+													<p className='text-sm text-muted-foreground max-w-md text-center mb-4'>
 														{t.v1beta.organization.organizationInsightsDescription}
 													</p>
 													<Badge variant='secondary'>Coming Soon</Badge>
 												</CardContent>
 											</Card>
 										</TabsContent>
+
+										{/* Members Tab */}
 										<TabsContent value='members'>
 											<div className='space-y-4'>
-												<div className='flex justify-between items-center'>
+												<div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
 													<h2 className='text-lg font-semibold'>
 														{t.v1beta.common.members}
+														<span className='ml-2 text-sm font-normal text-muted-foreground'>
+															({organization.users.length})
+														</span>
 													</h2>
-													<Button asChild>
-														<Link href={`/v1beta/${org}/organizations/invite`}>
-															<Users className='w-4 h-4 mr-2' />
-															{t.v1beta.common.inviteMember}
-														</Link>
-													</Button>
+													<div className='flex gap-2'>
+														<div className='relative flex-1 sm:flex-initial'>
+															<Search className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+															<Input
+																placeholder={
+																	t.v1beta.organization.searchMembers
+																}
+																className='pl-9 w-full sm:w-64'
+																value={memberSearch}
+																onChange={e =>
+																	setMemberSearch(e.target.value)
+																}
+															/>
+														</div>
+														<Button asChild className='shrink-0'>
+															<Link
+																href={`/v1beta/${org}/organizations/invite`}
+															>
+																<Users className='h-4 w-4 mr-1.5' />
+																<span className='hidden sm:inline'>
+																	{t.v1beta.common.inviteMember}
+																</span>
+															</Link>
+														</Button>
+													</div>
 												</div>
-												<Input
-													placeholder={t.v1beta.organization.searchMembers}
-													className='w-full max-w-sm'
-													value={memberSearch}
-													onChange={e => setMemberSearch(e.target.value)}
-												/>
 												<Card>
 													<CardContent className='p-0'>
 														<Table>
 															<TableHeader>
 																<TableRow>
-																	<TableHead className='w-[100px]'>
+																	<TableHead className='w-[60px] pl-4'>
 																		{t.v1beta.organization.table.avatar}
 																	</TableHead>
 																	<TableHead>
@@ -385,10 +425,10 @@ export function OrganizationPageUi({
 																	<TableHead>
 																		{t.v1beta.organization.table.role}
 																	</TableHead>
-																	<TableHead>
+																	<TableHead className='hidden sm:table-cell'>
 																		{t.v1beta.organization.table.email}
 																	</TableHead>
-																	<TableHead className='text-right'>
+																	<TableHead className='text-right pr-4'>
 																		{t.v1beta.organization.table.action}
 																	</TableHead>
 																</TableRow>
@@ -396,26 +436,50 @@ export function OrganizationPageUi({
 															<TableBody>
 																{filteredMembers.map(member => (
 																	<TableRow key={member.id}>
-																		<TableCell>
-																			<Avatar>
+																		<TableCell className='pl-4'>
+																			<Avatar className='h-8 w-8'>
 																				<AvatarImage
 																					src={member.image ?? ''}
-																					alt={member.name ?? 'user-avatar'}
+																					alt={
+																						member.name ?? 'user-avatar'
+																					}
 																				/>
-																				<AvatarFallback>
+																				<AvatarFallback className='text-xs'>
 																					{member.name?.charAt(0) ?? 'U'}
 																				</AvatarFallback>
 																			</Avatar>
 																		</TableCell>
-																		<TableCell className='font-medium'>
-																			{member.name}
+																		<TableCell>
+																			<div>
+																				<p className='font-medium'>
+																					{member.name}
+																				</p>
+																				<p className='text-xs text-muted-foreground sm:hidden'>
+																					{member.email}
+																				</p>
+																			</div>
 																		</TableCell>
-																		<TableCell>{member.role}</TableCell>
-																		<TableCell>{member.email}</TableCell>
-																		<TableCell className='text-right'>
+																		<TableCell>
+																			<Badge
+																				variant={
+																					member.role === DefaultRole.Owner
+																						? 'default'
+																						: 'secondary'
+																				}
+																				className='text-xs'
+																			>
+																				{member.role}
+																			</Badge>
+																		</TableCell>
+																		<TableCell className='hidden sm:table-cell text-muted-foreground'>
+																			{member.email}
+																		</TableCell>
+																		<TableCell className='text-right pr-4'>
 																			<Button variant='ghost' size='sm'>
-																				<Mail className='w-4 h-4 mr-2' />
-																				{t.v1beta.common.contact}
+																				<Mail className='h-4 w-4' />
+																				<span className='sr-only'>
+																					{t.v1beta.common.contact}
+																				</span>
 																			</Button>
 																		</TableCell>
 																	</TableRow>
@@ -426,24 +490,43 @@ export function OrganizationPageUi({
 												</Card>
 											</div>
 										</TabsContent>
+
+										{/* Settings Tab */}
 										<TabsContent value='settings'>
 											<div className='space-y-6'>
 												<div>
-													<h2 className='text-lg font-semibold mb-4'>
+													<h2 className='text-lg font-semibold mb-1'>
 														{t.v1beta.organization.settings}
 													</h2>
-													<OrganizationForm
-														organization={organization}
-														onSubmit={onSubmit}
-													/>
+													<p className='text-sm text-muted-foreground mb-4'>
+														Manage your organization profile and integrations.
+													</p>
 												</div>
+
+												<Card>
+													<CardHeader>
+														<CardTitle className='text-base'>
+															General
+														</CardTitle>
+														<CardDescription>
+															Update your organization name, description, and
+															website.
+														</CardDescription>
+													</CardHeader>
+													<CardContent>
+														<OrganizationForm
+															organization={organization}
+															onSubmit={onSubmit}
+														/>
+													</CardContent>
+												</Card>
 
 												<GitHubSettings org={org} />
 
 												<Card>
 													<CardHeader>
-														<CardTitle className='flex items-center gap-2'>
-															<Plug className='h-5 w-5' />
+														<CardTitle className='text-base flex items-center gap-2'>
+															<Plug className='h-4 w-4' />
 															App Integrations
 														</CardTitle>
 														<CardDescription>
@@ -452,7 +535,7 @@ export function OrganizationPageUi({
 														</CardDescription>
 													</CardHeader>
 													<CardContent>
-														<Button asChild>
+														<Button variant='outline' asChild>
 															<Link href={`/v1beta/${org}/integrations`}>
 																Browse Integrations
 															</Link>
@@ -462,8 +545,8 @@ export function OrganizationPageUi({
 
 												<Card>
 													<CardHeader>
-														<CardTitle className='flex items-center gap-2'>
-															<Webhook className='h-5 w-5' />
+														<CardTitle className='text-base flex items-center gap-2'>
+															<Webhook className='h-4 w-4' />
 															Webhook Integrations
 														</CardTitle>
 														<CardDescription>
@@ -471,7 +554,7 @@ export function OrganizationPageUi({
 														</CardDescription>
 													</CardHeader>
 													<CardContent>
-														<Button asChild>
+														<Button variant='outline' asChild>
 															<Link href={`/v1beta/${org}/webhooks`}>
 																Manage Webhooks
 															</Link>
@@ -482,22 +565,26 @@ export function OrganizationPageUi({
 												{apiKeyListSlot && <div>{apiKeyListSlot}</div>}
 											</div>
 										</TabsContent>
+
+										{/* Integrations Tab */}
 										<TabsContent value='integrations'>
-											<div className='space-y-6'>
+											<div className='space-y-4'>
+												<h2 className='text-lg font-semibold'>
+													Integration Marketplace
+												</h2>
 												<Card>
 													<CardHeader>
-														<CardTitle className='flex items-center gap-2'>
-															<Plug className='h-5 w-5' />
-															Integration Marketplace
+														<CardTitle className='text-base flex items-center gap-2'>
+															<Plug className='h-4 w-4' />
+															Connect External Services
 														</CardTitle>
 														<CardDescription>
-															Connect external services like GitHub, Linear,
-															HubSpot, Stripe, and more to sync data with
-															Library
+															Connect services like GitHub, Linear, HubSpot,
+															Stripe, and more to sync data with Library
 														</CardDescription>
 													</CardHeader>
 													<CardContent>
-														<Button asChild>
+														<Button variant='outline' asChild>
 															<Link href={`/v1beta/${org}/integrations`}>
 																Browse Integrations
 															</Link>
@@ -511,98 +598,109 @@ export function OrganizationPageUi({
 							</div>
 						</Tabs>
 					</div>
+
+					{/* Right: Sidebar */}
 					<div className='w-full lg:w-1/4'>
-						<Card className='dark:bg-gray-800 dark:border-gray-700'>
-							<CardHeader>
-								<CardTitle>{t.v1beta.organization.overview}</CardTitle>
+						<Card className='sticky top-6'>
+							<CardHeader className='pb-3'>
+								<CardTitle className='text-base'>
+									{t.v1beta.organization.overview}
+								</CardTitle>
 							</CardHeader>
-							<CardContent>
-								<div className='space-y-4'>
-									<div>
-										<h3 className='text-sm font-semibold mb-1'>
-											{t.v1beta.organization.description}
-										</h3>
-										<p className='text-sm text-muted-foreground dark:text-gray-400'>
-											{organization.description}
-										</p>
-									</div>
-									<Separator />
-									{organization.website && (
+							<CardContent className='space-y-4'>
+								{organization.description && (
+									<>
 										<div>
-											<h3 className='text-sm font-semibold mb-1'>
-												{t.v1beta.organization.website}
+											<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5'>
+												{t.v1beta.organization.description}
 											</h3>
-											<a
-												href={organization.website}
-												target='_blank'
-												rel='noopener noreferrer'
-												className='text-sm text-blue-500 flex items-center hover:underline'
-											>
-												<Globe className='w-4 h-4 mr-1' />
-												{organization.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-											</a>
-										</div>
-									)}
-									{!organization.website && (
-										<div>
-											<h3 className='text-sm font-semibold mb-1'>
-												{t.v1beta.organization.website}
-											</h3>
-											<p className='text-sm text-muted-foreground'>
-												{t.v1beta.common.noWebsiteSet}
+											<p className='text-sm leading-relaxed'>
+												{organization.description}
 											</p>
 										</div>
-									)}
-									<Separator />
-									<div>
-										<h3 className='text-sm font-semibold mb-1'>
-											{t.v1beta.common.members}
-										</h3>
-										<div className='flex items-center space-x-2'>
-											<div className='flex -space-x-2'>
-												{organization.users.map((member, i) => (
-													<Avatar
-														key={member.id}
-														className='w-6 h-6 border-2 border-background'
-													>
-														<AvatarImage
-															src={member.image ?? ''}
-															alt={member.name ?? 'user-avatar'}
-														/>
-														<AvatarFallback>{member.name?.charAt(0)?.toUpperCase() ?? 'U'}</AvatarFallback>
-													</Avatar>
-												))}
-											</div>
-											<span className='text-sm text-muted-foreground'>
-												{t.v1beta.organization.membersCount.replace(
-													'{count}',
-													String(organization.users.length),
-												)}
+										<Separator />
+									</>
+								)}
+
+								<div>
+									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5'>
+										{t.v1beta.organization.website}
+									</h3>
+									{organization.website ? (
+										<a
+											href={organization.website}
+											target='_blank'
+											rel='noopener noreferrer'
+											className='text-sm text-primary flex items-center gap-1.5 hover:underline'
+										>
+											<Globe className='h-3.5 w-3.5 shrink-0' />
+											<span className='truncate'>
+												{organization.website
+													.replace(/^https?:\/\//, '')
+													.replace(/\/$/, '')}
 											</span>
+										</a>
+									) : (
+										<p className='text-sm text-muted-foreground'>
+											{t.v1beta.common.noWebsiteSet}
+										</p>
+									)}
+								</div>
+
+								<Separator />
+
+								<div>
+									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2'>
+										{t.v1beta.common.members}
+									</h3>
+									<div className='flex items-center gap-2'>
+										<div className='flex -space-x-1.5'>
+											{organization.users.slice(0, 5).map(member => (
+												<Avatar
+													key={member.id}
+													className='h-7 w-7 border-2 border-background ring-0'
+												>
+													<AvatarImage
+														src={member.image ?? ''}
+														alt={member.name ?? 'user-avatar'}
+													/>
+													<AvatarFallback className='text-xs'>
+														{member.name?.charAt(0)?.toUpperCase() ?? 'U'}
+													</AvatarFallback>
+												</Avatar>
+											))}
 										</div>
+										<span className='text-xs text-muted-foreground'>
+											{t.v1beta.organization.membersCount.replace(
+												'{count}',
+												String(organization.users.length),
+											)}
+										</span>
 									</div>
-									<Separator />
-									<div>
-										<h3 className='text-sm font-semibold mb-1'>
-											{t.v1beta.common.statistics}
-										</h3>
-										<div className='grid grid-cols-2 gap-2'>
-											<div>
-												<p className='text-sm font-medium'>
-													{organization.repos.length}
-												</p>
-												<p className='text-xs text-muted-foreground'>
-													{t.v1beta.common.repositories}
-												</p>
-											</div>
-											<div>
-												<p className='text-sm font-medium'>
-													{organization.users.length}
-												</p>
-												<p className='text-xs text-muted-foreground'>
-													{t.v1beta.common.members}
-												</p>
-											</div>
+								</div>
+
+								<Separator />
+
+								<div>
+									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2'>
+										{t.v1beta.common.statistics}
+									</h3>
+									<div className='grid grid-cols-2 gap-3'>
+										<div className='rounded-md bg-muted/50 px-3 py-2'>
+											<p className='text-lg font-semibold leading-none'>
+												{organization.repos.length}
+											</p>
+											<p className='text-xs text-muted-foreground mt-1'>
+												{t.v1beta.common.repositories}
+											</p>
+										</div>
+										<div className='rounded-md bg-muted/50 px-3 py-2'>
+											<p className='text-lg font-semibold leading-none'>
+												{organization.users.length}
+											</p>
+											<p className='text-xs text-muted-foreground mt-1'>
+												{t.v1beta.common.members}
+											</p>
 										</div>
 									</div>
 								</div>
