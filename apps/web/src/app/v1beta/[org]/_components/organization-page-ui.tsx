@@ -30,8 +30,6 @@ import {
 	Clock,
 	Database,
 	Globe,
-	Globe2,
-	Lock,
 	Mail,
 	Plug,
 	Plus,
@@ -166,7 +164,7 @@ export function OrganizationPageUi({
 					<div className='w-full lg:w-3/4 min-w-0'>
 						<Tabs value={activeTab} className='w-full'>
 							<div className='overflow-x-auto scrollbar-hide -mx-1 px-1'>
-								<TabsList className='inline-flex w-max min-w-full h-10'>
+								<TabsList className='inline-flex w-auto h-10'>
 									<TabsTrigger value='repositories' asChild>
 										<Link href={`/v1beta/${org}?tab=repositories`}>
 											<BookOpen className='h-4 w-4 mr-1.5' />
@@ -254,56 +252,40 @@ export function OrganizationPageUi({
 										</div>
 									</div>
 
-									<div className='space-y-2.5'>
+									<div className='border rounded-md divide-y'>
 										{filteredRepos.length ? (
 											filteredRepos.map(db => (
-												<Card
+												<div
 													key={db.id}
-													className='transition-all hover:bg-muted/30 hover:shadow-sm'
+													className='flex items-start justify-between gap-4 px-4 py-3.5 hover:bg-muted/30 transition-colors'
 												>
-													<div className='flex items-center justify-between gap-4 px-4 py-3.5'>
-														<div className='min-w-0 flex-1'>
-															<div className='flex items-center gap-2 flex-wrap'>
-																<Link
-																	href={`/v1beta/${org}/${db.username}`}
-																	className='text-sm font-semibold hover:underline hover:text-primary truncate'
-																>
-																	{db.username}
-																</Link>
-																<Badge
-																	variant={
-																		db.isPublic ? 'secondary' : 'outline'
-																	}
-																	className='text-xs shrink-0'
-																>
-																	{db.isPublic ? (
-																		<Globe2 className='h-3 w-3 mr-1' />
-																	) : (
-																		<Lock className='h-3 w-3 mr-1' />
-																	)}
-																	{db.isPublic
-																		? t.v1beta.common.public
-																		: t.v1beta.common.private}
-																</Badge>
-															</div>
-															{db.description && (
-																<p className='text-sm text-muted-foreground mt-1 line-clamp-2'>
-																	{db.description}
-																</p>
-															)}
-														</div>
-														<Button
-															variant='ghost'
-															size='sm'
-															className='shrink-0'
-															asChild
-														>
-															<Link href={`/v1beta/${org}/${db.username}`}>
-																{t.v1beta.common.view}
+													<div className='min-w-0 flex-1'>
+														<div className='flex items-center gap-2'>
+															<Database className='h-4 w-4 text-muted-foreground shrink-0' />
+															<Link
+																href={`/v1beta/${org}/${db.username}`}
+																className='text-sm font-semibold text-primary hover:underline truncate'
+															>
+																{db.username}
 															</Link>
-														</Button>
+															<Badge
+																variant={
+																	db.isPublic ? 'secondary' : 'outline'
+																}
+																className='text-[11px] px-1.5 py-0 h-5 shrink-0'
+															>
+																{db.isPublic
+																	? t.v1beta.common.public
+																	: t.v1beta.common.private}
+															</Badge>
+														</div>
+														{db.description && (
+															<p className='text-xs text-muted-foreground mt-1 ml-6 line-clamp-1'>
+																{db.description}
+															</p>
+														)}
 													</div>
-												</Card>
+												</div>
 											))
 										) : (
 											<Card>
