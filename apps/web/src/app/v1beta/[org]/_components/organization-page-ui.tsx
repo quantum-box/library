@@ -30,13 +30,12 @@ import {
 	Clock,
 	Database,
 	Globe,
-	Globe2,
-	Lock,
 	Mail,
 	Plug,
 	Plus,
 	Search,
 	Settings,
+	Star,
 	Users,
 	Webhook,
 } from 'lucide-react'
@@ -62,6 +61,8 @@ export interface OrganizationPageUiProps {
 			username: string
 			description?: string | null
 			isPublic: boolean
+			stars?: number
+			updatedAt?: string | null
 		}>
 		users: Array<{
 			id: string
@@ -75,6 +76,21 @@ export interface OrganizationPageUiProps {
 		val: UpdateOrganizationInput,
 	) => Promise<{ id: string } | undefined>
 	apiKeyListSlot?: React.ReactNode
+}
+
+function formatRelativeTime(dateStr: string): string {
+	const now = new Date()
+	const date = new Date(dateStr)
+	const diffMs = now.getTime() - date.getTime()
+	const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+	if (diffDays === 0) return 'today'
+	if (diffDays === 1) return 'yesterday'
+	if (diffDays < 30) return `${diffDays} days ago`
+	const diffMonths = Math.floor(diffDays / 30)
+	if (diffMonths < 12)
+		return `${diffMonths} month${diffMonths > 1 ? 's' : ''} ago`
+	const diffYears = Math.floor(diffDays / 365)
+	return `${diffYears} year${diffYears > 1 ? 's' : ''} ago`
 }
 
 export function OrganizationPageUi({
@@ -115,17 +131,17 @@ export function OrganizationPageUi({
 		<div className='flex flex-col min-h-screen bg-background'>
 			{/* Header */}
 			<header className='border-b bg-card'>
-				<div className='container mx-auto py-6 px-4 sm:px-6'>
+				<div className='container mx-auto py-5 px-4 sm:px-6'>
 					<div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-						<div className='flex items-center gap-4'>
-							<Avatar className='h-12 w-12 border'>
+						<div className='flex items-center gap-3.5'>
+							<Avatar className='h-11 w-11 border shadow-sm'>
 								<AvatarImage alt={organization.name} />
-								<AvatarFallback className='text-lg font-semibold'>
+								<AvatarFallback className='text-base font-semibold bg-primary/5'>
 									{organization.name.slice(0, 2).toUpperCase()}
 								</AvatarFallback>
 							</Avatar>
 							<div className='min-w-0'>
-								<h1 className='text-2xl font-bold tracking-tight truncate'>
+								<h1 className='text-xl font-semibold tracking-tight truncate'>
 									{organization.name}
 								</h1>
 								{organization.description && (
@@ -166,7 +182,7 @@ export function OrganizationPageUi({
 					<div className='w-full lg:w-3/4 min-w-0'>
 						<Tabs value={activeTab} className='w-full'>
 							<div className='overflow-x-auto scrollbar-hide -mx-1 px-1'>
-								<TabsList className='inline-flex w-max min-w-full'>
+								<TabsList className='inline-flex w-auto h-10'>
 									<TabsTrigger value='repositories' asChild>
 										<Link href={`/v1beta/${org}?tab=repositories`}>
 											<BookOpen className='h-4 w-4 mr-1.5' />
@@ -213,19 +229,19 @@ export function OrganizationPageUi({
 							<div className='mt-6'>
 								{/* Repositories Tab */}
 								<TabsContent value='repositories'>
-									<div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6'>
-										<h2 className='text-lg font-semibold'>
+									<div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5'>
+										<h2 className='text-base font-semibold'>
 											{t.v1beta.common.repositories}
-											<span className='ml-2 text-sm font-normal text-muted-foreground'>
+											<span className='ml-1.5 text-sm font-normal text-muted-foreground'>
 												({organization.repos.length})
 											</span>
 										</h2>
-										<div className='flex flex-col gap-2 sm:flex-row'>
+										<div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
 											<div className='relative'>
 												<Search className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
 												<Input
 													placeholder={t.v1beta.organization.searchRepositories}
-													className='pl-9 w-full sm:w-64'
+													className='pl-9 h-9 w-full sm:w-56 text-sm'
 													value={repoSearch}
 													onChange={e => setRepoSearch(e.target.value)}
 												/>
@@ -243,7 +259,7 @@ export function OrganizationPageUi({
 															hasLinearConnection={hasLinearConnection}
 														/>
 													)}
-													<Button className='w-full sm:w-auto' asChild>
+													<Button size='sm' className='w-full sm:w-auto' asChild>
 														<Link href={`/v1beta/${org}/databases/new`}>
 															<Plus className='h-4 w-4 mr-1.5' />
 															{t.v1beta.common.createNew}
@@ -254,85 +270,77 @@ export function OrganizationPageUi({
 										</div>
 									</div>
 
-									<div className='space-y-3'>
-										{filteredRepos.length ? (
-											filteredRepos.map(db => (
-												<Card
+									{filteredRepos.length ? (
+										<div className='border rounded-md divide-y'>
+											{filteredRepos.map(db => (
+												<div
 													key={db.id}
-													className='transition-colors hover:bg-muted/50'
+													className='px-4 py-4 hover:bg-muted/30 transition-colors'
 												>
-													<div className='flex items-start justify-between gap-4 p-4 sm:p-5'>
-														<div className='min-w-0 flex-1'>
-															<div className='flex items-center gap-2 flex-wrap'>
-																<Link
-																	href={`/v1beta/${org}/${db.username}`}
-																	className='text-base font-semibold hover:underline hover:text-primary truncate'
-																>
-																	{db.username}
-																</Link>
-																<Badge
-																	variant={
-																		db.isPublic ? 'secondary' : 'outline'
-																	}
-																	className='text-xs shrink-0'
-																>
-																	{db.isPublic ? (
-																		<Globe2 className='h-3 w-3 mr-1' />
-																	) : (
-																		<Lock className='h-3 w-3 mr-1' />
-																	)}
-																	{db.isPublic
-																		? t.v1beta.common.public
-																		: t.v1beta.common.private}
-																</Badge>
-															</div>
-															{db.description && (
-																<p className='text-sm text-muted-foreground mt-1 line-clamp-2'>
-																	{db.description}
-																</p>
-															)}
-														</div>
-														<Button
-															variant='ghost'
-															size='sm'
-															className='shrink-0'
-															asChild
+													<div className='flex items-center gap-2 mb-1'>
+														<Link
+															href={`/v1beta/${org}/${db.username}`}
+															className='text-sm font-semibold text-primary hover:underline'
 														>
-															<Link href={`/v1beta/${org}/${db.username}`}>
-																{t.v1beta.common.view}
-															</Link>
-														</Button>
+															{db.username}
+														</Link>
+														<Badge
+															variant={db.isPublic ? 'secondary' : 'outline'}
+															className='text-[11px] px-1.5 py-0 h-5 shrink-0'
+														>
+															{db.isPublic
+																? t.v1beta.common.public
+																: t.v1beta.common.private}
+														</Badge>
 													</div>
-												</Card>
-											))
-										) : (
-											<Card>
-												<CardContent className='flex flex-col items-center justify-center py-16'>
-													<Database className='h-12 w-12 text-muted-foreground/40 mb-4' />
-													<h3 className='text-lg font-semibold mb-1'>
-														{t.v1beta.organization.noRepositoriesYet}
-													</h3>
-													<p className='text-sm text-muted-foreground mb-6 text-center max-w-sm'>
-														{t.v1beta.organization.noRepositoriesDescription}
-													</p>
-													<div className='flex flex-col sm:flex-row gap-2'>
-														{!isViewOnly && (
-															<GitHubImportDialog
-																org={org}
-																existingRepos={organization.repos}
-															/>
+													{db.description && (
+														<p className='text-xs text-muted-foreground mb-2 line-clamp-1 max-w-2xl'>
+															{db.description}
+														</p>
+													)}
+													<div className='flex items-center gap-4 text-xs text-muted-foreground'>
+														{db.stars != null && db.stars > 0 && (
+															<span className='flex items-center gap-1'>
+																<Star className='h-3 w-3' />
+																{db.stars}
+															</span>
 														)}
-														<Button asChild>
-															<Link href={`/v1beta/${org}/databases/new`}>
-																<Plus className='h-4 w-4 mr-1.5' />
-																{t.v1beta.organization.createNewRepository}
-															</Link>
-														</Button>
+														{db.updatedAt && (
+															<span>
+																Updated {formatRelativeTime(db.updatedAt)}
+															</span>
+														)}
 													</div>
-												</CardContent>
-											</Card>
-										)}
-									</div>
+												</div>
+											))}
+										</div>
+									) : (
+										<Card>
+											<CardContent className='flex flex-col items-center justify-center py-16'>
+												<Database className='h-12 w-12 text-muted-foreground/40 mb-4' />
+												<h3 className='text-lg font-semibold mb-1'>
+													{t.v1beta.organization.noRepositoriesYet}
+												</h3>
+												<p className='text-sm text-muted-foreground mb-6 text-center max-w-sm'>
+													{t.v1beta.organization.noRepositoriesDescription}
+												</p>
+												<div className='flex flex-col sm:flex-row gap-2'>
+													{!isViewOnly && (
+														<GitHubImportDialog
+															org={org}
+															existingRepos={organization.repos}
+														/>
+													)}
+													<Button asChild>
+														<Link href={`/v1beta/${org}/databases/new`}>
+															<Plus className='h-4 w-4 mr-1.5' />
+															{t.v1beta.organization.createNewRepository}
+														</Link>
+													</Button>
+												</div>
+											</CardContent>
+										</Card>
+									)}
 								</TabsContent>
 
 								{!isViewOnly && (
@@ -601,17 +609,17 @@ export function OrganizationPageUi({
 
 					{/* Right: Sidebar */}
 					<div className='w-full lg:w-1/4'>
-						<Card className='sticky top-6'>
-							<CardHeader className='pb-3'>
-								<CardTitle className='text-base'>
+						<Card className='sticky top-6 shadow-sm'>
+							<CardHeader className='pb-2'>
+								<CardTitle className='text-sm font-semibold'>
 									{t.v1beta.organization.overview}
 								</CardTitle>
 							</CardHeader>
-							<CardContent className='space-y-4'>
+							<CardContent className='space-y-3'>
 								{organization.description && (
 									<>
 										<div>
-											<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5'>
+											<h3 className='text-xs font-medium text-muted-foreground mb-1.5'>
 												{t.v1beta.organization.description}
 											</h3>
 											<p className='text-sm leading-relaxed'>
@@ -623,7 +631,7 @@ export function OrganizationPageUi({
 								)}
 
 								<div>
-									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5'>
+									<h3 className='text-xs font-medium text-muted-foreground mb-1.5'>
 										{t.v1beta.organization.website}
 									</h3>
 									{organization.website ? (
@@ -650,7 +658,7 @@ export function OrganizationPageUi({
 								<Separator />
 
 								<div>
-									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2'>
+									<h3 className='text-xs font-medium text-muted-foreground mb-2'>
 										{t.v1beta.common.members}
 									</h3>
 									<div className='flex items-center gap-2'>
@@ -682,23 +690,23 @@ export function OrganizationPageUi({
 								<Separator />
 
 								<div>
-									<h3 className='text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2'>
+									<h3 className='text-xs font-medium text-muted-foreground mb-2'>
 										{t.v1beta.common.statistics}
 									</h3>
-									<div className='grid grid-cols-2 gap-3'>
-										<div className='rounded-md bg-muted/50 px-3 py-2'>
-											<p className='text-lg font-semibold leading-none'>
+									<div className='grid grid-cols-2 gap-2'>
+										<div className='rounded-md bg-muted/40 px-3 py-2'>
+											<p className='text-base font-semibold leading-none'>
 												{organization.repos.length}
 											</p>
-											<p className='text-xs text-muted-foreground mt-1'>
+											<p className='text-[11px] text-muted-foreground mt-1'>
 												{t.v1beta.common.repositories}
 											</p>
 										</div>
-										<div className='rounded-md bg-muted/50 px-3 py-2'>
-											<p className='text-lg font-semibold leading-none'>
+										<div className='rounded-md bg-muted/40 px-3 py-2'>
+											<p className='text-base font-semibold leading-none'>
 												{organization.users.length}
 											</p>
-											<p className='text-xs text-muted-foreground mt-1'>
+											<p className='text-[11px] text-muted-foreground mt-1'>
 												{t.v1beta.common.members}
 											</p>
 										</div>
