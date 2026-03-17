@@ -27,6 +27,7 @@ import { useTranslation } from '@/lib/i18n/useTranslation'
 import {
 	BarChart3,
 	BookOpen,
+	Circle,
 	Clock,
 	Database,
 	Globe,
@@ -35,6 +36,7 @@ import {
 	Plus,
 	Search,
 	Settings,
+	Star,
 	Users,
 	Webhook,
 } from 'lucide-react'
@@ -60,6 +62,9 @@ export interface OrganizationPageUiProps {
 			username: string
 			description?: string | null
 			isPublic: boolean
+			language?: string | null
+			stars?: number
+			updatedAt?: string | null
 		}>
 		users: Array<{
 			id: string
@@ -73,6 +78,33 @@ export interface OrganizationPageUiProps {
 		val: UpdateOrganizationInput,
 	) => Promise<{ id: string } | undefined>
 	apiKeyListSlot?: React.ReactNode
+}
+
+const languageColors: Record<string, string> = {
+	TypeScript: '#3178c6',
+	JavaScript: '#f1e05a',
+	Python: '#3572A5',
+	Go: '#00ADD8',
+	Rust: '#dea584',
+	Java: '#b07219',
+	Ruby: '#701516',
+	SQL: '#e38c00',
+	Shell: '#89e051',
+}
+
+function formatRelativeTime(dateStr: string): string {
+	const now = new Date()
+	const date = new Date(dateStr)
+	const diffMs = now.getTime() - date.getTime()
+	const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+	if (diffDays === 0) return 'today'
+	if (diffDays === 1) return 'yesterday'
+	if (diffDays < 30) return `${diffDays} days ago`
+	const diffMonths = Math.floor(diffDays / 30)
+	if (diffMonths < 12)
+		return `${diffMonths} month${diffMonths > 1 ? 's' : ''} ago`
+	const diffYears = Math.floor(diffDays / 365)
+	return `${diffYears} year${diffYears > 1 ? 's' : ''} ago`
 }
 
 export function OrganizationPageUi({
@@ -252,69 +284,87 @@ export function OrganizationPageUi({
 										</div>
 									</div>
 
-									<div className='border rounded-md divide-y'>
-										{filteredRepos.length ? (
-											filteredRepos.map(db => (
+									{filteredRepos.length ? (
+										<div className='border rounded-md divide-y'>
+											{filteredRepos.map(db => (
 												<div
 													key={db.id}
-													className='flex items-start justify-between gap-4 px-4 py-3.5 hover:bg-muted/30 transition-colors'
+													className='px-4 py-4 hover:bg-muted/30 transition-colors'
 												>
-													<div className='min-w-0 flex-1'>
-														<div className='flex items-center gap-2'>
-															<Database className='h-4 w-4 text-muted-foreground shrink-0' />
-															<Link
-																href={`/v1beta/${org}/${db.username}`}
-																className='text-sm font-semibold text-primary hover:underline truncate'
-															>
-																{db.username}
-															</Link>
-															<Badge
-																variant={
-																	db.isPublic ? 'secondary' : 'outline'
-																}
-																className='text-[11px] px-1.5 py-0 h-5 shrink-0'
-															>
-																{db.isPublic
-																	? t.v1beta.common.public
-																	: t.v1beta.common.private}
-															</Badge>
-														</div>
-														{db.description && (
-															<p className='text-xs text-muted-foreground mt-1 ml-6 line-clamp-1'>
-																{db.description}
-															</p>
+													<div className='flex items-center gap-2 mb-1'>
+														<Link
+															href={`/v1beta/${org}/${db.username}`}
+															className='text-sm font-semibold text-primary hover:underline'
+														>
+															{db.username}
+														</Link>
+														<Badge
+															variant={db.isPublic ? 'secondary' : 'outline'}
+															className='text-[11px] px-1.5 py-0 h-5 shrink-0'
+														>
+															{db.isPublic
+																? t.v1beta.common.public
+																: t.v1beta.common.private}
+														</Badge>
+													</div>
+													{db.description && (
+														<p className='text-xs text-muted-foreground mb-2 line-clamp-1 max-w-2xl'>
+															{db.description}
+														</p>
+													)}
+													<div className='flex items-center gap-4 text-xs text-muted-foreground'>
+														{db.language && (
+															<span className='flex items-center gap-1'>
+																<Circle
+																	className='h-3 w-3'
+																	fill={languageColors[db.language] ?? '#8b8b8b'}
+																	stroke='none'
+																/>
+																{db.language}
+															</span>
+														)}
+														{db.stars != null && db.stars > 0 && (
+															<span className='flex items-center gap-1'>
+																<Star className='h-3 w-3' />
+																{db.stars}
+															</span>
+														)}
+														{db.updatedAt && (
+															<span>
+																Updated {formatRelativeTime(db.updatedAt)}
+															</span>
 														)}
 													</div>
 												</div>
-											))
-										) : (
-											<Card>
-												<CardContent className='flex flex-col items-center justify-center py-16'>
-													<Database className='h-12 w-12 text-muted-foreground/40 mb-4' />
-													<h3 className='text-lg font-semibold mb-1'>
-														{t.v1beta.organization.noRepositoriesYet}
-													</h3>
-													<p className='text-sm text-muted-foreground mb-6 text-center max-w-sm'>
-														{t.v1beta.organization.noRepositoriesDescription}
-													</p>
-													<div className='flex flex-col sm:flex-row gap-2'>
-														{!isViewOnly && (
-															<GitHubImportDialog
-																org={org}
-																existingRepos={organization.repos}
-															/>
-														)}
-														<Button asChild>
-															<Link href={`/v1beta/${org}/databases/new`}>
-																<Plus className='h-4 w-4 mr-1.5' />
-																{t.v1beta.organization.createNewRepository}
-															</Link>
-														</Button>
-													</div>
-												</CardContent>
-											</Card>
-										)}
-									</div>
+											))}
+										</div>
+									) : (
+										<Card>
+											<CardContent className='flex flex-col items-center justify-center py-16'>
+												<Database className='h-12 w-12 text-muted-foreground/40 mb-4' />
+												<h3 className='text-lg font-semibold mb-1'>
+													{t.v1beta.organization.noRepositoriesYet}
+												</h3>
+												<p className='text-sm text-muted-foreground mb-6 text-center max-w-sm'>
+													{t.v1beta.organization.noRepositoriesDescription}
+												</p>
+												<div className='flex flex-col sm:flex-row gap-2'>
+													{!isViewOnly && (
+														<GitHubImportDialog
+															org={org}
+															existingRepos={organization.repos}
+														/>
+													)}
+													<Button asChild>
+														<Link href={`/v1beta/${org}/databases/new`}>
+															<Plus className='h-4 w-4 mr-1.5' />
+															{t.v1beta.organization.createNewRepository}
+														</Link>
+													</Button>
+												</div>
+											</CardContent>
+										</Card>
+									)}
 								</TabsContent>
 
 								{!isViewOnly && (
