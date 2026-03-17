@@ -1,5 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
+export const runtime = 'edge'
+
 export default function RepoNotFound() {
 	return (
 		<div className='flex flex-col min-h-screen p-4 container'>
