@@ -27,7 +27,7 @@ import { useTranslation } from '@/lib/i18n/useTranslation'
 import {
 	BarChart3,
 	BookOpen,
-	Circle,
+
 	Clock,
 	Database,
 	Globe,
@@ -62,7 +62,6 @@ export interface OrganizationPageUiProps {
 			username: string
 			description?: string | null
 			isPublic: boolean
-			language?: string | null
 			stars?: number
 			updatedAt?: string | null
 		}>
@@ -78,18 +77,6 @@ export interface OrganizationPageUiProps {
 		val: UpdateOrganizationInput,
 	) => Promise<{ id: string } | undefined>
 	apiKeyListSlot?: React.ReactNode
-}
-
-const languageColors: Record<string, string> = {
-	TypeScript: '#3178c6',
-	JavaScript: '#f1e05a',
-	Python: '#3572A5',
-	Go: '#00ADD8',
-	Rust: '#dea584',
-	Java: '#b07219',
-	Ruby: '#701516',
-	SQL: '#e38c00',
-	Shell: '#89e051',
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -313,16 +300,6 @@ export function OrganizationPageUi({
 														</p>
 													)}
 													<div className='flex items-center gap-4 text-xs text-muted-foreground'>
-														{db.language && (
-															<span className='flex items-center gap-1'>
-																<Circle
-																	className='h-3 w-3'
-																	fill={languageColors[db.language] ?? '#8b8b8b'}
-																	stroke='none'
-																/>
-																{db.language}
-															</span>
-														)}
 														{db.stars != null && db.stars > 0 && (
 															<span className='flex items-center gap-1'>
 																<Star className='h-3 w-3' />

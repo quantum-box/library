@@ -42,7 +42,7 @@ const mockOrganization = {
 			description:
 				'Central repository for all product data and catalog management',
 			isPublic: true,
-			language: 'TypeScript',
+
 			stars: 24,
 			updatedAt: '2026-03-15T10:00:00Z',
 		},
@@ -51,7 +51,7 @@ const mockOrganization = {
 			username: 'customer-data',
 			description: 'Customer relationship and analytics data',
 			isPublic: false,
-			language: 'Python',
+
 			stars: 8,
 			updatedAt: '2026-03-10T14:30:00Z',
 		},
@@ -60,7 +60,7 @@ const mockOrganization = {
 			username: 'analytics-warehouse',
 			description: 'Business intelligence and reporting data warehouse',
 			isPublic: false,
-			language: 'SQL',
+
 			stars: 3,
 			updatedAt: '2026-02-28T09:00:00Z',
 		},
@@ -245,7 +245,7 @@ export const ManyRepositories: Story = {
 					username: 'inventory-system',
 					description: 'Real-time inventory tracking and management',
 					isPublic: true,
-					language: 'Go',
+		
 					stars: 42,
 					updatedAt: '2026-03-16T08:00:00Z',
 				},
@@ -254,7 +254,7 @@ export const ManyRepositories: Story = {
 					username: 'order-processing',
 					description: 'Order fulfillment and processing pipeline',
 					isPublic: false,
-					language: 'TypeScript',
+		
 					stars: 12,
 					updatedAt: '2026-03-14T16:00:00Z',
 				},
@@ -263,7 +263,7 @@ export const ManyRepositories: Story = {
 					username: 'supplier-data',
 					description: 'Supplier relationship and procurement data',
 					isPublic: false,
-					language: 'Python',
+		
 					stars: 5,
 					updatedAt: '2026-03-01T12:00:00Z',
 				},
@@ -272,7 +272,7 @@ export const ManyRepositories: Story = {
 					username: 'financial-reports',
 					description: 'Financial reporting and compliance data',
 					isPublic: false,
-					language: 'SQL',
+		
 					stars: 1,
 					updatedAt: '2026-02-15T10:00:00Z',
 				},
