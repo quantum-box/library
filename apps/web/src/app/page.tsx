@@ -3,13 +3,13 @@ export const runtime = 'edge'
 import { Dashboard } from '@/app/dashboard'
 import type { RepoItemOnDashboardFragment } from '@/gen/graphql'
 import { platformId } from '@/lib/apiClient'
-import { notFound } from 'next/navigation'
 import { auth } from './(auth)/auth'
 import { detectLocale } from './i18n/detect-locale'
 import { getDictionary } from './i18n/get-dictionary'
 import { I18nProvider } from './i18n/i18n-provider'
 import LP from './lp'
-import { ErrorCode, platformAction } from './v1beta/_lib/platform-action'
+import { platformAction } from './v1beta/_lib/platform-action'
+import { handleNotFound } from './v1beta/_lib/platform-error-handler'
 
 
 export default async function App({
@@ -27,11 +27,7 @@ export default async function App({
 	const dictionary = getDictionary(locale)
 
 	const { me } = await platformAction(async sdk => sdk.dashboard(), {
-		onError: error => {
-			if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-				notFound()
-			}
-		},
+		onError: handleNotFound,
 	})
 
 	// Repos are now included in the dashboard query via organizationListItem fragment

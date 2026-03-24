@@ -1,19 +1,15 @@
 export const runtime = 'edge'
 
-import { notFound } from 'next/navigation'
 import { authWithCheck } from '../(auth)/auth'
-import { ErrorCode, platformAction } from '../v1beta/_lib/platform-action'
+import { platformAction } from '../v1beta/_lib/platform-action'
+import { handleNotFound } from '../v1beta/_lib/platform-error-handler'
 import { NewRepoForm } from './form'
 
 
 export default async function NewRepo() {
 	const session = await authWithCheck()
 	const { me } = await platformAction(async sdk => sdk.newRepoPage(), {
-		onError: error => {
-			if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-				notFound()
-			}
-		},
+		onError: handleNotFound,
 	})
 	return (
 		<NewRepoForm

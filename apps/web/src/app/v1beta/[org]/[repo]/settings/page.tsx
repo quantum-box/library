@@ -2,11 +2,11 @@ export const runtime = 'edge'
 
 import { detectLocale } from '@/app/i18n/detect-locale'
 import { getDictionary } from '@/app/i18n/get-dictionary'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFound } from '@/app/v1beta/_lib/platform-error-handler'
 import { requireOwnerPermission } from '@/app/v1beta/_lib/repo-permissions'
 import { authWithCheck } from '@/app/(auth)/auth'
 import { executeGraphQL, graphql } from '@/lib/graphql'
-import { notFound } from 'next/navigation'
 import { SettingsForm } from './form'
 
 
@@ -102,11 +102,7 @@ export default async function SettingsPage({
 					repoUsername: params.repo,
 				}),
 			{
-				onError: error => {
-					if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-						notFound()
-					}
-				},
+				onError: handleNotFound,
 			},
 		),
 		executeGraphQL(OrganizationQuery, {

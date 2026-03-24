@@ -2,10 +2,10 @@ export const runtime = 'edge'
 
 import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
 import { getBaseUrl } from '@/app/v1beta/_lib/get-base-url'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFoundOrPermissionDenied } from '@/app/v1beta/_lib/platform-error-handler'
 import { canEdit } from '@/app/v1beta/_lib/repo-permissions'
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
 import { updateData } from './action'
 
 
@@ -132,18 +132,7 @@ export default async function DataPage({
 				dataId,
 			}),
 		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-				if (error.code === ErrorCode.PERMISSION_DENIED) {
-					console.warn(
-						'Permission denied during data detail page load, continuing:',
-						error.message,
-					)
-					return
-				}
-			},
+			onError: handleNotFoundOrPermissionDenied,
 			redirectOnError: false,
 			allowAnonymous: true,
 		},

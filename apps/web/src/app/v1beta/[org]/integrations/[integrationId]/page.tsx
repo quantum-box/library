@@ -3,7 +3,8 @@ export const runtime = 'edge'
 import { authWithCheck } from '@/app/(auth)/auth'
 import { detectLocale } from '@/app/i18n/detect-locale'
 import { getDictionary } from '@/app/i18n/get-dictionary'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFound } from '@/app/v1beta/_lib/platform-error-handler'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { notFound } from 'next/navigation'
 import { IntegrationDetailUI } from './components/integration-detail-ui'
@@ -53,11 +54,7 @@ export default async function IntegrationDetailPage({ params }: PageProps) {
 	const { organization } = await platformAction(
 		async sdk => sdk.orgPage({ username: org }),
 		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-			},
+			onError: handleNotFound,
 		},
 	)
 
