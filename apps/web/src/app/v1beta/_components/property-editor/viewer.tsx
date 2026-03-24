@@ -10,7 +10,19 @@ import {
 	SelectValueForEditorFragment,
 	StringValueForEditorFragment,
 } from '@/gen/graphql'
-import { LocationMap } from '../location-map'
+import dynamic from 'next/dynamic'
+
+const LocationMap = dynamic(
+	() => import('../location-map').then(mod => ({ default: mod.LocationMap })),
+	{
+		ssr: false,
+		loading: () => (
+			<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>
+				Loading map…
+			</div>
+		),
+	},
+)
 
 type PropertyViewerProps = {
 	propertyData: PropertyDataForEditorFragment[]

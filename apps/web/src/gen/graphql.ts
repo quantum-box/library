@@ -1898,7 +1898,7 @@ export type CreateOperatorMutation = { __typename?: 'Mutation', createOperator: 
 export type DashboardQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type DashboardQuery = { __typename?: 'Query', me: { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string }> } };
+export type DashboardQuery = { __typename?: 'Query', me: { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string, repos: Array<{ __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean }> }> } };
 
 export type DashboardOrgReposQueryVariables = Exact<{
   username: Scalars['String']['input'];
@@ -1909,7 +1909,7 @@ export type DashboardOrgReposQuery = { __typename?: 'Query', organization: { __t
 
 export type MeOnDashboardFragment = { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string }> };
 
-export type OrganizationListItemFragment = { __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string };
+export type OrganizationListItemFragment = { __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string, repos: Array<RepoItemOnDashboardFragment> };
 
 export type RepoItemOnDashboardFragment = { __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean };
 
@@ -2377,22 +2377,6 @@ export type CreateOrganizationMutation = { __typename?: 'Mutation', createOrgani
 
 export type WritePermissionHooksPolicyFieldsFragment = { __typename?: 'RepoPolicy', role: string, userId: string };
 
-export const OrganizationListItemFragmentDoc = gql`
-    fragment organizationListItem on Operator {
-  id
-  operatorName
-  platformTenantId
-}
-    `;
-export const MeOnDashboardFragmentDoc = gql`
-    fragment meOnDashboard on User {
-  name
-  tenantIdList
-  organizations {
-    ...organizationListItem
-  }
-}
-    ${OrganizationListItemFragmentDoc}`;
 export const RepoItemOnDashboardFragmentDoc = gql`
     fragment repoItemOnDashboard on Repo {
   id
@@ -2402,6 +2386,25 @@ export const RepoItemOnDashboardFragmentDoc = gql`
   isPublic
 }
     `;
+export const OrganizationListItemFragmentDoc = gql`
+    fragment organizationListItem on Operator {
+  id
+  operatorName
+  platformTenantId
+  repos {
+    ...repoItemOnDashboard
+  }
+}
+    ${RepoItemOnDashboardFragmentDoc}`;
+export const MeOnDashboardFragmentDoc = gql`
+    fragment meOnDashboard on User {
+  name
+  tenantIdList
+  organizations {
+    ...organizationListItem
+  }
+}
+    ${OrganizationListItemFragmentDoc}`;
 export const OrganizationOptionFragmentDoc = gql`
     fragment organizationOption on Operator {
   id

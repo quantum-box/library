@@ -37,8 +37,28 @@ import {
 	StringValueForEditorFragment,
 } from '@/gen/graphql'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { type AvailableRepo, ExtGithubEditor } from '../ext-github-editor'
-import { LocationMap, LocationMapCompact } from '../../location-map'
+
+const LocationMap = dynamic(
+	() => import('../../location-map').then(mod => ({ default: mod.LocationMap })),
+	{
+		ssr: false,
+		loading: () => (
+			<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>
+				Loading map…
+			</div>
+		),
+	},
+)
+
+const LocationMapCompact = dynamic(
+	() =>
+		import('../../location-map').then(mod => ({
+			default: mod.LocationMapCompact,
+		})),
+	{ ssr: false },
+)
 
 /** Check if property is ext_github */
 function isExtGithubProperty(property: PropertyForEditorFragment): boolean {

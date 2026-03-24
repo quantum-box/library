@@ -1,8 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
+import { useEffect, useRef, useState } from 'react'
 
 export type CollaborationConfig = {
 	/** WebSocket server base URL (e.g. ws://localhost:50053) */
@@ -18,14 +16,17 @@ export type CollaborationConfig = {
 }
 
 export type CollaborationState = {
-	provider: WebsocketProvider
-	doc: Y.Doc
-	fragment: Y.XmlFragment
+	provider: import('y-websocket').WebsocketProvider
+	doc: import('yjs').Doc
+	fragment: import('yjs').XmlFragment
 	connected: boolean
 }
 
 /**
  * Hook that manages Yjs document and WebSocket provider lifecycle.
+ *
+ * yjs and y-websocket are loaded dynamically to avoid bundling ~50KB
+ * for pages that don't use collaboration.
  *
  * y-websocket handles reconnection automatically with exponential
  * backoff. Offline edits are preserved in the local Y.Doc and
@@ -35,60 +36,84 @@ export function useCollaboration(
 	config: CollaborationConfig | undefined,
 ): CollaborationState | null {
 	const [connected, setConnected] = useState(false)
-	const providerRef = useRef<WebsocketProvider | null>(null)
-	const docRef = useRef<Y.Doc | null>(null)
-
-	const doc = useMemo(() => {
-		if (!config) return null
-		return new Y.Doc()
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [config?.documentKey, config?.wsUrl])
-
-	const fragment = useMemo(() => {
-		if (!doc) return null
-		return doc.getXmlFragment('document-store')
-	}, [doc])
+	const [state, setState] = useState<{
+		doc: import('yjs').Doc
+		fragment: import('yjs').XmlFragment
+		provider: import('y-websocket').WebsocketProvider
+	} | null>(null)
+	const stateRef = useRef(state)
+	stateRef.current = state
 
 	useEffect(() => {
-		if (!config || !doc) return
-
-		// y-websocket connects to: ${serverUrl}/${roomname}?params
-		const serverUrl = `${config.wsUrl}/ws/collab`
-
-		const provider = new WebsocketProvider(serverUrl, config.documentKey, doc, {
-			connect: true,
-			disableBc: true,
-			params: { operator_id: config.operatorId },
-			maxBackoffTime: 5000,
-		})
-
-		provider.awareness.setLocalStateField('user', {
-			name: config.userName,
-			color: config.userColor,
-		})
-
-		const handleStatus = ({ status }: { status: string }) => {
-			setConnected(status === 'connected')
+		if (!config) {
+			setState(null)
+			return
 		}
-		provider.on('status', handleStatus)
 
-		providerRef.current = provider
-		docRef.current = doc
+		let cancelled = false
+
+		const setup = async () => {
+			const [Y, { WebsocketProvider }] = await Promise.all([
+				import('yjs'),
+				import('y-websocket'),
+			])
+
+			if (cancelled) return
+
+			const doc = new Y.Doc()
+			const fragment = doc.getXmlFragment('document-store')
+
+			const serverUrl = `${config.wsUrl}/ws/collab`
+			const provider = new WebsocketProvider(
+				serverUrl,
+				config.documentKey,
+				doc,
+				{
+					connect: true,
+					disableBc: true,
+					params: { operator_id: config.operatorId },
+					maxBackoffTime: 5000,
+				},
+			)
+
+			provider.awareness.setLocalStateField('user', {
+				name: config.userName,
+				color: config.userColor,
+			})
+
+			const handleStatus = ({ status }: { status: string }) => {
+				setConnected(status === 'connected')
+			}
+			provider.on('status', handleStatus)
+
+			if (cancelled) {
+				provider.off('status', handleStatus)
+				provider.destroy()
+				doc.destroy()
+				return
+			}
+
+			const next = { doc, fragment, provider }
+			stateRef.current = next
+			setState(next)
+		}
+
+		void setup()
 
 		return () => {
-			provider.off('status', handleStatus)
-			provider.destroy()
-			doc.destroy()
-			providerRef.current = null
-			docRef.current = null
+			cancelled = true
+			const s = stateRef.current
+			if (s) {
+				s.provider.destroy()
+				s.doc.destroy()
+			}
+			setState(null)
 			setConnected(false)
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [config?.documentKey, config?.wsUrl, doc])
+	}, [config?.documentKey, config?.wsUrl])
 
-	if (!config || !doc || !fragment) return null
+	if (!config || !state) return null
 
-	return providerRef.current
-		? { provider: providerRef.current, doc, fragment, connected }
-		: null
+	return { ...state, connected }
 }

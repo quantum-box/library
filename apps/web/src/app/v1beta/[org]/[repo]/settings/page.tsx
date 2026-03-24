@@ -93,50 +93,52 @@ export default async function SettingsPage({
 	// Require owner permission
 	await requireOwnerPermission(params.org, params.repo)
 
-	const { repo, properties } = await platformAction(
-		async sdk =>
-			sdk.getRepoSettingsPage({
-				orgUsername: params.org,
-				repoUsername: params.repo,
-			}),
-		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
+	// Fetch repo settings and org tenantId in parallel
+	const [{ repo, properties }, orgResult] = await Promise.all([
+		platformAction(
+			async sdk =>
+				sdk.getRepoSettingsPage({
+					orgUsername: params.org,
+					repoUsername: params.repo,
+				}),
+			{
+				onError: error => {
+					if (error.code === ErrorCode.NOT_FOUND_ERROR) {
+						notFound()
+					}
+				},
 			},
-		},
-	)
+		),
+		executeGraphQL(OrganizationQuery, {
+			username: params.org,
+		}),
+	])
 
 	// Check if ext_github property exists
 	const hasGitHubSync = properties.some(p => p.name === 'ext_github')
 
-	// Resolve tenantId for integrations (extensions)
-	const orgResult = await executeGraphQL(OrganizationQuery, {
-		username: params.org,
-	})
 	const tenantId = orgResult?.organization?.id ?? null
 
-	const connectionsResult = tenantId
-		? await executeGraphQL<ConnectionsResult>(
-				ConnectionsQuery,
-				{ tenantId },
-				{ operatorId: tenantId, accessToken: session?.user?.accessToken },
-			)
-		: null
+	// Fetch connections and webhook endpoints in parallel
+	const [connectionsResult, endpointsResult] = tenantId
+		? await Promise.all([
+				executeGraphQL<ConnectionsResult>(
+					ConnectionsQuery,
+					{ tenantId },
+					{ operatorId: tenantId, accessToken: session?.user?.accessToken },
+				),
+				executeGraphQL<WebhookEndpointsResult>(WebhookEndpointsQuery, {
+					tenantId,
+					provider: 'LINEAR',
+					repositoryId: repo.id,
+				}),
+			])
+		: [null, null]
 
 	const linearConnection =
 		connectionsResult?.connections?.find(
 			connection => connection.provider === 'LINEAR',
 		) ?? null
-
-	const endpointsResult = tenantId
-		? await executeGraphQL<WebhookEndpointsResult>(WebhookEndpointsQuery, {
-				tenantId,
-				provider: 'LINEAR',
-				repositoryId: repo.id,
-			})
-		: null
 
 	const linearEndpoint = endpointsResult?.webhookEndpoints?.[0] ?? null
 
