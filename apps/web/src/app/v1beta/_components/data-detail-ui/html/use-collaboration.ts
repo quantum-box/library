@@ -93,7 +93,9 @@ export function useCollaboration(
 				return
 			}
 
-			setState({ doc, fragment, provider })
+			const next = { doc, fragment, provider }
+			stateRef.current = next
+			setState(next)
 		}
 
 		void setup()
