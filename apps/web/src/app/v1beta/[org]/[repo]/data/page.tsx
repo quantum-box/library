@@ -2,12 +2,11 @@ export const runtime = 'edge'
 
 import { auth } from '@/app/(auth)/auth'
 import {
-	ErrorCode,
 	PlatformActionError,
 	platformAction,
 } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFoundOrPermissionDenied } from '@/app/v1beta/_lib/platform-error-handler'
 import { RepositoryPageQuery, RepositoryPageWithTagsQuery } from '@/gen/graphql'
-import { notFound } from 'next/navigation'
 import { DataViewComponent } from './components/data-view'
 
 
@@ -37,19 +36,7 @@ export default async function DataPage({
 					pageSize,
 				}),
 			{
-				onError: error => {
-					if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-						notFound()
-					}
-					if (error.code === ErrorCode.PERMISSION_DENIED) {
-						console.warn(
-							'Permission denied during data page load, continuing:',
-							error.message,
-						)
-						return
-					}
-					throw error
-				},
+				onError: handleNotFoundOrPermissionDenied,
 				redirectOnError: false,
 				allowAnonymous: true,
 			},
@@ -69,19 +56,7 @@ export default async function DataPage({
 						pageSize,
 					}),
 				{
-					onError: fallbackError => {
-						if (fallbackError.code === ErrorCode.NOT_FOUND_ERROR) {
-							notFound()
-						}
-						if (fallbackError.code === ErrorCode.PERMISSION_DENIED) {
-							console.warn(
-								'Permission denied during data page load, continuing:',
-								fallbackError.message,
-							)
-							return
-						}
-						throw fallbackError
-					},
+					onError: handleNotFoundOrPermissionDenied,
 					redirectOnError: false,
 					allowAnonymous: true,
 				},

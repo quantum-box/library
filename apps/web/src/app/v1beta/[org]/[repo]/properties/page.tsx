@@ -2,7 +2,8 @@ export const runtime = 'edge'
 
 import { PropertiesUi } from '@/app/v1beta/_components/properties-ui'
 import type { GitHubRepoConfig } from '@/app/v1beta/_components/properties-ui/github-repos-editor'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFoundOrPermissionDenied } from '@/app/v1beta/_lib/platform-error-handler'
 import { canEdit } from '@/app/v1beta/_lib/repo-permissions'
 import {
 	MultiSelectTypeMetaForPropertiesUiFragment,
@@ -13,7 +14,6 @@ import {
 	SelectTypeMetaForPropertiesUiFragment,
 } from '@/gen/graphql'
 import { createSdkPlatform } from '@/lib/api-action'
-import { notFound } from 'next/navigation'
 import { getGitHubConnection } from '../../_components/github-settings-actions'
 
 
@@ -29,18 +29,7 @@ export default async function PropertiesPage({
 						repoUsername: repo,
 					}),
 				{
-					onError: error => {
-						if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-							notFound()
-						}
-						if (error.code === ErrorCode.PERMISSION_DENIED) {
-							console.warn(
-								'Permission denied during properties page load, continuing:',
-								error.message,
-							)
-							return
-						}
-					},
+					onError: handleNotFoundOrPermissionDenied,
 					redirectOnError: false,
 					allowAnonymous: true,
 				},

@@ -2,9 +2,9 @@ export const runtime = 'edge'
 
 import { auth } from '@/app/(auth)/auth'
 import { getBaseUrl } from '@/app/v1beta/_lib/get-base-url'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFoundOrPermissionDenied } from '@/app/v1beta/_lib/platform-error-handler'
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { updateOrgAction } from './_components/action'
 import { ApiKeyListServer } from './_components/api-key-list-server'
@@ -135,18 +135,7 @@ export default async function OrganizationPage({
 		platformAction(
 			async sdk => sdk.orgPage({ username: org }),
 			{
-				onError: error => {
-					if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-						notFound()
-					}
-					if (error.code === ErrorCode.PERMISSION_DENIED) {
-						console.warn(
-							'Permission denied during org page load, continuing:',
-							error.message,
-						)
-						return
-					}
-				},
+				onError: handleNotFoundOrPermissionDenied,
 				redirectOnError: false,
 				allowAnonymous: true,
 			},

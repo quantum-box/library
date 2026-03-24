@@ -9,13 +9,12 @@ import { RepositoryPageQuery, RepositoryPageWithTagsQuery } from '@/gen/graphql'
 import { createSdkOperator, createSdkPlatform } from '@/lib/api-action'
 import type { Metadata } from 'next'
 import { revalidatePath } from 'next/cache'
-import { notFound } from 'next/navigation'
 import { getBaseUrl } from '../../_lib/get-base-url'
 import {
-	ErrorCode,
 	PlatformActionError,
 	platformAction,
 } from '../../_lib/platform-action'
+import { handleNotFoundOrPermissionDenied } from '../../_lib/platform-error-handler'
 import { canEdit } from '../../_lib/repo-permissions'
 
 
@@ -161,19 +160,7 @@ export default async function RepositoryPage({
 						pageSize,
 					}),
 				{
-					onError: error => {
-						if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-							notFound()
-						}
-						if (error.code === ErrorCode.PERMISSION_DENIED) {
-							console.warn(
-								'Permission denied during repo page load, continuing:',
-								error.message,
-							)
-							return
-						}
-						throw error
-					},
+					onError: handleNotFoundOrPermissionDenied,
 					redirectOnError: false,
 					allowAnonymous: true,
 				},
@@ -193,19 +180,7 @@ export default async function RepositoryPage({
 							pageSize,
 						}),
 					{
-						onError: fallbackError => {
-							if (fallbackError.code === ErrorCode.NOT_FOUND_ERROR) {
-								notFound()
-							}
-							if (fallbackError.code === ErrorCode.PERMISSION_DENIED) {
-								console.warn(
-									'Permission denied during repo page load, continuing:',
-									fallbackError.message,
-								)
-								return
-							}
-							throw fallbackError
-						},
+						onError: handleNotFoundOrPermissionDenied,
 						redirectOnError: false,
 						allowAnonymous: true,
 					},

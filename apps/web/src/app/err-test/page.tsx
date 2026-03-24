@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
-import { notFound } from 'next/navigation'
-import { ErrorCode, platformAction } from '../v1beta/_lib/platform-action'
+import { platformAction } from '../v1beta/_lib/platform-action'
+import { handleNotFoundOrThrow } from '../v1beta/_lib/platform-error-handler'
 
 
 export default async function ErrTest() {
@@ -10,12 +10,7 @@ export default async function ErrTest() {
 			return await sdk.ErrTest()
 		},
 		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-				throw error
-			},
+			onError: handleNotFoundOrThrow,
 			redirectOnError: false,
 		},
 	)

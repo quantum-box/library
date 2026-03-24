@@ -4,8 +4,8 @@ import { auth } from '@/app/(auth)/auth'
 import { createApiKeyAction } from '@/app/v1beta/[org]/_components/action'
 import { ApiKeyDialog } from '@/app/v1beta/[org]/_components/api-key-dialog'
 import { ApiKeyListServer } from '@/app/v1beta/[org]/_components/api-key-list-server'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
-import { notFound } from 'next/navigation'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFound } from '@/app/v1beta/_lib/platform-error-handler'
 import { ApiPageUi } from './_components/api-page-ui'
 
 
@@ -20,11 +20,7 @@ export default async function ApiPage({
 				repoUsername: repo,
 			}),
 		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-			},
+			onError: handleNotFound,
 			redirectOnError: false,
 			allowAnonymous: true,
 		},

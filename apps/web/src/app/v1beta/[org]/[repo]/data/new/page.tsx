@@ -1,14 +1,14 @@
 export const runtime = 'edge'
 
 import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
-import { ErrorCode, platformAction } from '@/app/v1beta/_lib/platform-action'
+import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import { handleNotFound } from '@/app/v1beta/_lib/platform-error-handler'
 import { requireEditPermission } from '@/app/v1beta/_lib/repo-permissions'
 import {
 	PropertyDataForEditorFragment,
 	PropertyForEditorFragment,
 	PropertyType,
 } from '@/gen/graphql'
-import { notFound } from 'next/navigation'
 import { createData } from './action'
 
 
@@ -27,11 +27,7 @@ export default async function NewDataPage({
 				repoUsername: repo,
 			}),
 		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-			},
+			onError: handleNotFound,
 		},
 	)
 
