@@ -18,10 +18,12 @@ vi.mock('./platform-action', () => {
 		UNKNOWN_ERROR: 'UNKNOWN_ERROR',
 	} as const
 
+	type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode]
+
 	class PlatformActionError extends Error {
 		constructor(
 			message: string,
-			public readonly code: string,
+			public readonly code: ErrorCodeType,
 		) {
 			super(message)
 			this.name = 'PlatformActionError'
@@ -31,6 +33,7 @@ vi.mock('./platform-action', () => {
 	return { ErrorCode, PlatformActionError }
 })
 
+import type { ErrorCodeType } from './platform-action'
 import { ErrorCode, PlatformActionError } from './platform-action'
 import {
 	handleNotFound,
@@ -38,8 +41,8 @@ import {
 	handleNotFoundOrPermissionDenied,
 } from './platform-error-handler'
 
-function makeError(code: string, message = 'test error') {
-	return new PlatformActionError(message, code as any)
+function makeError(code: ErrorCodeType, message = 'test error') {
+	return new PlatformActionError(message, code)
 }
 
 describe('handleNotFound', () => {
