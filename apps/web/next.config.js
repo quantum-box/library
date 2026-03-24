@@ -13,7 +13,6 @@ const nextConfig = {
       '@dnd-kit/utilities',
       'class-variance-authority',
       'cmdk',
-      'framer-motion',
     ],
   },
   eslint: {

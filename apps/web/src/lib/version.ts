@@ -29,7 +29,7 @@ export const fetchBackendVersion = async (): Promise<string | null> => {
 
 	try {
 		const response = await fetch(`${normalizedBaseUrl}/version`, {
-			cache: 'no-store',
+			next: { revalidate: 3600 },
 		})
 
 		if (!response.ok) {
