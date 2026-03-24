@@ -129,26 +129,29 @@ export default async function OrganizationPage({
 		org: string
 	}
 }) {
-	const session = await auth()
-	const { organization } = await platformAction(
-		async sdk => sdk.orgPage({ username: org }),
-		{
-			onError: error => {
-				if (error.code === ErrorCode.NOT_FOUND_ERROR) {
-					notFound()
-				}
-				if (error.code === ErrorCode.PERMISSION_DENIED) {
-					console.warn(
-						'Permission denied during org page load, continuing:',
-						error.message,
-					)
-					return
-				}
+	// Fetch auth and org data in parallel
+	const [session, { organization }] = await Promise.all([
+		auth(),
+		platformAction(
+			async sdk => sdk.orgPage({ username: org }),
+			{
+				onError: error => {
+					if (error.code === ErrorCode.NOT_FOUND_ERROR) {
+						notFound()
+					}
+					if (error.code === ErrorCode.PERMISSION_DENIED) {
+						console.warn(
+							'Permission denied during org page load, continuing:',
+							error.message,
+						)
+						return
+					}
+				},
+				redirectOnError: false,
+				allowAnonymous: true,
 			},
-			redirectOnError: false,
-			allowAnonymous: true,
-		},
-	)
+		),
+	])
 	const isViewOnly = !session
 
 	// Check Linear connection status

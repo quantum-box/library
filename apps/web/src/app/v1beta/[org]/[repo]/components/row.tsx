@@ -5,7 +5,15 @@ import {
 	PropertyType,
 } from '@/gen/graphql'
 import NextLink from 'next/link'
-import { LocationMapCompact } from '../../../_components/location-map'
+import dynamic from 'next/dynamic'
+
+const LocationMapCompact = dynamic(
+	() =>
+		import('../../../_components/location-map').then(mod => ({
+			default: mod.LocationMapCompact,
+		})),
+	{ ssr: false },
+)
 
 export interface Props {
 	data: DataFieldOnRepoPageFragment

@@ -34,23 +34,14 @@ export default async function App({
 		},
 	})
 
-	// Fetch repos for each organization in parallel
+	// Repos are now included in the dashboard query via organizationListItem fragment
 	const orgRepos = new Map<string, RepoItemOnDashboardFragment[]>()
 	const orgs = me.organizations.filter(
 		org => org.platformTenantId === platformId,
 	)
-	const repoResults = await Promise.allSettled(
-		orgs.map(org =>
-			platformAction(
-				async sdk => sdk.dashboardOrgRepos({ username: org.operatorName }),
-				{ redirectOnError: false },
-			),
-		),
-	)
-	for (let i = 0; i < orgs.length; i++) {
-		const result = repoResults[i]
-		if (result.status === 'fulfilled' && result.value.organization?.repos) {
-			orgRepos.set(orgs[i].id, result.value.organization.repos)
+	for (const org of orgs) {
+		if (org.repos && org.repos.length > 0) {
+			orgRepos.set(org.id, org.repos)
 		}
 	}
 
