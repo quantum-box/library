@@ -1909,7 +1909,7 @@ export type DashboardOrgReposQuery = { __typename?: 'Query', organization: { __t
 
 export type MeOnDashboardFragment = { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string }> };
 
-export type OrganizationListItemFragment = { __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string, repos: Array<RepoItemOnDashboardFragment> };
+export type OrganizationListItemFragment = { __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string };
 
 export type RepoItemOnDashboardFragment = { __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean };
 
@@ -2391,11 +2391,8 @@ export const OrganizationListItemFragmentDoc = gql`
   id
   operatorName
   platformTenantId
-  repos {
-    ...repoItemOnDashboard
-  }
 }
-    ${RepoItemOnDashboardFragmentDoc}`;
+    `;
 export const MeOnDashboardFragmentDoc = gql`
     fragment meOnDashboard on User {
   name
