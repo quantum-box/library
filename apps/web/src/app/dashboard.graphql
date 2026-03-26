@@ -26,9 +26,6 @@ fragment organizationListItem on Operator {
   id
   operatorName
   platformTenantId
-  repos {
-    ...repoItemOnDashboard
-  }
 }
 
 fragment repoItemOnDashboard on Repo {
