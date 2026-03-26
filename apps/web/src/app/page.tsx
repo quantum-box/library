@@ -26,18 +26,45 @@ export default async function App({
 	const locale = detectLocale()
 	const dictionary = getDictionary(locale)
 
-	const { me } = await platformAction(async sdk => sdk.dashboard(), {
+	const result = await platformAction(async sdk => sdk.dashboard(), {
 		onError: handleNotFound,
 	})
 
-	// Repos are now included in the dashboard query via organizationListItem fragment
 	const orgRepos = new Map<string, RepoItemOnDashboardFragment[]>()
+	if (!result) {
+		return (
+			<I18nProvider locale={locale} dictionary={dictionary}>
+				<Dashboard
+					me={{ name: '', tenantIdList: [], organizations: [] }}
+					dictionary={dictionary}
+					orgRepos={orgRepos}
+				/>
+			</I18nProvider>
+		)
+	}
+
+	const { me } = result
 	const orgs = me.organizations.filter(
 		org => org.platformTenantId === platformId,
 	)
-	for (const org of orgs) {
-		if (org.repos && org.repos.length > 0) {
-			orgRepos.set(org.id, org.repos)
+
+	// Fetch repos per organization via separate query
+	const repoResults = await Promise.allSettled(
+		orgs.map(org =>
+			platformAction(
+				async sdk =>
+					sdk.dashboardOrgRepos({ username: org.operatorName }),
+				{ onError: handleNotFound },
+			),
+		),
+	)
+	for (let i = 0; i < orgs.length; i++) {
+		const result = repoResults[i]
+		if (
+			result.status === 'fulfilled' &&
+			result.value?.organization?.repos?.length
+		) {
+			orgRepos.set(orgs[i].id, result.value.organization.repos)
 		}
 	}
 
