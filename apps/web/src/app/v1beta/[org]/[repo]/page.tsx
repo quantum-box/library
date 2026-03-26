@@ -9,6 +9,7 @@ import { RepositoryPageQuery, RepositoryPageWithTagsQuery } from '@/gen/graphql'
 import { createSdkOperator, createSdkPlatform } from '@/lib/api-action'
 import type { Metadata } from 'next'
 import { revalidatePath } from 'next/cache'
+import { Suspense } from 'react'
 import { getBaseUrl } from '../../_lib/get-base-url'
 import {
 	PlatformActionError,
@@ -16,6 +17,7 @@ import {
 } from '../../_lib/platform-action'
 import { handleNotFoundOrPermissionDenied } from '../../_lib/platform-error-handler'
 import { canEdit } from '../../_lib/repo-permissions'
+import { RepoSkeleton } from './components/repo-skeleton'
 
 
 type Props = {
@@ -133,27 +135,39 @@ async function updateRepositoryMetaAction(
 	revalidatePath(`/v1beta/${payload.org}/${payload.repo}`)
 }
 
-export default async function RepositoryPage({
-	params: { org, repo },
-	searchParams,
-}: {
-	params: { org: string; repo: string }
-	searchParams: { page?: string; pageSize?: string }
-}) {
-	const page = searchParams.page ? Number.parseInt(searchParams.page, 10) : 1
-	const pageSize = searchParams.pageSize
-		? Number.parseInt(searchParams.pageSize, 10)
-		: 20
+async function fetchRepoData(
+	org: string,
+	repo: string,
+	page: number,
+	pageSize: number,
+) {
+	let repoDataWithTags: RepositoryPageWithTagsQuery['repo'] | null = null
+	let repoDataWithoutTags: RepositoryPageQuery['repo'] | null = null
 
-	// Fetch auth, repo data, and permissions in parallel
-	const repoDataPromise = (async () => {
-		let repoDataWithTags: RepositoryPageWithTagsQuery['repo'] | null = null
-		let repoDataWithoutTags: RepositoryPageQuery['repo'] | null = null
-
-		try {
-			const resWithTags = await platformAction<RepositoryPageWithTagsQuery>(
+	try {
+		const resWithTags = await platformAction<RepositoryPageWithTagsQuery>(
+			sdk =>
+				sdk.repositoryPageWithTags({
+					org,
+					repo,
+					page,
+					pageSize,
+				}),
+			{
+				onError: handleNotFoundOrPermissionDenied,
+				redirectOnError: false,
+				allowAnonymous: true,
+			},
+		)
+		repoDataWithTags = resWithTags?.repo ?? null
+	} catch (error: unknown) {
+		if (
+			error instanceof PlatformActionError &&
+			error.message.includes('Unknown field "tags"')
+		) {
+			const resWithoutTags = await platformAction<RepositoryPageQuery>(
 				sdk =>
-					sdk.repositoryPageWithTags({
+					sdk.repositoryPage({
 						org,
 						repo,
 						page,
@@ -165,45 +179,43 @@ export default async function RepositoryPage({
 					allowAnonymous: true,
 				},
 			)
-			repoDataWithTags = resWithTags?.repo ?? null
-		} catch (error: unknown) {
-			if (
-				error instanceof PlatformActionError &&
-				error.message.includes('Unknown field "tags"')
-			) {
-				const resWithoutTags = await platformAction<RepositoryPageQuery>(
-					sdk =>
-						sdk.repositoryPage({
-							org,
-							repo,
-							page,
-							pageSize,
-						}),
-					{
-						onError: handleNotFoundOrPermissionDenied,
-						redirectOnError: false,
-						allowAnonymous: true,
-					},
-				)
-				repoDataWithoutTags = resWithoutTags?.repo ?? null
-			} else {
-				throw error
-			}
+			repoDataWithoutTags = resWithoutTags?.repo ?? null
+		} else {
+			throw error
 		}
+	}
 
-		return { repoDataWithTags, repoDataWithoutTags }
-	})()
+	return { repoDataWithTags, repoDataWithoutTags }
+}
 
-	const [session, { repoDataWithTags, repoDataWithoutTags }, canEditResult] =
-		await Promise.all([auth(), repoDataPromise, canEdit(org, repo)])
+async function RepoContent({
+	org,
+	repo,
+	page,
+	pageSize,
+}: {
+	org: string
+	repo: string
+	page: number
+	pageSize: number
+}) {
+	const [sessionResult, repoDataResult, canEditResult] =
+		await Promise.allSettled([
+			auth(),
+			fetchRepoData(org, repo, page, pageSize),
+			canEdit(org, repo),
+		])
 
-	const repoData = repoDataWithTags ?? repoDataWithoutTags
+	const repoDataSettled =
+		repoDataResult.status === 'fulfilled' ? repoDataResult.value : null
+	const repoData =
+		repoDataSettled?.repoDataWithTags ?? repoDataSettled?.repoDataWithoutTags
 
 	if (!repoData) {
 		throw new Error('Failed to load repository data')
 	}
 
-	const tags = repoDataWithTags?.tags ?? []
+	const tags = repoDataSettled?.repoDataWithTags?.tags ?? []
 
 	const sources = repoData.sources?.map((source, index) => ({
 		id: source.id,
@@ -218,9 +230,11 @@ export default async function RepositoryPage({
 		avatarUrl: policy.user?.image ?? undefined,
 	}))
 
-	const hasEditPermission = canEditResult.isOk() && canEditResult.value
+	const hasEditPermission =
+		canEditResult.status === 'fulfilled' &&
+		canEditResult.value.isOk() &&
+		canEditResult.value.value
 
-	// Check if GitHub sync is enabled (ext_github property exists)
 	const hasGitHubSync = repoData.properties.some(p => p.name === 'ext_github')
 
 	return (
@@ -241,5 +255,24 @@ export default async function RepositoryPage({
 			isPublic={repoData.isPublic}
 			hasGitHubSync={hasGitHubSync}
 		/>
+	)
+}
+
+export default async function RepositoryPage({
+	params: { org, repo },
+	searchParams,
+}: {
+	params: { org: string; repo: string }
+	searchParams: { page?: string; pageSize?: string }
+}) {
+	const page = searchParams.page ? Number.parseInt(searchParams.page, 10) : 1
+	const pageSize = searchParams.pageSize
+		? Number.parseInt(searchParams.pageSize, 10)
+		: 20
+
+	return (
+		<Suspense fallback={<RepoSkeleton />}>
+			<RepoContent org={org} repo={repo} page={page} pageSize={pageSize} />
+		</Suspense>
 	)
 }
