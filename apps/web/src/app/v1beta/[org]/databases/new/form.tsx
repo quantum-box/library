@@ -45,17 +45,16 @@ export function CreateDatabase({
 
 	const onSubmit = async (data: FormData) => {
 		try {
-			// ここでリポジトリ作成のAPIを呼び出す
 			const orgObj = organizations.find(o => o.operatorName === org)
 			if (!orgObj) {
 				throw new Error('Organization not found')
 			}
-			const id = await createDatabaseAction(data, orgObj)
-			// API呼び出しが成功したと仮定
+			const repoUsername = await createDatabaseAction(data, orgObj)
 			toast({
 				title: t.v1beta.newRepository.success,
 				description: t.v1beta.newRepository.successDescription,
 			})
+			router.push(`/v1beta/${org}/${repoUsername}`)
 		} catch (error) {
 			toast({
 				title: t.common.error,
