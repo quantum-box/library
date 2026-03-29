@@ -9,7 +9,7 @@ import Providers from './providers'
 const inter = Inter({ subsets: ['latin'] })
 
 // https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config
-export const revalidate = 10
+export const revalidate = 3600
 // export const runtime = 'edge'
 
 export const viewport: Viewport = {

@@ -28,9 +28,14 @@ export const fetchBackendVersion = async (): Promise<string | null> => {
 	const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
 
 	try {
+		const controller = new AbortController()
+		const timeoutId = setTimeout(() => controller.abort(), 5_000)
+
 		const response = await fetch(`${normalizedBaseUrl}/version`, {
 			next: { revalidate: 3600 },
+			signal: controller.signal,
 		})
+		clearTimeout(timeoutId)
 
 		if (!response.ok) {
 			return null

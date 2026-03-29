@@ -88,11 +88,16 @@ async function proxyRequest(
 				? await request.text()
 				: undefined
 
+		const controller = new AbortController()
+		const timeoutId = setTimeout(() => controller.abort(), 15_000)
+
 		const response = await fetch(fullUrl, {
 			method: request.method,
 			headers,
 			body,
+			signal: controller.signal,
 		})
+		clearTimeout(timeoutId)
 
 		// Forward response headers
 		const responseHeaders = new Headers()
