@@ -143,17 +143,20 @@ export default async function OrganizationPage({
 	])
 	const isViewOnly = !session
 
-	// Check Linear connection status
-	const connectionsResult = await executeGraphQL<ConnectionsResult>(
-		ConnectionsQuery,
-		{
-			tenantId: organization.id,
-		},
-		{
-			operatorId: organization.id,
-			accessToken: session?.user?.accessToken,
-		},
-	)
+	// Check Linear connection status (only when authenticated)
+	let connectionsResult: ConnectionsResult | null = null
+	if (session?.user?.accessToken) {
+		connectionsResult = await executeGraphQL<ConnectionsResult>(
+			ConnectionsQuery,
+			{
+				tenantId: organization.id,
+			},
+			{
+				operatorId: organization.id,
+				accessToken: session.user.accessToken,
+			},
+		)
+	}
 	const hasLinearConnection = connectionsResult?.connections?.some(
 		connection =>
 			connection.provider === 'LINEAR' && connection.status !== 'DISCONNECTED',
