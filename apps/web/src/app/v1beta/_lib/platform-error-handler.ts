@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { ErrorCode, type PlatformActionError } from './platform-action'
 import 'server-only'
 
@@ -15,11 +15,15 @@ export const handleNotFound = (error: PlatformActionError) => {
 
 /**
  * Common onError handler: calls notFound() on NOT_FOUND_ERROR,
+ * redirects to sign-in on UNAUTHORIZED_ERROR,
  * re-throws all other errors.
  */
 export const handleNotFoundOrThrow = (error: PlatformActionError) => {
 	if (error.code === ErrorCode.NOT_FOUND_ERROR) {
 		notFound()
+	}
+	if (error.code === ErrorCode.UNAUTHORIZED_ERROR) {
+		redirect('/sign_in')
 	}
 	throw error
 }
