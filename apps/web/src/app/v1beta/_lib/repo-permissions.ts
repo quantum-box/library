@@ -38,7 +38,7 @@ export async function getRepoPolicies(
 		},
 	)
 
-	if (!result.repo) {
+	if (!result?.repo) {
 		return err({
 			code: ErrorCode.NOT_FOUND_ERROR,
 			message: 'Repository not found',
