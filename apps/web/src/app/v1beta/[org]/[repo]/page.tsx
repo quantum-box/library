@@ -9,9 +9,11 @@ import { RepositoryPageQuery, RepositoryPageWithTagsQuery } from '@/gen/graphql'
 import { createSdkOperator, createSdkPlatform } from '@/lib/api-action'
 import type { Metadata } from 'next'
 import { revalidatePath } from 'next/cache'
+import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import { getBaseUrl } from '../../_lib/get-base-url'
 import {
+	ErrorCode,
 	PlatformActionError,
 	platformAction,
 } from '../../_lib/platform-action'
@@ -154,35 +156,37 @@ async function fetchRepoData(
 					pageSize,
 				}),
 			{
-				onError: handleNotFoundOrPermissionDenied,
 				redirectOnError: false,
 				allowAnonymous: true,
 			},
 		)
 		repoDataWithTags = resWithTags?.repo ?? null
 	} catch (error: unknown) {
+		// NOT_FOUND should render the 404 page
 		if (
 			error instanceof PlatformActionError &&
-			error.message.includes('Unknown field "tags"')
+			error.code === ErrorCode.NOT_FOUND_ERROR
 		) {
-			const resWithoutTags = await platformAction<RepositoryPageQuery>(
-				sdk =>
-					sdk.repositoryPage({
-						org,
-						repo,
-						page,
-						pageSize,
-					}),
-				{
-					onError: handleNotFoundOrPermissionDenied,
-					redirectOnError: false,
-					allowAnonymous: true,
-				},
-			)
-			repoDataWithoutTags = resWithoutTags?.repo ?? null
-		} else {
-			throw error
+			notFound()
 		}
+
+		// For any other error (schema mismatch like "Unknown field tags",
+		// server errors, etc.), fall back to query without tags
+		const resWithoutTags = await platformAction<RepositoryPageQuery>(
+			sdk =>
+				sdk.repositoryPage({
+					org,
+					repo,
+					page,
+					pageSize,
+				}),
+			{
+				onError: handleNotFoundOrPermissionDenied,
+				redirectOnError: false,
+				allowAnonymous: true,
+			},
+		)
+		repoDataWithoutTags = resWithoutTags?.repo ?? null
 	}
 
 	return { repoDataWithTags, repoDataWithoutTags }
@@ -206,8 +210,12 @@ async function RepoContent({
 			canEdit(org, repo),
 		])
 
-	const repoDataSettled =
-		repoDataResult.status === 'fulfilled' ? repoDataResult.value : null
+	// Re-throw rejected fetchRepoData so notFound() propagates correctly
+	if (repoDataResult.status === 'rejected') {
+		throw repoDataResult.reason
+	}
+
+	const repoDataSettled = repoDataResult.value
 	const repoData =
 		repoDataSettled?.repoDataWithTags ?? repoDataSettled?.repoDataWithoutTags
 
