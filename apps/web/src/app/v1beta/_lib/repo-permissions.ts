@@ -64,7 +64,7 @@ export async function getRepoPolicies(
 		)
 
 		if (
-			fallbackResult.repo?.policies &&
+			fallbackResult?.repo?.policies &&
 			fallbackResult.repo.policies.length > 0
 		) {
 			return ok({
