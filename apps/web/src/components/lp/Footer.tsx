@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import type { LpLanguage } from '@/app/lp'
 import { ArrowRight, ExternalLink } from 'lucide-react'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 
 type FooterLink = {
 	label: string
@@ -141,7 +141,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 							className='inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 shadow-[0_20px_45px_rgba(255,255,255,0.35)] transition hover:shadow-[0_24px_55px_rgba(255,255,255,0.4)] sm:px-8 sm:py-4'
 							asChild
 						>
-							<Link href='/sign_up'>
+							<Link to='/sign_up'>
 								{t.primaryCta}
 								<ArrowRight className='h-5 w-5' />
 							</Link>
@@ -152,7 +152,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 							asChild
 						>
 							<Link
-								href='https://www.quantum-box.com/contact'
+								to='https://www.quantum-box.com/contact'
 								target='_blank'
 								rel='noreferrer'
 							>
@@ -204,7 +204,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 							{t.columnLibraryLinks.map(link => (
 								<li key={link.href}>
 									<Link
-										href={link.href}
+										to={link.href}
 										className='transition hover:text-white'
 									>
 										{link.label}
@@ -221,7 +221,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 						<ul className='space-y-3 text-sm text-slate-300'>
 							{t.columnQuantumLinks.map(link => (
 								<li key={link.href}>
-									<Link
+									<a
 										href={link.href}
 										className='inline-flex items-center gap-1 transition hover:text-white'
 										target='_blank'
@@ -229,7 +229,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 									>
 										{link.label}
 										<ExternalLink className='h-3.5 w-3.5 text-slate-400' />
-									</Link>
+									</a>
 								</li>
 							))}
 						</ul>
@@ -245,7 +245,7 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 							{t.footerLinks.map(link => (
 								<Link
 									key={link.href}
-									href={link.href}
+									to={link.href}
 									className='transition hover:text-white'
 								>
 									{link.label}

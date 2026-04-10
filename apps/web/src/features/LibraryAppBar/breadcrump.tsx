@@ -1,9 +1,8 @@
-'use client'
-import Link from 'next/link'
-import { useSelectedLayoutSegments } from 'next/navigation'
+import { Link, useRouterState } from '@tanstack/react-router'
 
 export function Breadcrumbs() {
-	const segments = useSelectedLayoutSegments()
+	const pathname = useRouterState({ select: (s) => s.location.pathname })
+	const segments = pathname.split('/').filter(Boolean)
 	return (
 		<div className='h-12 justify-start items-center inline-flex text-sm invisible md:visible'>
 			{segments
@@ -14,7 +13,7 @@ export function Breadcrumbs() {
 				.map((segment, ix) => (
 					<span key={segment} className='flex'>
 						<Link
-							href={`/${segments.slice(0, ix + 1).join('/')}`}
+							to={`/${segments.slice(0, ix + 1).join('/')}`}
 							key={segment}
 							className='hover:bg-gray-200 rounded font-semibold px-2'
 						>

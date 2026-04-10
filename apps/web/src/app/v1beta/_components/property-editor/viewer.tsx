@@ -10,19 +10,17 @@ import {
 	SelectValueForEditorFragment,
 	StringValueForEditorFragment,
 } from '@/gen/graphql'
-import dynamic from 'next/dynamic'
+import React, { Suspense } from 'react'
 
-const LocationMap = dynamic(
-	() => import('../location-map').then(mod => ({ default: mod.LocationMap })),
-	{
-		ssr: false,
-		loading: () => (
-			<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>
-				Loading map…
-			</div>
-		),
-	},
-)
+const LocationMapLazy = React.lazy(() => import('../location-map').then(mod => ({ default: mod.LocationMap })))
+
+function LocationMap(props: React.ComponentProps<typeof LocationMapLazy>) {
+	return (
+		<Suspense fallback={<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>Loading map…</div>}>
+			<LocationMapLazy {...props} />
+		</Suspense>
+	)
+}
 
 type PropertyViewerProps = {
 	propertyData: PropertyDataForEditorFragment[]

@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ExternalLink, Key, Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { connectWithApiKey } from '../actions'
 
@@ -39,7 +38,7 @@ export function ConnectDialog({
 	open,
 	onOpenChange,
 }: ConnectDialogProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isLoading, setIsLoading] = useState(false)
 	const [apiKey, setApiKey] = useState('')
 	const [error, setError] = useState<string | null>(null)
@@ -72,7 +71,7 @@ export function ConnectDialog({
 			if (result.success) {
 				onOpenChange(false)
 				setApiKey('')
-				router.refresh()
+				window.location.reload()
 			} else {
 				setError(result.error || 'Connection failed')
 			}

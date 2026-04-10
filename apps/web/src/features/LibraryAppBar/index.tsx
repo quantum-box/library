@@ -1,9 +1,9 @@
-import { auth } from '@/app/(auth)/auth'
+import { useSession } from '@/auth'
 import { Button } from '@/components/ui/button'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { AccountButton } from './account-button'
 
-export async function AppBar({
+export function AppBar({
 	onDrawer,
 	onNotification,
 	onAdd,
@@ -16,18 +16,13 @@ export async function AppBar({
 	onTodo?: () => void
 	children?: React.ReactNode
 }) {
-	const session = await auth()
-	const user = session?.user
+	const session = useSession()
+	const user = session?.data?.user
 	return (
 		<header className='sticky top-0 z-50 border-b border-border/60 bg-white/90 backdrop-blur shadow-sm'>
 			<div className='mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 text-sm font-medium text-foreground'>
 				<div className='flex items-center gap-3'>
-					{/* {onDrawer && (
-						<NavigationButton onClick={onDrawer}>
-							<HamburgerMenuIcon className=' w-5 h-5 relative' />
-						</NavigationButton>
-					)} */}
-					<Link href='/' className='flex items-center gap-2'>
+					<Link to='/' className='flex items-center gap-2'>
 						<BookIcon className='h-5 w-5 text-primary' />
 						<span className='text-base font-semibold'>Library</span>
 					</Link>
@@ -42,26 +37,11 @@ export async function AppBar({
 					)}
 					{user ? (
 						<div className='flex h-9 items-center gap-2'>
-							{/* {onAdd && (
-								<NavigationButton onClick={onAdd}>
-									<PlusIcon className='w-5 h-5 relative' />
-							</NavigationButton>
-						)}
-						{onTodo && (
-							<NavigationButton onClick={onTodo}>
-								<CheckboxIcon className='w-5 h-5 relative' />
-							</NavigationButton>
-						)}
-						{onNotification && (
-							<NavigationButton onClick={onNotification}>
-								<BellIcon className='w-5 h-5 relative' />
-							</NavigationButton>
-						)} */}
 							<AccountButton account={user} />
 						</div>
 					) : (
 						<Button size='sm' className='h-9 px-4 font-semibold' asChild>
-							<Link href='/sign_in'>Sign in</Link>
+							<Link to='/sign_in'>Sign in</Link>
 						</Button>
 					)}
 				</div>

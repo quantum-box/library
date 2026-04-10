@@ -1,4 +1,3 @@
-'use client'
 
 import {
 	AlertDialog,
@@ -101,15 +100,17 @@ function RepoCombobox({
 	const [hasSearched, setHasSearched] = useState(false)
 
 	const searchRepos = useCallback((query: string) => {
-		startTransition(async () => {
-			try {
-				const result = await listGitHubRepositories(query, 30, 1)
-				setRepos(result)
-				setHasSearched(true)
-			} catch (error) {
-				console.error('Failed to search repositories:', error)
-				setRepos([])
-			}
+		startTransition(() => {
+			void (async () => {
+				try {
+					const result = await listGitHubRepositories(query, 30, 1)
+					setRepos(result)
+					setHasSearched(true)
+				} catch (error) {
+					console.error('Failed to search repositories:', error)
+					setRepos([])
+				}
+			})()
 		})
 	}, [])
 

@@ -1,4 +1,3 @@
-'use client'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -40,7 +39,7 @@ import {
 	RotateCcw,
 	XCircle,
 } from 'lucide-react'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { retryWebhookEvent, sendTestWebhook } from '../../actions'
@@ -149,13 +148,15 @@ export function EndpointDetailUI({
 	}
 
 	const handleRetry = (event: WebhookEvent) => {
-		startRetryTransition(async () => {
-			const result = await retryWebhookEvent({ eventId: event.id })
-			if (result.success) {
-				toast.success('Event retry started')
-			} else {
-				toast.error(result.error || 'Failed to retry event')
-			}
+		startRetryTransition(() => {
+			void (async () => {
+				const result = await retryWebhookEvent({ eventId: event.id })
+				if (result.success) {
+					toast.success('Event retry started')
+				} else {
+					toast.error(result.error || 'Failed to retry event')
+				}
+			})()
 		})
 	}
 
@@ -185,7 +186,7 @@ export function EndpointDetailUI({
 	return (
 		<div className='container mx-auto py-6 space-y-6'>
 			<div className='flex items-center gap-4'>
-				<Link href={`/v1beta/${tenantId}/webhooks`}>
+				<Link to={`/v1beta/${tenantId}/webhooks`}>
 					<Button variant='ghost' size='icon'>
 						<ArrowLeft className='h-4 w-4' />
 					</Button>
@@ -416,14 +417,14 @@ export function EndpointDetailUI({
 						<div className='flex justify-center gap-2'>
 							{currentPage > 1 && (
 								<Link
-									href={`/v1beta/${tenantId}/webhooks/${endpoint.id}?page=${currentPage - 1}`}
+									to={`/v1beta/${tenantId}/webhooks/${endpoint.id}?page=${currentPage - 1}`}
 								>
 									<Button variant='outline'>Previous</Button>
 								</Link>
 							)}
 							{hasMore && (
 								<Link
-									href={`/v1beta/${tenantId}/webhooks/${endpoint.id}?page=${currentPage + 1}`}
+									to={`/v1beta/${tenantId}/webhooks/${endpoint.id}?page=${currentPage + 1}`}
 								>
 									<Button variant='outline'>Next</Button>
 								</Link>

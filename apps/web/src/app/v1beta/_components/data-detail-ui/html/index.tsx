@@ -1,6 +1,4 @@
-'use client'
-
-import dynamic from 'next/dynamic'
+import React, { Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import type { RichTextEditorProps } from './editor'
 import { RichTextViewer } from './viewer'
@@ -8,44 +6,29 @@ import { CollaborationPresence } from './collaboration-presence'
 import type { CollaborationConfig } from './use-collaboration'
 import { useCollaboration } from './use-collaboration'
 
-type RichTextFallbackProps = Pick<
-	RichTextEditorProps,
-	'value' | 'className' | 'isEditable' | 'format'
->
-
-const RichTextEditorFallback = ({
-	value,
-	className,
-	isEditable,
-	format = 'html',
-}: RichTextFallbackProps) => {
-	if (isEditable) {
-		return (
-			<div className={className}>
-				<p className='text-muted-foreground'>Loading editor…</p>
-			</div>
-		)
-	}
-	if (format === 'markdown') {
-		return (
-			<pre className={`${className ?? ''} whitespace-pre-wrap`}>{value}</pre>
-		)
-	}
-	return <RichTextViewer html={value ?? ''} className={className} />
-}
-
-const RichTextEditor = dynamic<RichTextEditorProps>(
-	() =>
-		import('./editor').then(mod => ({
-			default: mod.RichTextEditor,
-		})),
-	{
-		ssr: false,
-		loading: props => (
-			<RichTextEditorFallback {...(props as RichTextFallbackProps)} />
-		),
-	},
+const RichTextEditorLazy = React.lazy(() =>
+	import('./editor').then(mod => ({
+		default: mod.RichTextEditor,
+	})),
 )
+
+function RichTextEditor(props: RichTextEditorProps) {
+	const fallback = props.isEditable ? (
+		<div className={props.className}>
+			<p className='text-muted-foreground'>Loading editor…</p>
+		</div>
+	) : props.format === 'markdown' ? (
+		<pre className={`${props.className ?? ''} whitespace-pre-wrap`}>{props.value}</pre>
+	) : (
+		<RichTextViewer html={props.value ?? ''} className={props.className} />
+	)
+
+	return (
+		<Suspense fallback={fallback}>
+			<RichTextEditorLazy {...props} />
+		</Suspense>
+	)
+}
 
 type RichTextFormat = 'markdown' | 'html'
 

@@ -1,5 +1,3 @@
-'use client'
-
 import { AuthLayout } from '@/components/auth-layout'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,8 +12,7 @@ import { Input } from '@/components/ui/input'
 import { useToastWithError } from '@/lib/error-toast'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { SignInFormData, schema } from './type'
@@ -25,7 +22,7 @@ export function SignInForm({
 }: {
 	signInAction: (data: SignInFormData) => void
 }) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const { errorToast, toast } = useToastWithError()
 	const { t } = useTranslation()
 	const form = useForm<SignInFormData>({
@@ -39,7 +36,7 @@ export function SignInForm({
 	const onSubmit = async (data: SignInFormData) => {
 		try {
 			await signInAction(data)
-			router.push('/')
+			navigate({ to: '/' })
 			toast({
 				variant: 'success',
 				title: 'Sign-in success',
@@ -98,7 +95,7 @@ export function SignInForm({
 										{t.auth.signIn.passwordLabel}
 									</FormLabel>
 									<Link
-										href='/forgot-password'
+										to='/forgot-password'
 										className='text-sm text-blue-500 hover:underline'
 									>
 										{t.auth.signIn.forgotPassword}

@@ -1,13 +1,10 @@
-'use client'
-
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { DataListForDataListCardFragment } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { cn } from '@/lib/utils'
 import { FileText, Plus } from 'lucide-react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { Link, useParams } from '@tanstack/react-router'
 
 export function DataListCard({
 	orgUsername,
@@ -25,7 +22,7 @@ export function DataListCard({
 	onItemClick?: () => void
 }) {
 	const { t } = useTranslation()
-	const params = useParams<{ dataId?: string }>()
+	const params = useParams({ strict: false }) as { dataId?: string }
 	const activeId = params?.dataId
 	const newHref = `/v1beta/${orgUsername}/${repoUsername}/data/new`
 
@@ -49,7 +46,7 @@ export function DataListCard({
 							size='sm'
 							className='gap-2 text-xs font-medium'
 						>
-							<Link href={newHref}>
+							<Link to={newHref}>
 								<Plus className='h-4 w-4' />
 								{t.v1beta.dataDetail.createNew}
 							</Link>
@@ -65,7 +62,7 @@ export function DataListCard({
 						size='sm'
 						className='gap-2 text-xs font-medium'
 					>
-						<Link href={newHref}>
+						<Link to={newHref}>
 							<Plus className='h-4 w-4' />
 							{t.v1beta.dataDetail.createNew}
 						</Link>
@@ -97,7 +94,7 @@ export function DataListCard({
 											: 'font-medium text-muted-foreground hover:text-foreground',
 									)}
 								>
-									<Link href={href} onClick={onItemClick}>
+									<Link to={href} onClick={onItemClick}>
 										<FileText className='h-4 w-4 flex-shrink-0 text-muted-foreground' />
 										<span className='truncate'>
 											{item.name?.trim() || 'Untitled'}

@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -33,8 +32,8 @@ import {
 	startOfMonth,
 } from 'date-fns'
 import { ZoomIn, ZoomOut } from 'lucide-react'
-import NextLink from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link as NextLink } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { updateData } from '../[dataId]/action'
 
@@ -64,7 +63,7 @@ export function DataGanttView({
 	canEdit = false,
 }: DataGanttViewProps) {
 	const { toast } = useToast()
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [editingTask, setEditingTask] = useState<GanttTask | null>(null)
 	const [editStartDate, setEditStartDate] = useState<Date | undefined>()
 	const [editEndDate, setEditEndDate] = useState<Date | undefined>()
@@ -549,7 +548,7 @@ export function DataGanttView({
 					description: 'Task dates have been updated successfully',
 				})
 
-				router.refresh()
+				window.location.reload()
 			} catch (error) {
 				// Revert optimistic update on error
 				setOptimisticUpdates(prev => {
@@ -575,7 +574,6 @@ export function DataGanttView({
 			org,
 			repo,
 			toast,
-			router,
 		],
 	)
 
@@ -900,7 +898,7 @@ export function DataGanttView({
 										{/* Task name column */}
 										<div className='w-64 flex-shrink-0 border-r px-3 py-2'>
 											<NextLink
-												href={`/v1beta/${org}/${repo}/data/${task.id}`}
+												to={`/v1beta/${org}/${repo}/data/${task.id}`}
 												className='font-medium text-primary hover:underline truncate block'
 											>
 												{task.name}

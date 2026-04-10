@@ -1,7 +1,5 @@
-'use client'
-
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -88,8 +86,8 @@ export function LinearSyncSection({
 	properties: PropertyForEditorFragment[]
 	isEditing?: boolean
 }) {
-	const { org, repo } = useParams<{ org: string; repo: string }>()
-	const router = useRouter()
+	const { org, repo } = useParams({ strict: false }) as { org: string; repo: string }
+	const navigate = useNavigate()
 	const [endpoint, setEndpoint] = useState<LinearEndpoint | null>(null)
 	const [isLoadingEndpoint, setIsLoadingEndpoint] = useState(false)
 	const [isPending, startTransition] = useTransition()
@@ -103,8 +101,8 @@ export function LinearSyncSection({
 			executeGraphQL(RepoQuery, { orgUsername: org, repoUsername: repo }),
 		])
 			.then(([orgResult, repoResult]) => {
-				const tenantId = orgResult?.organization?.id
-				const repoId = repoResult?.repo?.id
+				const tenantId = (orgResult?.organization as { id?: string } | undefined)?.id
+				const repoId = (repoResult?.repo as { id?: string } | undefined)?.id
 				if (!tenantId || !repoId) {
 					setEndpoint(null)
 					return
@@ -114,7 +112,7 @@ export function LinearSyncSection({
 					provider: 'LINEAR',
 					repositoryId: repoId,
 				}).then(endpointsResult => {
-					const linearEndpoint = endpointsResult?.webhookEndpoints?.[0] ?? null
+					const linearEndpoint = (endpointsResult?.webhookEndpoints as LinearEndpoint[] | undefined)?.[0] ?? null
 					setEndpoint(linearEndpoint)
 				})
 			})
@@ -145,11 +143,11 @@ export function LinearSyncSection({
 		if (!isAutoRefreshEnabled) return
 		const intervalId = window.setInterval(() => {
 			if (document.visibilityState === 'visible') {
-				router.refresh()
+				window.location.reload()
 			}
 		}, REFRESH_INTERVAL_MS)
 		return () => window.clearInterval(intervalId)
-	}, [isAutoRefreshEnabled, router])
+	}, [isAutoRefreshEnabled])
 
 	useEffect(() => {
 		return () => {
@@ -172,26 +170,28 @@ export function LinearSyncSection({
 
 	const handlePull = () => {
 		if (!endpoint || !externalId) return
-		startTransition(async () => {
-			const result = await triggerSync({
-				endpointId: endpoint.id,
-				externalIds: [externalId],
-			})
-			if (result.error) {
-				toast.error(result.error)
-				return
-			}
-			toast.success('Pull from Linear started')
-			router.refresh()
-			if (refreshTimeoutRef.current) {
-				window.clearTimeout(refreshTimeoutRef.current)
-			}
-			refreshTimeoutRef.current = window.setTimeout(() => {
-				if (document.visibilityState === 'visible') {
-					router.refresh()
+		startTransition(() => {
+			void (async () => {
+				const result = await triggerSync({
+					endpointId: endpoint.id,
+					externalIds: [externalId],
+				})
+				if (result.error) {
+					toast.error(result.error)
+					return
 				}
-				refreshTimeoutRef.current = null
-			}, PULL_REFRESH_DELAY_MS)
+				toast.success('Pull from Linear started')
+				window.location.reload()
+				if (refreshTimeoutRef.current) {
+					window.clearTimeout(refreshTimeoutRef.current)
+				}
+				refreshTimeoutRef.current = window.setTimeout(() => {
+					if (document.visibilityState === 'visible') {
+						window.location.reload()
+					}
+					refreshTimeoutRef.current = null
+				}, PULL_REFRESH_DELAY_MS)
+			})()
 		})
 	}
 
@@ -297,7 +297,7 @@ export function LinearSyncSection({
 						<Button
 							variant='outline'
 							onClick={() =>
-								router.push(`/v1beta/${org}/${repo}/settings/extensions`)
+								navigate({ to: `/v1beta/${org}/${repo}/settings/extensions` })
 							}
 						>
 							Configure Sync

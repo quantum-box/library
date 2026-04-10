@@ -1,4 +1,3 @@
-'use client'
 
 import { AuthLayout } from '@/components/auth-layout'
 import { Button } from '@/components/ui/button'
@@ -16,7 +15,7 @@ import { useToastWithError } from '@/lib/error-toast'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTheme } from 'next-themes'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { SIGNUP_SESSION_STORAGE_KEY } from './constants'
@@ -27,7 +26,7 @@ export function SignUpForm({
 }: {
 	signUpAction: (data: SignUpFormData) => void
 }) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const { errorToast, toast } = useToastWithError()
 	const { theme, setTheme } = useTheme()
 	const { t } = useTranslation()
@@ -54,7 +53,7 @@ export function SignUpForm({
 					}),
 				)
 			}
-			router.push('/verify-email/otp')
+			navigate({ to: '/verify-email/otp' })
 
 			toast({
 				variant: 'success',

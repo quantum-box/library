@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -84,8 +83,10 @@ export function TestWebhookDialog({
 	const handleSend = () => {
 		if (!selectedEvent) return
 
-		startTransition(async () => {
-			await onSend(selectedEvent)
+		startTransition(() => {
+			void (async () => {
+				await onSend(selectedEvent)
+			})()
 		})
 	}
 

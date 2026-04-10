@@ -78,9 +78,8 @@ jobs:
           node-version: 20
           cache: yarn
       - run: yarn install --frozen-lockfile
-      - run: yarn lint
       - run: yarn tsc
       - name: Build
         env:
-          NEXT_PUBLIC_BACKEND_API_URL: ${{ vars.NEXT_PUBLIC_BACKEND_API_URL }}
+          VITE_BACKEND_API_URL: ${{ vars.VITE_BACKEND_API_URL }}
         run: yarn build

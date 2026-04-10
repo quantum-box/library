@@ -1,7 +1,6 @@
-'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -119,7 +118,7 @@ export function LinearExtensionSettings({
 	connection,
 	endpoint,
 }: LinearExtensionSettingsProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const { t } = useTranslation()
 	const isConnected = connection?.status?.toLowerCase?.() === 'active'
 	const [isPending, startTransition] = useTransition()
@@ -206,7 +205,7 @@ export function LinearExtensionSettings({
 		executeGraphQL(LinearTeamsQuery, {}, { operatorId: tenantId })
 			.then(result => {
 				if (result?.linearListTeams) {
-					setTeams(result.linearListTeams)
+					setTeams(result.linearListTeams as LinearTeam[])
 				}
 			})
 			.catch(error => {
@@ -224,7 +223,7 @@ export function LinearExtensionSettings({
 		executeGraphQL(LinearProjectsQuery, { teamId }, { operatorId: tenantId })
 			.then(result => {
 				if (result?.linearListProjects) {
-					setProjects(result.linearListProjects)
+					setProjects(result.linearListProjects as LinearProject[])
 				}
 			})
 			.catch(error => {
@@ -247,129 +246,137 @@ export function LinearExtensionSettings({
 			return
 		}
 
-		startTransition(async () => {
-			const result = await createWebhookEndpoint({
-				tenantId,
-				name: `${repo} Linear Sync`,
-				provider: 'LINEAR',
-				config: JSON.stringify({
-					provider: 'linear',
-					team_id:
-						selectedTeamId && selectedTeamId !== 'all' ? selectedTeamId : null,
-					project_id:
-						selectedProjectId && selectedProjectId !== 'all'
-							? selectedProjectId
-							: null,
-					webhook_secret: webhookSecret.trim() ? webhookSecret.trim() : null,
-				}),
-				events: selectedEvents,
-				repositoryId: repoId,
-			})
+		startTransition(() => {
+			void (async () => {
+				const result = await createWebhookEndpoint({
+					tenantId,
+					name: `${repo} Linear Sync`,
+					provider: 'LINEAR',
+					config: JSON.stringify({
+						provider: 'linear',
+						team_id:
+							selectedTeamId && selectedTeamId !== 'all' ? selectedTeamId : null,
+						project_id:
+							selectedProjectId && selectedProjectId !== 'all'
+								? selectedProjectId
+								: null,
+						webhook_secret: webhookSecret.trim() ? webhookSecret.trim() : null,
+					}),
+					events: selectedEvents,
+					repositoryId: repoId,
+				})
 
-			if (result.error) {
-				toast.error(result.error)
-				return
-			}
-
-			if (result.data) {
-				try {
-					await enableLinearSyncAction({
-						orgUsername: org,
-						repoUsername: repo,
-					})
-				} catch (error) {
-					console.error('Failed to enable Linear sync property:', error)
-					toast.error(
-						t.v1beta.repoSettings.integrationsTab
-							.extLinearPropertyCreationFailed,
-					)
+				if (result.error) {
+					toast.error(result.error)
+					return
 				}
-				setCreatedWebhook(result.data)
-				toast.success(
-					t.v1beta.repoSettings.integrationsTab.webhookEndpointCreated,
-				)
-				router.refresh()
-			}
+
+				if (result.data) {
+					try {
+						await enableLinearSyncAction({
+							orgUsername: org,
+							repoUsername: repo,
+						})
+					} catch (error) {
+						console.error('Failed to enable Linear sync property:', error)
+						toast.error(
+							t.v1beta.repoSettings.integrationsTab
+								.extLinearPropertyCreationFailed,
+						)
+					}
+					setCreatedWebhook(result.data)
+					toast.success(
+						t.v1beta.repoSettings.integrationsTab.webhookEndpointCreated,
+					)
+					window.location.reload()
+				}
+			})()
 		})
 	}
 
 	const handleUpdateConfig = () => {
 		if (!endpoint) return
-		startTransition(async () => {
-			const configResult = await updateEndpointConfig({
-				endpointId: endpoint.id,
-				config: JSON.stringify({
-					provider: 'linear',
-					team_id:
-						selectedTeamId && selectedTeamId !== 'all' ? selectedTeamId : null,
-					project_id:
-						selectedProjectId && selectedProjectId !== 'all'
-							? selectedProjectId
-							: null,
-					webhook_secret: webhookSecret.trim() ? webhookSecret.trim() : null,
-				}),
-				operatorId: endpoint.tenantId,
-			})
+		startTransition(() => {
+			void (async () => {
+				const configResult = await updateEndpointConfig({
+					endpointId: endpoint.id,
+					config: JSON.stringify({
+						provider: 'linear',
+						team_id:
+							selectedTeamId && selectedTeamId !== 'all' ? selectedTeamId : null,
+						project_id:
+							selectedProjectId && selectedProjectId !== 'all'
+								? selectedProjectId
+								: null,
+						webhook_secret: webhookSecret.trim() ? webhookSecret.trim() : null,
+					}),
+					operatorId: endpoint.tenantId,
+				})
 
-			if (configResult.error) {
-				toast.error(configResult.error)
-				return
-			}
+				if (configResult.error) {
+					toast.error(configResult.error)
+					return
+				}
 
-			const eventsResult = await updateEndpointEvents({
-				endpointId: endpoint.id,
-				events: selectedEvents,
-				operatorId: endpoint.tenantId,
-			})
+				const eventsResult = await updateEndpointEvents({
+					endpointId: endpoint.id,
+					events: selectedEvents,
+					operatorId: endpoint.tenantId,
+				})
 
-			if (eventsResult.error) {
-				toast.error(eventsResult.error)
-				return
-			}
+				if (eventsResult.error) {
+					toast.error(eventsResult.error)
+					return
+				}
 
-			toast.success(
-				t.v1beta.repoSettings.integrationsTab.syncConfigurationUpdated,
-			)
-			router.refresh()
+				toast.success(
+					t.v1beta.repoSettings.integrationsTab.syncConfigurationUpdated,
+				)
+				window.location.reload()
+			})()
 		})
 	}
 
 	const handleToggleStatus = (checked: boolean) => {
 		if (!endpoint) return
-		startTransition(async () => {
-			const result = await updateEndpointStatus({
-				tenantId: endpoint.tenantId,
-				endpointId: endpoint.id,
-				status: checked ? 'ACTIVE' : 'DISABLED',
-			})
+		startTransition(() => {
+			void (async () => {
+				const result = await updateEndpointStatus({
+					tenantId: endpoint.tenantId,
+					endpointId: endpoint.id,
+					status: checked ? 'ACTIVE' : 'DISABLED',
+				})
 
-			if (result.error) {
-				toast.error(result.error)
-				return
-			}
+				if (result.error) {
+					toast.error(result.error)
+					return
+				}
 
-			toast.success(
-				checked
-					? t.v1beta.repoSettings.integrationsTab.syncEnabledToast
-					: t.v1beta.repoSettings.integrationsTab.syncDisabledToast,
-			)
-			router.refresh()
+				toast.success(
+					checked
+						? t.v1beta.repoSettings.integrationsTab.syncEnabledToast
+						: t.v1beta.repoSettings.integrationsTab.syncDisabledToast,
+				)
+				window.location.reload()
+			})()
 		})
 	}
 
 	const handleInitialSync = () => {
 		if (!endpoint) return
-		startTransition(async () => {
-			const result = await startInitialSync({
-				endpointId: endpoint.id,
-				operatorId: endpoint.tenantId,
-			})
-			if (result.error) {
-				toast.error(result.error)
-			} else {
-				toast.success(t.v1beta.repoSettings.integrationsTab.initialSyncStarted)
-				router.refresh()
-			}
+		startTransition(() => {
+			void (async () => {
+				const result = await startInitialSync({
+					endpointId: endpoint.id,
+					operatorId: endpoint.tenantId,
+				})
+				if (result.error) {
+					toast.error(result.error)
+				} else {
+					toast.success(t.v1beta.repoSettings.integrationsTab.initialSyncStarted)
+					window.location.reload()
+				}
+			})()
 		})
 	}
 

@@ -1,7 +1,5 @@
 import { Button } from '@/components/ui/button'
-import Link from 'next/link'
-
-export const runtime = 'edge'
+import { Link } from '@tanstack/react-router'
 
 export default function NotFound() {
 	return (
@@ -11,7 +9,7 @@ export default function NotFound() {
 				The page you're looking for doesn't exist or has been moved.
 			</p>
 			<Button asChild>
-				<Link href='/'>Return to Home</Link>
+				<Link to='/'>Return to Home</Link>
 			</Button>
 		</div>
 	)

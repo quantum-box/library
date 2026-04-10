@@ -35,8 +35,8 @@ import {
 	UserPlus,
 	Users,
 } from 'lucide-react'
-import { useSession } from 'next-auth/react'
-import Link from 'next/link'
+import { useSession } from '@/auth'
+import { Link } from '@tanstack/react-router'
 
 export function HeaderAccountAvatar({
 	copyCount = 0,
@@ -163,7 +163,7 @@ export function HeaderAccountAvatar({
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem asChild>
-						<Link href='/sign_out'>
+						<Link to='/sign_out'>
 							<LogOut className='mr-2 h-4 w-4' />
 							<span>Log out</span>
 							<DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>

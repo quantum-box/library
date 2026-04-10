@@ -1,9 +1,7 @@
 import type { WritePermissionHooksPolicyFieldsFragment } from '@/gen/graphql'
-import type { User } from 'next-auth'
-
 export function useWritePermissionHooks(
 	policies: WritePermissionHooksPolicyFieldsFragment[],
-	user: User | undefined,
+	user: { name?: string | null } | undefined,
 ) {
 	const policy = policies.find(v => v.userId === user?.name)
 	const writeable = policy?.role === 'OWNER' || policy?.role === 'WRITER'

@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -11,7 +10,7 @@ import {
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
 import { AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { useRouterState } from '@tanstack/react-router'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
 	disconnectGitHub,
@@ -50,8 +49,8 @@ type GitHubConnection = {
 
 export function GitHubSettings({ org }: { org: string }) {
 	const { t, locale } = useTranslation()
-	const pathname = usePathname()
-	const searchParams = useSearchParams()
+	const pathname = useRouterState({ select: (s) => s.location.pathname })
+	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
 	const [error, setError] = useState<string | null>(null)
 	const [success, setSuccess] = useState<string | null>(null)
 	const [connection, setConnection] = useState<GitHubConnection>(null)
@@ -118,73 +117,79 @@ export function GitHubSettings({ org }: { org: string }) {
 		// Clear URL params immediately to prevent re-processing
 		window.history.replaceState({}, '', `${pathname}?tab=settings`)
 
-		startTransition(async () => {
-			try {
-				// Use empty state if not provided (direct callback case)
-				const result = await exchangeGitHubToken(code, stateParam || '')
-				if (result.connected) {
-					setSuccess(t.v1beta.githubSettings.successConnected)
-					// Refresh connection status
-					const newConnection = await getGitHubConnection()
-					setConnection(newConnection)
-				} else {
-					setError(t.v1beta.githubSettings.failedConnect)
+		startTransition(() => {
+			void (async () => {
+				try {
+					// Use empty state if not provided (direct callback case)
+					const result = await exchangeGitHubToken(code, stateParam || '')
+					if (result.connected) {
+						setSuccess(t.v1beta.githubSettings.successConnected)
+						// Refresh connection status
+						const newConnection = await getGitHubConnection()
+						setConnection(newConnection)
+					} else {
+						setError(t.v1beta.githubSettings.failedConnect)
+					}
+				} catch (err) {
+					setError(
+						err instanceof Error
+							? err.message
+							: t.v1beta.githubSettings.failedConnect,
+					)
 				}
-			} catch (err) {
-				setError(
-					err instanceof Error
-						? err.message
-						: t.v1beta.githubSettings.failedConnect,
-				)
-			}
+			})()
 		})
 	}, [searchParams, pathname, t])
 
 	const handleConnect = () => {
 		setError(null)
 		setSuccess(null)
-		startTransition(async () => {
-			try {
-				// Generate nonce for CSRF protection and store it
-				const nonce = generateNonce()
-				sessionStorage.setItem(OAUTH_STATE_KEY, nonce)
+		startTransition(() => {
+			void (async () => {
+				try {
+					// Generate nonce for CSRF protection and store it
+					const nonce = generateNonce()
+					sessionStorage.setItem(OAUTH_STATE_KEY, nonce)
 
-				// Encode return URL and nonce in state (will redirect back to settings tab)
-				const returnUrl = `${window.location.origin}/v1beta/${org}?tab=settings`
-				const state = btoa(JSON.stringify({ returnUrl, nonce }))
-				const result = await getGitHubAuthUrl(state)
-				window.location.href = result.url
-			} catch (err) {
-				setError(
-					err instanceof Error
-						? err.message
-						: t.v1beta.githubSettings.failedGenerateUrl,
-				)
-			}
+					// Encode return URL and nonce in state (will redirect back to settings tab)
+					const returnUrl = `${window.location.origin}/v1beta/${org}?tab=settings`
+					const state = btoa(JSON.stringify({ returnUrl, nonce }))
+					const result = await getGitHubAuthUrl(state)
+					window.location.href = result.url
+				} catch (err) {
+					setError(
+						err instanceof Error
+							? err.message
+							: t.v1beta.githubSettings.failedGenerateUrl,
+					)
+				}
+			})()
 		})
 	}
 
 	const handleDisconnect = () => {
 		setError(null)
 		setSuccess(null)
-		startTransition(async () => {
-			try {
-				const result = await disconnectGitHub()
-				if (result) {
-					setSuccess(t.v1beta.githubSettings.accountDisconnected)
-					// Refresh connection status
-					const newConnection = await getGitHubConnection()
-					setConnection(newConnection)
-				} else {
-					setError(t.v1beta.githubSettings.failedDisconnect)
+		startTransition(() => {
+			void (async () => {
+				try {
+					const result = await disconnectGitHub()
+					if (result) {
+						setSuccess(t.v1beta.githubSettings.accountDisconnected)
+						// Refresh connection status
+						const newConnection = await getGitHubConnection()
+						setConnection(newConnection)
+					} else {
+						setError(t.v1beta.githubSettings.failedDisconnect)
+					}
+				} catch (err) {
+					setError(
+						err instanceof Error
+							? err.message
+							: t.v1beta.githubSettings.failedDisconnect,
+					)
 				}
-			} catch (err) {
-				setError(
-					err instanceof Error
-						? err.message
-						: t.v1beta.githubSettings.failedDisconnect,
-				)
-			}
+			})()
 		})
 	}
 

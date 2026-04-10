@@ -1,5 +1,3 @@
-'use client'
-
 import { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -39,7 +37,7 @@ import {
 	Users,
 	Webhook,
 } from 'lucide-react'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { GitHubImportDialog } from './github-import-dialog'
 import { LinearImportDialog } from './linear-import-dialog'
 import { GitHubSettings } from './github-settings'
@@ -154,7 +152,7 @@ export function OrganizationPageUi({
 						{!isViewOnly && (
 							<div className='flex items-center gap-2 shrink-0'>
 								<Button variant='outline' size='sm' asChild>
-									<Link href={`/v1beta/${org}?tab=settings`}>
+									<Link to={`/v1beta/${org}?tab=settings`}>
 										<Settings className='h-4 w-4 mr-1.5' />
 										<span className='hidden sm:inline'>
 											{t.v1beta.common.settings}
@@ -162,7 +160,7 @@ export function OrganizationPageUi({
 									</Link>
 								</Button>
 								<Button size='sm' asChild>
-									<Link href={`/v1beta/${org}/organizations/invite`}>
+									<Link to={`/v1beta/${org}/organizations/invite`}>
 										<Users className='h-4 w-4 mr-1.5' />
 										<span className='hidden sm:inline'>
 											{t.v1beta.common.inviteMember}
@@ -184,7 +182,7 @@ export function OrganizationPageUi({
 							<div className='overflow-x-auto scrollbar-hide -mx-1 px-1'>
 								<TabsList className='inline-flex w-auto h-10'>
 									<TabsTrigger value='repositories' asChild>
-										<Link href={`/v1beta/${org}?tab=repositories`}>
+										<Link to={`/v1beta/${org}?tab=repositories`}>
 											<BookOpen className='h-4 w-4 mr-1.5' />
 											{t.v1beta.common.repositories}
 										</Link>
@@ -192,31 +190,31 @@ export function OrganizationPageUi({
 									{!isViewOnly && (
 										<>
 											<TabsTrigger value='integrations' asChild>
-												<Link href={`/v1beta/${org}?tab=integrations`}>
+												<Link to={`/v1beta/${org}?tab=integrations`}>
 													<Plug className='h-4 w-4 mr-1.5' />
 													Integrations
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='activity' asChild>
-												<Link href={`/v1beta/${org}?tab=activity`}>
+												<Link to={`/v1beta/${org}?tab=activity`}>
 													<Clock className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.activity}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='insights' asChild>
-												<Link href={`/v1beta/${org}?tab=insights`}>
+												<Link to={`/v1beta/${org}?tab=insights`}>
 													<BarChart3 className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.insights}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='members' asChild>
-												<Link href={`/v1beta/${org}?tab=members`}>
+												<Link to={`/v1beta/${org}?tab=members`}>
 													<Users className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.members}
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='settings' asChild>
-												<Link href={`/v1beta/${org}?tab=settings`}>
+												<Link to={`/v1beta/${org}?tab=settings`}>
 													<Settings className='h-4 w-4 mr-1.5' />
 													{t.v1beta.common.settings}
 												</Link>
@@ -260,7 +258,7 @@ export function OrganizationPageUi({
 														/>
 													)}
 													<Button size='sm' className='w-full sm:w-auto' asChild>
-														<Link href={`/v1beta/${org}/databases/new`}>
+														<Link to={`/v1beta/${org}/databases/new`}>
 															<Plus className='h-4 w-4 mr-1.5' />
 															{t.v1beta.common.createNew}
 														</Link>
@@ -279,7 +277,7 @@ export function OrganizationPageUi({
 												>
 													<div className='flex items-center gap-2 mb-1'>
 														<Link
-															href={`/v1beta/${org}/${db.username}`}
+															to={`/v1beta/${org}/${db.username}`}
 															className='text-sm font-semibold text-primary hover:underline'
 														>
 															{db.username}
@@ -332,7 +330,7 @@ export function OrganizationPageUi({
 														/>
 													)}
 													<Button asChild>
-														<Link href={`/v1beta/${org}/databases/new`}>
+														<Link to={`/v1beta/${org}/databases/new`}>
 															<Plus className='h-4 w-4 mr-1.5' />
 															{t.v1beta.organization.createNewRepository}
 														</Link>
@@ -409,7 +407,7 @@ export function OrganizationPageUi({
 														</div>
 														<Button asChild className='shrink-0'>
 															<Link
-																href={`/v1beta/${org}/organizations/invite`}
+																to={`/v1beta/${org}/organizations/invite`}
 															>
 																<Users className='h-4 w-4 mr-1.5' />
 																<span className='hidden sm:inline'>
@@ -544,7 +542,7 @@ export function OrganizationPageUi({
 													</CardHeader>
 													<CardContent>
 														<Button variant='outline' asChild>
-															<Link href={`/v1beta/${org}/integrations`}>
+															<Link to={`/v1beta/${org}/integrations`}>
 																Browse Integrations
 															</Link>
 														</Button>
@@ -563,7 +561,7 @@ export function OrganizationPageUi({
 													</CardHeader>
 													<CardContent>
 														<Button variant='outline' asChild>
-															<Link href={`/v1beta/${org}/webhooks`}>
+															<Link to={`/v1beta/${org}/webhooks`}>
 																Manage Webhooks
 															</Link>
 														</Button>
@@ -593,7 +591,7 @@ export function OrganizationPageUi({
 													</CardHeader>
 													<CardContent>
 														<Button variant='outline' asChild>
-															<Link href={`/v1beta/${org}/integrations`}>
+															<Link to={`/v1beta/${org}/integrations`}>
 																Browse Integrations
 															</Link>
 														</Button>

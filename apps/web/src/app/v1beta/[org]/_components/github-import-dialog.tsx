@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,7 +33,7 @@ import {
 	Loader2,
 	Upload,
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -60,7 +59,7 @@ export function GitHubImportDialog({
 	onImportComplete,
 }: GitHubImportDialogProps) {
 	const { t } = useTranslation()
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isPending, startTransition] = useTransition()
 	const [open, setOpen] = useState(false)
 	const [step, setStep] = useState<ImportStep>('select-repo')
@@ -215,8 +214,9 @@ export function GitHubImportDialog({
 
 		setStep('importing')
 
-		startTransition(async () => {
-			const result = await importMarkdownFromGitHub({
+		startTransition(() => {
+			void (async () => {
+				const result = await importMarkdownFromGitHub({
 				orgUsername: org,
 				repoUsername: repoUsername,
 				repoName: repoUsername,
@@ -253,7 +253,8 @@ export function GitHubImportDialog({
 			onImportComplete?.()
 			setOpen(false)
 			resetState()
-			router.refresh()
+			window.location.reload()
+			})()
 		})
 	}
 

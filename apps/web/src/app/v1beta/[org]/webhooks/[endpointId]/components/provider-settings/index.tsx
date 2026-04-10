@@ -1,4 +1,3 @@
-'use client'
 
 import { GitHubSettings } from './github-settings'
 import { LinearSettings } from './linear-settings'

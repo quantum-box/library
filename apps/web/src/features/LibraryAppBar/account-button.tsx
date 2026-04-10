@@ -1,4 +1,3 @@
-'use client'
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -19,14 +18,13 @@ import {
 	CheckboxIcon,
 	PlusIcon,
 } from '@radix-ui/react-icons'
-import type { User } from 'next-auth'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { SignOutButton } from './signout-button'
 
 export function AccountButton({
 	account,
 }: {
-	account: User
+	account: { email?: string | null }
 }) {
 	return (
 		<>
@@ -73,7 +71,7 @@ export function AccountButton({
 								</DropdownMenuSubContent>
 							</DropdownMenuPortal>
 						</DropdownMenuSub>
-						<Link href='/new'>
+						<Link to='/new'>
 							<DropdownMenuItem>
 								New Organization
 								<DropdownMenuShortcut>⌘+T</DropdownMenuShortcut>
@@ -85,7 +83,7 @@ export function AccountButton({
 					<DropdownMenuItem>Support</DropdownMenuItem>
 					<DropdownMenuItem disabled>API</DropdownMenuItem>
 					<DropdownMenuSeparator />
-					<Link href='/sign_out'>
+					<Link to='/sign_out'>
 						<DropdownMenuItem>
 							Sign out
 							<DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>

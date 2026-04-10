@@ -1,161 +1,90 @@
-'use server'
+// Stub: replaces the deleted Next.js server actions for GitHub import.
+// In the Vite SPA, these operations go through the GraphQL client directly.
 
-import { platformAction } from '@/app/v1beta/_lib/platform-action'
-import type {
-	GitHubRepository,
-	ListGitHubDirectoryInput,
-	PropertyMappingInput,
-	PropertyType,
-} from '@/gen/graphql'
+import type { PropertyType } from '@/gen/graphql'
 
 export interface GitHubFileInfo {
-	name: string
-	path: string
-	sha: string
-	size: number
-	fileType: string
-	htmlUrl?: string | null
+  name: string
+  path: string
+  fileType: 'file' | 'dir'
+  size: number
 }
 
 export interface FrontmatterProperty {
-	key: string
-	suggestedType: PropertyType
-	uniqueValues: string[]
-	suggestSelect: boolean
+  key: string
+  suggestedType: PropertyType
+  suggestSelect: boolean
+  uniqueValues: string[]
 }
 
+/**
+ * @deprecated Migration stub.
+ */
 export async function listGitHubRepositories(): Promise<{
-	repositories: GitHubRepository[]
-	error?: string
+  repositories: Array<{
+    id: string
+    fullName: string
+    name: string
+    description?: string | null
+    htmlUrl: string
+    private: boolean
+  }>
+  error?: string
 }> {
-	try {
-		const result = await platformAction(async sdk =>
-			sdk.GitHubListRepositories({}),
-		)
-		return {
-			repositories: (result.githubListRepositories ?? []) as GitHubRepository[],
-		}
-	} catch (error) {
-		console.error('Failed to list GitHub repositories:', error)
-		return {
-			repositories: [],
-			error:
-				error instanceof Error ? error.message : 'Failed to list repositories',
-		}
-	}
+  console.warn('[migration stub] listGitHubRepositories() called')
+  return { repositories: [], error: 'Not yet implemented in the SPA.' }
 }
 
-export async function listDirectoryContents(
-	input: ListGitHubDirectoryInput,
-): Promise<{
-	files: GitHubFileInfo[]
-	truncated: boolean
-	error?: string
-}> {
-	try {
-		const result = await platformAction(async sdk =>
-			sdk.GitHubListDirectoryContents({ input }),
-		)
-		return {
-			files:
-				(result.githubListDirectoryContents?.files as GitHubFileInfo[]) ?? [],
-			truncated: result.githubListDirectoryContents?.truncated ?? false,
-		}
-	} catch (error) {
-		console.error('Failed to list directory contents:', error)
-		return {
-			files: [],
-			truncated: false,
-			error:
-				error instanceof Error
-					? error.message
-					: 'Failed to list directory contents',
-		}
-	}
+/**
+ * @deprecated Migration stub.
+ */
+export async function listDirectoryContents(_input: {
+  githubRepo: string
+  path: string
+}): Promise<{ files: GitHubFileInfo[]; error?: string }> {
+  console.warn('[migration stub] listDirectoryContents() called')
+  return { files: [], error: 'Not yet implemented in the SPA.' }
 }
 
-export async function analyzeFrontmatter(input: {
-	githubRepo: string
-	paths: string[]
-	refName?: string
+/**
+ * @deprecated Migration stub.
+ */
+export async function analyzeFrontmatter(_input: {
+  githubRepo: string
+  paths: string[]
 }): Promise<{
-	properties: FrontmatterProperty[]
-	totalFiles: number
-	validFiles: number
-	error?: string
+  properties: FrontmatterProperty[]
+  totalFiles: number
+  validFiles: number
+  error?: string
 }> {
-	try {
-		const result = await platformAction(async sdk =>
-			sdk.GitHubAnalyzeFrontmatter({ input }),
-		)
-		return {
-			properties:
-				(result.githubAnalyzeFrontmatter
-					?.properties as FrontmatterProperty[]) ?? [],
-			totalFiles: result.githubAnalyzeFrontmatter?.totalFiles ?? 0,
-			validFiles: result.githubAnalyzeFrontmatter?.validFiles ?? 0,
-		}
-	} catch (error) {
-		console.error('Failed to analyze frontmatter:', error)
-		return {
-			properties: [],
-			totalFiles: 0,
-			validFiles: 0,
-			error:
-				error instanceof Error
-					? error.message
-					: 'Failed to analyze frontmatter',
-		}
-	}
+  console.warn('[migration stub] analyzeFrontmatter() called')
+  return { properties: [], totalFiles: 0, validFiles: 0, error: 'Not yet implemented in the SPA.' }
 }
 
-export async function importMarkdownFromGitHub(input: {
-	orgUsername: string
-	repoUsername: string
-	repoName?: string
-	githubRepo: string
-	paths: string[]
-	refName?: string
-	propertyMappings: PropertyMappingInput[]
-	contentPropertyName: string
-	skipExisting?: boolean
-	enableGithubSync?: boolean
+/**
+ * @deprecated Migration stub.
+ */
+export async function importMarkdownFromGitHub(_input: {
+  orgUsername: string
+  repoUsername: string
+  repoName: string
+  githubRepo: string
+  paths: string[]
+  propertyMappings: Array<{
+    frontmatterKey: string
+    propertyName: string
+    propertyType: PropertyType
+    selectOptions?: string[]
+  }>
+  contentPropertyName: string
+  enableGithubSync: boolean
 }): Promise<{
-	importedCount: number
-	updatedCount: number
-	skippedCount: number
-	errors: Array<{ path: string; message: string }>
-	dataIds: string[]
-	repoId: string
-	error?: string
+  importedCount: number
+  updatedCount: number
+  errors: string[]
+  error?: string
 }> {
-	try {
-		const result = await platformAction(async sdk =>
-			sdk.ImportMarkdownFromGitHub({ input }),
-		)
-
-		const data = result.importMarkdownFromGithub
-		return {
-			importedCount: data?.importedCount ?? 0,
-			updatedCount: data?.updatedCount ?? 0,
-			skippedCount: data?.skippedCount ?? 0,
-			errors: (data?.errors as Array<{ path: string; message: string }>) ?? [],
-			dataIds: data?.dataIds ?? [],
-			repoId: data?.repoId ?? '',
-		}
-	} catch (error) {
-		console.error('Failed to import markdown:', error)
-		return {
-			importedCount: 0,
-			updatedCount: 0,
-			skippedCount: 0,
-			errors: [],
-			dataIds: [],
-			repoId: '',
-			error:
-				error instanceof Error
-					? error.message
-					: 'Failed to import markdown files',
-		}
-	}
+  console.warn('[migration stub] importMarkdownFromGitHub() called')
+  return { importedCount: 0, updatedCount: 0, errors: [], error: 'Not yet implemented in the SPA.' }
 }

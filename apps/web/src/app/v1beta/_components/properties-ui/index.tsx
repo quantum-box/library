@@ -1,4 +1,3 @@
-'use client'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +21,7 @@ import {
 } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { Edit2, ExternalLink, Github, Info, Plus, X } from 'lucide-react'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
 	GitHubRepoConfig,
@@ -352,7 +351,7 @@ export function PropertiesUi({
 													</Button>
 												) : settingsUrl ? (
 													<Button variant='outline' size='sm' asChild>
-														<Link href={settingsUrl}>
+														<Link to={settingsUrl}>
 															<ExternalLink className='mr-2 h-4 w-4' />
 															{t.v1beta.properties.settings}
 														</Link>
@@ -379,7 +378,7 @@ export function PropertiesUi({
 													<span key={part}>
 														{part}
 														<Link
-															href={settingsUrl}
+															to={settingsUrl}
 															className='font-medium text-primary underline'
 														>
 															Settings &gt; Integrations

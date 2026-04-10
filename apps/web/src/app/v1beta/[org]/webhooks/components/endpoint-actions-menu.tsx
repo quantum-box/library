@@ -1,4 +1,3 @@
-'use client'
 
 import {
 	AlertDialog,
@@ -26,7 +25,7 @@ import {
 	Settings,
 	Trash2,
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { deleteWebhookEndpoint, updateEndpointStatus } from '../actions'
@@ -47,7 +46,7 @@ export function EndpointActionsMenu({
 	endpoint,
 	tenantId,
 }: EndpointActionsMenuProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isPending, startTransition] = useTransition()
 	const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
@@ -58,36 +57,40 @@ export function EndpointActionsMenu({
 
 	const handleToggleStatus = () => {
 		const newStatus = endpoint.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
-		startTransition(async () => {
-			const result = await updateEndpointStatus({
-				tenantId,
-				endpointId: endpoint.id,
-				status: newStatus,
-			})
-			if (result.error) {
-				toast.error(result.error)
-			} else {
-				toast.success(
-					newStatus === 'ACTIVE' ? 'Endpoint activated' : 'Endpoint paused',
-				)
-				router.refresh()
-			}
+		startTransition(() => {
+			void (async () => {
+				const result = await updateEndpointStatus({
+					tenantId,
+					endpointId: endpoint.id,
+					status: newStatus,
+				})
+				if (result.error) {
+					toast.error(result.error)
+				} else {
+					toast.success(
+						newStatus === 'ACTIVE' ? 'Endpoint activated' : 'Endpoint paused',
+					)
+					window.location.reload()
+				}
+			})()
 		})
 	}
 
 	const handleDelete = () => {
-		startTransition(async () => {
-			const result = await deleteWebhookEndpoint({
-				tenantId,
-				endpointId: endpoint.id,
-			})
-			if (result.error) {
-				toast.error(result.error)
-			} else {
-				toast.success('Endpoint deleted')
-				router.refresh()
-			}
-			setShowDeleteDialog(false)
+		startTransition(() => {
+			void (async () => {
+				const result = await deleteWebhookEndpoint({
+					tenantId,
+					endpointId: endpoint.id,
+				})
+				if (result.error) {
+					toast.error(result.error)
+				} else {
+					toast.success('Endpoint deleted')
+					window.location.reload()
+				}
+				setShowDeleteDialog(false)
+			})()
 		})
 	}
 
@@ -107,7 +110,7 @@ export function EndpointActionsMenu({
 					</DropdownMenuItem>
 					<DropdownMenuItem
 						onClick={() =>
-							router.push(`/v1beta/${tenantId}/webhooks/${endpoint.id}`)
+							navigate({ to: `/v1beta/${tenantId}/webhooks/${endpoint.id}` })
 						}
 					>
 						<Settings className='mr-2 h-4 w-4' />

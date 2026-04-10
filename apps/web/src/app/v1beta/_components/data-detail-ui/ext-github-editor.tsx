@@ -1,5 +1,3 @@
-'use client'
-
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -21,8 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { AlertTriangle, FolderGit2, Github, Trash2 } from 'lucide-react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { Link, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /**
@@ -71,7 +68,7 @@ export function ExtGithubEditor({
 	onChange,
 	availableRepos = [],
 }: ExtGithubEditorProps) {
-	const params = useParams()
+	const params = useParams({ strict: false }) as { org?: string }
 	const org = params.org as string
 	const parsedValue = useMemo<ExtGithubValue | null>(() => {
 		if (!value) return null
@@ -285,7 +282,7 @@ export function ExtGithubEditor({
 							<p className='mt-1 text-xs text-amber-600 dark:text-amber-400'>
 								Go to{' '}
 								<Link
-									href={`/v1beta/${org}/properties`}
+									to={`/v1beta/${org}/properties`}
 									className='font-medium text-blue-600 hover:underline dark:text-blue-400'
 								>
 									Properties

@@ -1,5 +1,3 @@
-'use server'
-
 import { auth } from '@/app/(auth)/auth'
 import { getSdkPlatform } from '@/lib/apiClient'
 
