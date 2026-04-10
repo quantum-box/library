@@ -1,0 +1,29 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd apps/web && npm ci
+    build:
+      commands:
+        - cd apps/web && npm run build
+  artifacts:
+    baseDirectory: apps/web/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - apps/web/node_modules/**/*
+  customHeaders:
+    - pattern: '/assets/**'
+      headers:
+        - key: Cache-Control
+          value: 'public, max-age=31536000, immutable'
+    - pattern: '*.html'
+      headers:
+        - key: Cache-Control
+          value: 'public, max-age=0, must-revalidate'
+customRules:
+  - source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>'
+    target: /index.html
+    status: '200'
