@@ -4,16 +4,22 @@ import {
 	PropertyFieldOnRepoPageFragment,
 	PropertyType,
 } from '@/gen/graphql'
-import NextLink from 'next/link'
-import dynamic from 'next/dynamic'
+import { Link } from '@tanstack/react-router'
+import React, { Suspense } from 'react'
 
-const LocationMapCompact = dynamic(
-	() =>
-		import('../../../_components/location-map').then(mod => ({
-			default: mod.LocationMapCompact,
-		})),
-	{ ssr: false },
+const LocationMapCompactLazy = React.lazy(() =>
+	import('../../../_components/location-map').then(mod => ({
+		default: mod.LocationMapCompact,
+	})),
 )
+
+function LocationMapCompact(props: React.ComponentProps<typeof LocationMapCompactLazy>) {
+	return (
+		<Suspense fallback={null}>
+			<LocationMapCompactLazy {...props} />
+		</Suspense>
+	)
+}
 
 export interface Props {
 	data: DataFieldOnRepoPageFragment
@@ -56,11 +62,11 @@ const PropertyDisplay = ({
 }) => {
 	if (property.name === 'name') {
 		return (
-			<NextLink href={`data/${data.id}`} passHref>
+			<Link to={`data/${data.id}`}>
 				<span className='text-blue-500 hover:underline cursor-pointer'>
 					{data.name}
 				</span>
-			</NextLink>
+			</Link>
 		)
 	}
 	if (property.name === 'updatedAt') {

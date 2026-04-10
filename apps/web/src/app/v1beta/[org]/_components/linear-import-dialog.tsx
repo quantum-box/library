@@ -1,4 +1,3 @@
-'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -39,7 +38,7 @@ import {
 	Plus,
 	Trash2,
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
@@ -150,7 +149,7 @@ export function LinearImportDialog({
 	tenantId,
 	hasLinearConnection,
 }: LinearImportDialogProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const { t } = useTranslation()
 	const [isPending, startTransition] = useTransition()
 	const [open, setOpen] = useState(false)
@@ -246,7 +245,7 @@ export function LinearImportDialog({
 		executeGraphQL(LinearTeamsQuery, {}, { operatorId: tenantId })
 			.then(result => {
 				if (result?.linearListTeams) {
-					setTeams(result.linearListTeams)
+					setTeams(result.linearListTeams as LinearTeam[])
 				}
 			})
 			.catch(error => {
@@ -267,7 +266,7 @@ export function LinearImportDialog({
 		executeGraphQL(LinearProjectsQuery, { teamId }, { operatorId: tenantId })
 			.then(result => {
 				if (result?.linearListProjects) {
-					setProjects(result.linearListProjects)
+					setProjects(result.linearListProjects as LinearProject[])
 				}
 			})
 			.catch(error => {
@@ -322,7 +321,7 @@ export function LinearImportDialog({
 			{ operatorId: tenantId },
 		)
 			.then(result => {
-				setIssues(result?.linearListIssues ?? [])
+				setIssues((result?.linearListIssues as LinearIssue[] | undefined) ?? [])
 			})
 			.catch(error => {
 				console.error('Failed to load issues:', error)
@@ -430,8 +429,9 @@ export function LinearImportDialog({
 
 		setStep('importing')
 		setImportStatus('creating-repo')
-		startTransition(async () => {
-			const repoResult = await createLinearRepository({
+		startTransition(() => {
+			void (async () => {
+				const repoResult = await createLinearRepository({
 				orgUsername: org,
 				tenantId,
 				repoName,
@@ -498,11 +498,12 @@ export function LinearImportDialog({
 			setSelectSpecificIssues(false)
 			setSelectedIssueIds([])
 			setPropertyMappings(DEFAULT_LINEAR_MAPPINGS)
-			router.refresh()
+			window.location.reload()
 
 			if (repoUsername) {
-				router.push(`/v1beta/${org}/${repoUsername}`)
+				navigate({ to: `/v1beta/${org}/${repoUsername}` })
 			}
+			})()
 		})
 	}
 

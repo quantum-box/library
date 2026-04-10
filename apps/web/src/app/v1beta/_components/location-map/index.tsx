@@ -1,4 +1,3 @@
-'use client'
 
 import {
 	GoogleMap,
@@ -27,7 +26,7 @@ const defaultCenter = {
 	lng: 139.6917,
 }
 
-const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
 // Libraries needed for Google Maps
 const libraries: 'places'[] = ['places']
@@ -166,7 +165,7 @@ function LocationFallback({
 					</div>
 					{!apiKey && (
 						<div className='text-xs mt-2 text-amber-600'>
-							Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY for map view
+							Set VITE_GOOGLE_MAPS_API_KEY for map view
 						</div>
 					)}
 				</div>

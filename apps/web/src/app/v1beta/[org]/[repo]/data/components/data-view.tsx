@@ -1,5 +1,4 @@
-'use client'
-
+import React, { Suspense } from 'react'
 import { Button } from '@/components/ui/button'
 import {
 	DataFieldOnRepoPageFragment,
@@ -10,10 +9,8 @@ import {
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { useDuckDBFilteredData } from '@/hooks/use-duckdb'
 import { Plus } from 'lucide-react'
-import NextLink from 'next/link'
-import dynamic from 'next/dynamic'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { parseAsStringLiteral, useQueryState } from 'nuqs'
+import { Link as NextLink, useNavigate, useRouterState } from '@tanstack/react-router'
+// nuqs removed during Vite migration - viewMode state managed via URL search params + useState
 import { useEffect, useMemo, useState } from 'react'
 import { DataCardView } from './data-card-view'
 import { DataTableView } from './data-table-view'
@@ -25,46 +22,39 @@ import {
 	type ViewMode,
 } from './data-toolbar'
 
-const DataGanttView = dynamic(
-	() =>
-		import('./data-gantt-view').then(mod => ({ default: mod.DataGanttView })),
-	{
-		loading: () => (
-			<div className='flex items-center justify-center py-16 text-muted-foreground'>
-				Loading Gantt view…
-			</div>
-		),
-	},
+const DataGanttViewLazy = React.lazy(() =>
+	import('./data-gantt-view').then(mod => ({ default: mod.DataGanttView })),
+)
+const DataKanbanViewLazy = React.lazy(() =>
+	import('./data-kanban-view').then(mod => ({ default: mod.DataKanbanView })),
+)
+const DataLocationsMapLazy = React.lazy(() =>
+	import('../../../../_components/location-map/data-locations-map').then(
+		mod => ({ default: mod.DataLocationsMap }),
+	),
 )
 
-const DataKanbanView = dynamic(
-	() =>
-		import('./data-kanban-view').then(mod => ({
-			default: mod.DataKanbanView,
-		})),
-	{
-		loading: () => (
-			<div className='flex items-center justify-center py-16 text-muted-foreground'>
-				Loading Kanban view…
-			</div>
-		),
-	},
-)
-
-const DataLocationsMap = dynamic(
-	() =>
-		import('../../../../_components/location-map/data-locations-map').then(
-			mod => ({ default: mod.DataLocationsMap }),
-		),
-	{
-		ssr: false,
-		loading: () => (
-			<div className='flex items-center justify-center py-16 text-muted-foreground'>
-				Loading map…
-			</div>
-		),
-	},
-)
+function DataGanttView(props: React.ComponentProps<typeof DataGanttViewLazy>) {
+	return (
+		<Suspense fallback={<div className='flex items-center justify-center py-16 text-muted-foreground'>Loading Gantt view…</div>}>
+			<DataGanttViewLazy {...props} />
+		</Suspense>
+	)
+}
+function DataKanbanView(props: React.ComponentProps<typeof DataKanbanViewLazy>) {
+	return (
+		<Suspense fallback={<div className='flex items-center justify-center py-16 text-muted-foreground'>Loading Kanban view…</div>}>
+			<DataKanbanViewLazy {...props} />
+		</Suspense>
+	)
+}
+function DataLocationsMap(props: React.ComponentProps<typeof DataLocationsMapLazy>) {
+	return (
+		<Suspense fallback={<div className='flex items-center justify-center py-16 text-muted-foreground'>Loading map…</div>}>
+			<DataLocationsMapLazy {...props} />
+		</Suspense>
+	)
+}
 
 export interface DataViewProps {
 	org: string
@@ -85,15 +75,27 @@ export function DataViewComponent({
 	canEdit,
 }: DataViewProps) {
 	const { t } = useTranslation()
-	const router = useRouter()
-	const searchParams = useSearchParams()
+	const navigate = useNavigate()
+	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
 	const currentPage = Number(searchParams.get('page')) || 1
 
-	// View state - viewMode is managed via URL query parameter
-	const [viewMode, setViewMode] = useQueryState(
-		'view',
-		parseAsStringLiteral(VIEW_MODES).withDefault('table'),
+	// View state - viewMode managed via URL search params
+	const viewParam = searchParams.get('view') as ViewMode | null
+	const [viewMode, setViewModeState] = useState<ViewMode>(
+		viewParam && VIEW_MODES.includes(viewParam) ? viewParam : 'table',
 	)
+	const setViewMode = (mode: ViewMode | null) => {
+		const next = mode ?? 'table'
+		setViewModeState(next)
+		const params = new URLSearchParams(searchParams)
+		if (next === 'table') {
+			params.delete('view')
+		} else {
+			params.set('view', next)
+		}
+		const query = params.toString()
+		navigate({ to: query ? `${window.location.pathname}?${query}` : window.location.pathname } as any)
+	}
 	const [searchQuery, setSearchQuery] = useState('')
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 	const [sortConfig, setSortConfig] = useState<SortConfig | null>(null)
@@ -350,7 +352,7 @@ export function DataViewComponent({
 	const handlePageChange = (page: number) => {
 		const params = new URLSearchParams(searchParams)
 		params.set('page', page.toString())
-		router.push(`/v1beta/${org}/${repo}/data?${params.toString()}`)
+		navigate({ to: `/v1beta/${org}/${repo}/data?${params.toString()}` })
 	}
 
 	const handleSelectAll = (checked: boolean) => {
@@ -409,7 +411,7 @@ export function DataViewComponent({
 					</div>
 					{canEdit && (
 						<Button size='sm' asChild>
-							<NextLink href={`/v1beta/${org}/${repo}/data/new`}>
+							<NextLink to={`/v1beta/${org}/${repo}/data/new`}>
 								<Plus className='mr-2 h-4 w-4' />
 								{t.v1beta.repositoryPage.addData}
 							</NextLink>
@@ -538,7 +540,7 @@ export function DataViewComponent({
 						</p>
 						{canEdit && !searchQuery && filters.length === 0 && (
 							<Button className='mt-4' asChild>
-								<NextLink href={`/v1beta/${org}/${repo}/data/new`}>
+								<NextLink to={`/v1beta/${org}/${repo}/data/new`}>
 									<Plus className='mr-2 h-4 w-4' />
 									{t.v1beta.repositoryPage.addData}
 								</NextLink>

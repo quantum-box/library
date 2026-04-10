@@ -1,4 +1,3 @@
-'use client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -17,7 +16,7 @@ import {
 	SheetTitle,
 } from '@/components/ui/sheet'
 import { ChevronLeft, Loader2, PanelLeft } from 'lucide-react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useNavigate } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useState, useTransition } from 'react'
 import { DataListCard } from './data-list-card'
 import { HtmlSection } from './html-section'
@@ -74,12 +73,12 @@ export function DataDetailUi({
 }) {
 	const { t } = useTranslation()
 	const { toast } = useToast()
-	const { org, repo, dataId } = useParams<{
+	const { org, repo, dataId } = useParams({ strict: false }) as {
 		org: string
 		repo: string
 		dataId?: string
-	}>()
-	const router = useRouter()
+	}
+	const navigate = useNavigate()
 	const [isEditing, setIsEditing] = useState(onlyEdit)
 	const [currentDataItem, setCurrentDataItem] = useState<
 		DataForDataDetailFragment | undefined
@@ -117,35 +116,37 @@ export function DataDetailUi({
 	const handleSave = async () => {
 		if (!onSave) return
 		if (!currentDataItem) throw new Error('data is undefined')
-		startTransition(async () => {
-			try {
-				const id = await onSave({
-					org,
-					repo,
-					dataId: dataId ?? currentDataItem.id ?? '',
-					properties,
-					input: currentDataItem,
-				})
-				setIsEditing(false)
-				if (onlyEdit && id) {
-					router.push(`/v1beta/${org}/${repo}/data/${id}`)
+		startTransition(() => {
+			void (async () => {
+				try {
+					const id = await onSave({
+						org,
+						repo,
+						dataId: dataId ?? currentDataItem.id ?? '',
+						properties,
+						input: currentDataItem,
+					})
+					setIsEditing(false)
+					if (onlyEdit && id) {
+						navigate({ to: `/v1beta/${org}/${repo}/data/${id}` })
+					}
+					toast({
+						variant: 'success',
+						title: t.v1beta.dataDetail.dataSaved,
+						description: t.v1beta.dataDetail.dataSavedDescription,
+					})
+				} catch (error) {
+					console.error('Failed to save data', error)
+					toast({
+						variant: 'destructive',
+						title: t.v1beta.dataDetail.saveFailed,
+						description:
+							error instanceof Error
+								? error.message
+								: t.v1beta.dataDetail.saveFailedDescription,
+					})
 				}
-				toast({
-					variant: 'success',
-					title: t.v1beta.dataDetail.dataSaved,
-					description: t.v1beta.dataDetail.dataSavedDescription,
-				})
-			} catch (error) {
-				console.error('Failed to save data', error)
-				toast({
-					variant: 'destructive',
-					title: t.v1beta.dataDetail.saveFailed,
-					description:
-						error instanceof Error
-							? error.message
-							: t.v1beta.dataDetail.saveFailedDescription,
-				})
-			}
+			})()
 		})
 	}
 
@@ -204,7 +205,7 @@ export function DataDetailUi({
 	const [isListOpen, setIsListOpen] = useState(false)
 
 	const handleBack = () => {
-		router.push(`/v1beta/${org}/${repo}`)
+		navigate({ to: `/v1beta/${org}/${repo}` })
 	}
 
 	return (

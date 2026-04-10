@@ -1,4 +1,3 @@
-'use client'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,7 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowRight, Code2, Plus, Settings2, Trash2, Wand2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { updateEndpointMapping } from '../../actions'
@@ -199,7 +198,7 @@ export function MappingEditor({
 	provider,
 	operatorId,
 }: MappingEditorProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isPending, startTransition] = useTransition()
 	const [mode, setMode] = useState<'visual' | 'json'>('visual')
 
@@ -364,18 +363,20 @@ export function MappingEditor({
 				? null
 				: JSON.stringify(cleanedMapping)
 
-		startTransition(async () => {
-			const result = await updateEndpointMapping({
-				endpointId,
-				mapping: mappingJson,
-				operatorId,
-			})
-			if (result.error) {
-				toast.error(result.error)
-			} else {
-				toast.success('Mapping saved successfully')
-				router.refresh()
-			}
+		startTransition(() => {
+			void (async () => {
+				const result = await updateEndpointMapping({
+					endpointId,
+					mapping: mappingJson,
+					operatorId,
+				})
+				if (result.error) {
+					toast.error(result.error)
+				} else {
+					toast.success('Mapping saved successfully')
+					window.location.reload()
+				}
+			})()
 		})
 	}
 

@@ -1,4 +1,3 @@
-'use client'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,8 +24,8 @@ import {
 	Trash2,
 	X,
 } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
 	disconnectConnection,
@@ -118,7 +117,7 @@ export function IntegrationDetailUI({
 	connection,
 	dictionary,
 }: IntegrationDetailUIProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isLoading, setIsLoading] = useState(false)
 	const [isConnectDialogOpen, setIsConnectDialogOpen] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -138,7 +137,7 @@ export function IntegrationDetailUI({
 				integration.id,
 			)
 			if (result.success) {
-				router.refresh()
+				window.location.reload()
 			} else {
 				setError(result.error || 'Failed to disconnect')
 			}
@@ -160,7 +159,7 @@ export function IntegrationDetailUI({
 				integration.id,
 			)
 			if (result.success) {
-				router.refresh()
+				window.location.reload()
 			} else {
 				setError(result.error || 'Failed to pause')
 			}
@@ -182,7 +181,7 @@ export function IntegrationDetailUI({
 				integration.id,
 			)
 			if (result.success) {
-				router.refresh()
+				window.location.reload()
 			} else {
 				setError(result.error || 'Failed to resume')
 			}
@@ -207,7 +206,7 @@ export function IntegrationDetailUI({
 			{/* Header */}
 			<div className='flex items-center justify-between gap-4'>
 				<div className='flex items-center gap-4'>
-					<Link href={`/v1beta/${orgUsername}/integrations`}>
+					<Link to={`/v1beta/${orgUsername}/integrations`}>
 						<Button variant='ghost' size='icon'>
 							<ArrowLeft className='h-4 w-4' />
 						</Button>

@@ -1,9 +1,7 @@
-'use client'
-import { ActionButton } from '@/components/action-button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 export default function ErrorPage({
@@ -13,7 +11,7 @@ export default function ErrorPage({
 	error: Error
 	reset: () => void
 }) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const { toast } = useToast()
 
 	if (error.message?.includes('GraphQL Error')) {
@@ -27,7 +25,7 @@ export default function ErrorPage({
 				title: 'Session expired',
 				description: 'Please sign in again',
 			})
-			router.replace('/sign_out')
+			navigate({ to: '/sign_out', replace: true })
 		}
 	}
 
@@ -37,7 +35,7 @@ export default function ErrorPage({
 	}, [error])
 
 	const onRedirect = () => {
-		router.replace('/sign_out')
+		navigate({ to: '/sign_out', replace: true })
 	}
 
 	return (
@@ -50,7 +48,7 @@ export default function ErrorPage({
 			</Alert>
 			<div className='flex gap-4 mt-8'>
 				<Button onClick={() => reset()}>Try Again</Button>
-				<ActionButton action={onRedirect}>Sign out</ActionButton>
+				<Button variant="outline" onClick={onRedirect}>Sign out</Button>
 			</div>
 		</div>
 	)

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import type { LpLanguage } from '@/app/lp'
 import { ArrowRight, Play, Sparkles } from 'lucide-react'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { fadeInAnimation, slideUpAnimation } from './animations'
 
 const copy = {
@@ -154,7 +154,7 @@ export function Hero({ lang }: { lang: LpLanguage }) {
 							className='inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 px-6 py-3 text-base font-semibold text-white shadow-[0_20px_45px_rgba(37,99,235,0.45)] transition hover:shadow-[0_24px_55px_rgba(37,99,235,0.5)] sm:px-8 sm:py-4'
 							asChild
 						>
-							<Link href='/sign_up'>
+							<Link to='/sign_up'>
 								{t.primaryCta}
 								<ArrowRight className='h-5 w-5' />
 							</Link>

@@ -408,7 +408,7 @@ async function fetchParquetUrl({
 	const headers: Record<string, string> = {
 		'x-platform-id': platformId,
 	}
-	if (process.env.NODE_ENV === 'development') {
+	if (import.meta.env.DEV) {
 		headers.Authorization = 'Bearer dummy-token'
 	}
 	const response = await fetch(

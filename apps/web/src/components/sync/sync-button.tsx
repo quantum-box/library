@@ -1,4 +1,3 @@
-'use client'
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
@@ -22,15 +21,17 @@ export function SyncButton({
 	const [isPending, startTransition] = useTransition()
 
 	const handleSync = () => {
-		startTransition(async () => {
-			const result = await startInitialSync({ endpointId })
+		startTransition(() => {
+			void (async () => {
+				const result = await startInitialSync({ endpointId })
 
-			if (result.error) {
-				toast.error(result.error)
-			} else if (result.operation) {
-				toast.success('Sync started successfully')
-				onSyncStarted?.(result.operation.id)
-			}
+				if (result.error) {
+					toast.error(result.error)
+				} else if (result.operation) {
+					toast.success('Sync started successfully')
+					onSyncStarted?.(result.operation.id)
+				}
+			})()
 		})
 	}
 

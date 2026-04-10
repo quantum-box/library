@@ -5,10 +5,10 @@
     "apps/web"
   ],
   "scripts": {
-    "dev": "yarn workspace library dev",
-    "build": "yarn workspace library build",
-    "lint": "yarn workspace library lint",
-    "tsc": "yarn workspace library ts"
+    "dev": "npm run --workspace apps/web dev",
+    "build": "npm run --workspace apps/web build",
+    "lint": "npm run --workspace apps/web lint",
+    "tsc": "npm run --workspace apps/web ts"
   },
   "resolutions": {
     "webpack": "5.101.2",

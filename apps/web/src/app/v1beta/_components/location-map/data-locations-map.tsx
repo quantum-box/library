@@ -1,5 +1,3 @@
-'use client'
-
 import {
 	GoogleMap,
 	Marker,
@@ -7,13 +5,13 @@ import {
 	useJsApiLoader,
 } from '@react-google-maps/api'
 import { useState, useMemo, useCallback } from 'react'
-import NextLink from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, MapPin, X } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 
-const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
 interface DataLocation {
 	id: string
@@ -63,7 +61,7 @@ function DataLocationsMapFallback({
 					<div className='font-medium'>{locations.length} locations</div>
 					{!apiKey && (
 						<div className='text-xs mt-2 text-amber-600'>
-							Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY for map view
+							Set VITE_GOOGLE_MAPS_API_KEY for map view
 						</div>
 					)}
 				</div>
@@ -71,15 +69,15 @@ function DataLocationsMapFallback({
 			<ul className='divide-y rounded-lg border'>
 				{locations.map(loc => (
 					<li key={loc.id} className='px-4 py-2'>
-						<NextLink
-							href={`/v1beta/${org}/${repo}/data/${loc.id}`}
+						<Link
+							to={`/v1beta/${org}/${repo}/data/${loc.id}`}
 							className='flex items-center justify-between hover:text-primary'
 						>
 							<span className='font-medium'>{loc.name}</span>
 							<span className='text-xs text-muted-foreground'>
 								📍 {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
 							</span>
-						</NextLink>
+						</Link>
 					</li>
 				))}
 			</ul>
@@ -259,12 +257,12 @@ function DataLocationsMapWithApi({
 							</div>
 							<div className='flex items-center gap-2 shrink-0'>
 								<Button asChild size='sm' variant='default'>
-									<NextLink
-										href={`/v1beta/${org}/${repo}/data/${selectedLocation.id}`}
+									<Link
+										to={`/v1beta/${org}/${repo}/data/${selectedLocation.id}`}
 									>
 										<ExternalLink className='h-4 w-4 mr-1' />
 										View
-									</NextLink>
+									</Link>
 								</Button>
 								<Button
 									size='sm'

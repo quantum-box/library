@@ -1,10 +1,7 @@
-'use client'
-
-import { loginAction } from '@/actions/auth'
-import { ActionButton } from '@/components/action-button'
+import { Link } from '@tanstack/react-router'
 import { ArrowRight, Globe, Menu, X } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
 import type { LpLanguage } from '@/app/lp'
 
 const copy = {
@@ -51,9 +48,9 @@ const copy = {
 
 export function Header({ lang }: { lang: LpLanguage }) {
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-	const router = useRouter()
-	const pathname = usePathname()
-	const searchParams = useSearchParams()
+	const navigate = useNavigate()
+	const pathname = useRouterState({ select: (s) => s.location.pathname })
+	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
 	const t = useMemo(() => copy[lang], [lang])
 
 	const toggleMobileMenu = () => {
@@ -69,10 +66,10 @@ export function Header({ lang }: { lang: LpLanguage }) {
 				params.set('lang', next)
 			}
 			const query = params.toString()
-			router.push(query ? `${pathname}?${query}` : pathname, { scroll: false })
+			navigate({ to: query ? `${pathname}?${query}` : pathname })
 			setMobileMenuOpen(false)
 		},
-		[pathname, router, searchParams],
+		[pathname, navigate, searchParams],
 	)
 
 	const langOptions: LpLanguage[] = ['ja', 'en']
@@ -163,13 +160,13 @@ export function Header({ lang }: { lang: LpLanguage }) {
 							))}
 						</div>
 					</div>
-					<ActionButton
+					<Link
+						to='/sign_in'
 						className='inline-flex items-center justify-center gap-2 rounded-full border border-sky-400/50 bg-gradient-to-r from-sky-500/80 to-blue-600/80 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_15px_40px_rgba(56,189,248,0.3)] transition hover:shadow-[0_18px_45px_rgba(56,189,248,0.36)]'
-						action={loginAction}
 					>
 						{t.login}
 						<ArrowRight className='h-4 w-4' />
-					</ActionButton>
+					</Link>
 				</nav>
 			</div>
 
@@ -247,13 +244,13 @@ export function Header({ lang }: { lang: LpLanguage }) {
 								</button>
 							))}
 						</div>
-						<ActionButton
+						<Link
+							to='/sign_in'
 							className='mt-2 inline-flex items-center justify-center gap-2 rounded-full border border-sky-400/50 bg-gradient-to-r from-sky-500/80 to-blue-600/80 px-4 py-2 text-sm font-semibold text-white shadow-[0_15px_40px_rgba(56,189,248,0.3)] transition hover:shadow-[0_18px_45px_rgba(56,189,248,0.36)]'
-							action={loginAction}
 						>
 							{t.login}
 							<ArrowRight className='h-4 w-4' />
-						</ActionButton>
+						</Link>
 					</nav>
 				</div>
 			)}

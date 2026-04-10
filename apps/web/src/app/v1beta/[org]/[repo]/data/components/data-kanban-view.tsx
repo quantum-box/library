@@ -1,4 +1,3 @@
-'use client'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,8 +32,8 @@ import {
 	type UniqueIdentifier,
 } from '@dnd-kit/core'
 import { Calendar, GripVertical, Loader2, Plus } from 'lucide-react'
-import NextLink from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link as NextLink } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { updatePropertyValueAction } from '../actions'
 
@@ -103,7 +102,7 @@ function DroppableColumn({
 				</div>
 				{canEdit && (
 					<Button variant='ghost' size='sm' className='h-6 w-6 p-0' asChild>
-						<NextLink href={`/v1beta/${org}/${repo}/data/new`}>
+						<NextLink to={`/v1beta/${org}/${repo}/data/new`}>
 							<Plus className='h-4 w-4' />
 						</NextLink>
 					</Button>
@@ -188,7 +187,7 @@ function DraggableCard({
 						/>
 					</div>
 					<NextLink
-						href={`/v1beta/${org}/${repo}/data/${item.id}`}
+						to={`/v1beta/${org}/${repo}/data/${item.id}`}
 						className='flex-1 min-w-0'
 					>
 						<div className='font-medium text-sm line-clamp-2 hover:text-primary'>
@@ -246,7 +245,7 @@ export function DataKanbanView({
 	repo,
 	canEdit,
 }: DataKanbanViewProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isPending, startTransition] = useTransition()
 	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
 
@@ -475,30 +474,32 @@ export function DataKanbanView({
 			})
 
 			// Update server in background
-			startTransition(async () => {
-				const result = await updatePropertyValueAction({
-					org,
-					repo,
-					dataId: item.id,
-					dataName: item.name,
-					propertyId: groupByPropertyId,
-					optionId: newOptionId,
-					currentPropertyData: item.propertyData.map(pd => ({
-						propertyId: pd.propertyId,
-						value: pd.value,
-					})),
-				})
-
-				if (!result.success) {
-					// On error: show toast and refresh to revert optimistic update
-					toast({
-						title: 'Error',
-						description: result.error || 'Failed to update',
-						variant: 'destructive',
+			startTransition(() => {
+				void (async () => {
+					const result = await updatePropertyValueAction({
+						org,
+						repo,
+						dataId: item.id,
+						dataName: item.name,
+						propertyId: groupByPropertyId,
+						optionId: newOptionId,
+						currentPropertyData: item.propertyData.map(pd => ({
+							propertyId: pd.propertyId,
+							value: pd.value,
+						})),
 					})
-					router.refresh()
-				}
-				// On success: do nothing (no toast, no refresh needed)
+
+					if (!result.success) {
+						// On error: show toast and refresh to revert optimistic update
+						toast({
+							title: 'Error',
+							description: result.error || 'Failed to update',
+							variant: 'destructive',
+						})
+						window.location.reload()
+					}
+					// On success: do nothing (no toast, no refresh needed)
+				})()
 			})
 		},
 		[
@@ -509,7 +510,6 @@ export function DataKanbanView({
 			options,
 			org,
 			repo,
-			router,
 		],
 	)
 

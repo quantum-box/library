@@ -1,4 +1,3 @@
-'use client'
 import { BlockNoteSchema, createCodeBlockSpec } from '@blocknote/core'
 import '@blocknote/core/fonts/inter.css'
 import { codeBlockOptions } from '@blocknote/code-block'

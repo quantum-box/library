@@ -1,4 +1,3 @@
-'use client'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,8 +20,8 @@ import {
 	Star,
 	Zap,
 } from 'lucide-react'
-import Link from 'next/link'
-import { useQueryState } from 'nuqs'
+import { Link } from '@tanstack/react-router'
+// nuqs removed during Vite migration - using useState + URL search params
 import { useState } from 'react'
 import { ConnectDialog } from './connect-dialog'
 
@@ -128,9 +127,7 @@ export function IntegrationsPageUI({
 	integrations,
 	connections,
 }: IntegrationsPageUIProps) {
-	const [activeTab, setActiveTab] = useQueryState('tab', {
-		defaultValue: 'marketplace',
-	})
+	const [activeTab, setActiveTab] = useState('marketplace')
 	const [selectedIntegration, setSelectedIntegration] =
 		useState<Integration | null>(null)
 	const [isConnectDialogOpen, setIsConnectDialogOpen] = useState(false)
@@ -303,7 +300,7 @@ function IntegrationCard({
 						</div>
 						<div>
 							<Link
-								href={`/v1beta/${orgUsername}/integrations/${integration.id}`}
+								to={`/v1beta/${orgUsername}/integrations/${integration.id}`}
 								className='hover:underline'
 							>
 								<CardTitle className='text-lg flex items-center gap-2 cursor-pointer'>
@@ -355,7 +352,7 @@ function IntegrationCard({
 							{connection.status.toLowerCase()}
 						</Badge>
 						<Link
-							href={`/v1beta/${orgUsername}/integrations/${integration.id}`}
+							to={`/v1beta/${orgUsername}/integrations/${integration.id}`}
 							className='text-sm text-primary hover:underline flex items-center gap-1'
 						>
 							Manage
@@ -438,7 +435,7 @@ function ConnectionCard({
 			</CardContent>
 			<CardFooter className='border-t pt-4'>
 				<Link
-					href={`/v1beta/${orgUsername}/integrations/${integration.id}`}
+					to={`/v1beta/${orgUsername}/integrations/${integration.id}`}
 					className='w-full'
 				>
 					<Button variant='outline' className='w-full'>

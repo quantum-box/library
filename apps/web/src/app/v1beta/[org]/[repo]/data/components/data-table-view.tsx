@@ -1,4 +1,3 @@
-'use client'
 
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -49,8 +48,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Check, EyeOff, GripVertical, Loader2, X } from 'lucide-react'
-import NextLink from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link as NextLink } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState, useTransition } from 'react'
 import { updatePropertyValueAction } from '../actions'
 import type { FilterConfig, SortConfig } from './data-toolbar'
@@ -266,7 +265,7 @@ function EditableCell({
 	repo: string
 	canEdit: boolean
 }) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isEditing, setIsEditing] = useState(false)
 	const [editValue, setEditValue] = useState('')
 	const [isPending, startTransition] = useTransition()
@@ -314,56 +313,59 @@ function EditableCell({
 	const handleSaveStringValue = () => {
 		if (!property) return
 
-		startTransition(async () => {
-			const result = await updatePropertyValueAction({
-				org,
-				repo,
-				dataId: item.id,
-				dataName: item.name,
-				propertyId,
-				optionId: null, // For string values
-				currentPropertyData: item.propertyData.map(pd => {
-					if (pd.propertyId === propertyId) {
+		startTransition(() => {
+			void (async () => {
+				const result = await updatePropertyValueAction({
+					org,
+					repo,
+					dataId: item.id,
+					dataName: item.name,
+					propertyId,
+					optionId: null, // For string values
+					currentPropertyData: item.propertyData.map(pd => {
+						if (pd.propertyId === propertyId) {
+							return {
+								propertyId: pd.propertyId,
+								value: { string: editValue },
+							}
+						}
 						return {
 							propertyId: pd.propertyId,
-							value: { string: editValue },
+							value: pd.value,
 						}
-					}
-					return {
-						propertyId: pd.propertyId,
-						value: pd.value,
-					}
-				}),
-			})
-
-			if (result.success) {
-				toast({ title: 'Updated', description: `"${item.name}" updated` })
-				router.refresh()
-			} else {
-				toast({
-					title: 'Error',
-					description: result.error || 'Failed to update',
-					variant: 'destructive',
+					}),
 				})
-			}
-			setIsEditing(false)
+
+				if (result.success) {
+					toast({ title: 'Updated', description: `"${item.name}" updated` })
+					window.location.reload()
+				} else {
+					toast({
+						title: 'Error',
+						description: result.error || 'Failed to update',
+						variant: 'destructive',
+					})
+				}
+				setIsEditing(false)
+			})()
 		})
 	}
 
 	const handleSelectChange = (newOptionId: string) => {
-		startTransition(async () => {
-			const result = await updatePropertyValueAction({
-				org,
-				repo,
-				dataId: item.id,
-				dataName: item.name,
-				propertyId,
-				optionId: newOptionId === '__none__' ? null : newOptionId,
-				currentPropertyData: item.propertyData.map(pd => ({
-					propertyId: pd.propertyId,
-					value: pd.value,
-				})),
-			})
+		startTransition(() => {
+			void (async () => {
+				const result = await updatePropertyValueAction({
+					org,
+					repo,
+					dataId: item.id,
+					dataName: item.name,
+					propertyId,
+					optionId: newOptionId === '__none__' ? null : newOptionId,
+					currentPropertyData: item.propertyData.map(pd => ({
+						propertyId: pd.propertyId,
+						value: pd.value,
+					})),
+				})
 
 			if (result.success) {
 				const optionName =
@@ -372,7 +374,7 @@ function EditableCell({
 					title: 'Updated',
 					description: `"${item.name}" → ${optionName}`,
 				})
-				router.refresh()
+				window.location.reload()
 			} else {
 				toast({
 					title: 'Error',
@@ -380,6 +382,7 @@ function EditableCell({
 					variant: 'destructive',
 				})
 			}
+			})()
 		})
 	}
 
@@ -832,7 +835,7 @@ export function DataTableView({
 									<TableCell key={col.id} className={cn(compact && 'py-2')}>
 										{col.id === 'name' ? (
 											<NextLink
-												href={`/v1beta/${org}/${repo}/data/${item.id}`}
+												to={`/v1beta/${org}/${repo}/data/${item.id}`}
 												className='font-medium text-primary hover:underline'
 											>
 												{item.name}

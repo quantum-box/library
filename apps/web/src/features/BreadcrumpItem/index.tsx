@@ -1,6 +1,6 @@
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 
-export async function BreadcrumbItem({
+export function BreadcrumbItem({
 	segment,
 	segments,
 	ix,
@@ -12,7 +12,7 @@ export async function BreadcrumbItem({
 	// ここでid to name
 	return (
 		<Link
-			href={`/${segments.slice(0, ix + 1).join('/')}`}
+			to={`/${segments.slice(0, ix + 1).join('/')}`}
 			key={segment}
 			className='hover:bg-gray-200 rounded font-semibold px-2'
 		>

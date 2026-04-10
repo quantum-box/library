@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -9,8 +8,8 @@ import {
 	CardTitle,
 } from '@/components/ui/card'
 import { CheckCircle, Loader2, XCircle } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { Link } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 interface OAuthCallbackUIProps {
@@ -32,17 +31,17 @@ export function OAuthCallbackUI({
 	integrationId,
 	connection,
 }: OAuthCallbackUIProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 
 	// Auto-redirect on success after a short delay
 	useEffect(() => {
 		if (status === 'success' && integrationId) {
 			const timer = setTimeout(() => {
-				router.push(`/v1beta/${tenantId}/integrations/${integrationId}`)
+				navigate({ to: `/v1beta/${tenantId}/integrations/${integrationId}` })
 			}, 2000)
 			return () => clearTimeout(timer)
 		}
-	}, [status, integrationId, tenantId, router])
+	}, [status, integrationId, tenantId, navigate])
 
 	return (
 		<div className='flex min-h-screen items-center justify-center p-4'>
@@ -95,7 +94,7 @@ export function OAuthCallbackUI({
 							</p>
 							<Button asChild variant='outline'>
 								<Link
-									href={`/v1beta/${tenantId}/integrations/${integrationId}`}
+									to={`/v1beta/${tenantId}/integrations/${integrationId}`}
 								>
 									Go to Integration
 								</Link>
@@ -106,7 +105,7 @@ export function OAuthCallbackUI({
 					{status === 'error' && (
 						<div className='space-y-4'>
 							<Button asChild>
-								<Link href={`/v1beta/${tenantId}/integrations`}>
+								<Link to={`/v1beta/${tenantId}/integrations`}>
 									Back to Integrations
 								</Link>
 							</Button>

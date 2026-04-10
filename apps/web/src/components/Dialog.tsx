@@ -1,6 +1,6 @@
 import { Cross1Icon } from '@radix-ui/react-icons'
 import clsx from 'clsx'
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 
 export function Dialog({
 	isOpen,
@@ -29,7 +29,7 @@ export function Dialog({
 
 export function DialogCloseIcon({ href }: { href: string }) {
 	return (
-		<Link href={href}>
+		<Link to={href}>
 			{/* biome-ignore lint/a11y/useButtonType: <explanation> */}
 			<button className='absolute top-1 right-1 p-2 hover:bg-gray-200 rounded'>
 				<Cross1Icon />

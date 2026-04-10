@@ -36,29 +36,27 @@ import {
 	SelectValueForEditorFragment,
 	StringValueForEditorFragment,
 } from '@/gen/graphql'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import dynamic from 'next/dynamic'
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { type AvailableRepo, ExtGithubEditor } from '../ext-github-editor'
 
-const LocationMap = dynamic(
-	() => import('../../location-map').then(mod => ({ default: mod.LocationMap })),
-	{
-		ssr: false,
-		loading: () => (
-			<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>
-				Loading map…
-			</div>
-		),
-	},
-)
+const LocationMapLazy = React.lazy(() => import('../../location-map').then(mod => ({ default: mod.LocationMap })))
+const LocationMapCompactLazy = React.lazy(() => import('../../location-map').then(mod => ({ default: mod.LocationMapCompact })))
 
-const LocationMapCompact = dynamic(
-	() =>
-		import('../../location-map').then(mod => ({
-			default: mod.LocationMapCompact,
-		})),
-	{ ssr: false },
-)
+function LocationMap(props: React.ComponentProps<typeof LocationMapLazy>) {
+	return (
+		<Suspense fallback={<div className='flex h-[150px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground'>Loading map…</div>}>
+			<LocationMapLazy {...props} />
+		</Suspense>
+	)
+}
+
+function LocationMapCompact(props: React.ComponentProps<typeof LocationMapCompactLazy>) {
+	return (
+		<Suspense fallback={null}>
+			<LocationMapCompactLazy {...props} />
+		</Suspense>
+	)
+}
 
 /** Check if property is ext_github */
 function isExtGithubProperty(property: PropertyForEditorFragment): boolean {

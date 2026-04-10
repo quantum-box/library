@@ -1,4 +1,3 @@
-'use client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -42,8 +41,8 @@ import {
 	MapPin,
 	Table2,
 } from 'lucide-react'
-import NextLink from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { Link as NextLink } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { DataLocationsMap } from '../../../_components/location-map/data-locations-map'
 import { DataTable } from './data-table'
@@ -108,8 +107,8 @@ export function RepositoryUi({
 }: RepositoryUiProps) {
 	const { t, locale } = useTranslation()
 	const canEdit = Boolean(onMetaUpdate)
-	const router = useRouter()
-	const searchParams = useSearchParams()
+	const navigate = useNavigate()
+	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
 	const currentPage = Number(searchParams.get('page')) || 1
 	const [aboutState, setAboutState] = useState(about)
 	const [labelsState, setLabelsState] = useState(labels)
@@ -244,7 +243,7 @@ export function RepositoryUi({
 	const handlePageChange = (page: number) => {
 		const params = new URLSearchParams(searchParams)
 		params.set('page', page.toString())
-		router.push(`/v1beta/${org}/${repo}?${params.toString()}`)
+		navigate({ to: `/v1beta/${org}/${repo}?${params.toString()}` })
 	}
 
 	const handleEditSave = () => {
@@ -348,7 +347,7 @@ export function RepositoryUi({
 										{t.v1beta.repositoryPage.editDetails}
 									</Button>
 									<Button size='sm' asChild>
-										<NextLink href={`/v1beta/${org}/${repo}/data/new`}>
+										<NextLink to={`/v1beta/${org}/${repo}/data/new`}>
 											<FileText className='mr-2 h-4 w-4' />
 											{t.v1beta.repositoryPage.addData}
 										</NextLink>
@@ -435,9 +434,8 @@ export function RepositoryUi({
 									{dataList.items.map(item => (
 										<li key={item.id}>
 											<NextLink
-												href={`/v1beta/${org}/${repo}/data/${item.id}`}
+												to={`/v1beta/${org}/${repo}/data/${item.id}`}
 												className='flex flex-col gap-2 px-6 py-4 transition-colors hover:bg-muted'
-												prefetch={false}
 											>
 												<div className='flex flex-wrap items-center justify-between gap-3'>
 													<span className='font-medium text-sm sm:text-base'>

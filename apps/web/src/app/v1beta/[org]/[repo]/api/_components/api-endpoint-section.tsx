@@ -1,4 +1,3 @@
-'use client'
 
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { cn } from '@/lib/utils'

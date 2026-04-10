@@ -1,4 +1,3 @@
-'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -9,7 +8,7 @@ import {
 } from '@/gen/graphql'
 import { cn } from '@/lib/utils'
 import { Calendar, Clock } from 'lucide-react'
-import NextLink from 'next/link'
+import { Link as NextLink } from '@tanstack/react-router'
 
 interface DataCardViewProps {
 	data: DataFieldOnRepoPageFragment[]
@@ -176,7 +175,7 @@ export function DataCardView({
 						</div>
 
 						<NextLink
-							href={`/v1beta/${org}/${repo}/data/${item.id}`}
+							to={`/v1beta/${org}/${repo}/data/${item.id}`}
 							className='block'
 						>
 							<CardHeader className='pb-2'>

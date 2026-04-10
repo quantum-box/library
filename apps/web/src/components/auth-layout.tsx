@@ -1,5 +1,3 @@
-'use client'
-
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import type { ReactNode } from 'react'

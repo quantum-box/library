@@ -1,12 +1,10 @@
-import { signOut } from '@/app/(auth)/auth'
-import { ActionButton } from '@/components/action-button'
-import { redirect } from 'next/navigation'
+import { useAuth } from '@/auth'
+import { Button } from '@/components/ui/button'
 
 export function SignOutButton() {
-	const handleSignOut = async () => {
-		'use server'
-		await signOut()
-		redirect('/')
+	const { signOut } = useAuth()
+	const handleSignOut = () => {
+		signOut()
 	}
-	return <ActionButton action={handleSignOut}>Sign out</ActionButton>
+	return <Button onClick={handleSignOut}>Sign out</Button>
 }

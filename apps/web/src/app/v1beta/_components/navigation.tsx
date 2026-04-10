@@ -1,5 +1,3 @@
-'use client'
-
 import { Button } from '@/components/ui/button'
 import {
 	DropdownMenu,
@@ -10,8 +8,7 @@ import {
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Menu } from 'lucide-react'
-import Link from 'next/link'
-import { useParams, usePathname } from 'next/navigation'
+import { Link, useParams, useRouterState } from '@tanstack/react-router'
 
 interface NavigationItem {
 	value: string
@@ -26,8 +23,9 @@ export interface NavigationProps {
 
 export function Navigation({ items, className }: NavigationProps) {
 	const { t } = useTranslation()
-	const pathname = usePathname()
-	const { org, repo } = useParams<{ org: string; repo: string }>()
+	const pathname = useRouterState({ select: (s) => s.location.pathname })
+	const params = useParams({ strict: false }) as { org: string; repo: string }
+	const { org, repo } = params
 
 	// Get translated label based on value
 	const getTranslatedLabel = (value: string) => {
@@ -70,7 +68,7 @@ export function Navigation({ items, className }: NavigationProps) {
 							return (
 								<DropdownMenuItem key={item.value} asChild>
 									<Link
-										href={
+										to={
 											item.value === 'contents'
 												? `/v1beta/${org}/${repo}`
 												: `/v1beta/${org}/${repo}/${item.value}`
@@ -105,7 +103,7 @@ export function Navigation({ items, className }: NavigationProps) {
 						return (
 							<Link
 								key={item.value}
-								href={
+								to={
 									item.value === 'contents'
 										? `/v1beta/${org}/${repo}`
 										: `/v1beta/${org}/${repo}/${item.value}`

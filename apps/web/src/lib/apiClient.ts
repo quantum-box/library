@@ -4,118 +4,79 @@ import v1alpha from '@/gen/v1alpha/$api'
 import aspida from '@aspida/fetch'
 import { GraphQLClient } from 'graphql-request'
 
-// Server-side (Docker): use BACKEND_API_URL (e.g., http://library-api:50053)
-// Client-side or local dev: use NEXT_PUBLIC_BACKEND_API_URL (e.g., http://localhost:50053)
 export const baseURL =
-	process.env.BACKEND_API_URL ||
-	process.env.NEXT_PUBLIC_BACKEND_API_URL ||
-	'http://localhost:50053'
+  import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:50053'
+
+export const platformId =
+  import.meta.env.VITE_PLATFORM_ID || 'tn_01j702qf86pc2j35s0kv0gv3gy'
 
 export const client = api(aspida(fetch, { baseURL: `${baseURL}/preview` }))
+
 export const v1alphaApi = (userId?: string | null, token?: string) => {
-	let currentToken = token
-	if (process.env.NODE_ENV === 'development') {
-		currentToken = 'dummy-token'
-	}
-	return v1alpha(
-		aspida(fetch, {
-			baseURL: `${baseURL}/v1alpha`,
-			headers: {
-				'x-authenticated-userid': userId ?? '',
-				'x-platform-id': platformId,
-				Authorization: `Bearer ${currentToken}`,
-			},
-		}),
-	)
+  return v1alpha(
+    aspida(fetch, {
+      baseURL: `${baseURL}/v1alpha`,
+      headers: {
+        'x-authenticated-userid': userId ?? '',
+        'x-platform-id': platformId,
+        Authorization: `Bearer ${token ?? ''}`,
+      },
+    }),
+  )
 }
+
 export const v1betaApi = (token?: string) => {
-	let currentToken = token
-	if (process.env.NODE_ENV === 'development') {
-		currentToken = 'dummy-token'
-	}
-	return v1alpha(
-		aspida(fetch, {
-			baseURL: `${baseURL}/v1alpha`,
-			headers: {
-				'x-platform-id': platformId,
-				Authorization: `Bearer ${currentToken}`,
-			},
-		}),
-	)
+  return v1alpha(
+    aspida(fetch, {
+      baseURL: `${baseURL}/v1alpha`,
+      headers: {
+        'x-platform-id': platformId,
+        Authorization: `Bearer ${token ?? ''}`,
+      },
+    }),
+  )
 }
 
 export const restClient = (token?: string) => {
-	let currentToken = token
-	if (process.env.NODE_ENV === 'development') {
-		currentToken = 'dummy-token'
-	}
-	return api(
-		aspida(fetch, {
-			baseURL: `${baseURL}`,
-			headers: {
-				'x-platform-id': platformId,
-				Authorization: `Bearer ${currentToken}`,
-			},
-		}),
-	)
+  return api(
+    aspida(fetch, {
+      baseURL: `${baseURL}`,
+      headers: {
+        'x-platform-id': platformId,
+        Authorization: `Bearer ${token ?? ''}`,
+      },
+    }),
+  )
 }
-
-/**
- * libraryのtenantIdを指定する
- * tachyon-uiでつくったやつ
- */
-export const platformId =
-	process.env.NEXT_PUBLIC_PLATFORM_ID || 'tn_01j702qf86pc2j35s0kv0gv3gy'
 
 const graphqlClient = (token?: string, operatorId?: string) => {
-	const headers = {
-		'x-platform-id': platformId,
-		'x-operator-id': operatorId ?? platformId,
-		Authorization: '',
-	}
-	if (token) {
-		headers.Authorization = `Bearer ${token}`
-	}
-
-	return new GraphQLClient(`${baseURL}/v1/graphql`, {
-		headers,
-	})
-}
-
-export const graphqlDevClient = () =>
-	new GraphQLClient(`${baseURL}/v1/graphql`, {
-		headers: {
-			'x-operator-id': platformId,
-			Authorization: 'Bearer dummy-token',
-		},
-	})
-
-// export const sdk = getSdkGraphql(graphqlClient())
-
-const getSdk = (token?: string, operatorId?: string) => {
-	// if (process.env.NODE_ENV === 'development') {
-	// 	return getSdkGraphql(graphqlDevClient())
-	// }
-	return getSdkGraphql(graphqlClient(token as string, operatorId))
+  const headers: Record<string, string> = {
+    'x-platform-id': platformId,
+    'x-operator-id': operatorId ?? platformId,
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return new GraphQLClient(`${baseURL}/v1/graphql`, { headers })
 }
 
 export const getSdkPlatform = (token?: string) => {
-	return getSdkGraphql(graphqlClient(token, platformId))
+  return getSdkGraphql(graphqlClient(token, platformId))
 }
 
 export const getSdkOperator = (token: string, operatorId: string) => {
-	return getSdkGraphql(graphqlClient(token as string, operatorId))
+  return getSdkGraphql(graphqlClient(token, operatorId))
 }
 
 export type ApiError = {
-	response: {
-		errors: {
-			message: string
-			extensions: {
-				code: string
-			}
-		}[]
-	}
+  response: {
+    errors: {
+      message: string
+      extensions: {
+        code: string
+      }
+    }[]
+  }
 }
 
-export type GraphqlSdk = ReturnType<typeof getSdk>
+export type GraphqlSdk = ReturnType<typeof getSdkPlatform>

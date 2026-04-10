@@ -1,4 +1,3 @@
-'use client'
 
 import type { Locale } from '@/lib/i18n/translations'
 import { createContext, useContext, useEffect, useMemo } from 'react'

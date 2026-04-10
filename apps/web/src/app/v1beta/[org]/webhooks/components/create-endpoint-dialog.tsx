@@ -1,4 +1,3 @@
-'use client'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,7 +17,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useState, useTransition } from 'react'
 import { createWebhookEndpoint } from '../actions'
 
@@ -147,7 +146,7 @@ export function CreateEndpointDialog({
 	open,
 	onOpenChange,
 }: CreateEndpointDialogProps) {
-	const router = useRouter()
+	const navigate = useNavigate()
 	const [isPending, startTransition] = useTransition()
 	const [name, setName] = useState('')
 	const [provider, setProvider] = useState<string>('')
@@ -191,27 +190,29 @@ export function CreateEndpointDialog({
 
 		setError(null)
 
-		startTransition(async () => {
-			try {
-				const result = await createWebhookEndpoint({
-					tenantId,
-					name,
-					provider,
-					config: JSON.stringify(buildProviderConfig(provider, config)),
-					events: selectedEvents,
-				})
-
-				if (result.error) {
-					setError(result.error)
-				} else if (result.data) {
-					setCreatedEndpoint({
-						webhookUrl: result.data.webhookUrl,
-						secret: result.data.secret,
+		startTransition(() => {
+			void (async () => {
+				try {
+					const result = await createWebhookEndpoint({
+						tenantId,
+						name,
+						provider,
+						config: JSON.stringify(buildProviderConfig(provider, config)),
+						events: selectedEvents,
 					})
+
+					if (result.error) {
+						setError(result.error)
+					} else if (result.data) {
+						setCreatedEndpoint({
+							webhookUrl: result.data.webhookUrl,
+							secret: result.data.secret,
+						})
+					}
+				} catch (e) {
+					setError('Failed to create endpoint')
 				}
-			} catch (e) {
-				setError('Failed to create endpoint')
-			}
+			})()
 		})
 	}
 
@@ -277,7 +278,7 @@ export function CreateEndpointDialog({
 
 	const handleClose = () => {
 		if (createdEndpoint) {
-			router.refresh()
+			window.location.reload()
 		}
 		setName('')
 		setProvider('')

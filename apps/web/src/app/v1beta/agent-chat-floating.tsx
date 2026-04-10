@@ -1,4 +1,3 @@
-'use client'
 
 type AgentChatFloatingProps = {
 	children: React.ReactNode

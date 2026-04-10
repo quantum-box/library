@@ -1,54 +1,25 @@
-import 'server-only'
-import packageJson from '../../package.json'
-
-type BackendVersionResponse = {
-	version: string
-}
-
-const isBackendVersionResponse = (
-	value: unknown,
-): value is BackendVersionResponse => {
-	if (typeof value !== 'object' || value === null) {
-		return false
-	}
-	if (!('version' in value)) {
-		return false
-	}
-	return typeof (value as { version?: unknown }).version === 'string'
-}
-
-export const frontendVersion = packageJson.version
+export const frontendVersion = '1.11.0'
 
 export const fetchBackendVersion = async (): Promise<string | null> => {
-	const baseUrl =
-		process.env.BACKEND_API_URL ||
-		process.env.NEXT_PUBLIC_BACKEND_API_URL ||
-		'http://localhost:50053'
+  const baseUrl =
+    import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:50053'
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
 
-	const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5_000)
+    const response = await fetch(`${normalizedBaseUrl}/version`, {
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
 
-	try {
-		const controller = new AbortController()
-		const timeoutId = setTimeout(() => controller.abort(), 5_000)
-
-		const response = await fetch(`${normalizedBaseUrl}/version`, {
-			next: { revalidate: 3600 },
-			signal: controller.signal,
-		})
-		clearTimeout(timeoutId)
-
-		if (!response.ok) {
-			return null
-		}
-
-		const data: unknown = await response.json()
-
-		if (!isBackendVersionResponse(data)) {
-			return null
-		}
-
-		return data.version
-	} catch {
-		return null
-	}
+    if (!response.ok) return null
+    const data: unknown = await response.json()
+    if (typeof data === 'object' && data !== null && 'version' in data) {
+      return (data as { version: string }).version
+    }
+    return null
+  } catch {
+    return null
+  }
 }
