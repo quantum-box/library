@@ -1,0 +1,18 @@
+apiVersion: apps.tachy.one/v1alpha
+kind: CloudApp
+metadata:
+  name: library-api
+  tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+spec:
+  envVars:
+    - name: DATABASE_URL
+      type: credential
+      value: ""
+    - name: COGNITO_JWK_URL
+      value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
+    - name: COGNITO_USER_POOL_ID
+      value: "ap-northeast-1_8Ga4bK5M4"
+    - name: ENVIRONMENT
+      value: "production"
+    - name: PORT
+      value: "8080"
