@@ -1,5 +1,5 @@
 apiVersion: apps.tachy.one/v1alpha
-kind: ComputeApp
+kind: CloudApp
 metadata:
   name: library-api
   tenantId: tn_01hjryxysgey07h5jz5wagqj0m

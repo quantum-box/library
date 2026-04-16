@@ -1,0 +1,67 @@
+name: Deploy API to Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-northeast-1
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install Rust target
+        run: rustup target add aarch64-unknown-linux-gnu
+
+      - name: Install cargo-lambda
+        run: |
+          pip install --user cargo-lambda==1.8.6
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lambda-library-api
+
+      - name: Build Lambda
+        run: |
+          cargo lambda build \
+            --package library-api \
+            --bin lambda-library-api \
+            --release \
+            --arm64
+
+      - name: Deploy Lambda
+        run: |
+          cargo lambda deploy \
+            --region ${{ env.AWS_REGION }} \
+            --binary-name lambda-library-api \
+            lambda-library-api
