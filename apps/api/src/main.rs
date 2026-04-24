@@ -40,9 +40,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     });
 
-    if let Some(dsn) = config.sentry_dsn {
-        telemetry::init_sentry(&dsn);
-    }
+    // Hold the Sentry guard for the process lifetime so events
+    // forwarded by sentry_tracing are flushed before exit.
+    let _sentry_guard =
+        config.sentry_dsn.as_deref().map(telemetry::init_sentry);
 
     tracing::debug!("start connect database...");
 
