@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use super::input;
 use super::model::{
-    ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, Operator,
-    Organization, Property, PropertyType, Repo, Source, SyncResult, User,
+    ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, GlobalIdMapping,
+    Operator, Organization, Property, PropertyType, Repo, Source,
+    SyncResult, User,
 };
 use crate::app::LibraryApp;
 use crate::sdk_auth::SdkAuthApp;
@@ -895,6 +896,96 @@ impl LibraryMutation {
             .await?;
 
         Ok(source_id)
+    }
+
+    // ==================== PLT-942 GlobalIdMapping ====================
+
+    /// Create a `global_id_mapping` row for the caller's tenant.
+    #[tracing::instrument(
+        name = "create_global_id_mapping",
+        skip(self, ctx)
+    )]
+    async fn create_global_id_mapping(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        input: input::CreateGlobalIdMappingInput,
+    ) -> Result<GlobalIdMapping> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let global_id = input
+            .global_id
+            .map(|s| s.parse::<crate::domain::GlobalId>())
+            .transpose()
+            .map_err(|e| {
+                async_graphql::Error::new(format!("Invalid global_id: {e}"))
+            })?;
+        let system = input.system.parse::<Text>().map_err(|e| {
+            async_graphql::Error::new(format!("Invalid system: {e}"))
+        })?;
+        let system_code =
+            input.system_code.parse::<Text>().map_err(|e| {
+                async_graphql::Error::new(format!(
+                    "Invalid system_code: {e}"
+                ))
+            })?;
+        let name = input.name.parse::<Text>().map_err(|e| {
+            async_graphql::Error::new(format!("Invalid name: {e}"))
+        })?;
+
+        let mapping = app
+            .create_global_id_mapping
+            .execute(usecase::CreateGlobalIdMappingInputData {
+                executor,
+                multi_tenancy,
+                global_id,
+                system,
+                system_code,
+                name,
+            })
+            .await?;
+
+        Ok(mapping.into())
+    }
+
+    /// Update a `global_id_mapping` row's `name`. Other fields are immutable
+    /// in Phase 1; mutation of `system` / `system_code` / `global_id` awaits
+    /// Phase 1.5+ (deletion is out of scope for Phase 1).
+    #[tracing::instrument(
+        name = "update_global_id_mapping",
+        skip(self, ctx)
+    )]
+    async fn update_global_id_mapping(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        input: input::UpdateGlobalIdMappingInput,
+    ) -> Result<GlobalIdMapping> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let id =
+            input.id.parse::<crate::domain::GlobalIdMappingId>().map_err(
+                |e| async_graphql::Error::new(format!("Invalid id: {e}")),
+            )?;
+        let name = input.name.parse::<Text>().map_err(|e| {
+            async_graphql::Error::new(format!("Invalid name: {e}"))
+        })?;
+
+        let mapping = app
+            .update_global_id_mapping
+            .execute(usecase::UpdateGlobalIdMappingInputData {
+                executor,
+                multi_tenancy,
+                id,
+                name,
+            })
+            .await?;
+
+        Ok(mapping.into())
     }
 
     // ==================== GitHub OAuth ====================

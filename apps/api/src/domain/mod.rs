@@ -1,8 +1,10 @@
+pub mod global_id_mapping;
 mod organization;
 pub mod policy;
 pub mod repo;
 mod role;
 
+pub use global_id_mapping::*;
 pub use organization::*;
 pub use policy::*;
 pub use repo::*;

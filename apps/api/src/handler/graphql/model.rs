@@ -1,8 +1,10 @@
 use crate::domain;
 
+mod global_id_mapping;
 mod source;
 use async_graphql::{Enum, SimpleObject, Union};
 use chrono::{DateTime, Utc};
+pub use global_id_mapping::GlobalIdMapping;
 pub use source::Source;
 use tachyon_sdk::auth as auth_domain;
 

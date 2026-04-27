@@ -1,7 +1,11 @@
 use async_graphql::{InputObject, OneofObject};
 use tachyon_sdk::auth as auth_domain;
 
+mod global_id_mapping;
 mod source;
+pub use global_id_mapping::{
+    CreateGlobalIdMappingInput, UpdateGlobalIdMappingInput,
+};
 pub use source::{CreateSourceInput, UpdateSourceInput};
 
 #[derive(async_graphql::InputObject, Debug)]
