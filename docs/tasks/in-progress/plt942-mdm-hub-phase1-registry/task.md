@@ -39,18 +39,27 @@ CREATE TABLE `global_id_mapping` (
     `updated_at`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_tenant_global_id`   (`tenant_id`, `global_id`),
-    UNIQUE KEY `uk_tenant_system_code` (`tenant_id`, `system`, `system_code`),
-    INDEX `idx_tenant_id` (`tenant_id`),
-    INDEX `idx_system`    (`system`)
+    UNIQUE KEY `uk_tenant_system_code` (`tenant_id`, `system`, `system_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Phase 1 Registry: external system code → Library global_id (PLT-942 / ADR-0001)';
 ```
 
 unique 設計の根拠:
-- `(tenant_id, global_id)` → Library 内で global_id は一意 (tenant scope 内)
+- `(tenant_id, global_id)` → Library 内で global_id は tenant scope で一意
 - `(tenant_id, system, system_code)` → 同一 system の同一 code が二重登録されない
   (= 名寄せの一貫性保証)
+- 単一 column INDEX は付けない: 全クエリは `WHERE tenant_id = ?` 固定で、上記 2 つの
+  unique key (どちらも leading column が `tenant_id`) で覆える
 - tenant 単位 scope なので、別 tenant が同じ `system_code` を持つことは許可
+
+注意 (advisor 指摘):
+- **`global_id` uniqueness は tenant-scoped** に意図的に設計。ADR の「Library 内で
+  名寄せ」を Phase 1 では tenant 内一意と解釈する (異 tenant 間で同じ `gid_xxx` が
+  別エンティティを指す可能性あり)。Phase 2 で再評価する余地あり。bakuure / PdM-Product
+  には schema 共有時にこの解釈を明示する。
+- **`system` は MariaDB 予約語**。SQL は backtick quoting で逃げる。sqlx の
+  `query_as!` macro が field 名で衝突したら domain 側 field を `source_system` に rename
+  する fallback あり (ただし Rust 側の field 名は `system` でも OK、衝突は SQL 側)。
 
 ### ID 戦略
 - `id` (PK): ULID with prefix `gim_`
@@ -82,6 +91,9 @@ input UpdateGlobalIdMappingInput {
   id: String!
   name: String           # only mutable field in Phase 1
 }
+# Note: `system` / `system_code` / `global_id` は post-create immutable.
+# 訂正は「delete + recreate」で行う。これは名寄せの一貫性を保つための制約で、
+# Phase 2 で再評価する。
 
 extend type Query {
   globalIdMapping(system: String!, systemCode: String!): GlobalIdMapping
@@ -94,24 +106,19 @@ extend type Mutation {
 }
 ```
 
-### REST endpoint (bakuure SDK 用)
+### REST endpoint (bakuure SDK 用、Phase 1 はこの 1 本のみ)
 
 ```
 GET  /v1beta/global-id-mapping?system=bakuure&code=BWS-001
      → 200 GlobalIdMappingResponse | 404
-POST /v1beta/global-id-mapping
-     body: CreateGlobalIdMappingRequest
-     → 201 GlobalIdMappingResponse
-PUT  /v1beta/global-id-mapping/{id}
-     body: UpdateGlobalIdMappingRequest
-     → 200 GlobalIdMappingResponse
-GET  /v1beta/global-id-mapping
-     query: system?
-     → 200 [GlobalIdMappingResponse]
 ```
 
 tenant scope は `x-operator-id` header (= TenantId) から決定。
 auth は既存 `LibraryExecutor` extractor に従い、未認証は permission_denied。
+
+REST は **bakuure SDK lookup 用の最小 1 本だけ** に絞る (advisor 指摘)。
+Create / Update / 一覧は全て GraphQL 経由。bakuure 側で別 REST が必要になったら
+Phase 1.5 以降で追加する。
 
 ### tenant scope 分離方針
 - 全 SQL に `WHERE tenant_id = ?` を強制
