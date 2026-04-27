@@ -1,11 +1,9 @@
 //! PLT-942: Update a `global_id_mapping`. Only `name` is mutable.
-//!
-//! NOTE (M2): policy enforcement (`library:UpdateGlobalIdMapping`) deferred
-//! to M3 (see PLT-942 / leader-plt942-action).
+//! Policy gate: `library:UpdateGlobalIdMapping`.
 
 use std::sync::Arc;
 
-use tachyon_sdk::auth::AuthApp;
+use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 
 use crate::domain::{GlobalIdMapping, GlobalIdMappingRepository};
 
@@ -16,7 +14,6 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct UpdateGlobalIdMapping {
     repository: Arc<dyn GlobalIdMappingRepository>,
-    #[allow(dead_code)]
     auth: Arc<dyn AuthApp>,
 }
 
@@ -39,7 +36,14 @@ impl UpdateGlobalIdMappingInputPort for UpdateGlobalIdMapping {
         &self,
         input: UpdateGlobalIdMappingInputData<'a>,
     ) -> errors::Result<GlobalIdMapping> {
-        // TODO PLT-942 M3: self.auth.check_policy("library:UpdateGlobalIdMapping")
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: input.multi_tenancy,
+                action: "library:UpdateGlobalIdMapping",
+            })
+            .await?;
+
         let tenant_id = input.multi_tenancy.get_operator_id()?;
 
         self.repository

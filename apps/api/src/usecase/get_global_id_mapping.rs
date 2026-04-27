@@ -1,11 +1,9 @@
 //! PLT-942: Look up a `global_id_mapping` by `(system, system_code)`.
-//!
-//! NOTE (M2): policy enforcement (`library:ReadGlobalIdMapping`) deferred to
-//! M3 (see PLT-942 / leader-plt942-action).
+//! Policy gate: `library:ReadGlobalIdMapping` (bakuure SA Phase 1 read-only).
 
 use std::sync::Arc;
 
-use tachyon_sdk::auth::AuthApp;
+use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 
 use crate::domain::{GlobalIdMapping, GlobalIdMappingRepository};
 
@@ -14,7 +12,6 @@ use super::{GetGlobalIdMappingInputData, GetGlobalIdMappingInputPort};
 #[derive(Debug, Clone)]
 pub struct GetGlobalIdMapping {
     repository: Arc<dyn GlobalIdMappingRepository>,
-    #[allow(dead_code)]
     auth: Arc<dyn AuthApp>,
 }
 
@@ -37,7 +34,14 @@ impl GetGlobalIdMappingInputPort for GetGlobalIdMapping {
         &self,
         input: GetGlobalIdMappingInputData<'a>,
     ) -> errors::Result<Option<GlobalIdMapping>> {
-        // TODO PLT-942 M3: self.auth.check_policy("library:ReadGlobalIdMapping")
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: input.multi_tenancy,
+                action: "library:ReadGlobalIdMapping",
+            })
+            .await?;
+
         let tenant_id = input.multi_tenancy.get_operator_id()?;
 
         self.repository
