@@ -42,17 +42,16 @@ impl TryFrom<GlobalIdMappingRow> for GlobalIdMapping {
             row.global_id.parse().map_err(|e: errors::ParseIdError| {
                 errors::Error::invalid(e.to_string())
             })?;
-        let system = row
-            .system
-            .parse()
-            .map_err(|e: anyhow::Error| errors::Error::invalid(e.to_string()))?;
-        let system_code = row.system_code.parse().map_err(
-            |e: anyhow::Error| errors::Error::invalid(e.to_string()),
-        )?;
-        let name = row
-            .name
-            .parse()
-            .map_err(|e: anyhow::Error| errors::Error::invalid(e.to_string()))?;
+        let system = row.system.parse().map_err(|e: anyhow::Error| {
+            errors::Error::invalid(e.to_string())
+        })?;
+        let system_code =
+            row.system_code.parse().map_err(|e: anyhow::Error| {
+                errors::Error::invalid(e.to_string())
+            })?;
+        let name = row.name.parse().map_err(|e: anyhow::Error| {
+            errors::Error::invalid(e.to_string())
+        })?;
 
         Ok(GlobalIdMapping::new(
             &id,

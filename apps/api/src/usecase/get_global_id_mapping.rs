@@ -26,10 +26,7 @@ impl GetGlobalIdMapping {
 
 #[async_trait::async_trait]
 impl GetGlobalIdMappingInputPort for GetGlobalIdMapping {
-    #[tracing::instrument(
-        name = "GetGlobalIdMapping::execute",
-        skip(self)
-    )]
+    #[tracing::instrument(name = "GetGlobalIdMapping::execute", skip(self))]
     async fn execute<'a>(
         &self,
         input: GetGlobalIdMappingInputData<'a>,

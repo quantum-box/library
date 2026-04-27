@@ -7,9 +7,7 @@ use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 
 use crate::domain::{GlobalIdMapping, GlobalIdMappingRepository};
 
-use super::{
-    FindGlobalIdMappingsInputData, FindGlobalIdMappingsInputPort,
-};
+use super::{FindGlobalIdMappingsInputData, FindGlobalIdMappingsInputPort};
 
 #[derive(Debug, Clone)]
 pub struct FindGlobalIdMappings {

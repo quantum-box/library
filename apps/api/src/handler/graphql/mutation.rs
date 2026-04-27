@@ -967,10 +967,12 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
-        let id =
-            input.id.parse::<crate::domain::GlobalIdMappingId>().map_err(
-                |e| async_graphql::Error::new(format!("Invalid id: {e}")),
-            )?;
+        let id = input
+            .id
+            .parse::<crate::domain::GlobalIdMappingId>()
+            .map_err(|e| {
+                async_graphql::Error::new(format!("Invalid id: {e}"))
+            })?;
         let name = input.name.parse::<Text>().map_err(|e| {
             async_graphql::Error::new(format!("Invalid name: {e}"))
         })?;

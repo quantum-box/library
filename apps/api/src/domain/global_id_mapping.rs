@@ -131,13 +131,8 @@ mod tests {
         let code: Text = "BWS-001".parse().unwrap();
         let name: Text = "Bakuure Widget Standard 001".parse().unwrap();
 
-        let m = GlobalIdMapping::create(
-            &tenant(),
-            None,
-            &system,
-            &code,
-            &name,
-        );
+        let m =
+            GlobalIdMapping::create(&tenant(), None, &system, &code, &name);
 
         assert!(m.id().as_str().starts_with("gim_"));
         assert!(m.global_id().as_str().starts_with("gid_"));
@@ -171,13 +166,8 @@ mod tests {
         let system: Text = "bakuure".parse().unwrap();
         let code: Text = "BWS-001".parse().unwrap();
         let name: Text = "Old".parse().unwrap();
-        let m = GlobalIdMapping::create(
-            &tenant(),
-            None,
-            &system,
-            &code,
-            &name,
-        );
+        let m =
+            GlobalIdMapping::create(&tenant(), None, &system, &code, &name);
 
         let new_name: Text = "New".parse().unwrap();
         let updated = m.update_name(&new_name);
