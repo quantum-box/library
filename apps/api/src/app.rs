@@ -46,6 +46,15 @@ pub struct LibraryApp {
     pub delete_source: Arc<dyn usecase::DeleteSourceInputPort>,
     pub get_source: Arc<dyn usecase::GetSourceInputPort>,
     pub find_sources: Arc<dyn usecase::FindSourcesInputPort>,
+    // PLT-942 Library MDM Hub Phase 1 (Registry)
+    pub create_global_id_mapping:
+        Arc<dyn usecase::CreateGlobalIdMappingInputPort>,
+    pub update_global_id_mapping:
+        Arc<dyn usecase::UpdateGlobalIdMappingInputPort>,
+    pub get_global_id_mapping:
+        Arc<dyn usecase::GetGlobalIdMappingInputPort>,
+    pub find_global_id_mappings:
+        Arc<dyn usecase::FindGlobalIdMappingsInputPort>,
     pub sign_in: Arc<dyn usecase::SignInInputPort>,
     pub invite_org_member: Arc<dyn usecase::InviteOrgMemberInputPort>,
     pub change_org_member_role:
@@ -104,6 +113,13 @@ impl LibraryApp {
             Arc::new(interface_adapter::SourceRepositoryImpl::new(
                 library_db.clone(),
             ));
+        let global_id_mapping_repo: Arc<
+            dyn crate::domain::GlobalIdMappingRepository,
+        > = Arc::new(
+            interface_adapter::GlobalIdMappingRepositoryImpl::new(
+                library_db.clone(),
+            ),
+        );
         let find_all_repo_query =
             Arc::new(interface_adapter::AllRepoQueryServiceImpl::new(
                 library_db.clone(),
@@ -319,6 +335,28 @@ impl LibraryApp {
             visibility_service.clone(),
         ));
 
+        // PLT-942 Library MDM Hub Phase 1
+        let create_global_id_mapping =
+            Arc::new(usecase::CreateGlobalIdMapping::new(
+                global_id_mapping_repo.clone(),
+                auth_app.clone(),
+            ));
+        let update_global_id_mapping =
+            Arc::new(usecase::UpdateGlobalIdMapping::new(
+                global_id_mapping_repo.clone(),
+                auth_app.clone(),
+            ));
+        let get_global_id_mapping =
+            Arc::new(usecase::GetGlobalIdMapping::new(
+                global_id_mapping_repo.clone(),
+                auth_app.clone(),
+            ));
+        let find_global_id_mappings =
+            Arc::new(usecase::FindGlobalIdMappings::new(
+                global_id_mapping_repo.clone(),
+                auth_app.clone(),
+            ));
+
         // GitHub Import usecases
         let list_github_directory =
             usecase::ListGitHubDirectory::new(auth_app.clone());
@@ -373,6 +411,10 @@ impl LibraryApp {
             delete_source,
             get_source,
             find_sources,
+            create_global_id_mapping,
+            update_global_id_mapping,
+            get_global_id_mapping,
+            find_global_id_mappings,
             sign_in,
             invite_org_member,
             change_org_member_role,

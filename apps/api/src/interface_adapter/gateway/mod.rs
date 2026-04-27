@@ -18,3 +18,6 @@ pub use repo_repository::*;
 
 pub mod source_repository;
 pub use source_repository::*;
+
+pub mod global_id_mapping_repository;
+pub use global_id_mapping_repository::*;

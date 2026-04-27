@@ -5,7 +5,8 @@ use super::model::*;
 use crate::app::LibraryApp;
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{
-    self, FindSourcesInputData, GetMarkdownPreviewsInputData,
+    self, FindGlobalIdMappingsInputData, FindSourcesInputData,
+    GetGlobalIdMappingInputData, GetMarkdownPreviewsInputData,
     GetRepoMembersInputPort, GetRepoPoliciesInputPort, GetSourceInputData,
     ListGitHubDirectoryInputData,
 };
@@ -234,6 +235,72 @@ impl LibraryQuery {
             .ok_or(errors::not_found!("Source not found"))?;
 
         Ok(source.into())
+    }
+
+    /// PLT-942: Look up a `global_id_mapping` by `(system, system_code)`
+    /// within the caller's tenant. Returns `null` when not found.
+    #[tracing::instrument(
+        name = "library_global_id_mapping",
+        skip(self, ctx)
+    )]
+    async fn global_id_mapping(
+        &self,
+        ctx: &Context<'_>,
+        system: String,
+        system_code: String,
+    ) -> Result<Option<GlobalIdMapping>> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let mapping = app
+            .get_global_id_mapping
+            .execute(GetGlobalIdMappingInputData {
+                executor,
+                multi_tenancy,
+                system,
+                system_code,
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("error: {:?}", e);
+                e.extend()
+            })?;
+
+        Ok(mapping.map(|m| m.into()))
+    }
+
+    /// PLT-942: List `global_id_mapping` rows for the caller's tenant,
+    /// optionally filtered by `system`.
+    #[tracing::instrument(
+        name = "library_global_id_mappings",
+        skip(self, ctx)
+    )]
+    async fn global_id_mappings(
+        &self,
+        ctx: &Context<'_>,
+        system: Option<String>,
+    ) -> Result<Vec<GlobalIdMapping>> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let mappings = app
+            .find_global_id_mappings
+            .execute(FindGlobalIdMappingsInputData {
+                executor,
+                multi_tenancy,
+                system,
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("error: {:?}", e);
+                e.extend()
+            })?;
+
+        Ok(mappings.into_iter().map(|m| m.into()).collect())
     }
 
     #[tracing::instrument(name = "library_api_keys", skip(self, ctx))]

@@ -8,8 +8,8 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, organization::*, property::*, repository::*,
-    source::*,
+    auth::*, data::*, global_id_mapping::*, organization::*, property::*,
+    repository::*, source::*,
 };
 
 // TODO: add English comment
@@ -45,6 +45,7 @@ use crate::handler::{
         create_source,
         update_source,
         delete_source,
+        get_global_id_mapping,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -68,7 +69,8 @@ use crate::handler::{
         crate::handler::types::UpdatePropertyRequest,
         crate::handler::types::SourceResponse,
         crate::handler::types::CreateSourceRequest,
-        crate::handler::types::UpdateSourceRequest
+        crate::handler::types::UpdateSourceRequest,
+        crate::handler::global_id_mapping::GlobalIdMappingResponse,
     ))
 )]
 pub struct ApiDoc;
@@ -116,6 +118,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(create_source))
         .routes(routes!(update_source))
         .routes(routes!(delete_source))
+        .routes(routes!(get_global_id_mapping))
 }
 
 pub fn create_router() -> axum::Router {

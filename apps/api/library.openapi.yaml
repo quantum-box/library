@@ -94,6 +94,31 @@ components:
       - name
       - items
       type: object
+    GlobalIdMappingResponse:
+      properties:
+        created_at:
+          type: string
+        global_id:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        system:
+          type: string
+        system_code:
+          type: string
+        updated_at:
+          type: string
+      required:
+      - id
+      - global_id
+      - system
+      - system_code
+      - name
+      - created_at
+      - updated_at
+      type: object
     Location:
       description: |-
         # Location
@@ -502,6 +527,33 @@ paths:
         '200':
           description: OK
       tags: []
+  /v1beta/global-id-mapping:
+    get:
+      operationId: get_global_id_mapping
+      parameters:
+      - description: Source system name (e.g. `bakuure`)
+        in: query
+        name: system
+        required: true
+        schema:
+          type: string
+      - description: Code in the source system (e.g. `BWS-001`)
+        in: query
+        name: code
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalIdMappingResponse'
+          description: Mapping found
+        '404':
+          description: No mapping for (system, code) in caller's tenant
+      tags:
+      - global_id_mapping
   /v1beta/orgs:
     post:
       operationId: create_organization
@@ -579,18 +631,14 @@ paths:
         name: name
         required: false
         schema:
-          type:
-          - string
-          - 'null'
+          type: string
       - description: Maximum number of results to return
         in: query
         name: limit
         required: false
         schema:
           format: int64
-          type:
-          - integer
-          - 'null'
+          type: integer
       responses:
         '200':
           content:
@@ -774,9 +822,7 @@ paths:
         schema:
           format: int32
           minimum: 0
-          type:
-          - integer
-          - 'null'
+          type: integer
       - description: Page size
         in: query
         name: page_size
@@ -784,9 +830,7 @@ paths:
         schema:
           format: int32
           minimum: 0
-          type:
-          - integer
-          - 'null'
+          type: integer
       responses:
         '200':
           content:
