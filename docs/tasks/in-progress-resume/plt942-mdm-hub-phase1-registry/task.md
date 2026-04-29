@@ -1,10 +1,15 @@
 # PLT-942 Library MDM Hub Phase 1 (Registry): bakuure SKU → Global ID
 
-- Status: in-progress
-- Owner: leader-plt942-lib (PdM-Platform)
+- Status: in-progress-resume (5/7 GW 明け M4 で再開)
+- Owner: 5/7 起動の新 leader-plt942-lib (PdM-Platform)
 - Branch: `feature/plt-942-mdm-hub-phase1`
 - Linear: PLT-942
 - Deadline: 2026-05-07 (GW明け)
+- Resume context:
+  - M1-M3 完遂 (PR #31 merged sha 3a3fa54、Lambda deploy 復旧 完全達成 run 25011411608 all green)
+  - 2-layer deploy fix shipped: library PR #32 (openssl-sys aarch64) + tachyon-apps PR #3256 (IAM `lambda:UpdateFunctionConfiguration`)
+  - M3 code live on `lambda-library-api` (ap-northeast-1) — `GET /v1beta/global-id-mapping?system=bakuure&code=BWS-001` 動作可能
+  - 残: M4 = bakuure 側からの read-only smoke test (PdM-Product 並行) → Linear PLT-942 Done flip (state=Done + assignee=Takanori Fukuyama 同時) → self-kill `tmux kill-window -t work:14`
 
 ## 背景・価値
 ADR-0001 (Library MDM Hub) Phase 1 = Registry スタイル。bakuure / 将来の会計・倉庫
