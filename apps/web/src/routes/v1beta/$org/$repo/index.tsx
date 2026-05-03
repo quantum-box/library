@@ -15,7 +15,7 @@ export const Route = createFileRoute('/v1beta/$org/$repo/')({
 function RepositoryPage() {
   const { org, repo } = Route.useParams()
   const search = Route.useSearch() as { page?: string; pageSize?: string }
-  const { session } = useAuth()
+  const { session, isLoading: isAuthLoading } = useAuth()
   const [repoData, setRepoData] = useState<any>(null)
   const [tags, setTags] = useState<string[]>([])
   const [hasEditPermission, setHasEditPermission] = useState(false)
@@ -25,6 +25,8 @@ function RepositoryPage() {
   const pageSize = search.pageSize ? parseInt(search.pageSize, 10) : 20
 
   useEffect(() => {
+    if (isAuthLoading) return
+
     const fetchData = async () => {
       setLoading(true)
       try {
@@ -79,7 +81,7 @@ function RepositoryPage() {
       }
     }
     fetchData()
-  }, [org, repo, page, pageSize, session?.user?.accessToken])
+  }, [org, repo, page, pageSize, session?.user?.accessToken, isAuthLoading])
 
   if (loading) return <RepoSkeleton />
 

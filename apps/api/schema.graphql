@@ -259,13 +259,6 @@ The input/output is a string in RFC3339 format.
 """
 scalar DateTime
 
-type DateValue {
-	"""
-	Date in ISO 8601 format (YYYY-MM-DD)
-	"""
-	date: String!
-}
-
 """
 Default role assigned to users within an operator.
 """
@@ -1246,7 +1239,7 @@ type Mutation {
 	"""
 	[AUTH] Sign in or sign up via platform access token (library)
 	"""
-	signIn(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
+	signInWithPlatform(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
 	"""
 	[AUTH] Create operator via SDK REST call
 	"""
@@ -1545,7 +1538,6 @@ type Organization {
 	name: String!
 	username: String!
 	description: String
-	website: String
 	repos: [Repo!]!
 	users: [User!]!
 }
@@ -1602,7 +1594,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | ImageValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -2184,9 +2176,9 @@ type User {
 	createdAt: DateTime!
 	updatedAt: DateTime!
 	"""
-	Resolve operator organizations accessible to this user
+	Resolve operators accessible to this user
 	"""
-	organizations: [Operator!]!
+	operators: [Operator!]!
 }
 
 """

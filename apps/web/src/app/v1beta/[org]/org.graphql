@@ -16,7 +16,6 @@ fragment DatabaseOnOrg on Organization {
   name
   username
   description
-  website
   repos {
     ...RepoItemOnOrgPage
   }

@@ -16,11 +16,19 @@ use gateway::{
     PropertyRepositoryImpl, RelationRepositoryImpl,
 };
 pub use usecase::boundary::*;
+pub use usecase::{DataQuery, FindAllPropertiesInputPort};
 
 use interface_adapter::*;
 use std::fmt::Debug;
 use std::sync::Arc;
-use usecase::*;
+use usecase::{
+    AddDataInteractorImpl, AddPropertyInteractorImpl,
+    CreateDatabaseInteractorImpl, DeleteDataInteractor,
+    DeleteDatabaseInteractor, DeletePropertyInteractor, FindAllProperties,
+    FindDatabasesInteractorImpl, GetDataInteractorImpl,
+    GetDatabaseDefinition, GetDatabaseInteractorImpl, SearchData,
+    UpdateDataInteractorImpl, UpdatePropertyInteractorImpl,
+};
 
 // #[async_trait::async_trait]
 // pub trait DatabaseManagerClient: Debug + Send + Sync + 'static {
