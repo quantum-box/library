@@ -19,6 +19,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+license = "MIT"
+
 [workspace.dependencies]
 # ---- CLI / Config ----
 clap = { version = "4", default-features = false, features = [

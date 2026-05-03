@@ -3,6 +3,7 @@ name = "inbound_sync_domain"
 version = "0.1.0"
 edition = "2021"
 description = "Domain models for inbound webhook synchronization"
+license.workspace = true
 
 [dependencies]
 async-trait.workspace = true

@@ -3,8 +3,7 @@ name = "tachyon-sdk"
 version = "0.1.0"
 authors = ["OpenAPI Generator team and contributors"]
 description = "Tachyon Platform REST API"
-# Override this license by providing a License Object in the OpenAPI.
-license = "Unlicense"
+license.workspace = true
 edition = "2021"
 
 [dependencies]

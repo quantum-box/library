@@ -3,6 +3,7 @@ name = "github_provider"
 version = "0.1.0"
 edition = "2021"
 description = "GitHub OAuth provider for authentication and API access"
+license.workspace = true
 
 [dependencies]
 errors = { path = "../../../../packages/errors" }
@@ -18,4 +19,3 @@ urlencoding = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-
