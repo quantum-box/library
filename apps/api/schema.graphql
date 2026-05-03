@@ -1246,7 +1246,7 @@ type Mutation {
 	"""
 	[AUTH] Sign in or sign up via platform access token (library)
 	"""
-	signIn(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
+	signInWithPlatform(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
 	"""
 	[AUTH] Create operator via SDK REST call
 	"""
@@ -1545,7 +1545,6 @@ type Organization {
 	name: String!
 	username: String!
 	description: String
-	website: String
 	repos: [Repo!]!
 	users: [User!]!
 }
@@ -2184,9 +2183,9 @@ type User {
 	createdAt: DateTime!
 	updatedAt: DateTime!
 	"""
-	Resolve operator organizations accessible to this user
+	Resolve operators accessible to this user
 	"""
-	organizations: [Operator!]!
+	operators: [Operator!]!
 }
 
 """

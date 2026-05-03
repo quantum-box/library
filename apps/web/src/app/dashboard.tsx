@@ -79,12 +79,12 @@ export function DashboardPage() {
 
 	if (loading) {
 		return (
-			<>
+			<I18nProvider locale={locale} dictionary={dictionary}>
 				<SpaHeader />
 				<div className='flex items-center justify-center min-h-[50vh]'>
 					<div className='animate-spin rounded-full h-8 w-8 border-b-2 border-primary' />
 				</div>
-			</>
+			</I18nProvider>
 		)
 	}
 

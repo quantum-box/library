@@ -17,7 +17,7 @@ query dashboardOrgRepos($username: String!) {
 fragment meOnDashboard on User {
   name
   tenantIdList
-  organizations {
+  organizations: operators {
     ...organizationListItem
   }
 }

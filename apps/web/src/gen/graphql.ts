@@ -2397,7 +2397,7 @@ export const MeOnDashboardFragmentDoc = gql`
     fragment meOnDashboard on User {
   name
   tenantIdList
-  organizations {
+  organizations: operators {
     ...organizationListItem
   }
 }
@@ -2570,7 +2570,6 @@ export const OrganizationFormFragmentDoc = gql`
   name
   username
   description
-  website
 }
     `;
 export const RepoItemOnOrgPageFragmentDoc = gql`
@@ -2597,7 +2596,6 @@ export const DatabaseOnOrgFragmentDoc = gql`
   name
   username
   description
-  website
   repos {
     ...RepoItemOnOrgPage
   }
@@ -2826,7 +2824,7 @@ export const VerifyDocument = gql`
     `;
 export const SignInOrSignUpDocument = gql`
     mutation signInOrSignUp($platformId: String!, $accessToken: String!, $allowSignUp: Boolean) {
-  signIn(
+  signIn: signInWithPlatform(
     platformId: $platformId
     accessToken: $accessToken
     allowSignUp: $allowSignUp
