@@ -1,9 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { ApiPageUi } from '@/app/v1beta/[org]/[repo]/api/_components/api-page-ui'
+import { baseURL } from '@/lib/apiClient'
 
 export const Route = createFileRoute('/v1beta/$org/$repo/api')({
   component: ApiPage,
 })
 
 function ApiPage() {
-  return <div className='container mx-auto p-4'>API page - TODO</div>
+  const { org, repo } = Route.useParams()
+
+  return (
+    <ApiPageUi
+      org={org}
+      repo={repo}
+      apiBaseUrl={baseURL}
+    />
+  )
 }

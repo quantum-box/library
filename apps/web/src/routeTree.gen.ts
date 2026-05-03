@@ -25,6 +25,8 @@ import { Route as V1betaOrgRepoSettingsRouteImport } from './routes/v1beta/$org/
 import { Route as V1betaOrgRepoPropertiesRouteImport } from './routes/v1beta/$org/$repo/properties'
 import { Route as V1betaOrgRepoDataRouteImport } from './routes/v1beta/$org/$repo/data'
 import { Route as V1betaOrgRepoApiRouteImport } from './routes/v1beta/$org/$repo/api'
+import { Route as V1betaOrgRepoDataNewRouteImport } from './routes/v1beta/$org/$repo/data/new'
+import { Route as V1betaOrgRepoDataDataIdRouteImport } from './routes/v1beta/$org/$repo/data/$dataId'
 
 const V1betaRoute = V1betaRouteImport.update({
   id: '/v1beta',
@@ -105,6 +107,16 @@ const V1betaOrgRepoApiRoute = V1betaOrgRepoApiRouteImport.update({
   path: '/api',
   getParentRoute: () => V1betaOrgRepoRoute,
 } as any)
+const V1betaOrgRepoDataNewRoute = V1betaOrgRepoDataNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => V1betaOrgRepoDataRoute,
+} as any)
+const V1betaOrgRepoDataDataIdRoute = V1betaOrgRepoDataDataIdRouteImport.update({
+  id: '/$dataId',
+  path: '/$dataId',
+  getParentRoute: () => V1betaOrgRepoDataRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -118,10 +130,12 @@ export interface FileRoutesByFullPath {
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org/': typeof V1betaOrgIndexRoute
   '/v1beta/$org/$repo/api': typeof V1betaOrgRepoApiRoute
-  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRoute
+  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRouteWithChildren
   '/v1beta/$org/$repo/properties': typeof V1betaOrgRepoPropertiesRoute
   '/v1beta/$org/$repo/settings': typeof V1betaOrgRepoSettingsRoute
   '/v1beta/$org/$repo/': typeof V1betaOrgRepoIndexRoute
+  '/v1beta/$org/$repo/data/$dataId': typeof V1betaOrgRepoDataDataIdRoute
+  '/v1beta/$org/$repo/data/new': typeof V1betaOrgRepoDataNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,10 +148,12 @@ export interface FileRoutesByTo {
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org': typeof V1betaOrgIndexRoute
   '/v1beta/$org/$repo/api': typeof V1betaOrgRepoApiRoute
-  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRoute
+  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRouteWithChildren
   '/v1beta/$org/$repo/properties': typeof V1betaOrgRepoPropertiesRoute
   '/v1beta/$org/$repo/settings': typeof V1betaOrgRepoSettingsRoute
   '/v1beta/$org/$repo': typeof V1betaOrgRepoIndexRoute
+  '/v1beta/$org/$repo/data/$dataId': typeof V1betaOrgRepoDataDataIdRoute
+  '/v1beta/$org/$repo/data/new': typeof V1betaOrgRepoDataNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -153,10 +169,12 @@ export interface FileRoutesById {
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org/': typeof V1betaOrgIndexRoute
   '/v1beta/$org/$repo/api': typeof V1betaOrgRepoApiRoute
-  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRoute
+  '/v1beta/$org/$repo/data': typeof V1betaOrgRepoDataRouteWithChildren
   '/v1beta/$org/$repo/properties': typeof V1betaOrgRepoPropertiesRoute
   '/v1beta/$org/$repo/settings': typeof V1betaOrgRepoSettingsRoute
   '/v1beta/$org/$repo/': typeof V1betaOrgRepoIndexRoute
+  '/v1beta/$org/$repo/data/$dataId': typeof V1betaOrgRepoDataDataIdRoute
+  '/v1beta/$org/$repo/data/new': typeof V1betaOrgRepoDataNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -176,6 +194,8 @@ export interface FileRouteTypes {
     | '/v1beta/$org/$repo/properties'
     | '/v1beta/$org/$repo/settings'
     | '/v1beta/$org/$repo/'
+    | '/v1beta/$org/$repo/data/$dataId'
+    | '/v1beta/$org/$repo/data/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -192,6 +212,8 @@ export interface FileRouteTypes {
     | '/v1beta/$org/$repo/properties'
     | '/v1beta/$org/$repo/settings'
     | '/v1beta/$org/$repo'
+    | '/v1beta/$org/$repo/data/$dataId'
+    | '/v1beta/$org/$repo/data/new'
   id:
     | '__root__'
     | '/'
@@ -210,6 +232,8 @@ export interface FileRouteTypes {
     | '/v1beta/$org/$repo/properties'
     | '/v1beta/$org/$repo/settings'
     | '/v1beta/$org/$repo/'
+    | '/v1beta/$org/$repo/data/$dataId'
+    | '/v1beta/$org/$repo/data/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -332,6 +356,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1betaOrgRepoApiRouteImport
       parentRoute: typeof V1betaOrgRepoRoute
     }
+    '/v1beta/$org/$repo/data/new': {
+      id: '/v1beta/$org/$repo/data/new'
+      path: '/new'
+      fullPath: '/v1beta/$org/$repo/data/new'
+      preLoaderRoute: typeof V1betaOrgRepoDataNewRouteImport
+      parentRoute: typeof V1betaOrgRepoDataRoute
+    }
+    '/v1beta/$org/$repo/data/$dataId': {
+      id: '/v1beta/$org/$repo/data/$dataId'
+      path: '/$dataId'
+      fullPath: '/v1beta/$org/$repo/data/$dataId'
+      preLoaderRoute: typeof V1betaOrgRepoDataDataIdRouteImport
+      parentRoute: typeof V1betaOrgRepoDataRoute
+    }
   }
 }
 
@@ -353,9 +391,22 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface V1betaOrgRepoDataRouteChildren {
+  V1betaOrgRepoDataDataIdRoute: typeof V1betaOrgRepoDataDataIdRoute
+  V1betaOrgRepoDataNewRoute: typeof V1betaOrgRepoDataNewRoute
+}
+
+const V1betaOrgRepoDataRouteChildren: V1betaOrgRepoDataRouteChildren = {
+  V1betaOrgRepoDataDataIdRoute: V1betaOrgRepoDataDataIdRoute,
+  V1betaOrgRepoDataNewRoute: V1betaOrgRepoDataNewRoute,
+}
+
+const V1betaOrgRepoDataRouteWithChildren =
+  V1betaOrgRepoDataRoute._addFileChildren(V1betaOrgRepoDataRouteChildren)
+
 interface V1betaOrgRepoRouteChildren {
   V1betaOrgRepoApiRoute: typeof V1betaOrgRepoApiRoute
-  V1betaOrgRepoDataRoute: typeof V1betaOrgRepoDataRoute
+  V1betaOrgRepoDataRoute: typeof V1betaOrgRepoDataRouteWithChildren
   V1betaOrgRepoPropertiesRoute: typeof V1betaOrgRepoPropertiesRoute
   V1betaOrgRepoSettingsRoute: typeof V1betaOrgRepoSettingsRoute
   V1betaOrgRepoIndexRoute: typeof V1betaOrgRepoIndexRoute
@@ -363,7 +414,7 @@ interface V1betaOrgRepoRouteChildren {
 
 const V1betaOrgRepoRouteChildren: V1betaOrgRepoRouteChildren = {
   V1betaOrgRepoApiRoute: V1betaOrgRepoApiRoute,
-  V1betaOrgRepoDataRoute: V1betaOrgRepoDataRoute,
+  V1betaOrgRepoDataRoute: V1betaOrgRepoDataRouteWithChildren,
   V1betaOrgRepoPropertiesRoute: V1betaOrgRepoPropertiesRoute,
   V1betaOrgRepoSettingsRoute: V1betaOrgRepoSettingsRoute,
   V1betaOrgRepoIndexRoute: V1betaOrgRepoIndexRoute,

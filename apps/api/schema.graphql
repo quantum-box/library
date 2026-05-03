@@ -259,13 +259,6 @@ The input/output is a string in RFC3339 format.
 """
 scalar DateTime
 
-type DateValue {
-	"""
-	Date in ISO 8601 format (YYYY-MM-DD)
-	"""
-	date: String!
-}
-
 """
 Default role assigned to users within an operator.
 """
@@ -1601,7 +1594,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | ImageValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String

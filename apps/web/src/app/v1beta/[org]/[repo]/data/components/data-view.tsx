@@ -86,7 +86,6 @@ export function DataViewComponent({
 	)
 	const setViewMode = (mode: ViewMode | null) => {
 		const next = mode ?? 'table'
-		setViewModeState(next)
 		const params = new URLSearchParams(searchParams)
 		if (next === 'table') {
 			params.delete('view')
@@ -94,6 +93,8 @@ export function DataViewComponent({
 			params.set('view', next)
 		}
 		const query = params.toString()
+		if (next === viewMode && query === searchParams.toString()) return
+		setViewModeState(next)
 		navigate({ to: query ? `${window.location.pathname}?${query}` : window.location.pathname } as any)
 	}
 	const [searchQuery, setSearchQuery] = useState('')
@@ -330,6 +331,19 @@ export function DataViewComponent({
 		return result
 	}, [dataList.items, searchQuery, filters, sortConfig])
 
+	const duckdbPagination = useMemo(
+		() => ({
+			currentPage,
+			itemsPerPage: dataList.paginator.itemsPerPage,
+			totalItems: dataList.paginator.totalItems,
+		}),
+		[
+			currentPage,
+			dataList.paginator.itemsPerPage,
+			dataList.paginator.totalItems,
+		],
+	)
+
 	const { data: duckdbData } = useDuckDBFilteredData({
 		org,
 		repo,
@@ -338,11 +352,7 @@ export function DataViewComponent({
 		filters,
 		sortConfig,
 		searchQuery,
-		pagination: {
-			currentPage,
-			itemsPerPage: dataList.paginator.itemsPerPage,
-			totalItems: dataList.paginator.totalItems,
-		},
+		pagination: duckdbPagination,
 		sqlQuery,
 		isSqlMode,
 	})

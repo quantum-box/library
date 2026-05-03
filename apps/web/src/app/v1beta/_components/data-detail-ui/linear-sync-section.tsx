@@ -92,9 +92,14 @@ export function LinearSyncSection({
 	const [isLoadingEndpoint, setIsLoadingEndpoint] = useState(false)
 	const [isPending, startTransition] = useTransition()
 	const refreshTimeoutRef = useRef<number | null>(null)
+	const extLinearProperty = useMemo(
+		() => properties.find(property => property.name === 'ext_linear'),
+		[properties],
+	)
 
 	useEffect(() => {
 		if (!org || !repo) return
+		if (!extLinearProperty) return
 		setIsLoadingEndpoint(true)
 		Promise.all([
 			executeGraphQL(OrganizationQuery, { username: org }),
@@ -117,16 +122,10 @@ export function LinearSyncSection({
 				})
 			})
 			.catch(error => {
-				console.error('Failed to load Linear endpoint:', error)
 				setEndpoint(null)
 			})
 			.finally(() => setIsLoadingEndpoint(false))
-	}, [org, repo])
-
-	const extLinearProperty = useMemo(
-		() => properties.find(property => property.name === 'ext_linear'),
-		[properties],
-	)
+	}, [org, repo, extLinearProperty])
 	const extLinearValue = useMemo(() => {
 		if (!extLinearProperty || !data?.propertyData) return null
 		const propertyData = data.propertyData.find(
