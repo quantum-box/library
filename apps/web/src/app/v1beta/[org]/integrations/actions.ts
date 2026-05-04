@@ -1,50 +1,148 @@
-// Stub: replaces the deleted Next.js server actions for integrations.
-// In the Vite SPA, these operations go through the GraphQL client directly.
+import { executeGraphQL, graphql } from '@/lib/graphql'
+import {
+  getAuthContext,
+  getGraphQLErrorMessage,
+} from '@/app/v1beta/_lib/spa-actions'
 
-/**
- * @deprecated Migration stub.
- */
+const ConnectIntegrationMutation = graphql(`
+  mutation ConnectIntegration($input: ConnectIntegrationInput!) {
+    connectIntegration(input: $input) {
+      id
+    }
+  }
+`)
+
+const UpdateConnectionMutation = graphql(`
+  mutation UpdateConnection($connectionId: String!, $action: GqlConnectionAction!) {
+    updateConnection(connectionId: $connectionId, action: $action) {
+      id
+    }
+  }
+`)
+
 export async function connectWithApiKey(
   _tenantId: string,
   _integrationId: string,
   _apiKey: string,
 ): Promise<{ success: boolean; error?: string }> {
-  console.warn('[migration stub] connectWithApiKey() called')
-  return { success: false, error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  try {
+    await executeGraphQL(
+      ConnectIntegrationMutation,
+      {
+        input: {
+          integrationId: _integrationId,
+          apiKey: _apiKey,
+        },
+      },
+      {
+        accessToken: auth.accessToken,
+        operatorId: _tenantId,
+      },
+    )
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: getGraphQLErrorMessage(error) }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function disconnectConnection(
   _tenantId: string,
   _connectionId?: string,
   _integrationId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  console.warn('[migration stub] disconnectConnection() called')
-  return { success: false, error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { success: false, error: 'Unauthorized' }
+  }
+  if (!_connectionId) {
+    return { success: false, error: 'Connection ID is required' }
+  }
+
+  try {
+    await executeGraphQL(
+      UpdateConnectionMutation,
+      {
+        connectionId: _connectionId,
+        action: 'DISCONNECT',
+      },
+      {
+        accessToken: auth.accessToken,
+        operatorId: _tenantId,
+      },
+    )
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: getGraphQLErrorMessage(error) }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function pauseConnection(
   _tenantId: string,
   _connectionId?: string,
   _integrationId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  console.warn('[migration stub] pauseConnection() called')
-  return { success: false, error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { success: false, error: 'Unauthorized' }
+  }
+  if (!_connectionId) {
+    return { success: false, error: 'Connection ID is required' }
+  }
+
+  try {
+    await executeGraphQL(
+      UpdateConnectionMutation,
+      {
+        connectionId: _connectionId,
+        action: 'PAUSE',
+      },
+      {
+        accessToken: auth.accessToken,
+        operatorId: _tenantId,
+      },
+    )
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: getGraphQLErrorMessage(error) }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function resumeConnection(
   _tenantId: string,
   _connectionId?: string,
   _integrationId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  console.warn('[migration stub] resumeConnection() called')
-  return { success: false, error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { success: false, error: 'Unauthorized' }
+  }
+  if (!_connectionId) {
+    return { success: false, error: 'Connection ID is required' }
+  }
+
+  try {
+    await executeGraphQL(
+      UpdateConnectionMutation,
+      {
+        connectionId: _connectionId,
+        action: 'RESUME',
+      },
+      {
+        accessToken: auth.accessToken,
+        operatorId: _tenantId,
+      },
+    )
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: getGraphQLErrorMessage(error) }
+  }
 }

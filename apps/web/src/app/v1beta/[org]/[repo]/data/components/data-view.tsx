@@ -1,4 +1,5 @@
 import React, { Suspense } from 'react'
+import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import {
 	DataFieldOnRepoPageFragment,
@@ -78,6 +79,7 @@ export function DataViewComponent({
 	const navigate = useNavigate()
 	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
 	const currentPage = Number(searchParams.get('page')) || 1
+	const { toast } = useToast()
 
 	// View state - viewMode managed via URL search params
 	const viewParam = searchParams.get('view') as ViewMode | null
@@ -86,7 +88,6 @@ export function DataViewComponent({
 	)
 	const setViewMode = (mode: ViewMode | null) => {
 		const next = mode ?? 'table'
-		setViewModeState(next)
 		const params = new URLSearchParams(searchParams)
 		if (next === 'table') {
 			params.delete('view')
@@ -94,10 +95,18 @@ export function DataViewComponent({
 			params.set('view', next)
 		}
 		const query = params.toString()
-		navigate({ to: query ? `${window.location.pathname}?${query}` : window.location.pathname } as any)
+		if (next === viewMode && query === searchParams.toString()) return
+		setViewModeState(next)
+		const search = Object.fromEntries(params.entries())
+		navigate({
+			to: '/v1beta/$org/$repo/data',
+			params: { org, repo },
+			search,
+		})
 	}
 	const [searchQuery, setSearchQuery] = useState('')
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+	const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
 	const [sortConfig, setSortConfig] = useState<SortConfig | null>(null)
 	const [filters, setFilters] = useState<FilterConfig[]>([])
 	const [sqlQuery, setSqlQuery] = useState('')
@@ -245,6 +254,7 @@ export function DataViewComponent({
 	// Filter and sort data (fallback)
 	const filteredDataFallback = useMemo(() => {
 		let result = [...(dataList.items ?? [])]
+		result = result.filter(item => !removedIds.has(item.id))
 
 		// Apply search filter
 		if (searchQuery.trim()) {
@@ -328,7 +338,20 @@ export function DataViewComponent({
 		}
 
 		return result
-	}, [dataList.items, searchQuery, filters, sortConfig])
+	}, [dataList.items, searchQuery, filters, sortConfig, removedIds])
+
+	const duckdbPagination = useMemo(
+		() => ({
+			currentPage,
+			itemsPerPage: dataList.paginator.itemsPerPage,
+			totalItems: dataList.paginator.totalItems,
+		}),
+		[
+			currentPage,
+			dataList.paginator.itemsPerPage,
+			dataList.paginator.totalItems,
+		],
+	)
 
 	const { data: duckdbData } = useDuckDBFilteredData({
 		org,
@@ -338,16 +361,14 @@ export function DataViewComponent({
 		filters,
 		sortConfig,
 		searchQuery,
-		pagination: {
-			currentPage,
-			itemsPerPage: dataList.paginator.itemsPerPage,
-			totalItems: dataList.paginator.totalItems,
-		},
+		pagination: duckdbPagination,
 		sqlQuery,
 		isSqlMode,
 	})
 
-	const filteredData = duckdbData ?? filteredDataFallback ?? []
+	const filteredData = (duckdbData ?? filteredDataFallback ?? []).filter(
+		item => !removedIds.has(item.id),
+	)
 
 	const handlePageChange = (page: number) => {
 		const params = new URLSearchParams(searchParams)
@@ -374,9 +395,39 @@ export function DataViewComponent({
 	}
 
 	const handleBulkDelete = () => {
-		// TODO: Implement bulk delete
-		console.log('Bulk delete:', Array.from(selectedIds))
+		if (selectedIds.size === 0) {
+			toast({
+				variant: 'destructive',
+				title: 'Nothing selected',
+				description: 'Please select at least one item before deleting.',
+			})
+			return
+		}
+
+		setRemovedIds(prev => {
+			const next = new Set(prev)
+			for (const id of selectedIds) {
+				next.add(id)
+			}
+			return next
+		})
+		setSelectedIds(new Set())
+		toast({
+			title: 'Bulk delete prepared',
+			description:
+				'データ削除APIが未接続のため、現在の画面表示からのみ除外しました。',
+			})
 	}
+
+	useEffect(() => {
+		setSelectedIds(prev => {
+			const next = new Set(prev)
+			for (const id of removedIds) {
+				next.delete(id)
+			}
+			return next
+		})
+	}, [removedIds])
 
 	const handleExport = (format: 'csv' | 'json') => {
 		const itemsToExport =

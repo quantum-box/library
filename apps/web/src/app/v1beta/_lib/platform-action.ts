@@ -87,7 +87,6 @@ export const platformAction = async <T>(
   try {
     return await fn(sdk)
   } catch (err: unknown) {
-    console.log('platformAction err:', err)
     let platformError: PlatformActionError
 
     if (err instanceof PlatformActionError) {
@@ -137,16 +136,16 @@ export const platformAction = async <T>(
       }
     }
 
+    if (options?.onError) {
+      await options.onError(platformError)
+      return undefined as unknown as T
+    }
+
     console.error('Platform Action Error:', {
       message: platformError.message,
       code: platformError.code,
       details: platformError.details,
     })
-
-    if (options?.onError) {
-      await options.onError(platformError)
-      return undefined as unknown as T
-    }
 
     throw platformError
   }

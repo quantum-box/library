@@ -1,7 +1,9 @@
-// Stub: replaces the deleted Next.js server actions for GitHub import.
-// In the Vite SPA, these operations go through the GraphQL client directly.
-
-import type { PropertyType } from '@/gen/graphql'
+import { executeGraphQL, graphql } from '@/lib/graphql'
+import {
+  getAuthContext,
+  getGraphQLErrorMessage,
+} from '@/app/v1beta/_lib/spa-actions'
+import type { GitHubRepository, PropertyType } from '@/gen/graphql'
 
 export interface GitHubFileInfo {
   name: string
@@ -17,9 +19,85 @@ export interface FrontmatterProperty {
   uniqueValues: string[]
 }
 
-/**
- * @deprecated Migration stub.
- */
+const ListGitHubRepositoriesQuery = graphql(`
+  query ListGitHubRepositories {
+    githubListRepositories {
+      id
+      fullName
+      name
+      description
+      private
+      htmlUrl
+    }
+  }
+`)
+
+const GitHubListDirectoryContentsQuery = graphql(`
+  query GitHubListDirectoryContents($input: ListGitHubDirectoryInput!) {
+    githubListDirectoryContents(input: $input) {
+      files {
+        name
+        path
+        sha
+        size
+        fileType
+        htmlUrl
+      }
+      truncated
+    }
+  }
+`)
+
+const GitHubAnalyzeFrontmatterQuery = graphql(`
+  query GitHubAnalyzeFrontmatter($input: GetMarkdownPreviewsInput!) {
+    githubAnalyzeFrontmatter(input: $input) {
+      properties {
+        key
+        suggestedType
+        uniqueValues
+        suggestSelect
+      }
+      totalFiles
+      validFiles
+    }
+  }
+`)
+
+const ImportMarkdownFromGitHubMutation = graphql(`
+  mutation ImportMarkdownFromGitHub($input: ImportMarkdownFromGitHubInput!) {
+    importMarkdownFromGithub(input: $input) {
+      importedCount
+      updatedCount
+      errors {
+        path
+        message
+      }
+    }
+  }
+`)
+
+type GitHubDirectoryResult = {
+  githubListDirectoryContents?: {
+    files?: GitHubFileInfo[] | null
+  } | null
+}
+
+type GitHubFrontmatterResult = {
+  githubAnalyzeFrontmatter?: {
+    properties?: FrontmatterProperty[] | null
+    totalFiles?: number | null
+    validFiles?: number | null
+  } | null
+}
+
+type GitHubImportResult = {
+  importMarkdownFromGithub?: {
+    importedCount: number
+    updatedCount: number
+    errors: Array<{ path: string; message: string }>
+  } | null
+}
+
 export async function listGitHubRepositories(): Promise<{
   repositories: Array<{
     id: string
@@ -31,24 +109,74 @@ export async function listGitHubRepositories(): Promise<{
   }>
   error?: string
 }> {
-  console.warn('[migration stub] listGitHubRepositories() called')
-  return { repositories: [], error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { repositories: [], error: 'Unauthorized' }
+  }
+
+  try {
+    const result = await executeGraphQL<{
+      githubListRepositories?: GitHubRepository[] | null
+    }>(
+      ListGitHubRepositoriesQuery,
+      {},
+      {
+        accessToken: auth.accessToken,
+      },
+    )
+
+    return {
+      repositories: (result?.githubListRepositories as GitHubRepository[] | undefined) ?? [],
+    }
+  } catch (error) {
+    return {
+      repositories: [],
+      error: getGraphQLErrorMessage(error),
+    }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function listDirectoryContents(_input: {
   githubRepo: string
   path: string
 }): Promise<{ files: GitHubFileInfo[]; error?: string }> {
-  console.warn('[migration stub] listDirectoryContents() called')
-  return { files: [], error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { files: [], error: 'Unauthorized' }
+  }
+
+  try {
+    const result = await executeGraphQL<GitHubDirectoryResult>(
+      GitHubListDirectoryContentsQuery,
+      {
+        input: {
+          githubRepo: _input.githubRepo,
+          path: _input.path,
+          recursive: false,
+        },
+      },
+      {
+        accessToken: auth.accessToken,
+      },
+    )
+
+    return {
+      files:
+        result.githubListDirectoryContents?.files?.map(file => ({
+          name: file.name,
+          path: file.path,
+          fileType: file.fileType as 'file' | 'dir',
+          size: file.size,
+        })) ?? [],
+    }
+  } catch (error) {
+    return {
+      files: [],
+      error: getGraphQLErrorMessage(error),
+    }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function analyzeFrontmatter(_input: {
   githubRepo: string
   paths: string[]
@@ -58,13 +186,40 @@ export async function analyzeFrontmatter(_input: {
   validFiles: number
   error?: string
 }> {
-  console.warn('[migration stub] analyzeFrontmatter() called')
-  return { properties: [], totalFiles: 0, validFiles: 0, error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { properties: [], totalFiles: 0, validFiles: 0, error: 'Unauthorized' }
+  }
+
+  try {
+    const result = await executeGraphQL<GitHubFrontmatterResult>(
+      GitHubAnalyzeFrontmatterQuery,
+      {
+        input: {
+          githubRepo: _input.githubRepo,
+          paths: _input.paths,
+        },
+      },
+      {
+        accessToken: auth.accessToken,
+      },
+    )
+
+    return {
+      properties: result.githubAnalyzeFrontmatter?.properties ?? [],
+      totalFiles: result.githubAnalyzeFrontmatter?.totalFiles ?? 0,
+      validFiles: result.githubAnalyzeFrontmatter?.validFiles ?? 0,
+    }
+  } catch (error) {
+    return {
+      properties: [],
+      totalFiles: 0,
+      validFiles: 0,
+      error: getGraphQLErrorMessage(error),
+    }
+  }
 }
 
-/**
- * @deprecated Migration stub.
- */
 export async function importMarkdownFromGitHub(_input: {
   orgUsername: string
   repoUsername: string
@@ -85,6 +240,57 @@ export async function importMarkdownFromGitHub(_input: {
   errors: string[]
   error?: string
 }> {
-  console.warn('[migration stub] importMarkdownFromGitHub() called')
-  return { importedCount: 0, updatedCount: 0, errors: [], error: 'Not yet implemented in the SPA.' }
+  const auth = getAuthContext()
+  if (!auth) {
+    return { importedCount: 0, updatedCount: 0, errors: [], error: 'Unauthorized' }
+  }
+
+  try {
+    const result = await executeGraphQL<GitHubImportResult>(
+      ImportMarkdownFromGitHubMutation,
+      {
+        input: {
+          orgUsername: _input.orgUsername,
+          repoUsername: _input.repoUsername,
+          repoName: _input.repoName,
+          githubRepo: _input.githubRepo,
+          paths: _input.paths,
+          contentPropertyName: _input.contentPropertyName,
+          enableGithubSync: _input.enableGithubSync,
+          propertyMappings: _input.propertyMappings.map(mapping => ({
+            frontmatterKey: mapping.frontmatterKey,
+            propertyName: mapping.propertyName,
+            propertyType: mapping.propertyType,
+            selectOptions: mapping.selectOptions,
+          })),
+        },
+      },
+      {
+        accessToken: auth.accessToken,
+      },
+    )
+
+    const output = result.importMarkdownFromGithub
+    if (!output) {
+      return {
+        importedCount: 0,
+        updatedCount: 0,
+        errors: [],
+        error: 'Failed to import markdown from GitHub',
+      }
+    }
+
+    return {
+      importedCount: output.importedCount,
+      updatedCount: output.updatedCount,
+      errors: output.errors.map(err => `${err.path}: ${err.message}`),
+    }
+  } catch (error) {
+    return {
+      importedCount: 0,
+      updatedCount: 0,
+      errors: [],
+      error: getGraphQLErrorMessage(error),
+    }
+  }
 }

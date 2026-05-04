@@ -723,6 +723,81 @@ pub struct FindSourcesInputData<'a> {
     pub repo_username: String,
 }
 
+// ==================== PLT-942 GlobalIdMapping ====================
+
+/// Create a `global_id_mapping` row, scoped to the caller's tenant.
+#[async_trait::async_trait]
+pub trait CreateGlobalIdMappingInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: CreateGlobalIdMappingInputData<'a>,
+    ) -> errors::Result<crate::domain::GlobalIdMapping>;
+}
+
+/// Update the `name` of an existing mapping. Other fields are immutable.
+#[async_trait::async_trait]
+pub trait UpdateGlobalIdMappingInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: UpdateGlobalIdMappingInputData<'a>,
+    ) -> errors::Result<crate::domain::GlobalIdMapping>;
+}
+
+/// Look up a mapping by `(system, system_code)` within the caller's tenant.
+#[async_trait::async_trait]
+pub trait GetGlobalIdMappingInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: GetGlobalIdMappingInputData<'a>,
+    ) -> errors::Result<Option<crate::domain::GlobalIdMapping>>;
+}
+
+/// List mappings within the caller's tenant, optionally filtered by system.
+#[async_trait::async_trait]
+pub trait FindGlobalIdMappingsInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: FindGlobalIdMappingsInputData<'a>,
+    ) -> errors::Result<Vec<crate::domain::GlobalIdMapping>>;
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateGlobalIdMappingInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub global_id: Option<crate::domain::GlobalId>,
+    pub system: value_object::Text,
+    pub system_code: value_object::Text,
+    pub name: value_object::Text,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateGlobalIdMappingInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub id: crate::domain::GlobalIdMappingId,
+    pub name: value_object::Text,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetGlobalIdMappingInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub system: String,
+    pub system_code: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FindGlobalIdMappingsInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub system: Option<String>,
+}
+
 /// TODO: add English documentation
 #[async_trait::async_trait]
 pub trait BulkSyncExtGithubInputPort: Debug + Send + Sync {

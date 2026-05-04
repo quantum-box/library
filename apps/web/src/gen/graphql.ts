@@ -2397,7 +2397,7 @@ export const MeOnDashboardFragmentDoc = gql`
     fragment meOnDashboard on User {
   name
   tenantIdList
-  organizations {
+  organizations: operators {
     ...organizationListItem
   }
 }
@@ -2487,9 +2487,6 @@ export const DataFieldOnRepoPageFragmentDoc = gql`
         latitude
         longitude
       }
-      ... on DateValue {
-        date
-      }
     }
   }
 }
@@ -2570,7 +2567,6 @@ export const OrganizationFormFragmentDoc = gql`
   name
   username
   description
-  website
 }
     `;
 export const RepoItemOnOrgPageFragmentDoc = gql`
@@ -2597,7 +2593,6 @@ export const DatabaseOnOrgFragmentDoc = gql`
   name
   username
   description
-  website
   repos {
     ...RepoItemOnOrgPage
   }
@@ -2655,13 +2650,13 @@ export const LocationValueForEditorFragmentDoc = gql`
 }
     `;
 export const DateValueForEditorFragmentDoc = gql`
-    fragment DateValueForEditor on DateValue {
-  date
+    fragment DateValueForEditor on StringValue {
+  string
 }
     `;
 export const ImageValueForEditorFragmentDoc = gql`
-    fragment ImageValueForEditor on ImageValue {
-  url
+    fragment ImageValueForEditor on StringValue {
+  string
 }
     `;
 export const PropertyDataForEditorFragmentDoc = gql`
@@ -2677,8 +2672,6 @@ export const PropertyDataForEditorFragmentDoc = gql`
     ...SelectValueForEditor
     ...MultiSelectValueForEditor
     ...LocationValueForEditor
-    ...DateValueForEditor
-    ...ImageValueForEditor
   }
 }
     ${StringValueForEditorFragmentDoc}
@@ -2689,9 +2682,7 @@ ${MarkdownValueForEditorFragmentDoc}
 ${RelationValueForEditorFragmentDoc}
 ${SelectValueForEditorFragmentDoc}
 ${MultiSelectValueForEditorFragmentDoc}
-${LocationValueForEditorFragmentDoc}
-${DateValueForEditorFragmentDoc}
-${ImageValueForEditorFragmentDoc}`;
+${LocationValueForEditorFragmentDoc}`;
 export const DataForDataDetailFragmentDoc = gql`
     fragment DataForDataDetail on Data {
   id
@@ -2826,7 +2817,7 @@ export const VerifyDocument = gql`
     `;
 export const SignInOrSignUpDocument = gql`
     mutation signInOrSignUp($platformId: String!, $accessToken: String!, $allowSignUp: Boolean) {
-  signIn(
+  signIn: signInWithPlatform(
     platformId: $platformId
     accessToken: $accessToken
     allowSignUp: $allowSignUp
@@ -2896,16 +2887,16 @@ export const DataDetailPageDocument = gql`
   data(orgUsername: $orgUsername, repoUsername: $repoUsername, dataId: $dataId) {
     ...DataForDataDetail
   }
-  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
-    ...PropertyForEditor
-  }
-  dataList(orgUsername: $orgUsername, repoUsername: $repoUsername) {
-    ...DataListForDataListCard
-  }
   repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
     policies {
       userId
       role
+    }
+    properties {
+      ...PropertyForEditor
+    }
+    dataList {
+      ...DataListForDataListCard
     }
   }
 }

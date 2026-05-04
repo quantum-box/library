@@ -1,12 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// Mock next/navigation
-vi.mock('next/navigation', () => ({
-	notFound: () => {
-		throw new Error('NEXT_NOT_FOUND')
-	},
-}))
-
 // Mock server-only (no-op)
 vi.mock('server-only', () => ({}))
 
@@ -15,6 +8,7 @@ vi.mock('./platform-action', () => {
 	const ErrorCode = {
 		NOT_FOUND_ERROR: 'NOT_FOUND_ERROR',
 		PERMISSION_DENIED: 'PERMISSION_DENIED',
+		UNAUTHORIZED_ERROR: 'UNAUTHORIZED_ERROR',
 		UNKNOWN_ERROR: 'UNKNOWN_ERROR',
 	} as const
 
@@ -46,9 +40,9 @@ function makeError(code: ErrorCodeType, message = 'test error') {
 }
 
 describe('handleNotFound', () => {
-	it('calls notFound() on NOT_FOUND_ERROR', () => {
+	it('throws on NOT_FOUND_ERROR', () => {
 		expect(() => handleNotFound(makeError(ErrorCode.NOT_FOUND_ERROR))).toThrow(
-			'NEXT_NOT_FOUND',
+			'Not found',
 		)
 	})
 
@@ -63,10 +57,10 @@ describe('handleNotFound', () => {
 })
 
 describe('handleNotFoundOrThrow', () => {
-	it('calls notFound() on NOT_FOUND_ERROR', () => {
+	it('throws on NOT_FOUND_ERROR', () => {
 		expect(() =>
 			handleNotFoundOrThrow(makeError(ErrorCode.NOT_FOUND_ERROR)),
-		).toThrow('NEXT_NOT_FOUND')
+		).toThrow('Not found')
 	})
 
 	it('re-throws other errors', () => {
@@ -76,12 +70,12 @@ describe('handleNotFoundOrThrow', () => {
 })
 
 describe('handleNotFoundOrPermissionDenied', () => {
-	it('calls notFound() on NOT_FOUND_ERROR', () => {
+	it('throws on NOT_FOUND_ERROR', () => {
 		expect(() =>
 			handleNotFoundOrPermissionDenied(
 				makeError(ErrorCode.NOT_FOUND_ERROR),
 			),
-		).toThrow('NEXT_NOT_FOUND')
+		).toThrow('Not found')
 	})
 
 	it('warns and returns on PERMISSION_DENIED', () => {

@@ -3,6 +3,7 @@ name = "outbound_sync_domain"
 version = "0.1.0"
 edition = "2021"
 description = "Domain models for outbound data synchronization"
+license.workspace = true
 
 [dependencies]
 errors = { path = "../../../../../packages/errors" }

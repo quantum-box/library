@@ -3,9 +3,6 @@ name: Chromatic
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "apps/web/**"
-      - ".github/workflows/chromatic.yml"
   push:
     branches: [main]
     paths:
@@ -32,7 +29,18 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
+      - name: Check for Storybook build script
+        id: storybook
+        working-directory: apps/web
+        run: |
+          if node -e "const pkg = require('./package.json'); process.exit(pkg.scripts?.['build-storybook'] ? 0 : 1)"; then
+            echo "has_build_script=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_build_script=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to Chromatic
+        if: steps.storybook.outputs.has_build_script == 'true'
         uses: chromaui/action@latest
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}

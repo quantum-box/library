@@ -2,6 +2,7 @@
 name = "library-api"
 version = "1.11.0"
 edition = "2021"
+license.workspace = true
 
 
 [dependencies]

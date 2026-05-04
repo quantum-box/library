@@ -376,23 +376,11 @@ pub async fn router(
             api_pull_registry.clone(),
         ));
 
-    // Start background worker for processing webhook events
-    let worker = WebhookEventWorker::new(process_webhook_event.clone())
-        .with_batch_size(10)
-        .with_poll_interval(std::time::Duration::from_secs(5));
-
-    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
-    tokio::spawn(async move {
-        worker.run(shutdown_rx).await;
-    });
-
-    // Webhook handler state
-    let webhook_handler_state =
-        inbound_sync::adapter::WebhookHandlerState {
-            receive_webhook: receive_webhook.clone(),
-            receive_provider_webhook: receive_provider_webhook.clone(),
-            base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
-        };
+    let (shutdown_tx, webhook_handler_state) = build_webhook_runtime(
+        process_webhook_event,
+        receive_webhook,
+        receive_provider_webhook,
+    );
 
     // Clone repositories for GraphQL schema before moving to mutation state
     let integration_registry_for_schema: Arc<
@@ -469,47 +457,7 @@ pub async fn router(
         .await,
     );
 
-    let parquet_bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
-        .unwrap_or_else(|_| "library-parquet".to_string());
-    let environment =
-        std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
-    let environment_lower = environment.to_lowercase();
-    let is_production =
-        environment_lower == "prod" || environment_lower == "production";
-    let skip_minio_setup = environment_lower == "test"
-        || std::env::var("SKIP_MINIO_SETUP")
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE"))
-            .unwrap_or(false);
-    let (storage, presign_storage): (Arc<dyn Storage>, Arc<dyn Storage>) =
-        if is_production {
-            let s3 = S3Driver::new()? as Arc<dyn Storage>;
-            (s3.clone(), s3)
-        } else {
-            let access_key = std::env::var("MINIO_ROOT_USER")
-                .unwrap_or_else(|_| "admin".to_string());
-            let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
-                .unwrap_or_else(|_| "password".to_string());
-            let storage_url = std::env::var("MINIO_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:9000".to_string());
-            let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
-                .unwrap_or_else(|_| storage_url.clone());
-            let minio = MinioDriver::new(&MinioConfiguration {
-                storage_url,
-                access_key: access_key.clone(),
-                secret_key: secret_key.clone(),
-            })?;
-            if !skip_minio_setup {
-                minio.create_bucket(&parquet_bucket).await?;
-            }
-            let public_minio = MinioDriver::new(&MinioConfiguration {
-                storage_url: public_storage_url,
-                access_key,
-                secret_key,
-            })?;
-            (minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>)
-        };
-    let parquet_storage =
-        ParquetStorage::new(storage, presign_storage, parquet_bucket);
+    let parquet_storage = build_parquet_storage().await?;
 
     let schema: graphql::AppSchema = Schema::build(
         graphql::Query::default(),
@@ -628,4 +576,80 @@ async fn version() -> Json<VersionResponse> {
     Json(VersionResponse {
         version: env!("CARGO_PKG_VERSION"),
     })
+}
+
+async fn build_parquet_storage(
+) -> Result<ParquetStorage, Box<dyn std::error::Error>> {
+    let parquet_bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
+        .unwrap_or_else(|_| "library-parquet".to_string());
+    let environment =
+        std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
+    let environment_lower = environment.to_lowercase();
+    let is_production =
+        environment_lower == "prod" || environment_lower == "production";
+    let skip_minio_setup = environment_lower == "test"
+        || std::env::var("SKIP_MINIO_SETUP")
+            .map(|value| matches!(value.as_str(), "true" | "1" | "TRUE"))
+            .unwrap_or(false);
+    let (storage, presign_storage): (Arc<dyn Storage>, Arc<dyn Storage>) =
+        if is_production {
+            let s3 = S3Driver::new()? as Arc<dyn Storage>;
+            (s3.clone(), s3)
+        } else {
+            let access_key = std::env::var("MINIO_ROOT_USER")
+                .unwrap_or_else(|_| "admin".to_string());
+            let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
+                .unwrap_or_else(|_| "password".to_string());
+            let storage_url = std::env::var("MINIO_ENDPOINT")
+                .unwrap_or_else(|_| "http://localhost:9000".to_string());
+            let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
+                .unwrap_or_else(|_| storage_url.clone());
+            let minio = MinioDriver::new(&MinioConfiguration {
+                storage_url,
+                access_key: access_key.clone(),
+                secret_key: secret_key.clone(),
+            })?;
+            if !skip_minio_setup {
+                minio.create_bucket(&parquet_bucket).await?;
+            }
+            let public_minio = MinioDriver::new(&MinioConfiguration {
+                storage_url: public_storage_url,
+                access_key,
+                secret_key,
+            })?;
+            (minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>)
+        };
+
+    Ok(ParquetStorage::new(
+        storage,
+        presign_storage,
+        parquet_bucket,
+    ))
+}
+
+fn build_webhook_runtime(
+    process_webhook_event: Arc<inbound_sync::usecase::ProcessWebhookEvent>,
+    receive_webhook: Arc<inbound_sync::usecase::ReceiveWebhook>,
+    receive_provider_webhook: Arc<
+        inbound_sync::usecase::ReceiveProviderWebhook,
+    >,
+) -> (
+    tokio::sync::broadcast::Sender<()>,
+    inbound_sync::adapter::WebhookHandlerState,
+) {
+    let worker = WebhookEventWorker::new(process_webhook_event)
+        .with_batch_size(10)
+        .with_poll_interval(std::time::Duration::from_secs(5));
+    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+    tokio::spawn(async move {
+        worker.run(shutdown_rx).await;
+    });
+
+    let webhook_handler_state =
+        inbound_sync::adapter::WebhookHandlerState {
+            receive_webhook,
+            receive_provider_webhook,
+            base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
+        };
+    (shutdown_tx, webhook_handler_state)
 }

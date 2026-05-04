@@ -15,7 +15,7 @@ function RepoLayout() {
   const [navItems, setNavItems] = useState(NAV_ITEMS.filter(item => item.value !== 'settings'))
 
   useEffect(() => {
-    if (session?.user) {
+    if (session?.user?.accessToken) {
       isOwner(org, repo, session.user.id, session.user.accessToken).then(result => {
         if (result.isOk() && result.value) {
           setNavItems(NAV_ITEMS)

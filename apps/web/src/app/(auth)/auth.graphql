@@ -13,7 +13,7 @@ mutation signInOrSignUp(
   $accessToken: String!
   $allowSignUp: Boolean
 ) {
-  signIn(
+  signIn: signInWithPlatform(
     platformId: $platformId
     accessToken: $accessToken
     allowSignUp: $allowSignUp

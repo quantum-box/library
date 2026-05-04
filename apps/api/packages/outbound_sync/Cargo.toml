@@ -3,6 +3,7 @@ name = "outbound_sync"
 version = "0.1.0"
 edition = "2021"
 description = "Outbound data synchronization engine for database context"
+license.workspace = true
 
 [dependencies]
 outbound_sync_domain = { path = "domain" }

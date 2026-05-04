@@ -431,14 +431,26 @@ pub const DEFAULT_FILTER: [&str; 14] = [
     "DEBUG",
 ];
 
-pub fn init_sentry(dsn: &str) {
-    let _guard = sentry::init((
+pub use sentry::ClientInitGuard;
+
+/// Initializes the Sentry client and returns its guard.
+///
+/// The returned [`ClientInitGuard`] flushes pending events and shuts
+/// down the Sentry client when it is dropped. Callers must keep the
+/// guard alive for the full lifetime of the process (or Lambda
+/// invocation); dropping it immediately — e.g. binding to `_` — will
+/// silently discard every event forwarded by `sentry_tracing`,
+/// because the `sentry_tracing::layer()` bridge no-ops once the
+/// client is shut down.
+#[must_use = "ClientInitGuard must be held for the full runtime lifetime; dropping it immediately will silently discard Sentry events forwarded by sentry_tracing"]
+pub fn init_sentry(dsn: &str) -> sentry::ClientInitGuard {
+    sentry::init((
         dsn,
         sentry::ClientOptions {
             release: sentry::release_name!(),
             ..Default::default()
         },
-    ));
+    ))
 }
 
 // https://github.com/open-telemetry/opentelemetry-rust/blob/d4b9befea04bcc7fc19319a6ebf5b5070131c486/examples/basic-otlp/src/main.rs#L35-L52

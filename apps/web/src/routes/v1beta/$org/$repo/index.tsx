@@ -3,6 +3,7 @@ import { useAuth } from '@/auth'
 import { useEffect, useState } from 'react'
 import { platformAction, PlatformActionError } from '@/app/v1beta/_lib/platform-action'
 import { canEdit } from '@/app/v1beta/_lib/repo-permissions'
+import { type RepositoryPageQuery } from '@/gen/graphql'
 import {
   RepositoryUi,
 } from '@/app/v1beta/[org]/[repo]/components/repository-ui'
@@ -15,21 +16,23 @@ export const Route = createFileRoute('/v1beta/$org/$repo/')({
 function RepositoryPage() {
   const { org, repo } = Route.useParams()
   const search = Route.useSearch() as { page?: string; pageSize?: string }
-  const { session } = useAuth()
-  const [repoData, setRepoData] = useState<any>(null)
+  const { session, isLoading: isAuthLoading } = useAuth()
+  const [repoData, setRepoData] = useState<RepositoryPageQuery['repo'] | null>(null)
   const [tags, setTags] = useState<string[]>([])
   const [hasEditPermission, setHasEditPermission] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  const page = search.page ? parseInt(search.page, 10) : 1
-  const pageSize = search.pageSize ? parseInt(search.pageSize, 10) : 20
+  const page = search.page ? Number.parseInt(search.page, 10) : 1
+  const pageSize = search.pageSize ? Number.parseInt(search.pageSize, 10) : 20
 
   useEffect(() => {
+    if (isAuthLoading) return
+
     const fetchData = async () => {
       setLoading(true)
       try {
         // Try with tags first
-        let data: any = null
+        let data: RepositoryPageQuery['repo'] | null = null
         try {
           const result = await platformAction(
             (sdk) => sdk.repositoryPageWithTags({ org, repo, page, pageSize }),
@@ -79,7 +82,7 @@ function RepositoryPage() {
       }
     }
     fetchData()
-  }, [org, repo, page, pageSize, session?.user?.accessToken])
+  }, [org, repo, page, pageSize, session?.user?.accessToken, isAuthLoading])
 
   if (loading) return <RepoSkeleton />
 
@@ -91,21 +94,21 @@ function RepositoryPage() {
     )
   }
 
-  const sources = repoData.sources?.map((source: any, index: number) => ({
+  const sources = repoData.sources.map((source, index) => ({
     id: source.id,
     name: source.name,
     url: source.url ?? '',
     isPrimary: index === 0,
   }))
 
-  const contributors = repoData.policies.map((policy: any) => ({
+  const contributors = repoData.policies.map((policy) => ({
     userId: policy.userId,
     role: policy.role,
     name: policy.user?.username ?? policy.user?.name ?? undefined,
     avatarUrl: policy.user?.image ?? undefined,
   }))
 
-  const hasGitHubSync = repoData.properties.some((p: any) => p.name === 'ext_github')
+  const hasGitHubSync = repoData.properties.some((p) => p.name === 'ext_github')
 
   return (
     <RepositoryUi

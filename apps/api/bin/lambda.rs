@@ -22,9 +22,10 @@ async fn main() -> Result<(), Error> {
         otel_sampling_rate: None, // reads from OTEL_TRACES_SAMPLER_ARG (default 10%)
     });
 
-    if let Some(dsn) = config.sentry_dsn {
-        telemetry::init_sentry(&dsn);
-    }
+    // Hold the Sentry guard for the Lambda runtime lifetime so events
+    // forwarded by sentry_tracing are flushed before process exit.
+    let _sentry_guard =
+        config.sentry_dsn.as_deref().map(telemetry::init_sentry);
 
     let database_url =
         config.database_url.parse::<value_object::DatabaseUrl>()?;

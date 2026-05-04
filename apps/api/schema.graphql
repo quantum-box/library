@@ -11,7 +11,6 @@ type ApiKeyResponse {
 	serviceAccount: ServiceAccount!
 }
 
-
 """
 Input for bulk syncing ext_github property
 """
@@ -127,6 +126,26 @@ input CreateApiKeyInput {
 	serviceAccountName: String
 }
 
+input CreateGlobalIdMappingInput {
+	"""
+	Optional Library-issued global ID (prefix `gid_`).
+	Server generates one when omitted.
+	"""
+	globalId: String
+	"""
+	Source system name (e.g. `bakuure`).
+	"""
+	system: String!
+	"""
+	Code in the source system (e.g. `BWS-001`).
+	"""
+	systemCode: String!
+	"""
+	Display name.
+	"""
+	name: String!
+}
+
 input CreateOperatorInput {
 	"""
 	TODO: add English documentation
@@ -240,17 +259,14 @@ The input/output is a string in RFC3339 format.
 """
 scalar DateTime
 
-type DateValue {
-	"""
-	Date in ISO 8601 format (YYYY-MM-DD)
-	"""
-	date: String!
-}
-
+"""
+Default role assigned to users within an operator.
+"""
 enum DefaultRole {
 	OWNER
 	MANAGER
 	GENERAL
+	STORE
 }
 
 """
@@ -376,7 +392,6 @@ input ExtGithubRepoConfigInput {
 	"""
 	defaultPath: String
 }
-
 
 """
 Result of analyzing frontmatter across multiple files
@@ -526,6 +541,17 @@ type GitHubRepository {
 	Default branch name
 	"""
 	defaultBranch: String
+}
+
+type GlobalIdMapping {
+	id: String!
+	tenantId: String!
+	globalId: String!
+	system: String!
+	systemCode: String!
+	name: String!
+	createdAt: DateTime!
+	updatedAt: DateTime!
 }
 
 """
@@ -876,7 +902,6 @@ type HtmlValue {
 	html: String!
 }
 
-
 input IdOrEmail @oneOf {
 	id: String
 	email: String
@@ -1006,7 +1031,6 @@ input InitOAuthInput {
 	"""
 	state: String
 }
-
 
 type IntegerValue {
 	number: String!
@@ -1215,7 +1239,7 @@ type Mutation {
 	"""
 	[AUTH] Sign in or sign up via platform access token (library)
 	"""
-	signIn(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
+	signInWithPlatform(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
 	"""
 	[AUTH] Create operator via SDK REST call
 	"""
@@ -1297,6 +1321,16 @@ type Mutation {
 	TODO: add English documentation
 	"""
 	deleteSource(orgUsername: String!, repoUsername: String!, sourceId: String!): String!
+	"""
+	Create a `global_id_mapping` row for the caller's tenant.
+	"""
+	createGlobalIdMapping(input: CreateGlobalIdMappingInput!): GlobalIdMapping!
+	"""
+	Update a `global_id_mapping` row's `name`. Other fields are immutable
+	in Phase 1; mutation of `system` / `system_code` / `global_id` awaits
+	Phase 1.5+ (deletion is out of scope for Phase 1).
+	"""
+	updateGlobalIdMapping(input: UpdateGlobalIdMappingInput!): GlobalIdMapping!
 	"""
 	[LIBRARY-API] Get GitHub OAuth authorization URL
 	
@@ -1446,7 +1480,7 @@ type Mutation {
 }
 
 """
-Owner information passed when creating a new Operator
+How the owner of a new operator is determined.
 """
 enum NewOperatorOwnerMethod {
 	INHERIT
@@ -1504,7 +1538,6 @@ type Organization {
 	name: String!
 	username: String!
 	description: String
-	website: String
 	repos: [Repo!]!
 	users: [User!]!
 }
@@ -1561,7 +1594,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | ImageValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -1663,6 +1696,16 @@ type Query {
 	dataList(orgUsername: String!, repoUsername: String!, pageSize: Int, page: Int): DataList!
 	properties(orgUsername: String!, repoUsername: String!): [Property!]!
 	source(orgUsername: String!, repoUsername: String!, sourceId: String!): Source!
+	"""
+	PLT-942: Look up a `global_id_mapping` by `(system, system_code)`
+	within the caller's tenant. Returns `null` when not found.
+	"""
+	globalIdMapping(system: String!, systemCode: String!): GlobalIdMapping
+	"""
+	PLT-942: List `global_id_mapping` rows for the caller's tenant,
+	optionally filtered by `system`.
+	"""
+	globalIdMappings(system: String): [GlobalIdMapping!]!
 	apiKeys(orgUsername: String!): [PublicApiKey!]!
 	"""
 	[LIBRARY-API] Get GitHub connection status
@@ -1911,7 +1954,6 @@ input StartInitialSyncInput {
 	endpointId: String!
 }
 
-
 type StringValue {
 	string: String!
 }
@@ -2079,6 +2121,15 @@ input UpdateEndpointStatusInput {
 	status: GqlEndpointStatus!
 }
 
+input UpdateGlobalIdMappingInput {
+	id: String!
+	"""
+	Only `name` is mutable in Phase 1. To change `system` / `system_code`
+	/ `global_id`, await Phase 1.5+ (deletion is out of scope for Phase 1).
+	"""
+	name: String!
+}
+
 input UpdateOrganizationInput {
 	username: String!
 	name: String!
@@ -2125,15 +2176,30 @@ type User {
 	createdAt: DateTime!
 	updatedAt: DateTime!
 	"""
-	Resolve operator organizations accessible to this user
+	Resolve operators accessible to this user
 	"""
-	organizations: [Operator!]!
+	operators: [Operator!]!
 }
 
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
 directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
 directive @oneOf on INPUT_OBJECT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
 directive @specifiedBy(url: String!) on SCALAR
 schema {
 	query: Query

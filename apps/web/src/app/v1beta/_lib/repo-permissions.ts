@@ -18,7 +18,7 @@ export async function getRepoPolicies(
   accessToken?: string,
 ): Promise<Result<RepoWithPolicies, { code: string; message: string }>> {
   const result = await platformAction(
-    async (sdk) => sdk.getRepoSettingsPage({ orgUsername: org, repoUsername: repo }),
+    async (sdk) => sdk.repositoryPage({ org, repo, page: 1, pageSize: 1 }),
     {
       onError: () => {},
       allowAnonymous: true,
@@ -30,25 +30,8 @@ export async function getRepoPolicies(
     return err({ code: ErrorCode.NOT_FOUND_ERROR, message: 'Repository not found' })
   }
 
-  if (!result.repo.policies || result.repo.policies.length === 0) {
-    const fallbackResult = await platformAction(
-      async (sdk) => sdk.repositoryPage({ org, repo, page: 1, pageSize: 1 }),
-      { onError: () => {}, allowAnonymous: true, accessToken },
-    )
-
-    if (fallbackResult?.repo?.policies?.length) {
-      return ok({
-        policies: fallbackResult.repo.policies.map((p: { userId: string; role: string }) => ({
-          userId: p.userId,
-          role: p.role as RepoRole,
-        })),
-      })
-    }
-    return ok({ policies: [] })
-  }
-
   return ok({
-    policies: result.repo.policies.map((p: { userId: string; role: string }) => ({
+    policies: (result.repo.policies ?? []).map((p: { userId: string; role: string }) => ({
       userId: p.userId,
       role: p.role as RepoRole,
     })),

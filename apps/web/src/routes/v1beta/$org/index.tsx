@@ -1,17 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { useEffect, useState } from 'react'
+import { type OrgPageQuery } from '@/gen/graphql'
 import { platformAction } from '@/app/v1beta/_lib/platform-action'
 import { OrganizationPageUi } from '@/app/v1beta/[org]/_components/organization-page-ui'
+
+const ORG_TABS = new Set([
+  'repositories',
+  'integrations',
+  'activity',
+  'insights',
+  'members',
+  'settings',
+])
 
 export const Route = createFileRoute('/v1beta/$org/')({
   component: OrganizationPage,
 })
+type OrganizationPageData = OrgPageQuery['organization']
 
 function OrganizationPage() {
   const { org } = Route.useParams()
+  const search = Route.useSearch() as { tab?: string }
+  const activeTab = search.tab && ORG_TABS.has(search.tab)
+    ? search.tab
+    : 'repositories'
   const { session } = useAuth()
-  const [organization, setOrganization] = useState<any>(null)
+  const [organization, setOrganization] = useState<OrganizationPageData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -56,7 +71,7 @@ function OrganizationPage() {
   return (
     <OrganizationPageUi
       org={org}
-      activeTab='repositories'
+      activeTab={activeTab}
       isViewOnly={!session}
       organization={organization}
       hasLinearConnection={false}

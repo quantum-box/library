@@ -3,6 +3,7 @@ name = "inbound_sync"
 version = "0.1.0"
 edition = "2021"
 description = "Inbound webhook synchronization engine for database context"
+license.workspace = true
 
 [dependencies]
 async-graphql.workspace = true
