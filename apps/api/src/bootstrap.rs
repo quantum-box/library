@@ -7,7 +7,9 @@ use inbound_sync_domain::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub async fn run_api(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_api(
+    config: config::Config,
+) -> Result<(), Box<dyn std::error::Error>> {
     init_tracing(&config);
 
     // Hold the Sentry guard for the process lifetime so events
