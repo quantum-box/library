@@ -527,6 +527,15 @@ pub async fn router(
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
         .route("/version", get(version))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(handler::mcp::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(handler::mcp::protected_resource_metadata),
+        )
+        .route("/mcp", post(handler::mcp::mcp_handler))
         .route("/v1/graphql", get(graphql::graphiql))
         .route("/v1/graphql", post(graphql::graphql_handler))
         .route(

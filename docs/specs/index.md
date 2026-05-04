@@ -9,6 +9,7 @@
 - [GraphQL API 仕様](docs/specs/apis/graphql-api.md)
 - [Webhook 受信仕様](docs/specs/integrations/webhooks.md)
 - [コラボレーション WebSocket 仕様](docs/specs/integrations/collaboration-ws.md)
+- [MCP 連携仕様](docs/specs/integrations/mcp.md)
 - [運用手順 / トラブル対応](docs/specs/integrations/operations.md)
 - [CMS利用ガイド](docs/specs/guides/cms-user-guide.md)
 - [ドキュメントOS利用ガイド](docs/specs/guides/document-os-user-guide.md)
