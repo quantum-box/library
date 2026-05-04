@@ -527,6 +527,33 @@ pub async fn router(
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
         .route("/version", get(version))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(handler::mcp::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(handler::mcp::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(handler::mcp::mcp_oauth_authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server/mcp/oauth",
+            get(handler::mcp::mcp_oauth_authorization_server_metadata),
+        )
+        .route("/mcp", post(handler::mcp::mcp_handler))
+        .route(
+            "/mcp/oauth/register",
+            post(handler::mcp::mcp_oauth_register),
+        )
+        .route(
+            "/mcp/oauth/authorize",
+            get(handler::mcp::mcp_oauth_authorize)
+                .post(handler::mcp::mcp_oauth_authorize_submit),
+        )
+        .route("/mcp/oauth/token", post(handler::mcp::mcp_oauth_token))
         .route("/v1/graphql", get(graphql::graphiql))
         .route("/v1/graphql", post(graphql::graphql_handler))
         .route(

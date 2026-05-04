@@ -63,6 +63,8 @@ mime = "0.3.16"
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 bytes = { workspace = true }
+base64 = { workspace = true }
+url = { workspace = true }
 arrow = "57.2.0"
 parquet = "57.2.0"
 sqlx = { workspace = true, features = [
