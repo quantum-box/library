@@ -1,17 +1,26 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
-    extract::Extension,
+    extract::{Extension, Form, Query},
     http::{
-        header::{AUTHORIZATION, WWW_AUTHENTICATE},
+        header::{AUTHORIZATION, LOCATION, WWW_AUTHENTICATE},
         HeaderMap, HeaderValue, StatusCode,
     },
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     Json,
 };
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::Engine;
+use hmac::{Hmac, Mac};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tachyon_sdk::auth::ExecutorAction;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::{
@@ -26,8 +35,11 @@ use crate::usecase::{
 };
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
-const MCP_AUTH_SCOPE_READ: &str = "library:read";
-const MCP_AUTH_SCOPE_WRITE: &str = "library:write";
+const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
+type HmacSha256 = Hmac<Sha256>;
+
+static MCP_OAUTH_STORE: Lazy<Mutex<McpOAuthStore>> =
+    Lazy::new(|| Mutex::new(McpOAuthStore::default()));
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +97,117 @@ struct CreateDataPropertyArgs {
     value: String,
     #[serde(default)]
     value_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct McpOAuthClientRegistrationRequest {
+    redirect_uris: Vec<String>,
+    #[serde(default)]
+    token_endpoint_auth_method: Option<String>,
+    #[serde(default)]
+    grant_types: Vec<String>,
+    #[serde(default)]
+    response_types: Vec<String>,
+    #[serde(default)]
+    client_name: Option<String>,
+    #[serde(default)]
+    client_uri: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct McpOAuthAuthorizeQuery {
+    response_type: String,
+    client_id: String,
+    redirect_uri: String,
+    code_challenge: String,
+    code_challenge_method: String,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    resource: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct McpOAuthAuthorizeForm {
+    response_type: String,
+    client_id: String,
+    redirect_uri: String,
+    code_challenge: String,
+    code_challenge_method: String,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    resource: Option<String>,
+    username: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct McpOAuthTokenRequest {
+    grant_type: String,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    code_verifier: Option<String>,
+    #[serde(default)]
+    redirect_uri: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct McpOAuthStore {
+    clients: HashMap<String, McpOAuthClient>,
+    codes: HashMap<String, McpOAuthCode>,
+}
+
+#[derive(Debug, Clone)]
+struct McpOAuthClient {
+    redirect_uris: Vec<String>,
+    token_endpoint_auth_method: String,
+    grant_types: Vec<String>,
+    response_types: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct McpOAuthCode {
+    client_id: String,
+    redirect_uri: String,
+    code_challenge: String,
+    scope: Option<String>,
+    access_token: String,
+    expires_in: i64,
+    created_at: Instant,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct CognitoInitiateAuthResponse {
+    authentication_result: Option<CognitoAuthenticationResult>,
+    challenge_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct CognitoAuthenticationResult {
+    access_token: Option<String>,
+    expires_in: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct CognitoErrorResponse {
+    #[serde(rename = "__type")]
+    error_type: Option<String>,
+    #[serde(alias = "message", alias = "Message")]
+    message: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -721,23 +844,556 @@ fn auth_challenge_response() -> Response {
 pub async fn protected_resource_metadata() -> Json<Value> {
     let authorization_servers = std::env::var("MCP_AUTHORIZATION_SERVERS")
         .or_else(|_| std::env::var("MCP_AUTHORIZATION_SERVER"))
-        .unwrap_or_default()
+        .unwrap_or_else(|_| mcp_oauth_issuer())
         .split(',')
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
+    let scopes_supported = mcp_scopes_supported();
 
     Json(json!({
         "resource": mcp_resource_url(),
         "authorization_servers": authorization_servers,
-        "scopes_supported": [
-            MCP_AUTH_SCOPE_READ,
-            MCP_AUTH_SCOPE_WRITE
-        ],
+        "scopes_supported": scopes_supported,
         "bearer_methods_supported": ["header"],
         "resource_name": "Library MCP"
     }))
+}
+
+pub async fn mcp_oauth_authorization_server_metadata() -> Json<Value> {
+    let issuer = mcp_oauth_issuer();
+    let scopes_supported = mcp_scopes_supported();
+
+    Json(json!({
+        "issuer": issuer,
+        "authorization_endpoint": format!("{issuer}/authorize"),
+        "token_endpoint": format!("{issuer}/token"),
+        "registration_endpoint": format!("{issuer}/register"),
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+        "scopes_supported": scopes_supported
+    }))
+}
+
+pub async fn mcp_oauth_register(
+    Json(request): Json<McpOAuthClientRegistrationRequest>,
+) -> Response {
+    if request.redirect_uris.is_empty() {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_client_metadata",
+            "redirect_uris is required",
+        );
+    }
+
+    let client_id = format!("mcp_client_{}", Uuid::new_v4().simple());
+    let token_endpoint_auth_method = request
+        .token_endpoint_auth_method
+        .clone()
+        .unwrap_or_else(|| "none".to_string());
+    if token_endpoint_auth_method != "none" {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_client_metadata",
+            "Only public clients with token_endpoint_auth_method=none are supported",
+        );
+    }
+
+    let client = McpOAuthClient {
+        redirect_uris: request.redirect_uris.clone(),
+        token_endpoint_auth_method,
+        grant_types: if request.grant_types.is_empty() {
+            vec!["authorization_code".to_string()]
+        } else {
+            request.grant_types.clone()
+        },
+        response_types: if request.response_types.is_empty() {
+            vec!["code".to_string()]
+        } else {
+            request.response_types.clone()
+        },
+    };
+
+    MCP_OAUTH_STORE
+        .lock()
+        .await
+        .clients
+        .insert(client_id.clone(), client);
+
+    Json(json!({
+        "client_id": client_id,
+        "client_id_issued_at": chrono::Utc::now().timestamp(),
+        "redirect_uris": request.redirect_uris,
+        "token_endpoint_auth_method": "none",
+        "grant_types": request.grant_types,
+        "response_types": request.response_types,
+        "client_name": request.client_name,
+        "client_uri": request.client_uri,
+        "scope": request.scope
+    }))
+    .into_response()
+}
+
+pub async fn mcp_oauth_authorize(
+    Query(query): Query<McpOAuthAuthorizeQuery>,
+) -> Response {
+    if let Err(message) = validate_authorize_request(&query).await {
+        return Html(render_login_page(&query, Some(&message)))
+            .into_response();
+    }
+
+    Html(render_login_page(&query, None)).into_response()
+}
+
+pub async fn mcp_oauth_authorize_submit(
+    Form(form): Form<McpOAuthAuthorizeForm>,
+) -> Response {
+    let query = McpOAuthAuthorizeQuery {
+        response_type: form.response_type.clone(),
+        client_id: form.client_id.clone(),
+        redirect_uri: form.redirect_uri.clone(),
+        code_challenge: form.code_challenge.clone(),
+        code_challenge_method: form.code_challenge_method.clone(),
+        state: form.state.clone(),
+        scope: form.scope.clone(),
+        resource: form.resource.clone(),
+    };
+
+    if let Err(message) = validate_authorize_request(&query).await {
+        return Html(render_login_page(&query, Some(&message)))
+            .into_response();
+    }
+
+    let auth =
+        match cognito_user_password_auth(&form.username, &form.password)
+            .await
+        {
+            Ok(auth) => auth,
+            Err(message) => {
+                return Html(render_login_page(&query, Some(&message)))
+                    .into_response()
+            }
+        };
+
+    let code = format!("mcp_code_{}", Uuid::new_v4().simple());
+    MCP_OAUTH_STORE.lock().await.codes.insert(
+        code.clone(),
+        McpOAuthCode {
+            client_id: form.client_id,
+            redirect_uri: form.redirect_uri.clone(),
+            code_challenge: form.code_challenge,
+            scope: form.scope.clone(),
+            access_token: auth
+                .access_token
+                .expect("cognito auth checked access token"),
+            expires_in: auth.expires_in.unwrap_or(3600),
+            created_at: Instant::now(),
+        },
+    );
+
+    match redirect_with_code(
+        &form.redirect_uri,
+        &code,
+        form.state.as_deref(),
+    ) {
+        Ok(location) => (
+            StatusCode::FOUND,
+            [(LOCATION, HeaderValue::from_str(&location).unwrap())],
+        )
+            .into_response(),
+        Err(message) => {
+            Html(render_login_page(&query, Some(&message))).into_response()
+        }
+    }
+}
+
+pub async fn mcp_oauth_token(
+    Form(request): Form<McpOAuthTokenRequest>,
+) -> Response {
+    if request.grant_type != "authorization_code" {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "Only authorization_code is supported",
+        );
+    }
+
+    let Some(code) = request.code else {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "code is required",
+        );
+    };
+    let Some(code_verifier) = request.code_verifier else {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "code_verifier is required",
+        );
+    };
+
+    let stored = MCP_OAUTH_STORE.lock().await.codes.remove(&code);
+    let Some(stored) = stored else {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "Authorization code is invalid or already used",
+        );
+    };
+
+    if stored.created_at.elapsed().as_secs() > 600 {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "Authorization code expired",
+        );
+    }
+    if request
+        .client_id
+        .as_deref()
+        .is_some_and(|client_id| client_id != stored.client_id)
+    {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "client_id does not match authorization code",
+        );
+    }
+    if request
+        .redirect_uri
+        .as_deref()
+        .is_some_and(|redirect_uri| redirect_uri != stored.redirect_uri)
+    {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "redirect_uri does not match authorization code",
+        );
+    }
+    if !verify_pkce(&code_verifier, &stored.code_challenge) {
+        return oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "PKCE verification failed",
+        );
+    }
+
+    Json(json!({
+        "access_token": stored.access_token,
+        "token_type": "Bearer",
+        "expires_in": stored.expires_in,
+        "scope": stored.scope.unwrap_or_else(|| mcp_scopes_supported().join(" "))
+    }))
+    .into_response()
+}
+
+fn mcp_oauth_issuer() -> String {
+    std::env::var("MCP_OAUTH_ISSUER").unwrap_or_else(|_| {
+        let base_url = std::env::var("LIBRARY_API_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:50053".to_string());
+        format!("{}/mcp/oauth", base_url.trim_end_matches('/'))
+    })
+}
+
+fn mcp_scopes_supported() -> Vec<String> {
+    std::env::var("MCP_SCOPES_SUPPORTED")
+        .ok()
+        .map(|value| csv_env(&value))
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| {
+            MCP_DEFAULT_SCOPES
+                .iter()
+                .map(|scope| (*scope).to_string())
+                .collect()
+        })
+}
+
+fn csv_env(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+async fn validate_authorize_request(
+    request: &McpOAuthAuthorizeQuery,
+) -> Result<(), String> {
+    if request.response_type != "code" {
+        return Err("Only response_type=code is supported.".to_string());
+    }
+    if request.code_challenge_method != "S256" {
+        return Err("Only PKCE S256 is supported.".to_string());
+    }
+
+    let store = MCP_OAUTH_STORE.lock().await;
+    let client = store
+        .clients
+        .get(&request.client_id)
+        .ok_or_else(|| "OAuth client is not registered.".to_string())?;
+    if !client.redirect_uris.contains(&request.redirect_uri) {
+        return Err(
+            "redirect_uri is not registered for this client.".to_string()
+        );
+    }
+    if client.token_endpoint_auth_method != "none" {
+        return Err("Only public OAuth clients are supported.".to_string());
+    }
+    if !client
+        .grant_types
+        .iter()
+        .any(|grant| grant == "authorization_code")
+    {
+        return Err(
+            "OAuth client does not allow authorization_code.".to_string()
+        );
+    }
+    if !client
+        .response_types
+        .iter()
+        .any(|response| response == "code")
+    {
+        return Err(
+            "OAuth client does not allow response_type=code.".to_string()
+        );
+    }
+
+    Ok(())
+}
+
+async fn cognito_user_password_auth(
+    username: &str,
+    password: &str,
+) -> Result<CognitoAuthenticationResult, String> {
+    let client_id = env_first(&[
+        "MCP_COGNITO_CLIENT_ID",
+        "COGNITO_CLIENT_ID",
+        "VITE_COGNITO_CLIENT_ID",
+    ])
+    .ok_or_else(|| {
+        "MCP_COGNITO_CLIENT_ID is not configured.".to_string()
+    })?;
+    let client_secret = env_first(&[
+        "MCP_COGNITO_CLIENT_SECRET",
+        "COGNITO_CLIENT_SECRET",
+        "VITE_COGNITO_CLIENT_SECRET",
+    ]);
+    let region = env_first(&[
+        "MCP_COGNITO_REGION",
+        "COGNITO_REGION",
+        "VITE_COGNITO_REGION",
+    ])
+    .unwrap_or_else(|| "ap-northeast-1".to_string());
+
+    let mut auth_parameters = json!({
+        "USERNAME": username,
+        "PASSWORD": password
+    });
+    if let Some(secret) =
+        client_secret.as_deref().filter(|value| !value.is_empty())
+    {
+        auth_parameters["SECRET_HASH"] =
+            json!(cognito_secret_hash(username, &client_id, secret)?);
+    }
+
+    let endpoint = format!("https://cognito-idp.{region}.amazonaws.com/");
+    let response = reqwest::Client::new()
+        .post(endpoint)
+        .header(
+            "X-Amz-Target",
+            "AWSCognitoIdentityProviderService.InitiateAuth",
+        )
+        .header("Content-Type", "application/x-amz-json-1.1")
+        .json(&json!({
+            "AuthFlow": "USER_PASSWORD_AUTH",
+            "ClientId": client_id,
+            "AuthParameters": auth_parameters
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("Cognito request failed: {error}"))?;
+
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        format!("Cognito response read failed: {error}")
+    })?;
+    if !status.is_success() {
+        let detail = serde_json::from_str::<CognitoErrorResponse>(&body)
+            .ok()
+            .and_then(|error| {
+                error
+                    .message
+                    .or(error.error_type)
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_else(|| {
+                "Cognito authentication failed.".to_string()
+            });
+        return Err(detail);
+    }
+
+    let response: CognitoInitiateAuthResponse = serde_json::from_str(&body)
+        .map_err(|error| {
+            format!("Cognito response parse failed: {error}")
+        })?;
+    let auth = response.authentication_result.ok_or_else(|| {
+        response
+            .challenge_name
+            .map(|challenge| {
+                format!(
+                    "Cognito returned unsupported challenge: {challenge}"
+                )
+            })
+            .unwrap_or_else(|| "Cognito did not return tokens.".to_string())
+    })?;
+    if auth.access_token.is_none() {
+        return Err("Cognito did not return an access token.".to_string());
+    }
+    Ok(auth)
+}
+
+fn env_first(names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| std::env::var(name).ok())
+        .filter(|value| !value.is_empty())
+}
+
+fn cognito_secret_hash(
+    username: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<String, String> {
+    let mut mac = HmacSha256::new_from_slice(client_secret.as_bytes())
+        .map_err(|error| {
+            format!("Invalid Cognito client secret: {error}")
+        })?;
+    mac.update(format!("{username}{client_id}").as_bytes());
+    Ok(STANDARD.encode(mac.finalize().into_bytes()))
+}
+
+fn verify_pkce(code_verifier: &str, expected_challenge: &str) -> bool {
+    let digest = Sha256::digest(code_verifier.as_bytes());
+    URL_SAFE_NO_PAD.encode(digest) == expected_challenge
+}
+
+fn redirect_with_code(
+    redirect_uri: &str,
+    code: &str,
+    state: Option<&str>,
+) -> Result<String, String> {
+    let mut url = url::Url::parse(redirect_uri)
+        .map_err(|error| format!("Invalid redirect_uri: {error}"))?;
+    url.query_pairs_mut().append_pair("code", code);
+    if let Some(state) = state {
+        url.query_pairs_mut().append_pair("state", state);
+    }
+    Ok(url.to_string())
+}
+
+fn oauth_error_response(
+    status: StatusCode,
+    error: &str,
+    description: &str,
+) -> Response {
+    (
+        status,
+        Json(json!({
+            "error": error,
+            "error_description": description
+        })),
+    )
+        .into_response()
+}
+
+fn render_login_page(
+    query: &McpOAuthAuthorizeQuery,
+    error: Option<&str>,
+) -> String {
+    let error_html = error
+        .map(|message| {
+            format!("<p class=\"error\">{}</p>", html_escape(message))
+        })
+        .unwrap_or_default();
+    let hidden = |name: &str, value: &str| {
+        format!(
+            "<input type=\"hidden\" name=\"{}\" value=\"{}\">",
+            html_escape(name),
+            html_escape(value)
+        )
+    };
+    let optional_hidden = |name: &str, value: &Option<String>| {
+        value
+            .as_deref()
+            .map(|value| hidden(name, value))
+            .unwrap_or_default()
+    };
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library MCP Login</title>
+  <style>
+    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f9; color: #17181c; }}
+    main {{ width: min(420px, calc(100vw - 32px)); background: #fff; border: 1px solid #d9dde5; border-radius: 8px; padding: 28px; box-shadow: 0 16px 40px rgba(20, 28, 40, .08); }}
+    h1 {{ font-size: 22px; margin: 0 0 6px; letter-spacing: 0; }}
+    p {{ margin: 0 0 20px; color: #596070; line-height: 1.5; }}
+    label {{ display: block; font-size: 13px; font-weight: 650; margin: 16px 0 6px; }}
+    input[type="text"], input[type="password"] {{ box-sizing: border-box; width: 100%; height: 42px; border: 1px solid #c9ced8; border-radius: 6px; padding: 0 12px; font-size: 15px; }}
+    button {{ width: 100%; height: 42px; margin-top: 22px; border: 0; border-radius: 6px; background: #17181c; color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }}
+    .error {{ margin: 0 0 16px; color: #b42318; background: #fff1f0; border: 1px solid #ffccc7; border-radius: 6px; padding: 10px 12px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Library MCP</h1>
+    <p>Sign in with your Library account to authorize this MCP client.</p>
+    {error_html}
+    <form method="post" action="/mcp/oauth/authorize">
+      {}
+      {}
+      {}
+      {}
+      {}
+      {}
+      {}
+      {}
+      <label for="username">Username or email</label>
+      <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>"#,
+        hidden("response_type", &query.response_type),
+        hidden("client_id", &query.client_id),
+        hidden("redirect_uri", &query.redirect_uri),
+        hidden("code_challenge", &query.code_challenge),
+        hidden("code_challenge_method", &query.code_challenge_method),
+        optional_hidden("state", &query.state),
+        optional_hidden("scope", &query.scope),
+        optional_hidden("resource", &query.resource),
+    )
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]

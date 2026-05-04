@@ -32,8 +32,15 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_AUTH_REQUIRED` | `true` / `1` の場合、`initialize` / `tools/list` を含む MCP endpoint 全体で認証を要求する |
 | `MCP_RESOURCE_URL` | protected resource metadata の `resource`。未指定時は `{LIBRARY_API_BASE_URL}/mcp` |
 | `MCP_RESOURCE_METADATA_URL` | `WWW-Authenticate` に載せる metadata URL。未指定時は `{LIBRARY_API_BASE_URL}/.well-known/oauth-protected-resource` |
-| `MCP_AUTHORIZATION_SERVER` | OAuth authorization server issuer |
+| `MCP_AUTHORIZATION_SERVER` | OAuth authorization server issuer。未指定時は Library MCP OAuth facade (`{LIBRARY_API_BASE_URL}/mcp/oauth`) |
 | `MCP_AUTHORIZATION_SERVERS` | 複数 issuer を comma-separated で指定する場合 |
+| `MCP_SCOPES_SUPPORTED` | protected resource metadata / authorization server metadata に載せる scopes。未指定時は `openid,email,profile` |
+| `MCP_OAUTH_ISSUER` | Library MCP OAuth facade の issuer。未指定時は `{LIBRARY_API_BASE_URL}/mcp/oauth` |
+| `MCP_COGNITO_CLIENT_ID` | MCP OAuth facade が Cognito `USER_PASSWORD_AUTH` に使う client id。`COGNITO_CLIENT_ID` / `VITE_COGNITO_CLIENT_ID` も fallback として読む |
+| `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` / `VITE_COGNITO_CLIENT_SECRET` も fallback として読む |
+| `MCP_COGNITO_REGION` | Cognito region。未指定時は `ap-northeast-1` |
+
+Library MCP OAuth facade は Dynamic Client Registration を受け付け、`/mcp/oauth/authorize` で Library login form を出す。入力された credential は Cognito `USER_PASSWORD_AUTH` で検証し、token endpoint は Cognito の実 access token を MCP client に返す。
 
 ## 3. 対応メソッド
 
@@ -156,6 +163,12 @@ OAuth protected resource metadata:
 
 ```bash
 curl -sS http://localhost:50055/.well-known/oauth-protected-resource
+```
+
+OAuth authorization server metadata:
+
+```bash
+curl -sS http://localhost:50055/.well-known/oauth-authorization-server/mcp/oauth
 ```
 
 認証 challenge:
