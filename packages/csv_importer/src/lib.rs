@@ -46,25 +46,24 @@ pub trait CSVImporter {
     ) -> anyhow::Result<Database>;
     /// # preview csv
     ///         
-    /// ```rust
-    /// let dsn =
-    ///     "mysql://root:@localhost:15000/tachyon_apps_database_manager";
+    /// ```rust,no_run
+    /// use csv_importer::{CSVImporter, CSVImporterClient};
+    /// use std::{io::Cursor, sync::Arc};
+    ///
+    /// # async fn run() -> anyhow::Result<()> {
+    /// let dsn = "mysql://root:@localhost:15000/tachyon_apps_database_manager";
     /// let db_manager = database_manager::factory_client(dsn).await?;
     /// let csv_importer = CSVImporterClient::new(Arc::new(db_manager));
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    /// TODO: add English documentation
-    ///     .to_string();
-    /// let buffer = std::io::Cursor::new(csv_str);
+    /// let csv_str = "name,age\nAlice,30\nBob,40\n".to_string();
+    /// let buffer = Cursor::new(csv_str);
+    ///
     /// let preview = csv_importer.preview(buffer, Some(3)).await?;
+    ///
     /// for record in preview.iter() {
-    ///     println!("{:?}", record);
+    ///     println!("{record:?}");
     /// }
-    /// Ok(())
+    /// # Ok(())
+    /// # }
     /// ```
     async fn preview(
         &self,
