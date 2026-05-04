@@ -16,6 +16,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      function_url: ${{ steps.function_url.outputs.function_url }}
     permissions:
       contents: read
       id-token: write
@@ -65,3 +67,53 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --binary-name lambda-library-api \
             lambda-library-api
+
+      - name: Resolve Function URL
+        id: function_url
+        run: |
+          function_url="$(aws lambda get-function-url-config \
+            --region "${AWS_REGION}" \
+            --function-name lambda-library-api \
+            --query 'FunctionUrl' \
+            --output text)"
+          echo "function_url=${function_url}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Library API Lambda"
+            echo ""
+            echo "Function URL: ${function_url}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-northeast-1
+      FUNCTION_URL: ${{ needs.deploy.outputs.function_url }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Smoke test Lambda Function URL
+        run: |
+          test -n "${FUNCTION_URL}"
+
+          health_url="${FUNCTION_URL%/}/health"
+          for attempt in 1 2 3 4 5 6; do
+            response="$(curl -fsSL --max-time 20 "${health_url}" || true)"
+            if [ "${response}" = "OK" ]; then
+              echo "Smoke test passed: ${health_url}"
+              exit 0
+            fi
+            echo "Smoke test attempt ${attempt} failed; retrying..."
+            sleep 10
+          done
+
+          echo "Smoke test failed: ${health_url}"
+          exit 1
