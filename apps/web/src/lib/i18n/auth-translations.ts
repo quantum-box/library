@@ -66,6 +66,8 @@ export const authTranslations = {
 		resetPassword: {
 			title: 'Reset password',
 			description: 'Enter your new password',
+			usernameLabel: 'Username or email',
+			usernamePlaceholder: 'Enter username or email',
 			passwordLabel: 'New password',
 			passwordPlaceholder: 'Enter new password',
 			confirmPasswordLabel: 'Confirm new password',
@@ -176,6 +178,8 @@ export const authTranslations = {
 		resetPassword: {
 			title: 'パスワードリセット',
 			description: '新しいパスワードを入力してください',
+			usernameLabel: 'ユーザー名 / メールアドレス',
+			usernamePlaceholder: 'ユーザー名かメールアドレスを入力',
 			passwordLabel: '新しいパスワード',
 			passwordPlaceholder: '新しいパスワードを入力',
 			confirmPasswordLabel: '新しいパスワード（確認）',

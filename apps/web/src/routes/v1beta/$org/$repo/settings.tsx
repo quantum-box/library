@@ -7,15 +7,18 @@ import { Separator } from '@/components/ui/separator'
 import { RepoSkeleton } from '@/app/v1beta/[org]/[repo]/components/repo-skeleton'
 import { Eye, GitBranch, Lock, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { type RepositoryPageQuery } from '@/gen/graphql'
 
 export const Route = createFileRoute('/v1beta/$org/$repo/settings')({
   component: SettingsPage,
 })
+type RepoData = RepositoryPageQuery['repo']
+type RepoPolicy = RepoData['policies'][number]
 
 function SettingsPage() {
   const { org, repo } = Route.useParams()
   const { session } = useAuth()
-  const [repoData, setRepoData] = useState<any>(null)
+  const [repoData, setRepoData] = useState<RepoData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -128,7 +131,7 @@ function SettingsPage() {
           {contributors.length === 0 ? (
             <div className='text-sm text-muted-foreground'>No policies</div>
           ) : (
-            contributors.map((policy: any) => (
+            contributors.map((policy: RepoPolicy) => (
               <div key={policy.userId} className='flex flex-wrap items-center justify-between gap-3'>
                 <div>
                   <div className='font-medium'>

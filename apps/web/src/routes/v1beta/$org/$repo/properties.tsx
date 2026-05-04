@@ -17,14 +17,33 @@ import { PropertyType } from '@/gen/graphql'
 import { Search, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+type PropertyMeta = {
+	__typename?: string
+	options?: Array<{
+		__typename?: 'SelectItem'
+		id: string
+		key: string
+		name: string
+	}> | null
+	databaseId?: string | null
+	json?: string | null
+}
+
+type Property = {
+	id: string
+	name: string
+	typ: PropertyType
+	meta?: PropertyMeta | null
+}
+
 export const Route = createFileRoute('/v1beta/$org/$repo/properties')({
-  component: PropertiesPage,
+	component: PropertiesPage,
 })
 
 function PropertiesPage() {
   const { org, repo } = Route.useParams()
   const { session, isLoading: isAuthLoading } = useAuth()
-  const [properties, setProperties] = useState<any[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
 
@@ -46,10 +65,10 @@ function PropertiesPage() {
             accessToken: session?.user?.accessToken,
           },
         )
-        setProperties(result?.repo?.properties ?? [])
+        setProperties((result?.repo?.properties ?? []) as Property[])
       } catch (error) {
         console.error('Failed to load properties:', error)
-        setProperties([])
+    setProperties([])
       } finally {
         setLoading(false)
       }
@@ -142,13 +161,13 @@ function formatPropertyType(type: PropertyType | string) {
   return String(type).replace(/_/g, ' ')
 }
 
-function formatPropertyMeta(property: any) {
+function formatPropertyMeta(property: Property): string {
   const meta = property.meta
   if (!meta) return '-'
   if (meta.__typename === 'SelectType' || meta.__typename === 'MultiSelectType') {
-    return meta.options?.map((option: { name: string }) => option.name).join(', ') || '-'
+    return (meta.options ?? []).map((option) => option.name).join(', ') || '-'
   }
-  if (meta.__typename === 'RelationType') return meta.databaseId
-  if (meta.__typename === 'JsonType') return meta.json
+  if (meta.__typename === 'RelationType') return meta.databaseId ?? '-'
+  if (meta.__typename === 'JsonType') return meta.json ?? '-'
   return property.typ === PropertyType.Select || property.typ === PropertyType.MultiSelect ? '-' : ''
 }

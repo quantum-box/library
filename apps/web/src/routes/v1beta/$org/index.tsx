@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { useEffect, useState } from 'react'
+import { type OrgPageQuery } from '@/gen/graphql'
 import { platformAction } from '@/app/v1beta/_lib/platform-action'
 import { OrganizationPageUi } from '@/app/v1beta/[org]/_components/organization-page-ui'
 
@@ -16,6 +17,7 @@ const ORG_TABS = new Set([
 export const Route = createFileRoute('/v1beta/$org/')({
   component: OrganizationPage,
 })
+type OrganizationPageData = OrgPageQuery['organization']
 
 function OrganizationPage() {
   const { org } = Route.useParams()
@@ -24,7 +26,7 @@ function OrganizationPage() {
     ? search.tab
     : 'repositories'
   const { session } = useAuth()
-  const [organization, setOrganization] = useState<any>(null)
+  const [organization, setOrganization] = useState<OrganizationPageData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

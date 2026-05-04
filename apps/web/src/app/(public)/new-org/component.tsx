@@ -15,7 +15,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { createSdkPlatform } from '@/lib/api-action'
+import { platformId } from '@/lib/apiClient'
 import { type ApiError } from '@/lib/apiClient'
+import { NewOperatorOwnerMethod } from '@/gen/graphql'
 import { zodResolver } from '@hookform/resolvers/zod'
 type Session = { user?: { email?: string | null; name?: string | null } | null }
 import { useNavigate } from '@tanstack/react-router'
@@ -59,19 +61,16 @@ export function NewOrgForm({ session }: { session: Session }) {
 			try {
 				// create account
 				const sdk = await createSdkPlatform('')
-				// TODO: さきにuserを作成する
-				// await sdk.createOperator({
-				// 	input: {
-				// 		newOperatorOwnerEmail: formStates.email,
-				// 		newOperatorOwnerMethod: NewOperatorOwnerMethod.Create,
-				// 		newOperatorOwnerPassword: formStates.password,
-				// 		operatorAlias: formStates.userName,
-				// 		operatorName: formStates.userName,
-				// 		platformId: platformId,
-				// 	},
-				// })
-				// backendでのサインアップは完了する
-				// ここでサインインする
+				await sdk.createOperator({
+					input: {
+						newOperatorOwnerId: formStates.email,
+						newOperatorOwnerMethod: NewOperatorOwnerMethod.Create,
+						newOperatorOwnerPassword: formStates.password,
+						operatorAlias: formStates.userName,
+						operatorName: formStates.userName,
+						platformId: platformId,
+					},
+				})
 				toast({
 					title: 'Account created',
 					description: 'Please sign in to your account',

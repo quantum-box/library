@@ -9,6 +9,7 @@
     "dev": "npm run --workspace apps/web dev",
     "build": "npm run --workspace apps/web build",
     "lint": "npm run --workspace apps/web lint",
+    "test": "npm run --workspace apps/web test",
     "tsc": "npm run --workspace apps/web ts"
   },
   "resolutions": {

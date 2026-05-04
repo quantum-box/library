@@ -2,6 +2,9 @@ import {
   CognitoIdentityProvider,
   GetUserCommand,
   InitiateAuthCommand,
+  SignUpCommand,
+  ForgotPasswordCommand,
+  ConfirmForgotPasswordCommand,
 } from '@aws-sdk/client-cognito-identity-provider'
 import { getSdkPlatform, platformId } from '@/lib/apiClient'
 
@@ -144,4 +147,67 @@ export async function refreshAccessToken(
     email: '', // email not returned on refresh
     username,
   }
+}
+
+export async function signUpWithCredentials(
+  username: string,
+  email: string,
+  password: string,
+): Promise<void> {
+  const config = getCognitoConfig()
+  const client = cognitoClient()
+
+  await client.send(
+    new SignUpCommand({
+      ClientId: config.clientId,
+      Username: username,
+      Password: password,
+      SecretHash: await generateSecretHash(
+        username,
+        config.clientId,
+        config.clientSecret,
+      ),
+      UserAttributes: [{ Name: 'email', Value: email }],
+    }),
+  )
+}
+
+export async function forgotPassword(usernameOrEmail: string): Promise<void> {
+  const config = getCognitoConfig()
+  const client = cognitoClient()
+
+  await client.send(
+    new ForgotPasswordCommand({
+      ClientId: config.clientId,
+      Username: usernameOrEmail,
+      SecretHash: await generateSecretHash(
+        usernameOrEmail,
+        config.clientId,
+        config.clientSecret,
+      ),
+    }),
+  )
+}
+
+export async function resetPasswordWithToken(
+  username: string,
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  const config = getCognitoConfig()
+  const client = cognitoClient()
+
+  await client.send(
+    new ConfirmForgotPasswordCommand({
+      ClientId: config.clientId,
+      Username: username,
+      ConfirmationCode: token,
+      Password: newPassword,
+      SecretHash: await generateSecretHash(
+        username,
+        config.clientId,
+        config.clientSecret,
+      ),
+    }),
+  )
 }
