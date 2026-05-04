@@ -50,11 +50,31 @@ MCP server 情報と tools capability を返す。
 
 ### `tools/list`
 
-次の tools を返す。
+匿名でも利用できる tools:
 
+- `search_repos`
+- `get_repo`
 - `list_data`
 - `search_data`
 - `get_data`
+- `list_properties`
+- `list_sources`
+- `get_source`
+
+認証後に追加される write tools:
+
+- `create_repo`
+- `update_repo`
+- `delete_repo`
+- `create_data`
+- `update_data`
+- `delete_data`
+- `create_property`
+- `update_property`
+- `delete_property`
+- `create_source`
+- `update_source`
+- `delete_source`
 
 ### `tools/call`
 
@@ -128,7 +148,32 @@ Data を作成する。認証必須。
 }
 ```
 
-`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `select`, `date`, `image`。
+`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `date`, `image`。
+
+### Repository tools
+
+- `search_repos`: repo を検索する。`org`, `query`, `limit` を指定可能。
+- `get_repo`: `org`, `repo` で repo 詳細を取得する。
+- `create_repo`: repo を作成する。`org`, `name`, `username`, `is_public`, `description`, `skip_sample_data`。
+- `update_repo`: repo 設定を更新する。`name`, `description`, `is_public`, `tags` を変更可能。
+- `delete_repo`: repo を削除する。
+
+### Property tools
+
+- `list_properties`: repo の properties を取得する。
+- `create_property`: property を作成する。`name`, `property_type`, `meta` を指定可能。
+- `update_property`: property を更新する。`name`, `property_type`, `meta` を指定可能。
+- `delete_property`: property を削除する。
+
+`property_type` は `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`。
+
+### Source tools
+
+- `list_sources`: repo の sources を取得する。
+- `get_source`: source を取得する。
+- `create_source`: source を作成する。`name`, `url` を指定可能。
+- `update_source`: source を更新する。`url: null` で URL を解除できる。
+- `delete_source`: source を削除する。
 
 ## 5. curl / CLI 検証例
 

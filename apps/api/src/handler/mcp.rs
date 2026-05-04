@@ -29,10 +29,17 @@ use crate::handler::library_executor_extractor::{
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::markdown_composer::compose_markdown;
 use crate::usecase::{
-    AddDataInputData, LibraryOrg, PropertyDataInputData,
-    PropertyDataValueInputData, SearchDataInputData, ViewDataInputData,
-    ViewDataListInputData, ViewOrgInputData,
+    AddDataInputData, AddPropertyInputData, CreateRepoInputData,
+    CreateSourceInputData, DeleteDataInputData, DeletePropertyInputData,
+    DeleteRepoInputData, DeleteSourceInputData, FindSourcesInputData,
+    GetPropertiesInputData, GetSourceInputData, LibraryOrg,
+    PropertyDataInputData, PropertyDataValueInputData, SearchDataInputData,
+    SearchRepoInputData, UpdateDataInputData, UpdatePropertyInputData,
+    UpdateRepoInputData, UpdateSourceInputData, ViewDataInputData,
+    ViewDataListInputData, ViewOrgInputData, ViewRepoInputData,
 };
+use database_manager::domain::{Property, PropertyType};
+use value_object::{LongText, Text, Url};
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
@@ -56,6 +63,40 @@ struct ToolCallParams {
     name: String,
     #[serde(default)]
     arguments: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct OrgRepoArgs {
+    org: String,
+    repo: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchReposArgs {
+    org: Option<String>,
+    query: Option<String>,
+    limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateRepoArgs {
+    org: String,
+    name: String,
+    username: String,
+    is_public: bool,
+    description: Option<String>,
+    #[serde(default)]
+    skip_sample_data: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateRepoArgs {
+    org: String,
+    repo: String,
+    name: Option<String>,
+    description: Option<String>,
+    is_public: Option<bool>,
+    tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,9 +135,85 @@ struct CreateDataArgs {
 #[derive(Debug, Deserialize)]
 struct CreateDataPropertyArgs {
     property_id: String,
-    value: String,
+    value: Value,
     #[serde(default)]
     value_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateDataArgs {
+    org: String,
+    repo: String,
+    data_id: String,
+    name: String,
+    #[serde(default)]
+    property_data: Vec<CreateDataPropertyArgs>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteDataArgs {
+    org: String,
+    repo: String,
+    data_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePropertyArgs {
+    org: String,
+    repo: String,
+    name: String,
+    property_type: String,
+    #[serde(default)]
+    meta: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdatePropertyArgs {
+    org: String,
+    repo: String,
+    property_id: String,
+    name: Option<String>,
+    property_type: Option<String>,
+    #[serde(default)]
+    meta: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeletePropertyArgs {
+    org: String,
+    repo: String,
+    property_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetSourceArgs {
+    org: String,
+    repo: String,
+    source_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateSourceArgs {
+    org: String,
+    repo: String,
+    name: String,
+    url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateSourceArgs {
+    org: String,
+    repo: String,
+    source_id: String,
+    name: Option<String>,
+    url: Option<Option<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteSourceArgs {
+    org: String,
+    repo: String,
+    source_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +340,33 @@ struct McpData {
     markdown: String,
 }
 
+#[derive(Debug, Serialize)]
+struct McpRepo {
+    id: String,
+    org: String,
+    username: String,
+    name: String,
+    is_public: bool,
+    description: Option<String>,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct McpProperty {
+    id: String,
+    name: String,
+    property_type: String,
+    meta: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct McpSource {
+    id: String,
+    repo_id: String,
+    name: String,
+    url: Option<String>,
+}
+
 #[axum::debug_handler]
 pub async fn mcp_handler(
     headers: HeaderMap,
@@ -290,6 +434,16 @@ async fn call_tool(
     .map_err(|err| json_rpc_error(-32602, err.to_string()))?;
 
     match params.name.as_str() {
+        "search_repos" => {
+            let args: SearchReposArgs = parse_tool_args(params.arguments)?;
+            let output = search_repos(library_app, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "get_repo" => {
+            let args: OrgRepoArgs = parse_tool_args(params.arguments)?;
+            let output = get_repo(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
         "list_data" => {
             let args: ListDataArgs = parse_tool_args(params.arguments)?;
             let output = list_data(library_app, args).await?;
@@ -305,9 +459,82 @@ async fn call_tool(
             let output = get_data(library_app, args).await?;
             Ok(tool_text_result(output))
         }
+        "list_properties" => {
+            let args: OrgRepoArgs = parse_tool_args(params.arguments)?;
+            let output = list_properties(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "list_sources" => {
+            let args: OrgRepoArgs = parse_tool_args(params.arguments)?;
+            let output = list_sources(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "get_source" => {
+            let args: GetSourceArgs = parse_tool_args(params.arguments)?;
+            let output = get_source(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "create_repo" => {
+            let args: CreateRepoArgs = parse_tool_args(params.arguments)?;
+            let output = create_repo(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "update_repo" => {
+            let args: UpdateRepoArgs = parse_tool_args(params.arguments)?;
+            let output = update_repo(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "delete_repo" => {
+            let args: OrgRepoArgs = parse_tool_args(params.arguments)?;
+            let output = delete_repo(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
         "create_data" => {
             let args: CreateDataArgs = parse_tool_args(params.arguments)?;
             let output = create_data(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "update_data" => {
+            let args: UpdateDataArgs = parse_tool_args(params.arguments)?;
+            let output = update_data(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "delete_data" => {
+            let args: DeleteDataArgs = parse_tool_args(params.arguments)?;
+            let output = delete_data(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "create_property" => {
+            let args: CreatePropertyArgs =
+                parse_tool_args(params.arguments)?;
+            let output = create_property(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "update_property" => {
+            let args: UpdatePropertyArgs =
+                parse_tool_args(params.arguments)?;
+            let output = update_property(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "delete_property" => {
+            let args: DeletePropertyArgs =
+                parse_tool_args(params.arguments)?;
+            let output = delete_property(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "create_source" => {
+            let args: CreateSourceArgs = parse_tool_args(params.arguments)?;
+            let output = create_source(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "update_source" => {
+            let args: UpdateSourceArgs = parse_tool_args(params.arguments)?;
+            let output = update_source(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "delete_source" => {
+            let args: DeleteSourceArgs = parse_tool_args(params.arguments)?;
+            let output = delete_source(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         name => {
@@ -349,6 +576,47 @@ async fn list_data(
         "data": data_list,
         "paginator": paginator,
     }))
+}
+
+async fn search_repos(
+    library_app: Arc<LibraryApp>,
+    args: SearchReposArgs,
+) -> Result<Value, Value> {
+    let input = SearchRepoInputData {
+        org_username: args.org,
+        name: args.query,
+        limit: Some(args.limit.unwrap_or(20).clamp(1, 100)),
+    };
+    let repos = library_app
+        .search_repo
+        .execute(&input)
+        .await
+        .map_err(tool_execution_error)?;
+    let repos = repos.iter().map(repo_to_mcp).collect::<Vec<_>>();
+
+    Ok(json!({ "repos": repos }))
+}
+
+async fn get_repo(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: OrgRepoArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let input = ViewRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        organization_username: args.org,
+        repo_username: args.repo,
+    };
+    let output = library_app
+        .view_repo
+        .execute(&input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "repo": repo_to_mcp(&output.repo) }))
 }
 
 async fn search_data(
@@ -415,45 +683,192 @@ async fn get_data(
     Ok(json!({ "data": data }))
 }
 
+async fn list_properties(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: OrgRepoArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let input = GetPropertiesInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    let properties = library_app
+        .get_properties
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+    let properties =
+        properties.iter().map(property_to_mcp).collect::<Vec<_>>();
+
+    Ok(json!({ "properties": properties }))
+}
+
+async fn list_sources(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: OrgRepoArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let repo = library_app
+        .view_repo
+        .execute(&ViewRepoInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            organization_username: args.org.clone(),
+            repo_username: args.repo.clone(),
+        })
+        .await
+        .map_err(tool_execution_error)?
+        .repo;
+    let input = FindSourcesInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        repo_id: repo.id(),
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    let sources = library_app
+        .find_sources
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+    let sources = sources.iter().map(source_to_mcp).collect::<Vec<_>>();
+
+    Ok(json!({ "sources": sources }))
+}
+
+async fn get_source(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: GetSourceArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
+    let input = GetSourceInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        source_id: &source_id,
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    let source = library_app
+        .get_source
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?
+        .ok_or_else(|| json_rpc_error(-32004, "source not found"))?;
+
+    Ok(json!({ "source": source_to_mcp(&source) }))
+}
+
+async fn create_repo(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: CreateRepoArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "create_repo")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let input = CreateRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_name: args.name,
+        repo_username: args.username,
+        user_id: executor.get_id().to_string(),
+        is_public: args.is_public,
+        description: args.description,
+        database_id: None,
+        skip_sample_data: args.skip_sample_data,
+    };
+    let repo = library_app
+        .create_repo
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "repo": repo_to_mcp(&repo) }))
+}
+
+async fn update_repo(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdateRepoArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "update_repo")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let name = parse_optional::<Text>(args.name)?;
+    let description = parse_optional::<LongText>(args.description)?;
+    let tags = args
+        .tags
+        .map(|tags| {
+            tags.into_iter()
+                .map(|tag| tag.parse::<Text>().map_err(invalid_tool_arg))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+    let input = UpdateRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+        name,
+        description,
+        is_public: args.is_public,
+        tags,
+    };
+    let repo = library_app
+        .update_repo
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "repo": repo_to_mcp(&repo) }))
+}
+
+async fn delete_repo(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: OrgRepoArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "delete_repo")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let input = DeleteRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    library_app
+        .delete_repo
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "deleted": true }))
+}
+
 async fn create_data(
     library_app: Arc<LibraryApp>,
     auth: McpAuthContext,
     args: CreateDataArgs,
 ) -> Result<Value, Value> {
-    let executor = auth.executor.ok_or_else(|| {
-        json_rpc_error(-32001, "Authentication required for create_data")
-    })?;
+    let executor = require_executor(auth, "create_data")?;
     let library_org = authenticated_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
-    let property_data = args
-        .property_data
-        .into_iter()
-        .map(|property| PropertyDataInputData {
-            property_id: property.property_id,
-            value: match property.value_type.as_deref() {
-                Some("integer") => {
-                    PropertyDataValueInputData::Integer(property.value)
-                }
-                Some("html") => {
-                    PropertyDataValueInputData::Html(property.value)
-                }
-                Some("markdown") => {
-                    PropertyDataValueInputData::Markdown(property.value)
-                }
-                Some("select") => {
-                    PropertyDataValueInputData::Select(property.value)
-                }
-                Some("date") => {
-                    PropertyDataValueInputData::Date(property.value)
-                }
-                Some("image") => {
-                    PropertyDataValueInputData::Image(property.value)
-                }
-                _ => PropertyDataValueInputData::String(property.value),
-            },
-        })
-        .collect::<Vec<_>>();
+    let property_data = property_data_from_args(args.property_data)?;
 
     let input = AddDataInputData {
         executor: &executor,
@@ -480,6 +895,389 @@ async fn create_data(
     }))
 }
 
+async fn update_data(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdateDataArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "update_data")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let property_data = property_data_from_args(args.property_data)?;
+    let input = UpdateDataInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        actor: executor.get_id(),
+        org_username: &args.org,
+        repo_username: &args.repo,
+        data_id: &args.data_id,
+        data_name: &args.name,
+        property_data,
+    };
+    let (data, properties) = library_app
+        .update_data
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({
+        "data": {
+            "id": data.id().to_string(),
+            "title": data.name().to_string(),
+            "property_count": properties.len()
+        }
+    }))
+}
+
+async fn delete_data(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: DeleteDataArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "delete_data")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let input = DeleteDataInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        actor: executor.get_id().to_string(),
+        org_username: args.org,
+        repo_username: args.repo,
+        data_id: args.data_id,
+    };
+    library_app
+        .delete_data
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "deleted": true }))
+}
+
+async fn create_property(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: CreatePropertyArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "create_property")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let property_type =
+        property_type_from_value(&args.property_type, args.meta)?;
+    let input = AddPropertyInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+        property_name: args.name,
+        property_type,
+    };
+    let property = library_app
+        .add_property
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "property": property_to_mcp(&property) }))
+}
+
+async fn update_property(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdatePropertyArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "update_property")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let property_type = args
+        .property_type
+        .as_deref()
+        .map(|typ| {
+            property_type_from_value(
+                typ,
+                args.meta.clone().unwrap_or(Value::Null),
+            )
+        })
+        .transpose()?;
+    let meta_json = args
+        .meta
+        .map(|meta| {
+            if meta.is_null() {
+                Ok(None)
+            } else {
+                serde_json::to_string(&meta)
+                    .map(Some)
+                    .map_err(invalid_tool_arg)
+            }
+        })
+        .transpose()?;
+    let input = UpdatePropertyInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+        property_id: args.property_id,
+        property_name: args.name,
+        property_type: property_type.as_ref(),
+        meta_json,
+    };
+    let property = library_app
+        .update_property
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "property": property_to_mcp(&property) }))
+}
+
+async fn delete_property(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: DeletePropertyArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "delete_property")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let input = DeletePropertyInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+        property_id: args.property_id,
+    };
+    let property = library_app
+        .delete_property
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "deleted": true, "property": property_to_mcp(&property) }))
+}
+
+async fn create_source(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: CreateSourceArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "create_source")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let name = args.name.parse::<Text>().map_err(invalid_tool_arg)?;
+    let url = parse_optional::<Url>(args.url)?;
+    let input = CreateSourceInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+        name: &name,
+        url,
+    };
+    let source = library_app
+        .create_source
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "source": source_to_mcp(&source) }))
+}
+
+async fn update_source(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdateSourceArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "update_source")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
+    let name = parse_optional::<Text>(args.name)?;
+    let url = args
+        .url
+        .map(|value| match value {
+            Some(value) => {
+                value.parse::<Url>().map(Some).map_err(invalid_tool_arg)
+            }
+            None => Ok(None),
+        })
+        .transpose()?;
+    let input = UpdateSourceInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        source_id: &source_id,
+        org_username: args.org,
+        repo_username: args.repo,
+        name,
+        url,
+    };
+    let source = library_app
+        .update_source
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "source": source_to_mcp(&source) }))
+}
+
+async fn delete_source(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: DeleteSourceArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "delete_source")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
+    let input = DeleteSourceInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        source_id: &source_id,
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    library_app
+        .delete_source
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "deleted": true }))
+}
+
+fn read_executor(auth: &McpAuthContext) -> LibraryExecutor {
+    auth.executor.clone().unwrap_or_else(anonymous_executor)
+}
+
+fn require_executor(
+    auth: McpAuthContext,
+    tool_name: &str,
+) -> Result<LibraryExecutor, Value> {
+    auth.executor.ok_or_else(|| {
+        json_rpc_error(
+            -32001,
+            format!("Authentication required for {tool_name}"),
+        )
+    })
+}
+
+fn property_data_from_args(
+    properties: Vec<CreateDataPropertyArgs>,
+) -> Result<Vec<PropertyDataInputData>, Value> {
+    properties
+        .into_iter()
+        .map(|property| {
+            Ok(PropertyDataInputData {
+                property_id: property.property_id,
+                value: property_data_value(
+                    property.value,
+                    property.value_type.as_deref(),
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn property_data_value(
+    value: Value,
+    value_type: Option<&str>,
+) -> Result<PropertyDataValueInputData, Value> {
+    let as_string = |value: Value| -> Result<String, Value> {
+        match value {
+            Value::String(value) => Ok(value),
+            value => Ok(value.to_string()),
+        }
+    };
+    match value_type.unwrap_or("string") {
+        "integer" => {
+            Ok(PropertyDataValueInputData::Integer(as_string(value)?))
+        }
+        "html" => Ok(PropertyDataValueInputData::Html(as_string(value)?)),
+        "markdown" => {
+            Ok(PropertyDataValueInputData::Markdown(as_string(value)?))
+        }
+        "relation" => {
+            let values = serde_json::from_value::<Vec<String>>(value)
+                .map_err(invalid_tool_arg)?;
+            Ok(PropertyDataValueInputData::Relation(values))
+        }
+        "select" => {
+            Ok(PropertyDataValueInputData::Select(as_string(value)?))
+        }
+        "multi_select" => {
+            let values = serde_json::from_value::<Vec<String>>(value)
+                .map_err(invalid_tool_arg)?;
+            Ok(PropertyDataValueInputData::MultiSelect(values))
+        }
+        "date" => Ok(PropertyDataValueInputData::Date(as_string(value)?)),
+        "image" => Ok(PropertyDataValueInputData::Image(as_string(value)?)),
+        "string" => {
+            Ok(PropertyDataValueInputData::String(as_string(value)?))
+        }
+        other => Err(json_rpc_error(
+            -32602,
+            format!("Unsupported property value_type: {other}"),
+        )),
+    }
+}
+
+fn property_type_from_value(
+    typ: &str,
+    meta: Value,
+) -> Result<PropertyType, Value> {
+    let typ = typ.trim().replace('-', "_").to_ascii_uppercase();
+    PropertyType::from_meta(&typ, meta).map_err(tool_execution_error)
+}
+
+fn parse_optional<T>(value: Option<String>) -> Result<Option<T>, Value>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    value
+        .map(|value| value.parse::<T>().map_err(invalid_tool_arg))
+        .transpose()
+}
+
+fn repo_to_mcp(repo: &crate::domain::Repo) -> McpRepo {
+    McpRepo {
+        id: repo.id().to_string(),
+        org: repo.org_username().to_string(),
+        username: repo.username().to_string(),
+        name: repo.name().to_string(),
+        is_public: *repo.is_public(),
+        description: repo.description().as_ref().map(ToString::to_string),
+        tags: repo.tags().iter().map(ToString::to_string).collect(),
+    }
+}
+
+fn property_to_mcp(property: &Property) -> McpProperty {
+    McpProperty {
+        id: property.id().to_string(),
+        name: property.name().to_string(),
+        property_type: property.property_type().to_string(),
+        meta: property
+            .meta_json()
+            .as_deref()
+            .and_then(|meta| serde_json::from_str(meta).ok()),
+    }
+}
+
+fn source_to_mcp(source: &crate::domain::Source) -> McpSource {
+    McpSource {
+        id: source.id().to_string(),
+        repo_id: source.repo_id().to_string(),
+        name: source.name().to_string(),
+        url: source.url().as_ref().map(ToString::to_string),
+    }
+}
+
 fn initialize_result() -> Value {
     json!({
         "protocolVersion": MCP_PROTOCOL_VERSION,
@@ -495,6 +1293,23 @@ fn initialize_result() -> Value {
 
 fn tools_list_result(is_authenticated: bool) -> Value {
     let mut tools = vec![
+        json!({
+            "name": "search_repos",
+            "description": "Search Library repositories, optionally within one organization.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org": { "type": "string" },
+                    "query": { "type": "string" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+                }
+            }
+        }),
+        json!({
+            "name": "get_repo",
+            "description": "Get one Library repository.",
+            "inputSchema": org_repo_schema()
+        }),
         json!({
             "name": "list_data",
             "description": "List data records in a public Library repository.",
@@ -545,48 +1360,239 @@ fn tools_list_result(is_authenticated: bool) -> Value {
                 "required": ["org", "repo", "data_id"]
             }
         }),
-    ];
-
-    if is_authenticated {
-        tools.push(json!({
-            "name": "create_data",
-            "description": "Create a Library data record. Requires authentication and repository write permission.",
+        json!({
+            "name": "list_properties",
+            "description": "List properties for a Library repository.",
+            "inputSchema": org_repo_schema()
+        }),
+        json!({
+            "name": "list_sources",
+            "description": "List sources attached to a Library repository.",
+            "inputSchema": org_repo_schema()
+        }),
+        json!({
+            "name": "get_source",
+            "description": "Get one source attached to a Library repository.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "org": { "type": "string" },
                     "repo": { "type": "string" },
-                    "name": { "type": "string" },
-                    "property_data": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "property_id": { "type": "string" },
-                                "value": { "type": "string" },
-                                "value_type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "string",
-                                        "integer",
-                                        "html",
-                                        "markdown",
-                                        "select",
-                                        "date",
-                                        "image"
-                                    ]
-                                }
-                            },
-                            "required": ["property_id", "value"]
-                        }
-                    }
+                    "source_id": { "type": "string" }
                 },
-                "required": ["org", "repo", "name"]
+                "required": ["org", "repo", "source_id"]
             }
-        }));
+        }),
+    ];
+
+    if is_authenticated {
+        tools.extend([
+            json!({
+                "name": "create_repo",
+                "description": "Create a Library repository.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "name": { "type": "string" },
+                        "username": { "type": "string" },
+                        "is_public": { "type": "boolean" },
+                        "description": { "type": "string" },
+                        "skip_sample_data": { "type": "boolean" }
+                    },
+                    "required": ["org", "name", "username", "is_public"]
+                }
+            }),
+            json!({
+                "name": "update_repo",
+                "description": "Update repository settings.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "name": { "type": "string" },
+                        "description": { "type": "string" },
+                        "is_public": { "type": "boolean" },
+                        "tags": { "type": "array", "items": { "type": "string" } }
+                    },
+                    "required": ["org", "repo"]
+                }
+            }),
+            json!({
+                "name": "delete_repo",
+                "description": "Delete a Library repository.",
+                "inputSchema": org_repo_schema()
+            }),
+            json!({
+                "name": "create_data",
+                "description": "Create a Library data record.",
+                "inputSchema": data_write_schema(["org", "repo", "name"])
+            }),
+            json!({
+                "name": "update_data",
+                "description": "Update a Library data record.",
+                "inputSchema": data_write_schema(["org", "repo", "data_id", "name"])
+            }),
+            json!({
+                "name": "delete_data",
+                "description": "Delete a Library data record.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "data_id": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "data_id"]
+                }
+            }),
+            json!({
+                "name": "create_property",
+                "description": "Create a repository property.",
+                "inputSchema": property_write_schema(["org", "repo", "name", "property_type"])
+            }),
+            json!({
+                "name": "update_property",
+                "description": "Update a repository property.",
+                "inputSchema": property_write_schema(["org", "repo", "property_id"])
+            }),
+            json!({
+                "name": "delete_property",
+                "description": "Delete a repository property.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "property_id": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "property_id"]
+                }
+            }),
+            json!({
+                "name": "create_source",
+                "description": "Create a repository source.",
+                "inputSchema": source_write_schema(["org", "repo", "name"])
+            }),
+            json!({
+                "name": "update_source",
+                "description": "Update a repository source. Set url to null to clear it.",
+                "inputSchema": source_write_schema(["org", "repo", "source_id"])
+            }),
+            json!({
+                "name": "delete_source",
+                "description": "Delete a repository source.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "source_id": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "source_id"]
+                }
+            }),
+        ]);
     }
 
     json!({ "tools": tools })
+}
+
+fn org_repo_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "org": { "type": "string" },
+            "repo": { "type": "string" }
+        },
+        "required": ["org", "repo"]
+    })
+}
+
+fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
+    let required = required.to_vec();
+    json!({
+        "type": "object",
+        "properties": {
+            "org": { "type": "string" },
+            "repo": { "type": "string" },
+            "data_id": { "type": "string" },
+            "name": { "type": "string" },
+            "property_data": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "property_id": { "type": "string" },
+                        "value": {},
+                        "value_type": {
+                            "type": "string",
+                            "enum": [
+                                "string",
+                                "integer",
+                                "html",
+                                "markdown",
+                                "relation",
+                                "select",
+                                "multi_select",
+                                "date",
+                                "image"
+                            ]
+                        }
+                    },
+                    "required": ["property_id", "value"]
+                }
+            }
+        },
+        "required": required
+    })
+}
+
+fn property_write_schema<const N: usize>(required: [&str; N]) -> Value {
+    let required = required.to_vec();
+    json!({
+        "type": "object",
+        "properties": {
+            "org": { "type": "string" },
+            "repo": { "type": "string" },
+            "property_id": { "type": "string" },
+            "name": { "type": "string" },
+            "property_type": {
+                "type": "string",
+                "enum": [
+                    "string",
+                    "integer",
+                    "html",
+                    "markdown",
+                    "relation",
+                    "select",
+                    "multi_select",
+                    "id",
+                    "location",
+                    "date",
+                    "image"
+                ]
+            },
+            "meta": {}
+        },
+        "required": required
+    })
+}
+
+fn source_write_schema<const N: usize>(required: [&str; N]) -> Value {
+    let required = required.to_vec();
+    json!({
+        "type": "object",
+        "properties": {
+            "org": { "type": "string" },
+            "repo": { "type": "string" },
+            "source_id": { "type": "string" },
+            "name": { "type": "string" },
+            "url": { "type": ["string", "null"] }
+        },
+        "required": required
+    })
 }
 
 fn parse_tool_args<T>(arguments: Value) -> Result<T, Value>
@@ -611,6 +1617,10 @@ fn tool_text_result(value: Value) -> Value {
 
 fn tool_execution_error(err: errors::Error) -> Value {
     json_rpc_error(-32000, err.to_string())
+}
+
+fn invalid_tool_arg(err: impl std::fmt::Display) -> Value {
+    json_rpc_error(-32602, err.to_string())
 }
 
 fn json_rpc_error(code: i64, message: impl Into<String>) -> Value {
