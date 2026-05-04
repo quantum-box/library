@@ -578,7 +578,8 @@ async fn version() -> Json<VersionResponse> {
     })
 }
 
-async fn build_parquet_storage() -> Result<ParquetStorage, Box<dyn std::error::Error>> {
+async fn build_parquet_storage(
+) -> Result<ParquetStorage, Box<dyn std::error::Error>> {
     let parquet_bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
         .unwrap_or_else(|_| "library-parquet".to_string());
     let environment =
@@ -619,13 +620,19 @@ async fn build_parquet_storage() -> Result<ParquetStorage, Box<dyn std::error::E
             (minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>)
         };
 
-    Ok(ParquetStorage::new(storage, presign_storage, parquet_bucket))
+    Ok(ParquetStorage::new(
+        storage,
+        presign_storage,
+        parquet_bucket,
+    ))
 }
 
 fn build_webhook_runtime(
     process_webhook_event: Arc<inbound_sync::usecase::ProcessWebhookEvent>,
     receive_webhook: Arc<inbound_sync::usecase::ReceiveWebhook>,
-    receive_provider_webhook: Arc<inbound_sync::usecase::ReceiveProviderWebhook>,
+    receive_provider_webhook: Arc<
+        inbound_sync::usecase::ReceiveProviderWebhook,
+    >,
 ) -> (
     tokio::sync::broadcast::Sender<()>,
     inbound_sync::adapter::WebhookHandlerState,
@@ -638,10 +645,11 @@ fn build_webhook_runtime(
         worker.run(shutdown_rx).await;
     });
 
-    let webhook_handler_state = inbound_sync::adapter::WebhookHandlerState {
-        receive_webhook,
-        receive_provider_webhook,
-        base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
-    };
+    let webhook_handler_state =
+        inbound_sync::adapter::WebhookHandlerState {
+            receive_webhook,
+            receive_provider_webhook,
+            base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
+        };
     (shutdown_tx, webhook_handler_state)
 }

@@ -1,8 +1,8 @@
 use dotenvy::dotenv;
 
 pub mod app;
-pub mod collaboration;
 mod bootstrap;
+pub mod collaboration;
 pub mod config;
 mod domain;
 pub mod error;

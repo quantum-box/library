@@ -7,14 +7,13 @@ use inbound_sync_domain::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub async fn run_api(
-    config: config::Config,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_api(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
     init_tracing(&config);
 
     // Hold the Sentry guard for the process lifetime so events
     // forwarded by sentry_tracing are flushed before exit.
-    let _sentry_guard = config.sentry_dsn.as_deref().map(telemetry::init_sentry);
+    let _sentry_guard =
+        config.sentry_dsn.as_deref().map(telemetry::init_sentry);
 
     tracing::debug!("start connect database...");
     let dsn = config.database_url.parse::<value_object::DatabaseUrl>()?;
@@ -35,12 +34,8 @@ pub async fn run_api(
         config.tachyon_api_url
     );
 
-    let (
-        oauth_service,
-        github,
-        oauth_token_repo,
-        provider_secrets,
-    ) = build_oauth_runtime(&sdk).await;
+    let (oauth_service, github, oauth_token_repo, provider_secrets) =
+        build_oauth_runtime(&sdk).await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("listening on http://{}", addr);
@@ -136,7 +131,9 @@ async fn build_oauth_runtime(
                         );
                     }
                 }
-                tracing::info!("Linear OAuth credentials configured via REST");
+                tracing::info!(
+                    "Linear OAuth credentials configured via REST"
+                );
             }
         }
         Err(error) => {
