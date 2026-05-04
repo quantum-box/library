@@ -94,7 +94,7 @@ impl HttpApiKeyValidator {
         // Just return success with a hash-based ID
         let id = format!(
             "generic_{}",
-            &hex::encode(&api_key.as_bytes()[..8.min(api_key.len())])
+            hex::encode(&api_key.as_bytes()[..8.min(api_key.len())])
         );
         Ok(ApiKeyValidationResult::success(id, None))
     }

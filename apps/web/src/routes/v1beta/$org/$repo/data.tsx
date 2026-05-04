@@ -3,6 +3,7 @@ import { useAuth } from '@/auth'
 import { useEffect, useState } from 'react'
 import { platformAction, PlatformActionError } from '@/app/v1beta/_lib/platform-action'
 import { canEdit } from '@/app/v1beta/_lib/repo-permissions'
+import { type RepositoryPageQuery } from '@/gen/graphql'
 import { DataViewComponent } from '@/app/v1beta/[org]/[repo]/data/components/data-view'
 import { RepoSkeleton } from '@/app/v1beta/[org]/[repo]/components/repo-skeleton'
 
@@ -23,12 +24,12 @@ function DataPageContent() {
   const { org, repo } = Route.useParams()
   const search = Route.useSearch() as { page?: string; pageSize?: string }
   const { session, isLoading: isAuthLoading } = useAuth()
-  const [repoData, setRepoData] = useState<any>(null)
+  const [repoData, setRepoData] = useState<RepositoryPageQuery['repo'] | null>(null)
   const [hasEditPermission, setHasEditPermission] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  const page = search.page ? parseInt(search.page, 10) : 1
-  const pageSize = search.pageSize ? parseInt(search.pageSize, 10) : 20
+  const page = search.page ? Number.parseInt(search.page, 10) : 1
+  const pageSize = search.pageSize ? Number.parseInt(search.pageSize, 10) : 20
 
   useEffect(() => {
     if (isAuthLoading) return
@@ -37,7 +38,7 @@ function DataPageContent() {
       setLoading(true)
       setHasEditPermission(false)
       try {
-        let data: any = null
+        let data: RepositoryPageQuery['repo'] | null = null
         try {
           const result = await platformAction(
             (sdk) => sdk.repositoryPageWithTags({ org, repo, page, pageSize }),

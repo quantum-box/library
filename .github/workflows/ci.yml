@@ -78,6 +78,7 @@ jobs:
           node-version: 20
           cache: yarn
       - run: yarn install --frozen-lockfile
+      - run: yarn lint
       - run: yarn tsc
       - name: Build
         env:

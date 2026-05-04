@@ -7,6 +7,7 @@ import type {
 	FilterConfig,
 	SortConfig,
 } from '@/app/v1beta/[org]/[repo]/data/components/data-toolbar'
+import { useSession } from '@/auth'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as duckdb from '@duckdb/duckdb-wasm'
 import { baseURL, platformId } from '@/lib/apiClient'
@@ -60,6 +61,8 @@ export function useDuckDBFilteredData({
 	sqlQuery,
 	isSqlMode,
 }: UseDuckDBFilteredDataProps): DuckDBQueryState {
+	const { data: session } = useSession()
+	const accessToken = session?.user.accessToken
 	const dbRef = useRef<duckdb.AsyncDuckDB | null>(null)
 	const connRef = useRef<duckdb.AsyncDuckDBConnection | null>(null)
 	const [status, setStatus] = useState<DuckDBStatus>('idle')
@@ -284,7 +287,7 @@ export function useDuckDBFilteredData({
 			setError(null)
 
 			try {
-				const presignedUrl = await fetchParquetUrl({ org, repo })
+				const presignedUrl = await fetchParquetUrl({ org, repo, accessToken })
 				const fallbackName = `data-${org}-${repo}.parquet`
 				const fileName = extractParquetFilename(presignedUrl, fallbackName)
 				const buffer = await loadParquetBuffer({
@@ -401,15 +404,17 @@ export function useDuckDBFilteredData({
 async function fetchParquetUrl({
 	org,
 	repo,
+	accessToken,
 }: {
 	org: string
 	repo: string
+	accessToken?: string
 }): Promise<string> {
 	const headers: Record<string, string> = {
 		'x-platform-id': platformId,
 	}
-	if (import.meta.env.DEV) {
-		headers.Authorization = 'Bearer dummy-token'
+	if (accessToken) {
+		headers.Authorization = `Bearer ${accessToken}`
 	}
 	const response = await fetch(
 		`${baseURL}/v1beta/repos/${org}/${repo}/data/parquet`,

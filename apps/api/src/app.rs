@@ -173,12 +173,13 @@ impl LibraryApp {
             get_repo_by_username.clone(),
         );
         let search_repo = usecase::SearchRepo::new(find_all_repo_query);
-        let save_data = usecase::AddData::new(
+        let add_data = usecase::AddData::new(
             auth_app.clone(),
             get_repo_by_username.clone(),
             get_organization_by_username.clone(),
             database_app.clone(),
         );
+        let save_data = add_data.clone();
         let change_repo_policy =
             Arc::new(usecase::ChangeRepoPolicy::new(auth_app.clone()));
         let get_repo_members = Arc::new(usecase::GetRepoMembers::new(
@@ -293,13 +294,6 @@ impl LibraryApp {
             auth_app.clone(),
             database_app.clone(),
             sync_data.clone(),
-        );
-
-        let add_data = usecase::AddData::new(
-            auth_app.clone(),
-            get_repo_by_username.clone(),
-            get_organization_by_username.clone(),
-            database_app.clone(),
         );
 
         let create_source = Arc::new(usecase::CreateSource::new(

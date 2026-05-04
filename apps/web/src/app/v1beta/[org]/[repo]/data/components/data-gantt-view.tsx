@@ -34,7 +34,7 @@ import {
 import { ZoomIn, ZoomOut } from 'lucide-react'
 import { Link as NextLink } from '@tanstack/react-router'
 import { useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { updateData } from '../[dataId]/action'
 
 interface DataGanttViewProps {
@@ -72,6 +72,7 @@ export function DataGanttView({
 		minDate: Date
 		maxDate: Date
 	} | null>(null)
+	const hasRangeWarningShownRef = useRef(false)
 	// Drag & Drop feature is temporarily disabled
 	// const [draggingTask, setDraggingTask] = useState<{
 	// 	taskId: string
@@ -311,18 +312,24 @@ export function DataGanttView({
 			timelineRange.maxDate.getTime() - timelineRange.minDate.getTime(),
 		)
 		const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-		// Performance warning for large date ranges
-		// TODO: Consider implementing virtualization for ranges >= 365 days
-		// Virtual scrolling would improve performance by rendering only visible items
-		if (days >= 365) {
-			console.warn(
-				`[DataGanttView] Large date range detected: ${days} days. Performance may be degraded. Consider using a smaller date range or implementing virtualization.`,
-			)
-		}
-
 		return days
 	}, [timelineRange])
+
+	useEffect(() => {
+		if (daysInRange >= 365) {
+			if (!hasRangeWarningShownRef.current) {
+				toast({
+					title: 'Long date range',
+					description:
+						'Large date ranges can slow down rendering. Narrowing the range is recommended.',
+					variant: 'default',
+				})
+				hasRangeWarningShownRef.current = true
+			}
+			return
+		}
+		hasRangeWarningShownRef.current = false
+	}, [daysInRange, toast])
 
 	// Generate headers based on zoom level
 	const headers = useMemo(() => {

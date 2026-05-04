@@ -116,7 +116,6 @@ export function PropertyMappingDialog({
 			return
 		}
 
-		// TODO: Call GraphQL mutation to update webhook endpoint mapping
 		onSave?.(validMappings)
 		toast.success('Property mapping saved')
 		onOpenChange(false)
