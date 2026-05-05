@@ -17,6 +17,8 @@
 - [ユースケース シーケンス図](docs/specs/use-cases/sequences.md)
 - [実装差分ノート](docs/specs/implementation-notes.md)
 - [利用ガイド（開発者向け / エンドユーザー向け）](docs/specs/guides/usage-guide.md)
+- [ADR-0004: Library/bakuure stub の責務境界](docs/specs/decisions/ADR-0004-library-bakuure-stub-boundary.md)
+- [ADR-0005: Shared Kernel を最小型セットに制限する](docs/specs/decisions/ADR-0005-shared-kernel-slim.md)
 
 ## 主な参照元
 
