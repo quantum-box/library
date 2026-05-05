@@ -2188,11 +2188,8 @@ async fn cognito_user_password_auth(
     .ok_or_else(|| {
         "MCP_COGNITO_CLIENT_ID is not configured.".to_string()
     })?;
-    let client_secret = env_first(&[
-        "MCP_COGNITO_CLIENT_SECRET",
-        "COGNITO_CLIENT_SECRET",
-        "VITE_COGNITO_CLIENT_SECRET",
-    ]);
+    let client_secret =
+        env_first(&["MCP_COGNITO_CLIENT_SECRET", "COGNITO_CLIENT_SECRET"]);
     let region = env_first(&[
         "MCP_COGNITO_REGION",
         "COGNITO_REGION",

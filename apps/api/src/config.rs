@@ -53,6 +53,46 @@ pub struct Config {
     pub service_auth_token: String,
 }
 
+impl Config {
+    pub fn validate_for_server_startup(
+        &self,
+    ) -> Result<(), std::io::Error> {
+        let environment = self.environment.to_ascii_lowercase();
+        let is_production =
+            environment == "prod" || environment == "production";
+        let is_lambda = std::env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok();
+
+        if is_lambda && !is_production {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ENVIRONMENT must be production when running on AWS Lambda",
+            ));
+        }
+
+        if is_production {
+            if self.service_auth_token.trim().is_empty()
+                || self.service_auth_token == "dummy-token"
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "SERVICE_AUTH_TOKEN must be configured in production",
+                ));
+            }
+
+            if self.database_url.contains("localhost")
+                || self.database_url.contains("127.0.0.1")
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "DATABASE_URL must not point at localhost in production",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config").finish()

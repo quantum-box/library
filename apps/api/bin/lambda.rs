@@ -10,6 +10,7 @@ use library_api::sdk_auth::{SdkAuthApp, SdkOAuthTokenRepository};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let config = library_api::Config::parse();
+    config.validate_for_server_startup()?;
 
     telemetry::init_production_tracing(telemetry::TracingConfig {
         environment: config.environment.as_str(),

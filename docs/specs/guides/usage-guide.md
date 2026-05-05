@@ -28,7 +28,7 @@
 - 認証ヘッダ: `Authorization: Bearer <JWT or pk_...>` を標準にする。
 - Bearer なしの匿名呼び出しは `LibraryExecutorKind::None` として扱われる。
 - サービスアカウントキー: `pk_...` プレフィックスを優先して `verify_api_key` 経路を通す。
-- 開発/テストのみ: `ENVIRONMENT=development|test` かつトークン `dummy-token` の場合は `x-user-id` により擬似ユーザー化が走る。
+- 開発/テストのみ: `ENVIRONMENT=development|test` かつトークン `dummy-token` の場合は `x-user-id` により擬似ユーザー化が走る。本番起動時は `SERVICE_AUTH_TOKEN=dummy-token` を拒否する。
 - MultiTenancy は `x-operator-id` / `x-platform-id` を利用。
 - コラボ系 `WebSocket` は `operator_id` がクエリとして必要。
 - OpenAPI と実装のステータス差分があり、厳密には実装側応答を優先する（後述「差分/注意点」）。

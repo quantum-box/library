@@ -20,12 +20,12 @@
 
 ## ランタイム設定（環境変数）
 
-1. `DATABASE_URL` DB 接続先（必須だがデフォルトあり）
+1. `DATABASE_URL` DB 接続先（開発用デフォルトあり。本番では localhost を拒否）
 2. `PORT` 既定 `50053`
 3. `ENVIRONMENT` 既定 `development`
 4. `COGNITO_JWK_URL` と `COGNITO_USER_POOL_ID`（認証検証で使用）
 5. `LIBRARY_TENANT_ID` と `LIBRARY_API_BASE_URL`（ルータ内参照）
-6. `TACHYON_API_URL` と `SERVICE_AUTH_TOKEN`（SDK 認証）
+6. `TACHYON_API_URL` と `SERVICE_AUTH_TOKEN`（SDK 認証。本番では `dummy-token` を拒否）
 7. `OTEL_EXPORTER_OTLP_ENDPOINT`（OpenTelemetry）
 8. `SENTRY_DSN`（Sentry）
 9. `LIBRARY_PARQUET_BUCKET`
@@ -39,7 +39,7 @@
 ## 認証と認可（実装ベース）
 
 1. Bearer トークン優先、ヘッダ `Authorization: Bearer ...`
-2. `dummy-token` は development/test 専用の開発用フォールバック
+2. `dummy-token` は development/test 専用の開発用フォールバック。本番起動時は `SERVICE_AUTH_TOKEN=dummy-token` を拒否する
 3. `pk_` プレフィックスはサービスアカウント API キーとして `verify_api_key` を通して検証
 4. ユーザー/ロール情報は `tachyon-api` と `sdk_auth` 経由で参照
 5. ルート単位の認可は usecase/リゾルバ側で enforce（例: 非公開リポジトリは原則匿名不可）

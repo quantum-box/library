@@ -19,6 +19,7 @@ use clap::Parser;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let config = config::Config::parse();
+    config.validate_for_server_startup()?;
     if config.environment == "development" {
         println!("{config:#?}");
     }
