@@ -43,3 +43,16 @@
 3. 新しい統合（inbound_sync 追加など）は `GraphQL` 側を優先して差分を追記し、REST route が無い場合は「提供経路」の明記を必須化
 4. OAuth callback の実装ハンドラはあるが `router` への merge が明示されていないため、運用手順では未公開ルートとして扱う
 5. 今回追加した運用手順は `docs/specs/integrations/operations.md` を参照して実運用に反映
+
+## 7) Shared Kernel 追加時のレビュー項目
+
+ADR-0005 に従い、Shared Kernel へ型を追加する PR では以下を確認する。
+
+1. その型は複数 bounded context で同じ意味を持つか。
+2. 業務 workflow / policy / repository / API client を含んでいないか。
+3. context 固有の entity / aggregate / enum を convenience で移していないか。
+4. 依存方向が `context -> shared kernel` に閉じており、shared kernel から context package を参照していないか。
+5. `TenantId`, actor, money, date/range, external reference, version marker の 6 分類に収まるか。収まらない場合は別 ADR または issue で理由を記録する。
+6. Rust workspace package 間の循環依存は `npm run check:rust-workspace-cycles` で検出できる。CI では `rust-workspace-cycles` job が同じ script を実行する。
+
+参照: [ADR-0005](decisions/ADR-0005-shared-kernel-slim.md)
