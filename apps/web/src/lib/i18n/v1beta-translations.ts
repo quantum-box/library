@@ -239,7 +239,7 @@ export const v1betaTranslations = {
 				title: 'Authentication',
 				description:
 					'Include your API key in the Authorization header of every request.',
-				headerFormat: 'Authorization: Bearer pk_YOUR_API_KEY',
+				headerFormat: 'Authorization: Bearer <LIBRARY_API_KEY>',
 				note: 'API keys are scoped to your organization and grant access to all repositories within it.',
 			},
 			endpoints: {
@@ -1047,7 +1047,7 @@ export const v1betaTranslations = {
 				title: '認証',
 				description:
 					'すべてのリクエストのAuthorizationヘッダーにAPIキーを含めてください。',
-				headerFormat: 'Authorization: Bearer pk_YOUR_API_KEY',
+				headerFormat: 'Authorization: Bearer <LIBRARY_API_KEY>',
 				note: 'APIキーは組織単位でスコープされ、組織内のすべてのリポジトリにアクセスできます。',
 			},
 			endpoints: {

@@ -1,2 +1,20 @@
-# Firebase public storage URL token (not a secret)
+# Historical false positives kept so full-history scans stay readable.
+# Firebase public storage URL token has been removed from current source.
 f58a0fde74e463aa89c598e3ef60a89b69f985ca:packages/csv_importer/src/lib.rs:generic-api-key:261
+
+# Empty sample env value, not a committed secret.
+4ca7e8ea30d572bd56e85a99de33fce85ee1e040:apps/api/.env.sample:generic-api-key:11
+
+# API documentation placeholders, not real bearer tokens.
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/code-snippet.stories.tsx:curl-auth-header:20
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/quick-start-section.tsx:curl-auth-header:33
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:34
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:58
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:82
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:117
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:152
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:176
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:207
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:236
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:265
+f58a0fde74e463aa89c598e3ef60a89b69f985ca:apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts:curl-auth-header:291

@@ -27,7 +27,7 @@
 ## 4) 認証・テナンシーの実装上の注意
 
 1. `pk_` トークンは API キーとして扱い、`LIBRARY` 側 `verify_api_key` 流れを通る。
-2. `dummy-token` は開発/テストを想定した例外扱いが存在する。
+2. `dummy-token` は開発/テストを想定した例外扱いが存在する。本番起動時は `SERVICE_AUTH_TOKEN=dummy-token` を拒否する。
 3. `LibraryMultiTenancy` は `x-operator-id` / `x-platform-id` を受けるが、複数 resolver で `get_operator_id`/`platform_id` を分岐参照しており、Tenant 解決は呼び出し場所で挙動が異なることがある。
 
 ## 5) GraphQL 実装の観点（運用時に重要）

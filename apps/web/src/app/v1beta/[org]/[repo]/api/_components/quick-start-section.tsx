@@ -30,18 +30,18 @@ export function QuickStartSection({
 
 	const quickStartSnippets = {
 		curl: `curl -X GET "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data-list" \\
-  -H "Authorization: Bearer pk_YOUR_API_KEY"`,
+  -H "Authorization: Bearer <LIBRARY_API_KEY>"`,
 		python: `import requests
 
 response = requests.get(
     "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data-list",
-    headers={"Authorization": "Bearer pk_YOUR_API_KEY"}
+    headers={"Authorization": "Bearer <LIBRARY_API_KEY>"}
 )
 print(response.json())`,
 		javascript: `const response = await fetch(
   "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data-list",
   {
-    headers: { "Authorization": "Bearer pk_YOUR_API_KEY" },
+    headers: { "Authorization": "Bearer <LIBRARY_API_KEY>" },
   }
 );
 const data = await response.json();

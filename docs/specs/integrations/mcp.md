@@ -37,7 +37,7 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_SCOPES_SUPPORTED` | protected resource metadata / authorization server metadata に載せる scopes。未指定時は `openid,email,profile` |
 | `MCP_OAUTH_ISSUER` | Library MCP OAuth facade の issuer。未指定時は `{LIBRARY_API_BASE_URL}/mcp/oauth` |
 | `MCP_COGNITO_CLIENT_ID` | MCP OAuth facade が Cognito `USER_PASSWORD_AUTH` に使う client id。`COGNITO_CLIENT_ID` / `VITE_COGNITO_CLIENT_ID` も fallback として読む |
-| `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` / `VITE_COGNITO_CLIENT_SECRET` も fallback として読む |
+| `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` も fallback として読む。frontend に公開される `VITE_*` からは読まない |
 | `MCP_COGNITO_REGION` | Cognito region。未指定時は `ap-northeast-1` |
 
 Library MCP OAuth facade は Dynamic Client Registration を受け付け、`/mcp/oauth/authorize` で Library login form を出す。入力された credential は Cognito `USER_PASSWORD_AUTH` で検証し、token endpoint は Cognito の実 access token を MCP client に返す。

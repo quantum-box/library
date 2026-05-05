@@ -20,7 +20,7 @@
 1. `Authorization: Bearer <token>` が優先で処理される。
 2. `pk_` プレフィックスは API キー扱いとして `verify_api_key` 経路へ接続される。
 3. 未指定時は匿名扱い（`LibraryExecutorKind::None`）。
-4. 開発・テスト環境では `dummy-token` と `x-user-id` の開発フォールバック経路が存在する。
+4. 開発・テスト環境では `dummy-token` と `x-user-id` の開発フォールバック経路が存在する。本番起動時は `SERVICE_AUTH_TOKEN=dummy-token` を拒否する。
 5. 実装: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/library_executor_extractor.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/library_executor_extractor.rs)
 
 ### 2.2 テナンシー
