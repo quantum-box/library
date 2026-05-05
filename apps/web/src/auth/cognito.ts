@@ -1,7 +1,9 @@
 import {
   CognitoIdentityProvider,
+  ConfirmSignUpCommand,
   GetUserCommand,
   InitiateAuthCommand,
+  ResendConfirmationCodeCommand,
   SignUpCommand,
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
@@ -222,6 +224,36 @@ export async function signUpWithCredentials(
       Username: username,
       Password: password,
       UserAttributes: [{ Name: 'email', Value: email }],
+    }),
+  )
+}
+
+export async function confirmSignUpWithCode(
+  username: string,
+  code: string,
+): Promise<void> {
+  const config = getCognitoConfig()
+  const client = cognitoClient()
+
+  await client.send(
+    new ConfirmSignUpCommand({
+      ClientId: config.clientId,
+      Username: username,
+      ConfirmationCode: code,
+    }),
+  )
+}
+
+export async function resendSignUpConfirmationCode(
+  username: string,
+): Promise<void> {
+  const config = getCognitoConfig()
+  const client = cognitoClient()
+
+  await client.send(
+    new ResendConfirmationCodeCommand({
+      ClientId: config.clientId,
+      Username: username,
     }),
   )
 }

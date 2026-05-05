@@ -28,7 +28,7 @@ export const v1betaTranslations = {
 			docs: 'Docs',
 			profile: 'Profile',
 			signIn: 'Sign in',
-			signUp: 'Sign up',
+			signUp: 'Create account',
 			signOut: 'Sign out',
 		},
 		organization: {
@@ -836,7 +836,7 @@ export const v1betaTranslations = {
 			docs: 'ドキュメント',
 			profile: 'プロフィール',
 			signIn: 'サインイン',
-			signUp: 'サインアップ',
+			signUp: '新規登録',
 			signOut: 'サインアウト',
 		},
 		organization: {
