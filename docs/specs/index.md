@@ -5,6 +5,7 @@
 ## ファイル
 
 - [概要 / 全体像](docs/specs/overview.md)
+- [Library GA scope](docs/specs/ga-scope.md)
 - [REST API 仕様](docs/specs/apis/rest-api.md)
 - [GraphQL API 仕様](docs/specs/apis/graphql-api.md)
 - [Webhook 受信仕様](docs/specs/integrations/webhooks.md)
