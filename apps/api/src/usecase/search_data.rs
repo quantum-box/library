@@ -6,6 +6,7 @@ use database_manager::{
     usecase::FindAllPropertiesInputData,
 };
 use std::{fmt::Debug, sync::Arc};
+use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 use value_object::OffsetPaginator;
 
 #[async_trait::async_trait]
@@ -27,6 +28,7 @@ pub struct SearchData {
     get_org_by_username:
         Arc<dyn crate::usecase::GetOrganizationByUsernameQuery>,
     get_repo_by_username: Arc<dyn crate::usecase::GetRepoByUsernameQuery>,
+    auth_app: Arc<dyn AuthApp>,
 }
 
 impl SearchData {
@@ -38,11 +40,13 @@ impl SearchData {
         get_repo_by_username: Arc<
             dyn crate::usecase::GetRepoByUsernameQuery,
         >,
+        auth_app: Arc<dyn AuthApp>,
     ) -> Arc<Self> {
         Arc::new(Self {
             database,
             get_org_by_username,
             get_repo_by_username,
+            auth_app,
         })
     }
 }
@@ -71,6 +75,20 @@ impl SearchDataInputPort for SearchData {
             .execute(org.username(), &input.repo_username.parse()?)
             .await?
             .ok_or(errors::not_found!("repo not found in search data"))?;
+
+        if input.executor.is_none() && repo.is_private() {
+            return Err(errors::Error::permission_denied("Access denied"));
+        }
+
+        if !input.executor.is_none() && repo.is_private() {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:ViewPrivateRepo",
+                })
+                .await?;
+        }
 
         let properties = self
             .database
