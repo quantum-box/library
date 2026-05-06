@@ -29,12 +29,67 @@ impl Default for BuiltinIntegrationRegistry {
 impl BuiltinIntegrationRegistry {
     /// Create a new registry with all built-in integrations.
     pub fn new() -> Self {
+        let include_experimental =
+            std::env::var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS")
+                .map(|value| {
+                    matches!(value.as_str(), "1" | "true" | "TRUE")
+                })
+                .unwrap_or(false);
+
+        Self::with_experimental_integrations(include_experimental)
+    }
+
+    fn with_experimental_integrations(include_experimental: bool) -> Self {
         let integrations = BUILTIN_INTEGRATIONS
             .iter()
+            .filter(|i| {
+                include_experimental || is_ga_integration(i.provider())
+            })
             .map(|i| (i.id().clone(), i.clone()))
             .collect();
 
         Self { integrations }
+    }
+}
+
+fn is_ga_integration(provider: OAuthProvider) -> bool {
+    matches!(provider, OAuthProvider::Linear)
+}
+
+#[cfg(test)]
+mod ga_filter_tests {
+    use super::*;
+
+    #[test]
+    fn default_registry_exposes_only_ga_integrations() {
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                false,
+            );
+        let providers = registry
+            .integrations
+            .values()
+            .map(|integration| integration.provider())
+            .collect::<Vec<_>>();
+
+        assert_eq!(providers, vec![OAuthProvider::Linear]);
+    }
+
+    #[test]
+    fn experimental_registry_exposes_non_ga_integrations() {
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
+        let providers = registry
+            .integrations
+            .values()
+            .map(|integration| integration.provider())
+            .collect::<Vec<_>>();
+
+        assert!(providers.contains(&OAuthProvider::Linear));
+        assert!(providers.contains(&OAuthProvider::Github));
+        assert!(providers.contains(&OAuthProvider::Hubspot));
     }
 }
 
@@ -395,7 +450,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_builtin_integrations() {
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
 
         let all = registry.find_all().await.unwrap();
         assert_eq!(all.len(), 7);
@@ -414,7 +472,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_by_category() {
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
 
         let payments = registry
             .find_by_category(IntegrationCategory::Payments)

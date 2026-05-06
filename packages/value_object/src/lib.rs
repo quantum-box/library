@@ -103,7 +103,9 @@ pub trait Repository<ID, T, C = Vec<T>>:
 {
     async fn insert(&self, entity: &T) -> anyhow::Result<()>;
     async fn update(&self, _entity: &T) -> anyhow::Result<()> {
-        unimplemented!()
+        anyhow::bail!(
+            "Repository::update is not supported by this repository"
+        )
     }
     async fn get_by_id(&self, id: ID) -> anyhow::Result<Option<T>>;
     async fn find_all(&self, tenant_id: &TenantId) -> anyhow::Result<C>;
@@ -118,14 +120,18 @@ pub trait RepositoryForATenant<ID, T, C = Vec<T>>:
 {
     async fn insert(&self, entity: &T) -> errors::Result<()>;
     async fn update(&self, _entity: &T) -> errors::Result<()> {
-        unimplemented!()
+        Err(errors::Error::not_supported(
+            "RepositoryForATenant::update is not supported by this repository",
+        ))
     }
     async fn delete(
         &self,
         _tenant_id: &TenantId,
         _id: &ID,
     ) -> errors::Result<()> {
-        unimplemented!()
+        Err(errors::Error::not_supported(
+            "RepositoryForATenant::delete is not supported by this repository",
+        ))
     }
 
     async fn get_by_id(
