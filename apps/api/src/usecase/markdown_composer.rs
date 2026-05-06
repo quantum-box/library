@@ -236,3 +236,137 @@ pub fn compose_markdown(
     let body = pick_body(data, properties);
     format!("---\n{fm}---\n\n{body}\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use database_manager::domain::{
+        Data, DataId, DatabaseId, Property, PropertyData, PropertyId,
+        PropertyType,
+    };
+    use value_object::TenantId;
+
+    struct Fixture {
+        tenant_id: TenantId,
+        database_id: DatabaseId,
+        properties: Vec<Property>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            Self {
+                tenant_id: TenantId::default(),
+                database_id: DatabaseId::default(),
+                properties: vec![],
+            }
+        }
+
+        fn property(
+            &mut self,
+            name: &str,
+            property_type: PropertyType,
+        ) -> Property {
+            let property = Property::new(
+                &PropertyId::default(),
+                &self.tenant_id,
+                &self.database_id,
+                name,
+                &property_type,
+                false,
+                self.properties.len() as u32,
+            );
+            self.properties.push(property.clone());
+            property
+        }
+
+        fn data(
+            &self,
+            name: &str,
+            property_data: Vec<PropertyData>,
+        ) -> Data {
+            Data::new(
+                &DataId::default(),
+                &self.tenant_id,
+                &self.database_id,
+                name,
+                property_data,
+                Utc::now(),
+                Utc::now(),
+            )
+            .expect("fixture data should be valid")
+        }
+    }
+
+    #[test]
+    fn compose_markdown_uses_content_property_as_body_and_excludes_it_from_frontmatter(
+    ) {
+        let mut fixture = Fixture::new();
+        let slug = fixture.property("slug", PropertyType::String);
+        let content = fixture.property("content", PropertyType::Markdown);
+        let data = fixture.data(
+            "Release note",
+            vec![
+                PropertyData::new(&slug, "v1-shipped".to_string()).unwrap(),
+                PropertyData::new(
+                    &content,
+                    "# Body\n\nHello Library".to_string(),
+                )
+                .unwrap(),
+            ],
+        );
+
+        let markdown = compose_markdown(&data, &fixture.properties);
+
+        assert!(markdown.starts_with("---\n"));
+        assert!(markdown.contains("title: Release note\n"));
+        assert!(markdown.contains("slug: v1-shipped\n"));
+        assert!(!markdown.contains("content:"));
+        assert!(markdown.ends_with("# Body\n\nHello Library\n"));
+    }
+
+    #[test]
+    fn compose_markdown_parses_synced_ext_github_json_into_frontmatter() {
+        let mut fixture = Fixture::new();
+        let ext_github =
+            fixture.property("ext_github", PropertyType::String);
+        let data = fixture.data(
+            "Synced page",
+            vec![PropertyData::new(
+                &ext_github,
+                r#"{"sync_to_github":true,"path":"docs/page.md","labels":["cms","docs"]}"#
+                    .to_string(),
+            )
+            .unwrap()],
+        );
+
+        let markdown = compose_markdown(&data, &fixture.properties);
+
+        assert!(markdown.contains("ext_github:\n"));
+        assert!(markdown.contains("sync_to_github: true\n"));
+        assert!(markdown.contains("path: docs/page.md\n"));
+        assert!(markdown.contains("- cms\n"));
+        assert!(markdown.contains("- docs\n"));
+    }
+
+    #[test]
+    fn compose_markdown_skips_unsynced_ext_github_frontmatter() {
+        let mut fixture = Fixture::new();
+        let ext_github =
+            fixture.property("ext_github", PropertyType::String);
+        let data = fixture.data(
+            "Draft page",
+            vec![PropertyData::new(
+                &ext_github,
+                r#"{"sync_to_github":false,"path":"docs/draft.md"}"#
+                    .to_string(),
+            )
+            .unwrap()],
+        );
+
+        let markdown = compose_markdown(&data, &fixture.properties);
+
+        assert!(!markdown.contains("ext_github:"));
+        assert!(markdown.ends_with("# Draft page\n\n"));
+    }
+}
