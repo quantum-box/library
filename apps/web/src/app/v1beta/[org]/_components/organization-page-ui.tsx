@@ -193,6 +193,9 @@ export function OrganizationPageUi({
 												<Link to={`/v1beta/${org}?tab=integrations`}>
 													<Plug className='h-4 w-4 mr-1.5' />
 													Integrations
+													<Badge variant='outline' className='ml-1.5 px-1 py-0 text-[10px]'>
+														Beta
+													</Badge>
 												</Link>
 											</TabsTrigger>
 											<TabsTrigger value='activity' asChild>
@@ -534,6 +537,9 @@ export function OrganizationPageUi({
 														<CardTitle className='text-base flex items-center gap-2'>
 															<Plug className='h-4 w-4' />
 															App Integrations
+															<Badge variant='outline' className='ml-1.5'>
+																Beta
+															</Badge>
 														</CardTitle>
 														<CardDescription>
 															Connect third-party apps like GitHub, Linear,
@@ -554,6 +560,9 @@ export function OrganizationPageUi({
 														<CardTitle className='text-base flex items-center gap-2'>
 															<Webhook className='h-4 w-4' />
 															Webhook Integrations
+															<Badge variant='outline' className='ml-1.5'>
+																Beta
+															</Badge>
 														</CardTitle>
 														<CardDescription>
 															Sync data from external services via webhooks
@@ -577,6 +586,9 @@ export function OrganizationPageUi({
 											<div className='space-y-4'>
 												<h2 className='text-lg font-semibold'>
 													Integration Marketplace
+													<Badge variant='outline' className='ml-2 align-middle'>
+														Beta
+													</Badge>
 												</h2>
 												<Card>
 													<CardHeader>

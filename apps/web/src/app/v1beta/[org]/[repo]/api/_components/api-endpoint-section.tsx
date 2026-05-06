@@ -3,6 +3,7 @@ import { useTranslation } from '@/lib/i18n/useTranslation'
 import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { CodeSnippet } from './code-snippet'
 import { type EndpointCategory, HTTP_METHOD_COLORS } from './endpoints-data'
 
@@ -63,6 +64,11 @@ export function ApiEndpointSection({
 										<span className='ml-3 font-mono text-sm flex-1 min-w-0 truncate'>
 											{endpoint.path}
 										</span>
+										{endpoint.maturity === 'beta' && (
+											<Badge variant='outline' className='ml-3 hidden shrink-0 sm:inline-flex'>
+												Beta
+											</Badge>
+										)}
 										<span className='ml-3 text-sm text-muted-foreground hidden sm:inline shrink-0'>
 											{endpoint.description}
 										</span>

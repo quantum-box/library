@@ -486,7 +486,7 @@ export function DataViewComponent({
 				onVisibleColumnsChange={setVisibleColumns}
 				selectedCount={selectedIds.size}
 				totalCount={filteredData.length}
-				onBulkDelete={canEdit ? handleBulkDelete : undefined}
+				onBulkDelete={undefined}
 				onExport={handleExport}
 				hasMapView={hasMapView ?? false}
 				hasKanbanView={hasKanbanView ?? false}
