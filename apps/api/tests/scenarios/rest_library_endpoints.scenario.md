@@ -253,6 +253,54 @@ steps:
     - {{vars.data_id}}
 ```
 
+## 公開Docs一覧でDataが表示される
+
+```yaml scenario
+steps:
+- id: docs_list
+  name: 公開Docs一覧でDataが表示される
+  request:
+    method: GET
+    url: /docs/{{vars.org_username}}/{{vars.repo_username}}
+  expect:
+    status: 200
+    contains:
+    - Documents
+    - First data REST updated {{vars.timestamp}}
+```
+
+## 公開Docs詳細HTMLでMarkdown本文が描画される
+
+```yaml scenario
+steps:
+- id: docs_detail_html
+  name: 公開Docs詳細HTMLでMarkdown本文が描画される
+  request:
+    method: GET
+    url: /docs/{{vars.org_username}}/{{vars.repo_username}}/{{vars.data_id}}
+  expect:
+    status: 200
+    contains:
+    - <article>
+    - <h1>First data REST updated {{vars.timestamp}}</h1>
+```
+
+## 公開Docs詳細Markdownでfrontmatterが返る
+
+```yaml scenario
+steps:
+- id: docs_detail_markdown
+  name: 公開Docs詳細Markdownでfrontmatterが返る
+  request:
+    method: GET
+    url: /docs/{{vars.org_username}}/{{vars.repo_username}}/{{vars.data_id}}/md
+  expect:
+    status: 200
+    contains:
+    - "---"
+    - "title: First data REST updated {{vars.timestamp}}"
+```
+
 ## Data検索が成功する
 
 ```yaml scenario
