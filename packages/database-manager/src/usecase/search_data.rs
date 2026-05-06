@@ -72,9 +72,10 @@ impl SearchDataInputPort for SearchData {
                 )
                 .await?;
             return Ok((data, paginator));
-        } else {
-            // TODO: add English comment
-            unimplemented!()
         }
+
+        Err(errors::Error::not_supported(
+            "search_data without database_id is not available in Library GA",
+        ))
     }
 }

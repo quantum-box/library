@@ -29,12 +29,71 @@ impl Default for BuiltinIntegrationRegistry {
 impl BuiltinIntegrationRegistry {
     /// Create a new registry with all built-in integrations.
     pub fn new() -> Self {
+        let include_experimental =
+            std::env::var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS")
+                .map(|value| {
+                    matches!(value.as_str(), "1" | "true" | "TRUE")
+                })
+                .unwrap_or(false);
+
         let integrations = BUILTIN_INTEGRATIONS
             .iter()
+            .filter(|i| {
+                include_experimental || is_ga_integration(i.provider())
+            })
             .map(|i| (i.id().clone(), i.clone()))
             .collect();
 
         Self { integrations }
+    }
+}
+
+fn is_ga_integration(provider: OAuthProvider) -> bool {
+    matches!(provider, OAuthProvider::Linear)
+}
+
+#[cfg(test)]
+mod ga_filter_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn default_registry_exposes_only_ga_integrations() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS");
+
+        let registry = BuiltinIntegrationRegistry::new();
+        let providers = registry
+            .integrations
+            .values()
+            .map(|integration| integration.provider())
+            .collect::<Vec<_>>();
+
+        assert_eq!(providers, vec![OAuthProvider::Linear]);
+    }
+
+    #[test]
+    fn experimental_registry_exposes_non_ga_integrations() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var(
+            "LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS",
+            "true",
+        );
+
+        let registry = BuiltinIntegrationRegistry::new();
+        let providers = registry
+            .integrations
+            .values()
+            .map(|integration| integration.provider())
+            .collect::<Vec<_>>();
+
+        assert!(providers.contains(&OAuthProvider::Linear));
+        assert!(providers.contains(&OAuthProvider::Github));
+        assert!(providers.contains(&OAuthProvider::Hubspot));
+
+        std::env::remove_var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS");
     }
 }
 

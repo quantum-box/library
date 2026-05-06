@@ -99,7 +99,20 @@ pub fn parse_deep_object(
         return params;
     }
 
-    unimplemented!("Only objects are supported with style=deepObject")
+    match value {
+        serde_json::Value::Array(array) => array
+            .iter()
+            .enumerate()
+            .flat_map(|(i, value)| {
+                parse_deep_object(&format!("{}[{}]", prefix, i), value)
+            })
+            .collect(),
+        serde_json::Value::Null => vec![],
+        serde_json::Value::String(value) => {
+            vec![(prefix.to_string(), value.clone())]
+        }
+        value => vec![(prefix.to_string(), value.to_string())],
+    }
 }
 
 /// Internal use only
