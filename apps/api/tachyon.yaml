@@ -8,10 +8,17 @@ spec:
     - name: DATABASE_URL
       type: credential
       value: ""
+    - name: SERVICE_AUTH_TOKEN
+      type: credential
+      value: ""
     - name: COGNITO_JWK_URL
       value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
     - name: COGNITO_USER_POOL_ID
       value: "ap-northeast-1_8Ga4bK5M4"
+    - name: TACHYON_API_URL
+      value: "https://api.n1.tachy.one"
+    - name: LIBRARY_PARQUET_BUCKET
+      value: "tachyon-library-parquet-production"
     - name: ENVIRONMENT
       value: "production"
     - name: PORT
