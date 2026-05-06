@@ -515,7 +515,9 @@ pub async fn router(
     let webhook_router =
         inbound_sync::adapter::create_webhook_router(webhook_handler_state);
 
-    // Public docs routes (no authentication required)
+    // Docs routes use optional authentication. Public repos are
+    // readable anonymously; private repos require normal repo/data
+    // permissions.
     let docs_router = axum::Router::new()
         .route("/docs/:org/:repo", get(handler::docs::list_docs))
         .route("/docs/:org/:repo/:data_id", get(handler::docs::view_doc))

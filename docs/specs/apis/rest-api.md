@@ -112,9 +112,9 @@
 | Method | Path | 認証 | 出力 | 備考 |
 | --- | --- | --- | --- | --- |
 | GET | `/v1beta/global-id-mapping` | 必要 | `GlobalIdMappingResponse` | `system`,`code` query |
-| GET | `/docs/{org}/{repo}` | 不要 | HTML | パブリック参照 |
-| GET | `/docs/{org}/{repo}/{data_id}` | 不要 | HTML | パブリック参照 |
-| GET | `/docs/{org}/{repo}/{data_id}/md` | 不要 | Markdown | 非構造利用向け |
+| GET | `/docs/{org}/{repo}` | 公開repoは不要 / private repoは必要 | HTML | page/page_size 対応の Docs 一覧 |
+| GET | `/docs/{org}/{repo}/{data_id}` | 公開repoは不要 / private repoは必要 | HTML | data_id canonical の Docs ページ |
+| GET | `/docs/{org}/{repo}/{data_id}/md` | 公開repoは不要 / private repoは必要 | Markdown | YAML frontmatter 付き。検索/埋め込み/外部 index 用 |
 参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/global_id_mapping.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/global_id_mapping.rs), [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/docs.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/docs.rs)
 
 ## 5. 変更差分（実装ベース）

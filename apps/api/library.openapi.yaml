@@ -485,7 +485,8 @@ components:
 info:
   description: ''
   license:
-    name: ''
+    identifier: MIT
+    name: MIT
   title: library-api
   version: 1.11.0
 openapi: 3.1.0
@@ -520,6 +521,129 @@ paths:
       summary: Sign in with platform access token.
       tags:
       - auth
+  /docs/{org}/{repo}:
+    get:
+      description: Lists documents in a repo as an HTML page.
+      operationId: list_docs
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Page number, starting at 1
+        in: query
+        name: page
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+      - description: Number of documents per page
+        in: query
+        name: page_size
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Rendered docs list HTML
+        '403':
+          description: Private repository access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`GET /docs/:org/:repo`'
+      tags:
+      - public-docs
+  /docs/{org}/{repo}/{data_id}:
+    get:
+      description: |-
+        Renders a single document as an HTML page with the Markdown body
+        converted to HTML via pulldown-cmark.
+      operationId: view_doc
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Rendered document HTML
+        '403':
+          description: Private repository access denied
+        '404':
+          description: Organization, repository, or data not found
+      summary: '`GET /docs/:org/:repo/:data_id`'
+      tags:
+      - public-docs
+  /docs/{org}/{repo}/{data_id}/md:
+    get:
+      description: Returns the raw composed Markdown (with YAML frontmatter).
+      operationId: view_doc_markdown
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            text/markdown:
+              schema:
+                type: string
+          description: Composed Markdown with YAML frontmatter
+        '403':
+          description: Private repository access denied
+        '404':
+          description: Organization, repository, or data not found
+      summary: '`GET /docs/:org/:repo/:data_id/md`'
+      tags:
+      - public-docs
   /health:
     get:
       operationId: health_check

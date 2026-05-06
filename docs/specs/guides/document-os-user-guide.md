@@ -22,12 +22,23 @@
 2. ページ: `GET /docs/{org}/{repo}/{data_id}`
 3. 本文抽出: `GET /docs/{org}/{repo}/{data_id}/md`
 
+公開 repo は認証なしで閲覧できる。private repo は同じ URL でも通常の Library 権限を持つ認証済み executor のみ閲覧できる。
+
 ## 3. ドキュメント公開品質の運用
 
 1. ページ本体は `markdown` を基準にし、本文差分チェックは `/md` API で行う。
 2. 一覧導線は `/docs/{org}/{repo}` で URL 構造が崩れていないか確認。
-3. 非公開変更（`is_public=false`）のまま公開URLを叩いて、404/401 になることを確認すると誤公開防止に有効。
+3. 非公開変更（`is_public=false`）のまま匿名で公開URLを叩いて、403 になることを確認すると誤公開防止に有効。
 4. URL共有時は `data_id` ベースかつ slug 的名称の整合を事前に決める。
+5. Canonical URL は `data_id` を使う。`slug` property は検索、frontmatter、CMS運用上の人間可読キーとして扱い、route 解決には使わない。
+
+### 3.1 Markdown / frontmatter 仕様
+
+1. `/md` は `text/markdown; charset=utf-8` として YAML frontmatter 付き Markdown を返す。
+2. frontmatter には `id` と `title` を必ず含める。
+3. `content` / `body` / `markdown` / `html` のような本文 property は body として扱い、frontmatter には重複出力しない。
+4. 本文以外の property は frontmatter に出力する。`slug` を運用する場合もここに含める。
+5. HTML ページは同じ Markdown から frontmatter を除いた本文を rendering する。
 
 ## 4. 外部連携（Document OS運用）
 

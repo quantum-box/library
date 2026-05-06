@@ -307,14 +307,16 @@
 ## 6. エンドユーザー向け（公開データ利用）
 
 - 公開データの閲覧はトークン不要。`is_public=true` になっているリポジトリのみに適用。
+- private repo の `/docs` 閲覧は通常の repo/data 権限を持つ認証済みユーザーまたは service account のみ許可される。
 - 画面側 URL:
   - `GET /docs/{org}/{repo}`
   - `GET /docs/{org}/{repo}/{data_id}`
   - `GET /docs/{org}/{repo}/{data_id}/md`
 - `/docs/{org}/{repo}` はページング付きHTML一覧。
 - `page` と `page_size` をクエリとして省略可能（既定 page=1、page_size=50）。
-- `md` エンドポイントは本文のみを返すので、検索インデックス作成や外部CMS連携で扱いやすい。
-- 非公開参照は 401/404 もしくはポリシー由来の拒否で見えなくなるので、表示確認時は該当 repo の公開フラグと tenant ポリシーを最初に確認する。
+- `md` エンドポイントは YAML frontmatter と本文を返す。frontmatter には `id` / `title` と本文以外のプロパティが含まれる。
+- URL の canonical key は `data_id`。`slug` は property として frontmatter や一覧検証に使えるが、routing key にはしない。
+- 非公開参照は 403 もしくはポリシー由来の拒否で見えなくなるので、表示確認時は該当 repo の公開フラグと tenant ポリシーを最初に確認する。
 
 ## 7. 実装差分・運用上の注意
 
