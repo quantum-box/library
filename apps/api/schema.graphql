@@ -710,6 +710,14 @@ type GqlIntegration {
 	"""
 	isEnabled: Boolean!
 	"""
+	GA readiness of this integration
+	"""
+	readiness: GqlIntegrationReadiness!
+	"""
+	Reason displayed when the integration is disabled/unavailable
+	"""
+	unavailableReason: String
+	"""
 	Whether this is a featured/recommended integration
 	"""
 	isFeatured: Boolean!
@@ -747,6 +755,15 @@ enum GqlIntegrationCategory {
 	Custom/generic integrations
 	"""
 	CUSTOM
+}
+
+"""
+Release readiness shown in marketplace/API responses.
+"""
+enum GqlIntegrationReadiness {
+	GA
+	EXPERIMENTAL
+	NON_GA
 }
 
 """

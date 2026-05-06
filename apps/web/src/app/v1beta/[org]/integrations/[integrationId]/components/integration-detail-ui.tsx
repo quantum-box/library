@@ -45,6 +45,8 @@ interface Integration {
 	supportedObjects: string[]
 	requiresOauth: boolean
 	isEnabled: boolean
+	readiness: string
+	unavailableReason: string | null
 	isFeatured: boolean
 }
 
@@ -94,6 +96,21 @@ const syncCapabilityLabels: Record<string, string> = {
 	BIDIRECTIONAL: 'Bidirectional',
 }
 
+const readinessLabels: Record<string, string> = {
+	GA: 'GA',
+	EXPERIMENTAL: 'Beta gated',
+	NON_GA: 'Coming soon',
+}
+
+const readinessVariants: Record<
+	string,
+	'default' | 'secondary' | 'destructive' | 'outline'
+> = {
+	GA: 'default',
+	EXPERIMENTAL: 'secondary',
+	NON_GA: 'outline',
+}
+
 const statusColors: Record<string, string> = {
 	ACTIVE: 'bg-green-500',
 	EXPIRED: 'bg-yellow-500',
@@ -123,6 +140,7 @@ export function IntegrationDetailUI({
 	const [error, setError] = useState<string | null>(null)
 
 	const handleConnect = () => {
+		if (!integration.isEnabled) return
 		setIsConnectDialogOpen(true)
 	}
 
@@ -225,6 +243,11 @@ export function IntegrationDetailUI({
 					{integration.isFeatured && (
 						<Badge variant='secondary'>Featured</Badge>
 					)}
+					<Badge
+						variant={readinessVariants[integration.readiness] ?? 'outline'}
+					>
+						{readinessLabels[integration.readiness] ?? integration.readiness}
+					</Badge>
 				</div>
 				{/* Connect button in the top right */}
 				{!connection && (
@@ -252,10 +275,15 @@ export function IntegrationDetailUI({
 						<CardHeader>
 							<CardTitle>About</CardTitle>
 						</CardHeader>
-						<CardContent>
+						<CardContent className='space-y-3'>
 							<p className='text-muted-foreground'>
 								{integration.description || 'No description available.'}
 							</p>
+							{!integration.isEnabled && integration.unavailableReason && (
+								<p className='rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground'>
+									{integration.unavailableReason}
+								</p>
+							)}
 						</CardContent>
 					</Card>
 
@@ -430,9 +458,21 @@ export function IntegrationDetailUI({
 									</div>
 								</>
 							) : (
-								<div className='flex items-center gap-2 text-muted-foreground'>
-									<X className='h-4 w-4' />
-									<span>Not Connected</span>
+								<div className='space-y-3'>
+									<div className='flex items-center gap-2 text-muted-foreground'>
+										<X className='h-4 w-4' />
+										<span>
+											{integration.isEnabled
+												? 'Not Connected'
+												: readinessLabels[integration.readiness] ??
+													integration.readiness}
+										</span>
+									</div>
+									{integration.unavailableReason && (
+										<p className='text-sm text-muted-foreground'>
+											{integration.unavailableReason}
+										</p>
+									)}
 								</div>
 							)}
 						</CardContent>
@@ -454,6 +494,13 @@ export function IntegrationDetailUI({
 								<span className='text-muted-foreground'>Auth:</span>
 								<span>
 									{integration.requiresOauth ? 'OAuth 2.0' : 'API Key'}
+								</span>
+							</div>
+							<div className='flex items-center gap-2 text-sm'>
+								<span className='text-muted-foreground'>Readiness:</span>
+								<span>
+									{readinessLabels[integration.readiness] ??
+										integration.readiness}
 								</span>
 							</div>
 						</CardContent>

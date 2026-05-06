@@ -144,7 +144,7 @@ impl LibrarySyncQuery {
                 .find_by_category(cat.into())
                 .await?
         } else {
-            state.integration_repository.find_enabled().await?
+            state.integration_repository.find_all().await?
         };
 
         Ok(integrations.into_iter().map(Into::into).collect())

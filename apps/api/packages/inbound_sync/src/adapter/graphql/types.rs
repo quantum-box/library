@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 
 use inbound_sync_domain::{
     Connection, ConnectionStatus, EndpointStatus, Integration,
-    IntegrationCategory, OAuthProvider, ProcessingStats, ProcessingStatus,
-    SyncCapability, SyncDirection, SyncState, WebhookEndpoint,
-    WebhookEvent,
+    IntegrationCategory, IntegrationReadiness, OAuthProvider,
+    ProcessingStats, ProcessingStatus, SyncCapability, SyncDirection,
+    SyncState, WebhookEndpoint, WebhookEvent,
 };
 
 /// Provider type enum for GraphQL.
@@ -419,6 +419,26 @@ impl From<SyncCapability> for GqlSyncCapability {
     }
 }
 
+/// Release readiness shown in marketplace/API responses.
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum GqlIntegrationReadiness {
+    Ga,
+    Experimental,
+    NonGa,
+}
+
+impl From<IntegrationReadiness> for GqlIntegrationReadiness {
+    fn from(readiness: IntegrationReadiness) -> Self {
+        match readiness {
+            IntegrationReadiness::Ga => GqlIntegrationReadiness::Ga,
+            IntegrationReadiness::Experimental => {
+                GqlIntegrationReadiness::Experimental
+            }
+            IntegrationReadiness::NonGa => GqlIntegrationReadiness::NonGa,
+        }
+    }
+}
+
 /// Connection status for GraphQL.
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
 pub enum GqlConnectionStatus {
@@ -486,6 +506,10 @@ pub struct GqlIntegration {
     pub oauth_config: Option<GqlOAuthConfig>,
     /// Whether this integration is enabled in the marketplace
     pub is_enabled: bool,
+    /// GA readiness of this integration
+    pub readiness: GqlIntegrationReadiness,
+    /// Reason displayed when the integration is disabled/unavailable
+    pub unavailable_reason: Option<String>,
     /// Whether this is a featured/recommended integration
     pub is_featured: bool,
 }
@@ -509,6 +533,8 @@ impl From<Integration> for GqlIntegration {
                 supports_refresh: c.supports_refresh,
             }),
             is_enabled: i.is_enabled(),
+            readiness: i.readiness().into(),
+            unavailable_reason: i.unavailable_reason().map(String::from),
             is_featured: i.is_featured(),
         }
     }

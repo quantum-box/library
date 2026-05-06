@@ -1,14 +1,15 @@
 //! Built-in integrations registry.
 //!
-//! Provides static integration definitions for all supported providers.
-//! These integrations are always available in the marketplace.
+//! Provides static integration definitions for all catalogued providers.
+//! Non-GA integrations stay visible but disabled with an explicit reason.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use inbound_sync_domain::{
     ConnectionRepository, Integration, IntegrationCategory, IntegrationId,
-    IntegrationRepository, OAuthConfig, OAuthProvider, SyncCapability,
+    IntegrationRepository, OAuthConfig, OAuthProvider, Provider,
+    SyncCapability,
 };
 
 /// Built-in integrations registry.
@@ -124,7 +125,7 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             supports_refresh: false,
         })
-        .as_featured(),
+        .as_non_ga(provider_reason(Provider::Github)),
         // Linear Integration
         Integration::new(
             IntegrationId::new("int_linear"),
@@ -176,7 +177,7 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             token_url: "https://api.hubapi.com/oauth/v1/token".to_string(),
             supports_refresh: true,
         })
-        .as_featured(),
+        .as_non_ga(provider_reason(Provider::Hubspot)),
         // Stripe Integration
         Integration::new(
             IntegrationId::new("int_stripe"),
@@ -196,7 +197,7 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             "invoice".to_string(),
             "payment_intent".to_string(),
         ])
-        .as_featured(),
+        .as_non_ga(provider_reason(Provider::Stripe)),
         // Square Integration
         Integration::new(
             IntegrationId::new("int_square"),
@@ -226,7 +227,8 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             auth_url: "https://connect.squareup.com/oauth2/authorize".to_string(),
             token_url: "https://connect.squareup.com/oauth2/token".to_string(),
             supports_refresh: true,
-        }),
+        })
+        .as_experimental(provider_reason(Provider::Square)),
         // Notion Integration
         Integration::new(
             IntegrationId::new("int_notion"),
@@ -248,7 +250,8 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             auth_url: "https://api.notion.com/v1/oauth/authorize".to_string(),
             token_url: "https://api.notion.com/v1/oauth/token".to_string(),
             supports_refresh: false,
-        }),
+        })
+        .as_non_ga(provider_reason(Provider::Notion)),
         // Airtable Integration
         Integration::new(
             IntegrationId::new("int_airtable"),
@@ -274,10 +277,17 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             auth_url: "https://airtable.com/oauth2/v1/authorize".to_string(),
             token_url: "https://airtable.com/oauth2/v1/token".to_string(),
             supports_refresh: true,
-        }),
+        })
+        .as_non_ga(provider_reason(Provider::Airtable)),
     ]
     },
 );
+
+fn provider_reason(provider: Provider) -> &'static str {
+    provider
+        .unavailable_reason()
+        .unwrap_or("Integration is not available in this runtime.")
+}
 
 /// In-memory connection repository for testing.
 #[derive(Debug, Default)]
@@ -401,7 +411,7 @@ mod tests {
         assert_eq!(all.len(), 7);
 
         let featured = registry.find_featured().await.unwrap();
-        assert!(featured.len() >= 3);
+        assert_eq!(featured.len(), 1);
 
         let github = registry
             .find_by_provider(OAuthProvider::Github)
@@ -410,6 +420,11 @@ mod tests {
             .unwrap();
         assert_eq!(github.name(), "GitHub");
         assert!(github.requires_oauth());
+        assert!(!github.is_enabled());
+        assert_eq!(
+            github.unavailable_reason(),
+            Some(provider_reason(Provider::Github))
+        );
     }
 
     #[tokio::test]
@@ -422,5 +437,16 @@ mod tests {
             .unwrap();
         assert_eq!(payments.len(), 1);
         assert_eq!(payments[0].name(), "Stripe");
+        assert!(!payments[0].is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_only_linear_is_enabled_for_ga_marketplace() {
+        let registry = BuiltinIntegrationRegistry::new();
+
+        let enabled = registry.find_enabled().await.unwrap();
+
+        assert_eq!(enabled.len(), 1);
+        assert_eq!(enabled[0].provider(), OAuthProvider::Linear);
     }
 }

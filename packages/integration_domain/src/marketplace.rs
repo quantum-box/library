@@ -165,6 +165,30 @@ pub enum SyncCapability {
     Bidirectional,
 }
 
+/// Release readiness shown in the integration marketplace.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum IntegrationReadiness {
+    /// Fully supported for the GA product surface.
+    Ga,
+    /// Hidden or disabled by default and available only to beta-gated tenants.
+    Experimental,
+    /// Catalogued for roadmap visibility but unavailable.
+    NonGa,
+}
+
 /// OAuth configuration for an integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthConfig {
@@ -201,6 +225,10 @@ pub struct Integration {
     oauth_config: Option<OAuthConfig>,
     /// Whether this integration is enabled in the marketplace
     is_enabled: bool,
+    /// Release readiness for the GA marketplace/API.
+    readiness: IntegrationReadiness,
+    /// User-facing reason when the integration is not connectable.
+    unavailable_reason: Option<String>,
     /// Whether this is a featured/recommended integration
     is_featured: bool,
     /// Version of the integration
@@ -233,6 +261,8 @@ impl Integration {
             supported_objects: vec![],
             oauth_config: None,
             is_enabled: true,
+            readiness: IntegrationReadiness::Ga,
+            unavailable_reason: None,
             is_featured: false,
             version: "1.0.0".to_string(),
             created_at: now,
@@ -267,6 +297,24 @@ impl Integration {
     /// Mark as disabled.
     pub fn set_disabled(mut self) -> Self {
         self.is_enabled = false;
+        self
+    }
+
+    /// Mark as experimental with an unavailable reason.
+    pub fn as_experimental(mut self, reason: impl Into<String>) -> Self {
+        self.readiness = IntegrationReadiness::Experimental;
+        self.unavailable_reason = Some(reason.into());
+        self.is_enabled = false;
+        self.is_featured = false;
+        self
+    }
+
+    /// Mark as non-GA with an unavailable reason.
+    pub fn as_non_ga(mut self, reason: impl Into<String>) -> Self {
+        self.readiness = IntegrationReadiness::NonGa;
+        self.unavailable_reason = Some(reason.into());
+        self.is_enabled = false;
+        self.is_featured = false;
         self
     }
 
@@ -309,6 +357,14 @@ impl Integration {
 
     pub fn is_enabled(&self) -> bool {
         self.is_enabled
+    }
+
+    pub fn readiness(&self) -> IntegrationReadiness {
+        self.readiness
+    }
+
+    pub fn unavailable_reason(&self) -> Option<&str> {
+        self.unavailable_reason.as_deref()
     }
 
     pub fn is_featured(&self) -> bool {

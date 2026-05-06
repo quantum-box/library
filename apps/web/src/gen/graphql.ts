@@ -444,12 +444,16 @@ export type GqlIntegration = {
   oauthConfig?: Maybe<GqlOAuthConfig>;
   /** The provider this integration is for */
   provider: GqlProvider;
+  /** GA readiness of this integration */
+  readiness: GqlIntegrationReadiness;
   /** Whether OAuth is required for this integration */
   requiresOauth: Scalars['Boolean']['output'];
   /** Supported object types (e.g., "customers", "orders", "products") */
   supportedObjects: Array<Scalars['String']['output']>;
   /** Sync capabilities */
   syncCapability: GqlSyncCapability;
+  /** Reason displayed when the integration is disabled/unavailable */
+  unavailableReason?: Maybe<Scalars['String']['output']>;
 };
 
 /** Integration category for GraphQL. */
@@ -468,6 +472,13 @@ export enum GqlIntegrationCategory {
   Payments = 'PAYMENTS',
   /** Issue and project tracking (Linear, Jira) */
   ProjectManagement = 'PROJECT_MANAGEMENT'
+}
+
+/** Release readiness shown in marketplace/API responses. */
+export enum GqlIntegrationReadiness {
+  Experimental = 'EXPERIMENTAL',
+  Ga = 'GA',
+  NonGa = 'NON_GA'
 }
 
 /** OAuth configuration for an integration. */
