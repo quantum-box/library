@@ -1,9 +1,9 @@
 //! Public documentation endpoints
 //!
-//! Serves documents from public Library repos as rendered HTML pages
-//! or raw Markdown. These endpoints require no authentication — access
-//! is governed by the repo's `is_public` flag (checked inside the
-//! existing ViewData / ViewDataList usecases).
+//! Serves Library documents as rendered HTML pages or raw Markdown.
+//! Public repos are readable without authentication. Private repos use
+//! the same optional executor and policy checks as the REST data
+//! endpoints.
 
 use std::sync::Arc;
 
@@ -16,21 +16,11 @@ use pulldown_cmark::{Options, Parser};
 use serde::Deserialize;
 
 use crate::app::LibraryApp;
-use crate::handler::library_executor_extractor::{
-    LibraryExecutor, LibraryExecutorKind,
-};
+use crate::handler::library_executor_extractor::LibraryExecutor;
 use crate::usecase::markdown_composer::compose_markdown;
 use crate::usecase::{
     LibraryOrg, ViewDataInputData, ViewDataListInputData,
 };
-
-/// Anonymous executor for unauthenticated public access.
-fn anonymous_executor() -> LibraryExecutor {
-    LibraryExecutor {
-        inner: LibraryExecutorKind::None,
-        original_token: None,
-    }
-}
 
 #[derive(Deserialize)]
 pub struct DocsListQuery {
@@ -42,14 +32,30 @@ pub struct DocsListQuery {
 
 /// `GET /docs/:org/:repo`
 ///
-/// Lists documents in a public repo as an HTML page.
+/// Lists documents in a repo as an HTML page.
+#[utoipa::path(
+    get,
+    path = "/docs/{org}/{repo}",
+    params(
+        ("org" = String, Path, description = "Organization username"),
+        ("repo" = String, Path, description = "Repository username"),
+        ("page" = Option<u32>, Query, description = "Page number, starting at 1"),
+        ("page_size" = Option<u32>, Query, description = "Number of documents per page")
+    ),
+    responses(
+        (status = 200, description = "Rendered docs list HTML", body = String, content_type = "text/html"),
+        (status = 403, description = "Private repository access denied"),
+        (status = 404, description = "Organization or repository not found")
+    ),
+    tag = "public-docs"
+)]
 #[axum::debug_handler]
 pub async fn list_docs(
     AxumPath((org, repo)): AxumPath<(String, String)>,
     Query(query): Query<DocsListQuery>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
 ) -> errors::Result<impl IntoResponse> {
-    let executor = anonymous_executor();
     let library_org = LibraryOrg::with_org(org.clone());
 
     let input = ViewDataListInputData {
@@ -136,12 +142,27 @@ pub async fn list_docs(
 ///
 /// Renders a single document as an HTML page with the Markdown body
 /// converted to HTML via pulldown-cmark.
+#[utoipa::path(
+    get,
+    path = "/docs/{org}/{repo}/{data_id}",
+    params(
+        ("org" = String, Path, description = "Organization username"),
+        ("repo" = String, Path, description = "Repository username"),
+        ("data_id" = String, Path, description = "Data ID")
+    ),
+    responses(
+        (status = 200, description = "Rendered document HTML", body = String, content_type = "text/html"),
+        (status = 403, description = "Private repository access denied"),
+        (status = 404, description = "Organization, repository, or data not found")
+    ),
+    tag = "public-docs"
+)]
 #[axum::debug_handler]
 pub async fn view_doc(
     AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
 ) -> errors::Result<impl IntoResponse> {
-    let executor = anonymous_executor();
     let library_org = LibraryOrg::with_org(org.clone());
 
     let input = ViewDataInputData {
@@ -194,12 +215,27 @@ pub async fn view_doc(
 /// `GET /docs/:org/:repo/:data_id/md`
 ///
 /// Returns the raw composed Markdown (with YAML frontmatter).
+#[utoipa::path(
+    get,
+    path = "/docs/{org}/{repo}/{data_id}/md",
+    params(
+        ("org" = String, Path, description = "Organization username"),
+        ("repo" = String, Path, description = "Repository username"),
+        ("data_id" = String, Path, description = "Data ID")
+    ),
+    responses(
+        (status = 200, description = "Composed Markdown with YAML frontmatter", body = String, content_type = "text/markdown"),
+        (status = 403, description = "Private repository access denied"),
+        (status = 404, description = "Organization, repository, or data not found")
+    ),
+    tag = "public-docs"
+)]
 #[axum::debug_handler]
 pub async fn view_doc_markdown(
     AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
 ) -> errors::Result<impl IntoResponse> {
-    let executor = anonymous_executor();
     let library_org = LibraryOrg::with_org(org.clone());
 
     let input = ViewDataInputData {

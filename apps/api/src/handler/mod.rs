@@ -52,6 +52,19 @@ pub fn extract_org_username(
         } else {
             None
         }
+    } else if path.contains("/docs/") {
+        let segments: Vec<&str> = path.split('/').collect();
+        let docs_index = segments.iter().position(|&s| s == "docs");
+
+        if let Some(docs_index) = docs_index {
+            if segments.len() > docs_index + 1 {
+                Some(segments[docs_index + 1].to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     } else {
         None
     };
