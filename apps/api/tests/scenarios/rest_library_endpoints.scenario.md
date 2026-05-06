@@ -144,6 +144,31 @@ steps:
     - repo-rest-new-{{vars.timestamp}}
 ```
 
+## MCPリポジトリ検索でorganization指定が使える
+
+```yaml scenario
+steps:
+- id: mcp_search_repo_in_org
+  name: MCPリポジトリ検索でorganization指定が使える
+  request:
+    method: POST
+    url: /mcp
+    body:
+      jsonrpc: "2.0"
+      id: "mcp-search-repo-in-org"
+      method: tools/call
+      params:
+        name: search_repos
+        arguments:
+          org: "{{vars.org_username}}"
+          query: Repo REST updated {{vars.timestamp}}
+          limit: 5
+  expect:
+    status: 200
+    contains:
+    - repo-rest-new-{{vars.timestamp}}
+```
+
 ## STRINGプロパティを追加する
 
 ```yaml scenario

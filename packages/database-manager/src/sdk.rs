@@ -49,11 +49,12 @@ impl DatabaseApp for DatabaseAppImpl {
         &self,
         _executor: &dyn ExecutorAction,
         _multi_tenancy: &dyn MultiTenancyAction,
-        _id: &str,
+        id: &str,
         _name: &str,
     ) -> errors::Result<AppDatabase> {
-        // TODO: implement update_database
-        unimplemented!()
+        Err(errors::Error::not_supported(format!(
+            "update_database is not available through DatabaseAppImpl (database_id={id})"
+        )))
     }
 
     async fn get_database(
