@@ -8,10 +8,25 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider'
 import { getSdkPlatform, platformId } from '@/lib/apiClient'
 
-const getCognitoConfig = () => ({
-  clientId: import.meta.env.VITE_COGNITO_CLIENT_ID ?? '',
-  region: import.meta.env.VITE_COGNITO_REGION ?? 'ap-northeast-1',
-})
+const requireCognitoEnv = (name: string, value: string | undefined): string => {
+  const resolvedValue = value?.trim()
+
+  if (!resolvedValue) {
+    throw new Error(`${name} is required for Cognito authentication`)
+  }
+
+  return resolvedValue
+}
+
+const cognitoConfig = {
+  clientId: requireCognitoEnv(
+    'VITE_COGNITO_CLIENT_ID',
+    import.meta.env.VITE_COGNITO_CLIENT_ID,
+  ),
+  region: import.meta.env.VITE_COGNITO_REGION?.trim() || 'ap-northeast-1',
+}
+
+const getCognitoConfig = () => cognitoConfig
 
 const cognitoClient = () =>
   new CognitoIdentityProvider({

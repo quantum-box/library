@@ -31,6 +31,10 @@ jobs:
       - name: Build
         env:
           VITE_BACKEND_API_URL: ${{ vars.VITE_BACKEND_API_URL }}
+          VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
+          VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID }}
+          VITE_COGNITO_REGION: ${{ vars.VITE_COGNITO_REGION }}
+          VITE_COGNITO_ISSUER: ${{ vars.VITE_COGNITO_ISSUER }}
         run: |
           cd apps/web
           npm run build
