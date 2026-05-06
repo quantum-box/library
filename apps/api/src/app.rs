@@ -171,6 +171,7 @@ impl LibraryApp {
             database_app.clone(),
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
+            auth_app.clone(),
         );
         let search_repo = usecase::SearchRepo::new(find_all_repo_query);
         let add_data = usecase::AddData::new(
