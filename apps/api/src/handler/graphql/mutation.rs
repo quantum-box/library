@@ -100,7 +100,7 @@ fn to_value_id_or_email(
 
 #[Object]
 impl LibraryMutation {
-    /// TODO: add English documentation
+    /// Delete a data item from a Library repository.
     #[tracing::instrument(name = "health_check", skip_all)]
     async fn check(&self) -> String {
         "ok".to_string()
@@ -550,6 +550,34 @@ impl LibraryMutation {
             .await?;
 
         Ok(data.into())
+    }
+
+    /// TODO: add English documentation
+    #[tracing::instrument(name = "delete_data", skip(self, ctx))]
+    async fn delete_data(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        org_username: String,
+        repo_username: String,
+        data_id: String,
+    ) -> Result<String> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+
+        ctx.data::<Arc<LibraryApp>>()?
+            .delete_data
+            .execute(usecase::DeleteDataInputData {
+                executor,
+                multi_tenancy,
+                actor: executor.get_id().to_string(),
+                org_username,
+                repo_username,
+                data_id: data_id.clone(),
+            })
+            .await?;
+
+        Ok(data_id)
     }
 
     /// TODO: add English documentation

@@ -78,6 +78,19 @@ jobs:
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
       - run: cargo nextest run --workspace
+      - name: Run Library GA CRUD regression
+        env:
+          DEV_DATABASE_URL: mysql://root:@127.0.0.1:3306
+          LIBRARY_DATABASE_URL: mysql://root:@127.0.0.1:3306/library
+          DATABASE_URL: mysql://root:@127.0.0.1:3306/library
+          ROOT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
+          LIBRARY_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
+          ENVIRONMENT: test
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          cargo run -p database-manager --bin database_manager_migrate dev
+          cargo run -p library-api --bin library_api_migrate dev
+          cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
 
   node:
     runs-on: ubuntu-latest

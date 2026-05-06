@@ -147,6 +147,11 @@ path = "tests/graphql_api_key.rs"
 required-features = ["integration_tests"]
 
 [[test]]
+name = "ga_crud_regression"
+path = "tests/ga_crud_regression.rs"
+required-features = ["integration_tests"]
+
+[[test]]
 name = "data"
 path = "tests/data.rs"
 required-features = ["integration_tests"]
