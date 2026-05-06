@@ -10,6 +10,7 @@ export interface Endpoint {
 	method: HttpMethod
 	path: string
 	description: string
+	maturity?: 'beta'
 	getSnippets: (params: {
 		apiBaseUrl: string
 		org: string
@@ -78,6 +79,7 @@ console.log(data);`,
 				method: 'POST',
 				path: '/v1beta/repos/{org}/{repo}/data',
 				description: 'Create a new data entry',
+				maturity: 'beta',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X POST "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>" \\
@@ -113,6 +115,7 @@ console.log(data);`,
 				method: 'PUT',
 				path: '/v1beta/repos/{org}/{repo}/data/{id}',
 				description: 'Update a data entry',
+				maturity: 'beta',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X PUT "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data/DATA_ID" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>" \\
@@ -148,6 +151,7 @@ console.log(data);`,
 				method: 'DELETE',
 				path: '/v1beta/repos/{org}/{repo}/data/{id}',
 				description: 'Delete a data entry',
+				maturity: 'beta',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X DELETE "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data/DATA_ID" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>"`,
@@ -261,6 +265,7 @@ console.log(data);`,
 				method: 'GET',
 				path: '/v1beta/repos/{org}/{repo}/data/parquet',
 				description: 'Export all data as Parquet',
+				maturity: 'beta',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X GET "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data/parquet" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>" \\
@@ -287,6 +292,7 @@ const blob = await response.blob();
 				method: 'GET',
 				path: '/v1beta/repos/{org}/{repo}/data/{id}/md',
 				description: 'Export a data entry as Markdown',
+				maturity: 'beta',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X GET "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data/DATA_ID/md" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>"`,

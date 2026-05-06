@@ -97,6 +97,9 @@ export function WebhooksPageUI({ tenantId, endpoints }: WebhooksPageUIProps) {
 				<div>
 					<h1 className='text-2xl font-bold tracking-tight'>
 						Webhook Endpoints
+						<Badge variant='outline' className='ml-2 align-middle'>
+							Beta
+						</Badge>
 					</h1>
 					<p className='text-muted-foreground'>
 						Manage webhook endpoints for external data synchronization
