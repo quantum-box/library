@@ -36,6 +36,10 @@ impl BuiltinIntegrationRegistry {
                 })
                 .unwrap_or(false);
 
+        Self::with_experimental_integrations(include_experimental)
+    }
+
+    fn with_experimental_integrations(include_experimental: bool) -> Self {
         let integrations = BUILTIN_INTEGRATIONS
             .iter()
             .filter(|i| {
@@ -55,16 +59,13 @@ fn is_ga_integration(provider: OAuthProvider) -> bool {
 #[cfg(test)]
 mod ga_filter_tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_registry_exposes_only_ga_integrations() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS");
-
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                false,
+            );
         let providers = registry
             .integrations
             .values()
@@ -76,13 +77,10 @@ mod ga_filter_tests {
 
     #[test]
     fn experimental_registry_exposes_non_ga_integrations() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var(
-            "LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS",
-            "true",
-        );
-
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
         let providers = registry
             .integrations
             .values()
@@ -92,8 +90,6 @@ mod ga_filter_tests {
         assert!(providers.contains(&OAuthProvider::Linear));
         assert!(providers.contains(&OAuthProvider::Github));
         assert!(providers.contains(&OAuthProvider::Hubspot));
-
-        std::env::remove_var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS");
     }
 }
 
@@ -454,7 +450,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_builtin_integrations() {
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
 
         let all = registry.find_all().await.unwrap();
         assert_eq!(all.len(), 7);
@@ -473,7 +472,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_by_category() {
-        let registry = BuiltinIntegrationRegistry::new();
+        let registry =
+            BuiltinIntegrationRegistry::with_experimental_integrations(
+                true,
+            );
 
         let payments = registry
             .find_by_category(IntegrationCategory::Payments)
