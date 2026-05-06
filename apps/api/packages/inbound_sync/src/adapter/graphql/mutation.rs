@@ -360,6 +360,8 @@ impl LibrarySyncMutation {
                 async_graphql::Error::new("Integration not found")
             })?;
 
+        ensure_integration_available(&integration)?;
+
         // Check if connection already exists
         if let Some(existing) = state
             .connection_repository
@@ -524,6 +526,8 @@ impl LibrarySyncMutation {
                 async_graphql::Error::new("Integration not found")
             })?;
 
+        ensure_integration_available(&integration)?;
+
         if !integration.requires_oauth() {
             return Err(async_graphql::Error::new(
                 "This integration does not use OAuth authentication",
@@ -576,6 +580,8 @@ impl LibrarySyncMutation {
             .ok_or_else(|| {
                 async_graphql::Error::new("Integration not found")
             })?;
+
+        ensure_integration_available(&integration)?;
 
         // Exchange the authorization code for tokens
         let domain_input = DomainExchangeInput {
@@ -689,6 +695,8 @@ impl LibrarySyncMutation {
                 async_graphql::Error::new("Integration not found")
             })?;
 
+        ensure_integration_available(&integration)?;
+
         // Create or update connection
         let existing = state
             .connection_repository
@@ -748,4 +756,21 @@ impl LibrarySyncMutation {
 
         Ok(GqlSyncOperation::from_domain(operation))
     }
+}
+
+fn ensure_integration_available(
+    integration: &inbound_sync_domain::Integration,
+) -> Result<()> {
+    let provider: inbound_sync_domain::Provider =
+        integration.provider().into();
+    if integration.is_enabled() && provider.is_runtime_available() {
+        return Ok(());
+    }
+
+    Err(async_graphql::Error::new(
+        integration
+            .unavailable_reason()
+            .or_else(|| provider.unavailable_reason())
+            .unwrap_or("Integration is not available in this runtime."),
+    ))
 }

@@ -65,6 +65,14 @@ pub enum Provider {
     Generic,
 }
 
+/// Provider release readiness for GA surfaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderReadiness {
+    Ga,
+    Experimental,
+    NonGa,
+}
+
 impl From<OAuthProvider> for Provider {
     fn from(p: OAuthProvider) -> Self {
         match p {
@@ -99,6 +107,72 @@ impl From<Provider> for OAuthProvider {
 }
 
 impl Provider {
+    pub fn readiness(&self) -> ProviderReadiness {
+        match self {
+            Provider::Linear | Provider::Generic => ProviderReadiness::Ga,
+            Provider::Square => ProviderReadiness::Experimental,
+            Provider::Github
+            | Provider::Hubspot
+            | Provider::Stripe
+            | Provider::Notion
+            | Provider::Airtable => ProviderReadiness::NonGa,
+        }
+    }
+
+    pub fn unavailable_reason(&self) -> Option<&'static str> {
+        match self {
+            Provider::Github => Some(
+                "GitHub inbound marketplace sync is not GA because the runtime still uses NoOp GitHub client/data handlers.",
+            ),
+            Provider::Hubspot => Some(
+                "HubSpot is not GA because the runtime still uses NoOp HubSpot client/data handlers.",
+            ),
+            Provider::Stripe => Some(
+                "Stripe is not GA because the runtime still uses NoOp Stripe client/data handlers.",
+            ),
+            Provider::Notion => Some(
+                "Notion is not GA because the runtime still uses NoOp Notion client/data handlers.",
+            ),
+            Provider::Square => Some(
+                "Square is experimental and requires LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS=true plus SQUARE_API_KEY.",
+            ),
+            Provider::Airtable => Some(
+                "Airtable is not GA because no runtime client, data handler, or API pull processor is wired.",
+            ),
+            Provider::Linear | Provider::Generic => None,
+        }
+    }
+
+    pub fn is_runtime_available(&self) -> bool {
+        match self {
+            Provider::Linear | Provider::Generic => true,
+            Provider::Square => {
+                std::env::var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS")
+                    .map(|value| value.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+                    && std::env::var("SQUARE_API_KEY")
+                        .map(|value| !value.trim().is_empty())
+                        .unwrap_or(false)
+            }
+            Provider::Github
+            | Provider::Hubspot
+            | Provider::Stripe
+            | Provider::Notion
+            | Provider::Airtable => false,
+        }
+    }
+
+    pub fn ensure_runtime_available(&self) -> errors::Result<()> {
+        if self.is_runtime_available() {
+            return Ok(());
+        }
+
+        Err(errors::Error::bad_request(
+            self.unavailable_reason()
+                .unwrap_or("Integration is not available in this runtime."),
+        ))
+    }
+
     /// Get the signature header name for this provider.
     pub fn signature_header(&self) -> &'static str {
         match self {
@@ -181,5 +255,26 @@ mod tests {
             "x-hub-signature-256"
         );
         assert_eq!(Provider::Stripe.signature_header(), "stripe-signature");
+    }
+
+    #[test]
+    fn test_provider_readiness() {
+        assert_eq!(Provider::Linear.readiness(), ProviderReadiness::Ga);
+        assert_eq!(
+            Provider::Square.readiness(),
+            ProviderReadiness::Experimental
+        );
+        assert_eq!(Provider::Github.readiness(), ProviderReadiness::NonGa);
+        assert!(Provider::Github.unavailable_reason().is_some());
+    }
+
+    #[test]
+    fn test_non_ga_providers_are_not_runtime_available() {
+        assert!(Provider::Linear.is_runtime_available());
+        assert!(!Provider::Github.is_runtime_available());
+        assert!(!Provider::Hubspot.is_runtime_available());
+        assert!(!Provider::Stripe.is_runtime_available());
+        assert!(!Provider::Notion.is_runtime_available());
+        assert!(!Provider::Airtable.is_runtime_available());
     }
 }

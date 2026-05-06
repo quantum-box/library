@@ -48,3 +48,4 @@
 
 1. REST と GraphQL を併用する際は、1) 成功コードの扱い 2) 再試行時の重複処理 3) tenant 解決の参照点を事前に固定する。
 2. OAuth については `init_oauth` / `exchange_oauth_code` の有効性と、`/v1beta/.../integrations/callback` 経路のデプロイ有無を別途確認する。
+3. 外部連携を GA 表示に含める前に [外部連携 readiness](readiness.md) の分類表を更新し、NoOp client / data handler / API pull processor が残っていないことを確認する。

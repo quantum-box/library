@@ -21,6 +21,9 @@ interface Integration {
 	name: string
 	description: string
 	requiresOauth: boolean
+	isEnabled?: boolean
+	readiness?: string
+	unavailableReason?: string | null
 }
 
 interface ConnectDialogProps {
@@ -44,6 +47,7 @@ export function ConnectDialog({
 	const [error, setError] = useState<string | null>(null)
 
 	const handleOAuthConnect = async () => {
+		if (integration.isEnabled === false) return
 		setIsLoading(true)
 		try {
 			// GitHub uses GitHub App installation flow
@@ -64,6 +68,7 @@ export function ConnectDialog({
 	}
 
 	const handleApiKeyConnect = async () => {
+		if (integration.isEnabled === false) return
 		setIsLoading(true)
 		setError(null)
 		try {
@@ -91,7 +96,14 @@ export function ConnectDialog({
 					<DialogDescription>{integration.description}</DialogDescription>
 				</DialogHeader>
 
-				{integration.requiresOauth ? (
+				{integration.isEnabled === false ? (
+					<div className='space-y-4 py-4'>
+						<p className='rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground'>
+							{integration.unavailableReason ||
+								'This integration is not available in the GA product surface.'}
+						</p>
+					</div>
+				) : integration.requiresOauth ? (
 					<div className='space-y-4 py-4'>
 						<p className='text-sm text-muted-foreground'>
 							This integration requires OAuth authorization. Click the button
@@ -146,7 +158,9 @@ export function ConnectDialog({
 					>
 						Cancel
 					</Button>
-					{integration.requiresOauth ? (
+					{integration.isEnabled === false ? (
+						<Button disabled>Unavailable</Button>
+					) : integration.requiresOauth ? (
 						<Button onClick={handleOAuthConnect} disabled={isLoading}>
 							{isLoading ? (
 								<Loader2 className='mr-2 h-4 w-4 animate-spin' />

@@ -37,6 +37,6 @@ pub use integration_domain::{
 // Re-export marketplace types from integration_domain
 pub use integration_domain::{
     Connection, ConnectionId, ConnectionRepository, ConnectionStatus,
-    Integration, IntegrationCategory, IntegrationId, IntegrationRepository,
-    OAuthConfig, SyncCapability,
+    Integration, IntegrationCategory, IntegrationId, IntegrationReadiness,
+    IntegrationRepository, OAuthConfig, SyncCapability,
 };

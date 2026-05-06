@@ -36,6 +36,8 @@ interface Integration {
 	supportedObjects: string[]
 	requiresOauth: boolean
 	isEnabled: boolean
+	readiness: string
+	unavailableReason: string | null
 	isFeatured: boolean
 }
 
@@ -110,6 +112,21 @@ const syncLabels: Record<string, string> = {
 	BIDIRECTIONAL: 'Bidirectional',
 }
 
+const readinessLabels: Record<string, string> = {
+	GA: 'GA',
+	EXPERIMENTAL: 'Beta gated',
+	NON_GA: 'Coming soon',
+}
+
+const readinessVariants: Record<
+	string,
+	'default' | 'secondary' | 'destructive' | 'outline'
+> = {
+	GA: 'default',
+	EXPERIMENTAL: 'secondary',
+	NON_GA: 'outline',
+}
+
 const statusVariants: Record<
 	string,
 	'default' | 'secondary' | 'destructive' | 'outline'
@@ -138,6 +155,7 @@ export function IntegrationsPageUI({
 	const allIntegrations = integrations
 
 	const handleConnect = (integration: Integration) => {
+		if (!integration.isEnabled) return
 		setSelectedIntegration(integration)
 		setIsConnectDialogOpen(true)
 	}
@@ -287,6 +305,8 @@ function IntegrationCard({
 }) {
 	// Consider DISCONNECTED status as not connected (allow reconnection)
 	const isConnected = !!connection && connection.status !== 'DISCONNECTED'
+	const readinessLabel =
+		readinessLabels[integration.readiness] ?? integration.readiness
 
 	return (
 		<Card className='flex flex-col'>
@@ -314,6 +334,14 @@ function IntegrationCard({
 								<Badge variant='outline' className='text-xs'>
 									{categoryLabels[integration.category] || integration.category}
 								</Badge>
+								<Badge
+									variant={
+										readinessVariants[integration.readiness] ?? 'outline'
+									}
+									className='text-xs'
+								>
+									{readinessLabel}
+								</Badge>
 								<Badge variant='secondary' className='text-xs'>
 									{syncLabels[integration.syncCapability] ||
 										integration.syncCapability}
@@ -327,6 +355,11 @@ function IntegrationCard({
 				<p className='text-sm text-muted-foreground line-clamp-2'>
 					{integration.description}
 				</p>
+				{!integration.isEnabled && integration.unavailableReason && (
+					<p className='mt-3 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground'>
+						{integration.unavailableReason}
+					</p>
+				)}
 				{integration.supportedObjects.length > 0 && (
 					<div className='mt-3'>
 						<p className='text-xs text-muted-foreground mb-1'>Syncs:</p>
@@ -362,10 +395,14 @@ function IntegrationCard({
 				) : (
 					<>
 						<span className='text-sm text-muted-foreground'>
-							{integration.requiresOauth ? 'OAuth required' : 'API key'}
+							{integration.isEnabled
+								? integration.requiresOauth
+									? 'OAuth required'
+									: 'API key'
+								: readinessLabel}
 						</span>
-						<Button size='sm' onClick={onConnect}>
-							Connect
+						<Button size='sm' onClick={onConnect} disabled={!integration.isEnabled}>
+							{integration.isEnabled ? 'Connect' : 'Unavailable'}
 						</Button>
 					</>
 				)}

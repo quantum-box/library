@@ -8,6 +8,7 @@
 - [REST API 仕様](docs/specs/apis/rest-api.md)
 - [GraphQL API 仕様](docs/specs/apis/graphql-api.md)
 - [Webhook 受信仕様](docs/specs/integrations/webhooks.md)
+- [外部連携 readiness](docs/specs/integrations/readiness.md)
 - [コラボレーション WebSocket 仕様](docs/specs/integrations/collaboration-ws.md)
 - [MCP 連携仕様](docs/specs/integrations/mcp.md)
 - [運用手順 / トラブル対応](docs/specs/integrations/operations.md)

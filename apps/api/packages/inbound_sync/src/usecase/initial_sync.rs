@@ -76,6 +76,8 @@ impl InitialSync {
             .await?
             .ok_or_else(|| errors::Error::not_found("Webhook endpoint"))?;
 
+        endpoint.provider().ensure_runtime_available()?;
+
         // Create sync operation
         let mut operation = SyncOperation::create(
             input.endpoint_id.clone(),

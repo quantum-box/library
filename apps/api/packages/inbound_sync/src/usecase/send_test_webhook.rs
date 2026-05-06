@@ -38,6 +38,8 @@ impl SendTestWebhook {
             .await?
             .ok_or_else(|| errors::Error::not_found("Webhook endpoint"))?;
 
+        endpoint.provider().ensure_runtime_available()?;
+
         // Create test payload based on provider
         let payload = create_test_payload(*endpoint.provider(), event_type);
 

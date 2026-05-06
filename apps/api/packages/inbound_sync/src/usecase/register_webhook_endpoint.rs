@@ -103,6 +103,8 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
             )));
         }
 
+        input.provider.ensure_runtime_available()?;
+
         // 4. Generate a secure secret (Linear can use provider secret)
         let mut config = input.config;
         let mut secret_value: Option<String> = None;
