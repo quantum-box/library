@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use crate::domain::VisibilityService;
 use database_manager::{
     domain::{Data, Property},
     usecase::FindAllPropertiesInputData,
@@ -87,6 +88,18 @@ impl ViewDataListInputPort for ViewDataList {
                 "repo not found in view data list"
             ))?;
 
+        let need_policy_check =
+            VisibilityService::new().check_access(&repo, input.executor)?;
+        if need_policy_check {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:ViewPrivateRepo",
+                })
+                .await?;
+        }
+
         let properties = self
             .database
             .find_all_properties()
@@ -110,24 +123,6 @@ impl ViewDataListInputPort for ViewDataList {
                 query: "",
             })
             .await?;
-
-        if *repo.is_public() {
-            return Ok((data_list, properties, paginator));
-        }
-
-        if input.executor.is_none() && repo.is_private() {
-            return Err(errors::Error::permission_denied("Access denied"));
-        }
-
-        if !input.executor.is_none() && repo.is_private() {
-            self.auth_app
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:ViewPrivateRepo",
-                })
-                .await?;
-        }
 
         Ok((data_list, properties, paginator))
     }

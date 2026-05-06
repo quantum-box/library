@@ -1,4 +1,5 @@
 use super::{ViewDataInputData, ViewDataInputPort};
+use crate::domain::VisibilityService;
 use database_manager::{
     domain::{Data, Property},
     usecase::FindAllPropertiesInputData,
@@ -55,6 +56,18 @@ impl ViewDataInputPort for ViewData {
             .await?
             .ok_or(errors::not_found!("repo not found in view data"))?;
 
+        let need_policy_check =
+            VisibilityService::new().check_access(&repo, input.executor)?;
+        if need_policy_check {
+            self.auth
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:ViewData",
+                })
+                .await?;
+        }
+
         let properties = self
             .database
             .find_all_properties()
@@ -75,26 +88,6 @@ impl ViewDataInputPort for ViewData {
             })
             .await?;
 
-        if *repo.is_public() {
-            return Ok((data, properties));
-        }
-
-        if input.executor.is_none() && repo.is_private() {
-            return Err(errors::permission_denied!("Access denied"));
-        }
-
-        if !input.executor.is_none() && repo.is_private() {
-            self.auth
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:ViewData",
-                })
-                .await?;
-            // repo.can_view(&input.executor.get_id().parse()?)?;
-        }
-
-        // TODO: add English comment
         Ok((data, properties))
     }
 }

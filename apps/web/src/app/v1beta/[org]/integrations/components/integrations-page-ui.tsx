@@ -114,7 +114,7 @@ const syncLabels: Record<string, string> = {
 
 const readinessLabels: Record<string, string> = {
 	GA: 'GA',
-	EXPERIMENTAL: 'Beta gated',
+	EXPERIMENTAL: 'Beta',
 	NON_GA: 'Coming soon',
 }
 
@@ -151,8 +151,9 @@ export function IntegrationsPageUI({
 
 	const connectedIntegrationIds = new Set(connections.map(c => c.integrationId))
 
-	const featuredIntegrations = integrations.filter(i => i.isFeatured)
-	const allIntegrations = integrations
+	const visibleIntegrations = integrations.filter(i => i.readiness !== 'NON_GA')
+	const featuredIntegrations = visibleIntegrations.filter(i => i.isFeatured)
+	const allIntegrations = visibleIntegrations
 
 	const handleConnect = (integration: Integration) => {
 		if (!integration.isEnabled) return
@@ -174,6 +175,9 @@ export function IntegrationsPageUI({
 					</h1>
 					<p className='text-muted-foreground mt-1'>
 						Connect external services to sync data with Library
+					</p>
+					<p className='text-xs text-muted-foreground mt-2'>
+						Non-GA providers are hidden until they are ready for customer use.
 					</p>
 				</div>
 				<div className='flex items-center gap-2'>
@@ -257,7 +261,7 @@ export function IntegrationsPageUI({
 					) : (
 						<div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
 							{connections.map(connection => {
-								const integration = integrations.find(
+								const integration = visibleIntegrations.find(
 									i => i.id === connection.integrationId,
 								)
 								if (!integration) return null

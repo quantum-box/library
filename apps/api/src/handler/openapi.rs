@@ -8,8 +8,8 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, global_id_mapping::*, organization::*, property::*,
-    repository::*, source::*,
+    auth::*, data::*, docs::*, global_id_mapping::*, organization::*,
+    property::*, repository::*, source::*,
 };
 
 // TODO: add English comment
@@ -30,6 +30,9 @@ use crate::handler::{
         view_data,
         view_data_markdown,
         view_data_list,
+        list_docs,
+        view_doc,
+        view_doc_markdown,
         view_data_parquet,
         add_data,
         update_data,

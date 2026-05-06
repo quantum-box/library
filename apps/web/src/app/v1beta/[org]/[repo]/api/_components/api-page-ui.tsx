@@ -31,6 +31,7 @@ export function ApiPageUi({
 			<div className='flex items-center gap-3 flex-wrap'>
 				<h1 className='text-2xl font-bold'>{t.v1beta.developerPortal.title}</h1>
 				<Badge variant='secondary'>{t.v1beta.developerPortal.subtitle}</Badge>
+				<Badge variant='outline'>Beta</Badge>
 			</div>
 
 			{/* Quick Start */}

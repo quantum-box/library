@@ -70,8 +70,24 @@ impl Config {
         }
 
         if is_production {
+            reject_empty(
+                "COGNITO_JWK_URL",
+                &self.cognito_jwk_url,
+                "COGNITO_JWK_URL must be configured in production",
+            )?;
+            reject_empty(
+                "COGNITO_USER_POOL_ID",
+                &self.cognito_user_pool_id,
+                "COGNITO_USER_POOL_ID must be configured in production",
+            )?;
+            reject_empty(
+                "TACHYON_API_URL",
+                &self.tachyon_api_url,
+                "TACHYON_API_URL must be configured in production",
+            )?;
+
             if self.service_auth_token.trim().is_empty()
-                || self.service_auth_token == "dummy-token"
+                || is_dangerous_secret(&self.service_auth_token)
             {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -87,14 +103,250 @@ impl Config {
                     "DATABASE_URL must not point at localhost in production",
                 ));
             }
+
+            validate_https_url("COGNITO_JWK_URL", &self.cognito_jwk_url)?;
+            validate_https_url("TACHYON_API_URL", &self.tachyon_api_url)?;
+            if self.cognito_jwk_url.contains("localhost")
+                || self.cognito_jwk_url.contains("127.0.0.1")
+            {
+                return Err(invalid_config(
+                    "COGNITO_JWK_URL must not point at localhost in production",
+                ));
+            }
+            if !self.cognito_jwk_url.contains(&self.cognito_user_pool_id) {
+                return Err(invalid_config(
+                    "COGNITO_JWK_URL must match COGNITO_USER_POOL_ID in production",
+                ));
+            }
+            if self.tachyon_api_url.contains("localhost")
+                || self.tachyon_api_url.contains("127.0.0.1")
+                || self.tachyon_api_url.contains("pages.dev")
+            {
+                return Err(invalid_config(
+                    "TACHYON_API_URL must point at the production API origin",
+                ));
+            }
+
+            let parquet_bucket =
+                std::env::var("LIBRARY_PARQUET_BUCKET").map_err(|_| {
+                    invalid_config(
+                        "LIBRARY_PARQUET_BUCKET must be configured in production",
+                    )
+                })?;
+            if parquet_bucket.trim().is_empty()
+                || parquet_bucket == "library-parquet"
+            {
+                return Err(invalid_config(
+                    "LIBRARY_PARQUET_BUCKET must not use the development default in production",
+                ));
+            }
+
+            for name in [
+                "MINIO_ENDPOINT",
+                "MINIO_PUBLIC_ENDPOINT",
+                "MINIO_ROOT_USER",
+                "MINIO_ROOT_PASSWORD",
+                "SKIP_MINIO_SETUP",
+            ] {
+                if std::env::var(name).is_ok() {
+                    return Err(invalid_config(
+                        "MINIO_* and SKIP_MINIO_SETUP must not be set in production",
+                    ));
+                }
+            }
         }
 
         Ok(())
     }
 }
 
+fn reject_empty(
+    name: &str,
+    value: &str,
+    message: &str,
+) -> Result<(), std::io::Error> {
+    if value.trim().is_empty() {
+        return Err(invalid_config(&format!("{message}: {name} is empty")));
+    }
+    Ok(())
+}
+
+fn validate_https_url(
+    name: &str,
+    value: &str,
+) -> Result<(), std::io::Error> {
+    let parsed = url::Url::parse(value).map_err(|_| {
+        invalid_config(&format!("{name} must be a valid URL"))
+    })?;
+    if parsed.scheme() != "https" {
+        return Err(invalid_config(&format!(
+            "{name} must use https in production"
+        )));
+    }
+    Ok(())
+}
+
+fn is_dangerous_secret(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "dummy-token"
+            | "dummy"
+            | "test"
+            | "secret"
+            | "changeme"
+            | "placeholder"
+    )
+}
+
+fn invalid_config(message: &str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
+}
+
 impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn valid_production_config() -> Config {
+        Config {
+            port: 50053,
+            environment: "production".to_string(),
+            database_url: "mysql://library:secret@tidb.example.com:4000"
+                .to_string(),
+            cognito_jwk_url: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_ProdPool/.well-known/jwks.json".to_string(),
+            otel_exporter_otlp_endpoint: None,
+            sentry_dsn: None,
+            cognito_user_pool_id: "ap-northeast-1_ProdPool".to_string(),
+            tachyon_api_url: "https://api.n1.tachy.one".to_string(),
+            service_auth_token: "prod-service-token".to_string(),
+        }
+    }
+
+    fn with_env_lock(test: impl FnOnce()) {
+        let _guard = ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned");
+        for name in [
+            "AWS_LAMBDA_FUNCTION_NAME",
+            "LIBRARY_PARQUET_BUCKET",
+            "MINIO_ENDPOINT",
+            "MINIO_PUBLIC_ENDPOINT",
+            "MINIO_ROOT_USER",
+            "MINIO_ROOT_PASSWORD",
+            "SKIP_MINIO_SETUP",
+        ] {
+            std::env::remove_var(name);
+        }
+        test();
+        for name in [
+            "AWS_LAMBDA_FUNCTION_NAME",
+            "LIBRARY_PARQUET_BUCKET",
+            "MINIO_ENDPOINT",
+            "MINIO_PUBLIC_ENDPOINT",
+            "MINIO_ROOT_USER",
+            "MINIO_ROOT_PASSWORD",
+            "SKIP_MINIO_SETUP",
+        ] {
+            std::env::remove_var(name);
+        }
+    }
+
+    #[test]
+    fn production_config_accepts_ga_values() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            let config = valid_production_config();
+
+            assert!(config.validate_for_server_startup().is_ok());
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_dummy_service_token() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            let mut config = valid_production_config();
+            config.service_auth_token = "dummy-token".to_string();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_localhost_database_url() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            let mut config = valid_production_config();
+            config.database_url =
+                "mysql://root:@localhost:15000".to_string();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_missing_parquet_bucket() {
+        with_env_lock(|| {
+            let config = valid_production_config();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_minio_settings() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            std::env::set_var("MINIO_ENDPOINT", "http://localhost:9000");
+            let config = valid_production_config();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_pages_dev_tachyon_api_url() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            let mut config = valid_production_config();
+            config.tachyon_api_url =
+                "https://tachyon-api.pages.dev".to_string();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
     }
 }

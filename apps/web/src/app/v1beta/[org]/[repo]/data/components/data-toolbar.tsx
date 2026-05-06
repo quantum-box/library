@@ -212,6 +212,9 @@ export function DataToolbar({
 							>
 								<Code2 className='mr-2 h-4 w-4' />
 								SQL
+								<Badge variant='outline' className='ml-2 px-1 py-0 text-[10px]'>
+									Beta
+								</Badge>
 							</Button>
 						</PopoverTrigger>
 						<PopoverContent className='w-[420px]' align='start'>
@@ -466,9 +469,10 @@ export function DataToolbar({
 								size='sm'
 								className={`h-8 rounded-none ${hasMapView ? 'border-r' : ''}`}
 								onClick={() => onViewModeChange('kanban')}
-								title='Kanban view'
+								title='Kanban view (Beta)'
 							>
 								<Kanban className='h-4 w-4' />
+								<span className='sr-only'>Beta</span>
 							</Button>
 						)}
 						{hasMapView && (
@@ -477,9 +481,10 @@ export function DataToolbar({
 								size='sm'
 								className={`h-8 rounded-none ${hasGanttView ? 'border-r' : 'rounded-l-none'}`}
 								onClick={() => onViewModeChange('map')}
-								title='Map view'
+								title='Map view (Beta)'
 							>
 								<MapPin className='h-4 w-4' />
+								<span className='sr-only'>Beta</span>
 							</Button>
 						)}
 						{hasGanttView && (
@@ -488,9 +493,10 @@ export function DataToolbar({
 								size='sm'
 								className='h-8 rounded-l-none'
 								onClick={() => onViewModeChange('gantt')}
-								title='Gantt view'
+								title='Gantt view (Beta)'
 							>
 								<Calendar className='h-4 w-4' />
+								<span className='sr-only'>Beta</span>
 							</Button>
 						)}
 					</div>
