@@ -89,14 +89,14 @@
 25. `github_auth_url(repo_id: String, redirect_uri?: String, scope?: String): GitHubAuthUrl`
 26. `github_exchange_token(input: GitHubExchangeTokenInput): GitHubConnection`
 27. `github_disconnect(repo_id: String): GitHubConnection`
-28. `sync_data_to_github(input: SyncDataToGitHubInput): SyncResult`
-29. `bulk_sync_ext_github(input: BulkSyncExtGitHubInput): SyncResult`
-30. `enable_github_sync(input: EnableGitHubSyncInput): SyncResult`
+28. `sync_data_to_github(input: SyncDataToGitHubInput): SyncResult`（Non-GA: Library GA では拒否）
+29. `bulk_sync_ext_github(input: BulkSyncExtGitHubInput): SyncResult`（Non-GA: Library GA では拒否）
+30. `enable_github_sync(input: EnableGitHubSyncInput): SyncResult`（Non-GA: Library GA では拒否）
 31. `disable_github_sync(input: DisableGitHubSyncInput): SyncResult`
 32. `invite_repo_member(input: InviteRepoMemberInput): RepoMember`
 33. `remove_repo_member(input: RemoveRepoMemberInput): Repo`
 34. `change_repo_member_role(input: ChangeRepoMemberRoleInput): RepoMember`
-35. `import_markdown_from_github(input: ImportMarkdownFromGitHubInput): ImportMarkdownResult`
+35. `import_markdown_from_github(input: ImportMarkdownFromGitHubInput): ImportMarkdownResult`（GA: `enableGithubSync=false` の one-shot import のみ）
 
 ## 7. Query（同期系）
 

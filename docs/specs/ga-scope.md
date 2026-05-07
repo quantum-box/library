@@ -26,13 +26,14 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 
 ## 3. 外部連携と同期の扱い
 
-外部連携の詳細な readiness は [外部連携 readiness](integrations/readiness.md) に従う。Library GA では、GitHub / HubSpot / Stripe / Notion / Airtable の NoOp 外部連携、外部同期、webhook / API pull の実行経路を GA 対象外とする。
+外部連携の詳細な readiness は [外部連携 readiness](integrations/readiness.md) に従う。Library GA では、GitHub / HubSpot / Stripe / Notion / Airtable の NoOp 外部連携、外部同期、webhook / API pull の実行経路を GA 対象外とする。GitHub Markdown import は例外的に GitHub OAuth を使う one-shot import だけ GA とし、GitHub sync / writeback / GitHub App installation / inbound GitHub sync は GA 対象外とする。
 
 1. UI は非GA 連携を `Coming soon` かつ disabled として表示する。接続ボタン、endpoint 作成、test webhook、initial sync、on-demand sync は実行可能にしない。
 2. API は `readiness=NON_GA` と `unavailableReason` を返せるが、保存や background operation 作成の前に `bad_request` 相当で拒否する。
 3. NoOp client / data handler / API pull processor は実行確認用の代替実装として扱わない。GA の E2E、監査、同期成功率、公開品質の根拠に含めない。
 4. `readiness=EXPERIMENTAL` の連携は Beta として扱い、必要な環境変数や feature flag が満たされない限り UI/API とも disabled にする。
 5. Linear inbound sync は [外部連携 readiness](integrations/readiness.md) 上では GA readiness だが、Library GA scope 全体では CMS / Document OS の中核機能とは別枠の連携機能として扱う。下流 issue が依存する場合は、連携 issue 側の完了条件として分離する。
+6. `importMarkdownFromGithub` は `enableGithubSync=false` の one-shot import のみ GA とする。`syncDataToGithub`、`bulkSyncExtGithub`、`enableGithubSync`、`enableGithubSync=true` の import は保存や外部書き戻し前に拒否する。
 
 ## 3.1 共同編集 WebSocket の扱い
 

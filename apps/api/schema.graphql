@@ -994,8 +994,8 @@ input ImportMarkdownFromGitHubInput {
 	"""
 	skipExisting: Boolean
 	"""
-	Whether to enable GitHub sync (default: true)
-	If false, ext_github property will be created but without repo config
+	Whether to enable GitHub sync. GitHub sync/writeback is Non-GA and is
+	rejected when true; omit or pass false for one-shot Markdown import.
 	"""
 	enableGithubSync: Boolean
 }
@@ -1377,15 +1377,15 @@ type Mutation {
 	"""
 	githubDisconnect: Boolean!
 	"""
-	[LIBRARY-API] Sync data to GitHub
+	[LIBRARY-API] Sync data to GitHub. Non-GA; rejected in Library GA.
 	"""
 	syncDataToGithub(input: SyncToGitHubInput!): SyncResult!
 	"""
-	[LIBRARY-API] Bulk sync ext_github property for all data items
+	[LIBRARY-API] Bulk sync ext_github property for all data items. Non-GA; rejected in Library GA.
 	"""
 	bulkSyncExtGithub(input: BulkSyncExtGithubInput!): BulkSyncExtGithubResult!
 	"""
-	[LIBRARY-API] Enable GitHub sync by creating the ext_github property (system use only)
+	[LIBRARY-API] Enable GitHub sync by creating the ext_github property. Non-GA; rejected in Library GA.
 	"""
 	enableGithubSync(input: EnableGitHubSyncInput!): EnableGitHubSyncResult!
 	"""

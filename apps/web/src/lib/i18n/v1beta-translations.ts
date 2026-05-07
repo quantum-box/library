@@ -282,20 +282,20 @@ export const v1betaTranslations = {
 		githubSettings: {
 			githubIntegration: 'GitHub Integration',
 			description:
-				'Connect your GitHub account to sync library data to repositories.',
+				'Connect your GitHub account to import Markdown files from repositories.',
 			loading: 'Loading...',
 			connectedAs: 'Connected as',
 			connectedOn: 'Connected on',
 			repositoryAccess: 'Repository Access',
 			repositoryAccessDescription:
-				'To sync data to your repositories, install the GitHub App on your account or organization.',
+				'GitHub App installation and repository sync are not part of Library GA. This OAuth connection is used for one-shot Markdown import only.',
 			installGitHubApp: 'Install GitHub App',
 			disconnectGitHub: 'Disconnect GitHub',
 			disconnecting: 'Disconnecting...',
 			connectGitHub: 'Connect GitHub',
 			connecting: 'Connecting...',
 			connectDescription:
-				'Connect your GitHub account to enable syncing library data to GitHub repositories.',
+				'Connect your GitHub account to import Markdown files from GitHub repositories.',
 			successConnected: 'Successfully connected to GitHub!',
 			failedConnect: 'Failed to connect to GitHub',
 			failedDisconnect: 'Failed to disconnect',
@@ -351,6 +351,8 @@ export const v1betaTranslations = {
 			syncExtGithub: 'Sync ext_github to frontmatter',
 			syncExtGithubDescription:
 				'When saving to GitHub, include ext_github in frontmatter',
+			oneShotImportOnly:
+				'GitHub Markdown import is one-shot for GA. GitHub sync and writeback are coming soon and will not be enabled by this import.',
 			propertyMappings: 'Property Mappings',
 			filesWithFrontmatter: '{valid}/{total} files with frontmatter',
 			noFrontmatter: 'No frontmatter properties found in selected files',
@@ -1090,20 +1092,20 @@ export const v1betaTranslations = {
 		githubSettings: {
 			githubIntegration: 'GitHub連携',
 			description:
-				'GitHubアカウントを接続して、ライブラリデータをリポジトリに同期します。',
+				'GitHubアカウントを接続して、リポジトリからMarkdownファイルをインポートします。',
 			loading: '読み込み中...',
 			connectedAs: '接続中',
 			connectedOn: '接続日',
 			repositoryAccess: 'リポジトリアクセス',
 			repositoryAccessDescription:
-				'リポジトリにデータを同期するには、アカウントまたは組織にGitHub Appをインストールしてください。',
+				'GitHub Appのインストールとリポジトリ同期はLibrary GA対象外です。このOAuth接続はone-shot Markdown importにのみ使用します。',
 			installGitHubApp: 'GitHub Appをインストール',
 			disconnectGitHub: 'GitHubを切断',
 			disconnecting: '切断中...',
 			connectGitHub: 'GitHubに接続',
 			connecting: '接続中...',
 			connectDescription:
-				'GitHubアカウントを接続して、ライブラリデータをGitHubリポジトリに同期できるようにします。',
+				'GitHubアカウントを接続して、GitHubリポジトリからMarkdownファイルをインポートします。',
 			successConnected: 'GitHubに接続しました！',
 			failedConnect: 'GitHubへの接続に失敗しました',
 			failedDisconnect: '切断に失敗しました',
@@ -1161,6 +1163,8 @@ export const v1betaTranslations = {
 			syncExtGithub: 'ext_githubをfrontmatterに同期',
 			syncExtGithubDescription:
 				'GitHubに保存する際、frontmatterにext_githubを含める',
+			oneShotImportOnly:
+				'GAではGitHub Markdown importはone-shotです。GitHub同期と書き戻しはComing soonで、このインポートでは有効化されません。',
 			propertyMappings: 'プロパティマッピング',
 			filesWithFrontmatter: '{total}件中{valid}件がfrontmatterを含む',
 			noFrontmatter:

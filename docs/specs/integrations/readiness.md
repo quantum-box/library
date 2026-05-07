@@ -14,6 +14,19 @@
 | Notion | Non-GA | `Coming soon` / disabled | marketplace には理由付きで返すが接続・endpoint 作成・test/sync は拒否 | `NoOpNotionClient` / `NoOpNotionDataHandler` |
 | Airtable | Non-GA | `Coming soon` / disabled | marketplace には理由付きで返すが接続・endpoint 作成・test/sync は拒否 | marketplace 定義のみ。client / data handler / API pull processor 未配線 |
 
+## 1.1 GitHub Markdown import / sync
+
+GitHub は inbound sync marketplace では Non-GA のまま扱う。一方、GraphQL の GitHub OAuth と Markdown import 経路は CMS / Document OS への one-shot import として GA 扱いにできる。
+
+| 経路 | GA扱い | UI/API 挙動 | 根拠 |
+| --- | --- | --- | --- |
+| `githubAuthUrl` / `githubExchangeToken` | GA | GitHub Markdown import 用 OAuth 接続として利用可 | state HMAC 検証と OAuth token 保存経路が実装済み |
+| `githubListDirectoryContents` / `githubGetMarkdownPreviews` / `githubAnalyzeFrontmatter` | GA | OAuth token を使った import preview / analyze として利用可 | 実 GitHub credential なしの検証では mock/fixture 対象。実通信は利用者 OAuth の明示接続後のみ |
+| `importMarkdownFromGithub(enableGithubSync=false)` | GA | Markdown を Library repo/data/property へ one-shot import。GitHub への書き戻しは有効化しない | `library:CreateData` 認可、repo 作成、property/data 作成経路あり |
+| `importMarkdownFromGithub(enableGithubSync=true)` | Non-GA | `bad_request` で拒否 | sync/writeback 導線に接続するため GA 対象外 |
+| `syncDataToGithub` / `bulkSyncExtGithub` / `enableGithubSync` | Non-GA | `bad_request` で拒否。GA UI からは非表示 | 外部副作用を持つ GitHub writeback / ext_github sync は GA scope 外 |
+| GitHub App installation / inbound GitHub sync | Non-GA | Coming soon / disabled | inbound runtime が `NoOpGitHubClient` / `NoOpGitHubDataHandler` |
+
 ## 2. GraphQL 表示仕様
 
 `GqlIntegration` は `readiness` と `unavailableReason` を返す。
