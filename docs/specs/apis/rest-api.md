@@ -123,7 +123,7 @@
 2. 作成系の成功コードは仕様定義とズレる場合があり、`200/201` を許容する実装寄りクライアントが必要。
 3. `delete_*` 成功時の `204` について、GraphQL 経由では `Boolean` 結果として吸収される場合がある。
 4. Webhook 受理後、署名検証失敗時でも `queued` 系イベントが返る経路があるため監査設計が必須。
-5. 追加経路 `POST /webhooks/:provider`, `POST /webhooks/:provider/:endpoint_id` と `GET /ws/collab/:document_key` は `OpenAPI` に含まれないが公開される。
+5. 追加経路 `POST /webhooks/:provider`, `POST /webhooks/:provider/:endpoint_id` は `OpenAPI` に含まれないが公開される。`GET /ws/collab/:document_key` は Non-GA / experimental のため標準環境では登録せず、検証環境でのみ `LIBRARY_COLLAB_WS_ENABLED=true` により有効化する。
 6. 詳細は [implementation-notes.md](/Users/takanorifukuyama/git/github.com/quantum-box/library/docs/specs/implementation-notes.md) へ常時追記。
 
 ## 6. 主要DTO参照

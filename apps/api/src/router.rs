@@ -49,9 +49,21 @@ use inbound_sync::{
     WebhookSecretStore,
 };
 
+const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
+
 #[derive(Serialize)]
 struct VersionResponse {
     version: &'static str,
+}
+
+fn collaboration_ws_enabled() -> bool {
+    std::env::var(COLLAB_WS_ENABLED_ENV)
+        .map(|value| env_flag_enabled(&value))
+        .unwrap_or(false)
+}
+
+fn env_flag_enabled(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("true")
 }
 
 pub async fn router(
@@ -495,21 +507,35 @@ pub async fn router(
     //     file.write_all(schema.clone().sdl().as_bytes())?;
     // }
 
-    // Collaboration (real-time editing) setup
-    let collab_persistence =
-        Arc::new(SqlxDocumentPersistence::new(library_db.pool()));
-    let doc_manager = Arc::new(DocumentManager::new(collab_persistence));
-    doc_manager.start_background_persistence();
-    let collab_state = CollaborationState {
-        manager: doc_manager,
-    };
+    // Collaboration WebSocket is Non-GA and must stay unregistered
+    // unless a validation environment explicitly opts in.
+    let collab_router = if collaboration_ws_enabled() {
+        tracing::warn!(
+            env = COLLAB_WS_ENABLED_ENV,
+            "enabling Non-GA collaboration WebSocket route"
+        );
+        let collab_persistence =
+            Arc::new(SqlxDocumentPersistence::new(library_db.pool()));
+        let doc_manager =
+            Arc::new(DocumentManager::new(collab_persistence));
+        doc_manager.start_background_persistence();
+        let collab_state = CollaborationState {
+            manager: doc_manager,
+        };
 
-    let collab_router = axum::Router::new()
-        .route(
-            "/ws/collab/:document_key",
-            get(crate::collaboration::ws_handler),
-        )
-        .with_state(collab_state);
+        axum::Router::new()
+            .route(
+                "/ws/collab/:document_key",
+                get(crate::collaboration::ws_handler),
+            )
+            .with_state(collab_state)
+    } else {
+        tracing::info!(
+            env = COLLAB_WS_ENABLED_ENV,
+            "collaboration WebSocket route disabled"
+        );
+        axum::Router::new()
+    };
 
     // Webhook router
     let webhook_router =
@@ -681,4 +707,21 @@ fn build_webhook_runtime(
             base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
         };
     (shutdown_tx, webhook_handler_state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env_flag_enabled;
+
+    #[test]
+    fn collaboration_ws_env_flag_requires_true() {
+        assert!(env_flag_enabled("true"));
+        assert!(env_flag_enabled("TRUE"));
+        assert!(env_flag_enabled(" true "));
+
+        assert!(!env_flag_enabled(""));
+        assert!(!env_flag_enabled("false"));
+        assert!(!env_flag_enabled("1"));
+        assert!(!env_flag_enabled("yes"));
+    }
 }

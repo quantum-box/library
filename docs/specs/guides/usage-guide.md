@@ -184,6 +184,7 @@
 
 ### 4.9 WebSocketコラボ
 
+- Status: Non-GA / experimental。標準環境では disabled で、検証環境のみ `LIBRARY_COLLAB_WS_ENABLED=true` により有効化する。
 - `GET /ws/collab/:document_key`
   - query: `operator_id`
   - handler: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/collaboration/handler.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/collaboration/handler.rs)

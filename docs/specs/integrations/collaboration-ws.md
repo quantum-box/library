@@ -1,13 +1,21 @@
 # コラボレーション WebSocket 仕様
 
-対象: `GET /ws/collab/:document_key`（query `operator_id` 必須）。最終更新: 2026-05-03
+対象: `GET /ws/collab/:document_key`（query `operator_id` 必須）。最終更新: 2026-05-07
+
+## 0. GA status
+
+1. 判断: Non-GA / experimental。
+2. 標準環境では `GET /ws/collab/:document_key` を router に登録しない。
+3. 検証環境でのみ `LIBRARY_COLLAB_WS_ENABLED=true` を明示して有効化する。
+4. 標準 UI からは `collaborationWsUrl` / `collaborationOperatorId` を渡さず、共同編集接続を開始しない。
+5. GA/Beta に戻す場合は、WebSocket upgrade 前の認証、編集権限、認証済み tenant/operator 境界、永続化復元、複数クライアント再接続の検証を完了条件に含める。
 
 ## 1. 接続
 
 1. ルート: `GET /ws/collab/:document_key`
 2. クエリ: `operator_id=<string>` を必須で受ける。
 3. 実装: `/apps/api/src/collaboration/handler.rs`
-4. ルータ登録: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/router.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/router.rs)
+4. ルータ登録: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/router.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/router.rs)。標準 default は disabled。
 
 ## 2. 連携方式
 
