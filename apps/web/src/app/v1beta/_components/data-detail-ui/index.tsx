@@ -64,9 +64,9 @@ export function DataDetailUi({
 	}) => Promise<string | undefined>
 	onlyEdit?: boolean
 	viewOnly?: boolean
-	/** WebSocket base URL for collaborative editing (e.g. ws://localhost:50053). */
+	/** Non-GA WebSocket base URL for validation-only collaborative editing. */
 	collaborationWsUrl?: string
-	/** Operator ID for tenant isolation in collaboration. */
+	/** Non-GA operator ID for validation-only collaborative editing. */
 	collaborationOperatorId?: string
 	/** Display name of the current user. */
 	collaborationUserName?: string

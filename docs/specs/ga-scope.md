@@ -34,6 +34,10 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 4. `readiness=EXPERIMENTAL` の連携は Beta として扱い、必要な環境変数や feature flag が満たされない限り UI/API とも disabled にする。
 5. Linear inbound sync は [外部連携 readiness](integrations/readiness.md) 上では GA readiness だが、Library GA scope 全体では CMS / Document OS の中核機能とは別枠の連携機能として扱う。下流 issue が依存する場合は、連携 issue 側の完了条件として分離する。
 
+## 3.1 共同編集 WebSocket の扱い
+
+`GET /ws/collab/:document_key` は Non-GA / experimental とする。標準環境では router に登録せず、検証環境でのみ `LIBRARY_COLLAB_WS_ENABLED=true` を明示して有効化する。GA 判定では共同編集 WebSocket の利用導線、永続化、再接続、競合解決、認証・編集権限を成功条件に含めない。
+
 ## 4. GA 入り判定基準
 
 機能を GA 正式提供に入れるには、次をすべて満たす。
