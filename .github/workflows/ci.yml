@@ -76,7 +76,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
       - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler default-mysql-client
       - run: cargo nextest run --workspace
       - name: Run Library GA CRUD regression
         env:
@@ -88,6 +88,13 @@ jobs:
           ENVIRONMENT: test
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
+          mysql --protocol=TCP -h 127.0.0.1 -P 3306 -u root -e "
+            CREATE DATABASE IF NOT EXISTS tachyon_apps_auth;
+            CREATE TABLE IF NOT EXISTS tachyon_apps_auth.tenants (
+              id VARCHAR(29) NOT NULL PRIMARY KEY,
+              parent_tenant_id VARCHAR(29) NULL
+            );
+          "
           cargo run -p database-manager --bin database_manager_migrate dev
           cargo run -p library-api --bin library_api_migrate dev
           cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
