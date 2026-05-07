@@ -1,6 +1,6 @@
 # Library GA scope
 
-最終更新: 2026-05-06
+最終更新: 2026-05-07
 
 この文書は Library GA Readiness の下流 issue が依存してよい正式提供範囲を定義する。GA は「追加の feature flag や個別運用なしに、利用者へ正式提供してよい範囲」を指す。
 
@@ -32,7 +32,7 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 2. API は `readiness=NON_GA` と `unavailableReason` を返せるが、保存や background operation 作成の前に `bad_request` 相当で拒否する。
 3. NoOp client / data handler / API pull processor は実行確認用の代替実装として扱わない。GA の E2E、監査、同期成功率、公開品質の根拠に含めない。
 4. `readiness=EXPERIMENTAL` の連携は Beta として扱い、必要な環境変数や feature flag が満たされない限り UI/API とも disabled にする。
-5. Linear inbound sync は [外部連携 readiness](integrations/readiness.md) 上では GA readiness だが、Library GA scope 全体では CMS / Document OS の中核機能とは別枠の連携機能として扱う。下流 issue が依存する場合は、連携 issue 側の完了条件として分離する。
+5. Linear inbound sync は [外部連携 readiness](integrations/readiness.md) 上では GA readiness だが、Library GA scope 全体では CMS / Document OS の中核機能とは別枠の連携機能として扱う。下流 issue が依存する場合は、連携 issue 側の完了条件として分離する。PLT-1144 の復旧後検証では本番 Library API の health / GraphQL schema / integration readiness と Linear 実データの読み取りを確認済みだが、本番書き込みを伴う sync operation 作成は安全な検証 endpoint でだけ実施する。
 6. `importMarkdownFromGithub` は `enableGithubSync=false` の one-shot import のみ GA とする。`syncDataToGithub`、`bulkSyncExtGithub`、`enableGithubSync`、`enableGithubSync=true` の import は保存や外部書き戻し前に拒否する。
 
 ## 3.1 共同編集 WebSocket の扱い

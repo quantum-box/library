@@ -1,6 +1,6 @@
 # 外部連携 readiness
 
-対象: inbound sync marketplace / webhook endpoint / API pull。最終更新: 2026-05-06
+対象: inbound sync marketplace / webhook endpoint / API pull。最終更新: 2026-05-07
 
 ## 1. 分類
 
@@ -51,3 +51,11 @@ GitHub は inbound sync marketplace では Non-GA のまま扱う。一方、Gra
 8. `triggerSync`
 
 既存 endpoint が残っている場合も `sendTestWebhook` / `startInitialSync` / `triggerSync` は provider readiness を再確認し、NoOp processor に到達させない。
+
+## 4. PLT-1144 Linear sync 検証結果
+
+2026-05-07 に `https://library.api.n1.tachy.one` の 502 復旧後検証を実施した。`GET /health` は HTTP 200 `OK`、`GET /v1/graphql/introspection` は HTTP 200、`query { integrations { ... } }` は `int_linear` を `readiness=GA`, `isEnabled=true`, `isFeatured=true`, `requiresOauth=true`, `syncCapability=INBOUND` として返した。
+
+Linear 側の実データは Linear connector で `プラットフォーム事業` team、`Library GA Readiness` project、`PLT-1144` を含む実 issue を読み取り確認した。Codex 環境には本番 caller credential と saved Linear OAuth token がないため、Library OAuth 経由の `linearListTeams` 以降は認証境界までの確認に留めた。本番 DB への webhook endpoint / sync operation 作成や Linear 本番データへの書き込みは行っていない。
+
+詳細な検証記録と再現手順は [PLT-1144 task doc](../../tasks/in-progress/plt-1144-linear-sync-ga/task.md) を参照する。
