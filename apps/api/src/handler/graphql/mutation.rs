@@ -23,6 +23,18 @@ use value_object::{
 };
 
 type HmacSha256 = Hmac<Sha256>;
+const GITHUB_SYNC_NON_GA_MESSAGE: &str =
+    "GitHub sync/writeback is not part of Library GA. Use one-shot GitHub Markdown import with enableGithubSync=false.";
+
+fn require_one_shot_github_markdown_import(
+    enable_github_sync: Option<bool>,
+) -> errors::Result<bool> {
+    if enable_github_sync.unwrap_or(false) {
+        return Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE));
+    }
+
+    Ok(false)
+}
 
 /// Sign an OAuth state parameter with HMAC-SHA256 for CSRF protection.
 ///
@@ -1138,168 +1150,37 @@ impl LibraryMutation {
     // ==================== Data Sync ====================
 
     /// [LIBRARY-API] Sync data to GitHub
-    #[tracing::instrument(name = "sync_data_to_github", skip(self, ctx))]
+    #[tracing::instrument(name = "sync_data_to_github", skip(self, _ctx))]
     async fn sync_data_to_github(
         &self,
-        ctx: &async_graphql::Context<'_>,
-        input: SyncToGitHubInput,
+        _ctx: &async_graphql::Context<'_>,
+        _input: SyncToGitHubInput,
     ) -> Result<SyncResult> {
-        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let app = ctx.data::<Arc<LibraryApp>>()?;
-
-        // Get data and properties
-        let (data, properties) = app
-            .view_data
-            .execute(&usecase::ViewDataInputData {
-                executor,
-                multi_tenancy,
-                org_username: input.org_username.clone(),
-                repo_username: input.repo_username.clone(),
-                data_id: input.data_id.clone(),
-            })
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to get data: {:?}", e);
-                e.extend()
-            })?;
-
-        // Generate markdown
-        let markdown =
-            crate::handler::data::compose_markdown(&data, &properties);
-
-        // Build sync target
-        let target = SyncTarget::git_with_branch(
-            &input.target_repo,
-            &input.target_path,
-            input.target_branch.unwrap_or_else(|| "main".to_string()),
-        );
-
-        // Build payload
-        let message = input.commit_message.unwrap_or_else(|| {
-            format!("chore(library): sync {}", data.name())
-        });
-        let payload =
-            SyncPayload::markdown_with_message(&markdown, &message);
-
-        // Execute sync
-        let sync_data =
-            ctx.data::<Arc<dyn outbound_sync::SyncDataInputPort>>()?;
-        let result = sync_data
-            .execute(&SyncDataInputData {
-                executor,
-                multi_tenancy,
-                data_id: input.data_id,
-                provider: "github".to_string(),
-                target,
-                payload,
-                dry_run: input.dry_run.unwrap_or(false),
-            })
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to sync data: {:?}", e);
-                e.extend()
-            })?;
-
-        Ok(SyncResult {
-            success: matches!(
-                result.status,
-                outbound_sync::SyncStatus::Synced
-            ),
-            status: result.status.into(),
-            result_id: result.result_id,
-            url: result.url,
-            diff: result.diff,
-        })
+        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
     }
 
     // ==================== Bulk Sync ====================
 
     /// [LIBRARY-API] Bulk sync ext_github property for all data items
-    #[tracing::instrument(name = "bulk_sync_ext_github", skip(self, ctx))]
+    #[tracing::instrument(name = "bulk_sync_ext_github", skip(self, _ctx))]
     async fn bulk_sync_ext_github(
         &self,
-        ctx: &async_graphql::Context<'_>,
-        input: BulkSyncExtGithubInput,
+        _ctx: &async_graphql::Context<'_>,
+        _input: BulkSyncExtGithubInput,
     ) -> Result<BulkSyncExtGithubResult> {
-        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let app = ctx.data::<Arc<LibraryApp>>()?;
-
-        let repo_configs = input
-            .repo_configs
-            .into_iter()
-            .map(|c| usecase::ExtGithubRepoConfig {
-                repo: c.repo,
-                label: c.label,
-                default_path: c.default_path,
-            })
-            .collect();
-
-        let result = app
-            .bulk_sync_ext_github
-            .execute(usecase::BulkSyncExtGithubInputData {
-                executor,
-                multi_tenancy,
-                org_username: input.org_username,
-                repo_username: input.repo_username,
-                ext_github_property_id: input.ext_github_property_id,
-                repo_configs,
-            })
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to bulk sync ext_github: {:?}", e);
-                e.extend()
-            })?;
-
-        Ok(BulkSyncExtGithubResult {
-            updated_count: result.updated_count as i32,
-            skipped_count: result.skipped_count as i32,
-            total_count: result.total_count as i32,
-        })
+        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
     }
 
     // ==================== Enable GitHub Sync ====================
 
     /// [LIBRARY-API] Enable GitHub sync by creating the ext_github property (system use only)
-    #[tracing::instrument(name = "enable_github_sync", skip(self, ctx))]
+    #[tracing::instrument(name = "enable_github_sync", skip(self, _ctx))]
     async fn enable_github_sync(
         &self,
-        ctx: &async_graphql::Context<'_>,
-        input: EnableGitHubSyncInput,
+        _ctx: &async_graphql::Context<'_>,
+        _input: EnableGitHubSyncInput,
     ) -> Result<EnableGitHubSyncResult> {
-        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let app = ctx.data::<Arc<LibraryApp>>()?;
-
-        // Create ext_github property (bypassing the ext_ validation since this is system use)
-        let property = app
-            .add_property
-            .execute(usecase::AddPropertyInputData {
-                executor,
-                multi_tenancy,
-                org_username: input.org_username.clone(),
-                repo_username: input.repo_username.clone(),
-                property_name: "ext_github".to_string(),
-                property_type:
-                    database_manager::domain::PropertyType::String,
-            })
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to create ext_github property: {:?}",
-                    e
-                );
-                e.extend()
-            })?;
-
-        Ok(EnableGitHubSyncResult {
-            success: true,
-            property_id: property.id().to_string(),
-        })
+        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
     }
 
     /// [LIBRARY-API] Enable Linear sync by creating the ext_linear property (system use only)
@@ -1528,6 +1409,11 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
+        let enable_github_sync = require_one_shot_github_markdown_import(
+            input.enable_github_sync,
+        )
+        .map_err(|e| e.extend())?;
+
         // Build property mappings
         let property_mappings: Vec<usecase::PropertyMapping> = input
             .property_mappings
@@ -1562,9 +1448,7 @@ impl LibraryMutation {
                 property_mappings,
                 content_property_name: input.content_property_name,
                 skip_existing: input.skip_existing.unwrap_or(false),
-                enable_github_sync: input
-                    .enable_github_sync
-                    .unwrap_or(true),
+                enable_github_sync,
             })
             .await
             .map_err(|e| {
@@ -1894,4 +1778,31 @@ pub struct SyncToGitHubInput {
     pub commit_message: Option<String>,
     /// If true, only calculate diff without syncing
     pub dry_run: Option<bool>,
+}
+
+#[cfg(test)]
+mod github_markdown_ga_tests {
+    use super::require_one_shot_github_markdown_import;
+
+    #[test]
+    fn github_markdown_import_defaults_to_one_shot_ga_path() {
+        assert_eq!(
+            require_one_shot_github_markdown_import(None).unwrap(),
+            false
+        );
+        assert_eq!(
+            require_one_shot_github_markdown_import(Some(false)).unwrap(),
+            false
+        );
+    }
+
+    #[test]
+    fn github_markdown_import_rejects_sync_enablement() {
+        let err = require_one_shot_github_markdown_import(Some(true))
+            .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("GitHub sync/writeback is not part of Library GA"));
+    }
 }

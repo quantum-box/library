@@ -80,7 +80,6 @@ export function GitHubImportDialog({
 	// Configuration
 	const [repoUsername, setRepoUsername] = useState('')
 	const [contentPropertyName, setContentPropertyName] = useState('content')
-	const [enableGithubSync, setEnableGithubSync] = useState(true)
 	const [propertyMappings, setPropertyMappings] = useState<
 		Array<{
 			frontmatterKey: string
@@ -229,7 +228,7 @@ export function GitHubImportDialog({
 					selectOptions: m.selectOptions,
 				})),
 				contentPropertyName,
-				enableGithubSync,
+				enableGithubSync: false,
 			})
 
 			if (result.error) {
@@ -513,26 +512,9 @@ export function GitHubImportDialog({
 									{t.v1beta.githubImport.contentPropertyNameDescription}
 								</p>
 							</div>
-							<div className='flex items-center gap-3 pt-2'>
-								<Checkbox
-									id='sync-ext-github'
-									checked={enableGithubSync}
-									onCheckedChange={checked =>
-										setEnableGithubSync(checked === true)
-									}
-								/>
-								<div>
-									<label
-										htmlFor='sync-ext-github'
-										className='text-sm font-medium cursor-pointer'
-									>
-										{t.v1beta.githubImport.syncExtGithub}
-									</label>
-									<p className='text-xs text-muted-foreground'>
-										{t.v1beta.githubImport.syncExtGithubDescription}
-									</p>
-								</div>
-							</div>
+							<p className='rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground'>
+								{t.v1beta.githubImport.oneShotImportOnly}
+							</p>
 						</div>
 
 						{/* Frontmatter analysis */}

@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/card'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
-import { AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react'
+import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useRouterState } from '@tanstack/react-router'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
@@ -266,16 +266,6 @@ export function GitHubSettings({ org }: { org: string }) {
 							<p className='text-muted-foreground text-sm'>
 								{t.v1beta.githubSettings.repositoryAccessDescription}
 							</p>
-							<Button variant='outline' asChild>
-								<a
-									href='https://github.com/apps/library-powered-by-tachyon/installations/new'
-									target='_blank'
-									rel='noopener noreferrer'
-								>
-									<ExternalLink className='mr-2 h-4 w-4' />
-									{t.v1beta.githubSettings.installGitHubApp}
-								</a>
-							</Button>
 						</div>
 
 						<Button

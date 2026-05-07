@@ -130,7 +130,7 @@ pub struct ImportMarkdownFromGitHubInput {
     pub content_property_name: String,
     /// Whether to skip files that already exist (by ext_github path)
     pub skip_existing: Option<bool>,
-    /// Whether to enable GitHub sync (default: true)
-    /// If false, ext_github property will be created but without repo config
+    /// Whether to enable GitHub sync. GitHub sync/writeback is Non-GA and is
+    /// rejected when true; omit or pass false for one-shot Markdown import.
     pub enable_github_sync: Option<bool>,
 }
