@@ -22,7 +22,5 @@ pub use webhook_event_repository::*;
 
 // Repository implementations (moved from integration package)
 mod connection_repository;
-mod oauth_token_repository;
 
 pub use connection_repository::SqlxConnectionRepository;
-pub use oauth_token_repository::SqlxOAuthTokenRepository;
