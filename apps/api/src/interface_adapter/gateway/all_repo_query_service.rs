@@ -61,18 +61,23 @@ impl AllRepoQueryServiceImpl {
         r: RepoRowOnQuery,
         databases: Vec<DatabaseRow>,
     ) -> Result<Repo> {
+        let database_ids = databases
+            .into_iter()
+            .map(|d| d.database_id.parse().map_err(Error::from))
+            .collect::<Result<Vec<_>>>()?;
+
         Ok(Repo::new(
-            &r.id.parse().unwrap(),
-            &r.org_id.parse().unwrap(),
-            &r.org_username.parse().unwrap(),
-            &r.name.parse().unwrap(),
-            &r.username.parse().unwrap(),
+            &r.id.parse()?,
+            &r.org_id.parse()?,
+            &r.org_username.parse()?,
+            &r.name.parse()?,
+            &r.username.parse()?,
             r.is_public == 1,
-            r.description.map(|d| d.parse()).transpose().unwrap(),
-            databases
-                .into_iter()
-                .map(|d| d.database_id.parse().unwrap())
-                .collect(),
+            r.description
+                .filter(|d| !d.is_empty())
+                .map(|d| d.parse())
+                .transpose()?,
+            database_ids,
             vec![], // tags
         ))
     }
