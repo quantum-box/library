@@ -21,6 +21,7 @@ pub struct RepoResponse {
     pub description: Option<String>,
     pub is_public: bool,
     pub organization_id: String,
+    pub org_username: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

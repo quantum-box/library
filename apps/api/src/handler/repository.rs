@@ -58,6 +58,7 @@ pub async fn view_repo(
             .map(|d| d.to_string()),
         is_public: *output.repo.is_public(),
         organization_id: output.repo.organization_id().to_string(),
+        org_username: output.repo.org_username().to_string(),
     };
     Ok(Json(response))
 }
@@ -105,6 +106,7 @@ pub async fn create_repo(
         description: repo.description().as_ref().map(|d| d.to_string()),
         is_public: *repo.is_public(),
         organization_id: repo.organization_id().to_string(),
+        org_username: repo.org_username().to_string(),
     };
     Ok(Json(response))
 }
@@ -180,6 +182,7 @@ pub async fn update_repo(
         description: repo.description().as_ref().map(|d| d.to_string()),
         is_public: *repo.is_public(),
         organization_id: repo.organization_id().to_string(),
+        org_username: repo.org_username().to_string(),
     };
     Ok(Json(response))
 }
@@ -253,6 +256,7 @@ pub async fn change_repo_username(
             .map(|d| d.to_string()),
         is_public: *updated_repo.is_public(),
         organization_id: updated_repo.organization_id().to_string(),
+        org_username: updated_repo.org_username().to_string(),
     };
     Ok(Json(response))
 }
@@ -289,6 +293,7 @@ pub async fn search_repo(
             description: repo.description().as_ref().map(|d| d.to_string()),
             is_public: *repo.is_public(),
             organization_id: repo.organization_id().to_string(),
+            org_username: repo.org_username().to_string(),
         })
         .collect();
     Ok(Json(response))

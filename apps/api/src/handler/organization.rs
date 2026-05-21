@@ -52,6 +52,7 @@ pub async fn view_organization(
             description: repo.description().as_ref().map(|d| d.to_string()),
             is_public: *repo.is_public(),
             organization_id: repo.organization_id().to_string(),
+            org_username: repo.org_username().to_string(),
         })
         .collect();
 
