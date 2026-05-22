@@ -12,7 +12,7 @@ use database_manager::{domain::DatabaseId, AddPropertyInputData};
 use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
 use tachyon_sdk::auth::AuthApp;
-use value_object::Ulid;
+use value_object::{LongText, Ulid};
 
 #[derive(Debug, Clone, new)]
 pub struct CreateRepo {
@@ -20,6 +20,17 @@ pub struct CreateRepo {
     get_organization_by_username: Arc<dyn GetOrganizationByUsernameQuery>,
     database_client: Arc<database_manager::App>,
     auth: Arc<dyn AuthApp>,
+}
+
+fn parse_optional_description(
+    description: Option<&str>,
+) -> errors::Result<Option<LongText>> {
+    description
+        .map(str::trim)
+        .filter(|description| !description.is_empty())
+        .map(str::parse::<LongText>)
+        .transpose()
+        .map_err(|err| errors::Error::invalid(err.to_string()))
 }
 
 #[async_trait::async_trait]
@@ -46,6 +57,8 @@ impl CreateRepoInputPort for CreateRepo {
             .ok_or(errors::not_found!(
                 "organization not found in create repo"
             ))?;
+        let description =
+            parse_optional_description(input.description.as_deref())?;
 
         let mut repo = Repo::create(
             &RepoId::default(),
@@ -55,7 +68,7 @@ impl CreateRepoInputPort for CreateRepo {
             &input.repo_username.parse()?,
             &input.user_id.parse()?,
             input.is_public,
-            input.description.map(|d| d.parse().unwrap()),
+            description,
             vec![],
             vec![], // tags
         );
@@ -164,5 +177,27 @@ impl CreateRepoInputPort for CreateRepo {
 
         self.repo_repository.save(&repo).await?;
         Ok(repo)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_optional_description;
+
+    #[test]
+    fn empty_description_is_treated_as_absent() {
+        assert!(parse_optional_description(Some("")).unwrap().is_none());
+        assert!(parse_optional_description(Some("   ")).unwrap().is_none());
+        assert!(parse_optional_description(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn non_empty_description_is_preserved() {
+        let description =
+            parse_optional_description(Some("  useful context  "))
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(description.as_str(), "useful context");
     }
 }
