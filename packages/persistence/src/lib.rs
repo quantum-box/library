@@ -15,6 +15,7 @@ use errors::Result;
 use sqlx::{mysql::MySqlPoolOptions, MySql, Pool};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 use value_object::InMemoryFile;
 
@@ -43,6 +44,89 @@ pub trait StorageAdminAccess: Debug + Send + Sync {
 #[derive(Clone, Debug)]
 pub struct Db(pub(crate) Arc<Pool<MySql>>);
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DbPoolConfig {
+    max_connections: u32,
+    acquire_timeout: Duration,
+}
+
+impl Default for DbPoolConfig {
+    fn default() -> Self {
+        Self {
+            max_connections: 8,
+            acquire_timeout: Duration::from_secs(60),
+        }
+    }
+}
+
+impl DbPoolConfig {
+    pub const MAX_CONNECTIONS_ENV: &'static str = "DB_POOL_MAX_CONNECTIONS";
+    pub const ACQUIRE_TIMEOUT_SECS_ENV: &'static str =
+        "DB_POOL_ACQUIRE_TIMEOUT_SECS";
+
+    pub fn from_env() -> Self {
+        Self::from_lookup(Self::default(), |key| std::env::var(key).ok())
+    }
+
+    fn from_lookup(
+        default: Self,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        let max_connections = lookup(Self::MAX_CONNECTIONS_ENV)
+            .and_then(|value| {
+                parse_non_zero_u32(Self::MAX_CONNECTIONS_ENV, &value)
+            })
+            .unwrap_or(default.max_connections);
+        let acquire_timeout = lookup(Self::ACQUIRE_TIMEOUT_SECS_ENV)
+            .and_then(|value| {
+                parse_non_zero_u64(Self::ACQUIRE_TIMEOUT_SECS_ENV, &value)
+            })
+            .map(Duration::from_secs)
+            .unwrap_or(default.acquire_timeout);
+
+        Self {
+            max_connections,
+            acquire_timeout,
+        }
+    }
+
+    pub fn max_connections(&self) -> u32 {
+        self.max_connections
+    }
+
+    pub fn acquire_timeout(&self) -> Duration {
+        self.acquire_timeout
+    }
+}
+
+fn parse_non_zero_u32(env_name: &str, value: &str) -> Option<u32> {
+    match value.parse::<u32>() {
+        Ok(parsed) if parsed > 0 => Some(parsed),
+        _ => {
+            tracing::warn!(
+                env_name,
+                value,
+                "invalid DB pool max connections; falling back to default"
+            );
+            None
+        }
+    }
+}
+
+fn parse_non_zero_u64(env_name: &str, value: &str) -> Option<u64> {
+    match value.parse::<u64>() {
+        Ok(parsed) if parsed > 0 => Some(parsed),
+        _ => {
+            tracing::warn!(
+                env_name,
+                value,
+                "invalid DB pool acquire timeout; falling back to default"
+            );
+            None
+        }
+    }
+}
+
 impl Db {
     // TODO: add English comment
     pub async fn from_env() -> Arc<Self> {
@@ -60,16 +144,27 @@ impl Db {
     }
 
     pub async fn new(dsn: impl ToString) -> Arc<Self> {
+        Self::new_with_pool_config(dsn, DbPoolConfig::from_env()).await
+    }
+
+    pub async fn new_with_pool_config(
+        dsn: impl ToString,
+        pool_config: DbPoolConfig,
+    ) -> Arc<Self> {
+        tracing::info!(
+            max_connections = pool_config.max_connections(),
+            acquire_timeout_secs = pool_config.acquire_timeout().as_secs(),
+            "creating MySQL connection pool"
+        );
+        let dsn = dsn.to_string();
         let pool = MySqlPoolOptions::new()
-            .max_connections(8)
-            .acquire_timeout(std::time::Duration::from_secs(60))
-            .connect(&dsn.to_string())
+            .max_connections(pool_config.max_connections())
+            .acquire_timeout(pool_config.acquire_timeout())
+            .connect(&dsn)
             .await
             .unwrap_or_else(|e| {
                 panic!(
-                    "Cannot connect to the database. Please check your configuration. :{:?}, {}",
-                    e,
-                    dsn.to_string(),
+                    "Cannot connect to the database. Please check your configuration: {e:?}"
                 )
             });
         Arc::new(Self(Arc::new(pool)))
@@ -77,5 +172,52 @@ impl Db {
 
     pub fn pool(&self) -> Arc<Pool<MySql>> {
         self.0.clone()
+    }
+}
+
+#[cfg(test)]
+mod db_pool_config_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn uses_default_pool_config_when_env_is_absent() {
+        let config =
+            DbPoolConfig::from_lookup(DbPoolConfig::default(), |_| None);
+
+        assert_eq!(config.max_connections(), 8);
+        assert_eq!(config.acquire_timeout(), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn reads_pool_config_from_env_values() {
+        let vars = HashMap::from([
+            (DbPoolConfig::MAX_CONNECTIONS_ENV, "16".to_string()),
+            (DbPoolConfig::ACQUIRE_TIMEOUT_SECS_ENV, "10".to_string()),
+        ]);
+        let config =
+            DbPoolConfig::from_lookup(DbPoolConfig::default(), |key| {
+                vars.get(key).cloned()
+            });
+
+        assert_eq!(config.max_connections(), 16);
+        assert_eq!(config.acquire_timeout(), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn ignores_invalid_pool_config_values() {
+        let vars = HashMap::from([
+            (DbPoolConfig::MAX_CONNECTIONS_ENV, "0".to_string()),
+            (
+                DbPoolConfig::ACQUIRE_TIMEOUT_SECS_ENV,
+                "invalid".to_string(),
+            ),
+        ]);
+        let config =
+            DbPoolConfig::from_lookup(DbPoolConfig::default(), |key| {
+                vars.get(key).cloned()
+            });
+
+        assert_eq!(config, DbPoolConfig::default());
     }
 }

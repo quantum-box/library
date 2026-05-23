@@ -103,6 +103,13 @@ impl Config {
                     "DATABASE_URL must not point at localhost in production",
                 ));
             }
+            reject_empty(
+                "DATABASE_URL",
+                &self.database_url,
+                "DATABASE_URL must be configured in production",
+            )?;
+            require_non_zero_u32_env("DB_POOL_MAX_CONNECTIONS")?;
+            require_non_zero_u64_env("DB_POOL_ACQUIRE_TIMEOUT_SECS")?;
 
             validate_https_url("COGNITO_JWK_URL", &self.cognito_jwk_url)?;
             validate_https_url("TACHYON_API_URL", &self.tachyon_api_url)?;
@@ -186,6 +193,30 @@ fn validate_https_url(
     Ok(())
 }
 
+fn require_non_zero_u32_env(name: &str) -> Result<(), std::io::Error> {
+    let value = std::env::var(name).map_err(|_| {
+        invalid_config(&format!("{name} must be configured in production"))
+    })?;
+    match value.parse::<u32>() {
+        Ok(parsed) if parsed > 0 => Ok(()),
+        _ => Err(invalid_config(&format!(
+            "{name} must be a positive integer in production"
+        ))),
+    }
+}
+
+fn require_non_zero_u64_env(name: &str) -> Result<(), std::io::Error> {
+    let value = std::env::var(name).map_err(|_| {
+        invalid_config(&format!("{name} must be configured in production"))
+    })?;
+    match value.parse::<u64>() {
+        Ok(parsed) if parsed > 0 => Ok(()),
+        _ => Err(invalid_config(&format!(
+            "{name} must be a positive integer in production"
+        ))),
+    }
+}
+
 fn is_dangerous_secret(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
@@ -243,6 +274,8 @@ mod tests {
             "MINIO_ROOT_USER",
             "MINIO_ROOT_PASSWORD",
             "SKIP_MINIO_SETUP",
+            "DB_POOL_MAX_CONNECTIONS",
+            "DB_POOL_ACQUIRE_TIMEOUT_SECS",
         ] {
             std::env::remove_var(name);
         }
@@ -255,18 +288,26 @@ mod tests {
             "MINIO_ROOT_USER",
             "MINIO_ROOT_PASSWORD",
             "SKIP_MINIO_SETUP",
+            "DB_POOL_MAX_CONNECTIONS",
+            "DB_POOL_ACQUIRE_TIMEOUT_SECS",
         ] {
             std::env::remove_var(name);
         }
     }
 
+    fn set_valid_production_env() {
+        std::env::set_var(
+            "LIBRARY_PARQUET_BUCKET",
+            "tachyon-n1-library-parquet-prod",
+        );
+        std::env::set_var("DB_POOL_MAX_CONNECTIONS", "16");
+        std::env::set_var("DB_POOL_ACQUIRE_TIMEOUT_SECS", "10");
+    }
+
     #[test]
     fn production_config_accepts_ga_values() {
         with_env_lock(|| {
-            std::env::set_var(
-                "LIBRARY_PARQUET_BUCKET",
-                "tachyon-n1-library-parquet-prod",
-            );
+            set_valid_production_env();
             let config = valid_production_config();
 
             assert!(config.validate_for_server_startup().is_ok());
@@ -276,10 +317,7 @@ mod tests {
     #[test]
     fn production_config_rejects_dummy_service_token() {
         with_env_lock(|| {
-            std::env::set_var(
-                "LIBRARY_PARQUET_BUCKET",
-                "tachyon-n1-library-parquet-prod",
-            );
+            set_valid_production_env();
             let mut config = valid_production_config();
             config.service_auth_token = "dummy-token".to_string();
 
@@ -292,10 +330,7 @@ mod tests {
     #[test]
     fn production_config_rejects_localhost_database_url() {
         with_env_lock(|| {
-            std::env::set_var(
-                "LIBRARY_PARQUET_BUCKET",
-                "tachyon-n1-library-parquet-prod",
-            );
+            set_valid_production_env();
             let mut config = valid_production_config();
             config.database_url =
                 "mysql://root:@localhost:15000".to_string();
@@ -307,8 +342,23 @@ mod tests {
     }
 
     #[test]
+    fn production_config_rejects_empty_database_url() {
+        with_env_lock(|| {
+            set_valid_production_env();
+            let mut config = valid_production_config();
+            config.database_url = "  ".to_string();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
     fn production_config_rejects_missing_parquet_bucket() {
         with_env_lock(|| {
+            std::env::set_var("DB_POOL_MAX_CONNECTIONS", "16");
+            std::env::set_var("DB_POOL_ACQUIRE_TIMEOUT_SECS", "10");
             let config = valid_production_config();
 
             let error = config.validate_for_server_startup().unwrap_err();
@@ -320,10 +370,7 @@ mod tests {
     #[test]
     fn production_config_rejects_minio_settings() {
         with_env_lock(|| {
-            std::env::set_var(
-                "LIBRARY_PARQUET_BUCKET",
-                "tachyon-n1-library-parquet-prod",
-            );
+            set_valid_production_env();
             std::env::set_var("MINIO_ENDPOINT", "http://localhost:9000");
             let config = valid_production_config();
 
@@ -336,13 +383,42 @@ mod tests {
     #[test]
     fn production_config_rejects_pages_dev_tachyon_api_url() {
         with_env_lock(|| {
+            set_valid_production_env();
+            let mut config = valid_production_config();
+            config.tachyon_api_url =
+                "https://tachyon-api.pages.dev".to_string();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_missing_pool_settings() {
+        with_env_lock(|| {
             std::env::set_var(
                 "LIBRARY_PARQUET_BUCKET",
                 "tachyon-n1-library-parquet-prod",
             );
-            let mut config = valid_production_config();
-            config.tachyon_api_url =
-                "https://tachyon-api.pages.dev".to_string();
+            let config = valid_production_config();
+
+            let error = config.validate_for_server_startup().unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn production_config_rejects_invalid_pool_settings() {
+        with_env_lock(|| {
+            std::env::set_var(
+                "LIBRARY_PARQUET_BUCKET",
+                "tachyon-n1-library-parquet-prod",
+            );
+            std::env::set_var("DB_POOL_MAX_CONNECTIONS", "0");
+            std::env::set_var("DB_POOL_ACQUIRE_TIMEOUT_SECS", "invalid");
+            let config = valid_production_config();
 
             let error = config.validate_for_server_startup().unwrap_err();
 

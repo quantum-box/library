@@ -89,6 +89,29 @@ jobs:
             --binary-name lambda-library-api \
             lambda-library-api
 
+      - name: Configure Lambda DB pool env
+        run: |
+          set -euo pipefail
+          current_env="$(aws lambda get-function-configuration \
+            --region "${AWS_REGION}" \
+            --function-name lambda-library-api \
+            --query 'Environment.Variables' \
+            --output json)"
+          merged_env="$(jq -c '. // {} | . + {
+            DB_POOL_MAX_CONNECTIONS: "16",
+            DB_POOL_ACQUIRE_TIMEOUT_SECS: "10",
+            DB_POOL_ACQUIRE_METRICS_ENABLED: "true",
+            DB_POOL_ACQUIRE_METRICS_INTERVAL_SECS: "60",
+            DB_POOL_ACQUIRE_WARN_MS: "250"
+          }' <<< "${current_env}")"
+          aws lambda update-function-configuration \
+            --region "${AWS_REGION}" \
+            --function-name lambda-library-api \
+            --environment "{\"Variables\":${merged_env}}"
+          aws lambda wait function-updated \
+            --region "${AWS_REGION}" \
+            --function-name lambda-library-api
+
       - name: Resolve Function URL
         id: function_url
         run: |
@@ -125,7 +148,7 @@ jobs:
         run: |
           test -n "${FUNCTION_URL}"
 
-          health_url="${FUNCTION_URL%/}/health"
+          health_url="${FUNCTION_URL%/}/"
           for attempt in 1 2 3 4 5 6; do
             response="$(curl -fsSL --max-time 20 "${health_url}" || true)"
             if [ "${response}" = "OK" ]; then

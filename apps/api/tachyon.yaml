@@ -19,6 +19,16 @@ spec:
       value: "https://api.n1.tachy.one"
     - name: LIBRARY_PARQUET_BUCKET
       value: "tachyon-library-parquet-production"
+    - name: DB_POOL_MAX_CONNECTIONS
+      value: "16"
+    - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
+      value: "10"
+    - name: DB_POOL_ACQUIRE_METRICS_ENABLED
+      value: "true"
+    - name: DB_POOL_ACQUIRE_METRICS_INTERVAL_SECS
+      value: "60"
+    - name: DB_POOL_ACQUIRE_WARN_MS
+      value: "250"
     - name: ENVIRONMENT
       value: "production"
     - name: PORT
