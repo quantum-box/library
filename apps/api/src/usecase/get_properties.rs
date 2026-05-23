@@ -1,7 +1,10 @@
-use crate::usecase::{GetPropertiesInputData, GetPropertiesInputPort};
+use crate::usecase::{
+    authorize_private_repo_read, GetPropertiesInputData,
+    GetPropertiesInputPort,
+};
 use database_manager::domain;
 use std::sync::Arc;
-use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
+use tachyon_sdk::auth::AuthApp;
 
 #[derive(Debug, Clone)]
 pub struct GetProperties {
@@ -54,6 +57,20 @@ impl GetPropertiesInputPort for GetProperties {
                 "repo not found in get properties"
             ))?;
 
+        if input.executor.is_none() && repo.is_private() {
+            return Err(errors::Error::permission_denied("Access denied"));
+        }
+
+        if !input.executor.is_none() && repo.is_private() {
+            authorize_private_repo_read(
+                self.auth.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                repo.id().as_ref(),
+            )
+            .await?;
+        }
+
         let (_, properties) = self
             .database
             .get_database_definition_usecase()
@@ -72,25 +89,6 @@ impl GetPropertiesInputPort for GetProperties {
                 },
             )
             .await?;
-
-        if *repo.is_public() {
-            return Ok(properties);
-        }
-
-        if input.executor.is_none() && repo.is_private() {
-            return Err(errors::Error::permission_denied("Access denied"));
-        }
-
-        if !input.executor.is_none() && repo.is_private() {
-            self.auth
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:ViewData",
-                })
-                .await?;
-            // repo.can_view(&input.executor.get_id().parse()?)?;
-        }
 
         Ok(properties)
     }

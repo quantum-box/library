@@ -4,8 +4,9 @@ use crate::domain::{Source, SourceRepository, VisibilityService};
 use derive_new::new;
 use tachyon_sdk::auth::AuthApp;
 
-use super::GetSourceInputData;
-use super::GetSourceInputPort;
+use super::{
+    authorize_private_repo_read, GetSourceInputData, GetSourceInputPort,
+};
 
 #[derive(Debug, Clone, new)]
 pub struct GetSource {
@@ -64,13 +65,13 @@ impl GetSourceInputPort for GetSource {
 
         // TODO: add English comment
         if need_check && !input.executor.is_none() {
-            self.auth
-                .check_policy(&tachyon_sdk::auth::CheckPolicyInput::<'a> {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:GetSource",
-                })
-                .await?;
+            authorize_private_repo_read(
+                self.auth.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                repo.id().as_ref(),
+            )
+            .await?;
         }
 
         Ok(Some(source))
