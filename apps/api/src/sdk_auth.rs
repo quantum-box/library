@@ -494,6 +494,16 @@ impl SdkAuthApp {
     /// Verify a bearer token via SDK.
     /// Uses public endpoint (no auth required).
     pub async fn verify_token(&self, token: &str) -> errors::Result<User> {
+        match self.bootstrap_token(token).await {
+            Ok(user) => return Ok(user),
+            Err(err) => {
+                tracing::debug!(
+                    error = %err,
+                    "bootstrap token verification failed; falling back to legacy verify"
+                );
+            }
+        }
+
         let config = self.sdk_config_public();
         let req = tachyon_sdk::models::VerifyRequest {
             token: token.to_string(),
@@ -504,6 +514,37 @@ impl SdkAuthApp {
             .map_err(sdk_api_err)?;
 
         user_from_sdk_model(&resp.user)
+    }
+
+    /// Verify a bearer token with Tachyon's bootstrap endpoint.
+    ///
+    /// `/v1/me` accepts Tachyon-issued session JWTs as well as
+    /// external IdP tokens and returns tenant memberships, which
+    /// Library needs before applying repo visibility checks.
+    pub async fn bootstrap_token(
+        &self,
+        token: &str,
+    ) -> errors::Result<User> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "Authorization",
+            format!("Bearer {token}").parse().map_err(sdk_err)?,
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(sdk_err)?;
+        let config = Configuration {
+            base_path: self.base_url.clone(),
+            client,
+            ..Default::default()
+        };
+
+        let resp: BootstrapResponse =
+            Self::rest_get(&config, "/v1/me").await?;
+
+        user_from_bootstrap_response(&resp)
     }
 
     /// Verify a public API key via REST.
@@ -688,6 +729,23 @@ struct RestUserResponse {
     role: String,
     #[serde(default)]
     tenants: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapResponse {
+    user: BootstrapUser,
+    tenants: Vec<BootstrapTenant>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapUser {
+    id: String,
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapTenant {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -983,6 +1041,36 @@ fn user_from_sdk_user_response(
         email_verified: None,
         image: None,
         role,
+        tenants,
+        metadata: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+}
+
+/// Construct a User from Tachyon's bootstrap response.
+fn user_from_bootstrap_response(
+    resp: &BootstrapResponse,
+) -> errors::Result<User> {
+    let id: UserId = resp
+        .user
+        .id
+        .parse()
+        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+    let tenants: Vec<TenantId> = resp
+        .tenants
+        .iter()
+        .map(|t| TenantId::new(&t.id))
+        .collect::<errors::Result<Vec<_>>>()?;
+
+    Ok(User {
+        id: id.clone(),
+        username: id.to_string(),
+        email: resp.user.email.clone(),
+        name: None,
+        email_verified: None,
+        image: None,
+        role: tachyon_sdk::auth::DefaultRole::General,
         tenants,
         metadata: None,
         created_at: chrono::Utc::now(),
