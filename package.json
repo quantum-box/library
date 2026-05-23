@@ -7,6 +7,10 @@
   ],
   "scripts": {
     "dev": "npm run --workspace apps/web dev",
+    "client:dev": "npm --prefix apps/client run dev",
+    "client:build": "npm --prefix apps/client run build",
+    "client:test": "npm --prefix apps/client run test",
+    "client:type-check": "npm --prefix apps/client run type-check",
     "build": "npm run --workspace apps/web build",
     "lint": "npm run --workspace apps/web lint",
     "test": "npm run --workspace apps/web test",

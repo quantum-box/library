@@ -3,6 +3,7 @@ target/
 dist/
 .next/
 node_modules/
+.yarn/
 out/
 
 # Environment & secrets
@@ -34,3 +35,6 @@ storybook-static/
 
 # Misc
 *.log
+*.db
+*.sqlite
+*.sqlite3

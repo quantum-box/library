@@ -1,0 +1,510 @@
+@import "tailwindcss";
+@source "../node_modules/@blocknote/shadcn";
+@import "@radix-ui/themes/styles.css";
+
+/* ─── Library Design Tokens ────────────────────────────────────── */
+
+:root {
+  /* Layout */
+  --sidebar-width: 188px;
+  --detail-width: 380px;
+
+  /* Light theme (default, matching Library web) */
+  --bg-primary: #ffffff;
+  --bg-sidebar: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --accent: #0f172a;
+  --accent-hover: #1e293b;
+  --accent-foreground: #f8fafc;
+  --status-todo: #64748b;
+  --status-progress: #ca8a04;
+  --status-done: #16a34a;
+  --status-cancelled: #dc2626;
+  --priority-urgent: #dc2626;
+  --priority-high: #ca8a04;
+  --priority-medium: #2563eb;
+  --priority-low: #64748b;
+  --bg-code: #f8fafc;
+  --text-code: #334155;
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ring-color: rgba(15, 23, 42, 0.3);
+  --overlay: rgba(15, 23, 42, 0.45);
+
+  /* shadcn tokens used by portaled BlockNote UI */
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--status-cancelled);
+  --color-destructive-foreground: #f8fafc;
+  --color-border: var(--border-color);
+  --color-input: var(--border-color);
+  --color-ring: var(--ring-color);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-sidebar: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --accent: #0f172a;
+  --accent-hover: #1e293b;
+  --accent-foreground: #f8fafc;
+  --status-todo: #64748b;
+  --status-progress: #ca8a04;
+  --status-done: #16a34a;
+  --status-cancelled: #dc2626;
+  --priority-urgent: #dc2626;
+  --priority-high: #ca8a04;
+  --priority-medium: #2563eb;
+  --priority-low: #64748b;
+  --bg-code: #f8fafc;
+  --text-code: #334155;
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ring-color: rgba(15, 23, 42, 0.3);
+  --overlay: rgba(15, 23, 42, 0.45);
+
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--status-cancelled);
+  --color-destructive-foreground: #f8fafc;
+  --color-border: var(--border-color);
+  --color-input: var(--border-color);
+  --color-ring: var(--ring-color);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  --bg-primary: #020817;
+  --bg-sidebar: #0f172a;
+  --bg-surface: #020817;
+  --bg-hover: #1e293b;
+  --border-color: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #f8fafc;
+  --accent-hover: #e2e8f0;
+  --accent-foreground: #0f172a;
+  --status-todo: #94a3b8;
+  --status-progress: #eab308;
+  --status-done: #22c55e;
+  --status-cancelled: #ef4444;
+  --priority-urgent: #ef4444;
+  --priority-high: #eab308;
+  --priority-medium: #60a5fa;
+  --priority-low: #94a3b8;
+  --bg-code: #0f172a;
+  --text-code: #cbd5e1;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --ring-color: rgba(248, 250, 252, 0.35);
+  --overlay: rgba(0, 0, 0, 0.7);
+
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--status-cancelled);
+  --color-destructive-foreground: #f8fafc;
+  --color-border: var(--border-color);
+  --color-input: var(--border-color);
+  --color-ring: var(--ring-color);
+}
+
+/* ─── Tailwind Theme Mapping ───────────────────────────────────── */
+
+@theme inline {
+  /* Backgrounds */
+  --color-canvas: var(--bg-primary);
+  --color-panel: var(--bg-sidebar);
+  --color-surface: var(--bg-surface);
+  --color-surface-hover: var(--bg-hover);
+  --color-background: var(--bg-primary);
+  --color-card: var(--bg-surface);
+  --color-popover: var(--bg-surface);
+  --color-secondary: var(--bg-hover);
+  --color-input: var(--border-color);
+
+  /* Text */
+  --color-foreground: var(--text-primary);
+  --color-muted: var(--text-secondary);
+  --color-subtle: var(--text-muted);
+  --color-card-foreground: var(--text-primary);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive-foreground: #f8fafc;
+
+  /* Accent */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-primary: var(--accent);
+  --color-destructive: var(--status-cancelled);
+
+  /* Border */
+  --color-border: var(--border-color);
+
+  /* Code */
+  --color-code: var(--bg-code);
+  --color-code-text: var(--text-code);
+
+  /* Focus ring */
+  --color-ring: var(--ring-color);
+
+  /* Overlay */
+  --color-overlay: var(--overlay);
+
+  /* Status */
+  --color-status-todo: var(--status-todo);
+  --color-status-progress: var(--status-progress);
+  --color-status-done: var(--status-done);
+  --color-status-cancelled: var(--status-cancelled);
+
+  /* Priority */
+  --color-priority-urgent: var(--priority-urgent);
+  --color-priority-high: var(--priority-high);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-low: var(--priority-low);
+
+  /* Shadows */
+  --shadow-soft: var(--shadow-sm);
+
+  /* Layout spacing */
+  --spacing-sidebar: var(--sidebar-width);
+  --spacing-detail: var(--detail-width);
+}
+
+/* ─── Base Styles ──────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  /* Smooth theme transitions */
+  body,
+  body * {
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  #root {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  @supports (padding: max(0px)) {
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-right: env(safe-area-inset-right);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --detail-width: 100vw;
+  }
+
+  .detail-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    width: 100vw !important;
+    width: 100dvw !important;
+    min-width: 0 !important;
+    border-left: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ─── Animations ───────────────────────────────────────────────── */
+
+/* Streaming cursor blink */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.animate-blink {
+  animation: blink 0.8s step-end infinite;
+}
+
+/* Bounce dots for loading indicator */
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+.animate-bounce-dot {
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+
+/* DOCX viewer content styles */
+.docx-content {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.docx-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 0.75rem; }
+.docx-content h2 { font-size: 1.25rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
+.docx-content h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+.docx-content p { margin: 0.5rem 0; }
+.docx-content ul, .docx-content ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+.docx-content li { margin: 0.25rem 0; }
+.docx-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75rem 0;
+}
+.docx-content th, .docx-content td {
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.docx-content th {
+  background: var(--bg-surface);
+  font-weight: 600;
+}
+.docx-content img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+}
+.docx-content strong { font-weight: 600; }
+.docx-content em { font-style: italic; }
+
+/* Tool execution spinner */
+@keyframes tool-spin {
+  to { transform: rotate(360deg); }
+}
+.tool-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tool-spin 0.8s linear infinite;
+}
+
+/* Shimmer loading effect for skeleton UI */
+@keyframes shimmer {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+.shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.photon-blocknote,
+.photon-blocknote .bn-root,
+.photon-blocknote .bn-editor {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--status-cancelled);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--border-color);
+  --color-input: var(--border-color);
+  --color-ring: var(--ring-color);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --bn-colors-editor-text: var(--text-primary);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--text-primary);
+  --bn-colors-menu-background: var(--bg-surface);
+  --bn-colors-tooltip-text: var(--text-primary);
+  --bn-colors-tooltip-background: var(--bg-surface);
+  --bn-colors-hovered-text: var(--text-primary);
+  --bn-colors-hovered-background: var(--bg-hover);
+  --bn-colors-selected-text: var(--text-primary);
+  --bn-colors-selected-background: var(--bg-hover);
+  --bn-colors-disabled-text: var(--text-muted);
+  --bn-colors-disabled-background: var(--bg-surface);
+  --bn-colors-shadow: rgba(0, 0, 0, 0.25);
+  --bn-colors-border: var(--border-color);
+  --bn-colors-side-menu: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  color: var(--text-primary);
+}
+
+.photon-blocknote,
+.photon-blocknote:focus,
+.photon-blocknote:focus-visible,
+.photon-blocknote:focus-within,
+.photon-blocknote .bn-root,
+.photon-blocknote .bn-root:focus,
+.photon-blocknote .bn-root:focus-visible,
+.photon-blocknote .bn-root:focus-within,
+.photon-blocknote .bn-editor,
+.photon-blocknote .bn-editor:focus,
+.photon-blocknote .bn-editor:focus-visible,
+.photon-blocknote .bn-editor:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+
+.photon-blocknote .bn-editor {
+  min-height: 55vh;
+  padding-inline: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+}
+
+.record-body-blocknote .bn-editor {
+  min-height: 220px;
+  padding-inline: 0;
+}
+
+.record-body-blocknote .bn-default-styles {
+  font-size: 0.875rem;
+}
+
+.record-body-blocknote .bn-block-content[data-content-type="heading"][data-level="1"] {
+  font-size: 1.45rem;
+}
+
+.record-body-blocknote .bn-block-content[data-content-type="heading"][data-level="2"] {
+  font-size: 1.2rem;
+}
+
+.record-body-blocknote .bn-block-content[data-content-type="heading"][data-level="3"] {
+  font-size: 1rem;
+}
+
+.photon-blocknote .bn-default-styles {
+  font-size: 0.95rem;
+}
+
+.photon-blocknote .bn-block-content {
+  color: var(--text-primary);
+  line-height: 1.7;
+}
+
+.photon-blocknote .bn-inline-content {
+  color: inherit;
+}
+
+.photon-blocknote .bn-block-content:has(.ProseMirror-trailingBreak:only-child)::after {
+  color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.photon-blocknote .bn-block-content[data-content-type="heading"] {
+  color: var(--text-primary);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.photon-blocknote .bn-block-content[data-content-type="heading"][data-level="1"] {
+  font-size: 2.25rem;
+}
+
+.photon-blocknote .bn-block-content[data-content-type="heading"][data-level="2"] {
+  font-size: 1.75rem;
+}
+
+.photon-blocknote .bn-block-content[data-content-type="heading"][data-level="3"] {
+  font-size: 1.35rem;
+}
+
+.bn-toolbar,
+.bn-menu-dropdown,
+.bn-select,
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"] {
+  background-color: var(--bg-surface);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}

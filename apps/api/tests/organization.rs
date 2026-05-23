@@ -61,6 +61,7 @@ struct RepoResponse {
     description: Option<String>,
     is_public: bool,
     organization_id: String,
+    org_username: String,
 }
 
 /// TODO: add English documentation

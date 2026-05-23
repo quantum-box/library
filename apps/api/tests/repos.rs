@@ -159,6 +159,7 @@ async fn test_repository_api_all() -> anyhow::Result<()> {
             description: Some(test_repo_description.to_string()),
             is_public: test_repo_is_public,
             organization_id: "dummy_org_id".to_string(),
+            org_username: test_org_username.clone(),
         }
     };
 
