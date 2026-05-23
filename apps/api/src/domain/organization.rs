@@ -44,6 +44,10 @@ pub trait OrganizationRepository: Debug + Send + Sync + 'static {
         &self,
         org_id: &TenantId,
     ) -> errors::Result<Option<Organization>>;
+    async fn get_by_username(
+        &self,
+        username: &Identifier,
+    ) -> errors::Result<Option<Organization>>;
     #[allow(dead_code)]
     async fn find_all(&self) -> errors::Result<Vec<Organization>>;
     #[allow(dead_code)]
