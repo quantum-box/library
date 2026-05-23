@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+playwright-report/
+test-results/
+storybook-static/
+.playwright-mcp/
+.wrangler/
+
+# Rust
+packages/*/target/
+packages/server/photon.db

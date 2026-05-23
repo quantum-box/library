@@ -1,0 +1,254 @@
+import * as Y from 'yjs'
+import { IndexeddbPersistence } from 'y-indexeddb'
+import { appKitConfig } from '../../app/kitConfig.js'
+
+// ---------------------------------------------------------------------------
+// Y.Doc singleton
+// ---------------------------------------------------------------------------
+
+export const ydoc = new Y.Doc()
+export const recordsArray = ydoc.getArray<Y.Map<string>>(appKitConfig.sync.yjsArrayName)
+export const databasesArray = ydoc.getArray<Y.Map<string>>(appKitConfig.sync.databasesArrayName)
+export const databaseViewsArray = ydoc.getArray<Y.Map<string>>(
+  appKitConfig.sync.databaseViewsArrayName
+)
+export const workflowCanvasesMap = ydoc.getMap<string>(
+  appKitConfig.sync.workflowCanvasesMapName
+)
+export const attachmentsArray = ydoc.getArray<Y.Map<string>>(appKitConfig.attachments.yjsArrayName)
+
+// ---------------------------------------------------------------------------
+// IndexedDB persistence
+// ---------------------------------------------------------------------------
+
+export const persistence = new IndexeddbPersistence(appKitConfig.sync.persistenceKey, ydoc)
+
+/** Resolves when the local IndexedDB state has been loaded into the Y.Doc. */
+export const idbSynced: Promise<void> = new Promise((resolve) => {
+  persistence.once('synced', () => resolve())
+})
+
+// ---------------------------------------------------------------------------
+// Connection status
+// ---------------------------------------------------------------------------
+
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected'
+export interface SyncPresence {
+  onlineCount: number
+}
+
+type StatusListener = (status: ConnectionStatus) => void
+type PresenceListener = (presence: SyncPresence) => void
+
+let _status: ConnectionStatus = 'disconnected'
+let _presence: SyncPresence = { onlineCount: 0 }
+const _listeners = new Set<StatusListener>()
+const _presenceListeners = new Set<PresenceListener>()
+
+function setStatus(s: ConnectionStatus) {
+  if (s === _status) return
+  _status = s
+  _listeners.forEach((fn) => fn(s))
+}
+
+function setPresence(presence: SyncPresence) {
+  if (presence.onlineCount === _presence.onlineCount) return
+  _presence = presence
+  _presenceListeners.forEach((fn) => fn(presence))
+}
+
+export const connectionStatus = {
+  get value() {
+    return _status
+  },
+  subscribe(fn: StatusListener) {
+    _listeners.add(fn)
+    return () => {
+      _listeners.delete(fn)
+    }
+  },
+}
+
+export const syncPresence = {
+  get value() {
+    return _presence
+  },
+  subscribe(fn: PresenceListener) {
+    _presenceListeners.add(fn)
+    return () => {
+      _presenceListeners.delete(fn)
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Photon Live: WebSocket realtime UX sync
+//
+// This module keeps the shared UI feeling live through Yjs updates, presence,
+// IndexedDB hydration, and reconnect behavior. It is deliberately separate
+// from Photon Engine, which owns durable mutation logs and push/pull sync.
+// ---------------------------------------------------------------------------
+
+const WS_REMOTE = 'ws-remote'
+
+let ws: WebSocket | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let backoff = 1000
+const MAX_BACKOFF = 30_000
+let disposed = false
+
+function getWsUrl(): string | undefined {
+  return appKitConfig.sync.websocketUrl
+}
+
+function scheduleReconnect() {
+  if (disposed || !getWsUrl()) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    connectWs()
+  }, backoff)
+  backoff = Math.min(backoff * 2, MAX_BACKOFF)
+}
+
+/** Send local Y.Doc updates to the server (skip remote-origin updates). */
+function onDocUpdate(update: Uint8Array, origin: unknown) {
+  if (origin === WS_REMOTE) return
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(update)
+  }
+}
+
+export function connectWs() {
+  if (disposed) return
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  const wsUrl = getWsUrl()
+  if (!wsUrl) {
+    setStatus('disconnected')
+    setPresence({ onlineCount: 0 })
+    return
+  }
+
+  setStatus('connecting')
+
+  const socket = new WebSocket(wsUrl)
+  socket.binaryType = 'arraybuffer'
+  ws = socket
+
+  let isFirstMessage = true
+
+  socket.addEventListener('open', () => {
+    backoff = 1000 // reset backoff on successful connect
+    setStatus('connected')
+    ydoc.on('update', onDocUpdate)
+    socket.send(Y.encodeStateAsUpdate(ydoc))
+  })
+
+  socket.addEventListener('message', (event) => {
+    if (typeof event.data === 'string') {
+      try {
+        const message = JSON.parse(event.data) as {
+          type?: string
+          onlineCount?: number
+        }
+        if (message.type === 'presence' && typeof message.onlineCount === 'number') {
+          setPresence({ onlineCount: message.onlineCount })
+        }
+      } catch {
+        // Ignore non-protocol text messages.
+      }
+      return
+    }
+
+    const data = new Uint8Array(event.data as ArrayBuffer)
+    Y.applyUpdate(ydoc, data, WS_REMOTE)
+
+    if (isFirstMessage) {
+      isFirstMessage = false
+      // Send our full local state so the server gets any offline changes
+      const localUpdate = Y.encodeStateAsUpdate(ydoc)
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(localUpdate)
+      }
+    }
+  })
+
+  socket.addEventListener('close', () => {
+    ydoc.off('update', onDocUpdate)
+    ws = null
+    setStatus('disconnected')
+    setPresence({ onlineCount: 0 })
+    scheduleReconnect()
+  })
+
+  socket.addEventListener('error', () => {
+    // The 'close' event will fire after 'error', so reconnect is handled there.
+  })
+}
+
+export function disconnectWs() {
+  disposed = true
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  ydoc.off('update', onDocUpdate)
+  if (ws) {
+    ws.close()
+    ws = null
+  }
+  setStatus('disconnected')
+}
+
+// ---------------------------------------------------------------------------
+// Initial sync ready
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves once:
+ *  1. IndexedDB has been loaded, AND
+ *  2. Either the first WebSocket message has been received, or 2 s elapsed
+ *     (to support the offline-first case where the server is unreachable).
+ */
+export const initialSyncReady: Promise<void> = new Promise((resolve) => {
+  let idbDone = false
+  let wsDone = false
+  let resolved = false
+
+  function tryResolve() {
+    if (resolved) return
+    if (idbDone && wsDone) {
+      resolved = true
+      resolve()
+    }
+  }
+
+  idbSynced.then(() => {
+    idbDone = true
+    tryResolve()
+
+    // If WS hasn't delivered anything in 2 s, proceed anyway (offline)
+    setTimeout(() => {
+      wsDone = true
+      tryResolve()
+    }, 2000)
+  })
+
+  // Mark WS done as soon as the first message is applied
+  const handler = (_update: Uint8Array, origin: unknown) => {
+    if (origin === WS_REMOTE) {
+      wsDone = true
+      ydoc.off('update', handler)
+      tryResolve()
+    }
+  }
+  ydoc.on('update', handler)
+})
+
+// ---------------------------------------------------------------------------
+// Auto-connect
+// ---------------------------------------------------------------------------
+
+connectWs()
