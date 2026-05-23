@@ -84,6 +84,11 @@ pub async fn router(
         &dsn.use_database("tachyon_apps_database_manager"),
     )
     .await;
+    let _db_pool_metric_tasks =
+        crate::db_pool_metrics::start_default_pool_acquire_metrics([
+            ("library", library_db.pool()),
+            ("database_manager", database_manager_db.pool()),
+        ]);
 
     // Database sync setup (must be created before LibraryApp)
     let sync_config_repo: Arc<dyn outbound_sync::SyncConfigRepository> =

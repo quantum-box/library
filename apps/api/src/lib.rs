@@ -4,6 +4,7 @@
 mod app;
 pub mod collaboration;
 mod config;
+mod db_pool_metrics;
 pub mod domain;
 mod error;
 pub mod handler;
