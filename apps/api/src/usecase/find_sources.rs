@@ -4,8 +4,9 @@ use crate::domain::{Source, SourceRepository, VisibilityService};
 use derive_new::new;
 use tachyon_sdk::auth::AuthApp;
 
-use super::FindSourcesInputData;
-use super::FindSourcesInputPort;
+use super::{
+    authorize_private_repo_read, FindSourcesInputData, FindSourcesInputPort,
+};
 
 #[derive(Debug, Clone, new)]
 pub struct FindSources {
@@ -54,13 +55,13 @@ impl FindSourcesInputPort for FindSources {
 
         // TODO: add English comment
         if need_check && !input.executor.is_none() {
-            self.auth
-                .check_policy(&tachyon_sdk::auth::CheckPolicyInput::<'a> {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:FindSources",
-                })
-                .await?;
+            authorize_private_repo_read(
+                self.auth.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                repo.id().as_ref(),
+            )
+            .await?;
         }
 
         // TODO: add English comment

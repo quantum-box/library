@@ -37,14 +37,7 @@ impl VisibilityService {
             return Err(errors::Error::permission_denied("Access denied"));
         }
 
-        // TODO: add English comment
-        if !executor.has_tenant_id(repo.organization_id()) {
-            return Err(errors::Error::permission_denied(
-                "Access denied: tenant mismatch",
-            ));
-        }
-
-        // TODO: add English comment
+        // Auth policy decides tenant membership and repo-scoped access.
         Ok(true)
     }
 }
@@ -98,7 +91,6 @@ mod tests {
         let mut mock_executor =
             tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(false);
-        mock_executor.expect_has_tenant_id().return_once(|_| true);
 
         // TODO: add English comment
         let result = visibility_service.check_access(&repo, &mock_executor);
@@ -106,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn test_check_access_private_repo_authorized_non_owner() {
+    fn test_check_access_private_repo_authenticated_non_tenant() {
         // TODO: add English comment
         let repo = create_test_repo(false);
         let visibility_service = VisibilityService::new();
@@ -115,7 +107,6 @@ mod tests {
         let mut mock_executor =
             tachyon_sdk::auth::MockExecutorAction::new();
         mock_executor.expect_is_none().return_const(false);
-        mock_executor.expect_has_tenant_id().return_once(|_| true);
 
         // TODO: add English comment
         let result = visibility_service.check_access(&repo, &mock_executor);
