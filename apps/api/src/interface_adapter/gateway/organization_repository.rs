@@ -19,7 +19,7 @@ use crate::domain::OrganizationRepository;
 use crate::domain::LIBRARY_TENANT;
 use derive_new::new;
 use std::sync::Arc;
-use value_object::TenantId;
+use value_object::{Identifier, TenantId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct OrganizationRow {
@@ -71,6 +71,26 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         )
         .bind(LIBRARY_TENANT.to_string())
         .bind(id.to_string())
+        .fetch_optional(self.db.pool().as_ref())
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+
+        Ok(row.map(|r| r.try_into()).transpose()?)
+    }
+
+    async fn get_by_username(
+        &self,
+        username: &Identifier,
+    ) -> errors::Result<Option<Organization>> {
+        let row = sqlx::query_as::<_, OrganizationRow>(
+            r#"
+            SELECT id, name, username, description, website
+            FROM library.organizations
+            WHERE platform_id = ? AND username = ?
+            "#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(username.to_string())
         .fetch_optional(self.db.pool().as_ref())
         .await
         .map_err(errors::Error::internal_server_error)?;
