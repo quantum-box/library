@@ -52,6 +52,9 @@ export function AccountButton({
 							Settings
 							<DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
 						</DropdownMenuItem>
+						<Link to='/account/security'>
+							<DropdownMenuItem>Security</DropdownMenuItem>
+						</Link>
 						<DropdownMenuItem>
 							Keyboard shortcuts
 							<DropdownMenuShortcut>⌘K</DropdownMenuShortcut>
