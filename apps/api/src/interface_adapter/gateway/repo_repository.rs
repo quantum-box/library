@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::domain::{Repo, RepoId, RepoRepository};
+use crate::{
+    domain::{Repo, RepoId, RepoRepository},
+    interface_adapter::gateway::row_parse::parse_stored,
+};
 use derive_new::new;
 use value_object::TenantId;
 
@@ -18,6 +21,45 @@ pub struct RepoRow {
 #[derive(Debug, Clone, new)]
 pub struct RepoRepositoryImpl {
     db: Arc<persistence::Db>,
+}
+
+fn repo_from_stored(
+    row: RepoRow,
+    database_ids: Vec<String>,
+    tags: Vec<String>,
+) -> errors::Result<Repo> {
+    let id = parse_stored("repo", "id", &row.id)?;
+    let org_id = parse_stored("repo", "org_id", &row.org_id)?;
+    let org_username =
+        parse_stored("repo", "org_username", &row.org_username)?;
+    let name = parse_stored("repo", "name", &row.name)?;
+    let username = parse_stored("repo", "username", &row.username)?;
+    let description = row
+        .description
+        .map(|d| parse_stored("repo", "description", &d))
+        .transpose()?;
+    let databases = database_ids
+        .into_iter()
+        .map(|database_id| {
+            parse_stored("repo_database", "database_id", &database_id)
+        })
+        .collect::<errors::Result<_>>()?;
+    let tags = tags
+        .into_iter()
+        .map(|tag| parse_stored("repo_tag", "tag", &tag))
+        .collect::<errors::Result<_>>()?;
+
+    Ok(Repo::new(
+        &id,
+        &org_id,
+        &org_username,
+        &name,
+        &username,
+        row.is_public == 1,
+        description,
+        databases,
+        tags,
+    ))
 }
 
 #[async_trait::async_trait]
@@ -199,20 +241,11 @@ impl RepoRepository for RepoRepositoryImpl {
             }
         };
 
-        Ok(Some(Repo::new(
-            &row.id.parse()?,
-            &row.org_id.parse()?,
-            &row.org_username.parse()?,
-            &row.name.parse()?,
-            &row.username.parse()?,
-            row.is_public == 1,
-            row.description.map(|d| d.parse()).transpose()?,
-            databases
-                .into_iter()
-                .map(|d| d.database_id.parse().unwrap())
-                .collect(),
-            tags.into_iter().map(|t| t.tag.parse().unwrap()).collect(),
-        )))
+        Ok(Some(repo_from_stored(
+            row,
+            databases.into_iter().map(|d| d.database_id).collect(),
+            tags.into_iter().map(|t| t.tag).collect(),
+        )?))
     }
 
     #[tracing::instrument(
@@ -244,22 +277,11 @@ impl RepoRepository for RepoRepositoryImpl {
             .await
             .map_err(errors::Error::internal_server_error)?;
 
-            let databases = database_rows
-                .into_iter()
-                .map(|d| d.database_id.parse().unwrap())
-                .collect();
-
-            repos.push(Repo::new(
-                &row.id.parse()?,
-                &row.org_id.parse()?,
-                &row.org_username.parse()?,
-                &row.name.parse()?,
-                &row.username.parse()?,
-                row.is_public == 1,
-                row.description.as_ref().map(|d| d.parse()).transpose()?,
-                databases,
-                vec![], // TODO: add English comment
-            ));
+            repos.push(repo_from_stored(
+                row.clone(),
+                database_rows.into_iter().map(|d| d.database_id).collect(),
+                vec![],
+            )?);
         }
         Ok(repos)
     }
@@ -278,5 +300,34 @@ impl RepoRepository for RepoRepositoryImpl {
         .await
         .map_err(errors::Error::internal_server_error)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row_with_name(name: &str) -> RepoRow {
+        RepoRow {
+            id: "rp_01hkz3700yt46snfewzpakeyj4".to_string(),
+            org_id: "tn_01hkz3700yt46snfewzpakeyj4".to_string(),
+            org_username: "test-org".to_string(),
+            name: name.to_string(),
+            username: "test-repo".to_string(),
+            description: None,
+            is_public: 1,
+        }
+    }
+
+    #[test]
+    fn repo_row_empty_name_returns_error_instead_of_panicking() {
+        let row = row_with_name("");
+
+        let result = repo_from_stored(row, vec![], vec![]);
+
+        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("invalid stored repo.name"));
+        assert!(message.contains("en.err.empty_type"));
     }
 }

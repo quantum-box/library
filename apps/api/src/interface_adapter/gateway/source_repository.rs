@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::domain::repo::{RepoId, Source, SourceId, SourceRepository};
+use crate::{
+    domain::repo::{RepoId, Source, SourceId, SourceRepository},
+    interface_adapter::gateway::row_parse::parse_stored,
+};
 use persistence;
 
 pub struct SourceRow {
@@ -19,6 +22,18 @@ impl SourceRepositoryImpl {
     pub fn new(db: Arc<persistence::Db>) -> Self {
         Self { db }
     }
+}
+
+fn source_from_stored(row: SourceRow) -> errors::Result<Source> {
+    let id = parse_stored("source", "id", &row.id)?;
+    let repo_id = parse_stored("source", "repo_id", &row.repo_id)?;
+    let name = parse_stored("source", "name", &row.name)?;
+    let url = row
+        .url
+        .map(|url| parse_stored("source", "url", &url))
+        .transpose()?;
+
+    Ok(Source::new(&id, &repo_id, &name, url))
 }
 
 #[async_trait::async_trait]
@@ -117,14 +132,7 @@ impl SourceRepository for SourceRepositoryImpl {
         .await
         .map_err(errors::Error::internal_server_error)?;
 
-        Ok(source.map(|s| {
-            Source::new(
-                &s.id.parse().unwrap(),
-                &s.repo_id.parse().unwrap(),
-                &s.name.parse().unwrap(),
-                s.url.map(|u| u.parse().unwrap()),
-            )
-        }))
+        source.map(source_from_stored).transpose()
     }
 
     async fn find_by_repo_id(
@@ -140,17 +148,7 @@ impl SourceRepository for SourceRepositoryImpl {
         .await
         .map_err(errors::Error::internal_server_error)?;
 
-        Ok(sources
-            .into_iter()
-            .map(|s| {
-                Source::new(
-                    &s.id.parse().unwrap(),
-                    &s.repo_id.parse().unwrap(),
-                    &s.name.parse().unwrap(),
-                    s.url.map(|u| u.parse().unwrap()),
-                )
-            })
-            .collect())
+        sources.into_iter().map(source_from_stored).collect()
     }
 
     async fn delete(&self, id: &SourceId) -> errors::Result<()> {
@@ -167,5 +165,29 @@ impl SourceRepository for SourceRepositoryImpl {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row_with_name(name: &str) -> SourceRow {
+        SourceRow {
+            id: "src_01hkz3700yt46snfewzpakeyj4".to_string(),
+            repo_id: "rp_01hkz3700yt46snfewzpakeyj4".to_string(),
+            name: name.to_string(),
+            url: Some("https://example.com/repo".to_string()),
+        }
+    }
+
+    #[test]
+    fn source_row_empty_name_returns_error_instead_of_panicking() {
+        let result = source_from_stored(row_with_name(""));
+
+        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("invalid stored source.name"));
+        assert!(message.contains("en.err.empty_type"));
     }
 }

@@ -4,7 +4,10 @@ use errors::Result;
 use sqlx::prelude::FromRow;
 use value_object::Identifier;
 
-use crate::{domain::Repo, usecase::GetRepoByUsernameQuery};
+use crate::{
+    domain::Repo, interface_adapter::gateway::row_parse::parse_stored,
+    usecase::GetRepoByUsernameQuery,
+};
 
 #[derive(Debug, Clone, FromRow)]
 pub struct RepoRow {
@@ -26,6 +29,45 @@ impl GetRepoByUsernameQueryImpl {
     pub fn new(db: Arc<persistence::Db>) -> Arc<Self> {
         Arc::new(Self { db })
     }
+}
+
+fn repo_from_stored(
+    row: RepoRow,
+    database_ids: Vec<String>,
+    tags: Vec<String>,
+) -> Result<Repo> {
+    let id = parse_stored("repo", "id", &row.id)?;
+    let org_id = parse_stored("repo", "org_id", &row.org_id)?;
+    let org_username =
+        parse_stored("repo", "org_username", &row.org_username)?;
+    let name = parse_stored("repo", "name", &row.name)?;
+    let username = parse_stored("repo", "username", &row.username)?;
+    let description = row
+        .description
+        .map(|d| parse_stored("repo", "description", &d))
+        .transpose()?;
+    let databases = database_ids
+        .into_iter()
+        .map(|database_id| {
+            parse_stored("repo_database", "database_id", &database_id)
+        })
+        .collect::<Result<_>>()?;
+    let tags = tags
+        .into_iter()
+        .map(|tag| parse_stored("repo_tag", "tag", &tag))
+        .collect::<Result<_>>()?;
+
+    Ok(Repo::new(
+        &id,
+        &org_id,
+        &org_username,
+        &name,
+        &username,
+        row.is_public == 1,
+        description,
+        databases,
+        tags,
+    ))
 }
 
 #[async_trait::async_trait]
@@ -74,22 +116,40 @@ impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
                     }
                 }
             };
-            Ok(Some(Repo::new(
-                &row.id.parse().unwrap(),
-                &row.org_id.parse().unwrap(),
-                &row.org_username.parse().unwrap(),
-                &row.name.parse().unwrap(),
-                &row.username.parse().unwrap(),
-                row.is_public == 1,
-                row.description.map(|d| d.parse()).transpose()?,
-                databases
-                    .into_iter()
-                    .map(|d| d.database_id.parse().unwrap())
-                    .collect(),
-                tags.into_iter().map(|t| t.tag.parse().unwrap()).collect(),
-            )))
+            Ok(Some(repo_from_stored(
+                row,
+                databases.into_iter().map(|d| d.database_id).collect(),
+                tags.into_iter().map(|t| t.tag).collect(),
+            )?))
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row_with_name(name: &str) -> RepoRow {
+        RepoRow {
+            id: "rp_01hkz3700yt46snfewzpakeyj4".to_string(),
+            org_id: "tn_01hkz3700yt46snfewzpakeyj4".to_string(),
+            org_username: "test-org".to_string(),
+            name: name.to_string(),
+            username: "test-repo".to_string(),
+            description: None,
+            is_public: 1,
+        }
+    }
+
+    #[test]
+    fn repo_row_empty_name_returns_error_instead_of_panicking() {
+        let result = repo_from_stored(row_with_name(""), vec![], vec![]);
+
+        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("invalid stored repo.name"));
+        assert!(message.contains("en.err.empty_type"));
     }
 }
