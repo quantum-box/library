@@ -1,0 +1,64 @@
+name: Library REST E2E Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Library API base URL
+        required: true
+        type: string
+      org:
+        description: Smoke-test organization username
+        required: true
+        type: string
+      repo:
+        description: Smoke-test repository username
+        required: true
+        type: string
+      data_id:
+        description: Existing data id for detail and markdown checks
+        required: false
+        type: string
+      property_id:
+        description: Existing property id for detail checks
+        required: false
+        type: string
+      public_docs:
+        description: Check public docs routes
+        required: false
+        default: false
+        type: boolean
+      expect_private:
+        description: Assert anonymous and malformed token reads fail closed
+        required: false
+        default: false
+        type: boolean
+      write_smoke:
+        description: Create and delete temporary property/source in the target repo
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run Library REST E2E smoke
+        env:
+          LIBRARY_API_BASE_URL: ${{ inputs.api_base_url }}
+          LIBRARY_API_TOKEN: ${{ secrets.LIBRARY_API_TOKEN }}
+          LIBRARY_API_KEY: ${{ secrets.LIBRARY_API_KEY }}
+          LIBRARY_ORG: ${{ inputs.org }}
+          LIBRARY_REPO: ${{ inputs.repo }}
+          LIBRARY_DATA_ID: ${{ inputs.data_id }}
+          LIBRARY_PROPERTY_ID: ${{ inputs.property_id }}
+          LIBRARY_PUBLIC_DOCS: ${{ inputs.public_docs && '1' || '0' }}
+          LIBRARY_EXPECT_PRIVATE: ${{ inputs.expect_private && '1' || '0' }}
+          LIBRARY_SMOKE_WRITE: ${{ inputs.write_smoke && '1' || '0' }}
+        run: scripts/library-rest-e2e-smoke.sh
