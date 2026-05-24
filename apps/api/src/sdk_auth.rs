@@ -592,7 +592,6 @@ impl SdkAuthApp {
         email: Option<&str>,
         name: Option<&str>,
     ) -> errors::Result<User> {
-        let config = self.sdk_config();
         let req = tachyon_sdk::models::SignInWithPlatformRequest {
             platform_id: platform_id.to_string(),
             access_token: access_token.to_string(),
@@ -601,14 +600,31 @@ impl SdkAuthApp {
             name: Some(name.map(|s| s.to_string())),
         };
 
-        let resp =
-            tachyon_sdk::apis::auth_verify_api::sign_in_with_platform(
-                &config, req,
-            )
-            .await
-            .map_err(sdk_api_err)?;
+        let resp = self.post_sign_in_with_platform(req).await?;
 
         user_from_sdk_model(&resp.user)
+    }
+
+    async fn post_sign_in_with_platform(
+        &self,
+        req: tachyon_sdk::models::SignInWithPlatformRequest,
+    ) -> errors::Result<tachyon_sdk::models::SignInWithPlatformResponse>
+    {
+        let url =
+            format!("{}/auth/v1beta/sign-in-with-platform", self.base_url);
+        let resp = reqwest::Client::new()
+            .post(url)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", self.auth_token),
+            )
+            .header("x-operator-id", self.default_operator_id.as_str())
+            .json(&req)
+            .send()
+            .await
+            .map_err(|e| sdk_err(format!("HTTP request failed: {e}")))?;
+
+        handle_rest_response(resp).await
     }
 
     /// Search user by username via REST.
@@ -2036,5 +2052,70 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         SdkAuthApp::rest_delete(&config, &path).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn sign_in_with_platform_sends_operator_header_directly(
+    ) -> anyhow::Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gy"
+                ),
+                "request was missing x-operator-id header: {request}"
+            );
+
+            let body = serde_json::json!({
+                "user": {
+                    "id": "us_01hs2yepy5hw4rz8pdq2wywnwt",
+                    "role": "GENERAL",
+                    "tenants": ["tn_01j702qf86pc2j35s0kv0gv3gy"]
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let tenant_id: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gy".parse()?;
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "pk_test_service_token",
+        );
+
+        let user = sdk
+            .sign_in_with_platform(
+                tenant_id.as_str(),
+                "access-token",
+                Some(true),
+                None,
+                None,
+            )
+            .await?;
+
+        assert_eq!(user.id().as_str(), "us_01hs2yepy5hw4rz8pdq2wywnwt");
+        server.await?;
+
+        Ok(())
     }
 }
