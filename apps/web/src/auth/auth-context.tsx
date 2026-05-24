@@ -9,6 +9,7 @@ import {
 } from 'react'
 import {
   type AuthTokens,
+  signInWithHostedUiCode,
   refreshAccessToken,
   signInWithCredentials,
 } from './cognito'
@@ -33,6 +34,11 @@ interface AuthContextValue {
   session: AuthSession | null
   isLoading: boolean
   signIn: (username: string, password: string) => Promise<void>
+  signInWithHostedUiCode: (
+    code: string,
+    codeVerifier: string,
+    redirectUri: string,
+  ) => Promise<void>
   signOut: () => void
 }
 
@@ -134,14 +140,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(tokensToSession(tokens))
   }, [])
 
+  const signInHostedUiCode = useCallback(
+    async (code: string, codeVerifier: string, redirectUri: string) => {
+      const tokens = await signInWithHostedUiCode(code, codeVerifier, redirectUri)
+      storeTokens(tokens)
+      setSession(tokensToSession(tokens))
+    },
+    [],
+  )
+
   const signOut = useCallback(() => {
     clearTokens()
     setSession(null)
   }, [])
 
   const value = useMemo(
-    () => ({ session, isLoading, signIn, signOut }),
-    [session, isLoading, signIn, signOut],
+    () => ({
+      session,
+      isLoading,
+      signIn,
+      signInWithHostedUiCode: signInHostedUiCode,
+      signOut,
+    }),
+    [session, isLoading, signIn, signInHostedUiCode, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

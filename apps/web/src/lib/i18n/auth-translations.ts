@@ -14,6 +14,14 @@ export const authTranslations = {
 			forgotPassword: 'Forgot password?',
 			agreement:
 				'By clicking continue, you agree to the Terms of Service and Privacy Policy of the service.',
+			hostedUi: {
+				separator: 'Or continue with',
+				google: 'Continue with Google',
+				passkey: 'Continue with Passkey',
+				missingConfig:
+					'Google and Passkey sign-in are not configured in this environment.',
+				error: 'Could not start Google or Passkey sign-in. Please try again.',
+			},
 			errors: {
 				invalidCredentials: 'Invalid username or password',
 				failed: 'Sign in failed. Please try again.',
@@ -124,6 +132,15 @@ export const authTranslations = {
 			forgotPassword: 'パスワードをお忘れですか？',
 			agreement:
 				'続行すると、利用規約とプライバシーポリシーに同意したことになります。',
+			hostedUi: {
+				separator: 'または次の方法で続行',
+				google: 'Googleで続行',
+				passkey: 'Passkeyで続行',
+				missingConfig:
+					'この環境では Google / Passkey サインインが設定されていません。',
+				error:
+					'Google / Passkey サインインを開始できませんでした。もう一度お試しください。',
+			},
 			errors: {
 				invalidCredentials: 'ユーザー名またはパスワードが正しくありません',
 				failed: 'サインインに失敗しました。もう一度お試しください。',
