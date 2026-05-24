@@ -13,6 +13,8 @@ pub use get_repo_by_username_query::*;
 mod organization_repository;
 pub use organization_repository::*;
 
+mod row_parse;
+
 pub mod repo_repository;
 pub use repo_repository::*;
 
