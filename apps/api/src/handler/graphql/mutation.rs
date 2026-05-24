@@ -137,6 +137,7 @@ impl LibraryMutation {
 
     /// [AUTH] Sign in or sign up via platform access token (library)
     #[tracing::instrument(skip(self, ctx))]
+    #[graphql(name = "signInWithPlatform")]
     async fn sign_in(
         &self,
         ctx: &async_graphql::Context<'_>,
@@ -1502,6 +1503,38 @@ impl LibraryMutation {
             data_ids: result.data_ids,
             repo_id: result.repo_id,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LibraryMutation;
+    use async_graphql::{EmptySubscription, Object, Schema};
+
+    struct TestQuery;
+
+    #[Object]
+    impl TestQuery {
+        async fn health(&self) -> &str {
+            "ok"
+        }
+    }
+
+    #[test]
+    fn schema_exposes_sign_in_with_platform_field() {
+        let schema =
+            Schema::build(TestQuery, LibraryMutation, EmptySubscription)
+                .finish();
+        let sdl = schema.sdl();
+
+        assert!(
+            sdl.contains("signInWithPlatform("),
+            "schema must expose the field called by the web sign-in flow"
+        );
+        assert!(
+            !sdl.contains("\n\tsignIn("),
+            "do not expose the implementation method name as the public field"
+        );
     }
 }
 
