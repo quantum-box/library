@@ -71,13 +71,16 @@ impl SignIn {
         let policy_id = library_user_policy_id();
         let platform_tenant = TenantId::new(LIBRARY_PLATFORM_ID)?;
         let executor = &SystemExecutor;
-        let multi_tenancy = &tachyon_sdk::auth::MultiTenancy::default();
+        let platform_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(platform_tenant.clone()),
+            Some(platform_tenant.clone()),
+        );
 
         AuthAppTrait::attach_user_policy(
             self.sdk.as_ref(),
             &tachyon_sdk::auth::AttachUserPolicyInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &platform_scope,
                 user_id: user.id(),
                 policy_id: &policy_id,
                 tenant_id: &platform_tenant,
@@ -94,11 +97,15 @@ impl SignIn {
         let mut seen = HashSet::new();
         for tenant in user.tenants() {
             if seen.insert(tenant.to_string()) {
+                let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+                    Some(platform_tenant.clone()),
+                    Some(tenant.clone()),
+                );
                 AuthAppTrait::attach_user_policy(
                     self.sdk.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
                         executor,
-                        multi_tenancy,
+                        multi_tenancy: &tenant_scope,
                         user_id: user.id(),
                         policy_id: &policy_id,
                         tenant_id: tenant,
@@ -141,13 +148,16 @@ impl SignIn {
 
         let policy_id = library_repo_owner_policy_id();
         let executor = &SystemExecutor;
-        let multi_tenancy = &tachyon_sdk::auth::MultiTenancy::default();
+        let multi_tenancy = tachyon_sdk::auth::MultiTenancy::new(
+            Some(TenantId::new(LIBRARY_PLATFORM_ID)?),
+            Some(tenant_id.clone()),
+        );
 
         AuthAppTrait::attach_user_policy(
             self.sdk.as_ref(),
             &tachyon_sdk::auth::AttachUserPolicyInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &multi_tenancy,
                 user_id: user.id(),
                 policy_id: &policy_id,
                 tenant_id,
