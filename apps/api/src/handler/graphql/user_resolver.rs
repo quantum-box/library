@@ -41,7 +41,7 @@ impl User {
                         "Failed to load platform operators; falling back to user tenants"
                     );
                     load_operators_from_tenants(
-                        &sdk,
+                        sdk,
                         &self.tenant_id_list,
                         &mut seen,
                         &mut operators,
@@ -54,7 +54,7 @@ impl User {
             // Fallback: iterate user's tenants and
             // resolve each operator by ID.
             load_operators_from_tenants(
-                &sdk,
+                sdk,
                 &self.tenant_id_list,
                 &mut seen,
                 &mut operators,
@@ -228,18 +228,15 @@ mod tests {
         let sdk =
             Arc::new(SdkAuthApp::new(auth_url, &platform_id, "token"));
 
-        let schema = Schema::build(
-            TestQuery::default(),
-            EmptyMutation,
-            EmptySubscription,
-        )
-        .data(sdk)
-        .data(tachyon_sdk::auth::Executor::None)
-        .data(tachyon_sdk::auth::MultiTenancy::new(
-            Some(platform_id.clone()),
-            Some(platform_id),
-        ))
-        .finish();
+        let schema =
+            Schema::build(TestQuery, EmptyMutation, EmptySubscription)
+                .data(sdk)
+                .data(tachyon_sdk::auth::Executor::None)
+                .data(tachyon_sdk::auth::MultiTenancy::new(
+                    Some(platform_id.clone()),
+                    Some(platform_id),
+                ))
+                .finish();
 
         schema
             .execute(Request::new(

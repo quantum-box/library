@@ -1814,13 +1814,9 @@ mod github_markdown_ga_tests {
 
     #[test]
     fn github_markdown_import_defaults_to_one_shot_ga_path() {
-        assert_eq!(
-            require_one_shot_github_markdown_import(None).unwrap(),
-            false
-        );
-        assert_eq!(
-            require_one_shot_github_markdown_import(Some(false)).unwrap(),
-            false
+        assert!(!require_one_shot_github_markdown_import(None).unwrap());
+        assert!(
+            !require_one_shot_github_markdown_import(Some(false)).unwrap()
         );
     }
 
