@@ -21,6 +21,7 @@ import { Route as V1betaOrgIndexRouteImport } from './routes/v1beta/$org/index'
 import { Route as V1betaOrganizationNewRouteImport } from './routes/v1beta/organization/new'
 import { Route as V1betaOrgRepoRouteImport } from './routes/v1beta/$org/$repo'
 import { Route as AuthAuthCallbackRouteImport } from './routes/_auth/auth/callback'
+import { Route as AuthAccountSecurityRouteImport } from './routes/_auth/account/security'
 import { Route as V1betaOrgRepoIndexRouteImport } from './routes/v1beta/$org/$repo/index'
 import { Route as V1betaOrgRepoSettingsRouteImport } from './routes/v1beta/$org/$repo/settings'
 import { Route as V1betaOrgRepoPropertiesRouteImport } from './routes/v1beta/$org/$repo/properties'
@@ -88,6 +89,11 @@ const AuthAuthCallbackRoute = AuthAuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthAccountSecurityRoute = AuthAccountSecurityRouteImport.update({
+  id: '/account/security',
+  path: '/account/security',
+  getParentRoute: () => AuthRoute,
+} as any)
 const V1betaOrgRepoIndexRoute = V1betaOrgRepoIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/sign_in': typeof AuthSign_inRoute
   '/sign_out': typeof AuthSign_outRoute
   '/sign_up': typeof AuthSign_upRoute
+  '/account/security': typeof AuthAccountSecurityRoute
   '/auth/callback': typeof AuthAuthCallbackRoute
   '/v1beta/$org/$repo': typeof V1betaOrgRepoRouteWithChildren
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/sign_in': typeof AuthSign_inRoute
   '/sign_out': typeof AuthSign_outRoute
   '/sign_up': typeof AuthSign_upRoute
+  '/account/security': typeof AuthAccountSecurityRoute
   '/auth/callback': typeof AuthAuthCallbackRoute
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org': typeof V1betaOrgIndexRoute
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/_auth/sign_in': typeof AuthSign_inRoute
   '/_auth/sign_out': typeof AuthSign_outRoute
   '/_auth/sign_up': typeof AuthSign_upRoute
+  '/_auth/account/security': typeof AuthAccountSecurityRoute
   '/_auth/auth/callback': typeof AuthAuthCallbackRoute
   '/v1beta/$org/$repo': typeof V1betaOrgRepoRouteWithChildren
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/sign_in'
     | '/sign_out'
     | '/sign_up'
+    | '/account/security'
     | '/auth/callback'
     | '/v1beta/$org/$repo'
     | '/v1beta/organization/new'
@@ -215,6 +225,7 @@ export interface FileRouteTypes {
     | '/sign_in'
     | '/sign_out'
     | '/sign_up'
+    | '/account/security'
     | '/auth/callback'
     | '/v1beta/organization/new'
     | '/v1beta/$org'
@@ -235,6 +246,7 @@ export interface FileRouteTypes {
     | '/_auth/sign_in'
     | '/_auth/sign_out'
     | '/_auth/sign_up'
+    | '/_auth/account/security'
     | '/_auth/auth/callback'
     | '/v1beta/$org/$repo'
     | '/v1beta/organization/new'
@@ -340,6 +352,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthAuthCallbackRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/account/security': {
+      id: '/_auth/account/security'
+      path: '/account/security'
+      fullPath: '/account/security'
+      preLoaderRoute: typeof AuthAccountSecurityRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/v1beta/$org/$repo/': {
       id: '/v1beta/$org/$repo/'
       path: '/'
@@ -398,6 +417,7 @@ interface AuthRouteChildren {
   AuthSign_inRoute: typeof AuthSign_inRoute
   AuthSign_outRoute: typeof AuthSign_outRoute
   AuthSign_upRoute: typeof AuthSign_upRoute
+  AuthAccountSecurityRoute: typeof AuthAccountSecurityRoute
   AuthAuthCallbackRoute: typeof AuthAuthCallbackRoute
 }
 
@@ -407,6 +427,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthSign_inRoute: AuthSign_inRoute,
   AuthSign_outRoute: AuthSign_outRoute,
   AuthSign_upRoute: AuthSign_upRoute,
+  AuthAccountSecurityRoute: AuthAccountSecurityRoute,
   AuthAuthCallbackRoute: AuthAuthCallbackRoute,
 }
 
