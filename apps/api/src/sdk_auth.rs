@@ -362,18 +362,19 @@ impl SdkAuthApp {
         user_id: &str,
     ) -> errors::Result<Vec<OperatorResp>> {
         let config = self.sdk_config();
-        let resp: SdkOperatorListResp = Self::rest_get_query(
+        let resp: SdkOperatorsByUserResp = Self::rest_get_query(
             &config,
             "/v1/auth/operators/by-user",
             &[("platform_id", platform_id.as_str()), ("user_id", user_id)],
         )
         .await?;
 
-        Ok(resp
-            .operators
-            .into_iter()
-            .map(operator_resp_from_rest)
-            .collect())
+        let operators = match resp {
+            SdkOperatorsByUserResp::Wrapped { operators } => operators,
+            SdkOperatorsByUserResp::Bare(operators) => operators,
+        };
+
+        Ok(operators.into_iter().map(operator_resp_from_rest).collect())
     }
 
     /// Get a single operator by ID.
@@ -710,8 +711,10 @@ struct SdkOperatorResp {
 }
 
 #[derive(Debug, Deserialize)]
-struct SdkOperatorListResp {
-    operators: Vec<SdkOperatorResp>,
+#[serde(untagged)]
+enum SdkOperatorsByUserResp {
+    Wrapped { operators: Vec<SdkOperatorResp> },
+    Bare(Vec<SdkOperatorResp>),
 }
 
 #[derive(Debug, Deserialize)]

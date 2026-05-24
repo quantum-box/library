@@ -214,7 +214,10 @@ mod tests {
         );
 
         headers.remove(X_REAL_IP);
-        assert_eq!(client_ip(&headers, remote), Some(remote.unwrap().ip()));
+        assert_eq!(
+            client_ip(&headers, remote),
+            Some("192.0.2.3".parse().unwrap())
+        );
     }
 
     #[test]
