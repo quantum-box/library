@@ -33,6 +33,43 @@ export LIBRARY_PROPERTY_ID="<property-id>"
 
 Do not paste token values into logs, PRs, issue comments, or incident notes.
 
+## Automated REST E2E Smoke
+
+Use the script below for the repeatable GA gate. It is read-only by default and
+exits non-zero on the first failed step.
+
+```bash
+LIBRARY_API_BASE_URL="https://library.api.n1.tachy.one" \
+LIBRARY_API_TOKEN="<jwt-or-pk-api-key>" \
+LIBRARY_ORG="<org>" \
+LIBRARY_REPO="<repo>" \
+LIBRARY_DATA_ID="<data-id>" \
+LIBRARY_PROPERTY_ID="<property-id>" \
+scripts/library-rest-e2e-smoke.sh
+```
+
+The same command is available through npm:
+
+```bash
+npm run smoke:library-rest-e2e
+```
+
+Optional switches:
+
+- `LIBRARY_PUBLIC_DOCS=1`: also checks `/docs/{org}/{repo}` and markdown public docs.
+- `LIBRARY_EXPECT_PRIVATE=1`: asserts anonymous and malformed bearer-token reads fail closed for the target repo.
+- `LIBRARY_API_KEY="pk_<redacted>"`: verifies API-key auth against the target repo.
+- `LIBRARY_SMOKE_WRITE=1`: creates and deletes a temporary property and source in the target repo. Use only with a designated smoke repository.
+
+The script reads credentials from environment variables only. It prints step
+names and HTTP failure metadata, but never prints bearer token or API key values.
+
+For CI/manual release validation, run the `Library REST E2E Smoke` GitHub Actions
+workflow. The workflow accepts the API base URL, org, repo, data id, property id,
+and boolean smoke switches as dispatch inputs. Tokens must be provided through
+GitHub Actions secrets `LIBRARY_API_TOKEN` and, when API-key auth should also be
+checked, `LIBRARY_API_KEY`.
+
 ## Health Check
 
 1. Verify the root health endpoint.
