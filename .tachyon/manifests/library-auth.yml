@@ -122,7 +122,7 @@
         resource_pattern: trn:library:global-id-mapping:*
       - context: library
         name: ReadGlobalIdMapping
-        description: Read Global ID mapping
+        description: Read Global ID mapping (bakuure SA Phase 1 read-only)
         resource_pattern: trn:library:global-id-mapping:*
       - context: database
         name: AddProperty
@@ -138,32 +138,32 @@
         resource_pattern: trn:database:property:*
       - context: inbound_sync
         name: ListIntegrations
-        description: List available Library inbound sync integrations
-        resource_pattern: trn:library:inbound-sync:integration:*
+        description: List available integrations
+        resource_pattern: trn:inbound_sync:integration:*
       - context: inbound_sync
         name: ListConnections
-        description: List Library inbound sync connections
-        resource_pattern: trn:library:inbound-sync:connection:*
+        description: List tenant connections
+        resource_pattern: trn:inbound_sync:connection:*
       - context: inbound_sync
         name: RegisterWebhookEndpoint
-        description: Register a Library inbound sync webhook endpoint
-        resource_pattern: trn:library:inbound-sync:webhook-endpoint:*
+        description: Register a new webhook endpoint
+        resource_pattern: trn:inbound_sync:webhook:*
       - context: inbound_sync
         name: UpdateWebhookEndpoint
-        description: Update a Library inbound sync webhook endpoint
-        resource_pattern: trn:library:inbound-sync:webhook-endpoint:*
+        description: Update a webhook endpoint
+        resource_pattern: trn:inbound_sync:webhook:*
       - context: inbound_sync
         name: DeleteWebhookEndpoint
-        description: Delete a Library inbound sync webhook endpoint
-        resource_pattern: trn:library:inbound-sync:webhook-endpoint:*
+        description: Delete a webhook endpoint
+        resource_pattern: trn:inbound_sync:webhook:*
       - context: inbound_sync
         name: InitialSync
-        description: Run initial Library inbound sync
-        resource_pattern: trn:library:inbound-sync:operation:*
+        description: Execute initial sync
+        resource_pattern: trn:inbound_sync:sync:*
       - context: inbound_sync
         name: OnDemandPull
-        description: Run on-demand Library inbound sync pull
-        resource_pattern: trn:library:inbound-sync:operation:*
+        description: Execute on-demand pull sync
+        resource_pattern: trn:inbound_sync:sync:*
 
 - apiVersion: auth.tachyon.io/v1
   kind: Policy
