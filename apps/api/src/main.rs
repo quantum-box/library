@@ -11,6 +11,7 @@ pub mod handler;
 mod interface_adapter;
 mod router;
 pub mod sdk_auth;
+mod sentry_context;
 mod usecase;
 pub use domain::LIBRARY_TENANT;
 

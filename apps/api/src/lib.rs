@@ -11,6 +11,7 @@ pub mod handler;
 mod interface_adapter;
 mod router;
 pub mod sdk_auth;
+mod sentry_context;
 pub mod usecase;
 pub use crate::domain::LIBRARY_TENANT;
 
