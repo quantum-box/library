@@ -17,6 +17,14 @@ pub struct ProductResponse {
     /// Billing cycle
     #[serde(rename = "billingCycle")]
     pub billing_cycle: String,
+    /// Product category master value
+    #[serde(
+        rename = "category",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category: Option<Option<String>>,
     /// Created at
     #[serde(rename = "createdAt")]
     pub created_at: String,
@@ -81,6 +89,14 @@ pub struct ProductResponse {
     /// Product status
     #[serde(rename = "status")]
     pub status: String,
+    /// Product subcategory master value
+    #[serde(
+        rename = "subcategory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub subcategory: Option<Option<String>>,
     /// Tenant ID
     #[serde(rename = "tenantId")]
     pub tenant_id: String,
@@ -114,6 +130,7 @@ impl ProductResponse {
     ) -> ProductResponse {
         ProductResponse {
             billing_cycle,
+            category: None,
             created_at,
             description: None,
             id,
@@ -127,6 +144,7 @@ impl ProductResponse {
             publication_status,
             sku_code: None,
             status,
+            subcategory: None,
             tenant_id,
             upc_code: None,
             updated_at,
