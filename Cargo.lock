@@ -3515,6 +3515,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "schemars 0.8.22",
+ "sentry",
  "serde",
  "serde_json",
  "serde_yaml 0.9.34+deprecated",

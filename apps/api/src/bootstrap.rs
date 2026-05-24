@@ -53,7 +53,11 @@ pub async fn run_api(
         provider_secrets,
     )
     .await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

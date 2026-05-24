@@ -9,6 +9,7 @@ use crate::sdk_auth::SdkAuthApp;
 use async_graphql::EmptySubscription;
 use async_graphql::Schema;
 use axum::http::method::Method;
+use axum::middleware;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Extension;
@@ -616,6 +617,9 @@ pub async fn router(
         )
         .layer(create_propagate_request_id_layer())
         .layer(create_trace_layer())
+        .layer(middleware::from_fn(
+            crate::sentry_context::sentry_request_context_middleware,
+        ))
         .layer(create_request_id_layer())
         .layer(Extension(sdk))
         .layer(Extension(library_app))

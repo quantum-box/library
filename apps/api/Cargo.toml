@@ -62,6 +62,7 @@ tower = "0.5.1"
 mime = "0.3.16"
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+sentry = { workspace = true }
 bytes = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
