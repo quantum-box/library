@@ -1,16 +1,25 @@
-apiVersion: apps.tachy.one/v1alpha
+apiVersion: tachyon/v1
 kind: CloudApp
 metadata:
   name: library-api
-  tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+  tenant_id: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
+  framework: static
+  deploymentTarget: cloud_run
+  rootDirectory: .
+  dockerContext: .
+  repository:
+    owner: quantum-box
+    name: library
+    url: https://github.com/quantum-box/library
+    defaultBranch: main
   envVars:
     - name: DATABASE_URL
-      type: credential
-      value: ""
+      valueFrom:
+        secret: DATABASE_URL
     - name: SERVICE_AUTH_TOKEN
-      type: credential
-      value: ""
+      valueFrom:
+        secret: SERVICE_AUTH_TOKEN
     - name: COGNITO_JWK_URL
       value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
     - name: COGNITO_USER_POOL_ID

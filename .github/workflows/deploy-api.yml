@@ -1,4 +1,4 @@
-name: Deploy API to Lambda
+name: Deploy API to txcloud
 
 on:
   workflow_dispatch:
@@ -11,6 +11,7 @@ on:
       - "Cargo.toml"
       - "apps/api/**"
       - "packages/**"
+      - "sdk/rust/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,154 +20,70 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    outputs:
-      function_url: ${{ steps.function_url.outputs.function_url }}
     permissions:
       contents: read
-      id-token: write
     env:
-      AWS_REGION: ap-northeast-1
-      SQLX_OFFLINE: "true"
+      TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
+      TACHYON_ENVIRONMENT: production
+      TACHYON_CONFIG: apps/api/tachyon.yaml
+      TACHYON_API_KEY: ${{ secrets.TACHYON_API_KEY }}
+      GH_TOKEN: ${{ secrets.TACHYON_GITHUB_TOKEN || github.token }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install Rust target
-        run: rustup target add aarch64-unknown-linux-gnu
-
-      - name: Install cargo-lambda
-        run: |
-          pip install --user cargo-lambda==1.8.6
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install protoc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-
-      - name: Install aarch64 cross-compile dependencies
+      - name: Require txcloud credentials
         run: |
           set -euo pipefail
-          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-            sudo sed -i '/^Types: deb$/,/^$/{/^Architectures:/d; s|^Types: deb$|Types: deb\nArchitectures: amd64|}' \
-              /etc/apt/sources.list.d/ubuntu.sources
-          fi
-          if [ -f /etc/apt/sources.list ]; then
-            sudo sed -i 's|^deb http|deb [arch=amd64] http|' /etc/apt/sources.list || true
-          fi
-          codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
-          sudo tee /etc/apt/sources.list.d/arm64-ports.list > /dev/null <<EOF
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ ${codename} main universe
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ ${codename}-updates main universe
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ ${codename}-security main universe
-          EOF
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev:arm64 pkg-config
+          test -n "${TACHYON_API_KEY}"
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: lambda-library-api
-
-      - name: Build Lambda
-        env:
-          PKG_CONFIG_ALLOW_CROSS: "1"
-          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
-          OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
-          OPENSSL_INCLUDE_DIR: /usr/include
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: |
-          cargo lambda build \
-            --package library-api \
-            --bin lambda-library-api \
-            --release \
-            --arm64
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Deploy Lambda
-        run: |
-          cargo lambda deploy \
-            --region ${{ env.AWS_REGION }} \
-            --binary-name lambda-library-api \
-            lambda-library-api
-
-      - name: Configure Lambda DB pool env
+      - name: Install tachyon CLI
         run: |
           set -euo pipefail
-          current_env="$(aws lambda get-function-configuration \
-            --region "${AWS_REGION}" \
-            --function-name lambda-library-api \
-            --query 'Environment.Variables' \
-            --output json)"
-          merged_env="$(jq -c '. // {} | . + {
-            DB_POOL_MAX_CONNECTIONS: "16",
-            DB_POOL_ACQUIRE_TIMEOUT_SECS: "10",
-            DB_POOL_ACQUIRE_METRICS_ENABLED: "true",
-            DB_POOL_ACQUIRE_METRICS_INTERVAL_SECS: "60",
-            DB_POOL_ACQUIRE_WARN_MS: "250"
-          }' <<< "${current_env}")"
-          aws lambda update-function-configuration \
-            --region "${AWS_REGION}" \
-            --function-name lambda-library-api \
-            --environment "{\"Variables\":${merged_env}}"
-          aws lambda wait function-updated \
-            --region "${AWS_REGION}" \
-            --function-name lambda-library-api
+          workdir="${RUNNER_TEMP}/tachyon-cli"
+          mkdir -p "${workdir}"
 
-      - name: Resolve Function URL
-        id: function_url
+          if ! gh release download \
+            --repo quantum-box/tachyon-sdk \
+            --pattern 'tachyon-cli-*x86_64-unknown-linux-gnu*.tar.gz' \
+            --dir "${workdir}"; then
+            gh release download \
+              --repo quantum-box/tachyon-sdk \
+              --pattern 'tachyon-*x86_64-unknown-linux-gnu*.tar.gz' \
+              --dir "${workdir}"
+          fi
+
+          archive="$(find "${workdir}" -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)"
+          test -n "${archive}"
+          tar -xzf "${archive}" -C "${workdir}"
+          tachyon_bin="$(find "${workdir}" -type f -name tachyon -perm -u+x | head -n 1)"
+          test -n "${tachyon_bin}"
+          install -m 0755 "${tachyon_bin}" /usr/local/bin/tachyon
+          tachyon --version
+
+      - name: Apply Cloud App manifest
         run: |
-          function_url="$(aws lambda get-function-url-config \
-            --region "${AWS_REGION}" \
-            --function-name lambda-library-api \
-            --query 'FunctionUrl' \
-            --output text)"
-          echo "function_url=${function_url}" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Library API Lambda"
-            echo ""
-            echo "Function URL: ${function_url}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          tachyon compute apps apply \
+            --file "${TACHYON_CONFIG}" \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --environment "${TACHYON_ENVIRONMENT}"
 
-  smoke-test:
-    runs-on: ubuntu-latest
-    needs: deploy
-    timeout-minutes: 3
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      AWS_REGION: ap-northeast-1
-      FUNCTION_URL: ${{ needs.deploy.outputs.function_url }}
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Smoke test Lambda Function URL
+      - name: Trigger txcloud build
         run: |
-          test -n "${FUNCTION_URL}"
+          set -euo pipefail
+          tachyon compute builds trigger library-api \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --branch "${GITHUB_REF_NAME}"
 
-          health_url="${FUNCTION_URL%/}/"
-          for attempt in 1 2 3 4 5 6; do
-            response="$(curl -fsSL --max-time 20 "${health_url}" || true)"
-            if [ "${response}" = "OK" ]; then
-              echo "Smoke test passed: ${health_url}"
-              exit 0
-            fi
-            echo "Smoke test attempt ${attempt} failed; retrying..."
-            sleep 10
-          done
+      - name: Watch txcloud build
+        run: |
+          set -euo pipefail
+          tachyon compute builds watch library-api \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --timeout-secs 1800 \
+            --no-logs
 
-          echo "Smoke test failed: ${health_url}"
-          exit 1
+      - name: Smoke test public sign-in route
+        run: |
+          set -euo pipefail
+          curl -fsSIL --max-time 20 https://planet-library.txcloud.app/sign_in
