@@ -34,6 +34,7 @@ The prior removal was premature for production migration. This migration must wi
 - HTTP/container entrypoint: `library-api` from `apps/api/src/main.rs`, which binds `0.0.0.0:$PORT`.
 - Lambda entrypoint: `lambda-library-api` from `apps/api/bin/lambda.rs`, which uses `lambda_http::run`.
 - Container deploy must run `library-api`, not the Lambda binary.
+- GCP Cloud Build resolves Dockerfile as `{rootDirectory}/Dockerfile`, so the manifest uses `rootDirectory: apps/api` and `dockerContext: .` to keep repo-root workspace files available.
 - Health path: `/` returns `OK`; `/health` is also present in the OpenAPI router.
 - Production port: `8080`.
 
