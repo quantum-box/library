@@ -41,9 +41,10 @@ The prior removal was premature for production migration. This migration must wi
 
 - Target tenant: `tn_01j702qf86pc2j35s0kv0gv3gy`.
 - Existing repo convention is `apps/api/tachyon.yaml`, so this task keeps the YAML manifest instead of introducing `.tachyon.json`.
-- Runtime secrets must be copied to txcloud without printing expanded credential values.
+- Runtime secrets must be copied to the Tachyon SecretsApp backend without printing expanded credential values.
 - Current `tachyon init --framework none` convention generates `apiVersion: tachyon/v1`, `kind: CloudApp`, `metadata.tenant_id`, and `spec.framework`, but the production API currently rejects `framework: none`. The manifest uses `framework: static` with `deploymentTarget: cloud_run` and `dockerContext: .`.
-- `tachyon compute apps apply --environment production` applied non-secret env values and reported missing txcloud secrets for `DATABASE_URL` and `SERVICE_AUTH_TOKEN`.
+- `tachyon compute apps apply --environment production` applied non-secret env values.
+- For `cloud_run` apps, `tachyon compute env set --secret` is not the correct secret path; it is currently Cloudflare Pages-only. Runtime secrets are resolved through provider-style secret references such as `library-api/DATABASE_URL`, backed by Secrets Manager path `{tenantId}/providers/library-api`.
 
 ## Redacted Secret Migration Commands
 
@@ -57,17 +58,12 @@ aws lambda get-function-configuration \
   --output json
 ```
 
-Copy secret values without echoing them. The current CLI rejects `KEY=VALUE` positional args when `--secret` is used, so use the secret prompt and paste the value only into the hidden prompt:
+Copy secret values without echoing them. Store both values as fields in the provider secret at `{tenantId}/providers/library-api`, then reference them from the manifest as `library-api/DATABASE_URL` and `library-api/SERVICE_AUTH_TOKEN`.
 
 ```bash
-tachyon compute env set library-api \
-  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy \
-  --target production \
-  --secret DATABASE_URL
-tachyon compute env set library-api \
-  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy \
-  --target production \
-  --secret SERVICE_AUTH_TOKEN
+aws secretsmanager put-secret-value \
+  --secret-id tn_01j702qf86pc2j35s0kv0gv3gy/providers/library-api \
+  --secret-string '<redacted JSON object>'
 ```
 
 Do not paste the expanded values into PRs, task comments, logs, or shell history.
@@ -89,4 +85,4 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 
 ## Current Blocker
 
-The Cloud App is created, but production deployment is intentionally not triggered yet. Required txcloud secrets `DATABASE_URL` and `SERVICE_AUTH_TOKEN` are missing, and this workspace has no AWS credentials to read the Lambda environment values from `lambda-library-api`.
+The Cloud App is created, but production deployment is intentionally not triggered until the provider secret fields `DATABASE_URL` and `SERVICE_AUTH_TOKEN` are present and a txcloud build/smoke passes.

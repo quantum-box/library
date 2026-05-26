@@ -16,10 +16,10 @@ spec:
   envVars:
     - name: DATABASE_URL
       valueFrom:
-        secret: DATABASE_URL
+        secret: library-api/DATABASE_URL
     - name: SERVICE_AUTH_TOKEN
       valueFrom:
-        secret: SERVICE_AUTH_TOKEN
+        secret: library-api/SERVICE_AUTH_TOKEN
     - name: COGNITO_JWK_URL
       value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
     - name: COGNITO_USER_POOL_ID
