@@ -36,9 +36,9 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 | Env | Scope | Source | 用途 |
 | --- | --- | --- | --- |
 | `SENTRY_DSN` | recommended secret | txcloud provider secret / Sentry project key | panic / error tracking |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | recommended | ADOT / collector endpoint | tracing export |
-| `OTEL_ENABLED` | recommended on Lambda | Lambda env | ADOT / X-Ray tracing enablement |
-| `OTEL_SERVICE_NAME=library-api` | recommended | Lambda env | metric / trace service name |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | PLT-1696 scope | Sentry OTLP ingest endpoint | 全 backend の OTEL + Sentry OTLP exporter 導入時に設定 |
+| `OTEL_ENABLED` | PLT-1696 scope | Lambda env | 全 backend の OTEL + Sentry OTLP exporter 導入時に設定 |
+| `OTEL_SERVICE_NAME=library-api` | PLT-1696 scope | Lambda env | 全 backend の OTEL + Sentry OTLP exporter 導入時に設定 |
 | `AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH=true` | recommended on Lambda | Lambda env or bootstrap | API Gateway stage prefix handling |
 
 ## GA scope 別の optional / disabled env
@@ -112,11 +112,13 @@ tachyon compute deployments list library-api \
   --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
 ```
 
-4. Runtime log は txcloud Cloud App が管理する Lambda backend の CloudWatch Logs で確認する。`tachyon compute logs --tail` は Cloudflare-backed app 専用で、`deploymentTarget: lambda` では使わない。
+4. Runtime log は既存の txcloud Cloud App backend log で確認する。`tachyon compute logs --tail` は Cloudflare-backed app 専用で、`deploymentTarget: lambda` では使わない。
 
 ```bash
 aws logs tail <txcloud-managed-library-api-log-group> --since 30m --follow
 ```
+
+PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない。Sentry Team plan で OTEL 直接送信が使えるため、runtime error spike の恒久検知は PLT-1696 の全 backend OTEL + Sentry OTLP exporter 導入で扱う。
 
 確認ポイント:
 
@@ -173,7 +175,7 @@ aws lambda update-alias \
 
 | 症状 | 確認箇所 | 初動 |
 | --- | --- | --- |
-| 起動直後に Cloud App が落ちる | txcloud deployment status, CloudWatch logs の guard message | env / secret を修正して redeploy |
+| 起動直後に Cloud App が落ちる | txcloud deployment status, 既存 runtime logs の guard message | env / secret を修正して redeploy |
 | Sentry event が入らない | `SENTRY_DSN` secret presence, Sentry project environment filter | secret reference と production project を確認 |
 | 401 / 403 が増える | `SERVICE_AUTH_TOKEN`, Tachyon API service account | token rotation / Tachyon API 側権限を確認 |
 | OAuth callback が失敗する | Tachyon OAuth bootstrap, `GITHUB_REDIRECT_URI` | callback URL と provider secret を確認 |
