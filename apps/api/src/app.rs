@@ -1,6 +1,6 @@
-use crate::domain::RepoRepository;
 use crate::domain::SourceRepository;
 use crate::domain::VisibilityService;
+use crate::domain::{OrganizationRepository, RepoRepository};
 use crate::interface_adapter;
 use crate::sdk_auth::{
     SdkAuthApp, SdkUserPolicyMappingRepository, SdkUserQuery,
@@ -56,6 +56,8 @@ pub struct LibraryApp {
     pub find_global_id_mappings:
         Arc<dyn usecase::FindGlobalIdMappingsInputPort>,
     pub sign_in: Arc<dyn usecase::SignInInputPort>,
+    pub organization_repo: Arc<dyn OrganizationRepository>,
+    pub auth_app: Arc<dyn AuthApp>,
     pub invite_org_member: Arc<dyn usecase::InviteOrgMemberInputPort>,
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
@@ -411,6 +413,8 @@ impl LibraryApp {
             get_global_id_mapping,
             find_global_id_mappings,
             sign_in,
+            organization_repo,
+            auth_app,
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,

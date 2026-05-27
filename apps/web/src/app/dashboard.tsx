@@ -1,11 +1,13 @@
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type {
 	MeOnDashboardFragment,
 	RepoItemOnDashboardFragment,
 } from '@/gen/graphql'
 import { platformId } from '@/lib/apiClient'
-import { BookOpen, Globe, Lock } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
+import { executeGraphQL, graphql } from '@/lib/graphql'
+import { ArrowRight, BookOpen, Globe, Loader2, Lock, Users } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { detectLocale } from './i18n/detect-locale'
 import { getDictionary } from './i18n/get-dictionary'
@@ -15,12 +17,43 @@ import { useEffect, useState } from 'react'
 import { platformAction } from './v1beta/_lib/platform-action'
 import { handleNotFound } from './v1beta/_lib/platform-error-handler'
 
+type TenantSeedCandidate = {
+	tenantId: string
+	name: string
+	username: string
+	staffCount: number
+}
+
+const TenantSeedCandidatesQuery = graphql(`
+	query TenantSeedCandidates {
+		tenantSeedCandidates {
+			tenantId
+			name
+			username
+			staffCount
+		}
+	}
+`)
+
+const SeedLibraryTenantMutation = graphql(`
+	mutation SeedLibraryTenant($tenantId: String!) {
+		seedLibraryTenant(tenantId: $tenantId) {
+			organization {
+				username
+			}
+		}
+	}
+`)
+
 export function DashboardPage() {
 	const { session } = useAuth()
+	const navigate = useNavigate()
 	const locale = detectLocale()
 	const dictionary = getDictionary(locale)
 	const [me, setMe] = useState<MeOnDashboardFragment | null>(null)
 	const [orgRepos, setOrgRepos] = useState<Map<string, RepoItemOnDashboardFragment[]>>(new Map())
+	const [seedCandidates, setSeedCandidates] = useState<TenantSeedCandidate[]>([])
+	const [seedingTenantId, setSeedingTenantId] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 
 	useEffect(() => {
@@ -39,6 +72,14 @@ export function DashboardPage() {
 				}
 
 				setMe(result.me)
+				const seedResult = await executeGraphQL<{
+					tenantSeedCandidates: TenantSeedCandidate[]
+				}>(
+					TenantSeedCandidatesQuery,
+					undefined,
+					{ accessToken: session.user.accessToken },
+				)
+				setSeedCandidates(seedResult.tenantSeedCandidates)
 
 				const orgs = result.me.organizations.filter(
 					(org) => org.platformTenantId === platformId,
@@ -77,6 +118,27 @@ export function DashboardPage() {
 		fetchDashboard()
 	}, [session?.user?.accessToken])
 
+	const seedTenant = async (tenantId: string) => {
+		if (!session?.user.accessToken) return
+		setSeedingTenantId(tenantId)
+		try {
+			const result = await executeGraphQL<{
+				seedLibraryTenant: { organization: { username: string } }
+			}>(
+				SeedLibraryTenantMutation,
+				{ tenantId },
+				{ accessToken: session.user.accessToken },
+			)
+			navigate({
+				to: `/v1beta/${result.seedLibraryTenant.organization.username}`,
+			})
+		} catch (error) {
+			console.error('Failed to seed Library tenant:', error)
+		} finally {
+			setSeedingTenantId(null)
+		}
+	}
+
 	if (loading) {
 		return (
 			<I18nProvider locale={locale} dictionary={dictionary}>
@@ -97,6 +159,58 @@ export function DashboardPage() {
 		const repos = orgRepos.get(org.id) ?? []
 		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
 	})
+
+	if (seedCandidates.length > 0) {
+		return (
+			<I18nProvider locale={locale} dictionary={dictionary}>
+				<SpaHeader />
+				<div className='container mx-auto max-w-3xl px-4 py-10'>
+					<div className='mb-6'>
+						<h1 className='text-2xl font-semibold tracking-normal'>
+							Library workspace setup
+						</h1>
+						<p className='mt-2 text-sm text-muted-foreground'>
+							Import your existing organization profile and staff access into
+							Library.
+						</p>
+					</div>
+					<div className='space-y-3'>
+						{seedCandidates.map((candidate) => (
+							<Card key={candidate.tenantId}>
+								<CardHeader className='pb-3'>
+									<CardTitle className='text-base'>{candidate.name}</CardTitle>
+								</CardHeader>
+								<CardContent className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+									<div className='min-w-0 space-y-2'>
+										<p className='truncate text-sm text-muted-foreground'>
+											/{candidate.username}
+										</p>
+										<div className='flex items-center gap-2 text-sm text-muted-foreground'>
+											<Users className='h-4 w-4' />
+											<span>{candidate.staffCount} staff members</span>
+										</div>
+									</div>
+									<Button
+										type='button'
+										className='w-full sm:w-auto'
+										disabled={seedingTenantId !== null}
+										onClick={() => seedTenant(candidate.tenantId)}
+									>
+										{seedingTenantId === candidate.tenantId ? (
+											<Loader2 className='h-4 w-4 animate-spin' />
+										) : (
+											<ArrowRight className='h-4 w-4' />
+										)}
+										Import to Library
+									</Button>
+								</CardContent>
+							</Card>
+						))}
+					</div>
+				</div>
+			</I18nProvider>
+		)
+	}
 
 	return (
 		<I18nProvider locale={locale} dictionary={dictionary}>
