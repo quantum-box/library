@@ -33,17 +33,17 @@ The prior removal was premature for production migration. This migration must wi
 
 - HTTP/container entrypoint: `library-api` from `apps/api/src/main.rs`, which binds `0.0.0.0:$PORT`.
 - Lambda entrypoint: `lambda-library-api` from `apps/api/bin/lambda.rs`, which uses `lambda_http::run`.
-- Container deploy must run `library-api`, not the Lambda binary.
-- GCP Cloud Build resolves Dockerfile as `{rootDirectory}/Dockerfile`, so the manifest uses `rootDirectory: apps/api` and `dockerContext: .` to keep repo-root workspace files available.
+- Production txcloud deploy uses the Lambda entrypoint because the Library database is reachable only through the dedicated enterprise VPC subnet.
+- The Cloud Run container path was buildable, but it cannot reach the private TiDB endpoint and fails startup before smoke checks. Keep the Dockerfile as a future non-private runtime artifact only; production remains txcloud-managed Lambda.
 - Health path: `/` returns `OK`; `/health` is also present in the OpenAPI router.
-- Production port: `8080`.
 
 ## txcloud Notes
 
 - Target tenant: `tn_01j702qf86pc2j35s0kv0gv3gy`.
 - Existing repo convention is `apps/api/tachyon.yaml`, so this task keeps the YAML manifest instead of introducing `.tachyon.json`.
 - Runtime secrets must be copied to the Tachyon SecretsApp backend without printing expanded credential values.
-- Current `tachyon init --framework none` convention generates `apiVersion: tachyon/v1`, `kind: CloudApp`, `metadata.tenant_id`, and `spec.framework`, but the production API currently rejects `framework: none`. The manifest uses `framework: static` with `deploymentTarget: cloud_run` and `dockerContext: .`.
+- Current `tachyon init --framework none` convention generates `apiVersion: tachyon/v1`, `kind: CloudApp`, `metadata.tenant_id`, and `spec.framework`, but the production API currently rejects `framework: none`. The manifest uses `framework: cargo_lambda` with `deploymentTarget: lambda`.
+- Library production requires `tier: enterprise` and `subnet: enterprise-library` so the Lambda runtime is attached to the Library private TiDB network profile.
 - `tachyon compute apps apply --environment production` applied non-secret env values.
 - For `cloud_run` apps, `tachyon compute env set --secret` is not the correct secret path; it is currently Cloudflare Pages-only. Runtime secrets are resolved through provider-style secret references such as `library-api/DATABASE_URL`, backed by Secrets Manager path `{tenantId}/providers/library-api`.
 
@@ -71,8 +71,8 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 
 ## Implementation Plan
 
-1. Add a Dockerfile that builds the workspace HTTP server binary `library-api` and runs it with `PORT=8080`.
-2. Update `apps/api/tachyon.yaml` to the current `tachyon/v1` Cloud App shape for the Library tenant.
+1. Add a Dockerfile that builds the workspace HTTP server binary `library-api` and runs it with `PORT=8080` for future container smoke/recovery.
+2. Update `apps/api/tachyon.yaml` to the current `tachyon/v1` Cloud App shape for the Library tenant, using txcloud-managed Lambda with the `enterprise-library` subnet.
 3. Replace the direct Lambda deploy workflow with txcloud manifest apply and build trigger/watch. Keep AWS Lambda resources untouched for rollback.
 4. Inspect Lambda environment variable names only, then prepare redacted migration commands for txcloud secrets and plain variables.
 5. Apply/create/deploy the Cloud App only when the active tachyon auth profile is confirmed for the Library tenant or another safe Library-scoped profile is available.

@@ -4,15 +4,23 @@ metadata:
   name: library-api
   tenant_id: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
-  framework: static
-  deploymentTarget: cloud_run
+  framework: cargo_lambda
+  deploymentTarget: lambda
+  tier: enterprise
+  subnet: enterprise-library
   rootDirectory: apps/api
   dockerContext: .
   repository:
     owner: quantum-box
     name: library
     url: https://github.com/quantum-box/library
-    defaultBranch: feature/plt-1676
+    defaultBranch: main
+  build:
+    package: library-api
+    binary: lambda-library-api
+    command: cargo lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir target/lambda/lambda-library-api --flatten lambda-library-api
+    release: true
+    arch: arm64
   envVars:
     - name: DATABASE_URL
       valueFrom:
