@@ -2,7 +2,7 @@
 
 ## 目的
 
-Library GA の初回デプロイ、ロールバック、障害対応で確認する env / secret / 起動ガードを定義する。対象は `library-api` production Lambda と、同じ `Config` を使う server binary。
+Library GA の初回デプロイ、ロールバック、障害対応で確認する env / secret / 起動ガードを定義する。対象は txcloud Cloud App `library-api` production と、その backend として txcloud が管理する AWS Lambda runtime である。旧 `lambda-library-api` は rollback 用に残すが、通常 deploy / health / build 確認の入口は txcloud Cloud App とする。
 
 ## 起動ガード
 
@@ -35,7 +35,7 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 
 | Env | Scope | Source | 用途 |
 | --- | --- | --- | --- |
-| `SENTRY_DSN` | recommended | Sentry project key | panic / error tracking |
+| `SENTRY_DSN` | recommended secret | txcloud provider secret / Sentry project key | panic / error tracking |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | recommended | ADOT / collector endpoint | tracing export |
 | `OTEL_ENABLED` | recommended on Lambda | Lambda env | ADOT / X-Ray tracing enablement |
 | `OTEL_SERVICE_NAME=library-api` | recommended | Lambda env | metric / trace service name |
@@ -55,26 +55,33 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 
 ## デプロイ前チェック
 
-1. Lambda / Cloud App env を確認する。
+1. Cloud App と latest deployment を確認する。
 
 ```bash
-aws lambda get-function-configuration \
-  --function-name lambda-library-api \
-  --query 'Environment.Variables'
+tachyon compute apps get library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
+
+tachyon compute deployments list library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
 ```
 
-2. secret 値そのものは表示せず、存在と向き先だけ確認する。
+2. Cloud App env は値を表示せず、key と secret flag だけ確認する。`tachyon env list` の通常出力は値を表示するため使わない。
 
 ```bash
-aws lambda get-function-configuration \
-  --function-name lambda-library-api \
-  --query 'Environment.Variables.{env:ENVIRONMENT,db:DATABASE_URL,cognito:COGNITO_JWK_URL,tachyon:TACHYON_API_URL,bucket:LIBRARY_PARQUET_BUCKET}'
+tachyon env list library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy \
+  --json \
+  | jq -r '.[] | [.key, .target, .is_secret] | @tsv' \
+  | sort
 ```
 
-3. 次の値が含まれていたらデプロイを止める。
+期待する key: `DATABASE_URL`, `SERVICE_AUTH_TOKEN`, `SENTRY_DSN`。`is_secret=false` と表示される場合でも provider secret reference 経由で runtime 解決される構成があるため、expanded value は表示せず secret store / runtime 側で解決状態を確認する。
+
+3. 値の検査が必要な場合は、担当者の secure terminal で secret store / Lambda configuration を直接確認し、結果だけを記録する。
 
 - `DATABASE_URL` に `localhost` / `127.0.0.1`
 - `SERVICE_AUTH_TOKEN` が `dummy-token` または placeholder
+- `SENTRY_DSN` が未設定、または production Sentry project 以外を指す
 - `TACHYON_API_URL` が `pages.dev` / localhost / non-HTTPS
 - `LIBRARY_PARQUET_BUCKET` が未設定または `library-parquet`
 - `MINIO_*` または `SKIP_MINIO_SETUP`
@@ -84,7 +91,7 @@ aws lambda get-function-configuration \
 1. API の health を確認する。
 
 ```bash
-curl -fsS https://library.api.n1.tachy.one/
+curl -fsS https://library.api.n1.tachy.one/health
 ```
 
 期待値: `OK`
@@ -95,23 +102,53 @@ curl -fsS https://library.api.n1.tachy.one/
 curl -fsS https://library.api.n1.tachy.one/version
 ```
 
-3. Lambda logs で guard / bootstrap エラーがないことを確認する。
+3. txcloud build / deployment event を確認する。
 
 ```bash
-aws logs tail /aws/lambda/lambda-library-api --since 30m --follow
+tachyon compute builds list library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
+
+tachyon compute deployments list library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
+```
+
+4. Runtime log は txcloud Cloud App が管理する Lambda backend の CloudWatch Logs で確認する。`tachyon compute logs --tail` は Cloudflare-backed app 専用で、`deploymentTarget: lambda` では使わない。
+
+```bash
+aws logs tail <txcloud-managed-library-api-log-group> --since 30m --follow
 ```
 
 確認ポイント:
 
+- `START` / `END` / `REPORT` が出ている
+- `ERROR` / `Task timed out` / `Runtime exited` / `panic` が継続していない
+- `status=5xx` または server-side error log が継続していない
+- DB pool acquire timeout / slow acquire warn が継続していない
 - `ENVIRONMENT must be production` が出ていない
 - `SERVICE_AUTH_TOKEN must be configured in production` が出ていない
 - `TACHYON_API_URL must point at the production API origin` が出ていない
 - OAuth bootstrap 失敗が継続していない
 - S3 / Parquet write error が継続していない
 
+5. Sentry は production project で `environment=production`, `service=library-api` 相当の event / issue を確認する。実 production event の強制発火は user impact と alert noise を生むため、既存 error event または設定確認で代替する。
+
 ## ロールバック
 
-1. 直前の安定版 Lambda version / alias を確認する。
+1. 直前の安定版 txcloud deployment を確認する。
+
+```bash
+tachyon compute deployments list library-api \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
+```
+
+2. txcloud deployment を戻す。
+
+```bash
+tachyon compute deployments rollback library-api <deployment-id> \
+  --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy
+```
+
+3. txcloud rollback で復旧できない場合だけ、旧 rollback Lambda の安定版 version / alias を確認する。
 
 ```bash
 aws lambda list-versions-by-function \
@@ -119,7 +156,7 @@ aws lambda list-versions-by-function \
   --query 'Versions[*].{Version:Version,LastModified:LastModified}'
 ```
 
-2. alias を安定版へ戻す。
+4. alias を安定版へ戻す。
 
 ```bash
 aws lambda update-alias \
@@ -128,15 +165,16 @@ aws lambda update-alias \
   --function-version <stable-version>
 ```
 
-3. env / secret の変更が原因の場合は、Terraform / Tachyon Cloud App 側の変更を revert して再適用する。`DATABASE_URL` と `SERVICE_AUTH_TOKEN` は値をログや PR に貼らない。
+5. env / secret の変更が原因の場合は、Terraform / Tachyon Cloud App 側の変更を revert して再適用する。`DATABASE_URL`, `SERVICE_AUTH_TOKEN`, `SENTRY_DSN` は値をログや PR に貼らない。
 
-4. health / version / logs を再確認する。
+6. health / version / logs を再確認する。
 
 ## 障害時の一次切り分け
 
 | 症状 | 確認箇所 | 初動 |
 | --- | --- | --- |
-| 起動直後に Lambda が落ちる | CloudWatch logs の guard message | env / secret を修正して redeploy |
+| 起動直後に Cloud App が落ちる | txcloud deployment status, CloudWatch logs の guard message | env / secret を修正して redeploy |
+| Sentry event が入らない | `SENTRY_DSN` secret presence, Sentry project environment filter | secret reference と production project を確認 |
 | 401 / 403 が増える | `SERVICE_AUTH_TOKEN`, Tachyon API service account | token rotation / Tachyon API 側権限を確認 |
 | OAuth callback が失敗する | Tachyon OAuth bootstrap, `GITHUB_REDIRECT_URI` | callback URL と provider secret を確認 |
 | Parquet 出力が失敗する | `LIBRARY_PARQUET_BUCKET`, Lambda IAM policy | bucket name と `s3:GetObject/PutObject/ListBucket` を確認 |
