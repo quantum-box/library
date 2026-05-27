@@ -222,7 +222,7 @@ export function SignInForm({
 						</div>
 
 						<Button variant='link' asChild>
-							<a href='/sign_up'>{t.auth.signIn.createAccount}</a>
+							<Link to='/sign_up'>{t.auth.signIn.createAccount}</Link>
 						</Button>
 					</div>
 				</form>

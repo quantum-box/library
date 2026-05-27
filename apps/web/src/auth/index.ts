@@ -4,6 +4,8 @@ export {
   signInWithCredentials,
   refreshAccessToken,
   signUpWithCredentials,
+  confirmSignUpWithCode,
+  resendSignUpConfirmationCode,
   forgotPassword,
   resetPasswordWithToken,
 } from './cognito'
