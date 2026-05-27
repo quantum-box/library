@@ -3,10 +3,11 @@ use std::sync::Arc;
 use super::input;
 use super::model::{
     ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, GlobalIdMapping,
-    Operator, Organization, Property, PropertyType, Repo, Source,
-    SyncResult, User,
+    Operator, Organization, Property, PropertyType, Repo,
+    SeedLibraryTenantPayload, Source, SyncResult, User,
 };
 use crate::app::LibraryApp;
+use crate::domain::{library_repo_owner_policy_id, library_user_policy_id};
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{self};
 use async_graphql::{
@@ -17,9 +18,13 @@ use github_provider::OAuthProvider;
 use hmac::{Hmac, Mac};
 use outbound_sync::{SyncDataInputData, SyncPayload, SyncTarget};
 use sha2::Sha256;
-use tachyon_sdk::auth::ExecutorAction;
+use tachyon_sdk::auth::{
+    AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
+    MultiTenancyAction,
+};
 use value_object::{
-    IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, Text, Url, UserId,
+    IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, TenantId, Text,
+    Url, UserId,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -157,6 +162,151 @@ impl LibraryMutation {
             })?;
 
         Ok(user.into())
+    }
+
+    /// [LIBRARY-API] Seed a tachyon tenant into Library organizations.
+    #[tracing::instrument(skip(self, ctx))]
+    #[graphql(name = "seedLibraryTenant")]
+    async fn seed_library_tenant(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        tenant_id: String,
+    ) -> Result<SeedLibraryTenantPayload> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let library_app = ctx.data::<Arc<LibraryApp>>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+
+        let tenant_id =
+            TenantId::new(&tenant_id).map_err(|e| e.extend())?;
+        let operator_id =
+            multi_tenancy.get_operator_id().map_err(|e| e.extend())?;
+        let user = sdk
+            .get_user_by_id_full(&operator_id, executor.get_id())
+            .await
+            .map_err(|e| e.extend())?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        if !user.tenants().contains(&tenant_id) {
+            return Err(errors::permission_denied!(
+                "User is not a member of this tenant"
+            )
+            .extend());
+        }
+
+        let operator = sdk
+            .get_operator(tenant_id.as_ref())
+            .await
+            .map_err(|e| e.extend())?
+            .ok_or_else(|| async_graphql::Error::new("Tenant not found"))?;
+
+        if operator.platform_id != crate::domain::LIBRARY_TENANT.to_string()
+        {
+            return Err(errors::permission_denied!(
+                "Tenant does not belong to the Library platform"
+            )
+            .extend());
+        }
+
+        let users = AuthAppTrait::find_users_by_tenant(
+            library_app.auth_app.as_ref(),
+            &tachyon_sdk::auth::FindUsersByTenantInput {
+                executor,
+                multi_tenancy,
+                tenant_id: &tenant_id,
+            },
+        )
+        .await
+        .map_err(|e| e.extend())?;
+
+        let existing = library_app
+            .organization_repo
+            .get_by_id(&tenant_id)
+            .await
+            .map_err(|e| e.extend())?;
+
+        let seeded = existing.is_none();
+        let organization = if let Some(org) = existing {
+            org
+        } else {
+            let organization = crate::domain::Organization::new(
+                &tenant_id,
+                &Text::new(&operator.name)
+                    .map_err(|e| errors::Error::bad_request(e).extend())?,
+                &operator
+                    .operator_name
+                    .parse()
+                    .map_err(|e| errors::Error::bad_request(e).extend())?,
+                None,
+                None,
+            );
+            library_app
+                .organization_repo
+                .insert(&organization)
+                .await
+                .map_err(|e| e.extend())?;
+            organization
+        };
+
+        let platform_tenant = crate::domain::LIBRARY_TENANT.clone();
+        let policy_id = library_user_policy_id();
+        let repo_owner_policy_id = library_repo_owner_policy_id();
+        let system_executor = tachyon_sdk::auth::Executor::SystemUser;
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(platform_tenant),
+            Some(tenant_id.clone()),
+        );
+
+        for tenant_user in &users {
+            if let Err(err) = AuthAppTrait::attach_user_policy(
+                library_app.auth_app.as_ref(),
+                &tachyon_sdk::auth::AttachUserPolicyInput {
+                    executor: &system_executor,
+                    multi_tenancy: &tenant_scope,
+                    user_id: tenant_user.id(),
+                    policy_id: &policy_id,
+                    tenant_id: &tenant_id,
+                },
+            )
+            .await
+            {
+                tracing::warn!(
+                    user = %tenant_user.id(),
+                    tenant = %tenant_id,
+                    error = ?err,
+                    "failed to attach library user policy during tenant seed"
+                );
+            }
+
+            if *tenant_user.role() == DefaultRole::Owner {
+                if let Err(err) = AuthAppTrait::attach_user_policy(
+                    library_app.auth_app.as_ref(),
+                    &tachyon_sdk::auth::AttachUserPolicyInput {
+                        executor: &system_executor,
+                        multi_tenancy: &tenant_scope,
+                        user_id: tenant_user.id(),
+                        policy_id: &repo_owner_policy_id,
+                        tenant_id: &tenant_id,
+                    },
+                )
+                .await
+                {
+                    tracing::warn!(
+                        user = %tenant_user.id(),
+                        tenant = %tenant_id,
+                        error = ?err,
+                        "failed to attach repo owner policy during tenant seed"
+                    );
+                }
+            }
+        }
+
+        Ok(SeedLibraryTenantPayload {
+            organization: organization.into(),
+            seeded,
+            staff_count: users.len() as i32,
+        })
     }
 
     /// [AUTH] Create operator via SDK REST call
@@ -1530,6 +1680,10 @@ mod tests {
         assert!(
             sdl.contains("signInWithPlatform("),
             "schema must expose the field called by the web sign-in flow"
+        );
+        assert!(
+            sdl.contains("seedLibraryTenant("),
+            "schema must expose the Library tenant seed mutation"
         );
         assert!(
             !sdl.contains("\n\tsignIn("),

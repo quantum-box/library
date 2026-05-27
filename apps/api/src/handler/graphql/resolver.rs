@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::input::{GetMarkdownPreviewsInput, ListGitHubDirectoryInput};
 use super::model::*;
 use crate::app::LibraryApp;
+use crate::domain::LIBRARY_TENANT;
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{
     self, FindGlobalIdMappingsInputData, FindSourcesInputData,
@@ -16,7 +17,7 @@ use async_graphql::{
 use inbound_sync::providers::linear::LinearClient;
 use tachyon_sdk::auth::ExecutorAction;
 use tachyon_sdk::auth::MultiTenancyAction;
-use value_object;
+use value_object::{self, TenantId};
 
 #[derive(Default)]
 pub struct LibraryQuery;
@@ -54,6 +55,78 @@ impl LibraryQuery {
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
         Ok(user.into())
+    }
+
+    #[tracing::instrument(
+        name = "library_tenant_seed_candidates",
+        skip(self, ctx)
+    )]
+    async fn tenant_seed_candidates(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<TenantSeedCandidate>> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let operator_id =
+            multi_tenancy.get_operator_id().map_err(|e| e.extend())?;
+        let user = sdk
+            .get_user_by_id_full(&operator_id, executor.get_id())
+            .await
+            .map_err(|e| e.extend())?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        let mut candidates = Vec::new();
+        for tenant in user.tenants() {
+            if app
+                .organization_repo
+                .get_by_id(tenant)
+                .await
+                .map_err(|e| e.extend())?
+                .is_some()
+            {
+                continue;
+            }
+
+            let Some(operator) = sdk
+                .get_operator(tenant.as_ref())
+                .await
+                .map_err(|e| e.extend())?
+            else {
+                continue;
+            };
+
+            if operator.platform_id != LIBRARY_TENANT.to_string() {
+                continue;
+            }
+
+            let tenant_id =
+                TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
+            let staff_count =
+                tachyon_sdk::auth::AuthApp::find_users_by_tenant(
+                    app.auth_app.as_ref(),
+                    &tachyon_sdk::auth::FindUsersByTenantInput {
+                        executor,
+                        multi_tenancy,
+                        tenant_id: &tenant_id,
+                    },
+                )
+                .await
+                .map(|users| users.len() as i32)
+                .unwrap_or(0);
+
+            candidates.push(TenantSeedCandidate {
+                tenant_id: operator.id,
+                name: operator.name,
+                username: operator.operator_name,
+                staff_count,
+            });
+        }
+
+        Ok(candidates)
     }
 
     #[tracing::instrument(name = "library_organization", skip(self, ctx))]
