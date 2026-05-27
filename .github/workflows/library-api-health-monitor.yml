@@ -1,0 +1,26 @@
+name: Library API Health Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check Library API health
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 https://library.api.n1.tachy.one/health | grep -qx 'OK'
+          curl -fsS --max-time 20 https://library.api.n1.tachy.one/version | jq -e '.version | length > 0'
+
+      - name: Check planet-library sign-in route
+        run: |
+          set -euo pipefail
+          curl -fsSIL --max-time 20 https://planet-library.txcloud.app/sign_in >/dev/null

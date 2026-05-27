@@ -22,6 +22,14 @@ pub struct UpdateProductRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub billing_cycle: Option<Option<String>>,
+    /// Product category master value
+    #[serde(
+        rename = "category",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category: Option<Option<String>>,
     /// Product description
     #[serde(
         rename = "description",
@@ -38,6 +46,14 @@ pub struct UpdateProductRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub image_file_ids: Option<Option<Vec<String>>>,
+    /// Expected product updatedAt value for optimistic concurrency
+    #[serde(
+        rename = "expectedUpdatedAt",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected_updated_at: Option<Option<String>>,
     /// JAN code
     #[serde(
         rename = "janCode",
@@ -110,6 +126,14 @@ pub struct UpdateProductRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub status: Option<Option<String>>,
+    /// Product subcategory master value
+    #[serde(
+        rename = "subcategory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub subcategory: Option<Option<String>>,
     /// UPC code
     #[serde(
         rename = "upcCode",
@@ -134,8 +158,10 @@ impl UpdateProductRequest {
     pub fn new() -> UpdateProductRequest {
         UpdateProductRequest {
             billing_cycle: None,
+            category: None,
             description: None,
             image_file_ids: None,
+            expected_updated_at: None,
             jan_code: None,
             kind: None,
             list_price: None,
@@ -145,8 +171,47 @@ impl UpdateProductRequest {
             publication_status: None,
             sku_code: None,
             status: None,
+            subcategory: None,
             upc_code: None,
             variations: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UpdateProductRequest;
+
+    #[test]
+    fn serializes_category_master_write_contract() {
+        let mut request = UpdateProductRequest::new();
+        request.category = Some(Some("electronics".to_string()));
+        request.subcategory = Some(Some("audio".to_string()));
+        request.expected_updated_at =
+            Some(Some("2026-05-24T12:00:00Z".to_string()));
+
+        let value =
+            serde_json::to_value(request).expect("request serializes");
+
+        assert_eq!(value["category"], "electronics");
+        assert_eq!(value["subcategory"], "audio");
+        assert_eq!(value["expectedUpdatedAt"], "2026-05-24T12:00:00Z");
+    }
+
+    #[test]
+    fn serializes_null_category_to_clear_master_value() {
+        let mut request = UpdateProductRequest::new();
+        request.category = Some(None);
+        request.subcategory = Some(None);
+
+        let value =
+            serde_json::to_value(request).expect("request serializes");
+
+        assert!(value
+            .get("category")
+            .is_some_and(serde_json::Value::is_null));
+        assert!(value
+            .get("subcategory")
+            .is_some_and(serde_json::Value::is_null));
     }
 }

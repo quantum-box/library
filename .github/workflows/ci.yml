@@ -106,11 +106,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: yarn
-      - run: yarn install --frozen-lockfile
-      - run: yarn lint
-      - run: yarn tsc
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Lint
+        run: yarn lint
+      - name: Unit tests
+        run: yarn test
+      - name: Type check
+        run: yarn tsc
       - name: Build
         env:
           VITE_BACKEND_API_URL: ${{ vars.VITE_BACKEND_API_URL }}
         run: yarn build
+      - name: Install Playwright browsers
+        run: yarn workspace library-web exec playwright install --with-deps chromium
+      - name: E2E tests
+        run: yarn test:e2e
+      - name: Upload Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

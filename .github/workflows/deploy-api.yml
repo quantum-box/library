@@ -80,8 +80,13 @@ jobs:
           set -euo pipefail
           tachyon compute builds watch library-api \
             --tenant-id "${TACHYON_TENANT_ID}" \
-            --timeout-secs 1800 \
-            --no-logs
+            --timeout-secs 1800
+
+      - name: Smoke test Library API health
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 https://library.api.n1.tachy.one/health | grep -qx 'OK'
+          curl -fsS --max-time 20 https://library.api.n1.tachy.one/version | jq -e '.version | length > 0'
 
       - name: Smoke test public sign-in route
         run: |

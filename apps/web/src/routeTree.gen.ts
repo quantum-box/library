@@ -20,6 +20,7 @@ import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-pa
 import { Route as V1betaOrgIndexRouteImport } from './routes/v1beta/$org/index'
 import { Route as V1betaOrganizationNewRouteImport } from './routes/v1beta/organization/new'
 import { Route as V1betaOrgRepoRouteImport } from './routes/v1beta/$org/$repo'
+import { Route as AuthVerifyEmailOtpRouteImport } from './routes/_auth/verify-email/otp'
 import { Route as AuthAuthCallbackRouteImport } from './routes/_auth/auth/callback'
 import { Route as AuthAccountSecurityRouteImport } from './routes/_auth/account/security'
 import { Route as V1betaOrgRepoIndexRouteImport } from './routes/v1beta/$org/$repo/index'
@@ -84,6 +85,11 @@ const V1betaOrgRepoRoute = V1betaOrgRepoRouteImport.update({
   path: '/$org/$repo',
   getParentRoute: () => V1betaRoute,
 } as any)
+const AuthVerifyEmailOtpRoute = AuthVerifyEmailOtpRouteImport.update({
+  id: '/verify-email/otp',
+  path: '/verify-email/otp',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthAuthCallbackRoute = AuthAuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/sign_up': typeof AuthSign_upRoute
   '/account/security': typeof AuthAccountSecurityRoute
   '/auth/callback': typeof AuthAuthCallbackRoute
+  '/verify-email/otp': typeof AuthVerifyEmailOtpRoute
   '/v1beta/$org/$repo': typeof V1betaOrgRepoRouteWithChildren
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org/': typeof V1betaOrgIndexRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/sign_up': typeof AuthSign_upRoute
   '/account/security': typeof AuthAccountSecurityRoute
   '/auth/callback': typeof AuthAuthCallbackRoute
+  '/verify-email/otp': typeof AuthVerifyEmailOtpRoute
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org': typeof V1betaOrgIndexRoute
   '/v1beta/$org/$repo/api': typeof V1betaOrgRepoApiRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/_auth/sign_up': typeof AuthSign_upRoute
   '/_auth/account/security': typeof AuthAccountSecurityRoute
   '/_auth/auth/callback': typeof AuthAuthCallbackRoute
+  '/_auth/verify-email/otp': typeof AuthVerifyEmailOtpRoute
   '/v1beta/$org/$repo': typeof V1betaOrgRepoRouteWithChildren
   '/v1beta/organization/new': typeof V1betaOrganizationNewRoute
   '/v1beta/$org/': typeof V1betaOrgIndexRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/sign_up'
     | '/account/security'
     | '/auth/callback'
+    | '/verify-email/otp'
     | '/v1beta/$org/$repo'
     | '/v1beta/organization/new'
     | '/v1beta/$org/'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/sign_up'
     | '/account/security'
     | '/auth/callback'
+    | '/verify-email/otp'
     | '/v1beta/organization/new'
     | '/v1beta/$org'
     | '/v1beta/$org/$repo/api'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/_auth/sign_up'
     | '/_auth/account/security'
     | '/_auth/auth/callback'
+    | '/_auth/verify-email/otp'
     | '/v1beta/$org/$repo'
     | '/v1beta/organization/new'
     | '/v1beta/$org/'
@@ -345,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1betaOrgRepoRouteImport
       parentRoute: typeof V1betaRoute
     }
+    '/_auth/verify-email/otp': {
+      id: '/_auth/verify-email/otp'
+      path: '/verify-email/otp'
+      fullPath: '/verify-email/otp'
+      preLoaderRoute: typeof AuthVerifyEmailOtpRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/auth/callback': {
       id: '/_auth/auth/callback'
       path: '/auth/callback'
@@ -419,6 +438,7 @@ interface AuthRouteChildren {
   AuthSign_upRoute: typeof AuthSign_upRoute
   AuthAccountSecurityRoute: typeof AuthAccountSecurityRoute
   AuthAuthCallbackRoute: typeof AuthAuthCallbackRoute
+  AuthVerifyEmailOtpRoute: typeof AuthVerifyEmailOtpRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
@@ -429,6 +449,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthSign_upRoute: AuthSign_upRoute,
   AuthAccountSecurityRoute: AuthAccountSecurityRoute,
   AuthAuthCallbackRoute: AuthAuthCallbackRoute,
+  AuthVerifyEmailOtpRoute: AuthVerifyEmailOtpRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
