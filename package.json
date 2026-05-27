@@ -15,6 +15,7 @@
     "lint": "npm run --workspace apps/web lint",
     "test": "npm run --workspace apps/web test",
     "tsc": "npm run --workspace apps/web ts",
+    "smoke:library-rest-e2e": "scripts/library-rest-e2e-smoke.sh",
     "check:rust-workspace-cycles": "node scripts/check-rust-workspace-cycles.mjs"
   },
   "resolutions": {

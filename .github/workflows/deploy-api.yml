@@ -2,6 +2,15 @@ name: Deploy API to Lambda
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-api.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "apps/api/**"
+      - "packages/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
