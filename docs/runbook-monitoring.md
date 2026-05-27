@@ -8,7 +8,7 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
 
 | 領域 | メトリクス / ログ / trace | 監視頻度 | 目的 |
 | --- | --- | --- | --- |
-| API availability | `GET /health`, `GET /version`, GitHub scheduled synthetic check, txcloud deployment status, backend Lambda `Errors` / `Throttles` | 1-5 分 | API が利用可能で、production build が応答していることを確認する |
+| API availability | `GET /health`, `GET /version`, GitHub scheduled synthetic check, txcloud deployment status | 1-5 分 | API が利用可能で、production build が応答していることを確認する |
 | API latency | API Gateway latency, backend Lambda duration p50 / p95 / p99, trace span duration | 5 分 | GA 後の実利用増加で体感速度が劣化していないことを確認する |
 | GraphQL errors | `/v1/graphql` response `errors[*].extensions.code`, resolver error logs, Sentry events | 5 分 | GraphQL は HTTP 200 でも業務エラーを返すため、HTTP status だけに依存しない |
 | REST errors | 4xx / 5xx rate, structured error code, Sentry events | 5 分 | public docs / API key / OAuth / webhook endpoint などの失敗を検知する |
@@ -29,8 +29,8 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
 
 | 条件 | 判定窓 | 初動 |
 | --- | --- | --- |
-| API synthetic check が 3 回連続失敗 | 15 分 | `GET /health` / `GET /version`、txcloud deployment、CloudWatch logs、直近 deploy を確認し、起動 guard / runtime error なら rollback |
-| Backend Lambda `Errors` が 5 分で 10 件以上、または 5xx rate が 5% 以上 | 5 分 | Sentry issue と CloudWatch logs を確認し、単一 endpoint か全体障害かを分類 |
+| API synthetic check が 3 回連続失敗 | 15 分 | `GET /health` / `GET /version`、txcloud deployment、既存 runtime logs、直近 deploy を確認し、起動 guard / runtime error なら rollback |
+| Sentry production issue / event が 5 分で急増、または 5xx rate が 5% 以上 | 5 分 | Sentry issue と既存 runtime logs を確認し、単一 endpoint か全体障害かを分類 |
 | Cognito / JWT / API key 検証失敗により 401 / 403 が通常比 3 倍以上、かつログイン成功がない | 10 分 | Cognito client id / JWKS URL / service token / API key verification を確認 |
 | GraphQL mutation の `internal_server_error` が 10 件以上 | 5 分 | resolver error と affected org / repo を確認し、書き込み停止や rollback を判断 |
 | Webhook worker DLQ depth が 1 以上、または event loss が疑われる | 5 分 | provider event id と retry state を保存し、再処理可否を判断 |
@@ -71,7 +71,7 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
    - worker 障害: webhook / sync operation / queue / DLQ が詰まる
    - storage 障害: S3 / Parquet / bucket IAM が失敗
 2. 直近 60 分の deploy、env / secret 変更、provider 障害、traffic spike を確認する。
-3. Sentry issue、CloudWatch logs、trace、txcloud deployment、GitHub deployment / workflow を同じ incident note にリンクする。
+3. Sentry issue、既存 runtime logs、trace、txcloud deployment、GitHub deployment / workflow を同じ incident note にリンクする。
 4. user impact がある場合は Linear project status を更新し、Critical は Slack / COO へ即時共有する。
 5. rollback が必要な場合は [Library GA environment and secrets Runbook](specs/operations/library-ga-env-secrets-runbook.md) の rollback 手順に従う。
 6. 一時復旧後、再発防止 issue を作成する。原因が不明なまま Done にしない。
@@ -91,7 +91,7 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
 | 時点 | 実施内容 | 記録先 |
 | --- | --- | --- |
 | GA 直後 | health / version / sign-in / public docs / GraphQL read / GraphQL write / REST read を確認 | Linear project update |
-| 30 分後 | Critical alert、Sentry new issue、Lambda errors、auth failures を確認 | Linear comment or project update |
+| 30 分後 | Critical alert、Sentry new issue、runtime error、auth failures を確認 | Linear comment or project update |
 | 2 時間後 | traffic、latency、GraphQL / REST errors、worker backlog を確認 | Linear project update |
 | 営業終了前 | 当日 summary、open risk、翌朝確認項目を記録 | Linear project update |
 
@@ -126,11 +126,11 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
 
 - Deploy failure: `.github/workflows/deploy-api.yml` が txcloud manifest apply、build trigger/watch、Library API health/version smoke、planet-library sign-in smoke を実行する。失敗時は GitHub Actions の failed run と通知が一次検知になる。
 - Health failure: `.github/workflows/library-api-health-monitor.yml` が 5 分ごとに `https://library.api.n1.tachy.one/health`, `/version`, `https://planet-library.txcloud.app/sign_in` を確認する。連続失敗は GitHub Actions の failed scheduled run として確認する。
-- Runtime error spike: backend Lambda の CloudWatch Logs / metrics と Sentry production project を確認する。`tachyon compute logs --tail` は Cloudflare-backed app 専用のため、`library-api` の runtime log には使わない。
+- Runtime error spike: Sentry production project と既存 runtime logs を確認する。Sentry Team plan で OTEL 直接送信が使えるため、PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない。全 backend の OTEL + Sentry OTLP exporter 導入は PLT-1696 で扱う。
 
 ## Dashboard 最低構成
 
-1. API overview: request count、5xx、4xx、p50 / p95 / p99 latency、backend Lambda errors / throttles。
+1. API overview: request count、5xx、4xx、p50 / p95 / p99 latency。
 2. GraphQL overview: operation name、error code、resolver latency、top failing fields。
 3. Auth overview: sign-in success / failure、JWT verification failure、API key verification failure、401 / 403 rate。
 4. Public docs overview: synthetic check status、public route latency、404 / 403 trend。
