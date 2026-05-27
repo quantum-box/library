@@ -17,6 +17,14 @@ pub struct CreateProductRequest {
     /// Billing cycle: MONTHLY, YEARLY, ONE_TIME
     #[serde(rename = "billingCycle")]
     pub billing_cycle: String,
+    /// Product category master value
+    #[serde(
+        rename = "category",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category: Option<Option<String>>,
     /// Whether to sync with CRM
     #[serde(rename = "createCrm", skip_serializing_if = "Option::is_none")]
     pub create_crm: Option<bool>,
@@ -94,6 +102,14 @@ pub struct CreateProductRequest {
     /// Product status: DRAFT, ACTIVE, ARCHIVED
     #[serde(rename = "status")]
     pub status: String,
+    /// Product subcategory master value
+    #[serde(
+        rename = "subcategory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub subcategory: Option<Option<String>>,
     /// UPC code
     #[serde(
         rename = "upcCode",
@@ -123,6 +139,7 @@ impl CreateProductRequest {
     ) -> CreateProductRequest {
         CreateProductRequest {
             billing_cycle,
+            category: None,
             create_crm: None,
             description: None,
             id: None,
@@ -136,6 +153,7 @@ impl CreateProductRequest {
             publication_status: None,
             sku_code: None,
             status,
+            subcategory: None,
             upc_code: None,
             variations: None,
         }

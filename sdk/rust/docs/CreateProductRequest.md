@@ -5,6 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **billing_cycle** | **String** | Billing cycle: MONTHLY, YEARLY, ONE_TIME | 
+**category** | Option<**String**> | Product category master value | [optional]
 **create_crm** | Option<**bool**> | Whether to sync with CRM | [optional]
 **description** | Option<**String**> | Product description | [optional]
 **id** | Option<**String**> | Optional product ID (auto-generated if omitted) | [optional]
@@ -18,9 +19,9 @@ Name | Type | Description | Notes
 **publication_status** | Option<**String**> | Publication status | [optional]
 **sku_code** | Option<**String**> | SKU code | [optional]
 **status** | **String** | Product status: DRAFT, ACTIVE, ARCHIVED | 
+**subcategory** | Option<**String**> | Product subcategory master value | [optional]
 **upc_code** | Option<**String**> | UPC code | [optional]
 **variations** | Option<[**Vec<models::ProductVariationRequest>**](ProductVariationRequest.md)> | Product variations | [optional]
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
-
 
