@@ -33,6 +33,8 @@ spec:
           value: "https://api.n1.tachy.one"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
+        - name: SENTRY_DSN
+          value: "library-api/SENTRY_DSN"
         - name: DB_POOL_MAX_CONNECTIONS
           value: "16"
         - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
