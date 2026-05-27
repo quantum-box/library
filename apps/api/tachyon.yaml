@@ -18,6 +18,7 @@ spec:
   build:
     package: library-api
     binary: lambda-library-api
+    installCommand: apt-get update && apt-get install -y --no-install-recommends protobuf-compiler && pip3 install cargo-lambda && rustup target add aarch64-unknown-linux-gnu
     command: cargo lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir target/lambda/lambda-library-api --flatten lambda-library-api
     release: true
     arch: arm64
