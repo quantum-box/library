@@ -12,7 +12,7 @@ spec:
     owner: quantum-box
     name: library
     url: https://github.com/quantum-box/library
-    defaultBranch: main
+    defaultBranch: feature/plt-1676
   envVars:
     - name: DATABASE_URL
       valueFrom:
@@ -40,5 +40,3 @@ spec:
       value: "250"
     - name: ENVIRONMENT
       value: "production"
-    - name: PORT
-      value: "8080"
