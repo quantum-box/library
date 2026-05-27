@@ -1,35 +1,47 @@
 apiVersion: apps.tachy.one/v1alpha
-kind: CloudApp
+kind: CloudApps
 metadata:
   name: library-api
-  tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+  tenantId: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
-  envVars:
-    - name: DATABASE_URL
-      type: credential
-      value: ""
-    - name: SERVICE_AUTH_TOKEN
-      type: credential
-      value: ""
-    - name: COGNITO_JWK_URL
-      value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
-    - name: COGNITO_USER_POOL_ID
-      value: "ap-northeast-1_8Ga4bK5M4"
-    - name: TACHYON_API_URL
-      value: "https://api.n1.tachy.one"
-    - name: LIBRARY_PARQUET_BUCKET
-      value: "tachyon-library-parquet-production"
-    - name: DB_POOL_MAX_CONNECTIONS
-      value: "16"
-    - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
-      value: "10"
-    - name: DB_POOL_ACQUIRE_METRICS_ENABLED
-      value: "true"
-    - name: DB_POOL_ACQUIRE_METRICS_INTERVAL_SECS
-      value: "60"
-    - name: DB_POOL_ACQUIRE_WARN_MS
-      value: "250"
-    - name: ENVIRONMENT
-      value: "production"
-    - name: PORT
-      value: "8080"
+  apps:
+    - name: library-api
+      repository:
+        owner: quantum-box
+        name: library
+        url: https://github.com/quantum-box/library
+        defaultBranch: main
+      framework: cargo_lambda
+      deploymentTarget: lambda
+      tier: enterprise
+      subnet: enterprise-library
+      rootDirectory: apps/api
+      dockerContext: .
+      build:
+        package: library-api
+        binary: lambda-library-api
+        installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && pip3 install cargo-lambda && rustup target add aarch64-unknown-linux-gnu
+        command: SQLX_OFFLINE=true cargo lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir target/lambda/lambda-library-api --flatten lambda-library-api && mkdir -p ../../target/lambda/lambda-library-api && cp target/lambda/lambda-library-api/bootstrap ../../target/lambda/lambda-library-api/bootstrap
+        release: true
+        arch: arm64
+      envVars:
+        - name: COGNITO_JWK_URL
+          value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
+        - name: COGNITO_USER_POOL_ID
+          value: "ap-northeast-1_8Ga4bK5M4"
+        - name: TACHYON_API_URL
+          value: "https://api.n1.tachy.one"
+        - name: LIBRARY_PARQUET_BUCKET
+          value: "tachyon-library-parquet-production"
+        - name: DB_POOL_MAX_CONNECTIONS
+          value: "16"
+        - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
+          value: "10"
+        - name: DB_POOL_ACQUIRE_METRICS_ENABLED
+          value: "true"
+        - name: DB_POOL_ACQUIRE_METRICS_INTERVAL_SECS
+          value: "60"
+        - name: DB_POOL_ACQUIRE_WARN_MS
+          value: "250"
+        - name: ENVIRONMENT
+          value: "production"
