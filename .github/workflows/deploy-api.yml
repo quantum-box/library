@@ -44,11 +44,11 @@ jobs:
 
           if ! gh release download \
             --repo quantum-box/tachyon-sdk \
-            --pattern 'tachyon-cli-*x86_64-unknown-linux-gnu*.tar.gz' \
+            --pattern 'tachyon-linux-x86_64.tar.gz' \
             --dir "${workdir}"; then
             gh release download \
               --repo quantum-box/tachyon-sdk \
-              --pattern 'tachyon-*x86_64-unknown-linux-gnu*.tar.gz' \
+              --pattern 'tachyon-cli-*x86_64-unknown-linux-gnu*.tar.gz' \
               --dir "${workdir}"
           fi
 
