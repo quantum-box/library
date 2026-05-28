@@ -34,7 +34,9 @@ spec:
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
-          value: "library-api/SENTRY_DSN"
+          type: credential
+          valueFrom:
+            secret: library-api/SENTRY_DSN
         - name: DB_POOL_MAX_CONNECTIONS
           value: "16"
         - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
