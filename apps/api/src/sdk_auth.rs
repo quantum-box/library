@@ -361,7 +361,7 @@ impl SdkAuthApp {
         platform_id: &TenantId,
         user_id: &str,
     ) -> errors::Result<Vec<OperatorResp>> {
-        let config = self.sdk_config();
+        let config = self.sdk_config_public();
         let resp: SdkOperatorsByUserResp = Self::rest_get_query(
             &config,
             "/v1/auth/operators/by-user",
@@ -2114,6 +2114,72 @@ mod tests {
             .await?;
 
         assert_eq!(user.id().as_str(), "us_01hs2yepy5hw4rz8pdq2wywnwt");
+        server.await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn find_operators_by_user_uses_public_auth_endpoint(
+    ) -> anyhow::Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+            assert!(
+                request.contains("GET /v1/auth/operators/by-user?"),
+                "request did not call operators by-user endpoint: {request}"
+            );
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gy"
+                ),
+                "request was missing x-operator-id header: {request}"
+            );
+            assert!(
+                !request.to_ascii_lowercase().contains("authorization:"),
+                "public operator lookup must not send Authorization: {request}"
+            );
+
+            let body = serde_json::json!({
+                "operators": [{
+                    "id": "tn_01j702qf86pc2j35s0kv0gv3gy",
+                    "name": "Library",
+                    "operatorName": "library",
+                    "platformId": "tn_01j702qf86pc2j35s0kv0gv3gy"
+                }]
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let tenant_id: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gy".parse()?;
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "pk_test_service_token",
+        );
+
+        let operators = sdk
+            .find_operators_by_user(
+                &tenant_id,
+                "us_01hs2yepy5hw4rz8pdq2wywnwt",
+            )
+            .await?;
+
+        assert_eq!(operators.len(), 1);
+        assert_eq!(operators[0].id, tenant_id.as_str());
         server.await?;
 
         Ok(())
