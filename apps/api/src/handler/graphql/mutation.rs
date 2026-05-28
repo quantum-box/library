@@ -133,7 +133,7 @@ impl LibraryMutation {
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
 
         let user = sdk.verify_token(&token).await.map_err(|e| {
-            tracing::error!("error: {:?}", e);
+            super::log_graphql_operation_error("library_mutation", &e);
             e.extend()
         })?;
 
@@ -157,7 +157,7 @@ impl LibraryMutation {
             .execute(platform_id.parse()?, access_token, allow_sign_up)
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_mutation", &e);
                 e.extend()
             })?;
 
@@ -346,7 +346,7 @@ impl LibraryMutation {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_mutation", &e);
                 e.extend()
             })?;
 
@@ -394,7 +394,7 @@ impl LibraryMutation {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_mutation", &e);
                 e.extend()
             })?;
 
