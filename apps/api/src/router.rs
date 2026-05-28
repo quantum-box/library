@@ -51,6 +51,7 @@ use inbound_sync::{
 };
 
 const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
+const WEBHOOK_WORKER_ENABLED_ENV: &str = "LIBRARY_WEBHOOK_WORKER_ENABLED";
 
 #[derive(Serialize)]
 struct VersionResponse {
@@ -625,7 +626,7 @@ pub async fn router(
         .layer(Extension(library_app))
         .layer(Extension(database_app))
         .layer(Extension(parquet_storage))
-        // Keep webhook worker alive by retaining the shutdown sender.
+        // Keep webhook worker alive by retaining the shutdown sender when enabled.
         .layer(Extension(shutdown_tx))
         .layer(Extension(schema));
     Ok(app)
@@ -698,16 +699,33 @@ fn build_webhook_runtime(
         inbound_sync::usecase::ReceiveProviderWebhook,
     >,
 ) -> (
-    tokio::sync::broadcast::Sender<()>,
+    Option<tokio::sync::broadcast::Sender<()>>,
     inbound_sync::adapter::WebhookHandlerState,
 ) {
-    let worker = WebhookEventWorker::new(process_webhook_event)
-        .with_batch_size(10)
-        .with_poll_interval(std::time::Duration::from_secs(5));
-    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
-    tokio::spawn(async move {
-        worker.run(shutdown_rx).await;
-    });
+    let shutdown_tx = if std::env::var(WEBHOOK_WORKER_ENABLED_ENV)
+        .map(|value| env_flag_enabled(&value))
+        .unwrap_or(false)
+    {
+        tracing::warn!(
+            env = WEBHOOK_WORKER_ENABLED_ENV,
+            "enabling webhook event worker"
+        );
+        let worker = WebhookEventWorker::new(process_webhook_event)
+            .with_batch_size(10)
+            .with_poll_interval(std::time::Duration::from_secs(5));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+        tokio::spawn(async move {
+            worker.run(shutdown_rx).await;
+        });
+        Some(shutdown_tx)
+    } else {
+        tracing::info!(
+            env = WEBHOOK_WORKER_ENABLED_ENV,
+            "webhook event worker disabled"
+        );
+        drop(process_webhook_event);
+        None
+    };
 
     let webhook_handler_state =
         inbound_sync::adapter::WebhookHandlerState {
@@ -732,5 +750,13 @@ mod tests {
         assert!(!env_flag_enabled("false"));
         assert!(!env_flag_enabled("1"));
         assert!(!env_flag_enabled("yes"));
+    }
+
+    #[test]
+    fn webhook_worker_env_flag_uses_same_boolean_parser() {
+        assert!(env_flag_enabled("TrUe"));
+
+        assert!(!env_flag_enabled("false"));
+        assert!(!env_flag_enabled("enabled"));
     }
 }
