@@ -37,6 +37,10 @@ spec:
           type: credential
           valueFrom:
             secret: library-api/SENTRY_DSN
+        - name: OTEL_EXPORTER_OTLP_HEADERS
+          type: credential
+          valueFrom:
+            secret: library-api/OTEL_EXPORTER_OTLP_HEADERS
         - name: DB_POOL_MAX_CONNECTIONS
           value: "16"
         - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
@@ -49,3 +53,21 @@ spec:
           value: "250"
         - name: ENVIRONMENT
           value: "production"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: OTEL_ENABLED
+          value: "true"
+        - name: OTEL_SERVICE_NAME
+          value: "library-api"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+          type: credential
+          valueFrom:
+            secret: library-api/OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "deployment.environment=production,service.namespace=library"
+        - name: OTEL_TRACES_SAMPLER_ARG
+          value: "0.05"
+        - name: OTEL_PROPAGATORS
+          value: "tracecontext"
