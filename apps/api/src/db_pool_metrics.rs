@@ -119,7 +119,7 @@ async fn probe_pool(
         }
         Err(error) if is_pool_timeout(&error) => {
             let wait = started_at.elapsed();
-            tracing::error!(
+            tracing::warn!(
                 metric = "library_api_db_pool_acquire_timeout",
                 pool_name,
                 wait_ms = duration_ms(wait),

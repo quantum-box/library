@@ -582,14 +582,22 @@ pub use sentry::ClientInitGuard;
 /// because the `sentry_tracing::layer()` bridge no-ops once the
 /// client is shut down.
 #[must_use = "ClientInitGuard must be held for the full runtime lifetime; dropping it immediately will silently discard Sentry events forwarded by sentry_tracing"]
-pub fn init_sentry(dsn: &str) -> sentry::ClientInitGuard {
-    sentry::init((
+pub fn init_sentry(dsn: &str) -> Option<sentry::ClientInitGuard> {
+    let dsn = match dsn.trim().parse::<sentry::types::Dsn>() {
+        Ok(dsn) => dsn,
+        Err(error) => {
+            eprintln!("Sentry disabled: invalid SENTRY_DSN ({error})");
+            return None;
+        }
+    };
+
+    Some(sentry::init((
         dsn,
         sentry::ClientOptions {
             release: sentry::release_name!(),
             ..Default::default()
         },
-    ))
+    )))
 }
 
 // https://github.com/open-telemetry/opentelemetry-rust/blob/d4b9befea04bcc7fc19319a6ebf5b5070131c486/examples/basic-otlp/src/main.rs#L35-L52

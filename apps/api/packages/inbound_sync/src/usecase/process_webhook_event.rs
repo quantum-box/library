@@ -320,7 +320,14 @@ impl WebhookEventWorker {
                             );
                         }
                         Err(e) => {
-                            tracing::error!(error = %e, "Error processing webhook events");
+                            if is_expected_worker_infra_error(&e) {
+                                tracing::warn!(
+                                    error = %e,
+                                    "Webhook event worker skipped optional batch"
+                                );
+                            } else {
+                                tracing::error!(error = %e, "Error processing webhook events");
+                            }
                         }
                         _ => {}
                     }
@@ -328,6 +335,12 @@ impl WebhookEventWorker {
             }
         }
     }
+}
+
+fn is_expected_worker_infra_error(error: &errors::Error) -> bool {
+    let message = error.to_string();
+    message.contains("pool timed out while waiting for an open connection")
+        || message.contains("Table 'library.webhook_events' doesn't exist")
 }
 
 #[cfg(test)]
@@ -344,5 +357,23 @@ mod tests {
             items_deleted: 1,
         };
         assert_eq!(result.total_processed(), 7);
+    }
+
+    #[test]
+    fn worker_pool_timeout_is_expected_infra_error() {
+        let error = errors::Error::internal_server_error(
+            "pool timed out while waiting for an open connection",
+        );
+
+        assert!(is_expected_worker_infra_error(&error));
+    }
+
+    #[test]
+    fn missing_optional_webhook_table_is_expected_infra_error() {
+        let error = errors::Error::internal_server_error(
+            "error returned from database: 1146 (42S02): Table 'library.webhook_events' doesn't exist",
+        );
+
+        assert!(is_expected_worker_infra_error(&error));
     }
 }
