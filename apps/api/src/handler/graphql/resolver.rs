@@ -49,7 +49,7 @@ impl LibraryQuery {
             .get_user_by_id_full(&operator_id, user_id)
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
@@ -148,7 +148,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         let org = output.organization.into();
@@ -179,7 +179,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         Ok(output.repo.into())
@@ -208,7 +208,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         Ok(output.0.into())
@@ -239,7 +239,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         Ok(DataList {
@@ -269,7 +269,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?
             .into_iter()
@@ -302,7 +302,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?
             .ok_or(errors::not_found!("Source not found"))?;
@@ -337,7 +337,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -369,7 +369,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -397,7 +397,7 @@ impl LibraryQuery {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -425,7 +425,7 @@ impl LibraryQuery {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -477,7 +477,7 @@ impl LibraryQuery {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -792,7 +792,7 @@ impl LibraryQuery {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -849,7 +849,7 @@ impl LibraryQuery {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -906,7 +906,7 @@ impl LibraryQuery {
             )
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
 
@@ -976,7 +976,7 @@ impl Organization {
         )
         .await
         .map_err(|e| {
-            tracing::error!("error: {:?}", e);
+            super::log_graphql_operation_error("library_query", &e);
             e.extend()
         })?;
 
@@ -1010,7 +1010,7 @@ impl Repo {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         Ok(DataList {
@@ -1037,7 +1037,7 @@ impl Repo {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?
             .into_iter()
@@ -1064,7 +1064,7 @@ impl Repo {
             })
             .await
             .map_err(|e| {
-                tracing::error!("error: {:?}", e);
+                super::log_graphql_operation_error("library_query", &e);
                 e.extend()
             })?;
         Ok(sources.into_iter().map(|s| s.into()).collect())

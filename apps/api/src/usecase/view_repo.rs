@@ -23,7 +23,7 @@ pub struct ViewRepo {
 
 #[async_trait]
 impl ViewRepoInputPort for ViewRepo {
-    #[tracing::instrument(name = "ViewRepo::execute", skip(self))]
+    #[tracing::instrument(name = "ViewRepo::execute", skip_all)]
     async fn execute<'a>(
         &self,
         input: &ViewRepoInputData<'a>,

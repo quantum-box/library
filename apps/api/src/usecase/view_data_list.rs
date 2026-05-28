@@ -61,7 +61,7 @@ impl ViewDataList {
 
 #[async_trait::async_trait]
 impl ViewDataListInputPort for ViewDataList {
-    #[tracing::instrument(name = "ViewDataList::execute", skip(self))]
+    #[tracing::instrument(name = "ViewDataList::execute", skip_all)]
     async fn execute(
         &self,
         input: &ViewDataListInputData,

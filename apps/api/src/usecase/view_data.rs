@@ -40,7 +40,7 @@ impl ViewData {
 
 #[async_trait::async_trait]
 impl ViewDataInputPort for ViewData {
-    #[tracing::instrument(name = "ViewData::execute", skip(self))]
+    #[tracing::instrument(name = "ViewData::execute", skip_all)]
     async fn execute<'a>(
         &self,
         input: &ViewDataInputData<'a>,
