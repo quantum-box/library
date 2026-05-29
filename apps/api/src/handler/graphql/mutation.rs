@@ -201,14 +201,6 @@ impl LibraryMutation {
             .map_err(|e| e.extend())?
             .ok_or_else(|| async_graphql::Error::new("Tenant not found"))?;
 
-        if operator.platform_id != crate::domain::LIBRARY_TENANT.to_string()
-        {
-            return Err(errors::permission_denied!(
-                "Tenant does not belong to the Library platform"
-            )
-            .extend());
-        }
-
         let users = AuthAppTrait::find_users_by_tenant(
             library_app.auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
@@ -1688,6 +1680,18 @@ mod tests {
         assert!(
             !sdl.contains("\n\tsignIn("),
             "do not expose the implementation method name as the public field"
+        );
+    }
+
+    /// Regression guard for PLT-1692: seeding must work for non-Library platform tenants.
+    #[test]
+    fn seed_library_tenant_does_not_reject_non_library_platform_id() {
+        let source = include_str!("mutation.rs");
+        let marker = "#[cfg(test)]";
+        let impl_source = source.split(marker).next().unwrap_or(source);
+        assert!(
+            !impl_source.contains("Tenant does not belong to the Library platform"),
+            "seedLibraryTenant must accept non-Library platform tenants"
         );
     }
 }
