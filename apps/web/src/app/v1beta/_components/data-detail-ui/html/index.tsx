@@ -3,6 +3,7 @@ import { useTheme } from 'next-themes'
 import type { RichTextEditorProps } from './editor'
 import { RichTextViewer } from './viewer'
 import { CollaborationPresence } from './collaboration-presence'
+import { MarkdownViewer } from './markdown-viewer'
 import type { CollaborationConfig } from './use-collaboration'
 import { useCollaboration } from './use-collaboration'
 
@@ -18,10 +19,24 @@ function RichTextEditor(props: RichTextEditorProps) {
 			<p className='text-muted-foreground'>Loading editor…</p>
 		</div>
 	) : props.format === 'markdown' ? (
-		<pre className={`${props.className ?? ''} whitespace-pre-wrap`}>{props.value}</pre>
+		<MarkdownViewer
+			markdown={props.value ?? ''}
+			className={props.className}
+			theme={props.theme}
+		/>
 	) : (
 		<RichTextViewer html={props.value ?? ''} className={props.className} />
 	)
+
+	if (!props.isEditable && props.format === 'markdown') {
+		return (
+			<MarkdownViewer
+				markdown={props.value ?? ''}
+				className={props.className}
+				theme={props.theme}
+			/>
+		)
+	}
 
 	return (
 		<Suspense fallback={fallback}>
