@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::input::{GetMarkdownPreviewsInput, ListGitHubDirectoryInput};
 use super::model::*;
 use crate::app::LibraryApp;
-use crate::domain::LIBRARY_TENANT;
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{
     self, FindGlobalIdMappingsInputData, FindSourcesInputData,
@@ -98,10 +97,6 @@ impl LibraryQuery {
             else {
                 continue;
             };
-
-            if operator.platform_id != LIBRARY_TENANT.to_string() {
-                continue;
-            }
 
             let tenant_id =
                 TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
@@ -1228,5 +1223,21 @@ impl Repo {
             .collect();
 
         Ok(members)
+    }
+}
+
+#[cfg(test)]
+mod tenant_seed_candidate_tests {
+    /// Regression guard for PLT-1692: Field / other platform tenants must appear
+    /// in the onboarding wizard when they lack a Library organization.
+    #[test]
+    fn tenant_seed_candidates_does_not_filter_by_library_platform_id() {
+        let source = include_str!("resolver.rs");
+        let marker = "#[cfg(test)]";
+        let impl_source = source.split(marker).next().unwrap_or(source);
+        assert!(
+            !impl_source.contains("if operator.platform_id != LIBRARY_TENANT.to_string()"),
+            "tenant_seed_candidates must not skip tenants by Library platform_id"
+        );
     }
 }
