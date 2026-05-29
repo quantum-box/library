@@ -18,6 +18,11 @@ members = [
     "sdk/rust",
 ]
 resolver = "2"
+exclude = [
+    "apps/client/packages/photon-engine",
+    "apps/client/packages/server",
+    "apps/client/src-tauri",
+]
 
 [workspace.package]
 license = "MIT"
@@ -43,6 +48,9 @@ opentelemetry = { version = "0.18.0", default-features = false, features = [
 ] }
 opentelemetry-otlp = { version = "0.11.0", default-features = false, features = [
     "grpc-tonic",
+    "http-proto",
+    "reqwest-client",
+    "reqwest-rustls",
     "trace",
     "metrics",
 ] }
@@ -63,6 +71,7 @@ sentry = { version = "0.32", features = [
     "reqwest",
 ], default-features = false }
 sentry-tracing = "0.32"
+openssl = { version = "0.10", features = ["vendored"] }
 
 # ---- Core / Serde ----
 smart-default = "0.7.1"

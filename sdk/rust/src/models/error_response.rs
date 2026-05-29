@@ -14,6 +14,21 @@ use serde::{Deserialize, Serialize};
 /// ErrorResponse : Common error response body for REST APIs
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ErrorResponse {
+    /// Stable machine-readable error code
+    #[serde(rename = "code", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Current master updatedAt value for conflict responses
+    #[serde(
+        rename = "currentUpdatedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub current_updated_at: Option<String>,
+    /// Expected master updatedAt value supplied by the caller
+    #[serde(
+        rename = "expectedUpdatedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected_updated_at: Option<String>,
     /// Error message
     #[serde(rename = "message")]
     pub message: String,
@@ -22,6 +37,11 @@ pub struct ErrorResponse {
 impl ErrorResponse {
     /// Common error response body for REST APIs
     pub fn new(message: String) -> ErrorResponse {
-        ErrorResponse { message }
+        ErrorResponse {
+            code: None,
+            current_updated_at: None,
+            expected_updated_at: None,
+            message,
+        }
     }
 }

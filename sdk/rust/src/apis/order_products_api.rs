@@ -19,7 +19,10 @@ use serde::{de::Error as _, Deserialize, Serialize};
 pub enum CreateProductError {
     Status400(models::ErrorResponse),
     Status403(models::ErrorResponse),
+    Status409(models::ErrorResponse),
+    Status422(models::ErrorResponse),
     Status500(models::ErrorResponse),
+    Status503(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
@@ -69,7 +72,11 @@ pub enum UpdateProductError {
     Status400(models::ErrorResponse),
     Status403(models::ErrorResponse),
     Status404(models::ErrorResponse),
+    Status409(models::ErrorResponse),
+    Status412(models::ErrorResponse),
+    Status422(models::ErrorResponse),
     Status500(models::ErrorResponse),
+    Status503(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 

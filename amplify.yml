@@ -3,16 +3,18 @@ frontend:
   phases:
     preBuild:
       commands:
-        - cd apps/web && npm ci
+        - corepack enable
+        - yarn install --immutable
     build:
       commands:
-        - cd apps/web && npm run build
+        - yarn build
   artifacts:
     baseDirectory: apps/web/dist
     files:
       - '**/*'
   cache:
     paths:
+      - node_modules/**/*
       - apps/web/node_modules/**/*
   customHeaders:
     - pattern: '/assets/**'

@@ -17,6 +17,15 @@ use crate::usecase::ViewOrgOutputData;
 
 use super::extract_org_username;
 
+fn sentry_request_context(
+    parts: &Parts,
+) -> Option<crate::sentry_context::SentryRequestContext> {
+    parts
+        .extensions
+        .get::<crate::sentry_context::SentryRequestContext>()
+        .copied()
+}
+
 // ---- Conversion: LibraryExecutor → tachyon_sdk::auth::Executor ----
 
 impl From<LibraryExecutor> for tachyon_sdk::auth::Executor {
@@ -77,6 +86,11 @@ where
         Ok(LibraryMultiTenancy(tachyon_sdk::auth::MultiTenancy::new(
             platform, operator,
         )))
+        .inspect(|multi_tenancy| {
+            crate::sentry_context::configure_multitenancy_scope(
+                &multi_tenancy.0,
+            );
+        })
     }
 }
 
@@ -246,18 +260,28 @@ where
 
                 match sdk.get_user_by_id_full(org.id(), &user_id).await {
                     Ok(Some(user)) => {
-                        return Ok(LibraryExecutor {
+                        let executor = LibraryExecutor {
                             inner: LibraryExecutorKind::User(Box::new(
                                 user,
                             )),
                             original_token: Some(token),
-                        });
+                        };
+                        crate::sentry_context::configure_executor_scope(
+                            &executor,
+                            sentry_request_context(parts),
+                        );
+                        return Ok(executor);
                     }
                     _ => {
-                        return Ok(LibraryExecutor {
+                        let executor = LibraryExecutor {
                             inner: LibraryExecutorKind::None,
                             original_token: Some(token),
-                        });
+                        };
+                        crate::sentry_context::configure_executor_scope(
+                            &executor,
+                            sentry_request_context(parts),
+                        );
+                        return Ok(executor);
                     }
                 }
             } else {
@@ -271,18 +295,28 @@ where
 
                 match sdk.get_user_by_id_full(&tenant_id, &user_id).await {
                     Ok(Some(user)) => {
-                        return Ok(LibraryExecutor {
+                        let executor = LibraryExecutor {
                             inner: LibraryExecutorKind::User(Box::new(
                                 user,
                             )),
                             original_token: Some(token),
-                        });
+                        };
+                        crate::sentry_context::configure_executor_scope(
+                            &executor,
+                            sentry_request_context(parts),
+                        );
+                        return Ok(executor);
                     }
                     _ => {
-                        return Ok(LibraryExecutor {
+                        let executor = LibraryExecutor {
                             inner: LibraryExecutorKind::None,
                             original_token: Some(token),
-                        });
+                        };
+                        crate::sentry_context::configure_executor_scope(
+                            &executor,
+                            sentry_request_context(parts),
+                        );
+                        return Ok(executor);
                     }
                 }
             }
@@ -314,13 +348,18 @@ where
                                  failed error: {err}"
                         ))
                     })?;
-                return Ok(LibraryExecutor {
+                let executor = LibraryExecutor {
                     inner: LibraryExecutorKind::ServiceAccount(Box::new(
                         out,
                     )),
                     // pk_* token: keep for forwarding
                     original_token: Some(token),
-                });
+                };
+                crate::sentry_context::configure_executor_scope(
+                    &executor,
+                    sentry_request_context(parts),
+                );
+                return Ok(executor);
             }
         }
 
@@ -331,19 +370,31 @@ where
         // Mutations that require authentication will reject None
         // executor via their own policy checks.
         match sdk.verify_token(&token).await {
-            Ok(user) => Ok(LibraryExecutor {
-                inner: LibraryExecutorKind::User(Box::new(user)),
-                original_token: Some(token),
-            }),
+            Ok(user) => {
+                let executor = LibraryExecutor {
+                    inner: LibraryExecutorKind::User(Box::new(user)),
+                    original_token: Some(token),
+                };
+                crate::sentry_context::configure_executor_scope(
+                    &executor,
+                    sentry_request_context(parts),
+                );
+                Ok(executor)
+            }
             Err(err) => {
                 tracing::warn!(
                     "JWT verification failed, \
                      treating request as unauthenticated: {err}"
                 );
-                Ok(LibraryExecutor {
+                let executor = LibraryExecutor {
                     inner: LibraryExecutorKind::None,
                     original_token: None,
-                })
+                };
+                crate::sentry_context::configure_executor_scope(
+                    &executor,
+                    sentry_request_context(parts),
+                );
+                Ok(executor)
             }
         }
     }

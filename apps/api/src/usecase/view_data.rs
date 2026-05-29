@@ -1,11 +1,13 @@
-use super::{ViewDataInputData, ViewDataInputPort};
+use super::{
+    authorize_private_repo_read, ViewDataInputData, ViewDataInputPort,
+};
 use crate::domain::VisibilityService;
 use database_manager::{
     domain::{Data, Property},
     usecase::FindAllPropertiesInputData,
 };
 use std::sync::Arc;
-use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
+use tachyon_sdk::auth::AuthApp;
 
 #[derive(Debug, Clone)]
 pub struct ViewData {
@@ -38,7 +40,7 @@ impl ViewData {
 
 #[async_trait::async_trait]
 impl ViewDataInputPort for ViewData {
-    #[tracing::instrument(name = "ViewData::execute", skip(self))]
+    #[tracing::instrument(name = "ViewData::execute", skip_all)]
     async fn execute<'a>(
         &self,
         input: &ViewDataInputData<'a>,
@@ -59,13 +61,13 @@ impl ViewDataInputPort for ViewData {
         let need_policy_check =
             VisibilityService::new().check_access(&repo, input.executor)?;
         if need_policy_check {
-            self.auth
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:ViewData",
-                })
-                .await?;
+            authorize_private_repo_read(
+                self.auth.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                repo.id().as_ref(),
+            )
+            .await?;
         }
 
         let properties = self

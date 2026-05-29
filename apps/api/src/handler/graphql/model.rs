@@ -18,6 +18,21 @@ pub struct Operator {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(SimpleObject, Debug, Clone)]
+pub struct TenantSeedCandidate {
+    pub tenant_id: String,
+    pub name: String,
+    pub username: String,
+    pub staff_count: i32,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct SeedLibraryTenantPayload {
+    pub organization: Organization,
+    pub seeded: bool,
+    pub staff_count: i32,
+}
+
 impl From<auth_domain::Operator> for Operator {
     fn from(value: auth_domain::Operator) -> Self {
         Self {

@@ -20,6 +20,30 @@ impl SqlxWebhookEventRepository {
     pub fn new(pool: Arc<MySqlPool>) -> Self {
         Self { pool }
     }
+
+    async fn mark_pending_row_failed(
+        &self,
+        id: &str,
+        error_message: String,
+    ) -> errors::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE webhook_events
+            SET processing_status = 'failed',
+                error_message = ?,
+                processed_at = ?
+            WHERE id = ? AND processing_status = 'pending'
+            "#,
+        )
+        .bind(error_message)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| errors::Error::internal_server_error(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -44,12 +68,23 @@ impl TryFrom<WebhookEventRow> for WebhookEvent {
     type Error = errors::Error;
 
     fn try_from(row: WebhookEventRow) -> Result<Self, Self::Error> {
-        let provider: Provider = row
-            .provider
-            .parse()
-            .map_err(|_| errors::Error::invalid("Invalid provider"))?;
+        let provider: Provider =
+            row.provider.trim().parse().map_err(|_| {
+                errors::Error::invalid(format!(
+                    "Invalid provider '{}' for webhook event {}",
+                    row.provider, row.id
+                ))
+            })?;
 
-        let status: ProcessingStatus = row.processing_status.parse()?;
+        let status: ProcessingStatus =
+            row.processing_status.trim().parse()?;
+        let retry_count: u32 =
+            row.retry_count.try_into().map_err(|_| {
+                errors::Error::invalid(format!(
+                    "Invalid retry_count '{}' for webhook event {}",
+                    row.retry_count, row.id
+                ))
+            })?;
 
         let stats: Option<ProcessingStats> = row
             .stats
@@ -67,7 +102,7 @@ impl TryFrom<WebhookEventRow> for WebhookEvent {
             row.signature_valid,
             status,
             row.error_message,
-            row.retry_count as u32,
+            retry_count,
             row.next_retry_at,
             stats,
             row.received_at,
@@ -191,7 +226,38 @@ impl WebhookEventRepository for SqlxWebhookEventRepository {
         .await
         .map_err(|e| errors::Error::internal_server_error(e.to_string()))?;
 
-        rows.into_iter().map(TryInto::try_into).collect()
+        let mut events = Vec::with_capacity(rows.len());
+        for row in rows {
+            let event_id = row.id.clone();
+            let provider = row.provider.clone();
+            let event_type = row.event_type.clone();
+            match row.try_into() {
+                Ok(event) => events.push(event),
+                Err(err) => {
+                    let error_message =
+                        format!("Invalid pending webhook event row: {err}");
+                    tracing::warn!(
+                        event_id = %event_id,
+                        provider = %provider,
+                        event_type = %event_type,
+                        error = %err,
+                        "Marking invalid pending webhook event row as failed"
+                    );
+                    if let Err(update_err) = self
+                        .mark_pending_row_failed(&event_id, error_message)
+                        .await
+                    {
+                        tracing::error!(
+                            event_id = %event_id,
+                            error = %update_err,
+                            "Failed to mark invalid pending webhook event row as failed"
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(events)
     }
 
     async fn find_by_status(
@@ -275,5 +341,50 @@ impl WebhookEventRepository for SqlxWebhookEventRepository {
                 })?;
 
         Ok(result.rows_affected())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(provider: &str, retry_count: i32) -> WebhookEventRow {
+        WebhookEventRow {
+            id: "wev_01hmp05xtq6fs5mmk8fg125cy7".to_string(),
+            endpoint_id: "whe_01hmp05xtq6fs5mmk8fg125cy7".to_string(),
+            provider: provider.to_string(),
+            event_type: "issue.updated".to_string(),
+            payload: serde_json::json!({}),
+            headers: None,
+            signature_valid: true,
+            processing_status: "pending".to_string(),
+            error_message: None,
+            retry_count,
+            next_retry_at: None,
+            stats: None,
+            received_at: Utc::now(),
+            processed_at: None,
+        }
+    }
+
+    #[test]
+    fn converts_valid_webhook_event_row() {
+        let event = WebhookEvent::try_from(row(" linear ", 1)).unwrap();
+
+        assert_eq!(*event.provider(), Provider::Linear);
+        assert_eq!(*event.retry_count(), 1);
+    }
+
+    #[test]
+    fn rejects_invalid_webhook_event_row_without_panicking() {
+        let provider_error =
+            WebhookEvent::try_from(row("slack", 1)).unwrap_err();
+        assert!(provider_error
+            .to_string()
+            .contains("Invalid provider 'slack'"));
+
+        let retry_error =
+            WebhookEvent::try_from(row("linear", -1)).unwrap_err();
+        assert!(retry_error.to_string().contains("Invalid retry_count"));
     }
 }

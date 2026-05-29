@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_COGNITO_REGION: string
   readonly VITE_COGNITO_ISSUER: string
   readonly VITE_KROKI_BASE_URL?: string
+  readonly VITE_COGNITO_HOSTED_UI_DOMAIN: string
+  readonly VITE_COGNITO_REDIRECT_URI: string
 }
 
 interface ImportMeta {

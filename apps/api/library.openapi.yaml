@@ -302,6 +302,8 @@ components:
           type: boolean
         name:
           type: string
+        org_username:
+          type: string
         organization_id:
           type: string
         username:
@@ -312,6 +314,7 @@ components:
       - username
       - is_public
       - organization_id
+      - org_username
       type: object
     SearchDataQuery:
       properties:

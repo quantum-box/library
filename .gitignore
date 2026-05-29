@@ -3,7 +3,10 @@ target/
 dist/
 .next/
 node_modules/
+.yarn/
 out/
+.yarn/
+.pnp.*
 
 # Environment & secrets
 .env
@@ -28,9 +31,14 @@ Thumbs.db
 
 # Playwright
 .playwright-mcp/
+playwright-report/
+test-results/
 
 # Storybook
 storybook-static/
 
 # Misc
 *.log
+*.db
+*.sqlite
+*.sqlite3

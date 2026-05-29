@@ -1,14 +1,14 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::domain::VisibilityService;
+use crate::{
+    domain::VisibilityService, usecase::authorize_private_repo_read,
+};
 use database_manager::{
     domain::{Data, Property},
     usecase::FindAllPropertiesInputData,
 };
-use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyInput, ExecutorAction, MultiTenancyAction,
-};
+use tachyon_sdk::auth::{AuthApp, ExecutorAction, MultiTenancyAction};
 use value_object::OffsetPaginator;
 
 #[async_trait::async_trait]
@@ -61,7 +61,7 @@ impl ViewDataList {
 
 #[async_trait::async_trait]
 impl ViewDataListInputPort for ViewDataList {
-    #[tracing::instrument(name = "ViewDataList::execute", skip(self))]
+    #[tracing::instrument(name = "ViewDataList::execute", skip_all)]
     async fn execute(
         &self,
         input: &ViewDataListInputData,
@@ -91,13 +91,13 @@ impl ViewDataListInputPort for ViewDataList {
         let need_policy_check =
             VisibilityService::new().check_access(&repo, input.executor)?;
         if need_policy_check {
-            self.auth_app
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    action: "library:ViewPrivateRepo",
-                })
-                .await?;
+            authorize_private_repo_read(
+                self.auth_app.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                repo.id().as_ref(),
+            )
+            .await?;
         }
 
         let properties = self

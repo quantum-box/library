@@ -5,6 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **billing_cycle** | **String** | Billing cycle | 
+**category** | Option<**String**> | Product category master value | [optional]
 **created_at** | **String** | Created at | 
 **description** | Option<**String**> | Product description | [optional]
 **id** | **String** | Product ID | 
@@ -18,10 +19,10 @@ Name | Type | Description | Notes
 **publication_status** | **String** | Publication status | 
 **sku_code** | Option<**String**> | SKU code | [optional]
 **status** | **String** | Product status | 
+**subcategory** | Option<**String**> | Product subcategory master value | [optional]
 **tenant_id** | **String** | Tenant ID | 
 **upc_code** | Option<**String**> | UPC code | [optional]
 **updated_at** | **String** | Updated at | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
-
 

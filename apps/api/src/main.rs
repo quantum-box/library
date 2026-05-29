@@ -4,12 +4,14 @@ pub mod app;
 mod bootstrap;
 pub mod collaboration;
 pub mod config;
+mod db_pool_metrics;
 mod domain;
 pub mod error;
 pub mod handler;
 mod interface_adapter;
 mod router;
 pub mod sdk_auth;
+mod sentry_context;
 mod usecase;
 pub use domain::LIBRARY_TENANT;
 

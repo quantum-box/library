@@ -9,6 +9,7 @@ use crate::sdk_auth::SdkAuthApp;
 use async_graphql::EmptySubscription;
 use async_graphql::Schema;
 use axum::http::method::Method;
+use axum::middleware;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Extension;
@@ -50,6 +51,7 @@ use inbound_sync::{
 };
 
 const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
+const WEBHOOK_WORKER_ENABLED_ENV: &str = "LIBRARY_WEBHOOK_WORKER_ENABLED";
 
 #[derive(Serialize)]
 struct VersionResponse {
@@ -84,6 +86,11 @@ pub async fn router(
         &dsn.use_database("tachyon_apps_database_manager"),
     )
     .await;
+    let _db_pool_metric_tasks =
+        crate::db_pool_metrics::start_default_pool_acquire_metrics([
+            ("library", library_db.pool()),
+            ("database_manager", database_manager_db.pool()),
+        ]);
 
     // Database sync setup (must be created before LibraryApp)
     let sync_config_repo: Arc<dyn outbound_sync::SyncConfigRepository> =
@@ -611,12 +618,15 @@ pub async fn router(
         )
         .layer(create_propagate_request_id_layer())
         .layer(create_trace_layer())
+        .layer(middleware::from_fn(
+            crate::sentry_context::sentry_request_context_middleware,
+        ))
         .layer(create_request_id_layer())
         .layer(Extension(sdk))
         .layer(Extension(library_app))
         .layer(Extension(database_app))
         .layer(Extension(parquet_storage))
-        // Keep webhook worker alive by retaining the shutdown sender.
+        // Keep webhook worker alive by retaining the shutdown sender when enabled.
         .layer(Extension(shutdown_tx))
         .layer(Extension(schema));
     Ok(app)
@@ -689,16 +699,33 @@ fn build_webhook_runtime(
         inbound_sync::usecase::ReceiveProviderWebhook,
     >,
 ) -> (
-    tokio::sync::broadcast::Sender<()>,
+    Option<tokio::sync::broadcast::Sender<()>>,
     inbound_sync::adapter::WebhookHandlerState,
 ) {
-    let worker = WebhookEventWorker::new(process_webhook_event)
-        .with_batch_size(10)
-        .with_poll_interval(std::time::Duration::from_secs(5));
-    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
-    tokio::spawn(async move {
-        worker.run(shutdown_rx).await;
-    });
+    let shutdown_tx = if std::env::var(WEBHOOK_WORKER_ENABLED_ENV)
+        .map(|value| env_flag_enabled(&value))
+        .unwrap_or(false)
+    {
+        tracing::warn!(
+            env = WEBHOOK_WORKER_ENABLED_ENV,
+            "enabling webhook event worker"
+        );
+        let worker = WebhookEventWorker::new(process_webhook_event)
+            .with_batch_size(10)
+            .with_poll_interval(std::time::Duration::from_secs(5));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+        tokio::spawn(async move {
+            worker.run(shutdown_rx).await;
+        });
+        Some(shutdown_tx)
+    } else {
+        tracing::info!(
+            env = WEBHOOK_WORKER_ENABLED_ENV,
+            "webhook event worker disabled"
+        );
+        drop(process_webhook_event);
+        None
+    };
 
     let webhook_handler_state =
         inbound_sync::adapter::WebhookHandlerState {
@@ -723,5 +750,13 @@ mod tests {
         assert!(!env_flag_enabled("false"));
         assert!(!env_flag_enabled("1"));
         assert!(!env_flag_enabled("yes"));
+    }
+
+    #[test]
+    fn webhook_worker_env_flag_uses_same_boolean_parser() {
+        assert!(env_flag_enabled("TrUe"));
+
+        assert!(!env_flag_enabled("false"));
+        assert!(!env_flag_enabled("enabled"));
     }
 }

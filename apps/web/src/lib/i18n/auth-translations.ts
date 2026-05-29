@@ -14,6 +14,14 @@ export const authTranslations = {
 			forgotPassword: 'Forgot password?',
 			agreement:
 				'By clicking continue, you agree to the Terms of Service and Privacy Policy of the service.',
+			hostedUi: {
+				separator: 'Or continue with',
+				google: 'Continue with Google',
+				passkey: 'Continue with Passkey',
+				missingConfig:
+					'Google and Passkey sign-in are not configured in this environment.',
+				error: 'Could not start Google or Passkey sign-in. Please try again.',
+			},
 			errors: {
 				invalidCredentials: 'Invalid username or password',
 				failed: 'Sign in failed. Please try again.',
@@ -28,20 +36,37 @@ export const authTranslations = {
 			emailPlaceholder: 'Enter email',
 			passwordLabel: 'Password',
 			passwordPlaceholder: 'Enter password',
+			passwordHelp:
+				'Use at least 8 characters with uppercase and lowercase letters and a number.',
 			confirmPasswordLabel: 'Confirm password',
 			confirmPasswordPlaceholder: 'Enter password again',
-			submit: 'Sign up',
-			submitting: 'Signing up...',
+			submit: 'Create account',
+			submitting: 'Creating account...',
 			hasAccount: 'Already have an account?',
 			signIn: 'Sign in',
 			agreement:
 				'By clicking continue, you agree to the Terms of Service and Privacy Policy of the service.',
 			errors: {
+				confirmPasswordRequired: 'Please confirm your password',
 				passwordMismatch: 'Passwords do not match',
-				failed: 'Sign up failed. Please try again.',
+				usernameTooShort: 'Username must be at least 3 characters',
+				usernameTooLong: 'Username must be at most 40 characters',
+				usernameInvalid: 'Username must contain only letters and numbers',
+				emailInvalid: 'Please enter a valid email address',
+				passwordTooShort: 'Password must be at least 8 characters',
+				passwordMissingUppercase:
+					'Password must contain at least one uppercase letter',
+				passwordMissingLowercase:
+					'Password must contain at least one lowercase letter',
+				passwordMissingNumber: 'Password must contain at least one number',
+				failed: 'Account registration failed. Please try again.',
 				emailExists: 'This email is already registered',
 				usernameExists: 'This username is already taken',
 			},
+		},
+		passwordVisibility: {
+			show: 'Show',
+			hide: 'Hide',
 		},
 		signOut: {
 			title: 'Sign out',
@@ -102,7 +127,10 @@ export const authTranslations = {
 			signUpSuccess: 'Verification code sent',
 			signUpSuccessDescription:
 				'Please check your email for the verification code.',
+			signInAfterVerification: 'You can now sign in with your account.',
 			errors: {
+				usernameRequired: 'Please enter your username',
+				codeInvalidLength: 'Verification code must be 6 digits',
 				invalidCode: 'Invalid verification code',
 				expired: 'Verification code has expired',
 				failed: 'Verification failed. Please try again.',
@@ -120,38 +148,64 @@ export const authTranslations = {
 			submit: 'サインイン',
 			submitting: 'サインイン中...',
 			noAccount: 'アカウントをお持ちでない方',
-			createAccount: 'アカウントを作成',
+			createAccount: '新規登録',
 			forgotPassword: 'パスワードをお忘れですか？',
 			agreement:
 				'続行すると、利用規約とプライバシーポリシーに同意したことになります。',
+			hostedUi: {
+				separator: 'または次の方法で続行',
+				google: 'Googleで続行',
+				passkey: 'Passkeyで続行',
+				missingConfig:
+					'この環境では Google / Passkey サインインが設定されていません。',
+				error:
+					'Google / Passkey サインインを開始できませんでした。もう一度お試しください。',
+			},
 			errors: {
 				invalidCredentials: 'ユーザー名またはパスワードが正しくありません',
 				failed: 'サインインに失敗しました。もう一度お試しください。',
 			},
 		},
 		signUp: {
-			title: 'サインアップ',
-			description: 'サービスを利用するにはアカウントを作成してください',
+			title: '新規登録',
+			description: 'アカウントを作成して Library を使い始めましょう',
 			usernameLabel: 'ユーザー名',
 			usernamePlaceholder: 'ユーザー名を入力',
 			emailLabel: 'メールアドレス',
 			emailPlaceholder: 'メールアドレスを入力',
 			passwordLabel: 'パスワード',
 			passwordPlaceholder: 'パスワードを入力',
+			passwordHelp:
+				'8文字以上で、大文字・小文字・数字をそれぞれ1つ以上含めてください。',
 			confirmPasswordLabel: 'パスワード（確認）',
 			confirmPasswordPlaceholder: 'パスワードを再入力',
-			submit: 'サインアップ',
-			submitting: 'サインアップ中...',
+			submit: '新規登録',
+			submitting: '登録中...',
 			hasAccount: 'すでにアカウントをお持ちの方',
 			signIn: 'サインイン',
 			agreement:
 				'続行すると、利用規約とプライバシーポリシーに同意したことになります。',
 			errors: {
+				confirmPasswordRequired: '確認用パスワードを入力してください',
 				passwordMismatch: 'パスワードが一致しません',
-				failed: 'サインアップに失敗しました。もう一度お試しください。',
+				usernameTooShort: 'ユーザー名は3文字以上で入力してください',
+				usernameTooLong: 'ユーザー名は40文字以内で入力してください',
+				usernameInvalid: 'ユーザー名は半角英数字のみ使用できます',
+				emailInvalid: '有効なメールアドレスを入力してください',
+				passwordTooShort: 'パスワードは8文字以上で入力してください',
+				passwordMissingUppercase:
+					'パスワードには大文字を1つ以上含めてください',
+				passwordMissingLowercase:
+					'パスワードには小文字を1つ以上含めてください',
+				passwordMissingNumber: 'パスワードには数字を1つ以上含めてください',
+				failed: '新規登録に失敗しました。もう一度お試しください。',
 				emailExists: 'このメールアドレスは既に登録されています',
 				usernameExists: 'このユーザー名は既に使用されています',
 			},
+		},
+		passwordVisibility: {
+			show: '表示',
+			hide: '非表示',
 		},
 		signOut: {
 			title: 'サインアウト',
@@ -213,7 +267,10 @@ export const authTranslations = {
 			startOver: 'やり直す',
 			signUpSuccess: '認証コードを送信しました',
 			signUpSuccessDescription: 'メールに届いた認証コードを入力してください。',
+			signInAfterVerification: '登録したアカウントでサインインできます。',
 			errors: {
+				usernameRequired: 'ユーザー名を入力してください',
+				codeInvalidLength: '6桁の認証コードを入力してください',
 				invalidCode: '認証コードが正しくありません',
 				expired: '認証コードの有効期限が切れています',
 				failed: '認証に失敗しました。もう一度お試しください。',

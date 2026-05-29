@@ -1258,6 +1258,10 @@ type Mutation {
 	"""
 	signInWithPlatform(platformId: String!, accessToken: String!, allowSignUp: Boolean): User!
 	"""
+	[LIBRARY-API] Seed a tachyon tenant into Library organizations.
+	"""
+	seedLibraryTenant(tenantId: String!): SeedLibraryTenantPayload!
+	"""
 	[AUTH] Create operator via SDK REST call
 	"""
 	createOperator(input: CreateOperatorInput!): Operator!
@@ -1707,6 +1711,7 @@ type PublicApiKey {
 type Query {
 	errTest: String!
 	me: User!
+	tenantSeedCandidates: [TenantSeedCandidate!]!
 	organization(username: String!): Organization!
 	repo(orgUsername: String!, repoUsername: String!): Repo!
 	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!
@@ -1922,6 +1927,12 @@ type RepoPolicy {
 	permissionSource: PermissionSource!
 }
 
+type SeedLibraryTenantPayload {
+	organization: Organization!
+	seeded: Boolean!
+	staffCount: Int!
+}
+
 type SelectItem {
 	id: String!
 	key: String!
@@ -2078,6 +2089,13 @@ input SyncToGitHubInput {
 	If true, only calculate diff without syncing
 	"""
 	dryRun: Boolean
+}
+
+type TenantSeedCandidate {
+	tenantId: String!
+	name: String!
+	username: String!
+	staffCount: Int!
 }
 
 """

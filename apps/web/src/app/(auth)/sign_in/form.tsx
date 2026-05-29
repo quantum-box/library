@@ -9,10 +9,16 @@ import {
 	FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+	createHostedUiAuthorizeUrl,
+	getHostedUiConfig,
+	type HostedUiSignInKind,
+} from '@/auth/hosted-ui'
 import { useToastWithError } from '@/lib/error-toast'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate } from '@tanstack/react-router'
+import { KeyRound, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { SignInFormData, schema } from './type'
@@ -25,6 +31,10 @@ export function SignInForm({
 	const navigate = useNavigate()
 	const { errorToast, toast } = useToastWithError()
 	const { t } = useTranslation()
+	const hostedUiConfig = getHostedUiConfig()
+	const [hostedUiLoading, setHostedUiLoading] =
+		useState<HostedUiSignInKind | null>(null)
+	const [hostedUiError, setHostedUiError] = useState<string | null>(null)
 	const form = useForm<SignInFormData>({
 		resolver: zodResolver(schema),
 		defaultValues: {
@@ -49,6 +59,24 @@ export function SignInForm({
 	}
 
 	const [showPassword, setShowPassword] = useState(false)
+
+	const handleHostedUiSignIn = async (kind: HostedUiSignInKind) => {
+		setHostedUiError(null)
+		setHostedUiLoading(kind)
+
+		try {
+			const searchParams = new URLSearchParams(window.location.search)
+			const authorizeUrl = await createHostedUiAuthorizeUrl(
+				kind,
+				searchParams.get('callbackUrl') ?? '/',
+			)
+			window.location.assign(authorizeUrl)
+		} catch (error) {
+			console.error('Hosted UI sign-in error:', error)
+			setHostedUiLoading(null)
+			setHostedUiError(t.auth.signIn.hostedUi.error)
+		}
+	}
 
 	return (
 		<AuthLayout
@@ -136,8 +164,65 @@ export function SignInForm({
 								: t.auth.signIn.submit}
 						</Button>
 
+						<div className='w-full space-y-3'>
+							<div className='relative'>
+								<div className='absolute inset-0 flex items-center'>
+									<span className='w-full border-t' />
+								</div>
+								<div className='relative flex justify-center text-xs uppercase'>
+									<span className='bg-background px-2 text-muted-foreground'>
+										{t.auth.signIn.hostedUi.separator}
+									</span>
+								</div>
+							</div>
+
+							<div className='grid w-full gap-2'>
+								<Button
+									type='button'
+									variant='outline'
+									className='w-full'
+									disabled={!hostedUiConfig.ok || hostedUiLoading !== null}
+									aria-label={t.auth.signIn.hostedUi.google}
+									onClick={() => handleHostedUiSignIn('google')}
+								>
+									{hostedUiLoading === 'google' ? (
+										<Loader2 className='h-4 w-4 animate-spin' />
+									) : (
+										<span className='inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-semibold'>
+											G
+										</span>
+									)}
+									{t.auth.signIn.hostedUi.google}
+								</Button>
+								<Button
+									type='button'
+									variant='outline'
+									className='w-full'
+									disabled={!hostedUiConfig.ok || hostedUiLoading !== null}
+									aria-label={t.auth.signIn.hostedUi.passkey}
+									onClick={() => handleHostedUiSignIn('passkey')}
+								>
+									{hostedUiLoading === 'passkey' ? (
+										<Loader2 className='h-4 w-4 animate-spin' />
+									) : (
+										<KeyRound className='h-4 w-4' />
+									)}
+									{t.auth.signIn.hostedUi.passkey}
+								</Button>
+							</div>
+
+							{!hostedUiConfig.ok && (
+								<p className='text-xs text-muted-foreground'>
+									{t.auth.signIn.hostedUi.missingConfig}
+								</p>
+							)}
+							{hostedUiError && (
+								<p className='text-xs text-destructive'>{hostedUiError}</p>
+							)}
+						</div>
+
 						<Button variant='link' asChild>
-							<a href='/sign_up'>{t.auth.signIn.createAccount}</a>
+							<Link to='/sign_up'>{t.auth.signIn.createAccount}</Link>
 						</Button>
 					</div>
 				</form>

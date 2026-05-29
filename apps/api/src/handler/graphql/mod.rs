@@ -19,6 +19,30 @@ mod mutation;
 mod resolver;
 mod user_resolver;
 
+pub(crate) fn log_graphql_operation_error(
+    operation: &'static str,
+    error: &errors::Error,
+) {
+    match error {
+        errors::Error::InternalServerError { .. }
+        | errors::Error::ServiceUnavailable { .. } => {
+            tracing::error!(
+                operation,
+                error = ?error,
+                "graphql operation failed"
+            );
+        }
+        _ => {
+            tracing::warn!(
+                operation,
+                error = ?error,
+                error_type = "client",
+                "graphql operation rejected"
+            );
+        }
+    }
+}
+
 #[derive(async_graphql::MergedObject, Default)]
 pub struct Query(resolver::LibraryQuery, LibrarySyncQuery);
 

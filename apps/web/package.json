@@ -1,5 +1,5 @@
 {
-  "name": "library",
+  "name": "library-web",
   "version": "1.11.0",
   "private": true,
   "license": "MIT",
@@ -9,10 +9,12 @@
     "lint": "biome lint src",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run src --passWithNoTests",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "codegen": "yarn codegen:gql && yarn codegen:rest",
     "codegen:gql": "graphql-codegen",
-    "codegen:rest": "rm -rf src/gen/api/ && npx openapi2aspida -i=https://b2yycfc6zrsys65xstai7hebf40wcwsi.lambda-url.ap-northeast-1.on.aws/v1beta/api-docs/openapi.json -o=src/gen/api",
+    "codegen:rest": "rm -rf src/gen/api/ && yarn dlx openapi2aspida -i=https://b2yycfc6zrsys65xstai7hebf40wcwsi.lambda-url.ap-northeast-1.on.aws/v1beta/api-docs/openapi.json -o=src/gen/api",
     "ts": "tsc --noEmit"
   },
   "dependencies": {
@@ -85,6 +87,7 @@
     "@graphql-codegen/typescript": "^4.0.1",
     "@graphql-codegen/typescript-graphql-request": "^5.0.0",
     "@graphql-codegen/typescript-operations": "^4.0.1",
+    "@playwright/test": "^1.59.1",
     "@tanstack/router-plugin": "^1.120.3",
     "@types/dompurify": "^3.0.4",
     "@types/node": "^20",
@@ -92,10 +95,12 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10",
+    "csstype": "^3.2.3",
     "graphql-codegen-typescript-validation-schema": "^0.11.1",
     "postcss": "^8",
     "tailwindcss": "^3",
     "typescript": "^5",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.1.1"
   }
 }

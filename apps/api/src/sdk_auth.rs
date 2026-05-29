@@ -361,19 +361,20 @@ impl SdkAuthApp {
         platform_id: &TenantId,
         user_id: &str,
     ) -> errors::Result<Vec<OperatorResp>> {
-        let config = self.sdk_config();
-        let resp: SdkOperatorListResp = Self::rest_get_query(
+        let config = self.sdk_config_public();
+        let resp: SdkOperatorsByUserResp = Self::rest_get_query(
             &config,
             "/v1/auth/operators/by-user",
             &[("platform_id", platform_id.as_str()), ("user_id", user_id)],
         )
         .await?;
 
-        Ok(resp
-            .operators
-            .into_iter()
-            .map(operator_resp_from_rest)
-            .collect())
+        let operators = match resp {
+            SdkOperatorsByUserResp::Wrapped { operators } => operators,
+            SdkOperatorsByUserResp::Bare(operators) => operators,
+        };
+
+        Ok(operators.into_iter().map(operator_resp_from_rest).collect())
     }
 
     /// Get a single operator by ID.
@@ -494,6 +495,16 @@ impl SdkAuthApp {
     /// Verify a bearer token via SDK.
     /// Uses public endpoint (no auth required).
     pub async fn verify_token(&self, token: &str) -> errors::Result<User> {
+        match self.bootstrap_token(token).await {
+            Ok(user) => return Ok(user),
+            Err(err) => {
+                tracing::debug!(
+                    error = %err,
+                    "bootstrap token verification failed; falling back to legacy verify"
+                );
+            }
+        }
+
         let config = self.sdk_config_public();
         let req = tachyon_sdk::models::VerifyRequest {
             token: token.to_string(),
@@ -504,6 +515,37 @@ impl SdkAuthApp {
             .map_err(sdk_api_err)?;
 
         user_from_sdk_model(&resp.user)
+    }
+
+    /// Verify a bearer token with Tachyon's bootstrap endpoint.
+    ///
+    /// `/v1/me` accepts Tachyon-issued session JWTs as well as
+    /// external IdP tokens and returns tenant memberships, which
+    /// Library needs before applying repo visibility checks.
+    pub async fn bootstrap_token(
+        &self,
+        token: &str,
+    ) -> errors::Result<User> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "Authorization",
+            format!("Bearer {token}").parse().map_err(sdk_err)?,
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(sdk_err)?;
+        let config = Configuration {
+            base_path: self.base_url.clone(),
+            client,
+            ..Default::default()
+        };
+
+        let resp: BootstrapResponse =
+            Self::rest_get(&config, "/v1/me").await?;
+
+        user_from_bootstrap_response(&resp)
     }
 
     /// Verify a public API key via REST.
@@ -550,7 +592,6 @@ impl SdkAuthApp {
         email: Option<&str>,
         name: Option<&str>,
     ) -> errors::Result<User> {
-        let config = self.sdk_config();
         let req = tachyon_sdk::models::SignInWithPlatformRequest {
             platform_id: platform_id.to_string(),
             access_token: access_token.to_string(),
@@ -559,14 +600,31 @@ impl SdkAuthApp {
             name: Some(name.map(|s| s.to_string())),
         };
 
-        let resp =
-            tachyon_sdk::apis::auth_verify_api::sign_in_with_platform(
-                &config, req,
-            )
-            .await
-            .map_err(sdk_api_err)?;
+        let resp = self.post_sign_in_with_platform(req).await?;
 
         user_from_sdk_model(&resp.user)
+    }
+
+    async fn post_sign_in_with_platform(
+        &self,
+        req: tachyon_sdk::models::SignInWithPlatformRequest,
+    ) -> errors::Result<tachyon_sdk::models::SignInWithPlatformResponse>
+    {
+        let url =
+            format!("{}/auth/v1beta/sign-in-with-platform", self.base_url);
+        let resp = reqwest::Client::new()
+            .post(url)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", self.auth_token),
+            )
+            .header("x-operator-id", self.default_operator_id.as_str())
+            .json(&req)
+            .send()
+            .await
+            .map_err(|e| sdk_err(format!("HTTP request failed: {e}")))?;
+
+        handle_rest_response(resp).await
     }
 
     /// Search user by username via REST.
@@ -669,8 +727,10 @@ struct SdkOperatorResp {
 }
 
 #[derive(Debug, Deserialize)]
-struct SdkOperatorListResp {
-    operators: Vec<SdkOperatorResp>,
+#[serde(untagged)]
+enum SdkOperatorsByUserResp {
+    Wrapped { operators: Vec<SdkOperatorResp> },
+    Bare(Vec<SdkOperatorResp>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -688,6 +748,23 @@ struct RestUserResponse {
     role: String,
     #[serde(default)]
     tenants: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapResponse {
+    user: BootstrapUser,
+    tenants: Vec<BootstrapTenant>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapUser {
+    id: String,
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapTenant {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -983,6 +1060,36 @@ fn user_from_sdk_user_response(
         email_verified: None,
         image: None,
         role,
+        tenants,
+        metadata: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+}
+
+/// Construct a User from Tachyon's bootstrap response.
+fn user_from_bootstrap_response(
+    resp: &BootstrapResponse,
+) -> errors::Result<User> {
+    let id: UserId = resp
+        .user
+        .id
+        .parse()
+        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+    let tenants: Vec<TenantId> = resp
+        .tenants
+        .iter()
+        .map(|t| TenantId::new(&t.id))
+        .collect::<errors::Result<Vec<_>>>()?;
+
+    Ok(User {
+        id: id.clone(),
+        username: id.to_string(),
+        email: resp.user.email.clone(),
+        name: None,
+        email_verified: None,
+        image: None,
+        role: tachyon_sdk::auth::DefaultRole::General,
         tenants,
         metadata: None,
         created_at: chrono::Utc::now(),
@@ -1945,5 +2052,136 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         SdkAuthApp::rest_delete(&config, &path).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn sign_in_with_platform_sends_operator_header_directly(
+    ) -> anyhow::Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gy"
+                ),
+                "request was missing x-operator-id header: {request}"
+            );
+
+            let body = serde_json::json!({
+                "user": {
+                    "id": "us_01hs2yepy5hw4rz8pdq2wywnwt",
+                    "role": "GENERAL",
+                    "tenants": ["tn_01j702qf86pc2j35s0kv0gv3gy"]
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let tenant_id: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gy".parse()?;
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "pk_test_service_token",
+        );
+
+        let user = sdk
+            .sign_in_with_platform(
+                tenant_id.as_str(),
+                "access-token",
+                Some(true),
+                None,
+                None,
+            )
+            .await?;
+
+        assert_eq!(user.id().as_str(), "us_01hs2yepy5hw4rz8pdq2wywnwt");
+        server.await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn find_operators_by_user_uses_public_auth_endpoint(
+    ) -> anyhow::Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+            assert!(
+                request.contains("GET /v1/auth/operators/by-user?"),
+                "request did not call operators by-user endpoint: {request}"
+            );
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gy"
+                ),
+                "request was missing x-operator-id header: {request}"
+            );
+            assert!(
+                !request.to_ascii_lowercase().contains("authorization:"),
+                "public operator lookup must not send Authorization: {request}"
+            );
+
+            let body = serde_json::json!({
+                "operators": [{
+                    "id": "tn_01j702qf86pc2j35s0kv0gv3gy",
+                    "name": "Library",
+                    "operatorName": "library",
+                    "platformId": "tn_01j702qf86pc2j35s0kv0gv3gy"
+                }]
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let tenant_id: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gy".parse()?;
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "pk_test_service_token",
+        );
+
+        let operators = sdk
+            .find_operators_by_user(
+                &tenant_id,
+                "us_01hs2yepy5hw4rz8pdq2wywnwt",
+            )
+            .await?;
+
+        assert_eq!(operators.len(), 1);
+        assert_eq!(operators[0].id, tenant_id.as_str());
+        server.await?;
+
+        Ok(())
     }
 }

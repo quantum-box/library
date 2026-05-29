@@ -1,0 +1,14 @@
+.git
+.github
+.playwright-mcp
+.tachyon
+node_modules
+target
+storybook-static
+apps/web/node_modules
+apps/web/dist
+apps/web/.next
+apps/web/.vercel
+apps/client/node_modules
+**/.DS_Store
+**/*.log
