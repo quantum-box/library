@@ -1690,7 +1690,8 @@ mod tests {
         let marker = "#[cfg(test)]";
         let impl_source = source.split(marker).next().unwrap_or(source);
         assert!(
-            !impl_source.contains("Tenant does not belong to the Library platform"),
+            !impl_source
+                .contains("Tenant does not belong to the Library platform"),
             "seedLibraryTenant must accept non-Library platform tenants"
         );
     }
