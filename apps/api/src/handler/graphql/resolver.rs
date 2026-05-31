@@ -15,7 +15,6 @@ use async_graphql::{
 };
 use inbound_sync::providers::linear::LinearClient;
 use tachyon_sdk::auth::ExecutorAction;
-use tachyon_sdk::auth::MultiTenancyAction;
 use value_object::{self, TenantId};
 
 #[derive(Default)]
