@@ -1,4 +1,13 @@
-export const frontendVersion = '1.11.0'
+export const frontendVersion = '1.11.1'
+
+declare const __GIT_COMMIT_HASH__: string
+export const commitHash: string = (() => {
+  try {
+    return __GIT_COMMIT_HASH__
+  } catch {
+    return 'dev'
+  }
+})()
 
 export const fetchBackendVersion = async (): Promise<string | null> => {
   const baseUrl =

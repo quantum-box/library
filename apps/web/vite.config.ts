@@ -1,7 +1,16 @@
+import { execSync } from 'child_process'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { defineConfig } from 'vite'
+
+const gitCommitHash = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim()
+  } catch {
+    return 'unknown'
+  }
+})()
 
 export default defineConfig({
   plugins: [
@@ -22,5 +31,6 @@ export default defineConfig({
   },
   define: {
     'process.env': {},
+    __GIT_COMMIT_HASH__: JSON.stringify(gitCommitHash),
   },
 })
