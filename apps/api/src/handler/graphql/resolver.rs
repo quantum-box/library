@@ -75,10 +75,7 @@ impl LibraryQuery {
         // platform. A user with tachyon tenants but no Library
         // membership would get an empty list from get_user_by_id_full
         // with the Library operator, causing the wizard to never show.
-        let user = sdk
-            .get_caller_user()
-            .await
-            .map_err(|e| e.extend())?;
+        let user = sdk.get_caller_user().await.map_err(|e| e.extend())?;
 
         let mut candidates = Vec::new();
         for tenant in user.tenants() {
