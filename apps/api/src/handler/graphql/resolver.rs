@@ -15,6 +15,7 @@ use async_graphql::{
 };
 use inbound_sync::providers::linear::LinearClient;
 use tachyon_sdk::auth::ExecutorAction;
+use tachyon_sdk::auth::MultiTenancyAction;
 use value_object::{self, TenantId};
 
 #[derive(Default)]
@@ -1231,8 +1232,6 @@ impl Repo {
     /// including org owners who have implicit owner access.
     #[tracing::instrument(name = "library_repo_members", skip(self, ctx))]
     async fn members(&self, ctx: &Context<'_>) -> Result<Vec<RepoMember>> {
-        use tachyon_sdk::auth::MultiTenancyAction;
-
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
