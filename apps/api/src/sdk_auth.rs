@@ -548,6 +548,18 @@ impl SdkAuthApp {
         user_from_bootstrap_response(&resp)
     }
 
+    /// Call `/v1/me` using the current `auth_token` and return
+    /// the full user with all tenant memberships.
+    ///
+    /// Unlike `get_user_by_id_full`, this uses no
+    /// `x-operator-id` header so tachyon returns memberships
+    /// across all platforms, not just the Library platform.
+    /// Use this when you need the caller's complete tenant
+    /// list (e.g. onboarding wizard seed candidates).
+    pub async fn get_caller_user(&self) -> errors::Result<User> {
+        self.bootstrap_token(&self.auth_token).await
+    }
+
     /// Verify a public API key via REST.
     pub async fn verify_api_key(
         &self,

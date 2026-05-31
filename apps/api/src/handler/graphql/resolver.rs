@@ -70,13 +70,15 @@ impl LibraryQuery {
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
-        let operator_id =
-            multi_tenancy.get_operator_id().map_err(|e| e.extend())?;
+        // Use /v1/me (no x-operator-id) to retrieve all tenant
+        // memberships across every platform, not just the Library
+        // platform. A user with tachyon tenants but no Library
+        // membership would get an empty list from get_user_by_id_full
+        // with the Library operator, causing the wizard to never show.
         let user = sdk
-            .get_user_by_id_full(&operator_id, executor.get_id())
+            .get_caller_user()
             .await
-            .map_err(|e| e.extend())?
-            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+            .map_err(|e| e.extend())?;
 
         let mut candidates = Vec::new();
         for tenant in user.tenants() {
