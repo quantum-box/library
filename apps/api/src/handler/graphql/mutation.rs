@@ -20,7 +20,6 @@ use outbound_sync::{SyncDataInputData, SyncPayload, SyncTarget};
 use sha2::Sha256;
 use tachyon_sdk::auth::{
     AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
-    MultiTenancyAction,
 };
 use value_object::{
     IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, TenantId, Text,
