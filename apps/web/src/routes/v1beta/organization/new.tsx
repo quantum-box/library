@@ -83,7 +83,7 @@ function NewOrganizationPage() {
   const [importing, setImporting] = useState(false)
 
   const formSchema = z.object({
-    name: z.string().min(1, 'Organization name is required.'),
+    name: z.string().min(1, t.v1beta.newOrg.validation.minLength.replace('{min}', '1')),
     username: z
       .string()
       .min(3, t.v1beta.newOrg.validation.minLength.replace('{min}', '3'))
@@ -122,14 +122,21 @@ function NewOrganizationPage() {
         }>(AccessibleTenantsQuery, undefined, {
           accessToken: session.user.accessToken,
         })
-        setAccessibleTenants(result.accessibleTenants)
-        const firstImportable = result.accessibleTenants.find(
+        const tenants = [...result.accessibleTenants].sort((a, b) => {
+          const byName = a.name.localeCompare(b.name)
+          if (byName !== 0) return byName
+          const byUsername = a.username.localeCompare(b.username)
+          if (byUsername !== 0) return byUsername
+          return a.tenantId.localeCompare(b.tenantId)
+        })
+        setAccessibleTenants(tenants)
+        const firstImportable = tenants.find(
           (tenant) => !tenant.hasLibraryOrg,
         )
         if (firstImportable) {
           setSelectedTenantId(firstImportable.tenantId)
-        } else if (result.accessibleTenants.length > 0) {
-          setSelectedTenantId(result.accessibleTenants[0].tenantId)
+        } else if (tenants.length > 0) {
+          setSelectedTenantId(tenants[0].tenantId)
         }
       } catch (error) {
         errorToast(error)
@@ -179,8 +186,8 @@ function NewOrganizationPage() {
     if (!session?.user) {
       toast({
         variant: 'destructive',
-        title: 'Sign in required',
-        description: 'Please sign in to create a new organization.',
+        title: t.v1beta.newOrg.signInRequired,
+        description: t.v1beta.newOrg.signInDescription,
       })
       return
     }
@@ -222,10 +229,10 @@ function NewOrganizationPage() {
           </CardHeader>
           <CardContent className='space-y-4'>
             <p className='text-sm text-muted-foreground'>
-              Sign in to create a new organization.
+              {t.v1beta.newOrg.signInDescription}
             </p>
             <Button asChild>
-              <Link to='/sign_in'>Sign in</Link>
+              <Link to='/sign_in'>{t.v1beta.newOrg.signInRequired}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -254,11 +261,11 @@ function NewOrganizationPage() {
             {tenantsLoading ? (
               <div className='flex items-center gap-2 text-sm text-muted-foreground'>
                 <Loader2 className='h-4 w-4 animate-spin' />
-                <span>Loading tenants...</span>
+                <span>{t.v1beta.newOrg.loadingTenants}</span>
               </div>
             ) : accessibleTenants.length === 0 ? (
               <p className='text-sm text-muted-foreground'>
-                No Tachyon tenants are available for this account.
+                {t.v1beta.newOrg.noTenants}
               </p>
             ) : (
               <div className='flex flex-col gap-3 sm:flex-row sm:items-end'>
@@ -277,7 +284,7 @@ function NewOrganizationPage() {
                         <SelectItem key={tenant.tenantId} value={tenant.tenantId}>
                           {tenant.name} (@{tenant.username})
                           {tenant.hasLibraryOrg
-                            ? ` — ${t.v1beta.newOrg.alreadyInLibrary}`
+                            ? ` - ${t.v1beta.newOrg.alreadyInLibrary}`
                             : ''}
                         </SelectItem>
                       ))}
@@ -285,7 +292,10 @@ function NewOrganizationPage() {
                   </Select>
                   {selectedTenant && !selectedTenant.hasLibraryOrg ? (
                     <p className='text-xs text-muted-foreground'>
-                      {selectedTenant.staffCount} staff members
+                      {t.v1beta.newOrg.staffMembers.replace(
+                        '{count}',
+                        String(selectedTenant.staffCount),
+                      )}
                     </p>
                   ) : null}
                 </div>
@@ -325,11 +335,11 @@ function NewOrganizationPage() {
                 name='name'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Organization name</FormLabel>
+                    <FormLabel>{t.v1beta.newOrg.name}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder={t.v1beta.newOrg.userNamePlaceholder}
+                        placeholder={t.v1beta.newOrg.namePlaceholder}
                       />
                     </FormControl>
                     <FormMessage />
@@ -359,7 +369,7 @@ function NewOrganizationPage() {
 
               <Button type='submit' disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting
-                  ? 'Creating...'
+                  ? t.v1beta.newOrg.creating
                   : t.v1beta.newOrg.createOrganization}
               </Button>
             </form>

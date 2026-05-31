@@ -1,3 +1,14 @@
+"""
+Tachyon tenant visible to the caller, with Library org linkage status.
+"""
+type AccessibleTenant {
+	tenantId: String!
+	name: String!
+	username: String!
+	staffCount: Int!
+	hasLibraryOrg: Boolean!
+}
+
 input AddDataInputData {
 	actor: String!
 	orgUsername: String!
@@ -258,6 +269,13 @@ Implement the DateTime<Utc> scalar
 The input/output is a string in RFC3339 format.
 """
 scalar DateTime
+
+type DateValue {
+	"""
+	Date in ISO 8601 format (YYYY-MM-DD)
+	"""
+	date: String!
+}
 
 """
 Default role assigned to users within an operator.
@@ -1246,7 +1264,7 @@ type MultiSelectValue {
 
 type Mutation {
 	"""
-	TODO: add English documentation
+	Delete a data item from a Library repository.
 	"""
 	check: String!
 	"""
@@ -1306,6 +1324,10 @@ type Mutation {
 	TODO: add English documentation
 	"""
 	updateData(input: UpdateDataInputData!): Data!
+	"""
+	TODO: add English documentation
+	"""
+	deleteData(orgUsername: String!, repoUsername: String!, dataId: String!): String!
 	"""
 	TODO: add English documentation
 	"""
@@ -1381,15 +1403,15 @@ type Mutation {
 	"""
 	githubDisconnect: Boolean!
 	"""
-	[LIBRARY-API] Sync data to GitHub. Non-GA; rejected in Library GA.
+	[LIBRARY-API] Sync data to GitHub
 	"""
 	syncDataToGithub(input: SyncToGitHubInput!): SyncResult!
 	"""
-	[LIBRARY-API] Bulk sync ext_github property for all data items. Non-GA; rejected in Library GA.
+	[LIBRARY-API] Bulk sync ext_github property for all data items
 	"""
 	bulkSyncExtGithub(input: BulkSyncExtGithubInput!): BulkSyncExtGithubResult!
 	"""
-	[LIBRARY-API] Enable GitHub sync by creating the ext_github property. Non-GA; rejected in Library GA.
+	[LIBRARY-API] Enable GitHub sync by creating the ext_github property (system use only)
 	"""
 	enableGithubSync(input: EnableGitHubSyncInput!): EnableGitHubSyncResult!
 	"""
@@ -1559,6 +1581,7 @@ type Organization {
 	name: String!
 	username: String!
 	description: String
+	website: String
 	repos: [Repo!]!
 	users: [User!]!
 }
@@ -1615,7 +1638,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | ImageValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -1713,7 +1736,7 @@ type Query {
 	me: User!
 	tenantSeedCandidates: [TenantSeedCandidate!]!
 	"""
-	[LIBRARY-API] All Tachyon tenants the caller can access, with Library org linkage.
+	[LIBRARY-API] All Tachyon tenants the caller can access, with Library org flag.
 	"""
 	accessibleTenants: [AccessibleTenant!]!
 	organization(username: String!): Organization!
@@ -2102,14 +2125,6 @@ type TenantSeedCandidate {
 	staffCount: Int!
 }
 
-type AccessibleTenant {
-	tenantId: String!
-	name: String!
-	username: String!
-	staffCount: Int!
-	hasLibraryOrg: Boolean!
-}
-
 """
 Input for triggering on-demand sync.
 """
@@ -2223,9 +2238,9 @@ type User {
 	createdAt: DateTime!
 	updatedAt: DateTime!
 	"""
-	Resolve operators accessible to this user
+	Resolve operator organizations accessible to this user
 	"""
-	operators: [Operator!]!
+	organizations: [Operator!]!
 }
 
 """

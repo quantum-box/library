@@ -120,6 +120,13 @@ impl LibraryQuery {
             });
         }
 
+        candidates.sort_by(|a, b| {
+            a.name
+                .cmp(&b.name)
+                .then_with(|| a.username.cmp(&b.username))
+                .then_with(|| a.tenant_id.cmp(&b.tenant_id))
+        });
+
         Ok(candidates)
     }
 
@@ -180,6 +187,13 @@ impl LibraryQuery {
                 has_library_org,
             });
         }
+
+        tenants.sort_by(|a, b| {
+            a.name
+                .cmp(&b.name)
+                .then_with(|| a.username.cmp(&b.username))
+                .then_with(|| a.tenant_id.cmp(&b.tenant_id))
+        });
 
         Ok(tenants)
     }
@@ -1308,5 +1322,6 @@ mod tenant_seed_candidate_tests {
         assert!(source.contains("async fn accessible_tenants"));
         assert!(source.contains("has_library_org"));
         assert!(source.contains("get_caller_user"));
+        assert!(source.contains("tenants.sort_by"));
     }
 }

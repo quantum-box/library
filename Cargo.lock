@@ -3472,7 +3472,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "library-api"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "arrow",
