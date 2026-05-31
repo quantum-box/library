@@ -20,7 +20,6 @@ use outbound_sync::{SyncDataInputData, SyncPayload, SyncTarget};
 use sha2::Sha256;
 use tachyon_sdk::auth::{
     AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
-    MultiTenancyAction,
 };
 use value_object::{
     IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, TenantId, Text,
@@ -180,13 +179,7 @@ impl LibraryMutation {
 
         let tenant_id =
             TenantId::new(&tenant_id).map_err(|e| e.extend())?;
-        let operator_id =
-            multi_tenancy.get_operator_id().map_err(|e| e.extend())?;
-        let user = sdk
-            .get_user_by_id_full(&operator_id, executor.get_id())
-            .await
-            .map_err(|e| e.extend())?
-            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+        let user = sdk.get_caller_user().await.map_err(|e| e.extend())?;
 
         if !user.tenants().contains(&tenant_id) {
             return Err(errors::permission_denied!(
@@ -1693,6 +1686,10 @@ mod tests {
             !impl_source
                 .contains("Tenant does not belong to the Library platform"),
             "seedLibraryTenant must accept non-Library platform tenants"
+        );
+        assert!(
+            impl_source.contains("get_caller_user"),
+            "seedLibraryTenant must authorize against all caller tenant memberships"
         );
     }
 }

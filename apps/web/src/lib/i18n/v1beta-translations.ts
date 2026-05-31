@@ -61,11 +61,16 @@ export const v1betaTranslations = {
 			title: 'Create a new organization and project',
 			description:
 				'A project contains all project files, including the revision history. Already have a project project',
+			name: 'Organization name',
+			namePlaceholder: 'Organization name',
 			userName: 'User name',
 			userNamePlaceholder: 'User name',
 			userNameHint:
 				'Username may only contain alphanumeric characters or single hyphens, and cannot begin or end with a hyphen.',
 			createOrganization: 'Create organization',
+			creating: 'Creating...',
+			signInRequired: 'Sign in required',
+			signInDescription: 'Please sign in to create a new organization.',
 			tips: 'Tips',
 			tipsList: {
 				lowercaseOnly: 'Use lowercase letters, numbers, and hyphens only.',
@@ -84,6 +89,18 @@ export const v1betaTranslations = {
 					'Form validation error. Please check the form and try again.',
 				generic: 'Something went wrong',
 			},
+			tachyonTenant: 'Tachyon tenant',
+			tachyonTenantPlaceholder: 'Select a tenant',
+			tachyonTenantDescription:
+				'Import an existing Tachyon organization into Library.',
+			importToLibrary: 'Import to Library',
+			importing: 'Importing...',
+			alreadyInLibrary: 'Already in Library',
+			openInLibrary: 'Open in Library',
+			orCreateManually: 'Or create a new organization manually',
+			loadingTenants: 'Loading tenants...',
+			noTenants: 'No Tachyon tenants are available for this account.',
+			staffMembers: '{count} staff members',
 		},
 		repository: {
 			title: 'Repository',
@@ -870,11 +887,16 @@ export const v1betaTranslations = {
 			title: '新しい組織とプロジェクトを作成',
 			description:
 				'プロジェクトには、改訂履歴を含むすべてのプロジェクトファイルが含まれます。',
+			name: '組織名',
+			namePlaceholder: '組織名',
 			userName: 'ユーザー名',
 			userNamePlaceholder: 'ユーザー名',
 			userNameHint:
 				'ユーザー名には英数字とハイフンのみ使用でき、ハイフンで始めたり終わったりすることはできません。',
 			createOrganization: '組織を作成',
+			creating: '作成中...',
+			signInRequired: 'サインインが必要です',
+			signInDescription: '新しい組織を作成するにはサインインしてください。',
 			tips: 'ヒント',
 			tipsList: {
 				lowercaseOnly: '小文字、数字、ハイフンのみ使用できます。',
@@ -892,6 +914,18 @@ export const v1betaTranslations = {
 					'フォーム検証エラー。フォームを確認して再試行してください。',
 				generic: 'エラーが発生しました',
 			},
+			tachyonTenant: 'Tachyon テナント',
+			tachyonTenantPlaceholder: 'テナントを選択',
+			tachyonTenantDescription:
+				'既存の Tachyon 組織を Library に取り込みます。',
+			importToLibrary: 'Library に取り込む',
+			importing: '取り込み中...',
+			alreadyInLibrary: 'Library に登録済み',
+			openInLibrary: 'Library で開く',
+			orCreateManually: 'または新しい組織を手動で作成',
+			loadingTenants: 'テナントを読み込んでいます...',
+			noTenants: 'このアカウントで利用可能な Tachyon テナントはありません。',
+			staffMembers: '{count} 人のスタッフ',
 		},
 		repository: {
 			title: 'リポジトリ',

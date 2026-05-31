@@ -491,7 +491,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.0
+  version: 1.11.1
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:
