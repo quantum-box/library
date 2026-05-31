@@ -1712,6 +1712,10 @@ type Query {
 	errTest: String!
 	me: User!
 	tenantSeedCandidates: [TenantSeedCandidate!]!
+	"""
+	[LIBRARY-API] All Tachyon tenants the caller can access, with Library org linkage.
+	"""
+	accessibleTenants: [AccessibleTenant!]!
 	organization(username: String!): Organization!
 	repo(orgUsername: String!, repoUsername: String!): Repo!
 	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!
@@ -2096,6 +2100,14 @@ type TenantSeedCandidate {
 	name: String!
 	username: String!
 	staffCount: Int!
+}
+
+type AccessibleTenant {
+	tenantId: String!
+	name: String!
+	username: String!
+	staffCount: Int!
+	hasLibraryOrg: Boolean!
 }
 
 """

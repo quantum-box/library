@@ -84,6 +84,15 @@ export const v1betaTranslations = {
 					'Form validation error. Please check the form and try again.',
 				generic: 'Something went wrong',
 			},
+			tachyonTenant: 'Tachyon tenant',
+			tachyonTenantPlaceholder: 'Select a tenant',
+			tachyonTenantDescription:
+				'Import an existing Tachyon organization into Library.',
+			importToLibrary: 'Import to Library',
+			importing: 'Importing...',
+			alreadyInLibrary: 'Already in Library',
+			openInLibrary: 'Open in Library',
+			orCreateManually: 'Or create a new organization manually',
 		},
 		repository: {
 			title: 'Repository',
@@ -892,6 +901,15 @@ export const v1betaTranslations = {
 					'フォーム検証エラー。フォームを確認して再試行してください。',
 				generic: 'エラーが発生しました',
 			},
+			tachyonTenant: 'Tachyon テナント',
+			tachyonTenantPlaceholder: 'テナントを選択',
+			tachyonTenantDescription:
+				'既存の Tachyon 組織を Library に取り込みます。',
+			importToLibrary: 'Library に取り込む',
+			importing: '取り込み中...',
+			alreadyInLibrary: 'Library に登録済み',
+			openInLibrary: 'Library で開く',
+			orCreateManually: 'または新しい組織を手動で作成',
 		},
 		repository: {
 			title: 'リポジトリ',

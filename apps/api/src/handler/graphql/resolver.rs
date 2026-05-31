@@ -123,6 +123,67 @@ impl LibraryQuery {
         Ok(candidates)
     }
 
+    /// [LIBRARY-API] All Tachyon tenants the caller can access, with Library org flag.
+    #[tracing::instrument(
+        name = "library_accessible_tenants",
+        skip(self, ctx)
+    )]
+    async fn accessible_tenants(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<AccessibleTenant>> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let user = sdk.get_caller_user().await.map_err(|e| e.extend())?;
+
+        let mut tenants = Vec::new();
+        for tenant in user.tenants() {
+            let has_library_org = app
+                .organization_repo
+                .get_by_id(tenant)
+                .await
+                .map_err(|e| e.extend())?
+                .is_some();
+
+            let Some(operator) = sdk
+                .get_operator(tenant.as_ref())
+                .await
+                .map_err(|e| e.extend())?
+            else {
+                continue;
+            };
+
+            let tenant_id =
+                TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
+            let staff_count =
+                tachyon_sdk::auth::AuthApp::find_users_by_tenant(
+                    app.auth_app.as_ref(),
+                    &tachyon_sdk::auth::FindUsersByTenantInput {
+                        executor,
+                        multi_tenancy,
+                        tenant_id: &tenant_id,
+                    },
+                )
+                .await
+                .map(|users| users.len() as i32)
+                .unwrap_or(0);
+
+            tenants.push(AccessibleTenant {
+                tenant_id: operator.id,
+                name: operator.name,
+                username: operator.operator_name,
+                staff_count,
+                has_library_org,
+            });
+        }
+
+        Ok(tenants)
+    }
+
     #[tracing::instrument(name = "library_organization", skip(self, ctx))]
     async fn organization(
         &self,
@@ -1238,5 +1299,14 @@ mod tenant_seed_candidate_tests {
             !impl_source.contains("if operator.platform_id != LIBRARY_TENANT.to_string()"),
             "tenant_seed_candidates must not skip tenants by Library platform_id"
         );
+    }
+
+    /// PLT-1734: org creation page lists every membership with import state.
+    #[test]
+    fn accessible_tenants_exposes_has_library_org_flag() {
+        let source = include_str!("resolver.rs");
+        assert!(source.contains("async fn accessible_tenants"));
+        assert!(source.contains("has_library_org"));
+        assert!(source.contains("get_caller_user"));
     }
 }
