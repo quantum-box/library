@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import {
   fetchLibraryOrganizations,
+  fetchLibraryRepositories,
   type LibraryOrganization,
   type LibraryRepository,
 } from '../lib/recordsApi'
@@ -26,7 +27,10 @@ interface DatabasesContextValue {
   databases: WorkspaceDatabase[]
   organizations: WorkspaceOrganization[]
   selectedOrganizationId: string | null
+  repositoriesLoading: boolean
+  repositoriesError: string | null
   setSelectedOrganizationId: (organizationId: string | null) => void
+  refreshRepositories: () => Promise<void>
   addDatabase: (label: string) => WorkspaceDatabase | null
   removeDatabase: (databaseId: string) => boolean
   canRemoveDatabase: (databaseId: string | null | undefined) => boolean
@@ -75,55 +79,52 @@ function defaultOrganizationId(
   return orgs.find((org) => org.repos.length > 0)?.id ?? orgs[0]?.id ?? null
 }
 
+function repositoryLoadErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  return 'Failed to load repositories'
+}
+
 export function DatabasesProvider({ children }: { children: ReactNode }) {
   const [databases, setDatabases] = useState<WorkspaceDatabase[]>([])
   const [organizations, setOrganizations] = useState<WorkspaceOrganization[]>([])
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null)
+  const [repositoriesLoading, setRepositoriesLoading] = useState(true)
+  const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-
-    fetchLibraryOrganizations()
-      .then((orgs) => {
-        if (cancelled) return
-        const nextOrganizations = uniqueOrganizations(orgs)
-        setOrganizations(nextOrganizations)
-        setSelectedOrganizationId((current) => defaultOrganizationId(orgs, current))
-        setDatabases(orgs.flatMap((org) => org.repos).map(repoToDatabase))
-      })
-      .catch((error: unknown) => {
-        console.warn('Failed to load Library repositories', error)
-        if (!cancelled) {
-          setOrganizations([])
-          setSelectedOrganizationId(null)
-          setDatabases([])
-        }
-      })
-
-    return () => {
-      cancelled = true
+  const refreshRepositories = useCallback(async () => {
+    setRepositoriesLoading(true)
+    setRepositoriesError(null)
+    try {
+      const [repos, orgs] = await Promise.all([
+        fetchLibraryRepositories(),
+        fetchLibraryOrganizations(),
+      ])
+      const nextOrganizations = uniqueOrganizations(orgs)
+      setOrganizations(nextOrganizations)
+      setSelectedOrganizationId((current) => defaultOrganizationId(orgs, current))
+      setDatabases(repos.map(repoToDatabase))
+    } catch (error: unknown) {
+      console.warn('Failed to load Library repositories', error)
+      setRepositoriesError(repositoryLoadErrorMessage(error))
+      setOrganizations([])
+      setSelectedOrganizationId(null)
+      setDatabases([])
+    } finally {
+      setRepositoriesLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void refreshRepositories()
+  }, [refreshRepositories])
 
   useEffect(() => {
     const reload = () => {
-      fetchLibraryOrganizations()
-        .then((orgs) => {
-          const nextOrganizations = uniqueOrganizations(orgs)
-          setOrganizations(nextOrganizations)
-          setSelectedOrganizationId((current) => defaultOrganizationId(orgs, current))
-          setDatabases(orgs.flatMap((org) => org.repos).map(repoToDatabase))
-        })
-        .catch((error: unknown) => {
-          console.warn('Failed to load Library repositories', error)
-          setOrganizations([])
-          setSelectedOrganizationId(null)
-          setDatabases([])
-        })
+      void refreshRepositories()
     }
     window.addEventListener('library-auth-change', reload)
     return () => window.removeEventListener('library-auth-change', reload)
-  }, [])
+  }, [refreshRepositories])
 
   const getDatabase = useCallback(
     (databaseId: string | undefined) =>
@@ -140,7 +141,10 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       databases,
       organizations,
       selectedOrganizationId,
+      repositoriesLoading,
+      repositoriesError,
       setSelectedOrganizationId,
+      refreshRepositories,
       addDatabase,
       removeDatabase,
       canRemoveDatabase,
@@ -152,7 +156,10 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       databases,
       getDatabase,
       organizations,
+      refreshRepositories,
       removeDatabase,
+      repositoriesError,
+      repositoriesLoading,
       selectedOrganizationId,
     ]
   )
