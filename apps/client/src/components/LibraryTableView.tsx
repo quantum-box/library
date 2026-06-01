@@ -10,8 +10,14 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchLibraryRepoTableData, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
+import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import { getLibraryDataPropertyValue, propertyValueText } from '../lib/libraryTable/libraryPropertyFormat'
-import { LibraryPropertyCell, libraryRowSearchText } from '../lib/libraryTable/libraryPropertyCells'
+import { libraryRowSearchText } from '../lib/libraryTable/libraryPropertyCells'
+import {
+  LibraryNameEditableCell,
+  LibraryPropertyEditableCell,
+} from '../lib/libraryTable/libraryPropertyEditableCell'
+import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { Kbd, KbdGroup } from './Kbd'
 
 const ROW_HEIGHT = 40
@@ -24,6 +30,7 @@ interface LibraryTableViewProps {
   repoLabel?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
+  onDataDeleted?: (dataId: string) => void
   globalFilter?: string
   onGlobalFilterChange?: (value: string) => void
 }
@@ -33,27 +40,6 @@ function repositoryLoadErrorMessage(error: unknown): string {
   return 'Failed to load repository data'
 }
 
-function buildPropertyColumns(properties: LibraryProperty[]) {
-  return properties.map((property) =>
-    columnHelper.display({
-      id: `property:${property.id}`,
-      header: property.name,
-      size: property.typ === 'Markdown' || property.typ === 'Html' ? 220 : 160,
-      meta: { property },
-      cell: ({ row }) => (
-        <LibraryPropertyCell item={row.original} property={property} />
-      ),
-      sortingFn: (rowA, rowB) => {
-        const valueA = getLibraryDataPropertyValue(rowA.original, property.id)
-        const valueB = getLibraryDataPropertyValue(rowB.original, property.id)
-        const textA = valueA ? propertyValueText(property, valueA) ?? '' : ''
-        const textB = valueB ? propertyValueText(property, valueB) ?? '' : ''
-        return textA.localeCompare(textB, 'ja')
-      },
-    })
-  )
-}
-
 export function LibraryTableView({
   org,
   repo,
@@ -61,6 +47,7 @@ export function LibraryTableView({
   repoLabel,
   selectedDataId,
   onSelectData,
+  onDataDeleted,
   globalFilter: controlledGlobalFilter,
   onGlobalFilterChange,
 }: LibraryTableViewProps) {
@@ -68,22 +55,30 @@ export function LibraryTableView({
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [creatingRow, setCreatingRow] = useState(false)
+  const [newRowName, setNewRowName] = useState('')
+  const [pendingDelete, setPendingDelete] = useState<LibraryDataItem | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('')
   const globalFilter = controlledGlobalFilter ?? internalGlobalFilter
   const setGlobalFilter = onGlobalFilterChange ?? setInternalGlobalFilter
   const parentRef = useRef<HTMLDivElement>(null)
+  const newRowInputRef = useRef<HTMLInputElement>(null)
+
+  const repoTarget = useMemo(
+    () => ({ org, repo, operatorId, repoName: repoLabel }),
+    [org, repo, operatorId, repoLabel]
+  )
 
   const reload = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const payload = await fetchLibraryRepoTableData({
-        org,
-        repo,
-        operatorId,
-        repoName: repoLabel,
-      })
+      const payload = await fetchLibraryRepoTableData(repoTarget)
       setItems(payload.items)
       setProperties(payload.properties)
     } catch (loadError: unknown) {
@@ -94,7 +89,7 @@ export function LibraryTableView({
     } finally {
       setLoading(false)
     }
-  }, [org, repo, operatorId, repoLabel])
+  }, [repoTarget])
 
   useEffect(() => {
     void reload()
@@ -108,19 +103,147 @@ export function LibraryTableView({
     return () => window.removeEventListener('library-auth-change', handleAuthChange)
   }, [reload])
 
+  useEffect(() => {
+    if (creatingRow && newRowInputRef.current) {
+      newRowInputRef.current.focus()
+    }
+  }, [creatingRow])
+
+  const persistItem = useCallback(
+    async (item: LibraryDataItem) => {
+      setSaving(true)
+      setMutationError(null)
+      try {
+        const saved = await updateLibraryData(repoTarget, properties, item)
+        setItems((current) => current.map((row) => (row.id === saved.id ? saved : row)))
+        return saved
+      } catch (saveError: unknown) {
+        setMutationError(repositoryLoadErrorMessage(saveError))
+        throw saveError
+      } finally {
+        setSaving(false)
+      }
+    },
+    [properties, repoTarget]
+  )
+
+  const handlePropertyCommit = useCallback(
+    (previous: LibraryDataItem, next: LibraryDataItem) => {
+      void persistItem(next).catch(() => {
+        setItems((current) =>
+          current.map((row) => (row.id === previous.id ? previous : row))
+        )
+      })
+    },
+    [persistItem]
+  )
+
+  const handleNameCommit = useCallback(
+    (item: LibraryDataItem, name: string) => {
+      if (name === item.name) return
+      void persistItem({ ...item, name }).catch(() => undefined)
+    },
+    [persistItem]
+  )
+
+  const handleCreateRow = useCallback(async () => {
+    const trimmed = newRowName.trim()
+    if (!trimmed) {
+      setCreatingRow(false)
+      setNewRowName('')
+      return
+    }
+    setSaving(true)
+    setMutationError(null)
+    try {
+      const created = await addLibraryData(repoTarget, properties, {
+        name: trimmed,
+        propertyData: [],
+      })
+      setItems((current) => [created, ...current])
+      setCreatingRow(false)
+      setNewRowName('')
+    } catch (createError: unknown) {
+      setMutationError(repositoryLoadErrorMessage(createError))
+    } finally {
+      setSaving(false)
+    }
+  }, [newRowName, properties, repoTarget])
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deleteLibraryData(repoTarget, pendingDelete.id)
+      setItems((current) => current.filter((row) => row.id !== pendingDelete.id))
+      onDataDeleted?.(pendingDelete.id)
+      setPendingDelete(null)
+    } catch (deleteErr: unknown) {
+      setDeleteError(repositoryLoadErrorMessage(deleteErr))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }, [onDataDeleted, pendingDelete, repoTarget])
+
   const columns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'actions',
+        header: '',
+        size: 44,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <button
+            type="button"
+            data-testid={`library-table-delete-${row.original.id}`}
+            className="rounded px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-status-cancelled"
+            disabled={saving}
+            title="Delete row"
+            onClick={(event) => {
+              event.stopPropagation()
+              setPendingDelete(row.original)
+              setDeleteError(null)
+            }}
+          >
+            ×
+          </button>
+        ),
+      }),
       columnHelper.accessor('name', {
         id: 'name',
         header: 'Name',
         size: 240,
-        cell: (info) => (
-          <span className="block truncate text-sm font-medium text-foreground">
-            {info.getValue()}
-          </span>
+        cell: ({ row }) => (
+          <LibraryNameEditableCell
+            item={row.original}
+            disabled={saving}
+            onCommit={(name) => handleNameCommit(row.original, name)}
+          />
         ),
       }),
-      ...buildPropertyColumns(properties),
+      ...properties.map((property) =>
+        columnHelper.display({
+          id: `property:${property.id}`,
+          header: property.name,
+          size: property.typ === 'Markdown' || property.typ === 'Html' ? 220 : 160,
+          cell: ({ row }) => (
+            <LibraryPropertyEditableCell
+              item={row.original}
+              property={property}
+              disabled={saving}
+              onCommit={(next) => handlePropertyCommit(row.original, next)}
+            />
+          ),
+          sortingFn: (rowA, rowB) => {
+            const valueA = getLibraryDataPropertyValue(rowA.original, property.id)
+            const valueB = getLibraryDataPropertyValue(rowB.original, property.id)
+            const textA = valueA ? propertyValueText(property, valueA) ?? '' : ''
+            const textB = valueB ? propertyValueText(property, valueB) ?? '' : ''
+            return textA.localeCompare(textB, 'ja')
+          },
+        })
+      ),
       columnHelper.accessor('updatedAt', {
         id: 'updatedAt',
         header: 'Updated',
@@ -139,7 +262,7 @@ export function LibraryTableView({
         },
       }),
     ],
-    [properties]
+    [handleNameCommit, handlePropertyCommit, properties, saving]
   )
 
   const table = useReactTable({
@@ -172,6 +295,19 @@ export function LibraryTableView({
 
   return (
     <div className="flex h-full flex-col" data-testid="library-table-view">
+      <LibraryDeleteDataDialog
+        open={Boolean(pendingDelete)}
+        dataName={pendingDelete?.name ?? ''}
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (deleteBusy) return
+          setPendingDelete(null)
+          setDeleteError(null)
+        }}
+        onConfirm={() => void handleConfirmDelete()}
+      />
+
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:gap-3 md:px-4">
         <div className="relative min-w-0 flex-1 md:max-w-xs">
           <input
@@ -190,19 +326,74 @@ export function LibraryTableView({
             </KbdGroup>
           </div>
         </div>
+        <button
+          type="button"
+          data-testid="library-table-add-row"
+          className="shrink-0 rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          disabled={loading || saving}
+          onClick={() => {
+            setCreatingRow(true)
+            setNewRowName('')
+          }}
+        >
+          + New data
+        </button>
         <span className="shrink-0 text-xs text-subtle">
           {loading ? 'Loading…' : `${rows.length} data`}
+          {saving ? ' · Saving…' : ''}
         </span>
         {repoLabel && (
           <span className="hidden truncate text-xs text-subtle md:inline">{repoLabel}</span>
         )}
       </div>
 
+      {mutationError && (
+        <div className="border-b border-border px-4 py-2 text-xs text-status-cancelled" data-testid="library-table-mutation-error">
+          {mutationError}
+        </div>
+      )}
+
+      {creatingRow && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+          <input
+            ref={newRowInputRef}
+            data-testid="library-table-new-row-name"
+            type="text"
+            value={newRowName}
+            placeholder="Data name"
+            onChange={(event) => setNewRowName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void handleCreateRow()
+              if (event.key === 'Escape') {
+                setCreatingRow(false)
+                setNewRowName('')
+              }
+            }}
+            className="min-w-0 flex-1 rounded border border-accent bg-canvas px-2 py-1.5 text-sm text-foreground outline-none"
+          />
+          <button
+            type="button"
+            className="rounded bg-accent px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+            disabled={saving || !newRowName.trim()}
+            onClick={() => void handleCreateRow()}
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            className="rounded bg-surface-hover px-2 py-1 text-xs text-muted"
+            onClick={() => {
+              setCreatingRow(false)
+              setNewRowName('')
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {loading && (
-        <div
-          className="px-4 py-6 text-sm text-subtle"
-          data-testid="library-table-loading"
-        >
+        <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-loading">
           Loading repository data…
         </div>
       )}
@@ -221,15 +412,15 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && !error && rows.length === 0 && (
+      {!loading && !error && rows.length === 0 && !creatingRow && (
         <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-empty">
-          No data in this repository
+          No data in this repository. Use &quot;+ New data&quot; to add a row.
         </div>
       )}
 
       {!loading && !error && rows.length > 0 && (
         <div ref={parentRef} className="flex-1 overflow-auto" style={{ minHeight: 240 }}>
-          <table className="w-full" style={{ minWidth: `${Math.max(900, properties.length * 160)}px` }}>
+          <table className="w-full" style={{ minWidth: `${Math.max(900, properties.length * 160 + 300)}px` }}>
             <thead className="sticky top-0 z-10">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>

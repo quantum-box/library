@@ -918,6 +918,14 @@ function DatabasesLayout() {
                   filters: { ...current.filters, search: searchValue },
                 }))
               }
+              onDataDeleted={(dataId) => {
+                if (selectedIdentifier === dataId || selectedRecord?.id === dataId) {
+                  void navigate({
+                    to: '/databases',
+                    search: { database, view: savedSelectedView.id },
+                  })
+                }
+              }}
             />
           ) : effectiveView.type === 'table' ? (
             <TableView
