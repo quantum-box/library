@@ -293,6 +293,9 @@ export function Sidebar() {
     organizations,
     selectedOrganizationId,
     setSelectedOrganizationId,
+    repositoriesLoading,
+    repositoriesError,
+    refreshRepositories,
   } = useWorkspaceDatabases()
   const navigate = useNavigate()
   const connStatus = useConnectionStatus()
@@ -459,36 +462,59 @@ export function Sidebar() {
         <span>All repository data</span>
         <span className="text-xs text-subtle">{records.length}</span>
       </button>
-      {visibleDatabases.map((item) => {
-        const count = records.filter((record) => record.project === item.label).length
-        return (
+      {repositoriesLoading && (
+        <div
+          className="px-1.5 py-1 text-xs text-subtle"
+          data-testid="sidebar-repositories-loading"
+        >
+          Loading repositories…
+        </div>
+      )}
+      {!repositoriesLoading && repositoriesError && (
+        <div className="px-1.5 py-1 text-xs" data-testid="sidebar-repositories-error">
+          <p className="leading-snug text-status-cancelled">{repositoriesError}</p>
           <button
-            key={item.id}
-            data-testid={`database-${item.id}`}
-            className={`flex shrink-0 items-center justify-between gap-2 rounded px-1.5 py-1 text-xs transition-colors md:w-full ${
-              selectedDatabaseId === item.id
-                ? 'bg-surface-hover text-foreground'
-                : 'text-muted hover:bg-surface-hover'
-            }`}
-            onClick={() => handleDatabaseSelect(item.id)}
-            onContextMenu={(event) =>
-              handleDatabaseContextMenu(event, {
-                id: item.id,
-                label: item.label,
-                count,
-              })
-            }
+            type="button"
+            className="mt-1 rounded bg-surface-hover px-2 py-1 text-[11px] font-medium text-muted hover:text-foreground"
+            data-testid="sidebar-repositories-retry"
+            onClick={() => void refreshRepositories()}
           >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-              <span className="truncate">{item.label}</span>
-            </span>
-            <span className="text-xs text-subtle">{count}</span>
+            Retry
           </button>
-        )
-      })}
-      {visibleDatabases.length === 0 && (
-        <div className="px-1.5 py-1 text-xs text-subtle">
+        </div>
+      )}
+      {!repositoriesLoading &&
+        !repositoriesError &&
+        visibleDatabases.map((item) => {
+          const count = records.filter((record) => record.project === item.label).length
+          return (
+            <button
+              key={item.id}
+              data-testid={`database-${item.id}`}
+              className={`flex shrink-0 items-center justify-between gap-2 rounded px-1.5 py-1 text-xs transition-colors md:w-full ${
+                selectedDatabaseId === item.id
+                  ? 'bg-surface-hover text-foreground'
+                  : 'text-muted hover:bg-surface-hover'
+              }`}
+              onClick={() => handleDatabaseSelect(item.id)}
+              onContextMenu={(event) =>
+                handleDatabaseContextMenu(event, {
+                  id: item.id,
+                  label: item.label,
+                  count,
+                })
+              }
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                <span className="truncate">{item.label}</span>
+              </span>
+              <span className="text-xs text-subtle">{count}</span>
+            </button>
+          )
+        })}
+      {!repositoriesLoading && !repositoriesError && visibleDatabases.length === 0 && (
+        <div className="px-1.5 py-1 text-xs text-subtle" data-testid="sidebar-repositories-empty">
           No repositories
         </div>
       )}
