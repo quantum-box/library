@@ -69,6 +69,7 @@
     "server:engine": "cd packages/server && cargo run --bin photon-engine-server",
     "server:live": "cd packages/server && cargo run --bin photon-live-server",
     "server:engine:smoke": "node scripts/smoke-engine-api.mjs",
+    "library:api:verify": "node scripts/verify-library-api-connection.mjs",
     "server:test": "cargo test --manifest-path packages/server/Cargo.toml",
     "pages:build": "npm run build",
     "pages:deploy": "npm run pages:build && cd dist && wrangler pages deploy . --project-name library-client --branch main --commit-dirty=true",
