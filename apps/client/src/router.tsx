@@ -13,6 +13,7 @@ import { useMemo, useCallback, useState, createContext, useContext, useEffect, u
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { TableView } from './components/TableView'
+import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
 import { WorkflowView } from './components/WorkflowView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
@@ -845,6 +846,9 @@ function DatabasesLayout() {
     [database, deleteDatabaseView, navigate, scopedViews]
   )
   const showSignedInDashboard = records.length === 0 && visibleDatabases.length === 0
+  const useLibraryRepoTable = Boolean(
+    selectedDatabase?.orgUsername && selectedDatabase?.repoUsername
+  )
 
   return (
     <>
@@ -885,6 +889,35 @@ function DatabasesLayout() {
             <SignedInLibraryDashboard
               organizationCount={organizations.length}
               repositoryCount={visibleDatabases.length}
+            />
+          ) : effectiveView.type === 'table' && useLibraryRepoTable ? (
+            <LibraryTableView
+              org={selectedDatabase!.orgUsername!}
+              repo={selectedDatabase!.repoUsername!}
+              operatorId={selectedDatabase?.operatorId}
+              repoLabel={selectedDatabase?.label}
+              selectedDataId={selectedRecord?.id ?? null}
+              onSelectData={(item) => {
+                if (selectedRecord?.id === item.id) {
+                  void navigate({
+                    to: '/databases',
+                    search: { database, view: savedSelectedView.id },
+                  })
+                  return
+                }
+                void navigate({
+                  to: '/databases/$recordId',
+                  params: { recordId: item.id },
+                  search: { database, view: savedSelectedView.id },
+                })
+              }}
+              globalFilter={effectiveView.filters.search}
+              onGlobalFilterChange={(searchValue) =>
+                updateDraftView((current) => ({
+                  ...current,
+                  filters: { ...current.filters, search: searchValue },
+                }))
+              }
             />
           ) : effectiveView.type === 'table' ? (
             <TableView

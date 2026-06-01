@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('./photonEngine/client', () => ({
+  deleteClientEngineRecord: vi.fn(),
+  listClientEngineRecords: vi.fn(async () => []),
+  patchClientEngineRecord: vi.fn(),
+  upsertClientEngineRecord: vi.fn(),
+}))
 import { appKitConfig } from '../app/kitConfig'
 import {
   fetchLibraryOrganizations,
   fetchLibraryRecords,
+  fetchLibraryRepoTableData,
   fetchLibraryRepositories,
   libraryDataToRecord,
   toRecord,
@@ -127,6 +135,53 @@ describe('recordsApi', () => {
       createdAt: '2026-05-21T01:00:00.000Z',
       updatedAt: '2026-05-21T02:00:00.000Z',
       description: 'Repo data from Library API.',
+    })
+  })
+
+  it('fetches Library repo table data through GraphQL data-list + properties', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    vi.stubEnv('VITE_LIBRARY_OPERATOR_ID', 'operator-1')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: {
+        repo: {
+          id: 'repo-1',
+          name: 'Docs',
+          dataList: {
+            items: [
+              {
+                id: 'data-1',
+                name: 'First page',
+                propertyData: [
+                  { propertyId: 'prop-1', value: { string: 'Alpha' } },
+                ],
+              },
+            ],
+          },
+          properties: [{ id: 'prop-1', name: 'Title', typ: 'String', meta: null }],
+        },
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })))
+
+    await expect(fetchLibraryRepoTableData({
+      org: 'quantum-box',
+      repo: 'docs',
+      operatorId: 'operator-1',
+    })).resolves.toEqual({
+      items: [
+        {
+          id: 'data-1',
+          name: 'First page',
+          propertyData: [{ propertyId: 'prop-1', value: { string: 'Alpha' } }],
+        },
+      ],
+      properties: [{ id: 'prop-1', name: 'Title', typ: 'String', meta: null }],
+      repoName: 'Docs',
     })
   })
 

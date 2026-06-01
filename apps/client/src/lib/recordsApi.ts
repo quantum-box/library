@@ -1,11 +1,18 @@
 import { appKitConfig } from '../app/kitConfig.js'
 import { type DatabaseRecord, type Priority, type Status } from '../data/mock'
 import {
+  getLibraryDataPropertyValue,
+  propertyValueList,
+  propertyValueText,
+} from './libraryTable/libraryPropertyFormat'
+import {
   deleteClientEngineRecord,
   listClientEngineRecords,
   patchClientEngineRecord,
   upsertClientEngineRecord,
 } from './photonEngine/client'
+
+export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
 export interface ServerRecord {
   id: string
@@ -186,6 +193,18 @@ interface LibraryRestDataResponse {
 
 interface LibraryRestDataListResponse {
   data: LibraryRestDataResponse[]
+}
+
+interface LibraryRestPropertyResponse {
+  id: string
+  name: string
+  property_type: string
+}
+
+export interface LibraryRepoTableData {
+  items: LibraryDataItem[]
+  properties: LibraryProperty[]
+  repoName: string
 }
 
 export interface ServerCreateRecordData {
@@ -606,49 +625,6 @@ function normalizedPropertyName(value: string): string {
   return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
 }
 
-function propertyValueText(
-  property: LibraryProperty,
-  value: LibraryPropertyDataValue
-): string | undefined {
-  const optionLabel = (optionId: string | undefined) => {
-    if (!optionId) return undefined
-    const option = property.meta?.options?.find((item) => item.id === optionId)
-    return option?.name ?? option?.key ?? optionId
-  }
-
-  if (typeof value.string === 'string') return value.string
-  if (typeof value.number === 'string') return value.number
-  if (typeof value.html === 'string') return value.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  if (typeof value.markdown === 'string') return value.markdown
-  if (typeof value.date === 'string') return value.date
-  if (typeof value.url === 'string') return value.url
-  if (typeof value.id === 'string') return value.id
-  if (typeof value.optionId === 'string') return optionLabel(value.optionId)
-  if (Array.isArray(value.optionIds)) {
-    return value.optionIds.map(optionLabel).filter(Boolean).join(', ')
-  }
-  if (Array.isArray(value.dataIds)) return value.dataIds.join(', ')
-  if (typeof value.latitude === 'number' && typeof value.longitude === 'number') {
-    return `${value.latitude}, ${value.longitude}`
-  }
-  return undefined
-}
-
-function propertyValueList(
-  property: LibraryProperty,
-  value: LibraryPropertyDataValue
-): string[] | undefined {
-  if (Array.isArray(value.optionIds)) {
-    return value.optionIds
-      .map((optionId) => property.meta?.options?.find((item) => item.id === optionId))
-      .map((option, index) => option?.name ?? option?.key ?? value.optionIds?.[index])
-      .filter((item): item is string => Boolean(item))
-  }
-  if (Array.isArray(value.dataIds)) return value.dataIds
-  const text = propertyValueText(property, value)
-  return text ? text.split(',').map((item) => item.trim()).filter(Boolean) : undefined
-}
-
 export function libraryDataToRecord(
   item: LibraryDataItem,
   properties: LibraryProperty[],
@@ -708,6 +684,33 @@ interface LibraryRepoTarget {
   repo: string
   operatorId?: string
   repoName?: string
+}
+
+export async function fetchLibraryRepoTableData(
+  target: LibraryRepoTarget
+): Promise<LibraryRepoTableData> {
+  try {
+    const payload = await requestLibraryGraphQL<LibraryRepoDataResponse>(
+      libraryRepoDataQuery,
+      {
+        org: target.org,
+        repo: target.repo,
+        pageSize: Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100),
+      },
+      { operatorId: target.operatorId }
+    )
+    const repoData = payload.repo
+    if (!repoData) {
+      return { items: [], properties: [], repoName: target.repoName ?? target.repo }
+    }
+    return {
+      items: repoData.dataList.items,
+      properties: repoData.properties,
+      repoName: target.repoName ?? repoData.name,
+    }
+  } catch {
+    return fetchLibraryRestRepoTableData(target)
+  }
 }
 
 export async function fetchLibraryRecords(target?: LibraryRepoTarget): Promise<DatabaseRecord[]> {
@@ -974,15 +977,99 @@ function restDataToRecord(
   }
 }
 
+function restValueToLibraryPropertyDataValue(
+  value: LibraryRestPropertyData['value']
+): LibraryPropertyDataValue {
+  if (value == null) return {}
+  if (typeof value === 'string') return { string: value }
+  if (typeof value === 'number') return { number: String(value) }
+  if (Array.isArray(value)) {
+    return { optionIds: value.map((item) => String(item)) }
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (typeof record.string === 'string') return { string: record.string }
+    if (typeof record.number === 'string' || typeof record.number === 'number') {
+      return { number: String(record.number) }
+    }
+    if (typeof record.html === 'string') return { html: record.html }
+    if (typeof record.markdown === 'string') return { markdown: record.markdown }
+    if (typeof record.date === 'string') return { date: record.date }
+    if (typeof record.url === 'string') return { url: record.url }
+    if (typeof record.id === 'string') return { id: record.id }
+    if (typeof record.optionId === 'string') return { optionId: record.optionId }
+    if (typeof record.option_id === 'string') return { optionId: record.option_id }
+    if (Array.isArray(record.optionIds)) {
+      return { optionIds: record.optionIds.map((item) => String(item)) }
+    }
+    if (Array.isArray(record.option_ids)) {
+      return { optionIds: record.option_ids.map((item) => String(item)) }
+    }
+    if (Array.isArray(record.dataIds)) {
+      return { dataIds: record.dataIds.map((item) => String(item)) }
+    }
+    if (typeof record.latitude === 'number' && typeof record.longitude === 'number') {
+      return { latitude: record.latitude, longitude: record.longitude }
+    }
+    const candidate = Object.values(record)[0]
+    if (typeof candidate === 'string') return { string: candidate }
+    if (typeof candidate === 'number') return { number: String(candidate) }
+  }
+  return {}
+}
+
+function restDataToLibraryDataItem(item: LibraryRestDataResponse): LibraryDataItem {
+  return {
+    id: item.id,
+    name: item.name,
+    propertyData: item.items.map((propertyData) => ({
+      propertyId: propertyData.property_id,
+      value: restValueToLibraryPropertyDataValue(propertyData.value),
+    })),
+  }
+}
+
+function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): LibraryProperty {
+  return {
+    id: property.id,
+    name: property.name,
+    typ: property.property_type,
+    meta: null,
+  }
+}
+
+async function fetchLibraryRestRepoTableData(
+  target: LibraryRepoTarget
+): Promise<LibraryRepoTableData> {
+  const limit = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
+  const headers = libraryRestHeaders(target.operatorId)
+  const baseUrl = configuredLibraryApiBaseUrl()
+  const [dataResponse, propertiesResponse] = await Promise.all([
+    fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?limit=${limit}`, { headers }),
+    fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/properties`, { headers }),
+  ])
+  if (!dataResponse.ok) {
+    throw new RecordApiError(`Library REST data list failed: ${dataResponse.status}`, dataResponse.status)
+  }
+  const dataPayload = await dataResponse.json() as LibraryRestDataListResponse
+  let properties: LibraryProperty[] = []
+  if (propertiesResponse.ok) {
+    const propertiesPayload = await propertiesResponse.json() as LibraryRestPropertyResponse[]
+    properties = (Array.isArray(propertiesPayload) ? propertiesPayload : []).map(restPropertyToLibraryProperty)
+  }
+  return {
+    items: (dataPayload.data ?? []).map(restDataToLibraryDataItem),
+    properties,
+    repoName: target.repoName ?? target.repo,
+  }
+}
+
 async function fetchLibraryRestRecords(target: LibraryRepoTarget): Promise<DatabaseRecord[]> {
-  const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data-list?limit=${Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)}`, {
-    headers: libraryRestHeaders(target.operatorId),
-  })
-  if (!response.ok) throw new RecordApiError(`Library REST data list failed: ${response.status}`, response.status)
-  const payload = await response.json() as LibraryRestDataListResponse
-  return (payload.data ?? []).map((item) => restDataToRecord(
+  const { items, properties, repoName } = await fetchLibraryRestRepoTableData(target)
+  return items.map((item) => libraryDataToRecord(
     item,
-    target.repoName ?? target.repo,
+    properties,
+    repoName,
     { orgUsername: target.org, repoUsername: target.repo, operatorId: target.operatorId }
   ))
 }
