@@ -11,7 +11,7 @@ spec:
       deploymentTarget: cloudflare_pages
       build:
         command: yarn build
-        outputDirectory: apps/web/dist
+        outputDirectory: dist
         nodeVersion: "20"
       envVars:
         - name: VITE_BACKEND_API_URL
