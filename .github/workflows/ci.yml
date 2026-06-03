@@ -116,9 +116,25 @@ jobs:
         run: yarn test
       - name: Type check
         run: yarn tsc
+      - name: Resolve Vite backend API URL
+        id: vite_backend
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            url="https://pr${{ github.event.pull_request.number }}--library-api.txcloud.app"
+          else
+            url="${{ vars.VITE_BACKEND_API_URL }}"
+          fi
+          if [ -z "${url}" ]; then
+            echo "VITE_BACKEND_API_URL is empty (set vars.VITE_BACKEND_API_URL for non-PR builds)"
+            exit 1
+          fi
+          echo "url=${url}" >> "${GITHUB_OUTPUT}"
+          echo "Using VITE_BACKEND_API_URL host: $(echo "${url}" | sed -E 's#https?://([^/]+)/?.*#\1#')"
+
       - name: Build
         env:
-          VITE_BACKEND_API_URL: ${{ vars.VITE_BACKEND_API_URL }}
+          VITE_BACKEND_API_URL: ${{ steps.vite_backend.outputs.url }}
         run: yarn build
       - name: Install Playwright browsers
         run: yarn workspace library-web exec playwright install --with-deps chromium
