@@ -635,7 +635,7 @@ pub async fn router(
 }
 
 async fn health_check() -> &'static str {
-    tracing::debug!("health check");
+    tracing::debug!(endpoint = "health", "health check");
     "OK"
 }
 
