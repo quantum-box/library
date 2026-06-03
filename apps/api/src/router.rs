@@ -561,7 +561,6 @@ pub async fn router(
 
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
-        .route("/v1/health", axum::routing::get(health_check))
         .route("/version", get(version))
         .route(
             "/.well-known/oauth-protected-resource",
