@@ -17,6 +17,7 @@ use crate::handler::{
 #[openapi(
     paths(
         health_check,
+        health_check_v1,
         sign_in,
         view_organization,
         create_organization,
@@ -90,9 +91,21 @@ pub async fn health_check() -> &'static str {
     "OK"
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/health",
+    responses(
+        (status = 200, description = "OK")
+    )
+)]
+pub async fn health_check_v1() -> &'static str {
+    health_check().await
+}
+
 pub fn create_openapi_router() -> OpenApiRouter<()> {
     OpenApiRouter::new()
         .routes(routes!(health_check))
+        .routes(routes!(health_check_v1))
         .routes(routes!(sign_in))
         .routes(routes!(add_property))
         .routes(routes!(update_property))
