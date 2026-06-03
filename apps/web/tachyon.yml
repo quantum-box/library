@@ -1,0 +1,22 @@
+apiVersion: apps.tachy.one/v1alpha
+kind: CloudApps
+metadata:
+  name: library
+  tenantId: tn_01j702qf86pc2j35s0kv0gv3gy
+spec:
+  apps:
+    - name: planet-library
+      rootDirectory: apps/web
+      framework: vite
+      deploymentTarget: cloudflare_pages
+      build:
+        command: yarn build
+        outputDirectory: apps/web/dist
+        nodeVersion: "20"
+      envVars:
+        - name: VITE_BACKEND_API_URL
+          value: https://5rbyt6phq5xldgby4c4olsdvu40rswvs.lambda-url.ap-northeast-1.on.aws
+          valueFrom:
+            computeDeploymentRef:
+              appName: library-api
+              field: publicUrl
