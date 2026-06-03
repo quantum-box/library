@@ -1,4 +1,5 @@
 # PLT-1751 E2E verify marker (safe to delete after verification)
 verified_at=2026-06-03T00:00:00Z
 # E2E R4 trigger 20260603T014924Z
+# E2E R5 trigger 20260604T040300Z — PLT-1761 SERVICE_AUTH_TOKEN preview + PLT-1762 yarnrc + /v1/health
 # E2E R4 trigger 20260603T034409Z
