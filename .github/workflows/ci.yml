@@ -108,6 +108,12 @@ jobs:
           node-version: 20
       - name: Enable Corepack
         run: corepack enable
+      - name: Reject legacy Yarn .yarnrc spec key (PLT-1762)
+        run: |
+          if [ -f .yarnrc.yml ] && grep -Eq '^[[:space:]]*spec:' .yarnrc.yml; then
+            echo "ERROR: .yarnrc.yml must not contain legacy 'spec:' (Yarn 4). Use package.json packageManager instead."
+            exit 1
+          fi
       - name: Install dependencies
         run: yarn install --immutable
       - name: Lint
