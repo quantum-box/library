@@ -96,7 +96,7 @@ spec:
       build:
         installCommand: yarn install --immutable
         command: yarn build
-        outputDirectory: apps/web/dist
+        outputDirectory: dist
         nodeVersion: "20"
       envVars:
         - name: VITE_BACKEND_API_URL
