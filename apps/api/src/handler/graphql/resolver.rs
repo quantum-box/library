@@ -14,8 +14,8 @@ use async_graphql::{
     ComplexObject, Context, ErrorExtensions, Object, Result,
 };
 use inbound_sync::providers::linear::LinearClient;
-use tachyon_sdk::auth::ExecutorAction;
 use tachyon_sdk::auth::MultiTenancyAction;
+use tachyon_sdk::auth::{DefaultRole, ExecutorAction};
 use value_object::{self, TenantId};
 
 #[derive(Default)]
@@ -99,6 +99,16 @@ impl LibraryQuery {
 
             let tenant_id =
                 TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
+            let Some(tenant_user) = sdk
+                .get_user_by_id_full(&tenant_id, user.id().as_ref())
+                .await
+                .map_err(|e| e.extend())?
+            else {
+                continue;
+            };
+            if !can_import_library_tenant(tenant_user.role()) {
+                continue;
+            }
             let staff_count =
                 tachyon_sdk::auth::AuthApp::find_users_by_tenant(
                     app.auth_app.as_ref(),
@@ -117,6 +127,7 @@ impl LibraryQuery {
                 name: operator.name,
                 username: operator.operator_name,
                 staff_count,
+                can_import_to_library: true,
             });
         }
 
@@ -166,6 +177,16 @@ impl LibraryQuery {
 
             let tenant_id =
                 TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
+            let can_import_to_library = match sdk
+                .get_user_by_id_full(&tenant_id, user.id().as_ref())
+                .await
+                .map_err(|e| e.extend())?
+            {
+                Some(tenant_user) => {
+                    can_import_library_tenant(tenant_user.role())
+                }
+                None => false,
+            };
             let staff_count =
                 tachyon_sdk::auth::AuthApp::find_users_by_tenant(
                     app.auth_app.as_ref(),
@@ -185,6 +206,7 @@ impl LibraryQuery {
                 username: operator.operator_name,
                 staff_count,
                 has_library_org,
+                can_import_to_library,
             });
         }
 
@@ -1298,8 +1320,15 @@ impl Repo {
     }
 }
 
+fn can_import_library_tenant(role: &DefaultRole) -> bool {
+    matches!(role, DefaultRole::Owner | DefaultRole::Manager)
+}
+
 #[cfg(test)]
 mod tenant_seed_candidate_tests {
+    use super::can_import_library_tenant;
+    use tachyon_sdk::auth::DefaultRole;
+
     /// Regression guard for PLT-1692: Field / other platform tenants must appear
     /// in the onboarding wizard when they lack a Library organization.
     #[test]
@@ -1319,7 +1348,16 @@ mod tenant_seed_candidate_tests {
         let source = include_str!("resolver.rs");
         assert!(source.contains("async fn accessible_tenants"));
         assert!(source.contains("has_library_org"));
+        assert!(source.contains("can_import_to_library"));
         assert!(source.contains("get_caller_user"));
         assert!(source.contains("tenants.sort_by"));
+    }
+
+    #[test]
+    fn importable_tenant_roles_are_owner_and_manager_only() {
+        assert!(can_import_library_tenant(&DefaultRole::Owner));
+        assert!(can_import_library_tenant(&DefaultRole::Manager));
+        assert!(!can_import_library_tenant(&DefaultRole::General));
+        assert!(!can_import_library_tenant(&DefaultRole::Store));
     }
 }

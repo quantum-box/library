@@ -25,6 +25,17 @@ export type Scalars = {
   DateTime: { input: any; output: any; }
 };
 
+/** Tachyon tenant visible to the caller, with Library org linkage status. */
+export type AccessibleTenant = {
+  __typename?: 'AccessibleTenant';
+  canImportToLibrary: Scalars['Boolean']['output'];
+  hasLibraryOrg: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  staffCount: Scalars['Int']['output'];
+  tenantId: Scalars['String']['output'];
+  username: Scalars['String']['output'];
+};
+
 export type AddDataInputData = {
   actor: Scalars['String']['input'];
   dataName: Scalars['String']['input'];
@@ -105,6 +116,20 @@ export type CreateApiKeyInput = {
   organizationUsername: Scalars['String']['input'];
   /** TODO: add English documentation */
   serviceAccountName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateGlobalIdMappingInput = {
+  /**
+   * Optional Library-issued global ID (prefix `gid_`).
+   * Server generates one when omitted.
+   */
+  globalId?: InputMaybe<Scalars['String']['input']>;
+  /** Display name. */
+  name: Scalars['String']['input'];
+  /** Source system name (e.g. `bakuure`). */
+  system: Scalars['String']['input'];
+  /** Code in the source system (e.g. `BWS-001`). */
+  systemCode: Scalars['String']['input'];
 };
 
 export type CreateOperatorInput = {
@@ -196,10 +221,12 @@ export type DateValue = {
   date: Scalars['String']['output'];
 };
 
+/** Default role assigned to users within an operator. */
 export enum DefaultRole {
   General = 'GENERAL',
   Manager = 'MANAGER',
-  Owner = 'OWNER'
+  Owner = 'OWNER',
+  Store = 'STORE'
 }
 
 /** Input for disabling GitHub sync */
@@ -361,6 +388,18 @@ export type GitHubRepository = {
   name: Scalars['String']['output'];
   /** Whether the repository is private */
   private: Scalars['Boolean']['output'];
+};
+
+export type GlobalIdMapping = {
+  __typename?: 'GlobalIdMapping';
+  createdAt: Scalars['DateTime']['output'];
+  globalId: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  system: Scalars['String']['output'];
+  systemCode: Scalars['String']['output'];
+  tenantId: Scalars['String']['output'];
+  updatedAt: Scalars['DateTime']['output'];
 };
 
 /** Tenant's connection to an integration. */
@@ -640,8 +679,8 @@ export type ImportMarkdownFromGitHubInput = {
   /** Property name for markdown content */
   contentPropertyName: Scalars['String']['input'];
   /**
-   * Whether to enable GitHub sync (default: true)
-   * If false, ext_github property will be created but without repo config
+   * Whether to enable GitHub sync. GitHub sync/writeback is Non-GA and is
+   * rejected when true; omit or pass false for one-shot Markdown import.
    */
   enableGithubSync?: InputMaybe<Scalars['Boolean']['input']>;
   /** GitHub repository in "owner/repo" format */
@@ -844,8 +883,17 @@ export type Mutation = {
   changeRepoMemberRole: Scalars['Boolean']['output'];
   /** TODO: add English documentation */
   changeRepoUsername: Repo;
-  /** TODO: add English documentation */
+  /** Delete a data item from a Library repository. */
   check: Scalars['String']['output'];
+  /**
+   * Complete GitHub App installation.
+   *
+   * Called after the user installs the GitHub App. GitHub redirects to the
+   * callback URL with `installation_id` and `state` (hex-encoded
+   * `tenant_id:integration_id`). This mutation creates a Connection with
+   * `installation_id` stored in metadata.
+   */
+  completeGithubInstall: GqlConnection;
   /**
    * Connect to an integration.
    *
@@ -858,6 +906,8 @@ export type Mutation = {
   createApiKey: ApiKeyResponse;
   /** TODO: add English documentation */
   createData: Data;
+  /** Create a `global_id_mapping` row for the caller's tenant. */
+  createGlobalIdMapping: GlobalIdMapping;
   /** [AUTH] Create operator via SDK REST call */
   createOperator: Operator;
   /** TODO: add English documentation */
@@ -875,6 +925,8 @@ export type Mutation = {
   createWebhookEndpoint: CreateWebhookEndpointOutput;
   /** Delete a connection permanently. */
   deleteConnection: Scalars['Boolean']['output'];
+  /** TODO: add English documentation */
+  deleteData: Scalars['String']['output'];
   /** TODO: add English documentation */
   deleteProperty: Scalars['String']['output'];
   /** TODO: add English documentation */
@@ -933,10 +985,12 @@ export type Mutation = {
   removeRepoMember: Scalars['Boolean']['output'];
   /** Retry a failed webhook event. */
   retryWebhookEvent: GqlWebhookEvent;
+  /** [LIBRARY-API] Seed a tachyon tenant into Library organizations. */
+  seedLibraryTenant: SeedLibraryTenantPayload;
   /** Send a test webhook to an endpoint. */
   sendTestWebhook: SendTestWebhookOutput;
   /** [AUTH] Sign in or sign up via platform access token (library) */
-  signIn: User;
+  signInWithPlatform: User;
   /** Start initial sync operation. */
   startInitialSync: GqlSyncOperation;
   /** [LIBRARY-API] Sync data to GitHub */
@@ -951,6 +1005,12 @@ export type Mutation = {
   updateConnection: GqlConnection;
   /** TODO: add English documentation */
   updateData: Data;
+  /**
+   * Update a `global_id_mapping` row's `name`. Other fields are immutable
+   * in Phase 1; mutation of `system` / `system_code` / `global_id` awaits
+   * Phase 1.5+ (deletion is out of scope for Phase 1).
+   */
+  updateGlobalIdMapping: GlobalIdMapping;
   /** TODO: add English documentation */
   updateOrganization: Organization;
   /** TODO: add English documentation */
@@ -1002,6 +1062,12 @@ export type MutationChangeRepoUsernameArgs = {
 };
 
 
+export type MutationCompleteGithubInstallArgs = {
+  installationId: Scalars['Int']['input'];
+  integrationId: Scalars['String']['input'];
+};
+
+
 export type MutationConnectIntegrationArgs = {
   input: ConnectIntegrationInput;
 };
@@ -1014,6 +1080,11 @@ export type MutationCreateApiKeyArgs = {
 
 export type MutationCreateDataArgs = {
   input: AddDataInputData;
+};
+
+
+export type MutationCreateGlobalIdMappingArgs = {
+  input: CreateGlobalIdMappingInput;
 };
 
 
@@ -1044,6 +1115,13 @@ export type MutationCreateWebhookEndpointArgs = {
 
 export type MutationDeleteConnectionArgs = {
   connectionId: Scalars['String']['input'];
+};
+
+
+export type MutationDeleteDataArgs = {
+  dataId: Scalars['String']['input'];
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
 };
 
 
@@ -1137,13 +1215,18 @@ export type MutationRetryWebhookEventArgs = {
 };
 
 
+export type MutationSeedLibraryTenantArgs = {
+  tenantId: Scalars['String']['input'];
+};
+
+
 export type MutationSendTestWebhookArgs = {
   endpointId: Scalars['String']['input'];
   eventType: Scalars['String']['input'];
 };
 
 
-export type MutationSignInArgs = {
+export type MutationSignInWithPlatformArgs = {
   accessToken: Scalars['String']['input'];
   allowSignUp?: InputMaybe<Scalars['Boolean']['input']>;
   platformId: Scalars['String']['input'];
@@ -1173,6 +1256,11 @@ export type MutationUpdateConnectionArgs = {
 
 export type MutationUpdateDataArgs = {
   input: UpdateDataInputData;
+};
+
+
+export type MutationUpdateGlobalIdMappingArgs = {
+  input: UpdateGlobalIdMappingInput;
 };
 
 
@@ -1221,7 +1309,7 @@ export type MutationVerifyArgs = {
   token: Scalars['String']['input'];
 };
 
-/** Owner information passed when creating a new Operator */
+/** How the owner of a new operator is determined. */
 export enum NewOperatorOwnerMethod {
   Create = 'CREATE',
   Inherit = 'INHERIT'
@@ -1396,6 +1484,8 @@ export type PublicApiKey = {
 
 export type Query = {
   __typename?: 'Query';
+  /** [LIBRARY-API] All Tachyon tenants the caller can access, with Library org flag. */
+  accessibleTenants: Array<AccessibleTenant>;
   apiKeys: Array<PublicApiKey>;
   /** Get a single connection by ID. */
   connection?: Maybe<GqlConnection>;
@@ -1414,6 +1504,16 @@ export type Query = {
   githubListDirectoryContents: GitHubDirectoryContents;
   /** [LIBRARY-API] List GitHub repositories accessible to the user */
   githubListRepositories: Array<GitHubRepository>;
+  /**
+   * PLT-942: Look up a `global_id_mapping` by `(system, system_code)`
+   * within the caller's tenant. Returns `null` when not found.
+   */
+  globalIdMapping?: Maybe<GlobalIdMapping>;
+  /**
+   * PLT-942: List `global_id_mapping` rows for the caller's tenant,
+   * optionally filtered by `system`.
+   */
+  globalIdMappings: Array<GlobalIdMapping>;
   /** Get a single integration by ID. */
   integration?: Maybe<GqlIntegration>;
   /** Get an integration by provider. */
@@ -1435,6 +1535,7 @@ export type Query = {
   syncOperation?: Maybe<GqlSyncOperation>;
   /** Get sync operations for an endpoint. */
   syncOperations: Array<GqlSyncOperation>;
+  tenantSeedCandidates: Array<TenantSeedCandidate>;
   /** Get a webhook endpoint by ID. */
   webhookEndpoint?: Maybe<GqlWebhookEndpoint>;
   /** List webhook endpoints for a tenant. */
@@ -1496,6 +1597,17 @@ export type QueryGithubListRepositoriesArgs = {
   page?: InputMaybe<Scalars['Int']['input']>;
   perPage?: InputMaybe<Scalars['Int']['input']>;
   search?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryGlobalIdMappingArgs = {
+  system: Scalars['String']['input'];
+  systemCode: Scalars['String']['input'];
+};
+
+
+export type QueryGlobalIdMappingsArgs = {
+  system?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -1679,6 +1791,13 @@ export type RepoPolicy = {
   userId: Scalars['String']['output'];
 };
 
+export type SeedLibraryTenantPayload = {
+  __typename?: 'SeedLibraryTenantPayload';
+  organization: Organization;
+  seeded: Scalars['Boolean']['output'];
+  staffCount: Scalars['Int']['output'];
+};
+
 export type SelectItem = {
   __typename?: 'SelectItem';
   id: Scalars['String']['output'];
@@ -1790,6 +1909,15 @@ export type SyncToGitHubInput = {
   targetRepo: Scalars['String']['input'];
 };
 
+export type TenantSeedCandidate = {
+  __typename?: 'TenantSeedCandidate';
+  canImportToLibrary: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  staffCount: Scalars['Int']['output'];
+  tenantId: Scalars['String']['output'];
+  username: Scalars['String']['output'];
+};
+
 /** Input for triggering on-demand sync. */
 export type TriggerSyncInput = {
   endpointId: Scalars['String']['input'];
@@ -1830,6 +1958,15 @@ export type UpdateEndpointMappingInput = {
 export type UpdateEndpointStatusInput = {
   endpointId: Scalars['String']['input'];
   status: GqlEndpointStatus;
+};
+
+export type UpdateGlobalIdMappingInput = {
+  id: Scalars['String']['input'];
+  /**
+   * Only `name` is mutable in Phase 1. To change `system` / `system_code`
+   * / `global_id`, await Phase 1.5+ (deletion is out of scope for Phase 1).
+   */
+  name: Scalars['String']['input'];
 };
 
 export type UpdateOrganizationInput = {
@@ -1909,7 +2046,7 @@ export type CreateOperatorMutation = { __typename?: 'Mutation', createOperator: 
 export type DashboardQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type DashboardQuery = { __typename?: 'Query', me: { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string, repos: Array<{ __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean }> }> } };
+export type DashboardQuery = { __typename?: 'Query', me: { __typename?: 'User', name?: string | null, tenantIdList: Array<string>, organizations: Array<{ __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string }> } };
 
 export type DashboardOrgReposQueryVariables = Exact<{
   username: Scalars['String']['input'];
@@ -1923,11 +2060,6 @@ export type MeOnDashboardFragment = { __typename?: 'User', name?: string | null,
 export type OrganizationListItemFragment = { __typename?: 'Operator', id: string, operatorName: string, platformTenantId: string };
 
 export type RepoItemOnDashboardFragment = { __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean };
-
-export type ErrTestQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type ErrTestQuery = { __typename?: 'Query', errTest: string };
 
 export type NewRepoPageQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2024,7 +2156,7 @@ export type RepositoryPageWithTagsQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue' } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue' } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
@@ -2036,13 +2168,13 @@ export type RepositoryPageQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue' } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue' } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageWithoutTagsFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
 export type SourceFieldOnRepoPageFragment = { __typename?: 'Source', id: string, name: string, url?: string | null };
 
-export type DataFieldOnRepoPageFragment = { __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue' } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue' } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
+export type DataFieldOnRepoPageFragment = { __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
 
 export type PaginationFieldFragment = { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number };
 
@@ -2228,7 +2360,7 @@ export type UpdateOrgOnFormMutationVariables = Exact<{
 
 export type UpdateOrgOnFormMutation = { __typename?: 'Mutation', updateOrganization: { __typename?: 'Organization', id: string } };
 
-export type DatabaseOnOrgFragment = { __typename?: 'Organization', id: string, name: string, username: string, description?: string | null, website?: string | null, repos: Array<{ __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean }>, users: Array<{ __typename?: 'User', id: string, name?: string | null, image?: string | null, email?: string | null, role: DefaultRole }> };
+export type DatabaseOnOrgFragment = { __typename?: 'Organization', id: string, name: string, username: string, description?: string | null, repos: Array<{ __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean }>, users: Array<{ __typename?: 'User', id: string, name?: string | null, image?: string | null, email?: string | null, role: DefaultRole }> };
 
 export type RepoItemOnOrgPageFragment = { __typename?: 'Repo', id: string, name: string, username: string, description?: string | null, isPublic: boolean };
 
@@ -2379,24 +2511,8 @@ export type SelectTypeMetaForEditorFragment = { __typename?: 'SelectType', optio
 
 export type MultiSelectTypeMetaForEditorFragment = { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> };
 
-export type CreateOrganizationMutationVariables = Exact<{
-  input: CreateOrganizationInput;
-}>;
-
-
-export type CreateOrganizationMutation = { __typename?: 'Mutation', createOrganization: { __typename?: 'Organization', id: string, name: string, username: string, description?: string | null } };
-
 export type WritePermissionHooksPolicyFieldsFragment = { __typename?: 'RepoPolicy', role: string, userId: string };
 
-export const RepoItemOnDashboardFragmentDoc = gql`
-    fragment repoItemOnDashboard on Repo {
-  id
-  name
-  username
-  description
-  isPublic
-}
-    `;
 export const OrganizationListItemFragmentDoc = gql`
     fragment organizationListItem on Operator {
   id
@@ -2408,11 +2524,20 @@ export const MeOnDashboardFragmentDoc = gql`
     fragment meOnDashboard on User {
   name
   tenantIdList
-  organizations: operators {
+  organizations {
     ...organizationListItem
   }
 }
     ${OrganizationListItemFragmentDoc}`;
+export const RepoItemOnDashboardFragmentDoc = gql`
+    fragment repoItemOnDashboard on Repo {
+  id
+  name
+  username
+  description
+  isPublic
+}
+    `;
 export const OrganizationOptionFragmentDoc = gql`
     fragment organizationOption on Operator {
   id
@@ -2498,6 +2623,15 @@ export const DataFieldOnRepoPageFragmentDoc = gql`
         latitude
         longitude
       }
+      ... on DateValue {
+        date
+      }
+      ... on ImageValue {
+        url
+      }
+      ... on MarkdownValue {
+        markdown
+      }
     }
   }
 }
@@ -2578,6 +2712,7 @@ export const OrganizationFormFragmentDoc = gql`
   name
   username
   description
+  website
 }
     `;
 export const RepoItemOnOrgPageFragmentDoc = gql`
@@ -2661,13 +2796,13 @@ export const LocationValueForEditorFragmentDoc = gql`
 }
     `;
 export const DateValueForEditorFragmentDoc = gql`
-    fragment DateValueForEditor on StringValue {
-  string
+    fragment DateValueForEditor on DateValue {
+  date
 }
     `;
 export const ImageValueForEditorFragmentDoc = gql`
-    fragment ImageValueForEditor on StringValue {
-  string
+    fragment ImageValueForEditor on ImageValue {
+  url
 }
     `;
 export const PropertyDataForEditorFragmentDoc = gql`
@@ -2683,6 +2818,8 @@ export const PropertyDataForEditorFragmentDoc = gql`
     ...SelectValueForEditor
     ...MultiSelectValueForEditor
     ...LocationValueForEditor
+    ...DateValueForEditor
+    ...ImageValueForEditor
   }
 }
     ${StringValueForEditorFragmentDoc}
@@ -2693,7 +2830,9 @@ ${MarkdownValueForEditorFragmentDoc}
 ${RelationValueForEditorFragmentDoc}
 ${SelectValueForEditorFragmentDoc}
 ${MultiSelectValueForEditorFragmentDoc}
-${LocationValueForEditorFragmentDoc}`;
+${LocationValueForEditorFragmentDoc}
+${DateValueForEditorFragmentDoc}
+${ImageValueForEditorFragmentDoc}`;
 export const DataForDataDetailFragmentDoc = gql`
     fragment DataForDataDetail on Data {
   id
@@ -2878,11 +3017,6 @@ export const DashboardOrgReposDocument = gql`
   }
 }
     ${RepoItemOnDashboardFragmentDoc}`;
-export const ErrTestDocument = gql`
-    query ErrTest {
-  errTest
-}
-    `;
 export const NewRepoPageDocument = gql`
     query newRepoPage {
   me {
@@ -2898,16 +3032,16 @@ export const DataDetailPageDocument = gql`
   data(orgUsername: $orgUsername, repoUsername: $repoUsername, dataId: $dataId) {
     ...DataForDataDetail
   }
+  properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...PropertyForEditor
+  }
+  dataList(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    ...DataListForDataListCard
+  }
   repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
     policies {
       userId
       role
-    }
-    properties {
-      ...PropertyForEditor
-    }
-    dataList {
-      ...DataListForDataListCard
     }
   }
 }
@@ -3404,16 +3538,6 @@ export const BulkSyncExtGithubDocument = gql`
   }
 }
     `;
-export const CreateOrganizationDocument = gql`
-    mutation CreateOrganization($input: CreateOrganizationInput!) {
-  createOrganization(input: $input) {
-    id
-    name
-    username
-    description
-  }
-}
-    `;
 
 export type SdkFunctionWrapper = <T>(action: (requestHeaders?:Record<string, string>) => Promise<T>, operationName: string, operationType?: string) => Promise<T>;
 
@@ -3439,9 +3563,6 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     },
     dashboardOrgRepos(variables: DashboardOrgReposQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<DashboardOrgReposQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<DashboardOrgReposQuery>(DashboardOrgReposDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'dashboardOrgRepos', 'query');
-    },
-    ErrTest(variables?: ErrTestQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<ErrTestQuery> {
-      return withWrapper((wrappedRequestHeaders) => client.request<ErrTestQuery>(ErrTestDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'ErrTest', 'query');
     },
     newRepoPage(variables?: NewRepoPageQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<NewRepoPageQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<NewRepoPageQuery>(NewRepoPageDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'newRepoPage', 'query');
@@ -3583,9 +3704,6 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     },
     BulkSyncExtGithub(variables: BulkSyncExtGithubMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<BulkSyncExtGithubMutation> {
       return withWrapper((wrappedRequestHeaders) => client.request<BulkSyncExtGithubMutation>(BulkSyncExtGithubDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'BulkSyncExtGithub', 'mutation');
-    },
-    CreateOrganization(variables: CreateOrganizationMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<CreateOrganizationMutation> {
-      return withWrapper((wrappedRequestHeaders) => client.request<CreateOrganizationMutation>(CreateOrganizationDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'CreateOrganization', 'mutation');
     }
   };
 }
@@ -3610,6 +3728,8 @@ export const GqlConnectionStatusSchema = z.nativeEnum(GqlConnectionStatus);
 export const GqlEndpointStatusSchema = z.nativeEnum(GqlEndpointStatus);
 
 export const GqlIntegrationCategorySchema = z.nativeEnum(GqlIntegrationCategory);
+
+export const GqlIntegrationReadinessSchema = z.nativeEnum(GqlIntegrationReadiness);
 
 export const GqlProcessingStatusSchema = z.nativeEnum(GqlProcessingStatus);
 
@@ -3687,6 +3807,15 @@ export function CreateApiKeyInputSchema(): z.ZodObject<Properties<CreateApiKeyIn
     name: z.string().min(1),
     organizationUsername: z.string().min(1),
     serviceAccountName: z.string().nullish()
+  })
+}
+
+export function CreateGlobalIdMappingInputSchema(): z.ZodObject<Properties<CreateGlobalIdMappingInput>> {
+  return z.object({
+    globalId: z.string().nullish(),
+    name: z.string().min(1),
+    system: z.string().min(1),
+    systemCode: z.string().min(1)
   })
 }
 
@@ -3971,6 +4100,13 @@ export function UpdateEndpointStatusInputSchema(): z.ZodObject<Properties<Update
   return z.object({
     endpointId: z.string().min(1),
     status: GqlEndpointStatusSchema
+  })
+}
+
+export function UpdateGlobalIdMappingInputSchema(): z.ZodObject<Properties<UpdateGlobalIdMappingInput>> {
+  return z.object({
+    id: z.string().min(1),
+    name: z.string().min(1)
   })
 }
 

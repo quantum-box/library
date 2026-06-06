@@ -188,6 +188,18 @@ impl LibraryMutation {
             .extend());
         }
 
+        let tenant_user = sdk
+            .get_user_by_id_full(&tenant_id, user.id().as_ref())
+            .await
+            .map_err(|e| e.extend())?
+            .ok_or_else(|| {
+                errors::permission_denied!(
+                    "User is not a member of this tenant"
+                )
+                .extend()
+            })?;
+        ensure_tenant_seed_admin(&tenant_user).map_err(|e| e.extend())?;
+
         let operator = sdk
             .get_operator(tenant_id.as_ref())
             .await
@@ -1641,10 +1653,26 @@ impl LibraryMutation {
     }
 }
 
+fn ensure_tenant_seed_admin(
+    user: &tachyon_sdk::auth::User,
+) -> errors::Result<()> {
+    match user.role() {
+        DefaultRole::Owner | DefaultRole::Manager => Ok(()),
+        DefaultRole::General | DefaultRole::Store => Err(
+            errors::permission_denied!(
+                "Only tenant owners or managers can import a tenant into Library"
+            ),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::LibraryMutation;
+    use super::{ensure_tenant_seed_admin, LibraryMutation};
     use async_graphql::{EmptySubscription, Object, Schema};
+    use chrono::Utc;
+    use tachyon_sdk::auth::{DefaultRole, User};
+    use value_object::{TenantId, UserId};
 
     struct TestQuery;
 
@@ -1691,6 +1719,41 @@ mod tests {
             impl_source.contains("get_caller_user"),
             "seedLibraryTenant must authorize against all caller tenant memberships"
         );
+    }
+
+    #[test]
+    fn tenant_seed_admin_allows_owner_and_manager() {
+        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Owner))
+            .is_ok());
+        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Manager))
+            .is_ok());
+    }
+
+    #[test]
+    fn tenant_seed_admin_rejects_general_and_store() {
+        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::General))
+            .is_err());
+        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Store))
+            .is_err());
+    }
+
+    fn test_user(role: DefaultRole) -> User {
+        let now = Utc::now();
+        User {
+            id: UserId::new("us_01hs2yepy5hw4rz8pdq2wywnwt").unwrap(),
+            username: "test-user".to_string(),
+            tenants: vec![
+                TenantId::new("tn_01j702qf86pc2j35s0kv0gv3gy").unwrap()
+            ],
+            email: Some("test@example.com".to_string()),
+            name: Some("Test User".to_string()),
+            email_verified: None,
+            image: None,
+            role,
+            metadata: None,
+            created_at: now,
+            updated_at: now,
+        }
     }
 }
 

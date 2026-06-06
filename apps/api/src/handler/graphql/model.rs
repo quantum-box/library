@@ -24,6 +24,7 @@ pub struct TenantSeedCandidate {
     pub name: String,
     pub username: String,
     pub staff_count: i32,
+    pub can_import_to_library: bool,
 }
 
 /// Tachyon tenant visible to the caller, with Library org linkage status.
@@ -34,6 +35,7 @@ pub struct AccessibleTenant {
     pub username: String,
     pub staff_count: i32,
     pub has_library_org: bool,
+    pub can_import_to_library: bool,
 }
 
 #[derive(SimpleObject, Debug, Clone)]

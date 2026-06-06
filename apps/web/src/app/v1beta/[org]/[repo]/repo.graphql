@@ -129,6 +129,15 @@ fragment DataFieldOnRepoPage on Data {
         latitude
         longitude
       }
+      ... on DateValue {
+        date
+      }
+      ... on ImageValue {
+        url
+      }
+      ... on MarkdownValue {
+        markdown
+      }
     }
   }
 }
