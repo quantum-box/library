@@ -100,7 +100,6 @@ spec:
         nodeVersion: "20"
       envVars:
         - name: VITE_BACKEND_API_URL
-          value: https://5rbyt6phq5xldgby4c4olsdvu40rswvs.lambda-url.ap-northeast-1.on.aws
           valueFrom:
             computeDeploymentRef:
               appName: library-api
