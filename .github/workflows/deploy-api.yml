@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     env:
       TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
       TACHYON_ENVIRONMENT: production
