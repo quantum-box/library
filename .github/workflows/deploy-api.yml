@@ -24,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     env:
       TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
       TACHYON_ENVIRONMENT: production
@@ -90,38 +89,6 @@ jobs:
           tachyon compute builds watch library-api-migrate \
             --tenant-id "${TACHYON_TENANT_ID}" \
             --timeout-secs 1800
-
-      - name: Configure AWS credentials
-        if: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN }}
-          aws-region: ap-northeast-1
-
-      - name: Run production database migrations
-        if: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN != '' }}
-        run: |
-          set -euo pipefail
-          aws lambda invoke \
-            --function-name lambda-library-api-migrate \
-            --invocation-type RequestResponse \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{}' \
-            /tmp/library-api-migrate-out.json
-          cat /tmp/library-api-migrate-out.json
-          python3 - <<'PY'
-          import json
-          import sys
-
-          payload = json.load(open("/tmp/library-api-migrate-out.json"))
-          if payload.get("status") == "ok":
-              sys.exit(0)
-          if payload.get("errorMessage"):
-              print(payload["errorMessage"], file=sys.stderr)
-              sys.exit(1)
-          print(f"Unexpected migration response: {payload}", file=sys.stderr)
-          sys.exit(1)
-          PY
 
       - name: Trigger txcloud build
         run: |
