@@ -89,9 +89,7 @@ jobs:
           tachyon compute builds trigger library-api-migrate \
             --tenant-id "${TACHYON_TENANT_ID}" \
             --branch "${GITHUB_REF_NAME}"
-          tachyon compute builds watch library-api-migrate \
-            --tenant-id "${TACHYON_TENANT_ID}" \
-            --timeout-secs 1800
+          bash scripts/watch-txcloud-build.sh library-api-migrate
 
       - name: Re-apply library-api-migrate manifest
         run: |
