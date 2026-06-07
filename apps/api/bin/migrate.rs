@@ -19,10 +19,11 @@ async fn main() -> errors::Result<()> {
         "dev" => {
             tracing::info!("Running migrations in dev environment");
 
-            let database_url: value_object::DatabaseUrl = env::var("DEV_DATABASE_URL")
-                .unwrap()
-                .parse()
-                .expect("Invalid database URL");
+            let database_url: value_object::DatabaseUrl =
+                env::var("DEV_DATABASE_URL")
+                    .unwrap()
+                    .parse()
+                    .expect("Invalid database URL");
             library_api::migrations::run_library_migrations(&database_url)
                 .await?;
             tracing::info!("Migrations ran successfully");
@@ -30,7 +31,8 @@ async fn main() -> errors::Result<()> {
         "prod" => {
             tracing::info!("Running migrations in prod environment");
 
-            let database_url = library_api::migrations::resolve_prod_database_url()?;
+            let database_url =
+                library_api::migrations::resolve_prod_database_url()?;
             library_api::migrations::run_library_migrations(&database_url)
                 .await?;
             tracing::info!("Migrations ran successfully");
@@ -40,9 +42,10 @@ async fn main() -> errors::Result<()> {
                 "Running migrations in tidb-playground environment"
             );
 
-            let database_url: value_object::DatabaseUrl = "mysql://root@127.0.0.1:4000"
-                .parse()
-                .expect("Invalid database URL");
+            let database_url: value_object::DatabaseUrl =
+                "mysql://root@127.0.0.1:4000"
+                    .parse()
+                    .expect("Invalid database URL");
             library_api::migrations::run_library_migrations(&database_url)
                 .await?;
             tracing::info!("Migrations ran successfully");

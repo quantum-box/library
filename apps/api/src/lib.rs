@@ -3,13 +3,13 @@
 
 mod app;
 pub mod collaboration;
-pub mod migrations;
 mod config;
 mod db_pool_metrics;
 pub mod domain;
 mod error;
 pub mod handler;
 mod interface_adapter;
+pub mod migrations;
 mod router;
 pub mod sdk_auth;
 mod sentry_context;

@@ -18,6 +18,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
         .await
         .map_err(|error| Error::from(error.to_string()))?;
 
-    tracing::info!("library-api production migration completed successfully");
+    tracing::info!(
+        "library-api production migration completed successfully"
+    );
     Ok(json!({ "status": "ok" }))
 }
