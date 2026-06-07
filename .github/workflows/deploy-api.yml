@@ -89,6 +89,7 @@ jobs:
           tachyon compute builds trigger library-api-migrate \
             --tenant-id "${TACHYON_TENANT_ID}" \
             --branch "${GITHUB_REF_NAME}"
+          sleep 15
           bash scripts/watch-txcloud-build.sh library-api-migrate
 
       - name: Re-apply library-api-migrate manifest
@@ -118,13 +119,8 @@ jobs:
           tachyon compute builds trigger library-api \
             --tenant-id "${TACHYON_TENANT_ID}" \
             --branch "${GITHUB_REF_NAME}"
-
-      - name: Watch txcloud build
-        run: |
-          set -euo pipefail
-          tachyon compute builds watch library-api \
-            --tenant-id "${TACHYON_TENANT_ID}" \
-            --timeout-secs 1800
+          sleep 15
+          bash scripts/watch-txcloud-build.sh library-api
 
       - name: Smoke test Library API health
         run: |

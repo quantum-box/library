@@ -7,6 +7,12 @@ TENANT_ID="${TACHYON_TENANT_ID:?TACHYON_TENANT_ID is required}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-1800}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-3}"
 RETRY_DELAY_SECS="${RETRY_DELAY_SECS:-60}"
+PRE_WATCH_DELAY_SECS="${PRE_WATCH_DELAY_SECS:-15}"
+
+if [ "${PRE_WATCH_DELAY_SECS}" -gt 0 ]; then
+  echo "Waiting ${PRE_WATCH_DELAY_SECS}s for CodeBuild log group provisioning..." >&2
+  sleep "${PRE_WATCH_DELAY_SECS}"
+fi
 
 attempt=1
 while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
