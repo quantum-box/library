@@ -7,6 +7,7 @@ type AccessibleTenant {
 	username: String!
 	staffCount: Int!
 	hasLibraryOrg: Boolean!
+	canImportToLibrary: Boolean!
 }
 
 input AddDataInputData {
@@ -2123,6 +2124,7 @@ type TenantSeedCandidate {
 	name: String!
 	username: String!
 	staffCount: Int!
+	canImportToLibrary: Boolean!
 }
 
 """

@@ -22,6 +22,7 @@ type TenantSeedCandidate = {
 	name: string
 	username: string
 	staffCount: number
+	canImportToLibrary: boolean
 }
 
 const TenantSeedCandidatesQuery = graphql(`
@@ -31,6 +32,7 @@ const TenantSeedCandidatesQuery = graphql(`
 			name
 			username
 			staffCount
+			canImportToLibrary
 		}
 	}
 `)

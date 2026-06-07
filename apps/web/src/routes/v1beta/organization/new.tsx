@@ -41,6 +41,7 @@ type AccessibleTenant = {
   username: string
   staffCount: number
   hasLibraryOrg: boolean
+  canImportToLibrary: boolean
 }
 
 const AccessibleTenantsQuery = graphql(`
@@ -51,6 +52,7 @@ const AccessibleTenantsQuery = graphql(`
       username
       staffCount
       hasLibraryOrg
+      canImportToLibrary
     }
   }
 `)
@@ -154,6 +156,14 @@ function NewOrganizationPage() {
     }
     if (selectedTenant.hasLibraryOrg) {
       navigate({ to: `/v1beta/${selectedTenant.username}` })
+      return
+    }
+    if (!selectedTenant.canImportToLibrary) {
+      toast({
+        variant: 'destructive',
+        title: t.v1beta.newOrg.importToLibrary,
+        description: t.v1beta.newOrg.insufficientTenantRole,
+      })
       return
     }
 
@@ -292,17 +302,24 @@ function NewOrganizationPage() {
                   </Select>
                   {selectedTenant && !selectedTenant.hasLibraryOrg ? (
                     <p className='text-xs text-muted-foreground'>
-                      {t.v1beta.newOrg.staffMembers.replace(
-                        '{count}',
-                        String(selectedTenant.staffCount),
-                      )}
+                      {selectedTenant.canImportToLibrary
+                        ? t.v1beta.newOrg.staffMembers.replace(
+                            '{count}',
+                            String(selectedTenant.staffCount),
+                          )
+                        : t.v1beta.newOrg.insufficientTenantRole}
                     </p>
                   ) : null}
                 </div>
                 <Button
                   type='button'
                   className='w-full sm:w-auto'
-                  disabled={!selectedTenant || importing}
+                  disabled={
+                    !selectedTenant ||
+                    importing ||
+                    (!selectedTenant.hasLibraryOrg &&
+                      !selectedTenant.canImportToLibrary)
+                  }
                   onClick={() => void importTenant()}
                 >
                   {importing ? (

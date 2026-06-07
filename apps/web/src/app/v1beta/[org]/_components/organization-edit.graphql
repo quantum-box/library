@@ -2,4 +2,5 @@ fragment OrganizationForm on Organization {
   name
   username
   description
+  website
 }

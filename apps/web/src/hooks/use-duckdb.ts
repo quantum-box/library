@@ -555,7 +555,7 @@ function toPropertyValue(
 		case PropertyType.Html:
 			return { __typename: 'HtmlValue', html: stringValue }
 		case PropertyType.Markdown:
-			return { __typename: 'MarkdownValue' }
+			return { __typename: 'MarkdownValue', markdown: stringValue }
 		case PropertyType.Relation: {
 			const [databaseId, ...dataIds] = stringValue.split(',')
 			if (!databaseId) return null
