@@ -79,6 +79,7 @@ jobs:
           aws-region: ap-northeast-1
 
       - name: Invoke migration Lambda
+        if: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN != '' }}
         run: |
           set -euo pipefail
           aws lambda invoke \
