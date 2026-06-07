@@ -36,6 +36,18 @@ pub async fn run_library_migrations(
         .execute(db.pool().as_ref())
         .await
         .ok();
+    // PLT-1808: 20241116030727 was applied on production before 1d2b766 added
+    // IF NOT EXISTS (checksum drift). Restore the e769b7f SHA-384 checksum so
+    // sqlx accepts the reverted migration file without re-running DDL.
+    sqlx::query(
+        "UPDATE _sqlx_migrations \
+         SET checksum = UNHEX(?) \
+         WHERE version = 20241116030727 AND success = TRUE",
+    )
+    .bind("16b8c3a465b012e1aa9fa3438e5a91cf7f8fd6691d0032ad87869d4d59741022348d7d89ee062c7b04a862b4ee8a8d31")
+    .execute(db.pool().as_ref())
+    .await
+    .ok();
     sqlx::migrate!("./migrations")
         .run(db.pool().as_ref())
         .await
