@@ -106,28 +106,12 @@ spec:
         - apps/api/migrations/**
         - apps/api/src/migrations.rs
         - apps/api/bin/migrate.rs
+        - scripts/build-library-api-migrate-lambda.sh
       build:
         package: library-api
         binary: library_api_migrate
         installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && pip3 install --force-reinstall cargo-lambda==1.9.1 ziglang==0.15.2 && rustup toolchain install nightly-2026-06-04 && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
-        command: >-
-          bash -lc 'source "$HOME/.cargo/env";
-          SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin library_api_migrate --release --arm64 --lambda-dir target/lambda/library_api_migrate;
-          mkdir -p target/lambda/library_api_migrate;
-          if [ ! -f target/lambda/library_api_migrate/bootstrap ]; then
-            for CAND in target/lambda/library_api_migrate/bootstrap ../../target/lambda/library_api_migrate/bootstrap; do
-              if [ -f "$CAND" ]; then cp "$CAND" target/lambda/library_api_migrate/bootstrap; break; fi;
-            done;
-          fi;
-          if [ ! -f target/lambda/library_api_migrate/bootstrap ]; then
-            BIN=$(find target ../../target -path "*/aarch64-unknown-linux-gnu/release/library_api_migrate" -type f 2>/dev/null | head -1);
-            if [ -z "$BIN" ]; then BIN=$(find target ../../target -path "*/release/library_api_migrate" -type f 2>/dev/null | head -1); fi;
-            if [ -z "$BIN" ]; then echo "ERROR: library_api_migrate bootstrap/binary not found"; find target ../../target -name library_api_migrate 2>/dev/null | head -20; exit 1; fi;
-            cp "$BIN" target/lambda/library_api_migrate/bootstrap;
-            chmod +x target/lambda/library_api_migrate/bootstrap;
-          fi;
-          mkdir -p ../../target/lambda/library_api_migrate &&
-          cp target/lambda/library_api_migrate/bootstrap ../../target/lambda/library_api_migrate/bootstrap'
+        command: bash -lc 'bash ../../scripts/build-library-api-migrate-lambda.sh'
         release: true
         arch: arm64
       envVars:
