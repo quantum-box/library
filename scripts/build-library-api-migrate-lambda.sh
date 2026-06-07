@@ -13,7 +13,11 @@ SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build \
 mkdir -p target/lambda/library_api_migrate
 
 if [ ! -f target/lambda/library_api_migrate/bootstrap ]; then
-  if [ -f ../../target/lambda/library_api_migrate/bootstrap ]; then
+  if [ -f target/lambda/library_api_migrate/library_api_migrate ]; then
+    cp target/lambda/library_api_migrate/library_api_migrate \
+      target/lambda/library_api_migrate/bootstrap
+    chmod +x target/lambda/library_api_migrate/bootstrap
+  elif [ -f ../../target/lambda/library_api_migrate/bootstrap ]; then
     cp ../../target/lambda/library_api_migrate/bootstrap \
       target/lambda/library_api_migrate/bootstrap
   fi
