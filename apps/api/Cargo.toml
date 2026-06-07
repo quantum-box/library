@@ -120,6 +120,10 @@ path = "./bin/lambda.rs"
 name = "library_api_migrate"
 path = "./bin/migrate.rs"
 
+[[bin]]
+name = "lambda-library-api-migrate"
+path = "./bin/migrate.rs"
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 reqwest = { workspace = true, features = ["json"] }

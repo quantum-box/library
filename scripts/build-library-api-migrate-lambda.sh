@@ -5,39 +5,27 @@ source "$HOME/.cargo/env"
 
 SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build \
   --package library-api \
-  --bin library_api_migrate \
+  --bin lambda-library-api-migrate \
   --release \
   --arm64 \
-  --lambda-dir target/lambda/library_api_migrate
+  --lambda-dir target/lambda/lambda-library-api-migrate \
+  --flatten lambda-library-api-migrate
 
-LAMBDA_DIR="target/lambda/library_api_migrate"
-mkdir -p "${LAMBDA_DIR}"
-
-if [ ! -f "${LAMBDA_DIR}/bootstrap" ]; then
-  CAND="$(find "${LAMBDA_DIR}" -type f 2>/dev/null | head -1 || true)"
-  if [ -n "${CAND}" ]; then
-    cp "${CAND}" "${LAMBDA_DIR}/bootstrap"
-    chmod +x "${LAMBDA_DIR}/bootstrap"
+mkdir -p target/lambda/lambda-library-api-migrate
+if [ ! -f target/lambda/lambda-library-api-migrate/bootstrap ]; then
+  NESTED="$(find target/lambda/lambda-library-api-migrate -type f 2>/dev/null | head -1 || true)"
+  if [ -n "${NESTED}" ]; then
+    cp "${NESTED}" target/lambda/lambda-library-api-migrate/bootstrap
+    chmod +x target/lambda/lambda-library-api-migrate/bootstrap
   fi
 fi
 
-if [ ! -f "${LAMBDA_DIR}/bootstrap" ]; then
-  BIN="$(find target ../../target \
-    -path '*/aarch64-unknown-linux-gnu/release/library_api_migrate' \
-    -type f 2>/dev/null | head -1 || true)"
-  if [ -z "${BIN}" ]; then
-    BIN="$(find target ../../target \
-      -path '*/release/library_api_migrate' \
-      -type f 2>/dev/null | head -1 || true)"
-  fi
-  if [ -z "${BIN}" ]; then
-    echo "library_api_migrate bootstrap not found" >&2
-    ls -laR "${LAMBDA_DIR}" 2>/dev/null >&2 || true
-    exit 1
-  fi
-  cp "${BIN}" "${LAMBDA_DIR}/bootstrap"
-  chmod +x "${LAMBDA_DIR}/bootstrap"
+if [ ! -f target/lambda/lambda-library-api-migrate/bootstrap ]; then
+  echo "lambda-library-api-migrate bootstrap not found" >&2
+  ls -laR target/lambda/lambda-library-api-migrate 2>/dev/null >&2 || true
+  exit 1
 fi
 
-mkdir -p ../../target/lambda/library_api_migrate
-cp "${LAMBDA_DIR}/bootstrap" ../../target/lambda/library_api_migrate/bootstrap
+mkdir -p ../../target/lambda/lambda-library-api-migrate
+cp target/lambda/lambda-library-api-migrate/bootstrap \
+  ../../target/lambda/lambda-library-api-migrate/bootstrap
