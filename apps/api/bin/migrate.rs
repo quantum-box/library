@@ -24,7 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-async fn lambda_handler(_event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
+async fn lambda_handler(
+    _event: LambdaEvent<Value>,
+) -> Result<Value, LambdaError> {
     telemetry::init_debug_tracing();
     tracing::info!("Starting library-api production migration");
 
