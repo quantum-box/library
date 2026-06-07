@@ -31,6 +31,11 @@ pub async fn run_library_migrations(
         admin_database_url.use_database(DATABASE_NAME),
     )
     .await;
+    // Remove any partially applied migrations so they can be re-run cleanly.
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE success = FALSE")
+        .execute(db.pool().as_ref())
+        .await
+        .ok();
     sqlx::migrate!("./migrations")
         .run(db.pool().as_ref())
         .await
