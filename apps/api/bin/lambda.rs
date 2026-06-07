@@ -28,7 +28,7 @@ async fn main() -> Result<(), Error> {
     let _sentry_guard = config
         .sentry_dsn
         .as_deref()
-        .and_then(telemetry::init_sentry);
+        .map(|dsn| telemetry::init_sentry(dsn, sentry::release_name!()));
 
     let database_url =
         config.database_url.parse::<value_object::DatabaseUrl>()?;

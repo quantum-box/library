@@ -17,7 +17,7 @@ pub async fn run_api(
     let _sentry_guard = config
         .sentry_dsn
         .as_deref()
-        .and_then(telemetry::init_sentry);
+        .map(|dsn| telemetry::init_sentry(dsn, sentry::release_name!()));
 
     tracing::debug!("start connect database...");
     let dsn = config.database_url.parse::<value_object::DatabaseUrl>()?;

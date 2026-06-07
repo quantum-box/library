@@ -582,7 +582,10 @@ pub use sentry::ClientInitGuard;
 /// because the `sentry_tracing::layer()` bridge no-ops once the
 /// client is shut down.
 #[must_use = "ClientInitGuard must be held for the full runtime lifetime; dropping it immediately will silently discard Sentry events forwarded by sentry_tracing"]
-pub fn init_sentry(dsn: &str) -> Option<sentry::ClientInitGuard> {
+pub fn init_sentry(
+    dsn: &str,
+    release: Option<std::borrow::Cow<'static, str>>,
+) -> Option<sentry::ClientInitGuard> {
     let dsn = match dsn.trim().parse::<sentry::types::Dsn>() {
         Ok(dsn) => dsn,
         Err(error) => {
@@ -594,7 +597,7 @@ pub fn init_sentry(dsn: &str) -> Option<sentry::ClientInitGuard> {
     Some(sentry::init((
         dsn,
         sentry::ClientOptions {
-            release: sentry::release_name!(),
+            release,
             ..Default::default()
         },
     )))
