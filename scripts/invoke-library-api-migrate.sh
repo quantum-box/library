@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AWS_PROFILE="${AWS_PROFILE:-n1}"
 FUNCTION_NAME="${FUNCTION_NAME:-lambda-library-api-migrate}"
 OUTPUT_FILE="${OUTPUT_FILE:-/tmp/library-api-migrate-out.json}"
 
+AWS_ARGS=()
+if [ -n "${AWS_PROFILE:-}" ]; then
+  AWS_ARGS+=(--profile "${AWS_PROFILE}")
+fi
+
 aws lambda invoke \
-  --profile "${AWS_PROFILE}" \
+  "${AWS_ARGS[@]}" \
   --function-name "${FUNCTION_NAME}" \
   --invocation-type RequestResponse \
   --cli-binary-format raw-in-base64-out \

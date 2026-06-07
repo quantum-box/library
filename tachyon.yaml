@@ -120,6 +120,10 @@ spec:
           type: credential
           valueFrom:
             secret: library-api/DATABASE_URL
+        - name: PROD_DATABASE_URL
+          type: credential
+          valueFrom:
+            secret: library-api/DATABASE_URL
         - name: ENVIRONMENT
           value: "production"
         - name: RUST_LOG

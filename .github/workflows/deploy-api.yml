@@ -24,12 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     env:
       TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
       TACHYON_ENVIRONMENT: production
       TACHYON_CONFIG: tachyon.yaml
       TACHYON_API_KEY: ${{ secrets.TACHYON_API_KEY }}
       GH_TOKEN: ${{ secrets.TACHYON_GITHUB_TOKEN || github.token }}
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${TACHYON_API_KEY}"
+          test -n "${AWS_DEPLOY_ROLE_ARN}"
 
       - name: Install tachyon CLI
         run: |
@@ -89,6 +92,24 @@ jobs:
           tachyon compute builds watch library-api-migrate \
             --tenant-id "${TACHYON_TENANT_ID}" \
             --timeout-secs 1800
+
+      - name: Re-apply library-api-migrate manifest
+        run: |
+          set -euo pipefail
+          tachyon compute apps apply \
+            --file "${TACHYON_CONFIG}" \
+            --app library-api-migrate \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --environment "${TACHYON_ENVIRONMENT}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Run production database migrations
+        run: bash scripts/invoke-library-api-migrate.sh
 
       - name: Trigger txcloud build
         run: |
