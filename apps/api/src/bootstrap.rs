@@ -14,9 +14,10 @@ pub async fn run_api(
 
     // Hold the Sentry guard for the process lifetime so events
     // forwarded by sentry_tracing are flushed before exit.
-    let _sentry_guard = config.sentry_dsn.as_deref().map(|dsn| {
-        telemetry::init_sentry(dsn, sentry::release_name!())
-    });
+    let _sentry_guard = config
+        .sentry_dsn
+        .as_deref()
+        .map(|dsn| telemetry::init_sentry(dsn, sentry::release_name!()));
 
     tracing::debug!("start connect database...");
     let dsn = config.database_url.parse::<value_object::DatabaseUrl>()?;
