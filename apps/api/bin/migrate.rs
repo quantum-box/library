@@ -36,7 +36,9 @@ async fn lambda_handler(
         .await
         .map_err(|error| LambdaError::from(error.to_string()))?;
 
-    tracing::info!("library-api production migration completed successfully");
+    tracing::info!(
+        "library-api production migration completed successfully"
+    );
     Ok(json!({ "status": "ok" }))
 }
 
