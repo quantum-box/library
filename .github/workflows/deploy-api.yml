@@ -108,6 +108,9 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ap-northeast-1
 
+      - name: Sync library-api-migrate Lambda env from ASM
+        run: bash scripts/sync-library-api-migrate-env.sh
+
       - name: Run production database migrations
         run: bash scripts/invoke-library-api-migrate.sh
 
