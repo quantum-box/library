@@ -25,10 +25,9 @@ async fn main() -> Result<(), Error> {
 
     // Hold the Sentry guard for the Lambda runtime lifetime so events
     // forwarded by sentry_tracing are flushed before process exit.
-    let _sentry_guard = config
-        .sentry_dsn
-        .as_deref()
-        .and_then(telemetry::init_sentry);
+    let _sentry_guard = config.sentry_dsn.as_deref().map(|dsn| {
+        telemetry::init_sentry(dsn, sentry::release_name!())
+    });
 
     let database_url =
         config.database_url.parse::<value_object::DatabaseUrl>()?;
