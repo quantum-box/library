@@ -1,27 +1,14 @@
-name: Deploy API to txcloud
+name: Run library-api production migration
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/deploy-api.yml"
-      - ".github/workflows/migrate-api.yml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "apps/api/**"
-      - "packages/**"
-      - "sdk/rust/**"
-      - "tachyon.yaml"
-      - "apps/web/**"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  migrate:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,14 +52,9 @@ jobs:
           install -m 0755 "${tachyon_bin}" /usr/local/bin/tachyon
           tachyon --version
 
-      - name: Apply Cloud App manifests
+      - name: Apply library-api-migrate manifest
         run: |
           set -euo pipefail
-          tachyon compute apps apply \
-            --file "${TACHYON_CONFIG}" \
-            --app library-api \
-            --tenant-id "${TACHYON_TENANT_ID}" \
-            --environment "${TACHYON_ENVIRONMENT}"
           tachyon compute apps apply \
             --file "${TACHYON_CONFIG}" \
             --app library-api-migrate \
@@ -96,7 +78,7 @@ jobs:
           role-to-assume: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN }}
           aws-region: ap-northeast-1
 
-      - name: Run production database migrations
+      - name: Invoke migration Lambda
         run: |
           set -euo pipefail
           aws lambda invoke \
@@ -119,28 +101,3 @@ jobs:
           print(f"Unexpected migration response: {payload}", file=sys.stderr)
           sys.exit(1)
           PY
-
-      - name: Trigger txcloud build
-        run: |
-          set -euo pipefail
-          tachyon compute builds trigger library-api \
-            --tenant-id "${TACHYON_TENANT_ID}" \
-            --branch "${GITHUB_REF_NAME}"
-
-      - name: Watch txcloud build
-        run: |
-          set -euo pipefail
-          tachyon compute builds watch library-api \
-            --tenant-id "${TACHYON_TENANT_ID}" \
-            --timeout-secs 1800
-
-      - name: Smoke test Library API health
-        run: |
-          set -euo pipefail
-          curl -fsS --max-time 20 https://library.api.n1.tachy.one/health | grep -qx 'OK'
-          curl -fsS --max-time 20 https://library.api.n1.tachy.one/version | jq -e '.version | length > 0'
-
-      - name: Smoke test public sign-in route
-        run: |
-          set -euo pipefail
-          curl -fsSIL --max-time 20 https://planet-library.txcloud.app/sign_in

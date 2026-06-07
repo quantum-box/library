@@ -3,6 +3,7 @@
 
 mod app;
 pub mod collaboration;
+pub mod migrations;
 mod config;
 mod db_pool_metrics;
 pub mod domain;

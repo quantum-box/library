@@ -117,6 +117,10 @@ name = "lambda-library-api"
 path = "./bin/lambda.rs"
 
 [[bin]]
+name = "lambda-library-api-migrate"
+path = "./bin/lambda-migrate.rs"
+
+[[bin]]
 name = "library_api_migrate"
 path = "./bin/migrate.rs"
 
