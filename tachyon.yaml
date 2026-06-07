@@ -90,6 +90,44 @@ spec:
           value: "0.05"
         - name: OTEL_PROPAGATORS
           value: "tracecontext"
+    - name: library-api-migrate
+      repository:
+        owner: quantum-box
+        name: library
+        url: https://github.com/quantum-box/library
+        defaultBranch: main
+      framework: cargo_lambda
+      deploymentTarget: lambda
+      tier: enterprise
+      subnet: enterprise-library
+      rootDirectory: apps/api
+      dockerContext: .
+      watchPaths:
+        - apps/api/migrations/**
+        - apps/api/src/migrations.rs
+        - apps/api/bin/migrate.rs
+      build:
+        package: library-api
+        binary: library_api_migrate
+        installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && pip3 install --force-reinstall cargo-lambda==1.9.1 ziglang==0.15.2 && rustup toolchain install nightly-2026-06-04 && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
+        command: >-
+          bash -lc 'source "$HOME/.cargo/env";
+          SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin library_api_migrate --release --arm64 --lambda-dir target/lambda/lambda-library-api-migrate --flatten lambda-library-api-migrate;
+          mkdir -p ../../target/lambda/lambda-library-api-migrate &&
+          cp target/lambda/lambda-library-api-migrate/bootstrap ../../target/lambda/lambda-library-api-migrate/bootstrap'
+        release: true
+        arch: arm64
+      envVars:
+        - name: DATABASE_URL
+          type: credential
+          valueFrom:
+            secret: library-api/DATABASE_URL
+        - name: ENVIRONMENT
+          value: "production"
+        - name: RUST_LOG
+          value: "info"
+        - name: RUST_BACKTRACE
+          value: "1"
     - name: planet-library
       repository:
         url: https://github.com/quantum-box/library
