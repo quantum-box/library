@@ -1,0 +1,77 @@
+name: Run library-api production migrations
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
+      TACHYON_ENVIRONMENT: production
+      TACHYON_CONFIG: tachyon.yaml
+      TACHYON_API_KEY: ${{ secrets.TACHYON_API_KEY }}
+      GH_TOKEN: ${{ secrets.TACHYON_GITHUB_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tachyon CLI
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/tachyon-cli"
+          mkdir -p "${workdir}"
+
+          if ! gh release download \
+            --repo quantum-box/tachyon-sdk \
+            --pattern 'tachyon-linux-x86_64.tar.gz' \
+            --dir "${workdir}"; then
+            gh release download \
+              --repo quantum-box/tachyon-sdk \
+              --pattern 'tachyon-cli-*x86_64-unknown-linux-gnu*.tar.gz' \
+              --dir "${workdir}"
+          fi
+
+          archive="$(find "${workdir}" -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)"
+          test -n "${archive}"
+          tar -xzf "${archive}" -C "${workdir}"
+          tachyon_bin="$(find "${workdir}" -type f -name tachyon -perm -u+x | head -n 1)"
+          test -n "${tachyon_bin}"
+          install -m 0755 "${tachyon_bin}" /usr/local/bin/tachyon
+          tachyon --version
+
+      - name: Trigger library-api-migrate build
+        run: |
+          set -euo pipefail
+          tachyon compute builds trigger library-api-migrate \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --branch "${GITHUB_REF_NAME}"
+          tachyon compute builds watch library-api-migrate \
+            --tenant-id "${TACHYON_TENANT_ID}" \
+            --timeout-secs 1800
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.N1_AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Invoke migration Lambda
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name lambda-library-api-migrate \
+            --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{}' \
+            /tmp/library-api-migrate-out.json
+          cat /tmp/library-api-migrate-out.json
+          STATUS=$(python3 -c "import json; d=json.load(open('/tmp/library-api-migrate-out.json')); print(d.get('status',''))")
+          if [ "${STATUS}" = "ok" ]; then
+            echo "Migration succeeded"
+          else
+            echo "Migration failed: $(cat /tmp/library-api-migrate-out.json)" >&2
+            exit 1
+          fi
