@@ -29,6 +29,7 @@ jobs:
       TACHYON_TENANT_ID: tn_01j702qf86pc2j35s0kv0gv3gy
       TACHYON_ENVIRONMENT: production
       TACHYON_CONFIG: tachyon.yaml
+      LIBRARY_API_BASE_URL: https://library-api.txcloud.app
       TACHYON_API_KEY: ${{ secrets.TACHYON_API_KEY }}
       GH_TOKEN: ${{ secrets.TACHYON_GITHUB_TOKEN || github.token }}
       AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
@@ -125,8 +126,8 @@ jobs:
       - name: Smoke test Library API health
         run: |
           set -euo pipefail
-          curl -fsS --max-time 20 https://library.api.n1.tachy.one/health | grep -qx 'OK'
-          curl -fsS --max-time 20 https://library.api.n1.tachy.one/version | jq -e '.version | length > 0'
+          curl -fsS --max-time 20 "${LIBRARY_API_BASE_URL}/health" | grep -qx 'OK'
+          curl -fsS --max-time 20 "${LIBRARY_API_BASE_URL}/version" | jq -e '.version | length > 0'
 
       - name: Smoke test public sign-in route
         run: |

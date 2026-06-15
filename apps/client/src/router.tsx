@@ -308,7 +308,7 @@ function SignedInLibraryDashboard({
             </div>
             <div className="border border-border bg-panel p-4">
               <div className="text-xs uppercase tracking-wider text-subtle">API</div>
-              <div className="mt-3 truncate text-sm font-medium">library.api.n1.tachy.one</div>
+              <div className="mt-3 truncate text-sm font-medium">library-api.txcloud.app</div>
             </div>
           </div>
 

@@ -91,7 +91,7 @@ tachyon env list library-api \
 1. API の health を確認する。
 
 ```bash
-curl -fsS https://library.api.n1.tachy.one/health
+curl -fsS https://library-api.txcloud.app/health
 ```
 
 期待値: `OK`
@@ -99,7 +99,7 @@ curl -fsS https://library.api.n1.tachy.one/health
 2. version endpoint を確認する。
 
 ```bash
-curl -fsS https://library.api.n1.tachy.one/version
+curl -fsS https://library-api.txcloud.app/version
 ```
 
 3. txcloud build / deployment event を確認する。

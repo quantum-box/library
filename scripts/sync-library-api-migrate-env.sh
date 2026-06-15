@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Sync library-api-migrate Lambda env from ASM provider secret.
-# Required because enterprise CargoLambda deploys preserve existing
-# Lambda configuration and skip manifest credential injection.
+# Sync library-api-migrate Lambda env from the txcloud-managed API Lambda.
+# Required because enterprise CargoLambda deploys preserve existing Lambda
+# configuration and skip manifest credential injection for the migrate Lambda.
 set -euo pipefail
 
 FUNCTION_NAME="${FUNCTION_NAME:-lambda-library-api-migrate}"
-SECRET_ID="${SECRET_ID:-tn_01j702qf86pc2j35s0kv0gv3gy/providers/library-api}"
+SOURCE_FUNCTION_NAME="${SOURCE_FUNCTION_NAME:-lambda-library-api}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 
 AWS_ARGS=(--region "${AWS_REGION}")
@@ -13,16 +13,14 @@ if [ -n "${AWS_PROFILE:-}" ]; then
   AWS_ARGS+=(--profile "${AWS_PROFILE}")
 fi
 
-SECRET_JSON="$(aws secretsmanager get-secret-value \
+DATABASE_URL="$(aws lambda get-function-configuration \
   "${AWS_ARGS[@]}" \
-  --secret-id "${SECRET_ID}" \
-  --query SecretString \
+  --function-name "${SOURCE_FUNCTION_NAME}" \
+  --query 'Environment.Variables.DATABASE_URL' \
   --output text)"
 
-DATABASE_URL="$(python3 -c "import json,sys; print(json.load(sys.stdin)['DATABASE_URL'])" <<<"${SECRET_JSON}")"
-
-if [ -z "${DATABASE_URL}" ]; then
-  echo "DATABASE_URL missing from provider secret" >&2
+if [ -z "${DATABASE_URL}" ] || [ "${DATABASE_URL}" = "None" ]; then
+  echo "DATABASE_URL missing from ${SOURCE_FUNCTION_NAME} Lambda environment" >&2
   exit 1
 fi
 
@@ -52,4 +50,4 @@ aws lambda wait function-updated \
   "${AWS_ARGS[@]}" \
   --function-name "${FUNCTION_NAME}"
 
-echo "Synced ${FUNCTION_NAME} environment from ASM provider secret"
+echo "Synced ${FUNCTION_NAME} environment from ${SOURCE_FUNCTION_NAME}"

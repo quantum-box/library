@@ -884,7 +884,7 @@ async function requestLibraryRestRepositories(
 ): Promise<LibraryRestRepository[]> {
   const baseUrls = [
     configuredLibraryApiBaseUrl(),
-    'https://library.api.n1.tachy.one',
+    'https://library-api.txcloud.app',
   ].filter((url, index, urls) => urls.indexOf(url) === index)
 
   for (const baseUrl of baseUrls) {

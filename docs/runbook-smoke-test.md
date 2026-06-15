@@ -13,7 +13,7 @@ GA deploy fails validation.
 Required inputs:
 
 - `LIBRARY_API_BASE_URL`: production or staging API origin, for example
-  `https://library.api.n1.tachy.one`
+  `https://library-api.txcloud.app`
 - `LIBRARY_API_TOKEN`: user JWT or API key token. API keys use the `pk_` prefix.
 - `LIBRARY_ORG`: organization username used for smoke testing.
 - `LIBRARY_REPO`: repository username used for smoke testing.
@@ -23,7 +23,7 @@ Required inputs:
 Set local shell variables before starting:
 
 ```bash
-export LIBRARY_API_BASE_URL="https://library.api.n1.tachy.one"
+export LIBRARY_API_BASE_URL="https://library-api.txcloud.app"
 export LIBRARY_API_TOKEN="<jwt-or-pk-api-key>"
 export LIBRARY_ORG="<org>"
 export LIBRARY_REPO="<repo>"
@@ -39,7 +39,7 @@ Use the script below for the repeatable GA gate. It is read-only by default and
 exits non-zero on the first failed step.
 
 ```bash
-LIBRARY_API_BASE_URL="https://library.api.n1.tachy.one" \
+LIBRARY_API_BASE_URL="https://library-api.txcloud.app" \
 LIBRARY_API_TOKEN="<jwt-or-pk-api-key>" \
 LIBRARY_ORG="<org>" \
 LIBRARY_REPO="<repo>" \

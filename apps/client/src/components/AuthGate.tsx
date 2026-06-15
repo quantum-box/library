@@ -94,7 +94,7 @@ export function AuthGate({ children }: AuthGateProps) {
           <div className="border border-border bg-surface p-5 shadow-soft">
             <div className="mb-5">
               <h2 className="text-base font-semibold">Sign in</h2>
-              <p className="mt-1 text-xs text-subtle">library.api.n1.tachy.one</p>
+              <p className="mt-1 text-xs text-subtle">library-api.txcloud.app</p>
             </div>
 
             <div className="flex flex-col gap-3">
