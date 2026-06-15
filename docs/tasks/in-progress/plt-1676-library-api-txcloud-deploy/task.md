@@ -6,6 +6,7 @@
 - Goal: migrate Library API production deployment from direct GitHub Actions `cargo lambda deploy` to txcloud Cloud App.
 - Rollback: keep the existing AWS Lambda function `lambda-library-api` available; do not delete the function as part of this migration.
 - txcloud Cloud App: created in the Library tenant as `app_01kshpeg8ppzemk6cypbws3q3j`.
+- Current decision: Library repo does not own `library-api` deploy / migration CI. Build and deployment status are owned by txcloud Cloud Apps; migration hook work belongs to Tachyon side follow-up PLT-1954.
 
 ## Prior Attempt Findings
 
@@ -27,7 +28,7 @@ However, PR #63 restored the Lambda workflow as `workflow_dispatch` only because
 
 ### Migration Implication
 
-The prior removal was premature for production migration. This migration must wire and verify the txcloud app/build path before disabling direct Lambda deployment. The Lambda function itself remains as rollback infrastructure.
+The prior removal was premature before the txcloud app/build path existed. Now that txcloud owns the Cloud App build/deployment status, Library should not reintroduce GitHub Actions deploy CI. The Lambda function itself remains as rollback infrastructure.
 
 ## Runtime Notes
 
@@ -73,7 +74,7 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 
 1. Add a Dockerfile that builds the workspace HTTP server binary `library-api` and runs it with `PORT=8080` for future container smoke/recovery.
 2. Update `apps/api/tachyon.yaml` to the current `tachyon/v1` Cloud App shape for the Library tenant, using txcloud-managed Lambda with the `enterprise-library` subnet.
-3. Replace the direct Lambda deploy workflow with txcloud manifest apply and build trigger/watch. Keep AWS Lambda resources untouched for rollback.
+3. Remove Library-owned deploy CI and rely on txcloud Cloud App build/deployment status. Keep AWS Lambda resources untouched for rollback.
 4. Inspect Lambda environment variable names only, then prepare redacted migration commands for txcloud secrets and plain variables.
 5. Apply/create/deploy the Cloud App only when the active tachyon auth profile is confirmed for the Library tenant or another safe Library-scoped profile is available.
 
@@ -81,7 +82,7 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 
 - `docker build -f apps/api/Dockerfile -t library-api:plt-1676 .`
 - `tachyon compute apps apply --dry-run --file apps/api/tachyon.yaml --tenant-id tn_01j702qf86pc2j35s0kv0gv3gy --environment production`
-- `python3` YAML parse for `.github/workflows/deploy-api.yml` and `apps/api/tachyon.yaml`
+- YAML parse for `tachyon.yaml`
 - `git diff --check`
 
 ## Current Blocker

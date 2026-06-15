@@ -91,7 +91,7 @@ tachyon env list library-api \
 1. API の health を確認する。
 
 ```bash
-curl -fsS https://library.api.n1.tachy.one/health
+curl -fsS https://library-api.txcloud.app/health
 ```
 
 期待値: `OK`
@@ -99,7 +99,7 @@ curl -fsS https://library.api.n1.tachy.one/health
 2. version endpoint を確認する。
 
 ```bash
-curl -fsS https://library.api.n1.tachy.one/version
+curl -fsS https://library-api.txcloud.app/version
 ```
 
 3. txcloud build / deployment event を確認する。
@@ -133,6 +133,21 @@ PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない
 - S3 / Parquet write error が継続していない
 
 5. Sentry は production project で `environment=production`, `service=library-api` 相当の event / issue を確認する。実 production event の強制発火は user impact と alert noise を生むため、既存 error event または設定確認で代替する。
+
+## Migration 実行経路
+
+Library repo には `library-api` の deploy / migration CI を置かない。API build / deploy は txcloud Cloud App 側の build / deployment status を正とする。
+
+PLT-1954 が完了するまでは、Library 側に GitHub Actions の migration bridge を追加しない。migration 実行が必要な場合は txcloud / Tachyon 側の運用手順として扱い、Library repo の CI から AWS credential / Lambda invoke を実行しない。
+
+Tachyon 側に Cloud App migration hook が実装されるまでは、`tachyon.yaml` に hook 設定は追加しない。現時点では hook phase / schema が未確定のため、Library 側は `library-api-migrate` Cloud App の定義だけを保持する。
+
+PLT-1954 完了後の切替手順:
+
+1. Tachyon 側の実装に合わせて、`tachyon.yaml` に migration hook 設定を追加する。
+2. txcloud 側の build / deployment flow で migration hook が `library-api` deploy 前に実行されることを確認する。
+3. Library repo に deploy / migration CI を再追加しない。
+4. txcloud build / deploy 後に `/health`, `/version`, GraphQL introspection, `planet-library` sign-in route を確認する。
 
 ## ロールバック
 

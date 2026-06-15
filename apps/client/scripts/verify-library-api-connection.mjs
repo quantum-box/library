@@ -3,13 +3,13 @@
  * Smoke-check Library API reachability for Photon client production config.
  * Usage:
  *   npm run library:api:verify
- *   LIBRARY_API_BASE_URL=https://library.api.n1.tachy.one npm run library:api:verify
+ *   LIBRARY_API_BASE_URL=https://library-api.txcloud.app npm run library:api:verify
  */
 
 const baseUrl = (
   process.env.LIBRARY_API_BASE_URL ??
   process.env.VITE_LIBRARY_API_BASE_URL ??
-  'https://library.api.n1.tachy.one'
+  'https://library-api.txcloud.app'
 ).replace(/\/+$/, '')
 
 const platformId =

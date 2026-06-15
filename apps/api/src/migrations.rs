@@ -3,7 +3,9 @@
 use sqlx::{mysql::MySqlPoolOptions, Executor};
 use value_object::DatabaseUrl;
 
-const DATABASE_NAME: &str = "library";
+const LIBRARY_DATABASE_NAME: &str = "library";
+const DATABASE_MANAGER_DATABASE_NAME: &str =
+    "tachyon_apps_database_manager";
 
 /// Resolves the production admin database URL from the runtime environment.
 ///
@@ -22,20 +24,49 @@ pub fn resolve_prod_database_url() -> errors::Result<DatabaseUrl> {
     })
 }
 
-/// Ensures the `library` schema exists and applies pending sqlx migrations.
+/// Ensures schemas required by library-api exist and applies pending migrations.
 pub async fn run_library_migrations(
     admin_database_url: &DatabaseUrl,
 ) -> errors::Result<()> {
-    ensure_database_exists(admin_database_url, DATABASE_NAME).await?;
+    run_database_manager_migrations(admin_database_url).await?;
+    run_app_migrations(admin_database_url).await?;
+    Ok(())
+}
+
+async fn run_database_manager_migrations(
+    admin_database_url: &DatabaseUrl,
+) -> errors::Result<()> {
+    ensure_database_exists(
+        admin_database_url,
+        DATABASE_MANAGER_DATABASE_NAME,
+    )
+    .await?;
     let db = persistence::Db::new(
-        admin_database_url.use_database(DATABASE_NAME),
+        admin_database_url.use_database(DATABASE_MANAGER_DATABASE_NAME),
     )
     .await;
-    // Remove any partially applied migrations so they can be re-run cleanly.
-    sqlx::query("DELETE FROM _sqlx_migrations WHERE success = FALSE")
-        .execute(db.pool().as_ref())
+    clear_failed_sqlx_migrations(&db).await;
+    sqlx::migrate!("../../packages/database-manager/migrations")
+        .run(db.pool().as_ref())
         .await
-        .ok();
+        .map_err(|error| {
+            errors::Error::internal_server_error(format!(
+                "Failed to run database-manager migrations: {error}"
+            ))
+        })?;
+    Ok(())
+}
+
+async fn run_app_migrations(
+    admin_database_url: &DatabaseUrl,
+) -> errors::Result<()> {
+    ensure_database_exists(admin_database_url, LIBRARY_DATABASE_NAME)
+        .await?;
+    let db = persistence::Db::new(
+        admin_database_url.use_database(LIBRARY_DATABASE_NAME),
+    )
+    .await;
+    clear_failed_sqlx_migrations(&db).await;
     // PLT-1808: 20241116030727 was applied on production before 1d2b766 added
     // IF NOT EXISTS (checksum drift). Restore the e769b7f SHA-384 checksum so
     // sqlx accepts the reverted migration file without re-running DDL.
@@ -57,6 +88,14 @@ pub async fn run_library_migrations(
             ))
         })?;
     Ok(())
+}
+
+async fn clear_failed_sqlx_migrations(db: &persistence::Db) {
+    // Remove any partially applied migrations so they can be re-run cleanly.
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE success = FALSE")
+        .execute(db.pool().as_ref())
+        .await
+        .ok();
 }
 
 async fn ensure_database_exists(

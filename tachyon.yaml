@@ -50,16 +50,14 @@ spec:
           value: "ap-northeast-1_8Ga4bK5M4"
         - name: TACHYON_API_URL
           value: "https://api.n1.tachy.one"
+        - name: LIBRARY_API_BASE_URL
+          value: "https://library-api.txcloud.app"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
           type: credential
           valueFrom:
             secret: library-api/SENTRY_DSN
-        - name: OTEL_EXPORTER_OTLP_HEADERS
-          type: credential
-          valueFrom:
-            secret: library-api/OTEL_EXPORTER_OTLP_HEADERS
         - name: DB_POOL_MAX_CONNECTIONS
           value: "16"
         - name: DB_POOL_ACQUIRE_TIMEOUT_SECS
@@ -80,10 +78,6 @@ spec:
           value: "library-api"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
           value: "http/protobuf"
-        - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-          type: credential
-          valueFrom:
-            secret: library-api/OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "deployment.environment=production,service.namespace=library"
         - name: OTEL_TRACES_SAMPLER_ARG

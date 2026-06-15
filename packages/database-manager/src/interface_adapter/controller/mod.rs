@@ -1,3 +1,4 @@
+#[allow(clippy::result_large_err)]
 mod pb {
     tonic::include_proto!("database_manager");
 }
