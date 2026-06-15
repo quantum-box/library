@@ -8,7 +8,7 @@ Single `tachyon.yaml` at `~/library/tachyon.yaml` defines both `library-api` (La
 
 - Add root `tachyon.yaml` (monorepo CloudApps manifest)
 - Delete `apps/api/tachyon.yaml`
-- Update `.github/workflows/deploy-api.yml` → `TACHYON_CONFIG: tachyon.yaml`, watch `tachyon.yaml` + `apps/web/**`
+- Remove Library-owned API deploy CI; txcloud Cloud Apps consume root `tachyon.yaml` for build/deployment status.
 
 ## Post-merge
 

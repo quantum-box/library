@@ -136,20 +136,17 @@ PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない
 
 ## Migration 実行経路
 
-PLT-1954 が完了するまでは、`.github/workflows/deploy-api.yml` が temporary migration bridge として以下を実行する。
+Library repo には `library-api` の deploy / migration CI を置かない。API build / deploy は txcloud Cloud App 側の build / deployment status を正とする。
 
-1. txcloud で `library-api-migrate` を build / deploy する。
-2. txcloud-managed `library-api` Lambda から migration Lambda へ必要な runtime env を同期する。
-3. GitHub Actions から `library-api-migrate` Lambda を invoke する。
-4. migration 成功後に txcloud で `library-api` を build / deploy する。
+PLT-1954 が完了するまでは、Library 側に GitHub Actions の migration bridge を追加しない。migration 実行が必要な場合は txcloud / Tachyon 側の運用手順として扱い、Library repo の CI から AWS credential / Lambda invoke を実行しない。
 
-Tachyon 側に Cloud App migration hook が実装されるまでは、`tachyon.yaml` に hook 設定は追加しない。現時点では hook phase / schema が未確定のため、Library 側は GitHub Actions の temporary migration bridge を正とする。
+Tachyon 側に Cloud App migration hook が実装されるまでは、`tachyon.yaml` に hook 設定は追加しない。現時点では hook phase / schema が未確定のため、Library 側は `library-api-migrate` Cloud App の定義だけを保持する。
 
 PLT-1954 完了後の切替手順:
 
 1. Tachyon 側の実装に合わせて、`tachyon.yaml` に migration hook 設定を追加する。
-2. `.github/workflows/deploy-api.yml` から temporary migration bridge の AWS credential / env sync / invoke steps を削除する。
-3. `.github/workflows/migrate-api.yml` は緊急時の手動 migration 専用にするか、Cloud App の hook 経路へ統合して廃止する。
+2. txcloud 側の build / deployment flow で migration hook が `library-api` deploy 前に実行されることを確認する。
+3. Library repo に deploy / migration CI を再追加しない。
 4. txcloud build / deploy 後に `/health`, `/version`, GraphQL introspection, `planet-library` sign-in route を確認する。
 
 ## ロールバック
