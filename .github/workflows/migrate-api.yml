@@ -32,7 +32,7 @@ jobs:
         with:
           ref: ${{ inputs.branch || github.ref }}
 
-      - name: Require txcloud and AWS deploy credentials
+      - name: Require txcloud and migration invoke credentials
         run: |
           set -euo pipefail
           test -n "${TACHYON_API_KEY}"
@@ -71,7 +71,7 @@ jobs:
             --tenant-id "${TACHYON_TENANT_ID}" \
             --environment "${TACHYON_ENVIRONMENT}"
 
-      - name: Build and deploy library-api-migrate Lambda
+      - name: Trigger txcloud build for library-api-migrate
         run: |
           set -euo pipefail
           tachyon compute builds trigger library-api-migrate \
@@ -89,7 +89,7 @@ jobs:
             --tenant-id "${TACHYON_TENANT_ID}" \
             --environment "${TACHYON_ENVIRONMENT}"
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials for migration invoke
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
