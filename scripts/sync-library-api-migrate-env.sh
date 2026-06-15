@@ -2,6 +2,8 @@
 # Sync library-api-migrate Lambda env from the txcloud-managed API Lambda.
 # Required because enterprise CargoLambda deploys preserve existing Lambda
 # configuration and skip manifest credential injection for the migrate Lambda.
+# Temporary bridge until PLT-1954 moves migration execution into txcloud
+# preDeploy lambdaInvoke hooks.
 set -euo pipefail
 
 FUNCTION_NAME="${FUNCTION_NAME:-lambda-library-api-migrate}"

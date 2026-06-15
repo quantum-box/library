@@ -35,6 +35,17 @@ spec:
           cp target/lambda/lambda-library-api/bootstrap ../../target/lambda/lambda-library-api/bootstrap'
         release: true
         arch: arm64
+      # Pending PLT-1954: rename xPendingHooks to hooks after
+      # txcloud supports lambdaInvoke deploy hooks. This keeps the
+      # intended Cloud App migration path next to the app without
+      # activating an unsupported production hook.
+      xPendingHooks:
+        preDeploy:
+          - name: migrate
+            lambdaInvoke:
+              appName: library-api-migrate
+              payload: {}
+            timeoutSeconds: 900
       envVars:
         - name: DATABASE_URL
           type: credential

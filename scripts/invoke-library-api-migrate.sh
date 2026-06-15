@@ -3,8 +3,9 @@ set -euo pipefail
 
 FUNCTION_NAME="${FUNCTION_NAME:-lambda-library-api-migrate}"
 OUTPUT_FILE="${OUTPUT_FILE:-/tmp/library-api-migrate-out.json}"
+AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 
-AWS_ARGS=()
+AWS_ARGS=(--region "${AWS_REGION}")
 if [ -n "${AWS_PROFILE:-}" ]; then
   AWS_ARGS+=(--profile "${AWS_PROFILE}")
 fi
@@ -18,11 +19,12 @@ aws lambda invoke \
   "${OUTPUT_FILE}"
 
 cat "${OUTPUT_FILE}"
-python3 - <<'PY'
+OUTPUT_FILE="${OUTPUT_FILE}" python3 - <<'PY'
 import json
+import os
 import sys
 
-payload = json.load(open("/tmp/library-api-migrate-out.json"))
+payload = json.load(open(os.environ["OUTPUT_FILE"]))
 if payload.get("status") == "ok":
     sys.exit(0)
 if payload.get("errorMessage"):

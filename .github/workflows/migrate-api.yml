@@ -89,14 +89,14 @@ jobs:
             --tenant-id "${TACHYON_TENANT_ID}" \
             --environment "${TACHYON_ENVIRONMENT}"
 
-      - name: Configure AWS credentials for migration invoke
+      - name: "Temporary migration bridge: configure AWS credentials"
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ap-northeast-1
 
-      - name: Sync library-api-migrate Lambda env from txcloud API Lambda
+      - name: "Temporary migration bridge: sync txcloud Lambda env"
         run: bash scripts/sync-library-api-migrate-env.sh
 
-      - name: Invoke migration Lambda
+      - name: "Temporary migration bridge: invoke migration Lambda"
         run: bash scripts/invoke-library-api-migrate.sh

@@ -134,6 +134,24 @@ PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない
 
 5. Sentry は production project で `environment=production`, `service=library-api` 相当の event / issue を確認する。実 production event の強制発火は user impact と alert noise を生むため、既存 error event または設定確認で代替する。
 
+## Migration 実行経路
+
+PLT-1954 が完了するまでは、`.github/workflows/deploy-api.yml` が temporary migration bridge として以下を実行する。
+
+1. txcloud で `library-api-migrate` を build / deploy する。
+2. txcloud-managed `library-api` Lambda から migration Lambda へ必要な runtime env を同期する。
+3. GitHub Actions から `library-api-migrate` Lambda を invoke する。
+4. migration 成功後に txcloud で `library-api` を build / deploy する。
+
+`tachyon.yaml` の `library-api.xPendingHooks.preDeploy` は、PLT-1954 後に有効化する intended state である。現時点で `hooks.preDeploy.lambdaInvoke` にリネームすると、未対応の txcloud runtime で deploy が失敗するため有効化しない。
+
+PLT-1954 完了後の切替手順:
+
+1. `xPendingHooks` を `hooks` にリネームする。
+2. `.github/workflows/deploy-api.yml` から temporary migration bridge の AWS credential / env sync / invoke steps を削除する。
+3. `.github/workflows/migrate-api.yml` は緊急時の手動 migration 専用にするか、Cloud App preDeploy 経路へ統合して廃止する。
+4. txcloud build / deploy 後に `/health`, `/version`, GraphQL introspection, `planet-library` sign-in route を確認する。
+
 ## ロールバック
 
 1. 直前の安定版 txcloud deployment を確認する。
