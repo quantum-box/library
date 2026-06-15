@@ -143,13 +143,13 @@ PLT-1954 が完了するまでは、`.github/workflows/deploy-api.yml` が tempo
 3. GitHub Actions から `library-api-migrate` Lambda を invoke する。
 4. migration 成功後に txcloud で `library-api` を build / deploy する。
 
-`tachyon.yaml` の `library-api.xPendingHooks.preDeploy` は、PLT-1954 後に有効化する intended state である。現時点で `hooks.preDeploy.lambdaInvoke` にリネームすると、未対応の txcloud runtime で deploy が失敗するため有効化しない。
+Tachyon 側に Cloud App migration hook が実装されるまでは、`tachyon.yaml` に hook 設定は追加しない。現時点では hook phase / schema が未確定のため、Library 側は GitHub Actions の temporary migration bridge を正とする。
 
 PLT-1954 完了後の切替手順:
 
-1. `xPendingHooks` を `hooks` にリネームする。
+1. Tachyon 側の実装に合わせて、`tachyon.yaml` に migration hook 設定を追加する。
 2. `.github/workflows/deploy-api.yml` から temporary migration bridge の AWS credential / env sync / invoke steps を削除する。
-3. `.github/workflows/migrate-api.yml` は緊急時の手動 migration 専用にするか、Cloud App preDeploy 経路へ統合して廃止する。
+3. `.github/workflows/migrate-api.yml` は緊急時の手動 migration 専用にするか、Cloud App の hook 経路へ統合して廃止する。
 4. txcloud build / deploy 後に `/health`, `/version`, GraphQL introspection, `planet-library` sign-in route を確認する。
 
 ## ロールバック

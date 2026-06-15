@@ -124,7 +124,7 @@ Library GA 後 1 週間の監視、アラート、ステータス更新、一次
 
 ## 一次検知経路
 
-- Deploy failure: `.github/workflows/deploy-api.yml` が txcloud manifest apply、build trigger/watch、temporary migration bridge、Library API health/version smoke、planet-library sign-in smoke を実行する。失敗時は GitHub Actions の failed run と通知が一次検知になる。PLT-1954 完了後は migration bridge を txcloud `preDeploy` hook に置き換える。
+- Deploy failure: `.github/workflows/deploy-api.yml` が txcloud manifest apply、build trigger/watch、temporary migration bridge、Library API health/version smoke、planet-library sign-in smoke を実行する。失敗時は GitHub Actions の failed run と通知が一次検知になる。PLT-1954 完了後は migration bridge を txcloud 側の deploy hook に置き換える。
 - Health failure: Library API health/version checks use `https://library-api.txcloud.app`, and public web checks use `https://planet-library.txcloud.app/sign_in`. Consecutive failures should be handled as the primary availability signal.
 - Runtime error spike: Sentry production project と既存 runtime logs を確認する。Sentry Team plan で OTEL 直接送信が使えるため、PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない。全 backend の OTEL + Sentry OTLP exporter 導入は PLT-1696 で扱う。
 
