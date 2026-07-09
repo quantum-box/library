@@ -1,24 +1,28 @@
 import type { LpLanguage } from '@/app/lp'
-import { fadeInAnimation, slideUpAnimation } from './animations'
-import {
-	Code2,
-	DollarSign,
-	GitBranch,
-	Globe2,
-	ShieldCheck,
-	Workflow,
-} from 'lucide-react'
+import { SectionHeader } from './SectionHeader'
 
 const roadmapOrder = [
-	{ key: 'api', icon: Code2 },
-	{ key: 'billing', icon: DollarSign },
-	{ key: 'version', icon: GitBranch },
-	{ key: 'global', icon: Globe2 },
-	{ key: 'security', icon: ShieldCheck },
-	{ key: 'extensibility', icon: Workflow },
+	{ key: 'api', tone: 'now' },
+	{ key: 'billing', tone: 'beta' },
+	{ key: 'version', tone: 'planned' },
+	{ key: 'global', tone: 'planned' },
+	{ key: 'security', tone: 'planned' },
+	{ key: 'extensibility', tone: 'planned' },
 ] as const
 
 type RoadmapKey = (typeof roadmapOrder)[number]['key']
+
+const toneStyles = {
+	now: {
+		dot: 'bg-emerald-500 ring-4 ring-emerald-100',
+		text: 'text-emerald-700',
+	},
+	beta: { dot: 'bg-blue-500 ring-4 ring-blue-100', text: 'text-blue-700' },
+	planned: {
+		dot: 'bg-slate-300 ring-4 ring-slate-100',
+		text: 'text-slate-500',
+	},
+} as const
 
 type RoadmapItemCopy = {
 	stage: string
@@ -29,12 +33,14 @@ type RoadmapItemCopy = {
 const copy: Record<
 	LpLanguage,
 	{
+		eyebrow: string
 		title: string
 		subtitle: string
 		items: Record<RoadmapKey, RoadmapItemCopy>
 	}
 > = {
 	en: {
+		eyebrow: 'Roadmap',
 		title: 'A roadmap built with customers',
 		subtitle:
 			'We prioritize resilient APIs, governance, and integrations that keep Library operating as your long-term knowledge OS.',
@@ -78,6 +84,7 @@ const copy: Record<
 		},
 	},
 	ja: {
+		eyebrow: 'ロードマップ',
 		title: 'お客さまと共に描くロードマップ',
 		subtitle:
 			'堅牢な API とガバナンス、そして統合性を最優先に、Library を長期的なナレッジ OS として進化させていきます。',
@@ -126,53 +133,47 @@ export function Roadmap({ lang }: { lang: LpLanguage }) {
 	const t = copy[lang]
 
 	return (
-		<section id='roadmap' className='scroll-mt-24 space-y-12'>
-			<div className='text-center'>
-				<p
-					className={`text-sm uppercase tracking-[0.3em] text-sky-200/80 ${fadeInAnimation}`}
-				>
-					{lang === 'en' ? 'Where we are heading' : 'これからの展望'}
-				</p>
-				<div className={`${fadeInAnimation} delay-150 space-y-4`}>
-					<h2 className='text-3xl font-semibold text-white sm:text-4xl md:text-5xl'>
-						{t.title}
-					</h2>
-					<p className='mx-auto max-w-3xl text-base text-slate-300 sm:text-lg'>
-						{t.subtitle}
-					</p>
-				</div>
-			</div>
+		<section
+			id='roadmap'
+			className='scroll-mt-24 border-t border-slate-200 py-16 sm:py-20'
+		>
+			<SectionHeader
+				chapter='05'
+				eyebrow={t.eyebrow}
+				title={t.title}
+				lead={t.subtitle}
+			/>
 
-			<div className={`grid gap-6 sm:grid-cols-2 ${slideUpAnimation}`}>
-				{roadmapOrder.map(item => {
+			<ol className='mt-12 max-w-3xl'>
+				{roadmapOrder.map((item, index) => {
 					const details = t.items[item.key]
-					const Icon = item.icon
+					const tone = toneStyles[item.tone]
+					const isLast = index === roadmapOrder.length - 1
 					return (
-						<div
-							key={item.key}
-							className='relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur transition duration-300 hover:border-sky-400/60 hover:bg-white/10'
-						>
-							<div className='pointer-events-none absolute -right-14 top-8 h-36 w-36 rounded-full bg-sky-500/15 blur-3xl opacity-0 transition duration-500 hover:opacity-80' />
-							<div className='relative flex items-center gap-4'>
-								<div className='flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white'>
-									<Icon className='h-6 w-6' />
-								</div>
-								<div className='space-y-1 text-left'>
-									<p className='text-xs font-semibold uppercase tracking-widest text-slate-300'>
-										{details.stage}
-									</p>
-									<h3 className='text-lg font-semibold text-white sm:text-xl'>
-										{details.title}
-									</h3>
-									<p className='text-sm text-slate-300'>
-										{details.description}
-									</p>
-								</div>
+						<li key={item.key} className='relative flex gap-6'>
+							<div className='flex flex-col items-center'>
+								<span
+									className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${tone.dot}`}
+								/>
+								{!isLast && <span className='w-px flex-1 bg-slate-200' />}
 							</div>
-						</div>
+							<div className={isLast ? 'pb-0' : 'pb-10'}>
+								<p
+									className={`font-mono text-xs uppercase tracking-[0.15em] ${tone.text}`}
+								>
+									{details.stage}
+								</p>
+								<h3 className='mt-1.5 text-base font-semibold text-slate-900 sm:text-lg'>
+									{details.title}
+								</h3>
+								<p className='mt-1.5 text-sm leading-relaxed text-slate-600'>
+									{details.description}
+								</p>
+							</div>
+						</li>
 					)
 				})}
-			</div>
+			</ol>
 		</section>
 	)
 }

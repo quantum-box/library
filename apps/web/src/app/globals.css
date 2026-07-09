@@ -92,7 +92,9 @@ h4 {
 	}
 	html,
 	body {
-		@apply bg-background text-foreground overflow-x-hidden;
+		/* overflow-x-hidden would break position:sticky (body becomes a clipped
+		   scroll container); clip prevents horizontal overflow without that. */
+		@apply bg-background text-foreground overflow-x-clip;
 	}
 }
 

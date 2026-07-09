@@ -1,7 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouterState } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { DashboardPage } from '@/app/dashboard'
-import LP from '@/app/lp'
+import { detectLocale } from '@/app/i18n/detect-locale'
+import LP, { type LpLanguage } from '@/app/lp'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -9,6 +10,9 @@ export const Route = createFileRoute('/')({
 
 function HomePage() {
   const { session, isLoading } = useAuth()
+  const searchParams = useRouterState({
+    select: (s) => new URLSearchParams(s.location.search),
+  })
 
   if (isLoading) {
     return (
@@ -19,7 +23,14 @@ function HomePage() {
   }
 
   if (!session?.user) {
-    return <LP lang='en' />
+    const langParam = searchParams.get('lang')
+    const lang: LpLanguage =
+      langParam === 'en' || langParam === 'ja'
+        ? langParam
+        : detectLocale() === 'ja'
+          ? 'ja'
+          : 'en'
+    return <LP lang={lang} />
   }
 
   return <DashboardPage />

@@ -1,51 +1,71 @@
 import type { LpLanguage } from '@/app/lp'
-import { fadeInAnimation, slideUpAnimation } from './animations'
-import { AlertTriangle, CheckCircle2, RefreshCcw } from 'lucide-react'
+import { Check, X } from 'lucide-react'
+import { SectionHeader } from './SectionHeader'
 
 const copy: Record<
 	LpLanguage,
 	{
+		eyebrow: string
 		title: string
 		subtitle: string
+		painTitle: string
 		painPoints: string[]
+		painNoteTitle: string
+		painNote: string
+		solutionTitle: string
 		solutions: string[]
+		alignmentLabel: string
 		alignment: string
 		alignmentDetail: string
 	}
 > = {
 	en: {
+		eyebrow: 'Challenges & answers',
 		title: 'Modern teams drown in content yet struggle to trust it',
 		subtitle:
 			'Library reconnects fractured knowledge ecosystems so product updates, compliance, and go-to-market teams operate from the same truth.',
+		painTitle: 'Where organizations struggle',
 		painPoints: [
 			'Knowledge is duplicated across tools with no single source of truth.',
 			'Compliance cannot trace who approved what and when.',
 			'API consumers break whenever content structures evolve.',
 		],
+		painNoteTitle: 'Without Library',
+		painNote:
+			'Static pages and scattered docs keep teams in constant catch-up mode with no shared visibility into change.',
+		solutionTitle: 'How Library responds',
 		solutions: [
 			'Every fact links back to its evidence, keeping narratives trustworthy.',
 			'Releases run through review states with immutable audit trails.',
 			'Developers rely on versioned schemas and change notifications.',
 		],
+		alignmentLabel: 'Time to alignment',
 		alignment: 'Hours → Minutes',
 		alignmentDetail:
 			'Automatic updates broadcast to every channel as changes land.',
 	},
 	ja: {
+		eyebrow: '課題と解決',
 		title: '情報はあふれているのに、信頼できる形で使いこなせない',
 		subtitle:
 			'Library は分断されたナレッジエコシステムをつなぎ直し、プロダクト更新・コンプライアンス・Go-to-market が同じ「事実」を基に動けるようにします。',
+		painTitle: '組織が抱える課題',
 		painPoints: [
 			'ツールを跨いで情報が複製され、信頼できる唯一の情報源が存在しない。',
 			'誰がいつ承認したのかを追跡できず、監査に耐えられない。',
 			'コンテンツ構造が変わるたびに API 利用側が破綻してしまう。',
 		],
+		painNoteTitle: 'Library がない場合',
+		painNote:
+			'静的ページと散在したドキュメントでは変更を共有できず、チームは常に後追いになります。',
+		solutionTitle: 'Library が解決すること',
 		solutions: [
 			'すべての記述に根拠を紐づけ、ストーリーの信頼性を維持します。',
 			'リリースはレビュー状態を経て、改ざんできない証跡とともに記録されます。',
 			'開発者はバージョン付きスキーマと変更通知により安全に連携できます。',
 		],
-		alignment: '時間は数時間から数分へ',
+		alignmentLabel: 'アラインメントまでの時間',
+		alignment: '数時間 → 数分',
 		alignmentDetail: '変更が入るたびにすべてのチャネルへ自動で通知されます。',
 	},
 }
@@ -54,81 +74,70 @@ export function Challenges({ lang }: { lang: LpLanguage }) {
 	const t = copy[lang]
 
 	return (
-		<section id='challenges' className='scroll-mt-24 space-y-10'>
-			<div className='text-center'>
-				<p
-					className={`text-sm uppercase tracking-[0.3em] text-sky-200/80 ${fadeInAnimation}`}
-				>
-					Library Insight
-				</p>
-				<div className={`${fadeInAnimation} delay-150 space-y-4`}>
-					<h2 className='text-3xl font-semibold text-white sm:text-4xl md:text-5xl'>
-						{t.title}
-					</h2>
-					<p className='mx-auto max-w-3xl text-base text-slate-300 sm:text-lg'>
-						{t.subtitle}
-					</p>
-				</div>
-			</div>
+		<section
+			id='challenges'
+			className='scroll-mt-24 border-t border-slate-200 py-16 sm:py-20'
+		>
+			<SectionHeader
+				chapter='03'
+				eyebrow={t.eyebrow}
+				title={t.title}
+				lead={t.subtitle}
+			/>
 
-			<div className={`grid gap-6 lg:grid-cols-2 ${slideUpAnimation}`}>
-				<div className='relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur'>
-					<div className='pointer-events-none absolute -right-12 top-12 h-32 w-32 rounded-full bg-rose-500/20 blur-3xl opacity-70' />
-					<div className='relative flex items-center gap-3 text-sm font-semibold uppercase tracking-widest text-rose-200'>
-						<AlertTriangle className='h-5 w-5' />
-						{lang === 'en'
-							? 'Where organizations struggle'
-							: '組織が抱える課題'}
-					</div>
-					<ul className='relative mt-6 space-y-4 text-sm text-slate-200 sm:text-base'>
+			<div className='mt-12 grid gap-6 lg:grid-cols-2'>
+				<div className='rounded-lg border border-slate-200 bg-slate-50 p-6 sm:p-8'>
+					<p className='font-mono text-xs uppercase tracking-[0.2em] text-slate-500'>
+						{t.painTitle}
+					</p>
+					<ul className='mt-6 space-y-4'>
 						{t.painPoints.map(point => (
-							<li key={point} className='flex items-start gap-3'>
-								<span className='mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-rose-300' />
+							<li
+								key={point}
+								className='flex items-start gap-3 text-sm leading-relaxed text-slate-700 sm:text-base'
+							>
+								<X className='mt-1 h-4 w-4 shrink-0 text-rose-500' />
 								{point}
 							</li>
 						))}
 					</ul>
-					<div className='relative mt-8 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200'>
-						<p className='font-semibold text-white'>
-							{lang === 'en' ? 'Without Library' : 'Library がない場合'}
+					<div className='mt-8 border-t border-slate-200 pt-4'>
+						<p className='text-sm font-semibold text-slate-700'>
+							{t.painNoteTitle}
 						</p>
-						<p className='mt-2 text-slate-300'>
-							{lang === 'en'
-								? 'Static pages and scattered docs keep teams in constant catch-up mode with no shared visibility into change.'
-								: '静的ページと散在したドキュメントでは変更を共有できず、チームは常に後追いになります。'}
+						<p className='mt-1.5 text-sm leading-relaxed text-slate-500'>
+							{t.painNote}
 						</p>
 					</div>
 				</div>
 
-				<div className='relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur'>
-					<div className='pointer-events-none absolute -left-16 top-16 h-36 w-36 rounded-full bg-emerald-400/25 blur-3xl opacity-80' />
-					<div className='relative flex items-center gap-3 text-sm font-semibold uppercase tracking-widest text-emerald-200'>
-						<CheckCircle2 className='h-5 w-5' />
-						{lang === 'en' ? 'How Library responds' : 'Library が解決すること'}
-					</div>
-					<ul className='relative mt-6 space-y-4 text-sm text-slate-200 sm:text-base'>
+				<div className='rounded-lg border border-slate-200 bg-white p-6 sm:p-8'>
+					<p className='font-mono text-xs uppercase tracking-[0.2em] text-emerald-700'>
+						{t.solutionTitle}
+					</p>
+					<ul className='mt-6 space-y-4'>
 						{t.solutions.map(solution => (
-							<li key={solution} className='flex items-start gap-3'>
-								<span className='mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-emerald-300' />
+							<li
+								key={solution}
+								className='flex items-start gap-3 text-sm leading-relaxed text-slate-700 sm:text-base'
+							>
+								<Check className='mt-1 h-4 w-4 shrink-0 text-emerald-600' />
 								{solution}
 							</li>
 						))}
 					</ul>
-					<div className='relative mt-8 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200 sm:flex-row sm:items-center sm:justify-between'>
+					<div className='mt-8 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:items-end sm:justify-between'>
 						<div>
-							<p className='text-xs font-semibold uppercase tracking-widest text-slate-300'>
-								{lang === 'en'
-									? 'Time to alignment'
-									: 'アラインメントまでの時間'}
+							<p className='font-mono text-xs uppercase tracking-wide text-slate-400'>
+								{t.alignmentLabel}
 							</p>
-							<p className='mt-1 text-2xl font-semibold text-white'>
+							<p className='mt-1 font-display text-2xl text-slate-900'>
 								{t.alignment}
 							</p>
 						</div>
-						<div className='flex items-center gap-3 text-xs text-slate-300 sm:text-sm'>
-							<RefreshCcw className='h-4 w-4 text-emerald-200' />
+						<p className='max-w-[16rem] text-xs leading-relaxed text-slate-500 sm:text-right'>
 							{t.alignmentDetail}
-						</div>
+						</p>
 					</div>
 				</div>
 			</div>
