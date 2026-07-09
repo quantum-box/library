@@ -20,6 +20,17 @@ const config = {
     		}
     	},
     	extend: {
+    		fontFamily: {
+    			display: [
+    				'"Iowan Old Style"',
+    				'Palatino',
+    				'Georgia',
+    				'"Hiragino Mincho ProN"',
+    				'"Yu Mincho"',
+    				'"Noto Serif JP"',
+    				'serif'
+    			]
+    		},
     		colors: {
     			border: 'hsl(var(--border))',
     			input: 'hsl(var(--input))',

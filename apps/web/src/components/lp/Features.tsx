@@ -1,25 +1,16 @@
-import { Card } from '@/components/ui/card'
 import type { LpLanguage } from '@/app/lp'
-import {
-	BadgeCheck,
-	Boxes,
-	Code2,
-	GitBranch,
-	Share2,
-	Users,
-} from 'lucide-react'
-import { fadeInAnimation, slideUpAnimation } from './animations'
+import { SectionHeader } from './SectionHeader'
 
-const baseFeatures = [
-	{ icon: Code2, key: 'api' },
-	{ icon: Share2, key: 'linking' },
-	{ icon: GitBranch, key: 'version' },
-	{ icon: Users, key: 'contributors' },
-	{ icon: Boxes, key: 'blocks' },
-	{ icon: BadgeCheck, key: 'traceability' },
+const featureOrder = [
+	'api',
+	'linking',
+	'version',
+	'contributors',
+	'blocks',
+	'traceability',
 ] as const
 
-type FeatureKey = (typeof baseFeatures)[number]['key']
+type FeatureKey = (typeof featureOrder)[number]
 
 type FeatureCopy = {
 	title: string
@@ -30,12 +21,14 @@ type FeatureCopy = {
 const copy: Record<
 	LpLanguage,
 	{
+		eyebrow: string
 		title: string
 		subtitle: string
 		features: Record<FeatureKey, FeatureCopy>
 	}
 > = {
 	en: {
+		eyebrow: 'Features',
 		title: 'API-first knowledge infrastructure for product teams',
 		subtitle:
 			'Standardize how knowledge travels across your organization with services built for real-time updates, compliance, and reuse.',
@@ -79,6 +72,7 @@ const copy: Record<
 		},
 	},
 	ja: {
+		eyebrow: '特徴',
 		title: 'プロダクトチームのための API ファーストなナレッジ基盤',
 		subtitle:
 			'リアルタイム更新・コンプライアンス・再利用性を前提としたサービスで、組織内の知識の流れを標準化します。',
@@ -125,53 +119,40 @@ export function Features({ lang }: { lang: LpLanguage }) {
 	const t = copy[lang]
 
 	return (
-		<section id='features' className='space-y-12 scroll-mt-24'>
-			<div className='text-center'>
-				<p
-					className={`text-sm uppercase tracking-[0.3em] text-sky-200/80 ${fadeInAnimation}`}
-				>
-					Library
-				</p>
-				<div className={`${fadeInAnimation} delay-150 space-y-4`}>
-					<h2 className='text-3xl font-semibold text-white sm:text-4xl md:text-5xl'>
-						{t.title}
-					</h2>
-					<p className='mx-auto max-w-3xl text-base text-slate-300 sm:text-lg'>
-						{t.subtitle}
-					</p>
-				</div>
-			</div>
+		<section
+			id='features'
+			className='scroll-mt-24 border-t border-slate-200 py-16 sm:py-20'
+		>
+			<SectionHeader
+				chapter='01'
+				eyebrow={t.eyebrow}
+				title={t.title}
+				lead={t.subtitle}
+			/>
 
-			<div
-				className={`grid gap-5 pt-4 sm:grid-cols-2 xl:grid-cols-3 ${slideUpAnimation}`}
-			>
-				{baseFeatures.map(feature => {
-					const details = t.features[feature.key]
+			<div className='mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3'>
+				{featureOrder.map((key, index) => {
+					const details = t.features[key]
 					return (
-						<Card
-							key={feature.key}
-							className='group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 transition duration-300 hover:border-sky-400/60 hover:bg-white/10'
+						<div
+							key={key}
+							className='rounded-lg border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300'
 						>
-							<div className='pointer-events-none absolute -left-12 top-6 h-40 w-40 rounded-full bg-sky-500/20 blur-3xl opacity-0 transition duration-500 group-hover:opacity-80' />
-							<div className='relative flex items-center justify-between gap-4'>
-								<div className='flex items-center gap-3'>
-									<div className='flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white transition group-hover:border-sky-300/40 group-hover:text-sky-200'>
-										<feature.icon className='h-6 w-6' />
-									</div>
-									<div>
-										<h3 className='text-lg font-semibold text-white sm:text-xl'>
-											{details.title}
-										</h3>
-										<p className='mt-1 text-sm text-slate-300'>
-											{details.description}
-										</p>
-									</div>
-								</div>
-								<span className='rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-sky-200'>
+							<div className='flex items-baseline justify-between gap-4'>
+								<span className='font-mono text-sm text-blue-700'>
+									1.{index + 1}
+								</span>
+								<span className='font-mono text-[11px] uppercase tracking-wide text-slate-400'>
 									{details.badge}
 								</span>
 							</div>
-						</Card>
+							<h3 className='mt-4 text-base font-semibold text-slate-900'>
+								{details.title}
+							</h3>
+							<p className='mt-2 text-sm leading-relaxed text-slate-600'>
+								{details.description}
+							</p>
+						</div>
 					)
 				})}
 			</div>
