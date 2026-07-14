@@ -66,7 +66,8 @@ flowchart LR
   Collaboration["Library Collaboration adapter\nACL / tickets / checkpoints"]
   Integration["GitHub / Notion adapters"]
   Api["Library API adapters\nREST / GraphQL / service binding"]
-  Ports["Library application ports\ncommands / queries / Unit of Work"]
+  Ports["Library application ports\ncommands / queries"]
+  UnitOfWork["Application Unit of Work\ntransaction coordinator"]
   Database["Database BC\nschema / record / relation / index"]
   Lifecycle["Content Lifecycle BC\nrevision / changeset / review"]
   View["View BC\nprojections"]
@@ -78,12 +79,12 @@ flowchart LR
   PhotonClient --> PhotonEdge
   PhotonEdge --> Collaboration
   Collaboration --> Ports
-  Integration --> Api
+  Integration --> Ports
   Api --> Ports
-  Ports --> Database
-  Ports --> Lifecycle
-  Database --> Outbox
-  Lifecycle --> Outbox
+  Ports --> UnitOfWork
+  UnitOfWork --> Database
+  UnitOfWork --> Lifecycle
+  UnitOfWork --> Outbox
   Outbox -.-> View
   Outbox -.-> Publication
   Outbox -.-> Collaboration
@@ -99,7 +100,7 @@ flowchart LR
 - Photon の operation、decision、Yjs update 型を Database domain の public type にすること。
 - `apps/web` から server repository、Durable Object binding、provider secret を直接扱うこと。
 
-Database / Content Lifecycle は accepted command と domain event の contract を公開する。View、Publication、Collaboration、Integration は application port または Outbox event を通して連携し、core BC の内部 module を import しない。
+Database / Content Lifecycle は accepted command と domain event の contract を公開する。domain は event を返すだけで Outbox repository に依存せず、application Unit of Work が domain state と Outbox event を同じ transaction に永続化する。View、Publication、Collaboration、Integration は application port または Outbox event を通して連携し、core BC の内部 module を import しない。
 
 ### 4. Page は flat Record のまま保持する
 
@@ -115,9 +116,35 @@ Hierarchy は Database BC の Property と View BC の定義を使って投影�
 - delete ownership や cascade は Page tree から暗黙に導出せず、RelationDefinition の `on_delete` policy に従う。
 - reverse lookup / backlink は Relation index から取得し、Page に children list を重複保存しない。
 
-この構成により、一つの Record を複数の tree、table、board、graph で表示できる。Property Type の拡張は #131 の versioned kernel に集約し、Relation / Rank の validation、codec、sort / index capability を同じ contract test で検証する。未知の type / version は黙って String へ変換せず、`apps/web` では read-only fallback として表示する。
+この構成により、一つの Record を複数の tree、table、board、graph で表示できる。
 
-### 5. Transaction、CAS、Outbox
+### 5. Property Type の拡張戦略
+
+Property Type の定義は #131 の versioned kernel に集約する。runtime から任意 code を読み込む plugin model ではなく、Library build に含まれる built-in handler を composition root で登録する。
+
+PropertyDefinition は表示名とは別に次の stable contract を持つ。
+
+- `type_key`: rename しない安定 key。例: `boolean`、`decimal`、`datetime`、`relation`、`rank`。
+- `type_version`: config / value semantics の互換境界を表す単調増加 version。
+- `config`: handler が検証する versioned configuration。Relation target、Decimal precision、Select options などを保持する。
+- `value_encoding_version`: normalized PropertyValue の wire / storage encoding version。
+- `capabilities`: equality / range / full-text / sort / unique / reference extraction / multi-value など、query と index が利用できる能力。
+
+各 handler は `validate_config`、`validate_value`、`encode`、`decode`、`compare`、`index_capabilities`、`extract_references`、`conversion_policy` を実装する。adapter ごとの `_ => String` fallback は禁止し、REST、GraphQL、Rust public API、SDK、`apps/web` editor / renderer は同じ type key / version matrix を exhaustive に扱う。
+
+未知の `type_key` / `type_version` を読み取った場合、raw value envelope と config を破壊せず保持する。server は mutation と index build を拒否し、`apps/web` は type key / version と raw value を read-only 表示する。既知の String へ黙って変換して保存し直してはならない。
+
+type upgrade は次の順で行う。
+
+1. 新旧 version の reader と conversion plan を先に配布する。
+2. dry-run で invalid / lossy / ambiguous value と必要 index rebuild を列挙する。
+3. tenant / Database 単位で idempotent backfill し、旧 value と変換後 value の parity を検証する。
+4. writer を新 version へ切り替え、rollback window 中は旧 reader を維持する。
+5. rollback window と旧 binary の稼働終了を確認してから旧 encoding を削除する。
+
+追加順は、Boolean、Decimal、DateTime、Rank / Position、URL / Email、Status、Person、Asset / File、RichText / DocumentRef、Formula / Rollup とする。Formula / Rollup は Relation と Index が完成した後に実装する。各 type は domain validation、storage round-trip、REST / GraphQL、SDK、`apps/web` editor / renderer、filter / sort / index、upgrade / rollback を一つの contract test matrix で完了させる。
+
+### 6. Transaction、CAS、Outbox
 
 Library 内部では次を一つの command acceptance transaction とする。
 
@@ -129,11 +156,29 @@ Library 内部では次を一つの command acceptance transaction とする。
 6. domain event を Outbox に追加する。
 7. commit 後に `accepted`、`rejected`、`conflict` と canonical version を返す。
 
-4 から 6 は同じ persistence transaction で確定する。Library と Photon、GitHub、Notion の間に distributed transaction は作らない。外部 delivery は at-least-once とし、`operation_id` / event id / external revision を使って冪等化する。
+4 から 6 は application Unit of Work が同じ persistence transaction で確定する。Database / Content Lifecycle domain は Outbox adapter を呼ばない。
+
+transaction 内で同期更新する index は、domain invariant と primary query に必要な typed property exact / range / unique projection、RelationEdge reverse lookup とする。外部 full-text search、vector search、analytics index は Outbox consumer が非同期更新する rebuildable projection とし、command validation や uniqueness の正本にしない。外部 index API を Library transaction 内から呼ばない。
+
+Library と Photon、GitHub、Notion の間に distributed transaction は作らない。外部 delivery は at-least-once とし、`operation_id` / event id / external revision を使って冪等化する。
 
 Photon Engine client でも local operation、optimistic projection、outbox enqueue を一つの local transaction にする。push が成功しただけでは local operation を accepted にせず、Library の decision を保存してから状態を遷移する。pull cursor は全 decision と他 actor の accepted operation を再現できなければならない。
 
-### 6. Photon Engine / Photon Live との接続
+### 7. Database storage の安全な移行
+
+#132、#130、#133 では、既存の `value0..value50`、Relation CSV、legacy `indexes` metadata を一度に置き換えない。次の expand / migrate / contract 手順を使う。
+
+1. normalized PropertyValue、RelationEdge、typed Index projection を additive migration で追加する。
+2. normalized-first / legacy-fallback の dual-read と、feature flag 下の dual-write を導入する。
+3. tenant / Database 単位の checkpoint を持つ idempotent backfill を実行する。不正 Relation CSV は panic せず quarantine と監査対象にする。
+4. row count、Property type / value hash、Relation source / target、tenant scope、unique constraint、代表 query の `EXPLAIN` を比較する。
+5. parity gate を通過した tenant から normalized read、normalized write の順に cutover する。
+6. rollback window 中は legacy read と dual-write を維持し、feature flag で直前の reader に戻せるようにする。
+7. 全 tenant の parity、backup / restore、旧 binary の停止、rollback SLA 経過を確認してから legacy column / CSV / metadata を削除する。
+
+RelationDefinition の既定 `on_delete` は `Restrict` とする。parent 表示などで `Nullify` が必要な Relation だけ明示設定し、暗黙 cascade は導入しない。
+
+### 8. Photon Engine / Photon Live との接続
 
 `apps/web` は Photon repo の UI、router、domain model を取り込まず、公開された client package と Library 専用 adapter だけを利用する。
 
@@ -141,7 +186,7 @@ Structured operation の基本 flow は次とする。
 
 1. `apps/web` が Library API から canonical Revision、RecordVersion、許可 scope を bootstrap する。
 2. Photon Engine client が local operation、projection、outbox を atomically 保存し、UI を `pending` として即時更新する。
-3. Engine push は `operation_id`、actor / device、tenant / repo / data scope、base Revision、expected RecordVersion を送る。
+3. Engine push は `operation_id`、actor / device、`tenant_id` / `database_id` / `data_id` / `property_id` scope、base Revision、expected RecordVersion を送る。
 4. Photon server / Worker は認証と transport validation を行い、Library Collaboration adapter の application port へ変換する。
 5. Library が domain validation と transaction を実行し、`accepted` / `rejected` / `conflict` を返す。
 6. Photon Engine が decision と pull cursor を保存し、`apps/web` が confirm、rollback、または rebase UI を表示する。
@@ -156,12 +201,14 @@ Rich text / document collaboration の基本 flow は次とする。
 
 Collaboration adapter は Photon contract と Library command の anti-corruption layer である。Photon server / Durable Object は Library DB に直接接続せず、Library API または private service binding を通す。
 
-### 7. Cloudflare Durable Object の room、認証、永続化
+Photon の authorization key は Library の canonical ID とする。Library の Repo は Database への application-level mapping / navigation shell であり、`repo_username` を authorization key や Durable Object identity にしない。ticket に `repo_id` を routing metadata として含める場合も、Library が `repo_id -> tenant_id / database_id` の所有関係を検証し、canonical scope を併記する。
+
+### 9. Cloudflare Durable Object の room、認証、永続化
 
 Photon Live は一つの collaborative document を一つの coordination atom として Durable Object に割り当てる。通常は一つの Data 本文が一 document だが、複数 document Property を持つ場合は Property ごとに server-issued `document_id` を発行する。
 
-- room key は tenant / repo / data / document scope から server 側で決定論的に導出する。client が任意の `room` query を指定して Durable Object 名を作ることを禁止する。
-- ticket は少なくとも tenant、repo、data、document、actor、許可 action、expiry、nonce / session id を含み、Library が署名する。
+- room key は `tenant_id` / `database_id` / `data_id` / `property_id` / `document_id` scope から server 側で決定論的に導出する。client が任意の `room` query を指定して Durable Object 名を作ることを禁止する。
+- ticket は少なくとも canonical scope、actor、許可 action、expiry、nonce / session id を含み、Library が署名する。
 - Worker と Durable Object は WebSocket upgrade 前に signature、expiry、scope、origin を検証する。domain edit permission の最終判断は Library が行う。
 - production CORS / Origin は allowlist とし、wildcard と user Authorization の無検証転送を許可しない。
 - Cloudflare WebSocket Hibernation API を使い、idle connection 中は Durable Object を hibernate できる構成にする。再起動後に必要な connection metadata は WebSocket attachment から復元し、in-memory global state だけに依存しない。
@@ -171,7 +218,7 @@ Photon Live は一つの collaborative document を一つの coordination atom �
 
 同一 Cloudflare deployment boundary では Service Binding を優先し、Photon Worker から Library edge adapter への public Internet round-trip と公開 credential を減らす。別 account / region になる場合は、明示的な service authentication と request signing を持つ private adapter を用意する。
 
-### 8. `apps/web` のみを primary client とする
+### 10. `apps/web` のみを primary client とする
 
 この移行で変更する client は `apps/web` のみとする。`apps/client` は Photon integration、Property editor registry、optimistic state machine、tree projection の実装対象にしない。
 
@@ -185,7 +232,7 @@ Photon Live は一つの collaborative document を一つの coordination atom �
 
 server contract は client 固有 state に依存せず、将来別 client を追加する場合も同じ public application port を使う。
 
-### 9. 既存 Collaboration WebSocket の移行
+### 11. 既存 Collaboration WebSocket の移行
 
 既存の `GET /ws/collab/:document_key` と `collaborative_documents` は Photon Live へ段階的に置き換える。
 
