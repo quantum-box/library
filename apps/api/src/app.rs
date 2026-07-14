@@ -62,7 +62,6 @@ pub struct LibraryApp {
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
     pub bulk_sync_ext_github: Arc<dyn usecase::BulkSyncExtGithubInputPort>,
-    pub sync_data: Arc<dyn outbound_sync::SyncDataInputPort>,
     // GitHub Import usecases
     pub list_github_directory:
         Arc<dyn usecase::ListGitHubDirectoryInputPort>,
@@ -81,7 +80,6 @@ pub struct LibraryApp {
 impl std::fmt::Debug for LibraryApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LibraryApp")
-            .field("sync_data", &"<SyncDataInputPort>")
             .finish_non_exhaustive()
     }
 }
@@ -218,7 +216,6 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             auth_app.clone(),
             database_app.clone(),
-            sync_data.clone(),
         );
         let delete_data = usecase::DeleteData::new(
             get_organization_by_username.clone(),
@@ -368,7 +365,6 @@ impl LibraryApp {
                 create_repo.clone(),
                 get_properties.clone(),
                 add_property.clone(),
-                update_property.clone(),
                 view_data_list.clone(),
                 add_data.clone(),
                 update_data.clone(),
@@ -418,7 +414,6 @@ impl LibraryApp {
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,
-            sync_data,
             list_github_directory,
             get_markdown_previews,
             analyze_frontmatter,

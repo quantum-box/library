@@ -21,6 +21,10 @@ import { Switch } from '@/components/ui/switch'
 import { AlertTriangle, FolderGit2, Github, Trash2 } from 'lucide-react'
 import { Link, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	isExtGithubSyncExplicitlyEnabled,
+	normalizeExtGithubEditorState,
+} from './ext-github-sync-policy'
 
 /**
  * プロパティ画面で設定されたリポジトリの型
@@ -80,9 +84,10 @@ export function ExtGithubEditor({
 		}
 	}, [value])
 
-	const [repo, setRepo] = useState(parsedValue?.repo ?? '')
-	const [path, setPath] = useState(parsedValue?.path ?? '')
-	const [enabled, setEnabled] = useState(parsedValue?.enabled ?? true)
+	const initialState = normalizeExtGithubEditorState(parsedValue)
+	const [repo, setRepo] = useState(initialState.repo)
+	const [path, setPath] = useState(initialState.path)
+	const [enabled, setEnabled] = useState(initialState.enabled)
 	const [deleteOldPath, setDeleteOldPath] = useState(true)
 
 	// 元のパスを保存（編集開始時点のパス）
@@ -95,11 +100,11 @@ export function ExtGithubEditor({
 
 	// 外部から値が変更された場合に状態を同期
 	useEffect(() => {
-		if (parsedValue) {
-			setRepo(parsedValue.repo ?? '')
-			setPath(parsedValue.path ?? '')
-			setEnabled(parsedValue.enabled ?? true)
-		}
+		const nextState = normalizeExtGithubEditorState(parsedValue)
+		setRepo(nextState.repo)
+		setPath(nextState.path)
+		setEnabled(nextState.enabled)
+		setDeleteOldPath(true)
 	}, [parsedValue])
 
 	// 編集モード開始時に元のパスを保存、終了時にリセット
@@ -108,8 +113,8 @@ export function ExtGithubEditor({
 			// 編集開始時に現在のパスを保存
 			originalPathRef.current = parsedValue.path
 			originalRepoRef.current = parsedValue.repo
-		} else if (!isEditing) {
-			// 編集終了時にリセット
+		} else {
+			// 編集終了時または値が空になったときにリセット
 			originalPathRef.current = null
 			originalRepoRef.current = null
 		}
@@ -233,7 +238,7 @@ export function ExtGithubEditor({
 						{parsedValue.path}
 					</a>
 				</div>
-				{parsedValue.enabled === false && (
+				{!isExtGithubSyncExplicitlyEnabled(parsedValue.enabled) && (
 					<span className='rounded bg-yellow-100 px-2 py-0.5 text-xs text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'>
 						Sync disabled
 					</span>

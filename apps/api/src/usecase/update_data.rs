@@ -1,9 +1,5 @@
 use database_manager::usecase::FindAllPropertiesInputData;
-use outbound_sync::{
-    SyncDataInputData, SyncDataInputPort, SyncPayload, SyncTarget,
-};
 
-use crate::handler::data::{compose_markdown, extract_ext_github};
 use crate::usecase::{UpdateDataInputData, UpdateDataInputPort};
 use std::sync::Arc;
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
@@ -17,13 +13,11 @@ pub struct UpdateData {
     get_repo_by_username: Arc<dyn crate::usecase::GetRepoByUsernameQuery>,
     auth: Arc<dyn AuthApp>,
     database: Arc<database_manager::App>,
-    sync_data: Arc<dyn SyncDataInputPort>,
 }
 
 impl std::fmt::Debug for UpdateData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UpdateData")
-            .field("sync_data", &"<SyncDataInputPort>")
             .finish_non_exhaustive()
     }
 }
@@ -38,14 +32,12 @@ impl UpdateData {
         >,
         auth: Arc<dyn AuthApp>,
         database: Arc<database_manager::App>,
-        sync_data: Arc<dyn SyncDataInputPort>,
     ) -> Arc<Self> {
         Arc::new(Self {
             get_org_by_username,
             get_repo_by_username,
             auth,
             database,
-            sync_data,
         })
     }
 }
@@ -147,60 +139,23 @@ impl UpdateDataInputPort for UpdateData {
                 errors::Error::application_logic_error(e.to_string())
             })?;
 
-        // Check for ext_github and trigger auto-sync if enabled
-        if let Some(ext_github) = extract_ext_github(&data, &properties) {
-            if ext_github.enabled {
-                tracing::info!(
-                    "Auto-syncing data {} to GitHub: {}/{}",
-                    data.id(),
-                    ext_github.repo,
-                    ext_github.path
-                );
-
-                // Build markdown
-                let markdown = compose_markdown(&data, &properties);
-
-                // Build sync target
-                let target = SyncTarget::git_with_branch(
-                    &ext_github.repo,
-                    &ext_github.path,
-                    "main".to_string(),
-                );
-
-                // Build payload
-                let message =
-                    format!("chore(library): auto-sync {}", data.name());
-                let payload =
-                    SyncPayload::markdown_with_message(&markdown, &message);
-
-                // Execute sync (non-blocking, log errors)
-                match self
-                    .sync_data
-                    .execute(&SyncDataInputData {
-                        executor: input.executor,
-                        multi_tenancy: input.multi_tenancy,
-                        data_id: data.id().to_string(),
-                        provider: "github".to_string(),
-                        target,
-                        payload,
-                        dry_run: false,
-                    })
-                    .await
-                {
-                    Ok(result) => {
-                        tracing::info!(
-                            "Auto-sync successful: {:?}",
-                            result.result_id
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!("Auto-sync failed: {:?}", e);
-                        // Don't fail the update operation, just log the error
-                    }
-                }
-            }
-        }
-
         Ok((data, properties))
+    }
+}
+
+#[cfg(test)]
+mod architecture_tests {
+    #[test]
+    fn generic_data_commands_have_no_github_writeback_dependency() {
+        for source in [
+            include_str!("add_data.rs"),
+            include_str!("update_data.rs"),
+        ] {
+            let implementation =
+                source.split("#[cfg(test)]").next().unwrap_or(source);
+
+            assert!(!implementation.contains("outbound_sync"));
+            assert!(!implementation.contains("ext_github"));
+        }
     }
 }

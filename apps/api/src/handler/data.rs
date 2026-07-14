@@ -81,54 +81,6 @@ pub fn compose_markdown(
     crate::usecase::markdown_composer::compose_markdown(data, properties)
 }
 
-/// GitHub sync configuration extracted from ext_github property
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct ExtGithub {
-    pub repo: String,
-    pub path: String,
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-    /// Whether to delete the old file when path changes
-    #[serde(default, rename = "deleteOldPath")]
-    pub delete_old_path: bool,
-    /// The old path (for deletion when path changes)
-    #[serde(default, rename = "oldPath")]
-    pub old_path: Option<String>,
-}
-
-fn default_enabled() -> bool {
-    true
-}
-
-/// Extract ext_github configuration from data properties
-pub fn extract_ext_github(
-    data: &database_manager::domain::Data,
-    properties: &[database_manager::domain::Property],
-) -> Option<ExtGithub> {
-    let property_map: std::collections::HashMap<_, _> =
-        properties.iter().map(|p| (p.id(), p)).collect();
-
-    for property_data in data.property_data() {
-        let Some(property) = property_map.get(property_data.property_id())
-        else {
-            continue;
-        };
-
-        if property.name().as_str() == "ext_github" {
-            if let Some(value) = property_data.value() {
-                let value_str = value.string_value();
-                if let Ok(ext_github) =
-                    serde_json::from_str::<ExtGithub>(&value_str)
-                {
-                    return Some(ext_github);
-                }
-            }
-        }
-    }
-
-    None
-}
-
 #[utoipa::path(
     get,
     path = "/v1beta/repos/{org}/{repo}/data/{data_id}",
