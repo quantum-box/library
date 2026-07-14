@@ -16,7 +16,6 @@ use async_graphql::{
 use database_manager::domain::SelectItemId;
 use github_provider::OAuthProvider;
 use hmac::{Hmac, Mac};
-use outbound_sync::{SyncDataInputData, SyncPayload, SyncTarget};
 use sha2::Sha256;
 use tachyon_sdk::auth::{
     AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
@@ -32,12 +31,12 @@ const GITHUB_SYNC_NON_GA_MESSAGE: &str =
 
 fn require_one_shot_github_markdown_import(
     enable_github_sync: Option<bool>,
-) -> errors::Result<bool> {
+) -> errors::Result<()> {
     if enable_github_sync.unwrap_or(false) {
         return Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE));
     }
 
-    Ok(false)
+    Ok(())
 }
 
 /// Sign an OAuth state parameter with HMAC-SHA256 for CSRF protection.
@@ -605,7 +604,7 @@ impl LibraryMutation {
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
-        let (data, properties) = ctx
+        let data = ctx
             .data::<Arc<LibraryApp>>()?
             .add_data
             .execute(usecase::AddDataInputData {
@@ -617,67 +616,8 @@ impl LibraryMutation {
                 data_name: &input.data_name,
                 property_data: input.property_data.clone(),
             })
-            .await?;
-
-        // Check for ext_github and trigger auto-sync if enabled
-        if let Some(ext_github) =
-            crate::handler::data::extract_ext_github(&data, &properties)
-        {
-            if ext_github.enabled {
-                tracing::info!(
-                    "Auto-syncing new data {} to GitHub: {}/{}",
-                    data.id(),
-                    ext_github.repo,
-                    ext_github.path
-                );
-
-                // Build markdown
-                let markdown = crate::handler::data::compose_markdown(
-                    &data,
-                    &properties,
-                );
-
-                // Build sync target
-                let target = SyncTarget::git_with_branch(
-                    &ext_github.repo,
-                    &ext_github.path,
-                    "main".to_string(),
-                );
-
-                // Build payload
-                let message =
-                    format!("chore(library): auto-sync {}", data.name());
-                let payload =
-                    SyncPayload::markdown_with_message(&markdown, &message);
-
-                // Execute sync (non-blocking, log errors)
-                let sync_data = ctx
-                    .data::<Arc<dyn outbound_sync::SyncDataInputPort>>()?;
-                match sync_data
-                    .execute(&SyncDataInputData {
-                        executor,
-                        multi_tenancy,
-                        data_id: data.id().to_string(),
-                        provider: "github".to_string(),
-                        target,
-                        payload,
-                        dry_run: false,
-                    })
-                    .await
-                {
-                    Ok(result) => {
-                        tracing::info!(
-                            "Auto-sync successful: {:?}",
-                            result.result_id
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!("Auto-sync failed: {:?}", e);
-                        // Don't fail the add operation, just log the error
-                    }
-                }
-            }
-        }
+            .await?
+            .0;
 
         Ok(data.into())
     }
@@ -693,8 +633,7 @@ impl LibraryMutation {
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
-        // GitHub sync is handled in the usecase layer
-        let (data, _properties) = ctx
+        let data = ctx
             .data::<Arc<LibraryApp>>()?
             .update_data
             .execute(usecase::UpdateDataInputData {
@@ -707,7 +646,8 @@ impl LibraryMutation {
                 data_name: &input.data_name,
                 property_data: input.property_data.clone(),
             })
-            .await?;
+            .await?
+            .0;
 
         Ok(data.into())
     }
@@ -1585,10 +1525,8 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
-        let enable_github_sync = require_one_shot_github_markdown_import(
-            input.enable_github_sync,
-        )
-        .map_err(|e| e.extend())?;
+        require_one_shot_github_markdown_import(input.enable_github_sync)
+            .map_err(|e| e.extend())?;
 
         // Build property mappings
         let property_mappings: Vec<usecase::PropertyMapping> = input
@@ -1624,7 +1562,6 @@ impl LibraryMutation {
                 property_mappings,
                 content_property_name: input.content_property_name,
                 skip_existing: input.skip_existing.unwrap_or(false),
-                enable_github_sync,
             })
             .await
             .map_err(|e| {
@@ -2065,10 +2002,21 @@ mod github_markdown_ga_tests {
     use super::require_one_shot_github_markdown_import;
 
     #[test]
+    fn generic_data_mutations_have_no_outbound_provider_dependency() {
+        let source = include_str!("mutation.rs");
+        let implementation =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+
+        assert!(!implementation.contains("SyncDataInputPort"));
+        assert!(!implementation.contains("SyncDataInputData"));
+        assert!(!implementation.contains("extract_ext_github"));
+    }
+
+    #[test]
     fn github_markdown_import_defaults_to_one_shot_ga_path() {
-        assert!(!require_one_shot_github_markdown_import(None).unwrap());
+        assert!(require_one_shot_github_markdown_import(None).is_ok());
         assert!(
-            !require_one_shot_github_markdown_import(Some(false)).unwrap()
+            require_one_shot_github_markdown_import(Some(false)).is_ok()
         );
     }
 

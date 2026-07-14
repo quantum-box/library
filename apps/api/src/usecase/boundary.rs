@@ -1013,8 +1013,6 @@ pub struct ImportMarkdownFromGitHubInputData<'a> {
     pub content_property_name: String,
     /// TODO: add English documentation
     pub skip_existing: bool,
-    /// TODO: add English documentation
-    pub enable_github_sync: bool,
 }
 
 /// TODO: add English documentation

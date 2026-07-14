@@ -16,7 +16,6 @@ use crate::usecase::{
     GetPropertiesInputData, GetPropertiesInputPort, ImportError,
     ImportMarkdownFromGitHubInputData, ImportMarkdownFromGitHubInputPort,
     ImportMarkdownResult, UpdateDataInputData, UpdateDataInputPort,
-    UpdatePropertyInputData, UpdatePropertyInputPort,
     ViewDataListInputData, ViewDataListInputPort, ViewOrgInputData,
     ViewOrganizationInputPort,
 };
@@ -30,7 +29,6 @@ pub struct ImportMarkdownFromGitHub {
     create_repo: Arc<dyn CreateRepoInputPort>,
     get_properties: Arc<dyn GetPropertiesInputPort>,
     add_property: Arc<dyn AddPropertyInputPort>,
-    update_property: Arc<dyn UpdatePropertyInputPort>,
     view_data_list: Arc<dyn ViewDataListInputPort>,
     add_data: Arc<dyn AddDataInputPort>,
     update_data: Arc<dyn UpdateDataInputPort>,
@@ -51,7 +49,6 @@ impl ImportMarkdownFromGitHub {
         create_repo: Arc<dyn CreateRepoInputPort>,
         get_properties: Arc<dyn GetPropertiesInputPort>,
         add_property: Arc<dyn AddPropertyInputPort>,
-        update_property: Arc<dyn UpdatePropertyInputPort>,
         view_data_list: Arc<dyn ViewDataListInputPort>,
         add_data: Arc<dyn AddDataInputPort>,
         update_data: Arc<dyn UpdateDataInputPort>,
@@ -62,7 +59,6 @@ impl ImportMarkdownFromGitHub {
             create_repo,
             get_properties,
             add_property,
-            update_property,
             view_data_list,
             add_data,
             update_data,
@@ -192,28 +188,6 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 .await?;
             prop.id().to_string()
         };
-
-        // Update ext_github property meta_json with GitHub repo configuration
-        // This enables the GitHub sync feature in the UI (only if enabled)
-        if input.enable_github_sync {
-            let github_repo_config = serde_json::json!([{
-                "repo": input.github_repo,
-                "path": "",
-                "branch": input.ref_name.clone().unwrap_or_else(|| "main".to_string()),
-            }]);
-            self.update_property
-                .execute(UpdatePropertyInputData {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    org_username: input.org_username.clone(),
-                    repo_username: input.repo_username.clone(),
-                    property_id: ext_github_prop_id.clone(),
-                    property_name: None,
-                    property_type: None,
-                    meta_json: Some(Some(github_repo_config.to_string())),
-                })
-                .await?;
-        }
 
         // Ensure content property exists
         let content_prop = existing_properties
@@ -397,7 +371,6 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     &content_prop_id,
                     &ext_github_prop_id,
                     &input.github_repo,
-                    input.enable_github_sync,
                 )
                 .await
                 {
@@ -449,7 +422,6 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     &content_prop_id,
                     &ext_github_prop_id,
                     &input.github_repo,
-                    input.enable_github_sync,
                 )
                 .await
                 {
@@ -609,7 +581,6 @@ async fn import_single_file(
     content_prop_id: &str,
     ext_github_prop_id: &str,
     github_repo: &str,
-    enable_github_sync: bool,
 ) -> Result<(String, Vec<crate::usecase::PropertyDataInputData>), String> {
     // Get file content
     let content = github_provider::GitHub::get_raw_file_content(
@@ -639,12 +610,7 @@ async fn import_single_file(
     // Add ext_github property with metadata
     // sync_to_github flag controls whether this property is included in frontmatter
     // when syncing back to GitHub
-    let github_meta = serde_json::json!({
-        "repo": github_repo,
-        "path": path,
-        "ref": ref_name.unwrap_or("main"),
-        "sync_to_github": enable_github_sync,
-    });
+    let github_meta = github_import_metadata(github_repo, path, ref_name);
     property_data.push(crate::usecase::PropertyDataInputData {
         property_id: ext_github_prop_id.to_string(),
         value: crate::usecase::PropertyDataValueInputData::String(
@@ -679,4 +645,43 @@ async fn import_single_file(
     }
 
     Ok((name, property_data))
+}
+
+fn github_import_metadata(
+    github_repo: &str,
+    path: &str,
+    ref_name: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "repo": github_repo,
+        "path": path,
+        "ref": ref_name.unwrap_or("main"),
+        "enabled": false,
+        "sync_to_github": false,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::github_import_metadata;
+
+    #[test]
+    fn one_shot_import_metadata_is_default_deny_for_writeback() {
+        let metadata = github_import_metadata(
+            "quantum-box/library",
+            "docs/example.md",
+            None,
+        );
+
+        assert_eq!(
+            metadata,
+            serde_json::json!({
+                "repo": "quantum-box/library",
+                "path": "docs/example.md",
+                "ref": "main",
+                "enabled": false,
+                "sync_to_github": false,
+            })
+        );
+    }
 }

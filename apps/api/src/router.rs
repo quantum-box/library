@@ -442,7 +442,7 @@ pub async fn router(
             base_url: base_url.clone(),
         };
 
-    // Enhance database_app with sync usecases
+    // Enhance database_app with inbound sync administration usecases
     let database_app_with_sync = Arc::new(
         (*database_app)
             .clone()
@@ -461,8 +461,7 @@ pub async fn router(
                     as Arc<
                         dyn inbound_sync::usecase::DeleteWebhookEndpointInputPort,
                     >,
-            )
-            .with_outbound_sync(sync_data.clone()),
+            ),
     );
 
     // Library application with enhanced database_app
@@ -488,7 +487,6 @@ pub async fn router(
     .data(library_app.clone())
     .data(database_app_with_sync.clone())
     .data(github.clone())
-    .data(sync_data.clone())
     .data(inbound_sync_query_state)
     .data(inbound_sync_mutation_state)
     .data(integration_registry_for_schema)
