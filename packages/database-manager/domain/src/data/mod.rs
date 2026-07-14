@@ -134,7 +134,7 @@ impl Data {
             .clone()
             .property_data
             .into_iter()
-            .filter(|v| v.property_id().eq(property_id))
+            .filter(|v| !v.property_id().eq(property_id))
             .collect::<Vec<PropertyData>>();
         Self {
             property_data,
@@ -181,4 +181,123 @@ pub trait DataRepository: Debug + Send + Sync + 'static {
         page: u32,
         page_size: u32,
     ) -> errors::Result<(DataCollection, OffsetPaginator)>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn property(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        name: &str,
+        property_num: u32,
+    ) -> Property {
+        Property::new(
+            &PropertyId::default(),
+            tenant_id,
+            database_id,
+            name,
+            &PropertyType::String,
+            false,
+            property_num,
+        )
+    }
+
+    fn data(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        property_data: Vec<PropertyData>,
+    ) -> Data {
+        let now = Utc::now();
+        Data::new(
+            &DataId::default(),
+            tenant_id,
+            database_id,
+            "fixture",
+            property_data,
+            now,
+            now,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn delete_property_data_removes_only_the_target_property() {
+        let tenant_id = TenantId::default();
+        let database_id = DatabaseId::default();
+        let target = property(&tenant_id, &database_id, "target", 0);
+        let retained = property(&tenant_id, &database_id, "retained", 1);
+        let data = data(
+            &tenant_id,
+            &database_id,
+            vec![
+                PropertyData::new(&target, "remove".to_string()).unwrap(),
+                PropertyData::new(&retained, "keep".to_string()).unwrap(),
+            ],
+        );
+
+        let result = data.delete_property_data(target.id());
+
+        assert!(result.get_property_data(target.id()).is_none());
+        assert_eq!(
+            result
+                .get_property_data(retained.id())
+                .expect("retained property data")
+                .string_value(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn delete_property_data_is_safe_for_collections_and_missing_values() {
+        let tenant_id = TenantId::default();
+        let database_id = DatabaseId::default();
+        let target = property(&tenant_id, &database_id, "target", 0);
+        let retained = property(&tenant_id, &database_id, "retained", 1);
+        let collection = DataCollection::new(vec![
+            data(
+                &tenant_id,
+                &database_id,
+                vec![
+                    PropertyData::new(&target, "remove".to_string())
+                        .unwrap(),
+                    PropertyData::new(&retained, "first".to_string())
+                        .unwrap(),
+                ],
+            ),
+            data(
+                &tenant_id,
+                &database_id,
+                vec![
+                    PropertyData::new(&retained, "second".to_string())
+                        .unwrap(),
+                ],
+            ),
+        ]);
+
+        let result = collection.delete_property_data(target.id());
+
+        assert_eq!(result.value().len(), 2);
+        assert!(
+            result
+                .value()
+                .iter()
+                .all(|item| item.get_property_data(target.id()).is_none())
+        );
+        assert_eq!(
+            result.value()[0]
+                .get_property_data(retained.id())
+                .expect("first retained property data")
+                .string_value(),
+            "first"
+        );
+        assert_eq!(
+            result.value()[1]
+                .get_property_data(retained.id())
+                .expect("second retained property data")
+                .string_value(),
+            "second"
+        );
+    }
 }
