@@ -2,7 +2,7 @@ apiVersion: apps.tachy.one/v1alpha
 kind: CloudApps
 metadata:
   name: library
-  tenantId: tn_01j702qf86pc2j35s0kv0gv3gy
+  tenantId: tn_01j91h09tpj5ehwbwfwfxpak2b
 spec:
   apps:
     - name: library-api
@@ -156,6 +156,6 @@ spec:
         - name: VITE_COGNITO_REGION
           value: ap-northeast-1
         - name: VITE_PLATFORM_ID
-          value: tn_01j702qf86pc2j35s0kv0gv3gy
+          value: tn_01j91h09tpj5ehwbwfwfxpak2b
         - name: VITE_COGNITO_USER_POOL_ID
           value: ap-northeast-1_8Ga4bK5M4
