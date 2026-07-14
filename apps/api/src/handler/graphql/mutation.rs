@@ -2015,7 +2015,9 @@ mod github_markdown_ga_tests {
     #[test]
     fn github_markdown_import_defaults_to_one_shot_ga_path() {
         assert!(require_one_shot_github_markdown_import(None).is_ok());
-        assert!(require_one_shot_github_markdown_import(Some(false)).is_ok());
+        assert!(
+            require_one_shot_github_markdown_import(Some(false)).is_ok()
+        );
     }
 
     #[test]

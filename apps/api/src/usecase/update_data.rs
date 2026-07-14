@@ -17,8 +17,7 @@ pub struct UpdateData {
 
 impl std::fmt::Debug for UpdateData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UpdateData")
-            .finish_non_exhaustive()
+        f.debug_struct("UpdateData").finish_non_exhaustive()
     }
 }
 
@@ -147,10 +146,9 @@ impl UpdateDataInputPort for UpdateData {
 mod architecture_tests {
     #[test]
     fn generic_data_commands_have_no_github_writeback_dependency() {
-        for source in [
-            include_str!("add_data.rs"),
-            include_str!("update_data.rs"),
-        ] {
+        for source in
+            [include_str!("add_data.rs"), include_str!("update_data.rs")]
+        {
             let implementation =
                 source.split("#[cfg(test)]").next().unwrap_or(source);
 
