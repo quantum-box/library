@@ -260,8 +260,10 @@ mod tests {
                 &tenant_id,
                 &database_id,
                 vec![
-                    PropertyData::new(&target, "remove".to_string()).unwrap(),
-                    PropertyData::new(&retained, "first".to_string()).unwrap(),
+                    PropertyData::new(&target, "remove".to_string())
+                        .unwrap(),
+                    PropertyData::new(&retained, "first".to_string())
+                        .unwrap(),
                 ],
             ),
             data(
@@ -277,10 +279,12 @@ mod tests {
         let result = collection.delete_property_data(target.id());
 
         assert_eq!(result.value().len(), 2);
-        assert!(result
-            .value()
-            .iter()
-            .all(|item| item.get_property_data(target.id()).is_none()));
+        assert!(
+            result
+                .value()
+                .iter()
+                .all(|item| item.get_property_data(target.id()).is_none())
+        );
         assert_eq!(
             result.value()[0]
                 .get_property_data(retained.id())
