@@ -140,10 +140,8 @@ impl Property {
         property_type: Option<&PropertyType>,
     ) -> errors::Result<Self> {
         if let Some(property_type) = property_type {
-            if let (
-                PropertyType::Id(current),
-                PropertyType::Id(requested),
-            ) = (&self.property_type, property_type)
+            if let (PropertyType::Id(current), PropertyType::Id(requested)) =
+                (&self.property_type, property_type)
                 && current.auto_generate != requested.auto_generate
             {
                 return Err(errors::invalid!(
