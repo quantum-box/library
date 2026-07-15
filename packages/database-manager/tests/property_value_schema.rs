@@ -217,10 +217,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
             ("data_id".to_string(), "varchar(31)".to_string()),
             ("property_id".to_string(), "varchar(31)".to_string()),
             ("type_key".to_string(), "varchar(64)".to_string()),
-            (
-                "type_version".to_string(),
-                "smallint unsigned".to_string(),
-            ),
+            ("type_version".to_string(), "smallint unsigned".to_string(),),
             (
                 "value_encoding_version".to_string(),
                 "smallint unsigned".to_string(),
@@ -443,9 +440,8 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     .execute(&mut *transaction)
     .await
     .expect_err("the database must reject a second Id property");
-    let database_error = duplicate_id
-        .as_database_error()
-        .expect("unique violation");
+    let database_error =
+        duplicate_id.as_database_error().expect("unique violation");
     assert!(database_error.is_unique_violation());
     assert!(database_error
         .message()

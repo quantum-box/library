@@ -5,9 +5,7 @@ use database_manager::domain::{
     PropertyType, TypeId, TypeRelation,
 };
 use database_manager::interface_adapter::gateway::PropertyRepositoryImpl;
-use database_manager::{
-    AddPropertyInputData, CreateDatabaseInputData,
-};
+use database_manager::{AddPropertyInputData, CreateDatabaseInputData};
 use sqlx::Row;
 use tachyon_sdk::auth;
 use tokio::sync::Barrier;

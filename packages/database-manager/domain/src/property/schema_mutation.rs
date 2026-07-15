@@ -103,7 +103,9 @@ impl PropertySchema {
 
 /// Output port for the serialized property-schema unit of work.
 #[async_trait::async_trait]
-pub trait PropertySchemaMutationPort: Debug + Send + Sync + 'static {
+pub trait PropertySchemaMutationPort:
+    Debug + Send + Sync + 'static
+{
     async fn add_property_atomically(
         &self,
         command: &AddPropertyCommand,
@@ -136,18 +138,8 @@ mod tests {
         let tenant_id = TenantId::default();
         let database_id = DatabaseId::default();
         let existing = vec![
-            property(
-                &tenant_id,
-                &database_id,
-                PropertyType::String,
-                0,
-            ),
-            property(
-                &tenant_id,
-                &database_id,
-                PropertyType::String,
-                2,
-            ),
+            property(&tenant_id, &database_id, PropertyType::String, 0),
+            property(&tenant_id, &database_id, PropertyType::String, 2),
         ];
         let command = AddPropertyCommand::new(
             &tenant_id,

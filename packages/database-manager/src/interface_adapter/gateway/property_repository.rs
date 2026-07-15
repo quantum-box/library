@@ -15,15 +15,15 @@ fn map_schema_insert_error(
     error: sqlx::Error,
     property_type: &PropertyType,
 ) -> errors::Error {
-    if let sqlx::Error::Database(database_error) = &error
-        && database_error.is_unique_violation()
-    {
-        let message = if matches!(property_type, PropertyType::Id(_)) {
-            ID_PROPERTY_ALREADY_EXISTS
-        } else {
-            "Property slot already exists"
-        };
-        return errors::Error::conflict(message);
+    if let sqlx::Error::Database(database_error) = &error {
+        if database_error.is_unique_violation() {
+            let message = if matches!(property_type, PropertyType::Id(_)) {
+                ID_PROPERTY_ALREADY_EXISTS
+            } else {
+                "Property slot already exists"
+            };
+            return errors::Error::conflict(message);
+        }
     }
 
     error.into()
