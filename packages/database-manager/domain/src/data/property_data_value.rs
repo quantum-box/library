@@ -38,7 +38,26 @@ impl PropertyDataValue {
         value: &str,
         property_type: &PropertyType,
     ) -> errors::Result<Self> {
-        Self::parse_storage(value, property_type)
+        LegacyPropertyTypeReader::decode_value(value, property_type)
+    }
+
+    /// Wrap this compatibility value in the versioned kernel envelope.
+    pub fn canonical_value(
+        &self,
+        property_type: &PropertyType,
+    ) -> errors::Result<KnownPropertyValue> {
+        let config = property_type.canonical_config();
+        BUILTIN_PROPERTY_TYPE_REGISTRY.normalize_value(&config, self)
+    }
+
+    /// Encode the normalized v1 payload without using the legacy string/CSV
+    /// representation.
+    pub fn encode_canonical(
+        &self,
+        property_type: &PropertyType,
+    ) -> errors::Result<serde_json::Value> {
+        let config = property_type.canonical_config();
+        BUILTIN_PROPERTY_TYPE_REGISTRY.encode_value(&config, self)
     }
 
     pub fn property_type(&self) -> PropertyType {
@@ -123,18 +142,6 @@ impl PropertyDataValue {
         }
     }
 
-    fn parse_storage(
-        text: &str,
-        property_type: &PropertyType,
-    ) -> errors::Result<Self> {
-        match property_type {
-            PropertyType::Relation(relation) => {
-                Self::parse_relation_storage(text, relation)
-            }
-            _ => Self::parse_command(text, property_type),
-        }
-    }
-
     fn parse_string(input: &str) -> errors::Result<PropertyDataValue> {
         Ok(PropertyDataValue::String(input.to_string()))
     }
@@ -189,28 +196,6 @@ impl PropertyDataValue {
             relation.database_id.clone(),
             ids,
         ))
-    }
-
-    fn parse_relation_storage(
-        input: &str,
-        relation: &TypeRelation,
-    ) -> errors::Result<PropertyDataValue> {
-        let mut parts = input.split(',');
-        let database_id = parts
-            .next()
-            .filter(|id| !id.is_empty())
-            .ok_or_else(Self::invalid_relation_value)?
-            .parse::<DatabaseId>()
-            .map_err(|_| Self::invalid_relation_value())?;
-
-        if database_id != relation.database_id {
-            return Err(Self::invalid_relation_value());
-        }
-
-        let ids = parts
-            .map(Self::parse_relation_data_id)
-            .collect::<errors::Result<Vec<_>>>()?;
-        Ok(PropertyDataValue::Relation(database_id, ids))
     }
 
     fn parse_relation_data_ids(input: &str) -> errors::Result<Vec<DataId>> {
