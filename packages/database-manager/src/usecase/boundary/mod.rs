@@ -166,7 +166,9 @@ pub struct GetDatabaseInputData<'a> {
 
     pub tenant_id: &'a TenantId,
     pub database_id: &'a DatabaseId,
+    /// 1-origin page number. Defaults to 1.
     pub page: Option<u32>,
+    /// Page size in the inclusive range 1..=100. Defaults to 20.
     pub page_size: Option<u32>,
 }
 
@@ -294,7 +296,9 @@ pub struct SearchDataInputData<'a> {
     pub tenant_id: &'a TenantId,
     pub database_id: Option<DatabaseId>,
     pub query: &'a str,
+    /// 1-origin page number. Defaults to 1.
     pub page: Option<u32>,
+    /// Page size in the inclusive range 1..=100. Defaults to 20.
     pub page_size: Option<u32>,
 }
 

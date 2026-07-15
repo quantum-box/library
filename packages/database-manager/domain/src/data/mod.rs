@@ -178,8 +178,7 @@ pub trait DataRepository: Debug + Send + Sync + 'static {
         &self,
         tenant_id: &TenantId,
         database_id: &DatabaseId,
-        page: u32,
-        page_size: u32,
+        page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)>;
 }
 

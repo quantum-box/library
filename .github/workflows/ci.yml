@@ -78,7 +78,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler default-mysql-client
       - run: cargo nextest run --workspace
-      - name: Run Library GA CRUD regression
+      - name: Run Library GA database regressions
         env:
           DEV_DATABASE_URL: mysql://root:@127.0.0.1:3306
           LIBRARY_DATABASE_URL: mysql://root:@127.0.0.1:3306/library
@@ -98,6 +98,7 @@ jobs:
           cargo run -p database-manager --bin database_manager_migrate dev
           cargo test -p database-manager --test tenant_composite_foreign_keys -- --ignored --test-threads=1
           cargo test -p database-manager --test tenant_database_scope -- --ignored --test-threads=1
+          cargo test -p database-manager --test paging -- --ignored --test-threads=1
           cargo run -p library-api --bin library_api_migrate dev
           cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
 

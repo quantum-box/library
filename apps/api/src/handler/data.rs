@@ -24,13 +24,13 @@ use axum::{
     Json,
 };
 use persistence::Storage;
-use value_object::{InMemoryFile, Queries};
+use value_object::{InMemoryFile, MAX_PAGE_SIZE};
 
 use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::LibraryExecutor;
 use crate::handler::types::{
-    convert_property_value, AddDataRequest, DataResponse, SearchDataQuery,
-    UpdateDataRequest,
+    convert_property_value, AddDataRequest, DataPaginationQuery,
+    DataResponse, SearchDataQuery, UpdateDataRequest,
 };
 use crate::usecase::LibraryOrg;
 use crate::usecase::{
@@ -166,17 +166,19 @@ pub async fn view_data_markdown(
     path = "/v1beta/repos/{org}/{repo}/data-list",
     params(
         ("org" = String, Path, description = "Organization username"),
-        ("repo" = String, Path, description = "Repository username")
+        ("repo" = String, Path, description = "Repository username"),
+        DataPaginationQuery
     ),
     responses(
-        (status = 200, description = "Data list found", body = Vec<DataResponse>),
+        (status = 200, description = "Data list found", body = DataListResponse),
+        (status = 400, description = "Invalid pagination request"),
         (status = 404, description = "Repository not found")
     )
 )]
 #[axum::debug_handler]
 pub async fn view_data_list(
     AxumPath((org, repo)): AxumPath<(String, String)>,
-    Query(query): Query<Queries>,
+    Query(query): Query<DataPaginationQuery>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     executor: LibraryExecutor,
     library_org: LibraryOrg,
@@ -186,8 +188,8 @@ pub async fn view_data_list(
         multi_tenancy: &library_org,
         org_username: org,
         repo_username: repo,
-        page: query.offset,
-        page_size: query.limit,
+        page: query.page,
+        page_size: query.page_size,
     };
 
     let result = library_app.view_data_list.execute(&input).await?;
@@ -386,12 +388,11 @@ pub async fn delete_data(
     params(
         ("org" = String, Path, description = "Organization username"),
         ("repo" = String, Path, description = "Repository username"),
-        ("name" = String, Query, description = "Data name to search for"),
-        ("page" = Option<u32>, Query, description = "Page number"),
-        ("page_size" = Option<u32>, Query, description = "Page size")
+        SearchDataQuery
     ),
     responses(
-        (status = 200, description = "Data found", body = Vec<DataResponse>),
+        (status = 200, description = "Data found", body = DataListResponse),
+        (status = 400, description = "Invalid pagination request"),
         (status = 404, description = "Repository not found")
     )
 )]
@@ -510,7 +511,7 @@ pub async fn view_data_parquet(
     Ok(Json(ParquetResponse { presigned_url }))
 }
 
-const PARQUET_PAGE_SIZE: u32 = 500;
+const PARQUET_PAGE_SIZE: u32 = MAX_PAGE_SIZE;
 
 enum ColumnValues {
     Strings(Vec<Option<String>>),

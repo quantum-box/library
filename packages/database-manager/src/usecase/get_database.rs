@@ -5,7 +5,7 @@ use crate::domain::{
     PropertyRepository,
 };
 use crate::usecase::{GetDatabaseInputData, GetDatabaseInputPort};
-use value_object::{OffsetPaginator, RepositoryV1};
+use value_object::{OffsetPage, OffsetPaginator, RepositoryV1};
 
 #[derive(Debug, Clone)]
 pub struct GetDatabaseInteractorImpl<D, P, DT>
@@ -50,8 +50,7 @@ where
         input: GetDatabaseInputData<'_>,
     ) -> errors::Result<(Database, Vec<Property>, Vec<Data>, OffsetPaginator)>
     {
-        let page = input.page.unwrap_or(1);
-        let page_size = input.page_size.unwrap_or(10);
+        let page = OffsetPage::from_options(input.page, input.page_size)?;
         let database = self
             .database_repo
             .get_by_id(input.tenant_id, input.database_id)
@@ -65,12 +64,7 @@ where
             .await?;
         let (data, paginator) = self
             .data_repo
-            .find_all_with_paging(
-                database.tenant_id(),
-                database.id(),
-                page,
-                page_size,
-            )
+            .find_all_with_paging(database.tenant_id(), database.id(), page)
             .await?;
         Ok((database, properties, data.value().to_vec(), paginator))
     }

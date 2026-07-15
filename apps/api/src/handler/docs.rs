@@ -14,6 +14,7 @@ use axum::{
 };
 use pulldown_cmark::{Options, Parser};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::LibraryExecutor;
@@ -22,9 +23,14 @@ use crate::usecase::{
     LibraryOrg, ViewDataInputData, ViewDataListInputData,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DocsListQuery {
+    /// 1-origin page number. Defaults to 1.
+    #[param(minimum = 1)]
     pub page: Option<u32>,
+    /// Number of documents per page. Defaults to 50 and is capped at 100.
+    #[param(minimum = 1, maximum = 100)]
     pub page_size: Option<u32>,
 }
 
@@ -39,11 +45,11 @@ pub struct DocsListQuery {
     params(
         ("org" = String, Path, description = "Organization username"),
         ("repo" = String, Path, description = "Repository username"),
-        ("page" = Option<u32>, Query, description = "Page number, starting at 1"),
-        ("page_size" = Option<u32>, Query, description = "Number of documents per page")
+        DocsListQuery
     ),
     responses(
         (status = 200, description = "Rendered docs list HTML", body = String, content_type = "text/html"),
+        (status = 400, description = "Invalid pagination request"),
         (status = 403, description = "Private repository access denied"),
         (status = 404, description = "Organization or repository not found")
     ),

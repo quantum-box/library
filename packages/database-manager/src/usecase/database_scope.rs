@@ -70,7 +70,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use std::sync::Mutex;
-    use value_object::OffsetPaginator;
+    use value_object::{OffsetPage, OffsetPaginator};
 
     #[derive(Debug)]
     struct StubDatabaseRepository {
@@ -191,8 +191,7 @@ mod tests {
             &self,
             _tenant_id: &TenantId,
             _database_id: &DatabaseId,
-            _page: u32,
-            _page_size: u32,
+            _page: OffsetPage,
         ) -> errors::Result<(crate::domain::DataCollection, OffsetPaginator)>
         {
             unreachable!("not used by the scope policy")
