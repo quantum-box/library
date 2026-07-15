@@ -273,6 +273,7 @@ pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
         property_repo.clone(),
     );
     let add_data_usecase = AddDataInteractorImpl::new(
+        database_repo.clone(),
         property_repo.clone(),
         data_repo.clone(),
     );
@@ -299,7 +300,11 @@ pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
     );
     let delete_data_usecase =
         DeleteDataInteractor::new(database_repo.clone(), data_repo.clone());
-    let search_data = SearchData::new(data_repo.clone(), data_query);
+    let search_data = SearchData::new(
+        database_repo.clone(),
+        data_repo.clone(),
+        data_query,
+    );
     let find_all_properties = FindAllProperties::new(
         database_repo.clone(),
         property_repo.clone(),
@@ -353,6 +358,7 @@ mod tests {
             property_repo.clone(),
         );
         let add_data_usecase = AddDataInteractorImpl::new(
+            database_repo.clone(),
             property_repo.clone(),
             data_repo.clone(),
         );

@@ -1,10 +1,11 @@
+use crate::usecase::database_scope::DatabaseScope;
 use crate::{
-    domain::{Data, DataRepository, DatabaseId},
+    domain::{Data, DataRepository, Database, DatabaseId},
     SearchDataInputData, SearchDataInputPort,
 };
 use errors;
 use value_object::OffsetPaginator;
-use value_object::TenantId;
+use value_object::{RepositoryV1, TenantId};
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -23,16 +24,19 @@ pub trait DataQuery: Debug + Send + Sync + 'static {
 
 #[derive(Debug, Clone)]
 pub struct SearchData {
+    database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     data_repo: Arc<dyn DataRepository>,
     data_query: Arc<dyn DataQuery>,
 }
 
 impl SearchData {
     pub fn new(
+        database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         data_repo: Arc<dyn DataRepository>,
         data_query: Arc<dyn DataQuery>,
     ) -> Arc<Self> {
         Arc::new(Self {
+            database_repo,
             data_repo,
             data_query,
         })
@@ -49,12 +53,15 @@ impl SearchDataInputPort for SearchData {
         let page = input.page.unwrap_or(1);
         let page_size = input.page_size.unwrap_or(20);
         if let Some(database_id) = input.database_id.clone() {
+            let scope = DatabaseScope::new(input.tenant_id, &database_id);
+            let database =
+                scope.require_database(self.database_repo.as_ref()).await?;
             if input.query.is_empty() {
                 let (data, paginator) = self
                     .data_repo
                     .find_all_with_paging(
-                        input.tenant_id,
-                        &database_id,
+                        database.tenant_id(),
+                        database.id(),
                         page,
                         page_size,
                     )
@@ -64,8 +71,8 @@ impl SearchDataInputPort for SearchData {
             let (data, paginator) = self
                 .data_query
                 .search_by_name(
-                    input.tenant_id,
-                    &database_id,
+                    database.tenant_id(),
+                    database.id(),
                     input.query,
                     page,
                     page_size,

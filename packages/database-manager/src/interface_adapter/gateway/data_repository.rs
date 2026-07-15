@@ -1,6 +1,36 @@
 use super::*;
 use std::str::FromStr;
 
+const CREATE_DATA_SCOPED_SQL: &str = r#"
+    INSERT INTO tachyon_apps_database_manager.data (
+        id,
+        tenant_id,
+        object_id,
+        name,
+        created_at,
+        updated_at
+    )
+    SELECT
+        ?,
+        ?,
+        scoped_database.id,
+        ?,
+        ?,
+        ?
+    FROM tachyon_apps_database_manager.objects AS scoped_database
+    WHERE scoped_database.tenant_id = ?
+      AND scoped_database.id = ?
+"#;
+
+const FIND_DATA_BY_ID_SQL: &str = r#"
+    SELECT
+        *
+    FROM
+        tachyon_apps_database_manager.data
+    WHERE
+        tenant_id = ? and object_id = ? and id = ?
+"#;
+
 #[derive(Clone, Debug)]
 pub struct DataRepositoryImpl {
     pub db: Arc<Db>,
@@ -75,35 +105,32 @@ impl DataRepository for DataRepositoryImpl {
         .await?;
 
         let mut tx = self.db.pool().begin().await?;
-        sqlx::query(
-            r#"
-            INSERT INTO tachyon_apps_database_manager.data (
-                id,
-                tenant_id,
-                object_id,
-                name,
-                created_at,
-                updated_at
-            ) VALUES (
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?
-            )
-            ON DUPLICATE KEY UPDATE
-                name = VALUES(name)
-            "#,
-        )
-        .bind(data.id().to_string())
-        .bind(data.tenant_id().to_string())
-        .bind(data.database_id().to_string())
-        .bind(data.name().to_string())
-        .bind(data.created_at())
-        .bind(data.updated_at())
-        .execute(&mut *tx)
-        .await?;
+        let insert_result = sqlx::query(CREATE_DATA_SCOPED_SQL)
+            .bind(data.id().to_string())
+            .bind(data.tenant_id().to_string())
+            .bind(data.name().to_string())
+            .bind(data.created_at())
+            .bind(data.updated_at())
+            .bind(data.tenant_id().to_string())
+            .bind(data.database_id().to_string())
+            .execute(&mut *tx)
+            .await;
+        let insert_result = match insert_result {
+            Ok(result) => result,
+            Err(sqlx::Error::Database(error))
+                if error.is_unique_violation() =>
+            {
+                return Err(errors::Error::conflict(
+                    "data id already exists",
+                ));
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if insert_result.rows_affected() == 0 {
+            return Err(
+                crate::usecase::database_scope::DatabaseScope::not_found(),
+            );
+        }
         for val in data.property_data().iter() {
             let field_num = fields
                 .iter()
@@ -252,21 +279,12 @@ impl DataRepository for DataRepositoryImpl {
         .bind(tenant_id.to_string())
         .fetch_all(self.db.pool().as_ref())
         .await?;
-        let row = sqlx::query_as::<_, DataRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                tachyon_apps_database_manager.data
-            WHERE
-                tenant_id = ? and object_id = ? and id = ?
-            "#,
-        )
-        .bind(tenant_id.to_string())
-        .bind(database_id.to_string())
-        .bind(id.to_string())
-        .fetch_optional(self.db.pool().as_ref())
-        .await?;
+        let row = sqlx::query_as::<_, DataRow>(FIND_DATA_BY_ID_SQL)
+            .bind(tenant_id.to_string())
+            .bind(database_id.to_string())
+            .bind(id.to_string())
+            .fetch_optional(self.db.pool().as_ref())
+            .await?;
 
         row.map(|row| self.convert_to_data(row, fields)).transpose()
     }
@@ -418,5 +436,36 @@ impl DataRepository for DataRepositoryImpl {
         }
         let paginator = OffsetPaginator::new(page, total as u32, page_size);
         Ok((DataCollection::new(data_vec), paginator))
+    }
+}
+
+#[cfg(test)]
+mod scope_query_tests {
+    use super::*;
+
+    fn normalize(sql: &str) -> String {
+        sql.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase()
+    }
+
+    #[test]
+    fn find_by_id_requires_tenant_database_and_data_predicates() {
+        assert!(normalize(FIND_DATA_BY_ID_SQL)
+            .contains("where tenant_id = ? and object_id = ? and id = ?"));
+    }
+
+    #[test]
+    fn create_is_scoped_and_never_upserts_an_existing_data_id() {
+        let sql = normalize(CREATE_DATA_SCOPED_SQL);
+
+        assert!(sql.contains(
+            "from tachyon_apps_database_manager.objects as scoped_database"
+        ));
+        assert!(sql.contains(
+            "where scoped_database.tenant_id = ? and scoped_database.id = ?"
+        ));
+        assert!(!sql.contains("on duplicate key update"));
     }
 }

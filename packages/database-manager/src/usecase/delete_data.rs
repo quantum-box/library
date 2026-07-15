@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::{Data, DataRepository, Database, DatabaseId};
+use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{DeleteDataInputData, DeleteDataInputPort};
 use value_object::RepositoryV1;
 
@@ -28,30 +29,19 @@ impl DeleteDataInputPort for DeleteDataInteractor {
         &self,
         input: &DeleteDataInputData<'_>,
     ) -> errors::Result<Data> {
-        let database = self
-            .database_repository
-            .get_by_id(
-                &input.tenant_id.parse()?,
-                &input.database_id.parse()?,
-            )
-            .await?
-            .ok_or(errors::not_found!(
-                "database is not found in delete data"
-            ))?;
-        let data = self
-            .data_repository
-            .find_by_id(
-                &input.data_id.parse()?,
-                database.id(),
-                &input.tenant_id.parse()?,
-            )
-            .await?
-            .ok_or(errors::not_found!(
-                "data is not found in delete data"
-            ))?;
+        let tenant_id = input.tenant_id.parse()?;
+        let database_id = input.database_id.parse()?;
+        let data_id = input.data_id.parse()?;
+        let scope = DatabaseScope::new(&tenant_id, &database_id);
+        let database = scope
+            .require_database(self.database_repository.as_ref())
+            .await?;
+        let data = scope
+            .require_data(self.data_repository.as_ref(), &data_id)
+            .await?;
 
         self.data_repository
-            .delete(data.tenant_id(), database.id(), data.id())
+            .delete(database.tenant_id(), database.id(), data.id())
             .await?;
         Ok(data)
     }

@@ -3,12 +3,16 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::domain::{
-    Data, DataId, DataRepository, Property, PropertyData,
-    PropertyRepository, PropertyType,
+    Data, DataId, DataRepository, Database, DatabaseId, Property,
+    PropertyData, PropertyRepository, PropertyType,
 };
+use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{AddDataInputData, AddDataInputPort};
+use value_object::RepositoryV1;
+
 #[derive(Debug, Clone)]
 pub struct AddDataInteractorImpl {
+    database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     property_repo: Arc<dyn PropertyRepository>,
     data_repo: Arc<dyn DataRepository>,
 }
@@ -47,10 +51,12 @@ fn populate_auto_generated_ids(
 
 impl AddDataInteractorImpl {
     pub fn new(
+        database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
     ) -> Arc<Self> {
         Arc::new(Self {
+            database_repo,
             property_repo,
             data_repo,
         })
@@ -63,9 +69,12 @@ impl AddDataInputPort for AddDataInteractorImpl {
         &self,
         input: AddDataInputData<'_>,
     ) -> errors::Result<Data> {
+        let scope = DatabaseScope::new(input.tenant_id, input.database_id);
+        let database =
+            scope.require_database(self.database_repo.as_ref()).await?;
         let properties = self
             .property_repo
-            .find_all(input.database_id, input.tenant_id)
+            .find_all(database.id(), database.tenant_id())
             .await?;
 
         // Generate the canonical record ID before parsing property values so
@@ -76,7 +85,7 @@ impl AddDataInputPort for AddDataInteractorImpl {
             let property = properties
                 .iter()
                 .find(|x| x.id() == &val.property_id)
-                .ok_or(errors::not_found!("property not found"))?;
+                .ok_or_else(DatabaseScope::not_found)?;
             let col = PropertyData::new(property, val.value)?;
             property_data_list.push(col);
         }
@@ -87,8 +96,8 @@ impl AddDataInputPort for AddDataInteractorImpl {
         )?;
         let data = Data::new(
             &data_id,
-            input.tenant_id,
-            input.database_id,
+            database.tenant_id(),
+            database.id(),
             input.name,
             property_data_list,
             Utc::now(),
