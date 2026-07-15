@@ -1753,6 +1753,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "strum 0.26.3",
  "tachyon-sdk",
