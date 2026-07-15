@@ -191,6 +191,10 @@ pub async fn router(
         auth_app_trait.clone(),
         connection_repository.clone(),
     ));
+    let integration_query_state = graphql::IntegrationQueryState {
+        list_integrations,
+        list_connections,
+    };
 
     // API Key Validator for non-OAuth integrations (e.g., Stripe)
     let api_key_validator: Arc<dyn ApiKeyValidator> =
@@ -442,33 +446,10 @@ pub async fn router(
             base_url: base_url.clone(),
         };
 
-    // Enhance database_app with inbound sync administration usecases
-    let database_app_with_sync = Arc::new(
-        (*database_app)
-            .clone()
-            .with_inbound_sync(
-                list_integrations.clone(),
-                list_connections.clone(),
-                register_endpoint.clone()
-                    as Arc<
-                        dyn inbound_sync::usecase::RegisterWebhookEndpointInputPort,
-                    >,
-                update_endpoint.clone()
-                    as Arc<
-                        dyn inbound_sync::usecase::UpdateWebhookEndpointInputPort,
-                    >,
-                delete_endpoint.clone()
-                    as Arc<
-                        dyn inbound_sync::usecase::DeleteWebhookEndpointInputPort,
-                    >,
-            ),
-    );
-
-    // Library application with enhanced database_app
     let library_app: Arc<LibraryApp> = Arc::new(
         LibraryApp::new(
             &dsn,
-            database_app_with_sync.clone(),
+            database_app.clone(),
             sdk.clone(),
             sync_data.clone(),
         )
@@ -485,7 +466,7 @@ pub async fn router(
     .data(sdk.clone())
     .data(auth_app_trait.clone())
     .data(library_app.clone())
-    .data(database_app_with_sync.clone())
+    .data(integration_query_state)
     .data(github.clone())
     .data(inbound_sync_query_state)
     .data(inbound_sync_mutation_state)

@@ -759,10 +759,11 @@ impl LibraryQuery {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let database_app = ctx.data::<Arc<database_manager::App>>()?;
+        let integration_queries =
+            ctx.data::<super::IntegrationQueryState>()?;
 
-        let output = database_app
-            .list_integrations()
+        let output = integration_queries
+            .list_integrations
             .execute(inbound_sync::usecase::ListIntegrationsInputData {
                 executor,
                 multi_tenancy,
@@ -806,10 +807,11 @@ impl LibraryQuery {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-        let database_app = ctx.data::<Arc<database_manager::App>>()?;
+        let integration_queries =
+            ctx.data::<super::IntegrationQueryState>()?;
 
-        let output = database_app
-            .list_connections()
+        let output = integration_queries
+            .list_connections
             .execute(inbound_sync::usecase::ListConnectionsInputData {
                 executor,
                 multi_tenancy,

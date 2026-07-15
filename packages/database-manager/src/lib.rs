@@ -6,10 +6,6 @@ pub mod usecase;
 
 pub mod sdk;
 
-// Re-export sync engines
-pub use inbound_sync;
-pub use outbound_sync;
-
 use derive_getters::Getters;
 use gateway::{
     DataQueryService, DataRepositoryImpl, DatabaseRepositoryImpl,
@@ -72,38 +68,11 @@ pub struct App {
     search_data: Arc<dyn SearchDataInputPort>,
     find_all_properties: Arc<dyn FindAllPropertiesInputPort>,
     update_property: Arc<dyn UpdatePropertyInputPort>,
-
-    // Inbound Sync usecases (optional for backward compatibility)
-    #[getter(skip)]
-    list_integrations:
-        Option<Arc<dyn inbound_sync::usecase::ListIntegrationsInputPort>>,
-    #[getter(skip)]
-    list_connections:
-        Option<Arc<dyn inbound_sync::usecase::ListConnectionsInputPort>>,
-    #[getter(skip)]
-    register_webhook_endpoint: Option<
-        Arc<dyn inbound_sync::usecase::RegisterWebhookEndpointInputPort>,
-    >,
-    #[getter(skip)]
-    update_webhook_endpoint: Option<
-        Arc<dyn inbound_sync::usecase::UpdateWebhookEndpointInputPort>,
-    >,
-    #[getter(skip)]
-    delete_webhook_endpoint: Option<
-        Arc<dyn inbound_sync::usecase::DeleteWebhookEndpointInputPort>,
-    >,
-
-    // Outbound Sync usecases (optional for backward compatibility)
-    #[getter(skip)]
-    sync_data: Option<Arc<dyn outbound_sync::usecase::SyncDataInputPort>>,
 }
 
 impl Debug for App {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("App")
-            .field("has_inbound_sync", &self.list_integrations.is_some())
-            .field("has_outbound_sync", &self.sync_data.is_some())
-            .finish_non_exhaustive()
+        f.debug_struct("App").finish_non_exhaustive()
     }
 }
 
@@ -142,100 +111,7 @@ impl App {
             search_data,
             find_all_properties,
             update_property,
-            // Sync usecases default to None
-            list_integrations: None,
-            list_connections: None,
-            register_webhook_endpoint: None,
-            update_webhook_endpoint: None,
-            delete_webhook_endpoint: None,
-            sync_data: None,
         }
-    }
-
-    // Inbound Sync usecase getters
-    pub fn list_integrations(
-        &self,
-    ) -> &Arc<dyn inbound_sync::usecase::ListIntegrationsInputPort> {
-        self.list_integrations
-            .as_ref()
-            .expect("list_integrations not configured")
-    }
-
-    pub fn list_connections(
-        &self,
-    ) -> &Arc<dyn inbound_sync::usecase::ListConnectionsInputPort> {
-        self.list_connections
-            .as_ref()
-            .expect("list_connections not configured")
-    }
-
-    pub fn register_webhook_endpoint(
-        &self,
-    ) -> &Arc<dyn inbound_sync::usecase::RegisterWebhookEndpointInputPort>
-    {
-        self.register_webhook_endpoint
-            .as_ref()
-            .expect("register_webhook_endpoint not configured")
-    }
-
-    pub fn update_webhook_endpoint(
-        &self,
-    ) -> &Arc<dyn inbound_sync::usecase::UpdateWebhookEndpointInputPort>
-    {
-        self.update_webhook_endpoint
-            .as_ref()
-            .expect("update_webhook_endpoint not configured")
-    }
-
-    pub fn delete_webhook_endpoint(
-        &self,
-    ) -> &Arc<dyn inbound_sync::usecase::DeleteWebhookEndpointInputPort>
-    {
-        self.delete_webhook_endpoint
-            .as_ref()
-            .expect("delete_webhook_endpoint not configured")
-    }
-
-    // Outbound Sync usecase getter
-    pub fn sync_data(
-        &self,
-    ) -> &Arc<dyn outbound_sync::usecase::SyncDataInputPort> {
-        self.sync_data.as_ref().expect("sync_data not configured")
-    }
-
-    // Builder methods for sync usecases
-    pub fn with_inbound_sync(
-        mut self,
-        list_integrations: Arc<
-            dyn inbound_sync::usecase::ListIntegrationsInputPort,
-        >,
-        list_connections: Arc<
-            dyn inbound_sync::usecase::ListConnectionsInputPort,
-        >,
-        register_webhook_endpoint: Arc<
-            dyn inbound_sync::usecase::RegisterWebhookEndpointInputPort,
-        >,
-        update_webhook_endpoint: Arc<
-            dyn inbound_sync::usecase::UpdateWebhookEndpointInputPort,
-        >,
-        delete_webhook_endpoint: Arc<
-            dyn inbound_sync::usecase::DeleteWebhookEndpointInputPort,
-        >,
-    ) -> Self {
-        self.list_integrations = Some(list_integrations);
-        self.list_connections = Some(list_connections);
-        self.register_webhook_endpoint = Some(register_webhook_endpoint);
-        self.update_webhook_endpoint = Some(update_webhook_endpoint);
-        self.delete_webhook_endpoint = Some(delete_webhook_endpoint);
-        self
-    }
-
-    pub fn with_outbound_sync(
-        mut self,
-        sync_data: Arc<dyn outbound_sync::usecase::SyncDataInputPort>,
-    ) -> Self {
-        self.sync_data = Some(sync_data);
-        self
     }
 }
 
