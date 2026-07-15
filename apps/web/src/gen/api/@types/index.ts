@@ -5,6 +5,7 @@ export type AddDataRequest = {
 }
 
 export type AddPropertyRequest = {
+  auto_generate?: boolean | null;
   name: string;
   property_type: string;
 }
@@ -106,6 +107,7 @@ export type PropertyDataValue = {
 }
 
 export type PropertyResponse = {
+  auto_generate?: boolean | null;
   id: string;
   name: string;
   property_type: string;

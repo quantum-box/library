@@ -114,7 +114,9 @@ pub struct TypeMultiSelect {
 
 #[derive(Debug, Clone, Getters, Default, Serialize, Deserialize, new)]
 pub struct TypeId {
-    /// Whether to auto-generate ID
+    /// Generate the canonical DataId when AddData accepts a new record. The
+    /// caller may omit the value or send an empty value, but cannot override
+    /// it. Adding the property does not backfill existing records.
     pub auto_generate: bool,
 }
 

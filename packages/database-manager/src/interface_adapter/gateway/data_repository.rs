@@ -28,15 +28,24 @@ impl DataRepositoryImpl {
             data_row.updated_at,
         )?;
         for field in fields {
-            let data_field_value = data_row.get_field(field.field_num)?;
-            let property = Property::new(
+            let property_type = PropertyType::from_meta(
+                &field.datatype,
+                field.datatype_meta.clone(),
+            )?;
+            let data_field_value = project_property_value(
+                &data_row.id,
+                &property_type,
+                data_row.get_field(field.field_num)?,
+            )?;
+            let property = Property::with_meta_json(
                 &field.id.parse()?,
                 &field.tenant_id.parse()?,
                 &field.object_id.parse()?,
                 &field.field_name,
-                &field.datatype.parse()?,
+                &property_type,
                 field.is_indexed,
                 field.field_num,
+                field.meta_json.clone(),
             );
             let property_data =
                 PropertyData::new(&property, data_field_value)?;
@@ -243,21 +252,23 @@ impl DataRepository for DataRepositoryImpl {
         .bind(tenant_id.to_string())
         .fetch_all(self.db.pool().as_ref())
         .await?;
-        Ok(sqlx::query_as::<_, DataRow>(
+        let row = sqlx::query_as::<_, DataRow>(
             r#"
             SELECT
                 *
             FROM
                 tachyon_apps_database_manager.data
             WHERE
-                tenant_id = ? and id = ?
+                tenant_id = ? and object_id = ? and id = ?
             "#,
         )
         .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
         .bind(id.to_string())
         .fetch_optional(self.db.pool().as_ref())
-        .await?
-        .map(|row| self.convert_to_data(row, fields).unwrap()))
+        .await?;
+
+        row.map(|row| self.convert_to_data(row, fields)).transpose()
     }
 
     #[tracing::instrument(skip(self))]

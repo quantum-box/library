@@ -4,8 +4,9 @@ use crate::usecase::{AddPropertyInputData, AddPropertyInputPort};
 use std::fmt::Debug;
 
 use crate::domain::{
-    Database, DatabaseId, Property, PropertyId, PropertyRepository,
-    PropertyType, Relation, RelationId, RelationRepository,
+    next_property_num, validate_property_type_addition, Database,
+    DatabaseId, Property, PropertyId, PropertyRepository, PropertyType,
+    Relation, RelationId, RelationRepository,
 };
 use value_object::RepositoryV1;
 
@@ -49,14 +50,8 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
             .find_all(database.id(), database.tenant_id())
             .await?;
 
-        if properties
-            .iter()
-            .any(|p| matches!(p.property_type(), PropertyType::Id(_)))
-        {
-            return Err(errors::business_logic!(
-                "Id property already exists"
-            ));
-        }
+        validate_property_type_addition(&properties, &input.property_type)?;
+        let property_num = next_property_num(&properties)?;
 
         let new_property = Property::new(
             &PropertyId::default(),
@@ -65,7 +60,7 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
             input.name,
             &input.property_type,
             false,
-            properties.len() as u32,
+            property_num,
         );
 
         if let PropertyType::Relation(relation) =

@@ -194,6 +194,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
             .iter()
             .find(|p| p.name() == &input.content_property_name);
         let content_prop_id = if let Some(prop) = content_prop {
+            validate_import_target(prop)?;
             prop.id().to_string()
         } else {
             let prop = self
@@ -221,6 +222,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 .find(|p| p.name() == &mapping.property_name);
 
             let prop_id = if let Some(prop) = existing {
+                validate_import_target(prop)?;
                 prop.id().to_string()
             } else {
                 let prop_type = match mapping.property_type.as_str() {
@@ -647,6 +649,22 @@ async fn import_single_file(
     Ok((name, property_data))
 }
 
+fn validate_import_target(property: &db::Property) -> errors::Result<()> {
+    if matches!(
+        property.property_type(),
+        db::PropertyType::Id(db::TypeId {
+            auto_generate: true
+        })
+    ) {
+        return Err(errors::Error::bad_request(format!(
+            "Property '{}' is an auto-generated Id and cannot be mapped from GitHub content",
+            property.name()
+        )));
+    }
+
+    Ok(())
+}
+
 fn github_import_metadata(
     github_repo: &str,
     path: &str,
@@ -663,7 +681,37 @@ fn github_import_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::github_import_metadata;
+    use super::{github_import_metadata, validate_import_target};
+    use database_manager::domain as db;
+    use value_object::TenantId;
+
+    fn property(property_type: db::PropertyType) -> db::Property {
+        db::Property::new(
+            &db::PropertyId::default(),
+            &TenantId::default(),
+            &db::DatabaseId::default(),
+            "id",
+            &property_type,
+            false,
+            0,
+        )
+    }
+
+    #[test]
+    fn github_import_rejects_an_auto_generated_id_target() {
+        let property =
+            property(db::PropertyType::Id(db::TypeId::new(true)));
+
+        assert!(validate_import_target(&property).is_err());
+    }
+
+    #[test]
+    fn github_import_allows_a_manual_id_target() {
+        let property =
+            property(db::PropertyType::Id(db::TypeId::new(false)));
+
+        assert!(validate_import_target(&property).is_ok());
+    }
 
     #[test]
     fn one_shot_import_metadata_is_default_deny_for_writeback() {

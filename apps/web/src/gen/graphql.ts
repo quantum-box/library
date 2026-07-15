@@ -2075,7 +2075,7 @@ export type DataDetailPageQueryVariables = Exact<{
 }>;
 
 
-export type DataDetailPageQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
+export type DataDetailPageQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
 
 export type UpdateDataMutationVariables = Exact<{
   input: UpdateDataInputData;
@@ -2099,7 +2099,7 @@ export type NewDataQueryVariables = Exact<{
 }>;
 
 
-export type NewDataQuery = { __typename?: 'Query', properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
+export type NewDataQuery = { __typename?: 'Query', properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
 
 export type AddDataMutationVariables = Exact<{
   input: AddDataInputData;
@@ -2156,7 +2156,7 @@ export type RepositoryPageWithTagsQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
@@ -2168,7 +2168,7 @@ export type RepositoryPageQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageWithoutTagsFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
@@ -2178,7 +2178,7 @@ export type DataFieldOnRepoPageFragment = { __typename?: 'Data', id: string, nam
 
 export type PaginationFieldFragment = { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number };
 
-export type PropertyFieldOnRepoPageFragment = { __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null };
+export type PropertyFieldOnRepoPageFragment = { __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null };
 
 export type InviteRepoMemberMutationVariables = Exact<{
   input: InviteRepoMemberInput;
@@ -2489,9 +2489,9 @@ export type DateValueForEditorFragment = { __typename?: 'DateValue', date: strin
 
 export type ImageValueForEditorFragment = { __typename?: 'ImageValue', url: string };
 
-export type PropertyForEditorFragment = { __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType' } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null };
+export type PropertyForEditorFragment = { __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null };
 
-type PropertyTypeMetaForEditor_IdType_Fragment = { __typename?: 'IdType' };
+type PropertyTypeMetaForEditor_IdType_Fragment = { __typename?: 'IdType', autoGenerate: boolean };
 
 type PropertyTypeMetaForEditor_JsonType_Fragment = { __typename?: 'JsonType', json: string };
 
@@ -2502,6 +2502,8 @@ type PropertyTypeMetaForEditor_RelationType_Fragment = { __typename?: 'RelationT
 type PropertyTypeMetaForEditor_SelectType_Fragment = { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> };
 
 export type PropertyTypeMetaForEditorFragment = PropertyTypeMetaForEditor_IdType_Fragment | PropertyTypeMetaForEditor_JsonType_Fragment | PropertyTypeMetaForEditor_MultiSelectType_Fragment | PropertyTypeMetaForEditor_RelationType_Fragment | PropertyTypeMetaForEditor_SelectType_Fragment;
+
+export type IdTypeMetaForEditorFragment = { __typename?: 'IdType', autoGenerate: boolean };
 
 export type JsonTypeMetaForEditorFragment = { __typename?: 'JsonType', json: string };
 
@@ -2650,6 +2652,9 @@ export const PropertyFieldOnRepoPageFragmentDoc = gql`
   name
   typ
   meta {
+    ... on IdType {
+      autoGenerate
+    }
     ... on SelectType {
       options {
         id
@@ -2899,6 +2904,11 @@ export const PropertyForPropertiesUiFragmentDoc = gql`
   }
 }
     ${PropertyTypeMetaForPropertiesUiFragmentDoc}`;
+export const IdTypeMetaForEditorFragmentDoc = gql`
+    fragment IdTypeMetaForEditor on IdType {
+  autoGenerate
+}
+    `;
 export const RelationTypeMetaForEditorFragmentDoc = gql`
     fragment RelationTypeMetaForEditor on RelationType {
   databaseId
@@ -2929,12 +2939,14 @@ export const JsonTypeMetaForEditorFragmentDoc = gql`
     `;
 export const PropertyTypeMetaForEditorFragmentDoc = gql`
     fragment PropertyTypeMetaForEditor on PropertyTypeMeta {
+  ...IdTypeMetaForEditor
   ...RelationTypeMetaForEditor
   ...SelectTypeMetaForEditor
   ...MultiSelectTypeMetaForEditor
   ...JsonTypeMetaForEditor
 }
-    ${RelationTypeMetaForEditorFragmentDoc}
+    ${IdTypeMetaForEditorFragmentDoc}
+${RelationTypeMetaForEditorFragmentDoc}
 ${SelectTypeMetaForEditorFragmentDoc}
 ${MultiSelectTypeMetaForEditorFragmentDoc}
 ${JsonTypeMetaForEditorFragmentDoc}`;

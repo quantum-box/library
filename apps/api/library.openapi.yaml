@@ -14,6 +14,10 @@ components:
       type: object
     AddPropertyRequest:
       properties:
+        auto_generate:
+          type:
+          - boolean
+          - 'null'
         name:
           type: string
         property_type:
@@ -275,6 +279,10 @@ components:
         type: object
     PropertyResponse:
       properties:
+        auto_generate:
+          type:
+          - boolean
+          - 'null'
         deprecation:
           type:
           - string

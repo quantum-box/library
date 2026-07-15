@@ -394,11 +394,13 @@ async fn test_properties_api_all() -> anyhow::Result<()> {
             AddPropertyRequest {
                 name: test_property_name.clone(),
                 property_type: format!("relation:{}", target_database_id),
+                auto_generate: None,
             }
         } else {
             AddPropertyRequest {
                 name: test_property_name.clone(),
                 property_type: property_type.to_string(),
+                auto_generate: None,
             }
         };
 

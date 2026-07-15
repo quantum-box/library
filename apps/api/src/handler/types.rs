@@ -74,6 +74,8 @@ pub struct PropertyResponse {
     pub name: String,
     pub property_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_generate: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub deprecation: Option<String>,
 }
 
@@ -132,6 +134,8 @@ pub struct UpdateDataRequest {
 pub struct AddPropertyRequest {
     pub name: String,
     pub property_type: String,
+    #[serde(default)]
+    pub auto_generate: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
