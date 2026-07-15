@@ -1,10 +1,10 @@
 use chrono::Utc;
 use database_manager::domain::{
     CreateRecordCommand, Data, DataId, PropertyType, PropertyValueCommand,
-    RecordUnitOfWork, RelationRepository, TypeRelation,
+    RecordUnitOfWork, RelationDefinitionRepository, TypeRelation,
 };
 use database_manager::interface_adapter::gateway::{
-    data_repository::DataRepositoryImpl, RelationRepositoryImpl,
+    data_repository::DataRepositoryImpl, RelationDefinitionRepositoryImpl,
 };
 use database_manager::{
     AddDataInputData, AddPropertyInputData, CreateDatabaseInputData,
@@ -35,7 +35,7 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
 
     let app = database_manager::factory_client(dsn.to_string()).await?;
     let data_repository = DataRepositoryImpl::new(db.clone());
-    let relation_repository = RelationRepositoryImpl::new(db);
+    let relation_repository = RelationDefinitionRepositoryImpl::new(db);
     let tenant_a = TenantId::default();
     let tenant_b = TenantId::default();
     let executor = &auth::Executor::SystemUser;
@@ -129,7 +129,7 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         })
         .await?;
     let stored_relations = relation_repository
-        .find_all_by_database(database_a.id(), &tenant_a)
+        .find_all_by_source_database(&tenant_a, database_a.id())
         .await?;
     assert_eq!(stored_relations.len(), 1);
     assert_eq!(
@@ -137,7 +137,7 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         other_database_a.id()
     );
     assert!(relation_repository
-        .find_all_by_database(database_a.id(), &tenant_b)
+        .find_all_by_source_database(&tenant_b, database_a.id())
         .await?
         .is_empty());
     let relation_target_a = app
