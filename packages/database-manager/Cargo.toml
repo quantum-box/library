@@ -21,6 +21,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 derive-new = { workspace = true }
 derive-getters = { workspace = true }
 tokio = { workspace = true, features = [
@@ -55,6 +56,10 @@ tonic-build = { workspace = true }
 [[bin]]
 name = "database_manager_migrate"
 path = "bin/migrate.rs"
+
+[[bin]]
+name = "database_manager_property_value_backfill"
+path = "bin/property_value_backfill.rs"
 
 [features]
 default = ["graphql", "grpc"]

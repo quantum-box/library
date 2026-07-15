@@ -2,6 +2,7 @@ mod data_query_service;
 pub mod data_repository;
 pub mod database_repository;
 pub mod property_repository;
+mod property_value_backfill;
 mod property_value_storage;
 mod relation_repository;
 
@@ -9,6 +10,7 @@ pub use data_query_service::*;
 pub use data_repository::*;
 pub use database_repository::*;
 pub use property_repository::*;
+pub use property_value_backfill::*;
 pub use property_value_storage::*;
 pub use relation_repository::*;
 

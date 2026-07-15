@@ -306,3 +306,58 @@ pub trait SearchDataInputPort: Debug + Send + Sync + 'static {
         input: &SearchDataInputData,
     ) -> errors::Result<(Vec<Data>, OffsetPaginator)>;
 }
+
+/// One bounded, resumable PropertyValue backfill request.
+///
+/// `after_data_id` is an exclusive, stable cursor within the selected
+/// Tenant/Database scope. The checksum seed lets an operator continue a
+/// boundary-independent XOR checksum across separate invocations.
+#[derive(Debug, Clone)]
+pub struct PropertyValueBackfillInputData<'a> {
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub after_data_id: Option<&'a DataId>,
+    pub batch_size: u16,
+    pub dry_run: bool,
+    pub checksum_seed: [u8; 32],
+}
+
+/// Value-free operational evidence for one committed or rolled-back chunk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropertyValueBackfillReport {
+    pub scanned_records: u64,
+    pub compared_values: u64,
+    pub expected_values: u64,
+    pub missing_values: u64,
+    pub written_values: u64,
+    pub matched_values: u64,
+    pub absent_values: u64,
+    pub opaque_values: u64,
+    pub next_cursor: Option<DataId>,
+    pub complete: bool,
+    pub parity_checksum: String,
+}
+
+#[async_trait::async_trait]
+pub trait PropertyValueBackfillInputPort:
+    Debug + Send + Sync + 'static
+{
+    async fn execute(
+        &self,
+        input: &PropertyValueBackfillInputData<'_>,
+    ) -> errors::Result<PropertyValueBackfillReport>;
+}
+
+/// Persistence boundary used by the application backfill interactor.
+///
+/// The adapter owns transaction/locking details; the application boundary
+/// owns scope, cursor, batch and dry-run semantics.
+#[async_trait::async_trait]
+pub trait PropertyValueBackfillOutputPort:
+    Debug + Send + Sync + 'static
+{
+    async fn execute_chunk(
+        &self,
+        input: &PropertyValueBackfillInputData<'_>,
+    ) -> errors::Result<PropertyValueBackfillReport>;
+}
