@@ -73,7 +73,8 @@ async fn property_definition_envelope_schema_is_additive_and_strict(
             CAST(COLUMN_NAME AS CHAR) AS column_name_text,
             CAST(COLUMN_TYPE AS CHAR) AS column_type_text,
             CAST(IS_NULLABLE AS CHAR) AS is_nullable_text,
-            CHARACTER_MAXIMUM_LENGTH
+            CAST(CHARACTER_MAXIMUM_LENGTH AS SIGNED)
+                AS character_maximum_length
         FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'fields'
@@ -89,7 +90,7 @@ async fn property_definition_envelope_schema_is_additive_and_strict(
             row.try_get::<String, _>("column_name_text")?,
             row.try_get::<String, _>("column_type_text")?,
             row.try_get::<String, _>("is_nullable_text")?,
-            row.try_get::<Option<u64>, _>("CHARACTER_MAXIMUM_LENGTH")?,
+            row.try_get::<Option<i64>, _>("character_maximum_length")?,
         ))
     })
     .collect::<Result<Vec<_>, sqlx::Error>>()?;
