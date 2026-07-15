@@ -3,12 +3,15 @@ import {
   createRouter,
   createRoute,
   createRootRoute,
+  Link,
   Outlet,
   redirect,
   useNavigate,
   useMatch,
   useRouterState,
 } from '@tanstack/react-router'
+import { Badge, Button } from '@tachyon-sdk/native-ui'
+import { ChevronRight, Database, Filter, FolderGit2, Plus, X } from 'lucide-react'
 import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
@@ -19,7 +22,11 @@ import { WorkflowView } from './components/WorkflowView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
 import { DatabaseViewSettingsPanel } from './components/DatabaseViewSettingsPanel'
 import { DetailPanel } from './components/DetailPanel'
+import { DataEditorPage } from './components/DataEditorPage'
 import { CreateRecordModal } from './components/CreateRecordModal'
+import { LibraryHome } from './components/LibraryHome'
+import { OrganizationOverview } from './components/OrganizationOverview'
+import { RepositoryOverview } from './components/RepositoryOverview'
 import { Kbd, KbdGroup } from './components/Kbd'
 import { ChatView } from './components/chat/ChatView'
 import { DocsView } from './components/docs/DocsView'
@@ -141,13 +148,25 @@ function getDatabaseProject(databases: WorkspaceDatabase[], databaseId: string |
   return databases.find((project) => project.id === databaseId) ?? null
 }
 
+function recordMatchesDatabase(record: DatabaseRecord, database: WorkspaceDatabase) {
+  if (record.orgUsername && record.repoUsername) {
+    return (
+      record.orgUsername === database.orgUsername &&
+      record.repoUsername === database.repoUsername
+    )
+  }
+  return record.project === database.label
+}
+
 function filterRecordsByDatabase(
   records: DatabaseRecord[],
   databases: WorkspaceDatabase[],
   databaseId: string | undefined
 ) {
   const database = getDatabaseProject(databases, databaseId)
-  return database ? records.filter((record) => record.project === database.label) : records
+  return database
+    ? records.filter((record) => recordMatchesDatabase(record, database))
+    : records
 }
 
 // ── Create DatabaseRecord Modal context ─────────────────────────────────
@@ -164,6 +183,8 @@ function useCreateModal() {
 function DatabaseHeader({
   title,
   databaseLabel,
+  organization,
+  repository,
   views,
   selectedView,
   dirty,
@@ -182,6 +203,8 @@ function DatabaseHeader({
 }: {
   title: string
   databaseLabel: string
+  organization?: string
+  repository?: string
   views: DatabaseViewDefinition[]
   selectedView: DatabaseViewDefinition
   dirty: boolean
@@ -199,60 +222,79 @@ function DatabaseHeader({
   onDiscardChanges: () => void
 }) {
   return (
-    <div
-      className="flex flex-col gap-1.5 border-b px-3 py-2 md:px-4"
-      style={{ borderColor: 'var(--border-color)' }}
-    >
-      <div className="flex items-center justify-between gap-2 md:gap-3">
-        <div className="flex min-w-0 items-center gap-2 md:gap-3">
-          <h1 className="text-sm font-semibold">{title}</h1>
-          <span
-            data-testid="selected-database-pill"
-            className="truncate rounded-full bg-surface-hover px-2 py-0.5 text-xs text-muted"
-          >
-            {databaseLabel}
-          </span>
-          {status && (
-            <span
-              data-testid="status-filter-pill"
-              className="flex min-w-0 items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-muted"
-            >
-              {statusConfig[status].label}
-              {onClearStatus && (
-                <button
-                  onClick={onClearStatus}
-                  className="ml-1 hover:opacity-75"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  x
-                </button>
-              )}
-            </span>
+    <>
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
+        <Database className="size-4 shrink-0 text-primary" aria-hidden="true" />
+        <div className="flex min-w-0 items-center gap-1 text-sm">
+          {organization && repository ? (
+            <>
+              <Link
+                to="/organizations/$organization"
+                params={{ organization }}
+                className="max-w-28 truncate text-muted-foreground no-underline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {organization}
+              </Link>
+              <ChevronRight className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
+              <Link
+                to="/repositories/$organization/$repository"
+                params={{ organization, repository }}
+                className="max-w-36 truncate text-muted-foreground no-underline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {repository}
+              </Link>
+              <ChevronRight className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
+              <h1 className="truncate font-semibold">Data</h1>
+            </>
+          ) : (
+            <h1 className="truncate font-semibold">{title}</h1>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <Badge data-testid="selected-database-pill" variant="outline" className="hidden sm:inline-flex">
+          {organization && repository ? 'Repository data' : databaseLabel}
+        </Badge>
+        {status && (
+          <Badge data-testid="status-filter-pill" variant="neutral" className="hidden gap-1 md:inline-flex">
+            {statusConfig[status].label}
+            {onClearStatus && (
+              <button
+                type="button"
+                onClick={onClearStatus}
+                className="rounded-sm text-subtle-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label="Clear status filter"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            )}
+          </Badge>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {onToggleFilters && (
-            <button
+            <Button
               data-testid="toggle-database-filters"
-              className="rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              className="hidden md:inline-flex"
               onClick={onToggleFilters}
             >
-              {filtersOpen ? 'Hide Filters' : 'Filters'}
-            </button>
+              <Filter aria-hidden="true" />
+              <span className="hidden sm:inline">{filtersOpen ? 'Hide filters' : 'Filter'}</span>
+            </Button>
           )}
           {onCreate && (
-            <button
+            <Button
               data-testid="open-create-record"
-              className="flex items-center gap-2 whitespace-nowrap rounded px-2.5 py-1.5 text-xs font-medium md:px-3"
-              style={{ background: 'var(--accent)', color: '#fff' }}
+              variant="primary"
+              size="sm"
               onClick={onCreate}
             >
-              <span>+ New Data</span>
-              <Kbd className="border-white/25 bg-white/15 text-white shadow-none">C</Kbd>
-            </button>
+              <Plus aria-hidden="true" />
+              <span>New data</span>
+              <Kbd className="hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">C</Kbd>
+            </Button>
           )}
         </div>
-      </div>
+      </header>
       <DatabaseViewTabs
         views={views}
         selectedView={selectedView}
@@ -265,7 +307,7 @@ function DatabaseHeader({
         onSaveView={onSaveView}
         onDiscardChanges={onDiscardChanges}
       />
-    </div>
+    </>
   )
 }
 
@@ -277,46 +319,20 @@ function SignedInLibraryDashboard({
   repositoryCount: number
 }) {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center px-6 py-10">
-      <div className="w-full max-w-3xl">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded border border-border bg-surface text-sm font-semibold">
-            L
-          </div>
-          <div>
-            <div className="text-sm font-semibold">Signed in to Library</div>
-            <div className="text-xs text-subtle">Production API connected</div>
-          </div>
-        </div>
-
-        <div className="border border-border bg-surface p-6 shadow-soft">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold leading-tight">Workspace loaded</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
-              Your account is authenticated. Organizations are available from the production API; repository data will appear here when repository aliases are returned for this account.
-            </p>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="border border-border bg-panel p-4">
-              <div className="text-xs uppercase tracking-wider text-subtle">Organizations</div>
-              <div className="mt-3 text-2xl font-semibold">{organizationCount}</div>
-            </div>
-            <div className="border border-border bg-panel p-4">
-              <div className="text-xs uppercase tracking-wider text-subtle">Repositories</div>
-              <div className="mt-3 text-2xl font-semibold">{repositoryCount}</div>
-            </div>
-            <div className="border border-border bg-panel p-4">
-              <div className="text-xs uppercase tracking-wider text-subtle">API</div>
-              <div className="mt-3 truncate text-sm font-medium">library-api.txcloud.app</div>
-            </div>
-          </div>
-
-          {repositoryCount === 0 && (
-            <div className="mt-5 rounded-md border border-border bg-canvas px-4 py-3 text-xs leading-5 text-muted">
-              Repository list is waiting on the production organization resolver. The account session is active, so this view will populate automatically once repository aliases are returned.
-            </div>
-          )}
+    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 py-10">
+      <div className="w-full max-w-xl text-center">
+        <span className="mx-auto flex size-11 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
+          <FolderGit2 className="size-5" aria-hidden="true" />
+        </span>
+        <Badge variant="success" className="mt-5">Authenticated</Badge>
+        <h2 className="mt-3 text-xl font-semibold tracking-tight">No repository data yet</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+          Library organizes pages beneath GitHub-style repository paths. Repositories available to this account will appear here as soon as they are connected.
+        </p>
+        <div className="mt-5 flex items-center justify-center gap-3 font-mono text-2xs text-subtle-foreground">
+          <span>{organizationCount} organizations</span>
+          <span aria-hidden="true">·</span>
+          <span>{repositoryCount} repositories</span>
         </div>
       </div>
     </div>
@@ -530,41 +546,76 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
 // ── Root Route ─────────────────────────────────────────────────
 
+function AuthenticatedWorkspaceRoot() {
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const { shortcutsOpen, closeShortcuts } = useGlobalKeyboardShortcuts(setCreateModalOpen)
+
+  return (
+    <DatabaseRecordsProvider>
+      <DatabasesProvider>
+        <DatabaseViewsProvider>
+          <AttachmentsProvider>
+            <CreateModalContext.Provider value={{ open: createModalOpen, setOpen: setCreateModalOpen }}>
+              <div className="flex h-full min-w-0 flex-col overflow-hidden md:flex-row">
+                <Sidebar />
+                <Outlet />
+              </div>
+              <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
+            </CreateModalContext.Provider>
+          </AttachmentsProvider>
+        </DatabaseViewsProvider>
+      </DatabasesProvider>
+    </DatabaseRecordsProvider>
+  )
+}
+
 const rootRoute = createRootRoute({
   component: function RootLayout() {
-    const [createModalOpen, setCreateModalOpen] = useState(false)
-    const { shortcutsOpen, closeShortcuts } = useGlobalKeyboardShortcuts(setCreateModalOpen)
     return (
-      <DatabaseRecordsProvider>
-        <DatabasesProvider>
-          <DatabaseViewsProvider>
-            <AttachmentsProvider>
-              <CreateModalContext.Provider value={{ open: createModalOpen, setOpen: setCreateModalOpen }}>
-                <AuthGate>
-                  <div className="flex h-full min-w-0 flex-col overflow-hidden md:flex-row">
-                    <Sidebar />
-                    <Outlet />
-                  </div>
-                </AuthGate>
-                <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
-              </CreateModalContext.Provider>
-            </AttachmentsProvider>
-          </DatabaseViewsProvider>
-        </DatabasesProvider>
-      </DatabaseRecordsProvider>
+      <AuthGate>
+        <AuthenticatedWorkspaceRoot />
+      </AuthGate>
     )
   },
 })
 
-// ── Index Route (redirect → /databases) ───────────────────────
+// ── Index Route (redirect → /home) ────────────────────────────
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/databases' })
+    throw redirect({ to: '/home' })
   },
 })
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'home',
+  component: LibraryHome,
+})
+
+const organizationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'organizations/$organization',
+  component: OrganizationPage,
+})
+
+function OrganizationPage() {
+  const { organization } = organizationRoute.useParams()
+  return <OrganizationOverview organization={organization} />
+}
+
+const repositoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'repositories/$organization/$repository',
+  component: RepositoryPage,
+})
+
+function RepositoryPage() {
+  const { organization, repository } = repositoryRoute.useParams()
+  return <RepositoryOverview organization={organization} repository={repository} />
+}
 
 // ── Databases Layout Route (/databases) ───────────────────────
 
@@ -589,6 +640,7 @@ function DatabasesLayout() {
     organizations,
     selectedOrganizationId,
   } = useWorkspaceDatabases()
+  const selectedDatabase = getDatabaseProject(databases, database)
   const visibleDatabases = selectedOrganizationId
     ? databases.filter((item) => item.operatorId === selectedOrganizationId)
     : databases
@@ -604,7 +656,6 @@ function DatabasesLayout() {
   const { open: createModalOpen, setOpen: setCreateModalOpen } = useCreateModal()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [draftView, setDraftView] = useState<DatabaseViewDefinition | null>(null)
-  const selectedDatabase = getDatabaseProject(databases, database)
   const databaseScopeId = getDatabaseViewScopeId(database)
   const scopedViews = useMemo(
     () => getViewsForDatabase(database),
@@ -661,9 +712,18 @@ function DatabasesLayout() {
     }
   }, [savedSelectedView])
 
+  const organizationRecords = useMemo(
+    () =>
+      selectedOrganizationId && !selectedDatabase
+        ? records.filter((record) =>
+            visibleDatabases.some((candidate) => recordMatchesDatabase(record, candidate)),
+          )
+        : records,
+    [records, selectedDatabase, selectedOrganizationId, visibleDatabases],
+  )
   const databaseRecords = useMemo(
-    () => filterRecordsByDatabase(records, visibleDatabases, database),
-    [records, visibleDatabases, database]
+    () => filterRecordsByDatabase(organizationRecords, databases, database),
+    [organizationRecords, databases, database]
   )
 
   const selectedDraftView =
@@ -695,7 +755,9 @@ function DatabasesLayout() {
   const selectedRecord = useMemo(
     () =>
       selectedIdentifier
-        ? databaseRecords.find((record) => record.identifier === selectedIdentifier) ?? null
+        ? databaseRecords.find(
+            (record) => record.identifier === selectedIdentifier || record.id === selectedIdentifier,
+          ) ?? null
         : null,
     [databaseRecords, selectedIdentifier]
   )
@@ -849,6 +911,17 @@ function DatabasesLayout() {
   const useLibraryRepoTable = Boolean(
     selectedDatabase?.orgUsername && selectedDatabase?.repoUsername
   )
+  const showDataEditorPage = Boolean(
+    selectedIdentifier && effectiveView.type !== 'workflow'
+  )
+
+  if (showDataEditorPage) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 bg-background">
+        <Outlet />
+      </div>
+    )
+  }
 
   return (
     <>
@@ -856,8 +929,10 @@ function DatabasesLayout() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Header */}
         <DatabaseHeader
-          title="Library Data"
+          title={selectedDatabase?.repoUsername ?? 'All repository data'}
           databaseLabel={selectedDatabase?.label ?? 'All repository data'}
+          organization={selectedDatabase?.orgUsername}
+          repository={selectedDatabase?.repoUsername}
           views={scopedViews}
           selectedView={savedSelectedView}
           dirty={dirty}
@@ -868,9 +943,9 @@ function DatabasesLayout() {
               filters: { ...current.filters, status: undefined },
             }))
           }
-          onCreate={() => setCreateModalOpen(true)}
+          onCreate={useLibraryRepoTable ? undefined : () => setCreateModalOpen(true)}
           onToggleFilters={
-            effectiveView.type === 'workflow'
+            effectiveView.type === 'workflow' || useLibraryRepoTable
               ? undefined
               : () => setFiltersOpen((current) => !current)
           }
@@ -1010,38 +1085,100 @@ function RecordDetailPanel() {
   const { database, view } = databasesRoute.useSearch()
   const { records, handleUpdateRecord, handleDeleteRecord, syncRecords } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
+  const { getViewsForDatabase } = useDatabaseViews()
   const navigate = useNavigate()
+  const selectedDatabase = getDatabaseProject(databases, database)
+  const selectedView = useMemo(
+    () => getViewsForDatabase(database).find((candidate) => candidate.id === view),
+    [database, getViewsForDatabase, view],
+  )
+  const useLibraryEditor = Boolean(
+    selectedView?.type !== 'workflow' &&
+    selectedDatabase?.orgUsername &&
+    selectedDatabase.repoUsername,
+  )
+  const [detailFailure, setDetailFailure] = useState<{
+    recordId: string
+    message: string
+  } | null>(null)
+  const detailError = detailFailure?.recordId === recordId
+    ? detailFailure.message
+    : null
   const databaseRecords = useMemo(
     () => filterRecordsByDatabase(records, databases, database),
     [records, databases, database]
   )
 
   const record = useMemo(
-    () => databaseRecords.find((candidate) => candidate.identifier === recordId) ?? null,
+    () => databaseRecords.find(
+      (candidate) => candidate.identifier === recordId || candidate.id === recordId,
+    ) ?? null,
     [databaseRecords, recordId]
   )
 
   useEffect(() => {
-    if (record) return
+    if (useLibraryEditor || record) return
     let cancelled = false
     void fetchServerRecords()
       .then((serverRecords) => {
-        if (!cancelled) syncRecords(serverRecords)
+        if (cancelled) return
+        syncRecords(serverRecords)
+        const found = serverRecords.some(
+          (candidate) => candidate.identifier === recordId || candidate.id === recordId,
+        )
+        if (!found) {
+          setDetailFailure({
+            recordId,
+            message: `${recordId} is not available in this data view.`,
+          })
+        }
       })
       .catch((error: unknown) => {
         console.warn('Failed to hydrate data detail from Library API', error)
+        if (!cancelled) {
+          setDetailFailure({
+            recordId,
+            message: error instanceof Error ? error.message : 'Failed to load data',
+          })
+        }
       })
     return () => {
       cancelled = true
     }
-  }, [record, syncRecords])
+  }, [record, recordId, syncRecords, useLibraryEditor])
+
+  const closeEditor = () =>
+    void navigate({ to: '/databases', search: { database, view } })
+
+  if (
+    useLibraryEditor &&
+    selectedDatabase?.orgUsername &&
+    selectedDatabase.repoUsername
+  ) {
+    return (
+      <DataEditorPage
+        dataId={recordId}
+        org={selectedDatabase.orgUsername}
+        repo={selectedDatabase.repoUsername}
+        operatorId={selectedDatabase.operatorId}
+        repoLabel={selectedDatabase.label}
+        onBack={closeEditor}
+      />
+    )
+  }
 
   return (
     <DetailPanel
       record={record}
-      onClose={() =>
-        void navigate({ to: '/databases', search: { database, view } })
+      recordIdentifier={recordId}
+      repositoryPath={
+        selectedDatabase?.orgUsername && selectedDatabase.repoUsername
+          ? `${selectedDatabase.orgUsername}/${selectedDatabase.repoUsername}`
+          : selectedDatabase?.label
       }
+      loading={!record && !detailError}
+      error={detailError}
+      onClose={closeEditor}
       onUpdateRecord={handleUpdateRecord}
       onDeleteRecord={handleDeleteRecord}
     />
@@ -1170,6 +1307,9 @@ function DocsPage() {
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  homeRoute,
+  organizationRoute,
+  repositoryRoute,
   databasesRoute.addChildren([recordsIndexRoute, recordDetailRoute]),
   kanbanRoute,
   workflowRoute,

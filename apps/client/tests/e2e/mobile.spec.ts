@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test.describe('Photon mobile shell', () => {
+test.describe('Library mobile shell', () => {
   test('supports core workspace flows on a phone viewport', async ({ page }) => {
     const title = `Mobile smoke record ${Date.now()}`
 
@@ -8,7 +8,7 @@ test.describe('Photon mobile shell', () => {
 
     await expect(page.getByTestId('sync-presence-status-mobile')).toBeVisible()
     await expect(page.getByTestId('side-nav')).toBeHidden()
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
 
     await page.getByTestId('open-create-record').click()
     await page.getByLabel(/Record title/i).fill(title)

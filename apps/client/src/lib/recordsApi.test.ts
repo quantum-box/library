@@ -7,6 +7,7 @@ vi.mock('./photonEngine/client', () => ({
   upsertClientEngineRecord: vi.fn(),
 }))
 import { appKitConfig } from '../app/kitConfig'
+import { clearAuthTokens } from './auth'
 import {
   fetchLibraryOrganizations,
   fetchLibraryRecords,
@@ -23,7 +24,7 @@ describe('recordsApi', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
-    localStorage.clear()
+    clearAuthTokens()
   })
 
   it('normalizes server record projections for the Yjs record cache', () => {

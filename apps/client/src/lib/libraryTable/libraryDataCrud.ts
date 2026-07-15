@@ -1,4 +1,5 @@
 import type { LibraryDataItem, LibraryProperty } from '../recordsApi'
+import { getValidAuthTokens, loadStoredAuthIdentity } from '../auth'
 
 class LibraryApiError extends Error {
   readonly status: number
@@ -115,27 +116,9 @@ function configuredPlatformId(): string {
   return import.meta.env.VITE_LIBRARY_PLATFORM_ID ?? import.meta.env.VITE_PLATFORM_ID ?? 'tn_01j702qf86pc2j35s0kv0gv3gy'
 }
 
-function libraryAccessToken(): string | null {
-  try {
-    const stored = localStorage.getItem('library_auth')
-    if (!stored) return null
-    const parsed = JSON.parse(stored) as { accessToken?: string }
-    return parsed.accessToken ?? null
-  } catch {
-    return null
-  }
-}
-
 function configuredLibraryActor(): string {
-  try {
-    const stored = localStorage.getItem('library_auth')
-    if (stored) {
-      const parsed = JSON.parse(stored) as { userId?: string }
-      if (parsed.userId) return parsed.userId
-    }
-  } catch {
-    // Fall back to operator/platform identifiers.
-  }
+  const actorId = loadStoredAuthIdentity()?.userId
+  if (actorId) return actorId
   return (
     import.meta.env.VITE_LIBRARY_ACTOR_ID ??
     import.meta.env.VITE_LIBRARY_OPERATOR_ID ??
@@ -143,13 +126,13 @@ function configuredLibraryActor(): string {
   )
 }
 
-function libraryRestHeaders(operatorId?: string): Record<string, string> {
+async function libraryRestHeaders(operatorId?: string): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = libraryAccessToken()
+  const token = (await getValidAuthTokens())?.accessToken
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
 }
@@ -164,7 +147,7 @@ async function requestLibraryGraphQL<TData>(
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = libraryAccessToken()
+  const token = (await getValidAuthTokens())?.accessToken
   if (token) headers.Authorization = `Bearer ${token}`
 
   const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
@@ -260,7 +243,7 @@ export async function addLibraryData(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data`,
     {
       method: 'POST',
-      headers: libraryRestHeaders(target.operatorId),
+      headers: await libraryRestHeaders(target.operatorId),
       body: JSON.stringify({
         name: input.name,
         property_data: restPropertyPayload(properties, propertyData),
@@ -304,7 +287,7 @@ export async function updateLibraryData(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${item.id}`,
     {
       method: 'PUT',
-      headers: libraryRestHeaders(target.operatorId),
+      headers: await libraryRestHeaders(target.operatorId),
       body: JSON.stringify({
         name: item.name,
         property_data: restPropertyPayload(properties, item.propertyData),
@@ -338,7 +321,7 @@ export async function deleteLibraryData(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}`,
     {
       method: 'DELETE',
-      headers: libraryRestHeaders(target.operatorId),
+      headers: await libraryRestHeaders(target.operatorId),
     }
   )
   if (!response.ok) {

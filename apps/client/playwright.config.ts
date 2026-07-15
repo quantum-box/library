@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { e2eAuthState } from './tests/e2e/auth-state'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -10,6 +11,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:5173',
+    storageState: e2eAuthState,
     trace: 'on-first-retry',
   },
   projects: [

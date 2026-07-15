@@ -13,14 +13,44 @@
     "windows": [
       {
         "title": "Library Client",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "base-uri": "'self'",
+        "child-src": "'self' blob:",
+        "connect-src": "'self' blob: ipc: http://ipc.localhost https://cognito-idp.ap-northeast-1.amazonaws.com https://api.n1.tachy.one https://library.api.n1.tachy.one https://library-api.txcloud.app wss://photon-sync.quantum-box.workers.dev",
+        "font-src": "'self' data:",
+        "form-action": "'self'",
+        "frame-src": "'none'",
+        "img-src": "'self' blob: data: https:",
+        "object-src": "'none'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "worker-src": "'self' blob:"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "base-uri": "'self'",
+        "child-src": "'self' blob:",
+        "connect-src": "'self' blob: ipc: http://ipc.localhost http://localhost:3001 http://127.0.0.1:3001 http://localhost:50053 http://127.0.0.1:50053 ws: wss: https://cognito-idp.ap-northeast-1.amazonaws.com https://api.n1.tachy.one https://library.api.n1.tachy.one https://library-api.txcloud.app",
+        "font-src": "'self' data:",
+        "form-action": "'self'",
+        "frame-src": "'none'",
+        "img-src": "'self' blob: data: https:",
+        "object-src": "'none'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "worker-src": "'self' blob:"
+      }
     }
   },
   "bundle": {
