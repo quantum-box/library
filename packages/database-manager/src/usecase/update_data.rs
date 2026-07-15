@@ -5,7 +5,10 @@ use crate::domain::{
     PropertyRepository, PropertyType,
 };
 use crate::usecase::database_scope::DatabaseScope;
-use crate::usecase::{UpdateDataInputData, UpdateDataInputPort};
+use crate::usecase::{
+    RelationTargetPolicy, RelationTargetValidationPort,
+    UpdateDataInputData, UpdateDataInputPort,
+};
 use value_object::RepositoryV1;
 
 fn validate_auto_generated_id_update(
@@ -45,6 +48,7 @@ pub struct UpdateDataInteractorImpl {
     database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     property_repo: Arc<dyn PropertyRepository>,
     data_repo: Arc<dyn DataRepository>,
+    relation_target_validator: Arc<dyn RelationTargetValidationPort>,
 }
 
 impl UpdateDataInteractorImpl {
@@ -53,10 +57,29 @@ impl UpdateDataInteractorImpl {
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
     ) -> Arc<Self> {
+        let relation_target_validator = RelationTargetPolicy::new(
+            database_repo.clone(),
+            data_repo.clone(),
+        );
+        Self::new_with_relation_target_validator(
+            database_repo,
+            property_repo,
+            data_repo,
+            relation_target_validator,
+        )
+    }
+
+    pub fn new_with_relation_target_validator(
+        database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
+        property_repo: Arc<dyn PropertyRepository>,
+        data_repo: Arc<dyn DataRepository>,
+        relation_target_validator: Arc<dyn RelationTargetValidationPort>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             database_repo,
             property_repo,
             data_repo,
+            relation_target_validator,
         })
     }
 }
@@ -88,10 +111,12 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
                 data.get_property_data(property.id()),
                 &d.value,
             )?;
-            data.update_property_data(&PropertyData::new(
-                property,
-                d.value.to_string(),
-            )?)?;
+            let property_data =
+                PropertyData::new(property, d.value.to_string())?;
+            self.relation_target_validator
+                .validate(input.tenant_id, &property_data)
+                .await?;
+            data.update_property_data(&property_data)?;
         }
         self.data_repo.update(&data).await?;
 

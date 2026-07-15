@@ -10,6 +10,8 @@ mod property_type;
 pub use property_type::*;
 
 pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
+pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
+    "Relation target database is immutable after property creation";
 pub const MAX_PROPERTY_NUM: u32 = 50;
 
 pub fn validate_property_type_addition(
@@ -140,6 +142,16 @@ impl Property {
         property_type: Option<&PropertyType>,
     ) -> errors::Result<Self> {
         if let Some(property_type) = property_type {
+            if let (
+                PropertyType::Relation(current),
+                PropertyType::Relation(requested),
+            ) = (&self.property_type, property_type)
+                && current.database_id != requested.database_id
+            {
+                return Err(errors::invalid!(
+                    RELATION_TARGET_DATABASE_IMMUTABLE
+                ));
+            }
             if let (PropertyType::Id(current), PropertyType::Id(requested)) =
                 (&self.property_type, property_type)
                 && current.auto_generate != requested.auto_generate
@@ -283,5 +295,45 @@ mod tests {
 
         assert!(error.is_bad_request());
         assert!(error.to_string().contains("auto_generate is immutable"));
+    }
+
+    #[test]
+    fn relation_target_database_is_immutable() {
+        let original_target = DatabaseId::default();
+        let requested_target = DatabaseId::default();
+        let property = property(
+            PropertyType::Relation(TypeRelation::new(original_target)),
+            0,
+        );
+
+        let error = property
+            .update(
+                None,
+                Some(&PropertyType::Relation(TypeRelation::new(
+                    requested_target,
+                ))),
+            )
+            .expect_err("a Relation target must not change after creation");
+
+        assert!(error.is_bad_request());
+        assert!(error
+            .to_string()
+            .contains(RELATION_TARGET_DATABASE_IMMUTABLE));
+    }
+
+    #[test]
+    fn the_existing_relation_target_database_is_accepted() {
+        let target = DatabaseId::default();
+        let property = property(
+            PropertyType::Relation(TypeRelation::new(target.clone())),
+            0,
+        );
+
+        property
+            .update(
+                None,
+                Some(&PropertyType::Relation(TypeRelation::new(target))),
+            )
+            .expect("repeating the configured Relation target is a no-op");
     }
 }

@@ -1,9 +1,15 @@
 use chrono::Utc;
-use database_manager::domain::{Data, DataId, DataRepository};
-use database_manager::interface_adapter::gateway::data_repository::DataRepositoryImpl;
+use database_manager::domain::{
+    Data, DataId, DataRepository, PropertyType, RelationRepository,
+    TypeRelation,
+};
+use database_manager::interface_adapter::gateway::{
+    data_repository::DataRepositoryImpl, RelationRepositoryImpl,
+};
 use database_manager::{
-    AddDataInputData, CreateDatabaseInputData, DeleteDataInputData,
-    GetDataInputData, SearchDataInputData, UpdateDataInputData,
+    AddDataInputData, AddPropertyInputData, CreateDatabaseInputData,
+    DeleteDataInputData, GetDataInputData, PropertyDataInputData,
+    SearchDataInputData, UpdateDataInputData,
 };
 use tachyon_sdk::auth;
 use value_object::{DatabaseUrl, TenantId};
@@ -28,7 +34,8 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         .await?;
 
     let app = database_manager::factory_client(dsn.to_string()).await?;
-    let data_repository = DataRepositoryImpl::new(db);
+    let data_repository = DataRepositoryImpl::new(db.clone());
+    let relation_repository = RelationRepositoryImpl::new(db);
     let tenant_a = TenantId::default();
     let tenant_b = TenantId::default();
     let executor = &auth::Executor::SystemUser;
@@ -68,6 +75,152 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             database_id: database_a.id(),
         })
         .await?;
+    let database_b = app
+        .create_database()
+        .execute(CreateDatabaseInputData {
+            executor,
+            multi_tenancy: multi_tenancy_b,
+            database_id: None,
+            tenant_id: &tenant_b,
+            name: "tenant-b",
+        })
+        .await?;
+    let record_b = app
+        .add_data_usecase()
+        .execute(AddDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_b,
+            tenant_id: &tenant_b,
+            name: "tenant-b-record",
+            property_data: vec![],
+            database_id: database_b.id(),
+        })
+        .await?;
+
+    let foreign_relation_database_error = app
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            database_id: database_a.id(),
+            name: "foreign-relation",
+            property_type: PropertyType::Relation(TypeRelation::new(
+                database_b.id().clone(),
+            )),
+        })
+        .await
+        .expect_err(
+            "a Relation property must not target another tenant's database",
+        );
+    assert_generic_not_found(foreign_relation_database_error);
+
+    let relation_property = app
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            database_id: database_a.id(),
+            name: "relation",
+            property_type: PropertyType::Relation(TypeRelation::new(
+                other_database_a.id().clone(),
+            )),
+        })
+        .await?;
+    let stored_relations = relation_repository
+        .find_all_by_database(database_a.id(), &tenant_a)
+        .await?;
+    assert_eq!(stored_relations.len(), 1);
+    assert_eq!(
+        stored_relations[0].target_database_id(),
+        other_database_a.id()
+    );
+    assert!(relation_repository
+        .find_all_by_database(database_a.id(), &tenant_b)
+        .await?
+        .is_empty());
+    let relation_target_a = app
+        .add_data_usecase()
+        .execute(AddDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            name: "tenant-a-relation-target",
+            property_data: vec![],
+            database_id: other_database_a.id(),
+        })
+        .await?;
+    let related_record_a = app
+        .add_data_usecase()
+        .execute(AddDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            name: "tenant-a-related-record",
+            property_data: vec![PropertyDataInputData {
+                property_id: relation_property.id().to_string(),
+                value: relation_target_a.id().to_string(),
+            }],
+            database_id: database_a.id(),
+        })
+        .await?;
+
+    let foreign_relation_data_error = app
+        .add_data_usecase()
+        .execute(AddDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            name: "foreign-relation-target",
+            property_data: vec![PropertyDataInputData {
+                property_id: relation_property.id().to_string(),
+                value: record_b.id().to_string(),
+            }],
+            database_id: database_a.id(),
+        })
+        .await
+        .expect_err(
+            "a Relation value must not target another tenant's record",
+        );
+    assert_generic_not_found(foreign_relation_data_error);
+
+    let missing_relation_data_error = app
+        .add_data_usecase()
+        .execute(AddDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            name: "missing-relation-target",
+            property_data: vec![PropertyDataInputData {
+                property_id: relation_property.id().to_string(),
+                value: DataId::default().to_string(),
+            }],
+            database_id: database_a.id(),
+        })
+        .await
+        .expect_err("a Relation value must point to an existing record");
+    assert_generic_not_found(missing_relation_data_error);
+
+    let update_relation_data_error = app
+        .update_data_usecase()
+        .execute(UpdateDataInputData {
+            executor,
+            multi_tenancy: multi_tenancy_a,
+            tenant_id: &tenant_a,
+            database_id: database_a.id(),
+            data_id: related_record_a.id(),
+            name: "foreign-relation-update",
+            data: vec![PropertyDataInputData {
+                property_id: relation_property.id().to_string(),
+                value: record_b.id().to_string(),
+            }],
+        })
+        .await
+        .expect_err(
+            "UpdateData must reject a Relation to another tenant's record",
+        );
+    assert_generic_not_found(update_relation_data_error);
 
     let add_error = app
         .add_data_usecase()

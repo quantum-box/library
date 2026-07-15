@@ -7,7 +7,10 @@ use crate::domain::{
     PropertyData, PropertyRepository, PropertyType,
 };
 use crate::usecase::database_scope::DatabaseScope;
-use crate::usecase::{AddDataInputData, AddDataInputPort};
+use crate::usecase::{
+    AddDataInputData, AddDataInputPort, RelationTargetPolicy,
+    RelationTargetValidationPort,
+};
 use value_object::RepositoryV1;
 
 #[derive(Debug, Clone)]
@@ -15,6 +18,7 @@ pub struct AddDataInteractorImpl {
     database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     property_repo: Arc<dyn PropertyRepository>,
     data_repo: Arc<dyn DataRepository>,
+    relation_target_validator: Arc<dyn RelationTargetValidationPort>,
 }
 
 fn populate_auto_generated_ids(
@@ -55,10 +59,29 @@ impl AddDataInteractorImpl {
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
     ) -> Arc<Self> {
+        let relation_target_validator = RelationTargetPolicy::new(
+            database_repo.clone(),
+            data_repo.clone(),
+        );
+        Self::new_with_relation_target_validator(
+            database_repo,
+            property_repo,
+            data_repo,
+            relation_target_validator,
+        )
+    }
+
+    pub fn new_with_relation_target_validator(
+        database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
+        property_repo: Arc<dyn PropertyRepository>,
+        data_repo: Arc<dyn DataRepository>,
+        relation_target_validator: Arc<dyn RelationTargetValidationPort>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             database_repo,
             property_repo,
             data_repo,
+            relation_target_validator,
         })
     }
 }
@@ -87,6 +110,9 @@ impl AddDataInputPort for AddDataInteractorImpl {
                 .find(|x| x.id() == &val.property_id)
                 .ok_or_else(DatabaseScope::not_found)?;
             let col = PropertyData::new(property, val.value)?;
+            self.relation_target_validator
+                .validate(input.tenant_id, &col)
+                .await?;
             property_data_list.push(col);
         }
         populate_auto_generated_ids(

@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
+use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{AddPropertyInputData, AddPropertyInputPort};
-use std::fmt::Debug;
 
 use crate::domain::{
     next_property_num, validate_property_type_addition, Database,
@@ -38,13 +38,12 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
         &self,
         input: AddPropertyInputData<'_>,
     ) -> errors::Result<Property> {
-        let database = self
-            .database_repo
-            .get_by_id(input.tenant_id, input.database_id)
-            .await?
-            .ok_or(anyhow::anyhow!(
-                "Database is not found in add property"
-            ))?;
+        let database = DatabaseScope::new(
+            input.tenant_id,
+            input.database_id,
+        )
+        .require_database(self.database_repo.as_ref())
+        .await?;
         let properties = self
             .property_repo
             .find_all(database.id(), database.tenant_id())
@@ -66,13 +65,12 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
         if let PropertyType::Relation(relation) =
             new_property.property_type()
         {
-            let target_database = self
-                .database_repo
-                .get_by_id(input.tenant_id, &relation.database_id)
-                .await?
-                .ok_or(anyhow::anyhow!(
-                    "Relation is not found in add property"
-                ))?;
+            let target_database = DatabaseScope::new(
+                input.tenant_id,
+                &relation.database_id,
+            )
+            .require_database(self.database_repo.as_ref())
+            .await?;
 
             let relation = Relation::new(
                 &RelationId::default(),
