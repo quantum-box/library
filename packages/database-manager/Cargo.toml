@@ -14,10 +14,6 @@ errors = { path = "../errors" }
 telemetry = { path = "../telemetry" }
 tachyon-sdk = { path = "../../sdk/rust", features = ["auth"] }
 
-# Sync engines
-inbound_sync = { path = "../../apps/api/packages/inbound_sync" }
-outbound_sync = { path = "../../apps/api/packages/outbound_sync" }
-
 # essential crates?
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

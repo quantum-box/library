@@ -375,6 +375,21 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     let id_property_id = string_field(id_property, "id")?;
     assert_eq!(id_property["meta"]["autoGenerate"], true);
 
+    let integration_admin = graphql(
+        &client,
+        &server_url,
+        "query IntegrationAdmin {
+            integrations { id provider }
+            connections(tenantId: \"deprecated\") { id provider }
+        }",
+        json!({}),
+    )
+    .await?;
+    assert!(integration_admin["integrations"]
+        .as_array()
+        .is_some_and(|integrations| !integrations.is_empty()));
+    assert!(integration_admin["connections"].is_array());
+
     let property = graphql(
         &client,
         &server_url,

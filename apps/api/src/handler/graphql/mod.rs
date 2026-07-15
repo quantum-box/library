@@ -19,6 +19,14 @@ mod mutation;
 mod resolver;
 mod user_resolver;
 
+#[derive(Clone)]
+pub(crate) struct IntegrationQueryState {
+    pub list_integrations:
+        Arc<dyn inbound_sync::usecase::ListIntegrationsInputPort>,
+    pub list_connections:
+        Arc<dyn inbound_sync::usecase::ListConnectionsInputPort>,
+}
+
 pub(crate) fn log_graphql_operation_error(
     operation: &'static str,
     error: &errors::Error,
