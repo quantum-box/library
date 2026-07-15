@@ -1,8 +1,8 @@
 # PropertyValue storage expand rollout
 
-This runbook covers only the additive foundation for normalized
-`property_values`. It does not enable dual-write, backfill existing values, or
-remove `data.value0..value50` / `fields.field_num`.
+This runbook covers the additive foundation and staged dual-write rollout for
+normalized `property_values`. It does not backfill existing values or remove
+`data.value0..value50` / `fields.field_num`.
 
 ## Preconditions
 
@@ -30,6 +30,20 @@ FROM data AS d
 LEFT JOIN objects AS o
   ON o.tenant_id = d.tenant_id AND o.id = d.object_id
 WHERE o.id IS NULL;
+
+-- The forward CHECK migration cannot be applied while an existing canonical
+-- envelope is malformed. Do not silently delete or rewrite returned rows.
+SELECT tenant_id, database_id, data_id, property_id,
+       type_key, type_version, value_encoding_version
+FROM property_values
+WHERE NOT REGEXP_LIKE(
+        type_key,
+        '^[a-z][a-z0-9]*(_[a-z0-9]+)*$',
+        'c'
+      )
+   OR type_version = 0
+   OR value_encoding_version = 0
+   OR NOT JSON_VALID(value);
 ```
 
 Also capture the migration ledger and a schema backup:
@@ -69,11 +83,34 @@ SHOW CREATE TABLE property_values;
 SHOW CREATE TABLE fields;
 ```
 
-Application behavior should remain on the legacy value columns in this
-phase. Exercise concurrent Property creation before enabling any later
-dual-write deployment.
+New deployments default to `legacy_only`. Exercise concurrent Property
+creation, then opt in with `PROPERTY_VALUE_STORAGE_MODE` in this order:
+
+1. `dual_write_legacy_read`: write both representations in one transaction,
+   continue serving legacy values, and inspect parity logs.
+2. `dual_write_canonical_read`: keep dual-writing but serve a canonical row
+   when present; only a missing row falls back to legacy.
+
+Treat the mode as a fleet-wide writer capability, not as a per-request
+experiment. During a rolling transition, a remaining `legacy_only` writer can
+update a legacy column while leaving an already-created canonical row stale;
+canonical-first will then serve that stale row rather than fall back. Before
+advancing, inventory every API, Lambda, importer, and sync writer, drain all
+older replicas, confirm every active writer is in
+`dual_write_legacy_read`, and reconcile parity again after the drain.
+
+Do not use or introduce a canonical-only writer in this rollout. Before moving
+to canonical-first, verify that `missing_canonical`, `missing_legacy`,
+`mismatch`, `opaque`, and `decode_failure` parity states are understood and
+that no unexpected state remains.
 
 ## Rollback
+
+First set `PROPERTY_VALUE_STORAGE_MODE=dual_write_legacy_read`. This is the
+application rollback state: both representations stay current while reads are
+served exclusively from legacy columns. A `legacy_only` deployment is safe
+only when canonical freshness is no longer required during the rollback
+window.
 
 Block Property-schema writes before rolling back the application. A binary
 that predates the schema-mutation unit of work still uses
@@ -83,11 +120,18 @@ overwrite an existing Property definition. Resume schema writes only after a
 compatible non-upsert writer is deployed. Leaving the additive objects in
 place remains the preferred schema rollback.
 
-If DDL removal is required, stop all schema mutation and future normalized
-writers first. Confirm `property_values` is empty. Then remove objects in
-dependency order:
+If DDL removal is required, stop all record and schema mutation and future
+normalized writers first. Confirm `property_values` is empty. Drop the envelope
+checks before the table (MySQL 8.0 syntax), then remove objects in dependency
+order:
 
 ```sql
+ALTER TABLE property_values
+  DROP CHECK chk_property_values_type_key,
+  DROP CHECK chk_property_values_type_version,
+  DROP CHECK chk_property_values_encoding_version,
+  DROP CHECK chk_property_values_value_json;
+
 DROP TABLE property_values;
 
 ALTER TABLE fields

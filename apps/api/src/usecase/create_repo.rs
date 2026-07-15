@@ -6,7 +6,9 @@ use super::{
     CreateRepoInputData, CreateRepoInputPort,
     GetOrganizationByUsernameQuery,
 };
-use database_manager::domain::{PropertyType, TypeId};
+use database_manager::domain::{
+    PropertyType, PropertyValueCommand, TypeId,
+};
 use database_manager::usecase::CreateDatabaseInputData;
 use database_manager::{domain::DatabaseId, AddPropertyInputData};
 use database_manager::{AddDataInputData, PropertyDataInputData};
@@ -122,8 +124,10 @@ impl CreateRepoInputPort for CreateRepo {
                     database_id: database.id(),
                     name: "data1",
                     property_data: vec![PropertyDataInputData {
-                        property_id: content_property.id().to_string(),
-                        value: "# data1\n\nwrite here\n".to_string(),
+                        property_id: content_property.id().clone(),
+                        value: PropertyValueCommand::Markdown(
+                            "# data1\n\nwrite here\n".to_string(),
+                        ),
                     }],
                 })
                 .await?;
@@ -136,8 +140,10 @@ impl CreateRepoInputPort for CreateRepo {
                     database_id: database.id(),
                     name: "data2",
                     property_data: vec![PropertyDataInputData {
-                        property_id: content_property.id().to_string(),
-                        value: "# data2\n\nwrite here\n".to_string(),
+                        property_id: content_property.id().clone(),
+                        value: PropertyValueCommand::Markdown(
+                            "# data2\n\nwrite here\n".to_string(),
+                        ),
                     }],
                 })
                 .await?;

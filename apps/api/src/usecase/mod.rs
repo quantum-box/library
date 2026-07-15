@@ -33,6 +33,7 @@ mod list_api_keys;
 mod list_github_directory;
 pub mod markdown_composer;
 mod private_repo_access;
+mod property_value_adapter;
 mod remove_repo_member;
 mod search_data;
 mod search_repo;

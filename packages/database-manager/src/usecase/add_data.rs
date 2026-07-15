@@ -3,8 +3,9 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::domain::{
-    Data, DataId, DataRepository, Database, DatabaseId, Property,
-    PropertyData, PropertyRepository, PropertyType,
+    CreateRecordCommand, Data, DataId, DataRepository, Database,
+    DatabaseId, Property, PropertyData, PropertyRepository, PropertyType,
+    PropertyValueChange, PropertyValueCommand, RecordUnitOfWork,
 };
 use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{
@@ -17,7 +18,7 @@ use value_object::RepositoryV1;
 pub struct AddDataInteractorImpl {
     database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     property_repo: Arc<dyn PropertyRepository>,
-    data_repo: Arc<dyn DataRepository>,
+    record_uow: Arc<dyn RecordUnitOfWork>,
     relation_target_validator: Arc<dyn RelationTargetValidationPort>,
 }
 
@@ -37,16 +38,20 @@ fn populate_auto_generated_ids(
             .position(|value| value.property_id() == property.id())
         {
             Some(index) if property_data[index].value().is_none() => {
-                property_data[index] =
-                    PropertyData::new(property, data_id.to_string())?;
+                property_data[index] = PropertyData::from_command(
+                    property,
+                    PropertyValueCommand::Id(data_id.to_string()),
+                )?;
             }
             Some(_) => {
                 return Err(errors::Error::business_logic(
                     "Auto-generated Id property does not accept an explicit value",
                 ));
             }
-            None => property_data
-                .push(PropertyData::new(property, data_id.to_string())?),
+            None => property_data.push(PropertyData::from_command(
+                property,
+                PropertyValueCommand::Id(data_id.to_string()),
+            )?),
         }
     }
 
@@ -58,6 +63,7 @@ impl AddDataInteractorImpl {
         database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
+        record_uow: Arc<dyn RecordUnitOfWork>,
     ) -> Arc<Self> {
         let relation_target_validator = RelationTargetPolicy::new(
             database_repo.clone(),
@@ -66,7 +72,7 @@ impl AddDataInteractorImpl {
         Self::new_with_relation_target_validator(
             database_repo,
             property_repo,
-            data_repo,
+            record_uow,
             relation_target_validator,
         )
     }
@@ -74,13 +80,13 @@ impl AddDataInteractorImpl {
     pub fn new_with_relation_target_validator(
         database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
-        data_repo: Arc<dyn DataRepository>,
+        record_uow: Arc<dyn RecordUnitOfWork>,
         relation_target_validator: Arc<dyn RelationTargetValidationPort>,
     ) -> Arc<Self> {
         Arc::new(Self {
             database_repo,
             property_repo,
-            data_repo,
+            record_uow,
             relation_target_validator,
         })
     }
@@ -109,7 +115,7 @@ impl AddDataInputPort for AddDataInteractorImpl {
                 .iter()
                 .find(|x| x.id() == &val.property_id)
                 .ok_or_else(DatabaseScope::not_found)?;
-            let col = PropertyData::new(property, val.value)?;
+            let col = PropertyData::from_command(property, val.value)?;
             self.relation_target_validator
                 .validate(input.tenant_id, &col)
                 .await?;
@@ -129,8 +135,28 @@ impl AddDataInputPort for AddDataInteractorImpl {
             Utc::now(),
             Utc::now(),
         )?;
-
-        self.data_repo.create(&data).await?;
+        let changes = data
+            .property_data()
+            .iter()
+            .map(|property_data| {
+                let property = properties
+                    .iter()
+                    .find(|property| {
+                        property.id() == property_data.property_id()
+                    })
+                    .ok_or_else(DatabaseScope::not_found)?;
+                PropertyValueChange::from_property_data(
+                    property,
+                    property_data,
+                )
+            })
+            .collect::<errors::Result<Vec<_>>>()?;
+        self.record_uow
+            .create_atomically(&CreateRecordCommand {
+                record: data.clone(),
+                changes,
+            })
+            .await?;
         Ok(data)
     }
 }
@@ -160,7 +186,7 @@ mod tests {
         let mut property_data = vec![];
 
         populate_auto_generated_ids(
-            &[property.clone()],
+            std::slice::from_ref(&property),
             &mut property_data,
             &data_id,
         )

@@ -1,9 +1,13 @@
 mod property_data;
 mod property_data_value;
+mod property_value_command;
+mod record_mutation;
 
 use chrono::{DateTime, Utc};
 pub use property_data::*;
 pub use property_data_value::*;
+pub use property_value_command::*;
+pub use record_mutation::*;
 use util::macros::*;
 
 use super::*;
@@ -148,10 +152,6 @@ def_id!(DataId, "data_");
 
 #[async_trait::async_trait]
 pub trait DataRepository: Debug + Send + Sync + 'static {
-    async fn create(&self, data: &Data) -> errors::Result<()>;
-    async fn update(&self, data: &Data) -> errors::Result<()>;
-    async fn update_all(&self, data: &DataCollection)
-    -> errors::Result<()>;
     async fn find_by_id(
         &self,
         id: &DataId,

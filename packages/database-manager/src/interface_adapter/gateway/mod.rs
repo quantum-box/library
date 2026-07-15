@@ -2,12 +2,14 @@ mod data_query_service;
 pub mod data_repository;
 pub mod database_repository;
 pub mod property_repository;
+mod property_value_storage;
 mod relation_repository;
 
 pub use data_query_service::*;
 pub use data_repository::*;
 pub use database_repository::*;
 pub use property_repository::*;
+pub use property_value_storage::*;
 pub use relation_repository::*;
 
 pub use crate::domain::*;
@@ -147,59 +149,62 @@ pub struct DataRow {
 }
 
 impl DataRow {
-    pub fn get_field(&self, field_num: u32) -> anyhow::Result<String> {
+    pub fn get_field(
+        &self,
+        field_num: u32,
+    ) -> anyhow::Result<Option<String>> {
         Ok(match field_num {
-            0 => self.value0.clone().unwrap_or_default(),
-            1 => self.value1.clone().unwrap_or_default(),
-            2 => self.value2.clone().unwrap_or_default(),
-            3 => self.value3.clone().unwrap_or_default(),
-            4 => self.value4.clone().unwrap_or_default(),
-            5 => self.value5.clone().unwrap_or_default(),
-            6 => self.value6.clone().unwrap_or_default(),
-            7 => self.value7.clone().unwrap_or_default(),
-            8 => self.value8.clone().unwrap_or_default(),
-            9 => self.value9.clone().unwrap_or_default(),
-            10 => self.value10.clone().unwrap_or_default(),
-            11 => self.value11.clone().unwrap_or_default(),
-            12 => self.value12.clone().unwrap_or_default(),
-            13 => self.value13.clone().unwrap_or_default(),
-            14 => self.value14.clone().unwrap_or_default(),
-            15 => self.value15.clone().unwrap_or_default(),
-            16 => self.value16.clone().unwrap_or_default(),
-            17 => self.value17.clone().unwrap_or_default(),
-            18 => self.value18.clone().unwrap_or_default(),
-            19 => self.value19.clone().unwrap_or_default(),
-            20 => self.value20.clone().unwrap_or_default(),
-            21 => self.value21.clone().unwrap_or_default(),
-            22 => self.value22.clone().unwrap_or_default(),
-            23 => self.value23.clone().unwrap_or_default(),
-            24 => self.value24.clone().unwrap_or_default(),
-            25 => self.value25.clone().unwrap_or_default(),
-            26 => self.value26.clone().unwrap_or_default(),
-            27 => self.value27.clone().unwrap_or_default(),
-            28 => self.value28.clone().unwrap_or_default(),
-            29 => self.value29.clone().unwrap_or_default(),
-            30 => self.value30.clone().unwrap_or_default(),
-            31 => self.value31.clone().unwrap_or_default(),
-            32 => self.value32.clone().unwrap_or_default(),
-            33 => self.value33.clone().unwrap_or_default(),
-            34 => self.value34.clone().unwrap_or_default(),
-            35 => self.value35.clone().unwrap_or_default(),
-            36 => self.value36.clone().unwrap_or_default(),
-            37 => self.value37.clone().unwrap_or_default(),
-            38 => self.value38.clone().unwrap_or_default(),
-            39 => self.value39.clone().unwrap_or_default(),
-            40 => self.value40.clone().unwrap_or_default(),
-            41 => self.value41.clone().unwrap_or_default(),
-            42 => self.value42.clone().unwrap_or_default(),
-            43 => self.value43.clone().unwrap_or_default(),
-            44 => self.value44.clone().unwrap_or_default(),
-            45 => self.value45.clone().unwrap_or_default(),
-            46 => self.value46.clone().unwrap_or_default(),
-            47 => self.value47.clone().unwrap_or_default(),
-            48 => self.value48.clone().unwrap_or_default(),
-            49 => self.value49.clone().unwrap_or_default(),
-            50 => self.value50.clone().unwrap_or_default(),
+            0 => self.value0.clone(),
+            1 => self.value1.clone(),
+            2 => self.value2.clone(),
+            3 => self.value3.clone(),
+            4 => self.value4.clone(),
+            5 => self.value5.clone(),
+            6 => self.value6.clone(),
+            7 => self.value7.clone(),
+            8 => self.value8.clone(),
+            9 => self.value9.clone(),
+            10 => self.value10.clone(),
+            11 => self.value11.clone(),
+            12 => self.value12.clone(),
+            13 => self.value13.clone(),
+            14 => self.value14.clone(),
+            15 => self.value15.clone(),
+            16 => self.value16.clone(),
+            17 => self.value17.clone(),
+            18 => self.value18.clone(),
+            19 => self.value19.clone(),
+            20 => self.value20.clone(),
+            21 => self.value21.clone(),
+            22 => self.value22.clone(),
+            23 => self.value23.clone(),
+            24 => self.value24.clone(),
+            25 => self.value25.clone(),
+            26 => self.value26.clone(),
+            27 => self.value27.clone(),
+            28 => self.value28.clone(),
+            29 => self.value29.clone(),
+            30 => self.value30.clone(),
+            31 => self.value31.clone(),
+            32 => self.value32.clone(),
+            33 => self.value33.clone(),
+            34 => self.value34.clone(),
+            35 => self.value35.clone(),
+            36 => self.value36.clone(),
+            37 => self.value37.clone(),
+            38 => self.value38.clone(),
+            39 => self.value39.clone(),
+            40 => self.value40.clone(),
+            41 => self.value41.clone(),
+            42 => self.value42.clone(),
+            43 => self.value43.clone(),
+            44 => self.value44.clone(),
+            45 => self.value45.clone(),
+            46 => self.value46.clone(),
+            47 => self.value47.clone(),
+            48 => self.value48.clone(),
+            49 => self.value49.clone(),
+            50 => self.value50.clone(),
             _ => anyhow::bail!("Unknown field_num {}", field_num),
         })
     }
@@ -271,7 +276,7 @@ impl DataRow {
 /// legacy rows. Pre-policy values remain visible (and immutable) so rollout
 /// does not make existing records unreadable; they are also surfaced in logs
 /// for a later repair migration.
-fn project_property_value(
+pub(super) fn project_property_value(
     data_id: &str,
     property_type: &PropertyType,
     stored_value: String,

@@ -1,6 +1,8 @@
 mod header;
 
-use database_manager::domain::{Database, DatabaseId};
+use database_manager::domain::{
+    Database, DatabaseId, PropertyValueCommand,
+};
 use database_manager::*;
 use domain::Property;
 use futures::stream::{self, StreamExt};
@@ -186,8 +188,11 @@ impl CSVImporterClient {
         let name = record[0].clone(); // TODO: add English comment
         for (ix, val) in record.into_iter().enumerate() {
             property_data_list.push(PropertyDataInputData {
-                property_id: properties[ix].id().to_string(),
-                value: val,
+                property_id: properties[ix].id().clone(),
+                value: PropertyValueCommand::from_legacy_command_text(
+                    &properties[ix],
+                    &val,
+                )?,
             });
         }
         self.db_manager

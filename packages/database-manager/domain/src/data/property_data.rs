@@ -4,8 +4,20 @@ use super::*;
 pub struct PropertyData {
     property_id: PropertyId,
     value: Option<PropertyDataValue>,
+    #[serde(skip)]
+    envelope: Option<PropertyValue>,
 }
 impl PropertyData {
+    pub fn from_command(
+        property: &Property,
+        command: PropertyValueCommand,
+    ) -> errors::Result<Self> {
+        match command.into_value(property)? {
+            Some(value) => Self::from_known(property, value),
+            None => Ok(Self::unset(property.id())),
+        }
+    }
+
     /// Build PropertyData from a command input.
     ///
     /// Relation input contains only target DataIds. Its target DatabaseId is
@@ -41,15 +53,49 @@ impl PropertyData {
         parse: fn(&str, &PropertyType) -> errors::Result<PropertyDataValue>,
     ) -> errors::Result<Self> {
         if empty_value_is_none && value.is_empty() {
-            return Ok(Self {
-                property_id: property.id().clone(),
-                value: None,
-            });
+            return Ok(Self::unset(property.id()));
         }
+        Self::from_known(property, parse(&value, property.property_type())?)
+    }
+
+    pub fn from_envelope(
+        property: &Property,
+        envelope: EncodedPropertyValue,
+    ) -> errors::Result<Self> {
+        let config = ResolvedPropertyConfig::Known(
+            property.property_type().canonical_config(),
+        );
+        let decoded = BUILTIN_PROPERTY_TYPE_REGISTRY
+            .decode_envelope(&config, envelope)?;
+        let value = match &decoded {
+            PropertyValue::Known(value) => Some(value.value().clone()),
+            PropertyValue::Opaque(_) => None,
+        };
         Ok(Self {
             property_id: property.id().clone(),
-            value: Some(parse(&value, property.property_type())?),
+            value,
+            envelope: Some(decoded),
         })
+    }
+
+    fn from_known(
+        property: &Property,
+        value: PropertyDataValue,
+    ) -> errors::Result<Self> {
+        let known = value.canonical_value(property.property_type())?;
+        Ok(Self {
+            property_id: property.id().clone(),
+            value: Some(value),
+            envelope: Some(PropertyValue::Known(known)),
+        })
+    }
+
+    fn unset(property_id: &PropertyId) -> Self {
+        Self {
+            property_id: property_id.clone(),
+            value: None,
+            envelope: None,
+        }
     }
 
     pub fn string_value(&self) -> String {

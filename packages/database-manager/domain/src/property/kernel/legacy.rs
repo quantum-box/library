@@ -117,6 +117,50 @@ impl LegacyPropertyTypeReader {
     }
 }
 
+/// Symmetric codec for the temporary `value0..value50` representation.
+/// New adapters use this type instead of duplicating CSV/string formatting.
+pub struct LegacyPropertyValueCodec;
+
+impl LegacyPropertyValueCodec {
+    pub fn decode(
+        legacy_value: &str,
+        property_type: &PropertyType,
+    ) -> errors::Result<PropertyDataValue> {
+        LegacyPropertyTypeReader::decode_value(legacy_value, property_type)
+    }
+
+    pub fn encode(
+        value: &PropertyDataValue,
+        property_type: &PropertyType,
+    ) -> errors::Result<String> {
+        let config = property_type.canonical_config();
+        config.handler().validate_value(&config, value)?;
+
+        Ok(match value {
+            PropertyDataValue::String(value)
+            | PropertyDataValue::Html(value)
+            | PropertyDataValue::Markdown(value)
+            | PropertyDataValue::Id(value)
+            | PropertyDataValue::Date(value)
+            | PropertyDataValue::Image(value) => value.clone(),
+            PropertyDataValue::Integer(value) => value.to_string(),
+            PropertyDataValue::Relation(database_id, data_ids) => {
+                std::iter::once(database_id.to_string())
+                    .chain(data_ids.iter().map(ToString::to_string))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+            PropertyDataValue::Location(value) => value.to_string(),
+            PropertyDataValue::Select(value) => value.to_string(),
+            PropertyDataValue::MultiSelect(values) => values
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        })
+    }
+}
+
 fn invalid_relation_value() -> errors::Error {
     errors::Error::invalid("relation value")
 }

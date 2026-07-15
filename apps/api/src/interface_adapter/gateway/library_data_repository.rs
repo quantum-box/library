@@ -9,7 +9,8 @@ use value_object::{TenantId, Ulid};
 
 use crate::domain::{RepoId, RepoRepository};
 use database_manager::domain::{
-    DataId, DatabaseId, Property, PropertyType, TypeId,
+    DataId, DatabaseId, Property, PropertyType, PropertyValueCommand,
+    TypeId,
 };
 use database_manager::usecase::FindAllPropertiesInputData;
 use database_manager::{
@@ -224,8 +225,11 @@ impl LibraryDataRepositoryImpl {
                 continue;
             }
             property_data.push(PropertyDataInputData {
-                property_id: property.id().to_string(),
-                value: Self::json_value_to_string(&value),
+                property_id: property.id().clone(),
+                value: PropertyValueCommand::from_legacy_command_text(
+                    property,
+                    &Self::json_value_to_string(&value),
+                )?,
             });
         }
         Ok(property_data)
@@ -414,8 +418,11 @@ mod tests {
         .expect("property data conversion must succeed");
 
         assert_eq!(property_data.len(), 1);
-        assert_eq!(property_data[0].property_id, title.id().to_string());
-        assert_eq!(property_data[0].value, "Title");
+        assert_eq!(property_data[0].property_id, title.id().clone());
+        assert_eq!(
+            property_data[0].value,
+            PropertyValueCommand::String("Title".to_string())
+        );
     }
 
     #[test]

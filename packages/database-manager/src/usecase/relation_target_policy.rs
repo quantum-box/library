@@ -127,21 +127,6 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DataRepository for StubDataRepository {
-        async fn create(&self, _data: &Data) -> errors::Result<()> {
-            unreachable!("not used by RelationTargetPolicy")
-        }
-
-        async fn update(&self, _data: &Data) -> errors::Result<()> {
-            unreachable!("not used by RelationTargetPolicy")
-        }
-
-        async fn update_all(
-            &self,
-            _data: &DataCollection,
-        ) -> errors::Result<()> {
-            unreachable!("not used by RelationTargetPolicy")
-        }
-
         async fn find_by_id(
             &self,
             id: &DataId,

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    DataRepository, Database, DatabaseId, Property, PropertyId,
-    PropertyRepository,
+    Database, DatabaseId, Property, PropertyId, PropertySchemaMutationPort,
 };
 use crate::usecase::{DeletePropertyInputData, DeletePropertyInputPort};
 use value_object::RepositoryV1;
@@ -10,20 +9,17 @@ use value_object::RepositoryV1;
 #[derive(Debug, Clone)]
 pub struct DeletePropertyInteractor {
     database_repository: Arc<dyn RepositoryV1<DatabaseId, Database>>,
-    property_repository: Arc<dyn PropertyRepository>,
-    data_repository: Arc<dyn DataRepository>,
+    schema_mutation: Arc<dyn PropertySchemaMutationPort>,
 }
 
 impl DeletePropertyInteractor {
     pub fn new(
         database_repository: Arc<dyn RepositoryV1<DatabaseId, Database>>,
-        property_repository: Arc<dyn PropertyRepository>,
-        data_repository: Arc<dyn DataRepository>,
+        schema_mutation: Arc<dyn PropertySchemaMutationPort>,
     ) -> Arc<Self> {
         Arc::new(Self {
             database_repository,
-            property_repository,
-            data_repository,
+            schema_mutation,
         })
     }
 }
@@ -45,24 +41,12 @@ impl DeletePropertyInputPort for DeletePropertyInteractor {
             .ok_or(errors::not_found!(
                 "database is not found in delete property"
             ))?;
-        let property = self
-            .property_repository
-            .find_by_id(&property_id, database.id(), database.tenant_id())
-            .await?
-            .ok_or(errors::not_found!(
-                "property is not found in delete property"
-            ))?;
-        let all_data = self
-            .data_repository
-            .find_all(database.id(), database.tenant_id())
-            .await?;
-
-        let all_data = all_data.delete_property_data(property.id());
-
-        self.data_repository.update_all(&all_data).await?;
-        self.property_repository
-            .delete(database.tenant_id(), property.id())
-            .await?;
-        Ok(property)
+        self.schema_mutation
+            .delete_property_atomically(
+                database.tenant_id(),
+                database.id(),
+                &property_id,
+            )
+            .await
     }
 }

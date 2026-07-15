@@ -3,6 +3,7 @@ pub extern crate database_domain as domain;
 pub mod database_app;
 pub mod interface_adapter;
 pub mod migration_preflight;
+pub mod property_value_rollout;
 pub mod usecase;
 
 pub mod sdk;
@@ -121,6 +122,13 @@ impl App {
 }
 
 pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
+    factory_client_with_property_value_mode(dsn, Default::default()).await
+}
+
+pub async fn factory_client_with_property_value_mode(
+    dsn: impl ToString,
+    property_value_mode: property_value_rollout::PropertyValueStorageMode,
+) -> anyhow::Result<App> {
     let dsn = dsn.to_string();
     let db = persistence::Db::new(&dsn).await;
 
@@ -130,9 +138,15 @@ pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
 
     let database_repo = DatabaseRepositoryImpl::new(db.clone());
     let property_repo = PropertyRepositoryImpl::new(db.clone());
-    let data_repo = DataRepositoryImpl::new(db.clone());
+    let data_repo = DataRepositoryImpl::new_with_property_value_mode(
+        db.clone(),
+        property_value_mode,
+    );
     let relation_repo = RelationRepositoryImpl::new(db.clone());
-    let data_query = DataQueryService::new(db.clone());
+    let data_query = DataQueryService::new_with_property_value_mode(
+        db.clone(),
+        property_value_mode,
+    );
 
     let create_database = CreateDatabaseInteractorImpl::new(
         database_repo.clone(),
@@ -157,10 +171,12 @@ pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
         database_repo.clone(),
         property_repo.clone(),
         data_repo.clone(),
+        data_repo.clone(),
     );
     let update_data_usecase = UpdateDataInteractorImpl::new(
         database_repo.clone(),
         property_repo.clone(),
+        data_repo.clone(),
         data_repo.clone(),
     );
     let find_database_usecase =
@@ -177,7 +193,6 @@ pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
     let delete_property_usecase = DeletePropertyInteractor::new(
         database_repo.clone(),
         property_repo.clone(),
-        data_repo.clone(),
     );
     let delete_data_usecase =
         DeleteDataInteractor::new(database_repo.clone(), data_repo.clone());
