@@ -1,4 +1,6 @@
-use database_manager::domain::{DataId, DatabaseId, PropertyId, RelationId};
+use database_manager::domain::{
+    DataId, DatabaseId, PropertyId, RelationId,
+};
 use sqlx::{MySqlPool, Row};
 use value_object::{DatabaseUrl, TenantId};
 
@@ -8,11 +10,9 @@ fn assert_fk_violation(error: sqlx::Error, constraints: &[&str]) {
         .expect("the database must reject the insert");
     assert!(database_error.is_foreign_key_violation());
     assert!(
-        constraints
-            .iter()
-            .any(|constraint| {
-                database_error.message().contains(constraint)
-            }),
+        constraints.iter().any(|constraint| {
+            database_error.message().contains(constraint)
+        }),
         "expected one of {constraints:?}, got: {}",
         database_error.message()
     );
@@ -191,10 +191,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
         pool.as_ref(),
         "relationships",
         "fk_relationships_tenant_target_object",
-        &[
-            ("tenant_id", "tenant_id"),
-            ("target_object_id", "id"),
-        ],
+        &[("tenant_id", "tenant_id"), ("target_object_id", "id")],
     )
     .await?;
     assert_foreign_key_columns(
