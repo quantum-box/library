@@ -378,11 +378,11 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     let integration_admin = graphql(
         &client,
         &server_url,
-        "query IntegrationAdmin {
+        "query IntegrationAdmin($tenantId: String!) {
             integrations { id provider }
-            connections(tenantId: \"deprecated\") { id provider }
+            connections(tenantId: $tenantId) { id provider }
         }",
-        json!({}),
+        json!({"tenantId": LIBRARY_TENANT_ID}),
     )
     .await?;
     assert!(integration_admin["integrations"]
