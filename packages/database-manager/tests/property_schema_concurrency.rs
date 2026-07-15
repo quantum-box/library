@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use database_manager::domain::{
     AddPropertyCommand, DatabaseId, Property, PropertySchemaMutationPort,
@@ -184,6 +184,66 @@ async fn concurrent_id_properties_have_one_winner_and_no_residue(
         scoped_counts(db.as_ref(), &tenant_id, database.id()).await?,
         (1, 1, 0),
         "the losing mutation must leave neither a field nor relation metadata"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn opposite_relation_additions_lock_endpoints_without_deadlock(
+) -> anyhow::Result<()> {
+    let (db, app, tenant_id, database_a) =
+        mysql_fixture("opposite-relation-a").await?;
+    let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
+    let database_b = app
+        .create_database()
+        .execute(CreateDatabaseInputData {
+            executor: &auth::Executor::SystemUser,
+            multi_tenancy: &multi_tenancy,
+            database_id: None,
+            tenant_id: &tenant_id,
+            name: "opposite-relation-b",
+        })
+        .await?;
+    let barrier = Arc::new(Barrier::new(2));
+
+    let (a_to_b, b_to_a) =
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(
+                add_after_barrier(
+                    app.clone(),
+                    barrier.clone(),
+                    tenant_id.clone(),
+                    database_a.id().clone(),
+                    "a-to-b",
+                    PropertyType::Relation(TypeRelation::new(
+                        database_b.id().clone(),
+                    )),
+                ),
+                add_after_barrier(
+                    app,
+                    barrier,
+                    tenant_id.clone(),
+                    database_b.id().clone(),
+                    "b-to-a",
+                    PropertyType::Relation(TypeRelation::new(
+                        database_a.id().clone(),
+                    )),
+                ),
+            )
+        })
+        .await
+        .expect("opposite Relation additions must not deadlock");
+    a_to_b?;
+    b_to_a?;
+
+    assert_eq!(
+        scoped_counts(db.as_ref(), &tenant_id, database_a.id()).await?,
+        (1, 1, 1)
+    );
+    assert_eq!(
+        scoped_counts(db.as_ref(), &tenant_id, database_b.id()).await?,
+        (1, 1, 1)
     );
     Ok(())
 }

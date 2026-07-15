@@ -38,24 +38,41 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         let pool = self.db.pool();
         let mut transaction = pool.begin().await?;
 
-        // The database row is the serialization boundary for schema changes.
-        // Every writer locks it before reading fields, so the domain always
-        // evaluates slot and singleton invariants against the latest schema.
-        let locked_database_id = sqlx::query_scalar::<_, String>(
+        // Database rows are the serialization boundary for schema changes.
+        // Relation writers lock both endpoints in the same primary-key order
+        // so opposite A -> B and B -> A additions cannot deadlock while the
+        // relationship foreign keys are checked.
+        let source_database_id = command.database_id().to_string();
+        let target_database_id = match command.property_type() {
+            PropertyType::Relation(relation) => {
+                relation.database_id.to_string()
+            }
+            _ => source_database_id.clone(),
+        };
+        let mut endpoint_ids =
+            [source_database_id.clone(), target_database_id];
+        endpoint_ids.sort();
+        let locked_database_ids = sqlx::query_scalar::<_, String>(
             r#"
             SELECT id
             FROM objects
-            WHERE tenant_id = ? AND id = ?
+            WHERE tenant_id = ? AND id IN (?, ?)
+            ORDER BY id
             FOR UPDATE;
             "#,
         )
         .bind(command.tenant_id().to_string())
-        .bind(command.database_id().to_string())
-        .fetch_optional(&mut *transaction)
+        .bind(&endpoint_ids[0])
+        .bind(&endpoint_ids[1])
+        .fetch_all(&mut *transaction)
         .await?;
-        if locked_database_id.is_none() {
+        if !locked_database_ids.contains(&source_database_id) {
             return Err(errors::Error::not_found("resource not found"));
         }
+
+        // Every writer reads fields only after acquiring the endpoint locks,
+        // so the domain evaluates slot and singleton invariants against the
+        // latest schema.
 
         let existing_properties = sqlx::query_as::<_, FieldRow>(
             r#"

@@ -75,8 +75,13 @@ dual-write deployment.
 
 ## Rollback
 
-The application change remains compatible with the expanded schema, so prefer
-rolling back the application binary and leaving additive objects in place.
+Block Property-schema writes before rolling back the application. A binary
+that predates the schema-mutation unit of work still uses
+`INSERT ... ON DUPLICATE KEY UPDATE` for `fields`; with the new slot and Id
+singleton unique keys, a concurrent collision can enter that update path and
+overwrite an existing Property definition. Resume schema writes only after a
+compatible non-upsert writer is deployed. Leaving the additive objects in
+place remains the preferred schema rollback.
 
 If DDL removal is required, stop all schema mutation and future normalized
 writers first. Confirm `property_values` is empty. Then remove objects in
