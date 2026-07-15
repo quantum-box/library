@@ -89,6 +89,11 @@
 | PUT | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | `UpdateDataRequest` | `DataResponse` | 更新 |
 | DELETE | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | Path: `org`,`repo`,`data_id` | 空 | 204 |
 | GET | `/v1beta/repos/{org}/{repo}/data/parquet` | 必要 | Path: `org`,`repo` | `ParquetResponse` | `presigned_url` |
+
+`DataResponse.recordVersion` は Database BC の 1-origin record revision を
+10進文字列で返す。BIGINT を JavaScript number に変換してはならない。この
+expand/read 段階では更新要求に version を渡さず、write 時の CAS もまだ行わない。
+
 参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs)
 
 ### 4.5 Property / Source

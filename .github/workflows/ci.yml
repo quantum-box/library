@@ -103,6 +103,7 @@ jobs:
           cargo test -p database-manager --test property_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_dual_write -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_backfill -- --ignored --test-threads=1
+          cargo test -p database-manager --test record_version_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test property_schema_concurrency -- --ignored --test-threads=1
           cargo test -p database-manager --test relation_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test relation_definition_contract -- --ignored --test-threads=1

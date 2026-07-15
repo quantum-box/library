@@ -177,6 +177,13 @@ export declare class Data extends Message<Data> {
    */
   propertyData: PropertyData[];
 
+  /**
+   * Decimal Library record revision. String avoids uint64 precision loss in JS.
+   *
+   * @generated from field: string record_version = 5;
+   */
+  recordVersion: string;
+
   constructor(data?: PartialMessage<Data>);
 
   static readonly runtime: typeof proto3;
@@ -440,4 +447,3 @@ export declare class GetDataRequest extends Message<GetDataRequest> {
 
   static equals(a: GetDataRequest | PlainMessage<GetDataRequest> | undefined, b: GetDataRequest | PlainMessage<GetDataRequest> | undefined): boolean;
 }
-

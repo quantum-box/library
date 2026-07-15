@@ -48,6 +48,8 @@ export type DataResponse = {
   id: string;
   items: PropertyDataResponse[];
   name: string;
+  /** Decimal Library record revision. */
+  recordVersion: string;
 }
 
 /**

@@ -81,6 +81,7 @@ export const Data = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "database_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "property_data", kind: "message", T: PropertyData, repeated: true },
+    { no: 5, name: "record_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -171,4 +172,3 @@ export const GetDataRequest = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "data_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
-

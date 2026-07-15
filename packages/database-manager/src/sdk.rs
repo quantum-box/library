@@ -327,6 +327,7 @@ impl DatabaseApp for DatabaseAppImpl {
             id: data.id().to_string(),
             database_id: data.database_id().to_string(),
             name: data.name().to_string(),
+            record_version: data.record_version().to_string(),
             property_data: data
                 .property_data()
                 .iter()
@@ -403,6 +404,7 @@ impl DatabaseApp for DatabaseAppImpl {
                     id: data.id().to_string(),
                     database_id: data.database_id().to_string(),
                     name: data.name().to_string(),
+                    record_version: data.record_version().to_string(),
                     property_data: data
                         .property_data()
                         .iter()

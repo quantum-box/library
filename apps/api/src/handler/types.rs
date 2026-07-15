@@ -36,9 +36,13 @@ pub struct ParquetResponse {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DataResponse {
     pub id: String,
     pub name: String,
+    /// Decimal Library record revision. Serialized as a string so clients do
+    /// not lose precision when BIGINT values exceed JavaScript's safe range.
+    pub record_version: String,
     pub items: Vec<PropertyDataResponse>,
 }
 

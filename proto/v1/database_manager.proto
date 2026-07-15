@@ -56,6 +56,8 @@ message Data {
   string database_id = 2;
   string name = 3;
   repeated PropertyData property_data = 4;
+  // Decimal Library record revision. String avoids uint64 precision loss in JS.
+  string record_version = 5;
 }
 
 // request and response
