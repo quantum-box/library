@@ -15,6 +15,7 @@
 - [MCP 連携仕様](integrations/mcp.md)
 - [運用手順 / トラブル対応](integrations/operations.md)
 - [Library GA env / secrets Runbook](operations/library-ga-env-secrets-runbook.md)
+- [Database Manager tenant composite FK rollout](operations/database-manager-tenant-composite-fk-rollout.md)
 - [CMS利用ガイド](guides/cms-user-guide.md)
 - [ドキュメントOS利用ガイド](guides/document-os-user-guide.md)
 - [利用ユースケース](use-cases/use-cases.md)
