@@ -8,7 +8,9 @@ use sqlx::query_scalar;
 use value_object::{TenantId, Ulid};
 
 use crate::domain::{RepoId, RepoRepository};
-use database_manager::domain::{DataId, DatabaseId, PropertyType};
+use database_manager::domain::{
+    DataId, DatabaseId, Property, PropertyType, TypeId,
+};
 use database_manager::usecase::FindAllPropertiesInputData;
 use database_manager::{
     AddDataInputData, AddPropertyInputData, DeleteDataInputData,
@@ -80,14 +82,14 @@ impl LibraryDataRepositoryImpl {
         Ok((database_id, org_tenant_id))
     }
 
-    async fn ensure_property_ids(
+    async fn ensure_properties(
         &self,
         executor: &SystemExecutor,
         multi_tenancy: &OperatorMultiTenancy,
         tenant_id: &TenantId,
         database_id: &DatabaseId,
         properties: &HashMap<String, JsonValue>,
-    ) -> errors::Result<HashMap<String, String>> {
+    ) -> errors::Result<HashMap<String, Property>> {
         let existing = self
             .database_app
             .find_all_properties()
@@ -96,15 +98,13 @@ impl LibraryDataRepositoryImpl {
                 database_id: database_id.clone(),
             })
             .await?;
-        let mut property_ids: HashMap<String, String> = existing
+        let mut property_definitions: HashMap<String, Property> = existing
             .into_iter()
-            .map(|property| {
-                (property.name().to_string(), property.id().to_string())
-            })
+            .map(|property| (property.name().to_string(), property))
             .collect();
 
         for name in properties.keys() {
-            if property_ids.contains_key(name) {
+            if property_definitions.contains_key(name) {
                 continue;
             }
             let property = self
@@ -119,17 +119,17 @@ impl LibraryDataRepositoryImpl {
                     property_type: Self::property_type_for(name),
                 })
                 .await?;
-            property_ids.insert(name.clone(), property.id().to_string());
+            property_definitions.insert(name.clone(), property);
         }
 
-        Ok(property_ids)
+        Ok(property_definitions)
     }
 
     fn property_type_for(name: &str) -> PropertyType {
-        if name == "content" {
-            PropertyType::Markdown
-        } else {
-            PropertyType::String
+        match name {
+            "content" => PropertyType::Markdown,
+            "id" => PropertyType::Id(TypeId::new(true)),
+            _ => PropertyType::String,
         }
     }
 
@@ -207,17 +207,24 @@ impl LibraryDataRepositoryImpl {
 
     fn build_property_data(
         properties: HashMap<String, JsonValue>,
-        property_ids: &HashMap<String, String>,
+        property_definitions: &HashMap<String, Property>,
     ) -> errors::Result<Vec<PropertyDataInputData>> {
         let mut property_data = Vec::new();
         for (name, value) in properties {
-            let property_id = property_ids.get(&name).ok_or_else(|| {
-                errors::Error::internal_server_error(format!(
-                    "Property not found: {name}"
-                ))
-            })?;
+            let property =
+                property_definitions.get(&name).ok_or_else(|| {
+                    errors::Error::internal_server_error(format!(
+                        "Property not found: {name}"
+                    ))
+                })?;
+            if matches!(
+                property.property_type(),
+                PropertyType::Id(type_id) if type_id.auto_generate
+            ) {
+                continue;
+            }
             property_data.push(PropertyDataInputData {
-                property_id: property_id.clone(),
+                property_id: property.id().to_string(),
                 value: Self::json_value_to_string(&value),
             });
         }
@@ -258,8 +265,8 @@ impl LibraryDataRepository for LibraryDataRepositoryImpl {
             self.resolve_repo_context(endpoint).await?;
         let properties = Self::enrich_properties(properties, content, true);
         let (executor, multi_tenancy) = Self::build_context(&org_tenant_id);
-        let property_ids = self
-            .ensure_property_ids(
+        let property_definitions = self
+            .ensure_properties(
                 &executor,
                 &multi_tenancy,
                 &org_tenant_id,
@@ -268,7 +275,7 @@ impl LibraryDataRepository for LibraryDataRepositoryImpl {
             )
             .await?;
         let property_data =
-            Self::build_property_data(properties, &property_ids)?;
+            Self::build_property_data(properties, &property_definitions)?;
         let input = AddDataInputData {
             executor: &executor,
             multi_tenancy: &multi_tenancy,
@@ -295,8 +302,8 @@ impl LibraryDataRepository for LibraryDataRepositoryImpl {
         let properties =
             Self::enrich_properties(properties, content, false);
         let (executor, multi_tenancy) = Self::build_context(&org_tenant_id);
-        let property_ids = self
-            .ensure_property_ids(
+        let property_definitions = self
+            .ensure_properties(
                 &executor,
                 &multi_tenancy,
                 &org_tenant_id,
@@ -305,7 +312,7 @@ impl LibraryDataRepository for LibraryDataRepositoryImpl {
             )
             .await?;
         let property_data =
-            Self::build_property_data(properties, &property_ids)?;
+            Self::build_property_data(properties, &property_definitions)?;
         let data_id: DataId = data_id.parse()?;
         let input = UpdateDataInputData {
             executor: &executor,
@@ -367,5 +374,57 @@ impl LibraryDataRepository for LibraryDataRepositoryImpl {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use database_manager::domain::PropertyId;
+
+    fn property(name: &str, property_type: PropertyType) -> Property {
+        Property::new(
+            &PropertyId::default(),
+            &TenantId::default(),
+            &DatabaseId::default(),
+            name,
+            &property_type,
+            false,
+            0,
+        )
+    }
+
+    #[test]
+    fn inbound_sync_leaves_typed_id_generation_to_database_context() {
+        let id = property("id", PropertyType::Id(TypeId::new(true)));
+        let title = property("title", PropertyType::String);
+        let properties = HashMap::from([
+            ("id".to_string(), JsonValue::String("external".to_string())),
+            ("title".to_string(), JsonValue::String("Title".to_string())),
+        ]);
+        let definitions = HashMap::from([
+            ("id".to_string(), id),
+            ("title".to_string(), title.clone()),
+        ]);
+
+        let property_data = LibraryDataRepositoryImpl::build_property_data(
+            properties,
+            &definitions,
+        )
+        .expect("property data conversion must succeed");
+
+        assert_eq!(property_data.len(), 1);
+        assert_eq!(property_data[0].property_id, title.id().to_string());
+        assert_eq!(property_data[0].value, "Title");
+    }
+
+    #[test]
+    fn inbound_sync_creates_missing_id_as_typed_auto_generated() {
+        assert!(matches!(
+            LibraryDataRepositoryImpl::property_type_for("id"),
+            PropertyType::Id(TypeId {
+                auto_generate: true
+            })
+        ));
     }
 }

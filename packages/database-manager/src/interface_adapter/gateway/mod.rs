@@ -266,3 +266,70 @@ impl DataRow {
         Ok(())
     }
 }
+
+/// Project an auto-generated Id from the canonical row ID without mutating
+/// legacy rows. Pre-policy values remain visible (and immutable) so rollout
+/// does not make existing records unreadable; they are also surfaced in logs
+/// for a later repair migration.
+fn project_property_value(
+    data_id: &str,
+    property_type: &PropertyType,
+    stored_value: String,
+) -> errors::Result<String> {
+    if let PropertyType::Id(TypeId {
+        auto_generate: true,
+    }) = property_type
+    {
+        if stored_value.is_empty() || stored_value == data_id {
+            return Ok(data_id.to_string());
+        }
+
+        tracing::warn!(
+            canonical_data_id = data_id,
+            "legacy auto-generated Id value differs from canonical DataId"
+        );
+    }
+
+    Ok(stored_value)
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+
+    #[test]
+    fn missing_auto_generated_id_projects_the_canonical_data_id() {
+        let projected = project_property_value(
+            "data_01canonical",
+            &PropertyType::Id(TypeId::new(true)),
+            String::new(),
+        )
+        .expect("projection");
+
+        assert_eq!(projected, "data_01canonical");
+    }
+
+    #[test]
+    fn legacy_non_canonical_auto_generated_id_remains_visible() {
+        let projected = project_property_value(
+            "data_01canonical",
+            &PropertyType::Id(TypeId::new(true)),
+            "external-id".to_string(),
+        )
+        .expect("legacy projection");
+
+        assert_eq!(projected, "external-id");
+    }
+
+    #[test]
+    fn manual_id_preserves_its_stored_value() {
+        let projected = project_property_value(
+            "data_01canonical",
+            &PropertyType::Id(TypeId::new(false)),
+            "external-id".to_string(),
+        )
+        .expect("projection");
+
+        assert_eq!(projected, "external-id");
+    }
+}

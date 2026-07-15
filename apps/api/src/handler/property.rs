@@ -15,7 +15,42 @@ use crate::usecase::{
     AddPropertyInputData, DeletePropertyInputData, GetPropertiesInputData,
     GetPropertyInputData,
 };
-use database_manager::domain::{Property as DomainProperty, PropertyType};
+use database_manager::domain::{
+    Property as DomainProperty, PropertyType, TypeId,
+};
+
+fn property_type_from_request(
+    payload: &AddPropertyRequest,
+) -> errors::Result<PropertyType> {
+    if payload.property_type != "id" && payload.auto_generate.is_some() {
+        return Err(errors::Error::invalid(
+            "auto_generate is only valid for an Id property",
+        ));
+    }
+
+    match payload.property_type.as_str() {
+        "string" => Ok(PropertyType::String),
+        "integer" => Ok(PropertyType::Integer),
+        "html" => {
+            tracing::warn!("{}", HTML_DEPRECATION_MESSAGE);
+            Ok(PropertyType::Html)
+        }
+        "markdown" => Ok(PropertyType::Markdown),
+        "relation" => Ok(PropertyType::Relation(Default::default())),
+        "select" => Ok(PropertyType::Select(Default::default())),
+        "multi_select" => Ok(PropertyType::MultiSelect(Default::default())),
+        "id" => Ok(PropertyType::Id(TypeId::new(
+            payload.auto_generate.ok_or_else(|| {
+                errors::Error::invalid(
+                    "auto_generate is required for an Id property",
+                )
+            })?,
+        ))),
+        "location" => Ok(PropertyType::Location(Default::default())),
+        "image" => Ok(PropertyType::Image),
+        _ => Err(errors::Error::invalid("Invalid property type")),
+    }
+}
 
 #[utoipa::path(
     get,
@@ -73,23 +108,7 @@ pub async fn add_property(
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Json(payload): Json<AddPropertyRequest>,
 ) -> errors::Result<Json<PropertyResponse>> {
-    let property_type = match payload.property_type.as_str() {
-        "string" => PropertyType::String,
-        "integer" => PropertyType::Integer,
-        "html" => {
-            tracing::warn!("{}", HTML_DEPRECATION_MESSAGE);
-            PropertyType::Html
-        }
-        "markdown" => PropertyType::Markdown,
-        "relation" => PropertyType::Relation(Default::default()),
-        "select" => PropertyType::Select(Default::default()),
-        "multi_select" => PropertyType::MultiSelect(Default::default()),
-        "location" => PropertyType::Location(Default::default()),
-        "image" => PropertyType::Image,
-        _ => {
-            return Err(errors::Error::invalid("Invalid property type"));
-        }
-    };
+    let property_type = property_type_from_request(&payload)?;
 
     let input = AddPropertyInputData {
         executor: &executor,
@@ -103,6 +122,55 @@ pub async fn add_property(
     let property = library_app.add_property.execute(input).await?;
     let response = to_property_response(&property);
     Ok(Json(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rest_id_property_preserves_auto_generate() {
+        let property_type =
+            property_type_from_request(&AddPropertyRequest {
+                name: "id".to_string(),
+                property_type: "id".to_string(),
+                auto_generate: Some(true),
+            })
+            .expect("Id must be supported by the REST adapter");
+
+        assert!(matches!(
+            property_type,
+            PropertyType::Id(TypeId {
+                auto_generate: true
+            })
+        ));
+    }
+
+    #[test]
+    fn rest_id_property_requires_auto_generate() {
+        let error = property_type_from_request(&AddPropertyRequest {
+            name: "id".to_string(),
+            property_type: "id".to_string(),
+            auto_generate: None,
+        })
+        .expect_err("Id metadata must not silently default");
+
+        assert!(error.is_bad_request());
+        assert!(error.to_string().contains("auto_generate is required"));
+    }
+
+    #[test]
+    fn rest_non_id_property_rejects_auto_generate() {
+        let error = property_type_from_request(&AddPropertyRequest {
+            name: "title".to_string(),
+            property_type: "string".to_string(),
+            auto_generate: Some(true),
+        })
+        .expect_err("Id metadata must not leak into other property types");
+
+        assert!(error.is_bad_request());
+        assert!(error.to_string().contains("only valid for an Id"));
+    }
 }
 
 #[utoipa::path(
@@ -238,6 +306,10 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
         id: property.id().to_string(),
         name: property.name().to_string(),
         property_type: property_type.clone(),
+        auto_generate: match property.property_type() {
+            PropertyType::Id(type_id) => Some(type_id.auto_generate),
+            _ => None,
+        },
         deprecation: property_deprecation(&property_type),
     }
 }

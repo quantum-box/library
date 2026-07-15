@@ -9,6 +9,41 @@ use util::macros::*;
 mod property_type;
 pub use property_type::*;
 
+pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
+pub const MAX_PROPERTY_NUM: u32 = 50;
+
+pub fn validate_property_type_addition(
+    existing_properties: &[Property],
+    new_property_type: &PropertyType,
+) -> errors::Result<()> {
+    if matches!(new_property_type, PropertyType::Id(_))
+        && existing_properties.iter().any(|property| {
+            matches!(property.property_type(), PropertyType::Id(_))
+        })
+    {
+        return Err(errors::Error::conflict(ID_PROPERTY_ALREADY_EXISTS));
+    }
+
+    Ok(())
+}
+
+pub fn next_property_num(
+    existing_properties: &[Property],
+) -> errors::Result<u32> {
+    (0..=MAX_PROPERTY_NUM)
+        .find(|candidate| {
+            existing_properties
+                .iter()
+                .all(|property| property.property_num() != candidate)
+        })
+        .ok_or_else(|| {
+            errors::Error::business_logic(format!(
+                "Property limit reached: {} slots are available",
+                MAX_PROPERTY_NUM + 1
+            ))
+        })
+}
+
 def_id!(PropertyId, "prop_");
 
 #[derive(Getters, Debug, Clone)]
@@ -105,6 +140,17 @@ impl Property {
         property_type: Option<&PropertyType>,
     ) -> errors::Result<Self> {
         if let Some(property_type) = property_type {
+            if let (
+                PropertyType::Id(current),
+                PropertyType::Id(requested),
+            ) = (&self.property_type, property_type)
+            {
+                if current.auto_generate != requested.auto_generate {
+                    return Err(errors::invalid!(
+                        "Id auto_generate is immutable after property creation."
+                    ));
+                }
+            }
             if self.property_type.to_string() != property_type.to_string() {
                 // TODO: add English comment
                 // TODO: add English comment
@@ -146,4 +192,99 @@ pub trait PropertyRepository: Debug + Send + Sync + 'static {
         tenant_id: &TenantId,
         database_id: &DatabaseId,
     ) -> errors::Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn property(
+        property_type: PropertyType,
+        property_num: u32,
+    ) -> Property {
+        Property::new(
+            &PropertyId::default(),
+            &TenantId::default(),
+            &DatabaseId::default(),
+            "property",
+            &property_type,
+            false,
+            property_num,
+        )
+    }
+
+    #[test]
+    fn string_property_can_be_added_after_id_property() {
+        let existing =
+            vec![property(PropertyType::Id(TypeId::new(true)), 0)];
+
+        validate_property_type_addition(&existing, &PropertyType::String)
+            .expect("a non-Id property must remain addable");
+    }
+
+    #[test]
+    fn id_property_can_be_added_after_string_property() {
+        let existing = vec![property(PropertyType::String, 0)];
+
+        validate_property_type_addition(
+            &existing,
+            &PropertyType::Id(TypeId::new(true)),
+        )
+        .expect("the first Id property must be addable");
+    }
+
+    #[test]
+    fn second_id_property_is_rejected_by_the_domain() {
+        let existing =
+            vec![property(PropertyType::Id(TypeId::new(true)), 0)];
+
+        let error = validate_property_type_addition(
+            &existing,
+            &PropertyType::Id(TypeId::new(false)),
+        )
+        .expect_err("a second Id property must be rejected");
+
+        assert!(matches!(error, errors::Error::Conflict { .. }));
+        assert!(error.to_string().contains(ID_PROPERTY_ALREADY_EXISTS));
+    }
+
+    #[test]
+    fn deleted_property_slot_is_reused_without_colliding() {
+        let existing = vec![
+            property(PropertyType::String, 0),
+            property(PropertyType::String, 2),
+        ];
+
+        assert_eq!(
+            next_property_num(&existing).expect("a slot must be available"),
+            1
+        );
+    }
+
+    #[test]
+    fn property_limit_is_an_explicit_domain_error() {
+        let existing = (0..=MAX_PROPERTY_NUM)
+            .map(|property_num| {
+                property(PropertyType::String, property_num)
+            })
+            .collect::<Vec<_>>();
+
+        let error = next_property_num(&existing)
+            .expect_err("all legacy storage slots are occupied");
+
+        assert!(error.is_bad_request());
+        assert!(error.to_string().contains("Property limit reached"));
+    }
+
+    #[test]
+    fn id_auto_generate_policy_is_creation_only() {
+        let property = property(PropertyType::Id(TypeId::new(true)), 0);
+
+        let error = property
+            .update(None, Some(&PropertyType::Id(TypeId::new(false))))
+            .expect_err("auto_generate must not change after creation");
+
+        assert!(error.is_bad_request());
+        assert!(error.to_string().contains("auto_generate is immutable"));
+    }
 }

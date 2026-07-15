@@ -6,13 +6,13 @@ use super::{
     CreateRepoInputData, CreateRepoInputPort,
     GetOrganizationByUsernameQuery,
 };
-use database_manager::domain::PropertyType;
+use database_manager::domain::{PropertyType, TypeId};
 use database_manager::usecase::CreateDatabaseInputData;
 use database_manager::{domain::DatabaseId, AddPropertyInputData};
 use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
 use tachyon_sdk::auth::AuthApp;
-use value_object::{LongText, Ulid};
+use value_object::LongText;
 
 #[derive(Debug, Clone, new)]
 pub struct CreateRepo {
@@ -87,8 +87,7 @@ impl CreateRepoInputPort for CreateRepo {
                     .as_ref(),
             })
             .await?;
-        let id_property = self
-            .database_client
+        self.database_client
             .add_property()
             .execute(AddPropertyInputData {
                 executor: input.executor,
@@ -96,7 +95,7 @@ impl CreateRepoInputPort for CreateRepo {
                 tenant_id: org.id(),
                 database_id: database.id(),
                 name: "id",
-                property_type: PropertyType::String,
+                property_type: PropertyType::Id(TypeId::new(true)),
             })
             .await?;
         let content_property = self
@@ -122,16 +121,10 @@ impl CreateRepoInputPort for CreateRepo {
                     tenant_id: org.id(),
                     database_id: database.id(),
                     name: "data1",
-                    property_data: vec![
-                        PropertyDataInputData {
-                            property_id: id_property.id().to_string(),
-                            value: Ulid::new().to_string(),
-                        },
-                        PropertyDataInputData {
-                            property_id: content_property.id().to_string(),
-                            value: "# data1\n\nwrite here\n".to_string(),
-                        },
-                    ],
+                    property_data: vec![PropertyDataInputData {
+                        property_id: content_property.id().to_string(),
+                        value: "# data1\n\nwrite here\n".to_string(),
+                    }],
                 })
                 .await?;
             self.database_client
@@ -142,16 +135,10 @@ impl CreateRepoInputPort for CreateRepo {
                     tenant_id: org.id(),
                     database_id: database.id(),
                     name: "data2",
-                    property_data: vec![
-                        PropertyDataInputData {
-                            property_id: id_property.id().to_string(),
-                            value: Ulid::new().to_string(),
-                        },
-                        PropertyDataInputData {
-                            property_id: content_property.id().to_string(),
-                            value: "# data2\n\nwrite here\n".to_string(),
-                        },
-                    ],
+                    property_data: vec![PropertyDataInputData {
+                        property_id: content_property.id().to_string(),
+                        value: "# data2\n\nwrite here\n".to_string(),
+                    }],
                 })
                 .await?;
         }

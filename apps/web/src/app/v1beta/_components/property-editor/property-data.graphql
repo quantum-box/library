@@ -71,10 +71,15 @@ fragment PropertyForEditor on Property {
 }
 
 fragment PropertyTypeMetaForEditor on PropertyTypeMeta {
+  ...IdTypeMetaForEditor
   ...RelationTypeMetaForEditor
   ...SelectTypeMetaForEditor
   ...MultiSelectTypeMetaForEditor
   ...JsonTypeMetaForEditor
+}
+
+fragment IdTypeMetaForEditor on IdType {
+  autoGenerate
 }
 
 fragment JsonTypeMetaForEditor on JsonType {

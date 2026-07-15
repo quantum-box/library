@@ -28,15 +28,24 @@ impl DataQueryService {
             data_row.updated_at,
         )?;
         for field in fields {
-            let data_field_value = data_row.get_field(field.field_num)?;
-            let property = Property::new(
+            let property_type = PropertyType::from_meta(
+                &field.datatype,
+                field.datatype_meta.clone(),
+            )?;
+            let data_field_value = project_property_value(
+                &data_row.id,
+                &property_type,
+                data_row.get_field(field.field_num)?,
+            )?;
+            let property = Property::with_meta_json(
                 &field.id.parse()?,
                 &field.tenant_id.parse()?,
                 &field.object_id.parse()?,
                 &field.field_name,
-                &field.datatype.parse()?,
+                &property_type,
                 field.is_indexed,
                 field.field_num,
+                field.meta_json.clone(),
             );
             let property_data =
                 PropertyData::new(&property, data_field_value)?;

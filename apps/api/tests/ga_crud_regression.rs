@@ -114,6 +114,48 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     .await?;
     assert_eq!(property_updated["name"], "ga_title_updated");
 
+    let properties = get_json(
+        &client,
+        &format!("{server_url}/v1beta/repos/{org}/{repo}/properties"),
+        StatusCode::OK,
+    )
+    .await?;
+    let id_property = properties
+        .as_array()
+        .and_then(|properties| {
+            properties
+                .iter()
+                .find(|property| property["property_type"] == "ID")
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("default typed Id property is missing")
+        })?;
+    let id_property_id = string_field(id_property, "id")?;
+    assert_eq!(id_property["auto_generate"], true);
+
+    post_json(
+        &client,
+        &format!("{server_url}/v1beta/repos/{org}/{repo}/properties"),
+        json!({
+            "name": "ga_after_id",
+            "property_type": "string"
+        }),
+        StatusCode::OK,
+    )
+    .await?;
+
+    post_json(
+        &client,
+        &format!("{server_url}/v1beta/repos/{org}/{repo}/properties"),
+        json!({
+            "name": "ga_duplicate_id",
+            "property_type": "id",
+            "auto_generate": false
+        }),
+        StatusCode::CONFLICT,
+    )
+    .await?;
+
     let data = post_json(
         &client,
         &format!("{server_url}/v1beta/repos/{org}/{repo}/data"),
@@ -128,6 +170,16 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     let data_id = string_field(&data, "id")?;
+    let generated_id = data["items"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["property_id"] == id_property_id)
+        })
+        .and_then(|item| item["value"]["id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("generated Id value is missing"))?;
+    assert_eq!(generated_id, data_id);
 
     let data_updated = put_json(
         &client,
@@ -299,6 +351,30 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     .await?;
     assert_eq!(repo_update["updateRepo"]["isPublic"], true);
 
+    let initial_properties = graphql(
+        &client,
+        &server_url,
+        "query Properties($org: String!, $repo: String!) {
+            properties(orgUsername: $org, repoUsername: $repo) {
+                id
+                typ
+                meta { ... on IdType { autoGenerate } }
+            }
+        }",
+        json!({"org": org, "repo": repo}),
+    )
+    .await?;
+    let id_property = initial_properties["properties"]
+        .as_array()
+        .and_then(|properties| {
+            properties.iter().find(|property| property["typ"] == "ID")
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("GraphQL typed Id property is missing")
+        })?;
+    let id_property_id = string_field(id_property, "id")?;
+    assert_eq!(id_property["meta"]["autoGenerate"], true);
+
     let property = graphql(
         &client,
         &server_url,
@@ -316,6 +392,35 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     let property_id = string_at(&property, &["addProperty", "id"])?;
+
+    let duplicate_id_response = post_json(
+        &client,
+        &format!("{server_url}/v1/graphql"),
+        json!({
+            "query": "mutation AddProperty($input: PropertyInput!) {
+                addProperty(input: $input) { id }
+            }",
+            "variables": {
+                "input": {
+                    "orgUsername": org,
+                    "repoUsername": repo,
+                    "propertyName": "ga_duplicate_id",
+                    "propertyType": "ID",
+                    "meta": {"id": false}
+                }
+            }
+        }),
+        StatusCode::OK,
+    )
+    .await?;
+    let duplicate_errors =
+        duplicate_id_response["errors"].as_array().ok_or_else(|| {
+            anyhow::anyhow!("GraphQL duplicate Id did not return errors")
+        })?;
+    assert!(!duplicate_errors.is_empty());
+    assert!(duplicate_id_response
+        .to_string()
+        .contains(database_manager::domain::ID_PROPERTY_ALREADY_EXISTS));
 
     let property_update = graphql(
         &client,
@@ -343,7 +448,14 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         &client,
         &server_url,
         "mutation AddData($input: AddDataInputData!) {
-            addData(input: $input) { id name }
+            addData(input: $input) {
+                id
+                name
+                propertyData {
+                    propertyId
+                    value { ... on IdValue { id } }
+                }
+            }
         }",
         json!({
             "input": {
@@ -360,6 +472,18 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     let data_id = string_at(&data, &["addData", "id"])?;
+    let generated_id = data["addData"]["propertyData"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["propertyId"] == id_property_id)
+        })
+        .and_then(|item| item["value"]["id"].as_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!("GraphQL generated Id value is missing")
+        })?;
+    assert_eq!(generated_id, data_id);
 
     let data_update = graphql(
         &client,
