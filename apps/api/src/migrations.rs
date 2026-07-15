@@ -45,6 +45,10 @@ async fn run_database_manager_migrations(
         admin_database_url.use_database(DATABASE_MANAGER_DATABASE_NAME),
     )
     .await;
+    database_manager::migration_preflight::ensure_check_constraints_enforced(
+        db.pool().as_ref(),
+    )
+    .await?;
     clear_failed_sqlx_migrations(&db).await;
     sqlx::migrate!("../../packages/database-manager/migrations")
         .run(db.pool().as_ref())

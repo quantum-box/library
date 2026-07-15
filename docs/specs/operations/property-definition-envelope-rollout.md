@@ -19,6 +19,8 @@ SELECT VERSION() AS mysql_version,
        DATABASE() AS database_name,
        @@SESSION.sql_mode AS sql_mode;
 
+SHOW VARIABLES LIKE 'tidb_enable_check_constraint';
+
 SELECT column_name
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
@@ -36,6 +38,12 @@ SELECT version, description, success, HEX(checksum) AS checksum,
 FROM _sqlx_migrations
 ORDER BY version;
 ```
+
+On MySQL, the variable query returns no rows. On TiDB, it must return `ON`.
+The migration entrypoints detect TiDB through `VERSION()` and fail before SQLx
+migrations run unless `tidb_enable_check_constraint=ON`; this prevents TiDB's
+default-disabled `CHECK` behavior from silently weakening the envelope
+invariant.
 
 The two schema queries must return no rows before the first application. Stop
 if any object already exists: inspect the actual schema and converge with a new
