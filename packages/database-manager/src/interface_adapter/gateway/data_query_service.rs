@@ -48,7 +48,7 @@ impl DataQueryService {
                 field.meta_json.clone(),
             );
             let property_data =
-                PropertyData::new(&property, data_field_value)?;
+                PropertyData::from_storage(&property, data_field_value)?;
             data.add_property_data(property_data)?;
         }
         Ok(data)

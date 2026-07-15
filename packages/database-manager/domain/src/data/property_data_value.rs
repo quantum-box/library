@@ -18,11 +18,27 @@ pub enum PropertyDataValue {
 }
 
 impl PropertyDataValue {
+    /// Parse a value received by a Database BC command.
+    ///
+    /// Relation commands contain only target DataIds. The configured
+    /// TypeRelation is authoritative for the target DatabaseId.
     pub fn new(
         value: &str,
         property_type: &PropertyType,
     ) -> errors::Result<Self> {
-        Self::parse_from_string(value, property_type)
+        Self::parse_command(value, property_type)
+    }
+
+    /// Restore a value from the legacy `value0..value50` representation.
+    ///
+    /// Legacy Relation values contain `database_id,data_id...`. The encoded
+    /// DatabaseId is checked against the configured TypeRelation rather than
+    /// being trusted as the relation target.
+    pub fn from_storage(
+        value: &str,
+        property_type: &PropertyType,
+    ) -> errors::Result<Self> {
+        Self::parse_storage(value, property_type)
     }
 
     pub fn property_type(&self) -> PropertyType {
@@ -86,7 +102,7 @@ impl PropertyDataValue {
         }
     }
 
-    fn parse_from_string(
+    fn parse_command(
         text: &str,
         property_type: &PropertyType,
     ) -> errors::Result<Self> {
@@ -95,13 +111,27 @@ impl PropertyDataValue {
             PropertyType::Integer => Self::parse_integer(text),
             PropertyType::Html => Self::parse_html(text),
             PropertyType::Markdown => Self::parse_markdown(text),
-            PropertyType::Relation(_) => Self::parse_relation(text),
+            PropertyType::Relation(relation) => {
+                Self::parse_relation_command(text, relation)
+            }
             PropertyType::Id(_) => Self::parse_id(text),
             PropertyType::Location(_) => Self::parse_location(text),
             PropertyType::Select(_) => Self::parse_select(text),
             PropertyType::MultiSelect(_) => Self::parse_multi_select(text),
             PropertyType::Date => Self::parse_date(text),
             PropertyType::Image => Self::parse_image(text),
+        }
+    }
+
+    fn parse_storage(
+        text: &str,
+        property_type: &PropertyType,
+    ) -> errors::Result<Self> {
+        match property_type {
+            PropertyType::Relation(relation) => {
+                Self::parse_relation_storage(text, relation)
+            }
+            _ => Self::parse_command(text, property_type),
         }
     }
 
@@ -150,19 +180,59 @@ impl PropertyDataValue {
         Ok(PropertyDataValue::Markdown(input.to_string()))
     }
 
-    fn parse_relation(input: &str) -> errors::Result<PropertyDataValue> {
-        let parts = input.split(',').collect::<Vec<_>>();
-        let database_id = DatabaseId::from_str(
-            parts
-                .first()
-                .ok_or(anyhow::anyhow!("DatabaseId is missing"))?,
-        )?;
+    fn parse_relation_command(
+        input: &str,
+        relation: &TypeRelation,
+    ) -> errors::Result<PropertyDataValue> {
+        let ids = Self::parse_relation_data_ids(input)?;
+        Ok(PropertyDataValue::Relation(
+            relation.database_id.clone(),
+            ids,
+        ))
+    }
+
+    fn parse_relation_storage(
+        input: &str,
+        relation: &TypeRelation,
+    ) -> errors::Result<PropertyDataValue> {
+        let mut parts = input.split(',');
+        let database_id = parts
+            .next()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(Self::invalid_relation_value)?
+            .parse::<DatabaseId>()
+            .map_err(|_| Self::invalid_relation_value())?;
+
+        if database_id != relation.database_id {
+            return Err(Self::invalid_relation_value());
+        }
+
         let ids = parts
-            .into_iter()
-            .skip(1)
-            .map(|id| id.parse::<DataId>().unwrap())
-            .collect::<Vec<_>>();
+            .map(Self::parse_relation_data_id)
+            .collect::<errors::Result<Vec<_>>>()?;
         Ok(PropertyDataValue::Relation(database_id, ids))
+    }
+
+    fn parse_relation_data_ids(input: &str) -> errors::Result<Vec<DataId>> {
+        if input.is_empty() {
+            return Ok(vec![]);
+        }
+
+        input.split(',').map(Self::parse_relation_data_id).collect()
+    }
+
+    fn parse_relation_data_id(input: &str) -> errors::Result<DataId> {
+        if input.is_empty() {
+            return Err(Self::invalid_relation_value());
+        }
+
+        input
+            .parse::<DataId>()
+            .map_err(|_| Self::invalid_relation_value())
+    }
+
+    fn invalid_relation_value() -> errors::Error {
+        errors::Error::invalid("relation value")
     }
 
     fn parse_id(input: &str) -> errors::Result<PropertyDataValue> {
@@ -279,31 +349,155 @@ mod unit {
     use super::*;
     use rstest::*;
 
-    // relation
-    #[rstest]
-    #[case(
-        "db_01hmp05xtq6fs5mmk8fg125cy7",
-        "db_01hmp05xtq6fs5mmk8fg125cy7,data_01hmp06dkf89pzjp75p1p6gfw7,data_01hmp076wtgn1m5m5ap0zp8y28"
-    )]
-    #[case(
-        "db_01hmp05xtq6fs5mmk8fg125cy7",
-        "db_01hmp05xtq6fs5mmk8fg125cy7"
-    )]
-    #[should_panic]
-    #[case(
-        "db_01hmp05xtq6fs5mmk8fg125cy7",
-        "data_01hmp05xtq6fs5mmk8fg125cy7,data_01hmp06dkf89pzjp75p1p6gfw7"
-    )]
-    fn test_parse_relation_and_to_string(
-        #[case] db: &str,
-        #[case] input: &str,
-    ) {
-        let actual = PropertyDataValue::new(
-            input,
-            &PropertyType::Relation(TypeRelation::new(db.parse().unwrap())),
+    const RELATION_DATABASE: &str = "db_01hmp05xtq6fs5mmk8fg125cy7";
+    const OTHER_DATABASE: &str = "db_01hmp05xtq6fs5mmk8fg125cy8";
+    const RELATION_DATA_1: &str = "data_01hmp06dkf89pzjp75p1p6gfw7";
+    const RELATION_DATA_2: &str = "data_01hmp076wtgn1m5m5ap0zp8y28";
+
+    fn relation_property_type(database_id: &str) -> PropertyType {
+        PropertyType::Relation(TypeRelation::new(
+            database_id.parse().expect("valid test DatabaseId"),
+        ))
+    }
+
+    #[test]
+    fn legacy_relation_storage_round_trips() {
+        let input = format!(
+            "{RELATION_DATABASE},{RELATION_DATA_1},{RELATION_DATA_2}"
         );
-        assert!(actual.is_ok());
-        assert_eq!(input.to_string(), actual.unwrap().string_value());
+
+        let actual = PropertyDataValue::from_storage(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect("valid legacy Relation storage");
+
+        assert_eq!(actual.string_value(), input);
+    }
+
+    #[test]
+    fn legacy_relation_storage_without_targets_round_trips() {
+        let actual = PropertyDataValue::from_storage(
+            RELATION_DATABASE,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect("an empty Relation target set is valid");
+
+        assert_eq!(actual.string_value(), RELATION_DATABASE);
+    }
+
+    #[test]
+    fn invalid_relation_data_id_returns_an_error_instead_of_panicking() {
+        let input = format!("{RELATION_DATABASE},not-a-data-id");
+
+        let error = PropertyDataValue::from_storage(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("an invalid DataId must be rejected");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn trailing_relation_separator_is_rejected() {
+        let input = format!("{RELATION_DATABASE},{RELATION_DATA_1},");
+
+        let error = PropertyDataValue::from_storage(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("a trailing separator creates an invalid empty DataId");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn legacy_relation_storage_requires_a_database_id() {
+        let input = format!(",{RELATION_DATA_1}");
+        let error = PropertyDataValue::from_storage(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("legacy storage must start with a DatabaseId");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn legacy_relation_database_must_match_the_configured_relation() {
+        let input = format!("{OTHER_DATABASE},{RELATION_DATA_1}");
+
+        let error = PropertyDataValue::from_storage(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("stored DatabaseId cannot override TypeRelation");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn relation_command_derives_database_from_the_configured_relation() {
+        let input = format!("{RELATION_DATA_1},{RELATION_DATA_2}");
+        let expected_database: DatabaseId =
+            RELATION_DATABASE.parse().expect("valid test DatabaseId");
+        let expected_ids = vec![
+            RELATION_DATA_1.parse().expect("valid test DataId"),
+            RELATION_DATA_2.parse().expect("valid test DataId"),
+        ];
+
+        let actual = PropertyDataValue::new(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect("command Relation input contains only DataIds");
+
+        assert_eq!(
+            actual,
+            PropertyDataValue::Relation(expected_database, expected_ids)
+        );
+        assert_eq!(
+            actual.string_value(),
+            format!(
+                "{RELATION_DATABASE},{RELATION_DATA_1},{RELATION_DATA_2}"
+            )
+        );
+    }
+
+    #[test]
+    fn relation_command_rejects_an_invalid_data_id_without_panicking() {
+        let error = PropertyDataValue::new(
+            "not-a-data-id",
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("an invalid command DataId must be rejected");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn relation_command_rejects_the_legacy_storage_shape() {
+        let input = format!("{RELATION_DATABASE},{RELATION_DATA_1}");
+
+        let error = PropertyDataValue::new(
+            &input,
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect_err("command input must not contain a legacy DatabaseId");
+
+        assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn empty_relation_command_uses_the_configured_database() {
+        let actual = PropertyDataValue::new(
+            "",
+            &relation_property_type(RELATION_DATABASE),
+        )
+        .expect("an empty Relation target set is valid command input");
+
+        assert_eq!(actual.string_value(), RELATION_DATABASE);
     }
 
     // TODO: add English comment

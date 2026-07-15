@@ -111,6 +111,9 @@ pub trait AddDataInputPort: Debug + Send + Sync + 'static {
 #[derive(Debug)]
 pub struct PropertyDataInputData {
     pub property_id: String,
+    /// Command value encoded for the Property type. Relation commands contain
+    /// only comma-separated target DataIds; the configured TypeRelation owns
+    /// the target DatabaseId.
     pub value: String,
 }
 
