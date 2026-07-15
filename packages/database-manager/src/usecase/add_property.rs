@@ -19,8 +19,8 @@ impl AddPropertyInteractorImpl {
     pub fn new(
         database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
-        // Kept in the public constructor for compatibility. Relation metadata
-        // is now persisted by the schema mutation unit of work.
+        // Retained for source compatibility. Definition writes are owned by
+        // the Property-schema unit of work.
         _relation_repo: Arc<dyn RelationRepository>,
     ) -> Arc<Self> {
         Arc::new(Self {

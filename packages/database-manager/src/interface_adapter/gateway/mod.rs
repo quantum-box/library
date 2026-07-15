@@ -78,6 +78,19 @@ pub struct IndexRow {
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
+pub struct RelationDefinitionRow {
+    pub id: String,
+    pub tenant_id: String,
+    pub object_id: String,
+    pub field_id: String,
+    pub target_object_id: String,
+    pub forward_cardinality: String,
+    pub reverse_cardinality: String,
+    pub inverse_field_id: Option<String>,
+    pub on_target_delete: String,
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct RelationshipRow {
     pub id: String,
     pub tenant_id: String,

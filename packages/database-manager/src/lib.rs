@@ -161,7 +161,7 @@ pub async fn factory_client_with_property_value_mode(
     let add_property_usecase = AddPropertyInteractorImpl::new(
         database_repo.clone(),
         property_repo.clone(),
-        relation_repo.clone(),
+        relation_repo,
     );
     let get_database_definition_usecase = GetDatabaseDefinition::new(
         database_repo.clone(),
@@ -239,6 +239,7 @@ mod tests {
         let database_repo = DatabaseRepositoryImpl::new(db.clone());
         let property_repo = PropertyRepositoryImpl::new(db.clone());
         let data_repo = DataRepositoryImpl::new(db.clone());
+        let relation_repo = RelationRepositoryImpl::new(db.clone());
 
         let create_database_usecase = CreateDatabaseInteractorImpl::new(
             database_repo.clone(),
@@ -248,6 +249,7 @@ mod tests {
         let add_property_usecase = AddPropertyInteractorImpl::new(
             database_repo.clone(),
             property_repo.clone(),
+            relation_repo,
         );
         let get_database_definition_usecase = GetDatabaseDefinition::new(
             database_repo.clone(),

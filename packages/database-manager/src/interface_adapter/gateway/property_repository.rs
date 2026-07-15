@@ -93,7 +93,7 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
 
         let mutation =
             PropertySchema::plan_addition(&existing_properties, command)?;
-        let (property, relation) = mutation.into_parts();
+        let (property, relation_definition) = mutation.into_parts();
 
         let field_insert = sqlx::query(
             r#"
@@ -122,22 +122,32 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
             ));
         }
 
-        if let Some(relation) = relation {
+        if let Some(definition) = relation_definition {
             sqlx::query(
                 r#"
                 INSERT INTO relationships
                     (id, tenant_id, object_id, field_id, relation_id,
-                     target_object_id)
+                     target_object_id, forward_cardinality,
+                     reverse_cardinality, inverse_field_id,
+                     on_target_delete)
                 VALUES
-                    (?, ?, ?, ?, ?, ?);
+                    (?, ?, ?, ?, 0, ?, ?, ?, ?, ?);
                 "#,
             )
-            .bind(relation.id().to_string())
-            .bind(relation.tenant_id().to_string())
-            .bind(relation.database_id().to_string())
-            .bind(relation.property_id().to_string())
-            .bind(*relation.relation_id() as u32)
-            .bind(relation.target_database_id().to_string())
+            .bind(definition.id().to_string())
+            .bind(definition.tenant_id().to_string())
+            .bind(definition.source_database_id().to_string())
+            .bind(definition.source_property_id().to_string())
+            .bind(definition.target_database_id().to_string())
+            .bind(definition.forward_cardinality().to_string())
+            .bind(definition.reverse_cardinality().to_string())
+            .bind(
+                definition
+                    .inverse_property_id()
+                    .as_ref()
+                    .map(ToString::to_string),
+            )
+            .bind(definition.on_target_delete().to_string())
             .execute(&mut *transaction)
             .await?;
         }

@@ -18,6 +18,7 @@
 - [Database Manager tenant composite FK rollout](operations/database-manager-tenant-composite-fk-rollout.md)
 - [PropertyValue storage expand rollout](operations/property-value-storage-expand-rollout.md)
 - [PropertyDefinition envelope schema rollout](operations/property-definition-envelope-rollout.md)
+- [RelationDefinition control-plane rollout](operations/relation-definition-expand-rollout.md)
 - [CMS利用ガイド](guides/cms-user-guide.md)
 - [ドキュメントOS利用ガイド](guides/document-os-user-guide.md)
 - [利用ユースケース](use-cases/use-cases.md)

@@ -197,12 +197,30 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     assert_foreign_key_columns(
         pool.as_ref(),
         "relationships",
-        "fk_relationships_tenant_object_field",
+        "fk_relationships_tenant_source_property",
         &[
             ("tenant_id", "tenant_id"),
             ("object_id", "object_id"),
             ("field_id", "id"),
         ],
+    )
+    .await?;
+    assert_foreign_key_columns(
+        pool.as_ref(),
+        "relationships",
+        "fk_relationships_tenant_target_inverse_field",
+        &[
+            ("tenant_id", "tenant_id"),
+            ("target_object_id", "object_id"),
+            ("inverse_field_id", "id"),
+        ],
+    )
+    .await?;
+    assert_constraint_columns(
+        pool.as_ref(),
+        "relationships",
+        "uq_relationships_tenant_source_field",
+        &["tenant_id", "object_id", "field_id"],
     )
     .await?;
 
@@ -223,6 +241,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     let object_a_other = DatabaseId::default().to_string();
     let object_b = DatabaseId::default().to_string();
     let field_a = PropertyId::default().to_string();
+    let field_a_cross_target = PropertyId::default().to_string();
     let field_a_other = PropertyId::default().to_string();
     let field_b = PropertyId::default().to_string();
     let data_a = DataId::default().to_string();
@@ -245,6 +264,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
 
     for (id, tenant_id, object_id, field_num) in [
         (&field_a, &tenant_a, &object_a, 0_u32),
+        (&field_a_cross_target, &tenant_a, &object_a, 1_u32),
         (&field_a_other, &tenant_a, &object_a_other, 0_u32),
         (&field_b, &tenant_b, &object_b, 0_u32),
     ] {
@@ -339,7 +359,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     .bind(&valid_relation)
     .bind(&tenant_a)
     .bind(&object_a)
-    .bind(&field_a)
+    .bind(&field_a_cross_target)
     .bind(&object_a)
     .execute(&mut *transaction)
     .await?;
@@ -385,7 +405,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     .expect_err("a relation field must belong to its source object");
     assert_fk_violation(
         wrong_field_error,
-        &["fk_relationships_tenant_object_field"],
+        &["fk_relationships_tenant_source_property"],
     );
 
     let cross_source_error = sqlx::query(
@@ -409,7 +429,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
         cross_source_error,
         &[
             "fk_relationships_tenant_object",
-            "fk_relationships_tenant_object_field",
+            "fk_relationships_tenant_source_property",
         ],
     );
 

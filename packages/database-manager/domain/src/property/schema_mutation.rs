@@ -49,12 +49,12 @@ impl AddPropertyCommand {
 #[derive(Debug)]
 pub struct PropertySchemaMutation {
     property: Property,
-    relation: Option<Relation>,
+    relation_definition: Option<RelationDefinition>,
 }
 
 impl PropertySchemaMutation {
-    pub fn into_parts(self) -> (Property, Option<Relation>) {
-        (self.property, self.relation)
+    pub fn into_parts(self) -> (Property, Option<RelationDefinition>) {
+        (self.property, self.relation_definition)
     }
 }
 
@@ -85,19 +85,23 @@ impl PropertySchema {
             false,
             property_num,
         );
-        let relation = match property.property_type() {
-            PropertyType::Relation(relation_type) => Some(Relation::new(
-                &RelationId::default(),
-                command.tenant_id(),
-                command.database_id(),
-                property.id(),
-                0,
-                &relation_type.database_id,
-            )),
+        let relation_definition = match property.property_type() {
+            PropertyType::Relation(relation_type) => {
+                Some(RelationDefinition::legacy_default(
+                    &RelationId::default(),
+                    command.tenant_id(),
+                    command.database_id(),
+                    property.id(),
+                    &relation_type.database_id,
+                ))
+            }
             _ => None,
         };
 
-        Ok(PropertySchemaMutation { property, relation })
+        Ok(PropertySchemaMutation {
+            property,
+            relation_definition,
+        })
     }
 }
 
@@ -155,13 +159,13 @@ mod tests {
             &PropertyType::String,
         );
 
-        let (planned, relation) =
+        let (planned, relation_definition) =
             PropertySchema::plan_addition(&existing, &command)
                 .expect("schema mutation")
                 .into_parts();
 
         assert_eq!(*planned.property_num(), 1);
-        assert!(relation.is_none());
+        assert!(relation_definition.is_none());
     }
 
     #[test]
@@ -178,13 +182,29 @@ mod tests {
             )),
         );
 
-        let (property, relation) =
+        let (property, relation_definition) =
             PropertySchema::plan_addition(&[], &command)
                 .expect("schema mutation")
                 .into_parts();
-        let relation = relation.expect("relation metadata");
+        let relation_definition =
+            relation_definition.expect("Relation definition");
 
-        assert_eq!(relation.property_id(), property.id());
-        assert_eq!(relation.target_database_id(), &target_database_id);
+        assert_eq!(relation_definition.source_property_id(), property.id());
+        assert_eq!(
+            relation_definition.target_database_id(),
+            &target_database_id
+        );
+        assert_eq!(
+            *relation_definition.forward_cardinality(),
+            RelationCardinality::Many
+        );
+        assert_eq!(
+            *relation_definition.reverse_cardinality(),
+            RelationCardinality::Many
+        );
+        assert_eq!(
+            *relation_definition.on_target_delete(),
+            RelationOnDelete::Restrict
+        );
     }
 }
