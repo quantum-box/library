@@ -221,7 +221,7 @@ async fn property_definition_envelope_schema_is_additive_and_strict(
     let database_error = overlong_error
         .as_database_error()
         .expect("the database must reject the insert");
-    assert_eq!(database_error.code().as_deref(), Some("1406"));
+    assert_eq!(database_error.code().as_deref(), Some("22001"));
     assert!(database_error.message().contains("type_key"));
 
     let invalid_json = insert_property(
