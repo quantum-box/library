@@ -28,9 +28,10 @@ impl OffsetPage {
         current_page: u32,
         items_per_page: u32,
     ) -> errors::Result<Self> {
-        let zero_based_page = current_page.checked_sub(1).ok_or_else(|| {
-            errors::Error::bad_request("page must start at 1")
-        })?;
+        let zero_based_page =
+            current_page.checked_sub(1).ok_or_else(|| {
+                errors::Error::bad_request("page must start at 1")
+            })?;
         if !(1..=MAX_PAGE_SIZE).contains(&items_per_page) {
             return Err(errors::Error::bad_request(format!(
                 "page_size must be between 1 and {MAX_PAGE_SIZE}"
@@ -159,8 +160,7 @@ mod tests {
 
     #[test]
     fn offset_overflow_is_rejected() {
-        let error =
-            OffsetPage::new(u32::MAX, MAX_PAGE_SIZE).unwrap_err();
+        let error = OffsetPage::new(u32::MAX, MAX_PAGE_SIZE).unwrap_err();
 
         assert!(error.is_bad_request());
         assert_eq!(

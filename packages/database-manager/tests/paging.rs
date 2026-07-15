@@ -182,10 +182,7 @@ async fn paging_is_one_origin_stable_and_filtered() -> anyhow::Result<()> {
     .bind("idx_data_tenant_object_name_id")
     .fetch_all(&pool)
     .await?;
-    assert_eq!(
-        indexed_columns,
-        ["tenant_id", "object_id", "name", "id"]
-    );
+    assert_eq!(indexed_columns, ["tenant_id", "object_id", "name", "id"]);
 
     let mut all_actual_ids = Vec::new();
     for page in 1..=5 {

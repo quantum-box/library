@@ -64,11 +64,7 @@ where
             .await?;
         let (data, paginator) = self
             .data_repo
-            .find_all_with_paging(
-                database.tenant_id(),
-                database.id(),
-                page,
-            )
+            .find_all_with_paging(database.tenant_id(), database.id(), page)
             .await?;
         Ok((database, properties, data.value().to_vec(), paginator))
     }
