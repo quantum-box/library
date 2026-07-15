@@ -1,7 +1,6 @@
 import { appKitConfig } from '../app/kitConfig.js'
 import { type DatabaseRecord, type Priority, type Status } from '../data/mock'
 import {
-  getLibraryDataPropertyValue,
   propertyValueList,
   propertyValueText,
 } from './libraryTable/libraryPropertyFormat'
@@ -11,6 +10,12 @@ import {
   patchClientEngineRecord,
   upsertClientEngineRecord,
 } from './photonEngine/client'
+import {
+  getValidAuthTokens,
+  loadAuthTokens,
+  loadStoredAuthIdentity,
+  storeAuthTokens,
+} from './auth'
 
 export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
@@ -522,15 +527,8 @@ function configuredTachyonApiBaseUrl(): string {
 }
 
 function configuredLibraryActor(): string {
-  try {
-    const stored = localStorage.getItem('library_auth')
-    if (stored) {
-      const parsed = JSON.parse(stored) as { userId?: string }
-      if (parsed.userId) return parsed.userId
-    }
-  } catch {
-    // Fall back to operator/platform identifiers.
-  }
+  const actorId = loadStoredAuthIdentity()?.userId
+  if (actorId) return actorId
 
   return (
     import.meta.env.VITE_LIBRARY_ACTOR_ID ??
@@ -539,50 +537,37 @@ function configuredLibraryActor(): string {
   )
 }
 
-function libraryAccessToken(): string | undefined {
-  if (import.meta.env.VITE_LIBRARY_ACCESS_TOKEN) {
-    return import.meta.env.VITE_LIBRARY_ACCESS_TOKEN
-  }
-
-  if (typeof localStorage === 'undefined') {
-    return undefined
-  }
-
-  try {
-    const stored = localStorage.getItem('library_auth')
-    if (!stored) return undefined
-    const parsed = JSON.parse(stored) as { accessToken?: string }
-    return parsed.accessToken
-  } catch {
-    return undefined
-  }
+async function validLibraryAccessToken(): Promise<string | undefined> {
+  return (
+    import.meta.env.VITE_LIBRARY_ACCESS_TOKEN ||
+    (await getValidAuthTokens())?.accessToken
+  )
 }
 
-function libraryRestHeaders(operatorId?: string): Record<string, string> {
+async function libraryRestHeaders(operatorId?: string): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = libraryAccessToken()
+  const token = await validLibraryAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
 }
 
 function updateStoredAuthFromLibraryUser(user: { id: string; email?: string | null } | null | undefined) {
-  if (!user || typeof localStorage === 'undefined') return
+  if (!user) return
 
+  const parsed = loadAuthTokens()
+  if (!parsed) return
   try {
-    const stored = localStorage.getItem('library_auth')
-    if (!stored) return
-    const parsed = JSON.parse(stored) as { userId?: string; email?: string | null }
     const next = {
       ...parsed,
       userId: user.id,
       email: user.email ?? parsed.email ?? '',
     }
     if (next.userId !== parsed.userId || next.email !== parsed.email) {
-      localStorage.setItem('library_auth', JSON.stringify(next))
+      storeAuthTokens(next)
     }
   } catch {
     // Auth storage is best-effort; API reads can continue without mutating it.
@@ -599,7 +584,7 @@ async function requestLibraryGraphQL<TData>(
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = libraryAccessToken()
+  const token = await validLibraryAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
   const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
@@ -786,7 +771,7 @@ export async function fetchLibraryRepositories(): Promise<LibraryRepository[]> {
 
 export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]> {
   const restRepos = await fetchLibraryRestRepositories()
-  const token = libraryAccessToken()
+  const token = await validLibraryAccessToken()
   if (!token) return hydrateOrganizationsFromRestRepositories(restRepos)
 
   try {
@@ -847,7 +832,7 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
 }
 
 async function fetchTachyonOperator(tenantId: string): Promise<TachyonOperatorResponse | null> {
-  const token = libraryAccessToken()
+  const token = await validLibraryAccessToken()
   if (!token) return null
 
   try {
@@ -873,7 +858,7 @@ async function fetchLibraryRestRepositories(): Promise<LibraryRestRepository[]> 
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = libraryAccessToken()
+  const token = await validLibraryAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
   return requestLibraryRestRepositories(headers)
@@ -1042,7 +1027,7 @@ async function fetchLibraryRestRepoTableData(
   target: LibraryRepoTarget
 ): Promise<LibraryRepoTableData> {
   const limit = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
-  const headers = libraryRestHeaders(target.operatorId)
+  const headers = await libraryRestHeaders(target.operatorId)
   const baseUrl = configuredLibraryApiBaseUrl()
   const [dataResponse, propertiesResponse] = await Promise.all([
     fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?limit=${limit}`, { headers }),
@@ -1080,7 +1065,7 @@ async function createLibraryRestRecord(
 ): Promise<DatabaseRecord> {
   const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data`, {
     method: 'POST',
-    headers: libraryRestHeaders(target.operatorId),
+    headers: await libraryRestHeaders(target.operatorId),
     body: JSON.stringify({
       name: data.title,
       property_data: [],
@@ -1237,7 +1222,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
     }
   }
 
-  if (libraryAccessToken()) {
+  if (await validLibraryAccessToken()) {
     try {
       const repositories = await fetchLibraryRepositories()
       const libraryRecords = (await Promise.all(
@@ -1265,7 +1250,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
     }
   }
 
-  let records = await listClientEngineRecords<DatabaseRecord>('records')
+  const records = await listClientEngineRecords<DatabaseRecord>('records')
   if (import.meta.env.MODE === 'test') {
     return records.map((record) => record.value)
   }
@@ -1276,7 +1261,7 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
   const targetOrg = data.orgUsername ?? import.meta.env.VITE_LIBRARY_ORG
   const targetRepo = data.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = data.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
-  if (targetOrg && targetRepo && (libraryApiConfigured() || libraryAccessToken())) {
+  if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
     try {
       return await createLibraryRestRecord(data, {
         org: targetOrg,
@@ -1352,7 +1337,7 @@ export async function updateServerRecord(
   const targetOrg = data.orgUsername ?? cachedLibraryRecord?.orgUsername ?? import.meta.env.VITE_LIBRARY_ORG
   const targetRepo = data.repoUsername ?? cachedLibraryRecord?.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = data.operatorId ?? cachedLibraryRecord?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
-  if (targetOrg && targetRepo && (libraryApiConfigured() || libraryAccessToken())) {
+  if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
     const existing = await fetchLibraryDataDetail(recordId, {
       org: targetOrg,
       repo: targetRepo,
@@ -1408,7 +1393,7 @@ export async function deleteServerRecord(recordId: string): Promise<void> {
   const targetOrg = existing?.orgUsername ?? import.meta.env.VITE_LIBRARY_ORG
   const targetRepo = existing?.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = existing?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
-  if (targetOrg && targetRepo && (libraryApiConfigured() || libraryAccessToken())) {
+  if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
     const payload = await requestLibraryGraphQL<LibraryDeleteDataResponse>(
       libraryDeleteDataMutation,
       { org: targetOrg, repo: targetRepo, dataId: recordId },

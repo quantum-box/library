@@ -125,9 +125,11 @@ export function parseEditablePropertyValue(
   const trimmed = raw.trim()
   switch (property.typ) {
     case 'String':
-    case 'Html':
-    case 'Markdown':
       return { string: raw }
+    case 'Html':
+      return { html: raw }
+    case 'Markdown':
+      return { markdown: raw }
     case 'Integer':
       return { number: trimmed }
     case 'Date':

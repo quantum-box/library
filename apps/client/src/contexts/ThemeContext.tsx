@@ -61,9 +61,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [mode])
 
-  // Apply data-theme attribute to <html>
+  // Keep both theme contracts in sync: legacy styles use data-theme while
+  // Native UI and Tailwind's dark variant use the .dark class.
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', resolved)
+    const root = document.documentElement
+    root.setAttribute('data-theme', resolved)
+    root.classList.toggle('dark', resolved === 'dark')
   }, [resolved])
 
   return (

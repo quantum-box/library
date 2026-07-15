@@ -1,13 +1,95 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import { e2eAuthState } from './auth-state'
 
-test.describe('Photon shell', () => {
+async function mockLibraryRepository(page: Page) {
+  const repository = {
+    id: 'repo-1',
+    username: 'photon-core',
+    name: 'Photon Core',
+    description: 'Library E2E repository',
+  }
+
+  await page.route('**/v1beta/repos', async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          ...repository,
+          organization_id: 'org-1',
+          org_username: 'quantum-box',
+        },
+      ],
+    })
+  })
+
+  await page.route('**/v1/graphql', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string }
+    const query = body.query ?? ''
+
+    if (query.includes('LibraryClientMeOrganizations')) {
+      await route.fulfill({
+        json: {
+          data: {
+            me: {
+              id: 'library-e2e-user',
+              email: 'library-e2e@local.test',
+              tenantIdList: ['org-1'],
+              organizations: [
+                {
+                  id: 'org-1',
+                  operatorName: 'quantum-box',
+                  platformTenantId: 'tn_01j702qf86pc2j35s0kv0gv3gy',
+                  repos: [repository],
+                },
+              ],
+            },
+          },
+        },
+      })
+      return
+    }
+
+    if (query.includes('LibraryClientOrganizationRepos')) {
+      await route.fulfill({
+        json: {
+          data: {
+            organization: {
+              id: 'org-1',
+              name: 'Quantum Box',
+              username: 'quantum-box',
+              repos: [repository],
+            },
+          },
+        },
+      })
+      return
+    }
+
+    await route.fulfill({
+      json: {
+        data: {
+          repo: {
+            id: repository.id,
+            name: repository.name,
+            dataList: { items: [] },
+            properties: [],
+          },
+        },
+      },
+    })
+  })
+}
+
+test.describe('Library shell', () => {
   test('opens the database table and creates a new record', async ({ page }) => {
     const title = `E2E smoke record ${Date.now()}`
 
     await page.goto('/')
 
+    await expect(page).toHaveURL(/\/home/)
+    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+    await page.getByRole('link', { name: 'New data' }).click()
     await expect(page).toHaveURL(/\/databases/)
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByText(/\d+ records/)).toBeVisible()
 
     await page.getByTestId('open-create-record').click()
@@ -27,13 +109,13 @@ test.describe('Photon shell', () => {
     await page.getByTestId('view-kanban').click()
 
     await expect(page).toHaveURL(/view=.*board/)
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByText('drag to move')).toBeVisible()
 
     await page.getByTestId('view-workflow').click()
 
     await expect(page).toHaveURL(/view=.*workflow/)
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
     await expect(page.getByTestId('workflow-template-business-flow')).toBeVisible()
@@ -50,7 +132,7 @@ test.describe('Photon shell', () => {
 
     await expect(page).toHaveURL(/\/chat$/)
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible()
-    await expect(page.getByText('Photon Chat')).toBeVisible()
+    await expect(page.getByText('Library Chat')).toBeVisible()
   })
 
   test('supports global keyboard shortcuts for fast navigation and creation', async ({ page }) => {
@@ -104,7 +186,7 @@ test.describe('Photon shell', () => {
 
     await expect(page).toHaveURL(/database=workflow-e2e-\d+/)
     await expect(page).toHaveURL(/view=.*workflow/)
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.getByText('KPI tree item')).toBeVisible()
 
@@ -160,10 +242,10 @@ test.describe('Photon shell', () => {
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
 
     await page.getByTestId('toggle-side-nav').click()
-    await expect(page.locator('[data-testid="side-nav"] [data-testid="database-photon-core"]')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Open' })).toBeVisible()
+    await expect(page.getByTestId('view-home').getByText('Home')).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
     await page.getByTestId('toggle-side-nav').click()
-    await expect(page.locator('[data-testid="side-nav"] [data-testid="database-photon-core"]')).toBeVisible()
+    await expect(page.getByTestId('view-home').getByText('Home')).toBeVisible()
   })
 
   test('syncs workflow canvas changes between browser tabs', async ({ page, context }) => {
@@ -213,42 +295,63 @@ test.describe('Photon shell', () => {
   })
 
   test('preserves the selected database when switching database views', async ({ page }) => {
+    await mockLibraryRepository(page)
     await page.goto('/databases')
 
-    await page.getByRole('button', { name: 'Photon Core' }).click()
+    await page.getByTestId('database-quantum-box/photon-core').click()
 
-    await expect(page).toHaveURL(/database=photon-core/)
+    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page.getByTestId('repository-page')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'photon-core', exact: true })).toBeVisible()
+    await expect(page.getByText('Library E2E repository')).toBeVisible()
+    await expect(page.getByTestId('database-quantum-box/photon-core')).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    await page.getByTestId('repository-open-data').click()
+
+    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
     await expect(page).toHaveURL(/view=.*table/)
-    await expect(page.getByTestId('selected-database-pill')).toHaveText('Photon Core')
+    await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
     await page.getByTestId('view-kanban').click()
 
-    await expect(page).toHaveURL(/database=photon-core/)
+    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
     await expect(page).toHaveURL(/view=.*board/)
     await expect(page.getByText('drag to move')).toBeVisible()
-    await expect(page.getByTestId('selected-database-pill')).toHaveText('Photon Core')
+    await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
     await page.getByTestId('view-table').click()
 
-    await expect(page).toHaveURL(/database=photon-core/)
+    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
     await expect(page).toHaveURL(/view=.*table/)
-    await expect(page.getByRole('heading', { name: 'Databases' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
     await page.getByTestId('view-workflow').click()
 
-    await expect(page).toHaveURL(/database=photon-core/)
+    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
     await expect(page).toHaveURL(/view=.*workflow/)
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
-    await expect(page.getByTestId('selected-database-pill')).toHaveText('Photon Core')
+    await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
+  })
+
+  test('opens an organization overview and continues into its repository', async ({ page }) => {
+    await mockLibraryRepository(page)
+    await page.goto('/organizations/quantum-box')
+
+    await expect(page.getByTestId('organization-page')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'quantum-box', exact: true })).toBeVisible()
+    await expect(page.getByText('tn_01j702qf86pc2j35s0kv0gv3gy')).toBeVisible()
+    await expect(page.getByTestId('organization-repository-quantum-box/photon-core')).toBeVisible()
+
+    await page.getByTestId('organization-repository-quantum-box/photon-core').click()
+    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page.getByTestId('repository-page')).toBeVisible()
   })
 
   test('creates, renames, duplicates, and deletes named database views', async ({ page }) => {
-    const databaseName = `Views ${Date.now()}`
-
     await page.goto('/databases')
-    await page.locator('aside').getByTestId('new-database-name').fill(databaseName)
-    await page.locator('aside').getByTestId('create-database').click()
-    await expect(page.getByTestId('selected-database-pill')).toHaveText(databaseName)
 
     await page.getByTestId('new-board-view').click()
     await expect(page).toHaveURL(/view=.*board/)
@@ -269,18 +372,8 @@ test.describe('Photon shell', () => {
     await expect(page.getByRole('button', { name: /Saved Board/ })).toBeVisible()
   })
 
-  test('creates a database and uses status filters from the right panel', async ({ page }) => {
-    const databaseName = `Ops ${Date.now()}`
-
+  test('uses repository status filters from the right panel', async ({ page }) => {
     await page.goto('/databases')
-
-    await page.locator('aside').getByTestId('new-database-name').fill(databaseName)
-    await page.locator('aside').getByTestId('create-database').click()
-
-    await expect(page).toHaveURL(/database=ops-\d+/)
-    await expect(page).toHaveURL(/view=.*table/)
-    await expect(page.getByTestId('selected-database-pill')).toHaveText(databaseName)
-    await expect(page.getByRole('button', { name: new RegExp(databaseName) })).toBeVisible()
 
     await page.getByTestId('toggle-database-filters').click()
     await expect(page.getByTestId('database-filter-panel')).toBeVisible()
@@ -292,57 +385,28 @@ test.describe('Photon shell', () => {
   })
 
   test('opens a database context menu from the sidebar', async ({ page }) => {
+    await mockLibraryRepository(page)
     await page.goto('/databases')
 
     await expect(page.getByTestId('nav-databases')).toHaveCount(0)
-    const photonCoreDatabase = page.getByTestId('side-nav').getByTestId('database-photon-core')
-    await expect(photonCoreDatabase).toBeVisible()
-    await photonCoreDatabase.click({ button: 'right' })
+    await page.getByTestId('database-quantum-box/photon-core').hover()
+    await page.getByTestId('database-actions-quantum-box/photon-core').click()
 
     await expect(page.getByTestId('database-context-menu')).toBeVisible()
-    await expect(page.getByTestId('database-context-menu').getByText('Photon Core')).toBeVisible()
+    await expect(page.getByTestId('database-context-menu').getByText('quantum-box/photon-core')).toBeVisible()
 
     await page.getByTestId('database-context-open').click()
-    await expect(page).toHaveURL(/database=photon-core/)
+    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page.getByTestId('repository-page')).toBeVisible()
     await expect(page.getByTestId('database-context-menu')).toHaveCount(0)
   })
 
-  test('deletes a custom database from the sidebar context menu', async ({ page }) => {
-    const databaseName = `Delete DB ${Date.now()}`
+  test('shows a repository not-found state for an unavailable path', async ({ page }) => {
+    await mockLibraryRepository(page)
+    await page.goto('/repositories/quantum-box/missing-repository')
 
-    await page.goto('/databases')
-    await page.locator('aside').getByTestId('new-database-name').fill(databaseName)
-    await page.locator('aside').getByTestId('create-database').click()
-
-    const databaseButton = page.getByTestId('side-nav').getByRole('button', { name: new RegExp(databaseName) })
-    await expect(databaseButton).toBeVisible()
-
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toContain(databaseName)
-      await dialog.accept()
-    })
-    await databaseButton.click({ button: 'right' })
-    await page.getByTestId('database-context-delete').click({ force: true })
-
-    await expect(page.getByTestId('side-nav').getByRole('button', { name: new RegExp(databaseName) })).toHaveCount(0)
-    await expect(page.getByTestId('selected-database-pill')).toHaveText('All databases')
-  })
-
-  test('syncs database creation between browser tabs', async ({ page, context }) => {
-    const databaseName = `Synced DB ${Date.now()}`
-
-    await page.goto('/databases')
-    const secondPage = await context.newPage()
-    await secondPage.goto('/databases')
-
-    await page.locator('aside').getByTestId('new-database-name').fill(databaseName)
-    await page.locator('aside').getByTestId('create-database').click()
-
-    await expect(secondPage.getByRole('button', { name: new RegExp(databaseName) })).toBeVisible({
-      timeout: 15_000,
-    })
-
-    await secondPage.close()
+    await expect(page.getByRole('heading', { name: 'Repository not found' })).toBeVisible()
+    await expect(page.getByText('quantum-box/missing-repository is not available')).toBeVisible()
   })
 
   test('shows sync presence as clients connect', async ({ page, context }) => {
@@ -426,7 +490,7 @@ test.describe('Photon shell', () => {
     await page.getByTestId('chat-send').click()
     await expect(page.getByText(filename)).toBeVisible({ timeout: 15_000 })
 
-    await page.getByTestId('side-nav').getByRole('button', { name: /All databases/ }).click()
+    await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
     await expect(page).toHaveURL(/\/databases/)
     await page.getByTestId('view-chat').click()
 
@@ -460,7 +524,7 @@ test.describe('Photon shell', () => {
       timeout: 15_000,
     })
 
-    await page.getByTestId('side-nav').getByRole('button', { name: /All databases/ }).click()
+    await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
     await page.getByPlaceholder('Filter records...').fill(title)
     await expect(page.getByText(title)).toBeVisible()
 
@@ -499,7 +563,7 @@ test.describe('Photon shell', () => {
       timeout: 15_000,
     })
 
-    await page.getByTestId('side-nav').getByRole('button', { name: /All databases/ }).click()
+    await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
     await page.getByPlaceholder('Filter records...').fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
@@ -522,7 +586,7 @@ test.describe('Photon shell', () => {
     await page.waitForTimeout(500)
 
     const documentUrl = page.url()
-    const sharedContext = await browser.newContext()
+    const sharedContext = await browser.newContext({ storageState: e2eAuthState })
     const sharedPage = await sharedContext.newPage()
     await sharedPage.goto(documentUrl)
 
@@ -548,7 +612,7 @@ test.describe('Photon shell', () => {
     const initialText = `Online baseline ${Date.now()}`
     const offlineText = `Offline reconnect proof ${Date.now()}`
 
-    const editingContext = await browser.newContext()
+    const editingContext = await browser.newContext({ storageState: e2eAuthState })
     const editingPage = await editingContext.newPage()
     await editingPage.goto('/docs')
     await editingPage.getByTestId('create-doc').click()
@@ -563,7 +627,7 @@ test.describe('Photon shell', () => {
     await expect(editingPage.getByText(initialText)).toBeVisible({ timeout: 10_000 })
 
     const documentUrl = editingPage.url()
-    const verifierContext = await browser.newContext()
+    const verifierContext = await browser.newContext({ storageState: e2eAuthState })
     const verifierPage = await verifierContext.newPage()
     await verifierPage.goto(documentUrl)
     await expect(verifierPage.getByText('Server connected')).toBeVisible({ timeout: 20_000 })

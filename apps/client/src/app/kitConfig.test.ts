@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   appKitConfig,
   buildRoomId,
+  buildUserStorageScope,
   buildWorkspaceScope,
   buildSyncWebsocketPath,
   namespacedKey,
@@ -75,6 +76,15 @@ describe('appKitConfig', () => {
     expect(appKitConfig.chat.stream.transport).toBe('sse')
     expect(appKitConfig.chat.stream.endpoint).toBe('/api/agent/chat/stream')
     expect(appKitConfig.chat.stream.toolResultPath).toBe('/api/agent/tool-results')
+  })
+
+  it('isolates local-first storage by user without changing the shared workspace scope', () => {
+    const workspaceScope = buildWorkspaceScope('tenant-a', 'workspace-a')
+
+    expect(buildUserStorageScope(workspaceScope, undefined)).toBe(workspaceScope)
+    expect(buildUserStorageScope(workspaceScope, 'user:01/example')).toBe(
+      'tenant:tenant-a:workspace:workspace-a:user:user-01-example',
+    )
   })
 
   it('keeps the Cloudflare worker as a required frontend-side component', () => {

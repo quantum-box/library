@@ -1,3 +1,5 @@
+import { loadStoredAuthIdentity } from '../lib/auth'
+
 export type DeploymentMode = 'local' | 'cloud' | 'onprem'
 export type FrontendWorkerRuntime = 'cloudflare-workers' | 'workerd'
 // Photon Live backend: realtime collaborative UX transport for Yjs rooms,
@@ -219,6 +221,24 @@ function namespacedDataDir(base: string, workspaceScope: string): string {
 }
 
 /**
+ * Keep local-first databases separate per signed-in user without changing the
+ * shared realtime room. The room is tenant/workspace scoped so collaborators
+ * still meet each other; IndexedDB and PGlite keys additionally include the
+ * actor so one account cannot hydrate another account's offline cache.
+ */
+export function buildUserStorageScope(
+  workspaceScope: string,
+  actorId: string | undefined,
+): string {
+  const normalizedActor = actorId?.trim().replace(/[^a-zA-Z0-9_-]/g, '-')
+  return normalizedActor ? `${workspaceScope}:user:${normalizedActor}` : workspaceScope
+}
+
+function browserAuthActorId(): string | undefined {
+  return loadStoredAuthIdentity()?.userId || undefined
+}
+
+/**
  * Build a sync relay room id following the multi-tenant convention
  * `tenant:{tenantId}:workspace:{workspaceId}:{surface}`.
  *
@@ -384,7 +404,9 @@ const tenantName = selectedTenantWorkspace.tenantName
 const workspaceId = selectedTenantWorkspace.workspaceId
 const workspaceName = selectedTenantWorkspace.workspaceName
 const workspaceScope = buildWorkspaceScope(tenantId, workspaceId)
+const userStorageScope = buildUserStorageScope(workspaceScope, browserAuthActorId())
 const recordsRoomId = buildRoomId(workspaceScope, 'records')
+const recordsPersistenceKey = buildRoomId(userStorageScope, 'records')
 const syncWebsocketPath = appendRoomQuery('/ws', recordsRoomId)
 const websocketBaseUrl = viteEnv.VITE_LIBRARY_SYNC_WS_URL ?? viteEnv.VITE_PHOTON_SYNC_WS_URL
 const chatStreamEndpoint =
@@ -424,7 +446,7 @@ export const appKitConfig: AppKitConfig = {
   },
   workflows: {
     defaultWorkflowId: 'default-data-workflow',
-    pgliteDataDir: namespacedDataDir('idb://library-workflows', workspaceScope),
+    pgliteDataDir: namespacedDataDir('idb://library-workflows', userStorageScope),
     definitions: [
       {
         id: 'default-data-workflow',
@@ -501,12 +523,12 @@ export const appKitConfig: AppKitConfig = {
     },
   },
   docs: {
-    pgliteDataDir: namespacedDataDir('idb://library-docs', workspaceScope),
+    pgliteDataDir: namespacedDataDir('idb://library-docs', userStorageScope),
     defaultTitle: 'Untitled doc',
     yjsArrayName: 'blocks',
   },
   engine: {
-    pgliteDataDir: namespacedDataDir('idb://library-engine', workspaceScope),
+    pgliteDataDir: namespacedDataDir('idb://library-engine', userStorageScope),
     pushPath: '/api/engine/push',
     pullPath: '/api/engine/pull',
   },
@@ -528,7 +550,7 @@ export const appKitConfig: AppKitConfig = {
     databasesArrayName: 'databases',
     databaseViewsArrayName: 'databaseViews',
     workflowCanvasesMapName: 'workflowCanvases',
-    persistenceKey: recordsRoomId,
+    persistenceKey: recordsPersistenceKey,
     websocketPath: buildSyncWebsocketPath(recordsRoomId),
     websocketUrl: buildConfiguredSyncWebsocketUrl(recordsRoomId),
     websocketBaseUrl,

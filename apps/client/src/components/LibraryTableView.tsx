@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Input } from '@tachyon-sdk/native-ui'
+import { Plus, RefreshCw, Rows3, Search } from 'lucide-react'
 import {
   createColumnHelper,
   flexRender,
@@ -12,7 +14,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchLibraryRepoTableData, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import { getLibraryDataPropertyValue, propertyValueText } from '../lib/libraryTable/libraryPropertyFormat'
-import { libraryRowSearchText } from '../lib/libraryTable/libraryPropertyCells'
+import { libraryRowSearchText } from '../lib/libraryTable/libraryRowSearchText'
 import {
   LibraryNameEditableCell,
   LibraryPropertyEditableCell,
@@ -308,15 +310,16 @@ export function LibraryTableView({
         onConfirm={() => void handleConfirmDelete()}
       />
 
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:gap-3 md:px-4">
-        <div className="relative min-w-0 flex-1 md:max-w-xs">
-          <input
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2 md:px-3">
+        <div className="relative min-w-0 flex-1 md:max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle-foreground" aria-hidden="true" />
+          <Input
             data-testid="library-table-global-filter"
             type="text"
-            placeholder="Filter data..."
+            placeholder="Search data"
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
-            className="w-full rounded border border-border bg-surface py-1.5 pl-3 pr-24 text-sm text-foreground outline-none"
+            className="h-7 w-full bg-surface pl-8 pr-24 text-xs"
           />
           <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-1">
             <Kbd>/</Kbd>
@@ -326,25 +329,35 @@ export function LibraryTableView({
             </KbdGroup>
           </div>
         </div>
-        <button
-          type="button"
+        <Button
           data-testid="library-table-add-row"
-          className="shrink-0 rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          variant="primary"
+          size="sm"
           disabled={loading || saving}
           onClick={() => {
             setCreatingRow(true)
             setNewRowName('')
           }}
         >
-          + New data
-        </button>
-        <span className="shrink-0 text-xs text-subtle">
+          <Plus aria-hidden="true" />
+          New data
+        </Button>
+        <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
+          <Rows3 className="size-3.5" aria-hidden="true" />
           {loading ? 'Loading…' : `${rows.length} data`}
           {saving ? ' · Saving…' : ''}
         </span>
-        {repoLabel && (
-          <span className="hidden truncate text-xs text-subtle md:inline">{repoLabel}</span>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={() => void reload()}
+          disabled={loading}
+          aria-label="Refresh data"
+          title="Refresh data"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+        </Button>
       </div>
 
       {mutationError && (

@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { Columns3, MoreHorizontal, Plus, Rows3, Workflow } from 'lucide-react'
 import type { DatabaseViewDefinition, DatabaseViewType } from '../lib/databaseViews/types'
 
-const viewTypeMeta: Record<DatabaseViewType, { icon: string; label: string }> = {
-  table: { icon: '▦', label: 'Table' },
-  board: { icon: '▤', label: 'Board' },
-  workflow: { icon: '◇', label: 'Workflow' },
+const viewTypeMeta: Record<DatabaseViewType, { icon: typeof Rows3; label: string }> = {
+  table: { icon: Rows3, label: 'Table' },
+  board: { icon: Columns3, label: 'Board' },
+  workflow: { icon: Workflow, label: 'Workflow' },
 }
 
 function legacyTestId(view: DatabaseViewDefinition) {
@@ -40,71 +41,73 @@ export function DatabaseViewTabs({
   const [optionsOpen, setOptionsOpen] = useState(false)
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-end gap-2 border-b border-border">
-        <nav
-          className="flex min-w-0 flex-1 overflow-x-auto"
-          aria-label="Library data views"
-        >
-          {views.map((view) => {
-            const meta = viewTypeMeta[view.type]
-            const selected = view.id === selectedView.id
-            return (
-              <button
-                key={view.id}
-                data-testid={legacyTestId(view)}
-                className={`relative -mb-px flex h-7 min-w-18 items-center justify-center gap-1 border px-2 text-xs font-medium transition-colors ${
-                  selected
-                    ? 'rounded-t-md border-border border-b-surface bg-surface text-foreground'
-                    : 'border-transparent text-muted hover:border-border hover:border-b-transparent hover:bg-surface/60 hover:text-foreground'
-                }`}
-                onClick={() => onSelectView(view)}
-                title={`${view.name} (${meta.label})`}
-              >
-                <span className="shrink-0">{meta.icon}</span>
-                <span className="truncate">{view.name}</span>
-                {selected && dirty && (
-                  <span aria-label="Unsaved changes" className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                )}
-                {selected && (
-                  <span className="absolute inset-x-2 -bottom-px h-px bg-surface" aria-hidden="true" />
-                )}
-              </button>
-            )
-          })}
-        </nav>
-        {dirty && (
-          <div className="mb-0.5 flex shrink-0 items-center gap-1">
+    <div className="flex h-9 shrink-0 items-end gap-1 border-b border-border bg-surface px-2 pt-1 md:px-3">
+      <nav
+        className="flex min-w-0 flex-1 overflow-x-auto"
+        aria-label="Library data views"
+      >
+        {views.map((view) => {
+          const meta = viewTypeMeta[view.type]
+          const Icon = meta.icon
+          const selected = view.id === selectedView.id
+          return (
             <button
-              data-testid="save-view"
-              className="rounded bg-accent px-2 py-1 text-xs font-medium text-white"
-              onClick={onSaveView}
+              key={view.id}
+              data-testid={legacyTestId(view)}
+              className={`relative flex h-8 min-w-20 shrink-0 items-center justify-center gap-1.5 rounded-t-md border px-2.5 text-xs font-medium transition-colors ${
+                selected
+                  ? 'border-border border-b-background bg-background text-foreground'
+                  : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+              onClick={() => onSelectView(view)}
+              title={`${view.name} (${meta.label})`}
             >
-              Save view
+              <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{view.name}</span>
+              {selected && dirty && (
+                <span aria-label="Unsaved changes" className="size-1.5 shrink-0 rounded-full bg-primary" />
+              )}
+              {selected && (
+                <span className="absolute inset-x-2 -bottom-px h-px bg-background" aria-hidden="true" />
+              )}
             </button>
+          )
+        })}
+      </nav>
+
+      <div className="flex h-8 shrink-0 items-center gap-1 pb-0.5">
+        {dirty && (
+          <>
             <button
               data-testid="discard-view-changes"
-              className="rounded bg-surface-hover px-2 py-1 text-xs font-medium text-muted hover:text-foreground"
+              className="hidden h-6 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:inline-flex sm:items-center"
               onClick={onDiscardChanges}
             >
               Discard
             </button>
-          </div>
+            <button
+              data-testid="save-view"
+              className="inline-flex h-6 items-center rounded bg-primary px-2 text-xs font-medium text-primary-foreground"
+              onClick={onSaveView}
+            >
+              Save
+            </button>
+          </>
         )}
-      </div>
 
-      <div className="flex items-center justify-between gap-2 text-xs">
         <div className="relative">
           <button
             type="button"
             data-testid="view-options"
-            className="list-none rounded px-2 py-0.5 text-xs font-medium text-subtle hover:bg-surface-hover hover:text-foreground"
+            className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={() => setOptionsOpen((open) => !open)}
+            aria-label="View options"
+            aria-expanded={optionsOpen}
           >
-            View options
+            <MoreHorizontal className="size-4" aria-hidden="true" />
           </button>
           {optionsOpen && (
-            <div className="absolute left-0 top-7 z-20 flex w-36 flex-col gap-1 rounded border border-border bg-panel p-1 shadow-xl">
+            <div className="absolute right-0 top-8 z-20 flex w-44 flex-col rounded-md border border-border bg-panel p-1 shadow-xl">
               <button
                 data-testid="rename-view"
                 className="rounded px-2 py-1.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-foreground"
@@ -127,34 +130,40 @@ export function DatabaseViewTabs({
               >
                 Delete
               </button>
+              <div className="my-1 border-t border-border" />
+              <span className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-subtle-foreground">
+                New view
+              </span>
+              {(['table', 'board', 'workflow'] as const).map((type) => {
+                const meta = viewTypeMeta[type]
+                const Icon = meta.icon
+                return (
+                  <button
+                    key={type}
+                    data-testid={`new-${type}-view`}
+                    className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-foreground"
+                    onClick={() => {
+                      onCreateView(type)
+                      setOptionsOpen(false)
+                    }}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                    {meta.label}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          <span className="hidden text-xs text-subtle sm:inline">New</span>
-          <button
-            data-testid="new-table-view"
-            className="rounded px-2 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-foreground"
-            onClick={() => onCreateView('table')}
-          >
-            Table
-          </button>
-          <button
-            data-testid="new-board-view"
-            className="rounded px-2 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-foreground"
-            onClick={() => onCreateView('board')}
-          >
-            Board
-          </button>
-          <button
-            data-testid="new-workflow-view"
-            className="rounded px-2 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-foreground"
-            onClick={() => onCreateView('workflow')}
-          >
-            Workflow
-          </button>
-        </div>
+        <button
+          type="button"
+          className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          onClick={() => onCreateView('table')}
+          aria-label="New table view"
+          title="New table view"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+        </button>
       </div>
     </div>
   )

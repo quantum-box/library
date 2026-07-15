@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
+import { Button } from '@tachyon-sdk/native-ui'
+import { ArrowLeft, Database, RefreshCw } from 'lucide-react'
 import {
   type DatabaseRecord,
   type Status,
@@ -24,9 +26,22 @@ interface DetailPanelProps {
   onClose: () => void
   onUpdateRecord?: (recordId: string, field: keyof DatabaseRecord, value: string) => void
   onDeleteRecord?: (recordId: string) => void
+  recordIdentifier?: string
+  repositoryPath?: string
+  loading?: boolean
+  error?: string | null
 }
 
-export function DetailPanel({ record, onClose, onUpdateRecord, onDeleteRecord }: DetailPanelProps) {
+export function DetailPanel({
+  record,
+  onClose,
+  onUpdateRecord,
+  onDeleteRecord,
+  recordIdentifier,
+  repositoryPath,
+  loading = false,
+  error = null,
+}: DetailPanelProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [relatedDocs, setRelatedDocs] = useState<DocumentRecordLink[]>([])
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
@@ -50,7 +65,41 @@ export function DetailPanel({ record, onClose, onUpdateRecord, onDeleteRecord }:
     }
   }, [record])
 
-  if (!record) return null
+  if (!record) {
+    return (
+      <main
+        className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+        data-testid="detail-panel"
+      >
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
+          <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label="Back to data">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </Button>
+          <Database className="size-4 text-primary" aria-hidden="true" />
+          <span className="truncate text-sm text-muted-foreground">{repositoryPath ?? 'All data'}</span>
+          <span className="text-subtle-foreground">/</span>
+          <span className="truncate font-mono text-xs font-medium">{recordIdentifier ?? 'Data'}</span>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <div>
+            {loading ? (
+              <RefreshCw className="mx-auto size-5 animate-spin text-primary" aria-hidden="true" />
+            ) : (
+              <Database className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+            )}
+            <h1 className="mt-3 text-sm font-semibold">
+              {loading ? 'Opening data' : 'Data not found'}
+            </h1>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              {error ?? (loading
+                ? 'Loading the latest content and properties…'
+                : `${recordIdentifier ?? 'This data'} is not available in the selected repository.`)}
+            </p>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   const status = statusConfig[record.status]
   const priority = priorityConfig[record.priority]

@@ -42,4 +42,34 @@ describe('libraryPropertyInput', () => {
     }
     expect(parseEditablePropertyValue(selectProperty, 'Todo')).toEqual({ optionId: 'opt-1' })
   })
+
+  it('keeps Markdown and HTML values in their schema-specific fields', () => {
+    const markdownProperty: LibraryProperty = {
+      id: 'prop-body',
+      name: 'Body',
+      typ: 'Markdown',
+    }
+    const htmlProperty: LibraryProperty = {
+      id: 'prop-html',
+      name: 'Rendered body',
+      typ: 'Html',
+    }
+
+    expect(parseEditablePropertyValue(markdownProperty, '# Hello')).toEqual({
+      markdown: '# Hello',
+    })
+    expect(parseEditablePropertyValue(htmlProperty, '<p>Hello</p>')).toEqual({
+      html: '<p>Hello</p>',
+    })
+    expect(libraryDataItemToGraphqlPropertyData(
+      [markdownProperty, htmlProperty],
+      [
+        { propertyId: markdownProperty.id, value: { markdown: '# Hello' } },
+        { propertyId: htmlProperty.id, value: { html: '<p>Hello</p>' } },
+      ],
+    )).toEqual([
+      { propertyId: markdownProperty.id, value: { markdown: '# Hello' } },
+      { propertyId: htmlProperty.id, value: { html: '<p>Hello</p>' } },
+    ])
+  })
 })

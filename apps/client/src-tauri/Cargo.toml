@@ -1,17 +1,17 @@
 [package]
-name = "photon"
+name = "library-client"
 version = "0.1.0"
-description = "Photon - AI Chat Desktop App"
+description = "Library knowledge workspace for web, desktop, and mobile"
 authors = ["Quantum Box"]
 license = "MIT"
-repository = "https://github.com/quantum-box/photon"
+repository = "https://github.com/quantum-box/library"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "photon_lib"
+name = "library_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
