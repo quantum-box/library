@@ -133,10 +133,7 @@ impl UpdateDataInputPort for UpdateData {
                 name: input.data_name,
                 data: property_data,
             })
-            .await
-            .map_err(|e| {
-                errors::Error::application_logic_error(e.to_string())
-            })?;
+            .await?;
 
         Ok((data, properties))
     }

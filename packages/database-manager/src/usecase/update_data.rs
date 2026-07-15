@@ -4,6 +4,7 @@ use crate::domain::{
     Data, DataRepository, Database, DatabaseId, PropertyData, PropertyId,
     PropertyRepository, PropertyType,
 };
+use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{UpdateDataInputData, UpdateDataInputPort};
 use value_object::RepositoryV1;
 
@@ -26,6 +27,17 @@ fn validate_auto_generated_id_update(
     }
 
     Ok(())
+}
+
+fn find_scoped_property<'a>(
+    properties: &'a [crate::domain::Property],
+    property_id: &str,
+) -> errors::Result<&'a crate::domain::Property> {
+    let property_id = property_id.parse::<PropertyId>()?;
+    properties
+        .iter()
+        .find(|property| property.id() == &property_id)
+        .ok_or_else(DatabaseScope::not_found)
 }
 
 #[derive(Debug)]
@@ -56,35 +68,20 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
         &self,
         input: UpdateDataInputData<'_>,
     ) -> errors::Result<Data> {
-        let database = self
-            .database_repo
-            .get_by_id(input.tenant_id, input.database_id)
-            .await?
-            .ok_or(errors::not_found!(
-                "database is not found in update data"
-            ))?;
+        let scope = DatabaseScope::new(input.tenant_id, input.database_id);
+        let database =
+            scope.require_database(self.database_repo.as_ref()).await?;
         let property = self
             .property_repo
             .find_all(database.id(), database.tenant_id())
             .await?;
-        let mut data = self
-            .data_repo
-            .find_by_id(input.data_id, database.id(), database.tenant_id())
-            .await?
-            .ok_or(errors::not_found!(
-                "data is not found in update data"
-            ))?;
+        let mut data = scope
+            .require_data(self.data_repo.as_ref(), input.data_id)
+            .await?;
 
         data.update_name(&input.name.parse()?);
         for d in input.data {
-            let property = property
-                .iter()
-                .find(|p| {
-                    PropertyId::new(&d.property_id).unwrap().eq(p.id())
-                })
-                .ok_or(errors::not_found!(
-                    "property is not found in update data"
-                ))?;
+            let property = find_scoped_property(&property, &d.property_id)?;
             validate_auto_generated_id_update(
                 property,
                 input.data_id,
@@ -164,5 +161,14 @@ mod tests {
         .expect(
             "an existing legacy value must remain readable and immutable",
         );
+    }
+
+    #[test]
+    fn malformed_property_id_returns_a_domain_error() {
+        let error = find_scoped_property(&[], "not-a-property-id")
+            .expect_err("a malformed property id must not panic");
+
+        assert!(error.is_bad_request());
+        assert!(error.to_string().contains("PropertyId"));
     }
 }

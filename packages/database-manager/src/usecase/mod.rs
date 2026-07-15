@@ -4,6 +4,7 @@ pub mod boundary;
 pub mod choose_property_type;
 pub mod create_database;
 pub mod database_difinition;
+pub(crate) mod database_scope;
 pub mod delete_data;
 pub mod delete_database;
 pub mod delete_property;

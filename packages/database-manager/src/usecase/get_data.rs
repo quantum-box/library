@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::{Data, DataRepository, Database, DatabaseId};
+use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{GetDataInputData, GetDataInputPort};
 use value_object::RepositoryV1;
 
@@ -40,17 +41,12 @@ where
         &self,
         input: &GetDataInputData<'_>,
     ) -> errors::Result<Data> {
-        self.database_repository
-            .get_by_id(input.tenant_id, input.database_id)
-            .await?
-            .ok_or(errors::not_found!(
-                "Database is not found in get data"
-            ))?;
-        let data = self
-            .data_repository
-            .find_by_id(input.data_id, input.database_id, input.tenant_id)
-            .await?
-            .ok_or(errors::not_found!("Data is not found in get data"))?;
-        Ok(data)
+        let scope = DatabaseScope::new(input.tenant_id, input.database_id);
+        scope
+            .require_database(self.database_repository.as_ref())
+            .await?;
+        scope
+            .require_data(self.data_repository.as_ref(), input.data_id)
+            .await
     }
 }
