@@ -192,7 +192,9 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
 
     let property_value_columns = sqlx::query(
         r#"
-        SELECT COLUMN_NAME, COLUMN_TYPE
+        SELECT
+            COLUMN_NAME,
+            CAST(COLUMN_TYPE AS CHAR) AS column_type_text
         FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'property_values'
@@ -205,7 +207,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     .map(|row| {
         Ok((
             row.try_get::<String, _>("COLUMN_NAME")?,
-            row.try_get::<String, _>("COLUMN_TYPE")?,
+            row.try_get::<String, _>("column_type_text")?,
         ))
     })
     .collect::<Result<Vec<_>, sqlx::Error>>()?;
@@ -244,7 +246,9 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
 
     let marker = sqlx::query(
         r#"
-        SELECT EXTRA, GENERATION_EXPRESSION
+        SELECT
+            CAST(EXTRA AS CHAR) AS extra_text,
+            CAST(GENERATION_EXPRESSION AS CHAR) AS generation_expression_text
         FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'fields'
@@ -254,11 +258,11 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     .fetch_one(pool.as_ref())
     .await?;
     assert!(marker
-        .try_get::<String, _>("EXTRA")?
+        .try_get::<String, _>("extra_text")?
         .to_ascii_uppercase()
         .contains("STORED GENERATED"));
     assert!(marker
-        .try_get::<String, _>("GENERATION_EXPRESSION")?
+        .try_get::<String, _>("generation_expression_text")?
         .to_ascii_uppercase()
         .contains("DATATYPE"));
 
