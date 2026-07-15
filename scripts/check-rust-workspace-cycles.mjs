@@ -150,7 +150,7 @@ function findDatabaseBoundaryViolations(graph) {
 	}
 
 	const syncPackages = [...graph.values()].filter(({ pkg }) =>
-		/^apps\/api\/packages\/[^/]*sync(?:\/|$)/.test(
+		/^apps\/api\/packages\/[^/]*sync[^/]*(?:\/|$)/.test(
 			manifestDirectory(pkg),
 		),
 	)
