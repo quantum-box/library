@@ -4,7 +4,7 @@ use crate::usecase::{UpdateDataInputData, UpdateDataInputPort};
 use std::sync::Arc;
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 
-use super::PropertyDataValueInputData;
+use super::property_value_adapter::property_value_command;
 
 #[derive(Clone)]
 pub struct UpdateData {
@@ -98,28 +98,18 @@ impl UpdateDataInputPort for UpdateData {
             .property_data
             .iter()
             .map(|data| {
-                let value = match &data.value {
-                    PropertyDataValueInputData::String(s) => s.clone(),
-                    PropertyDataValueInputData::Integer(s) => s.clone(),
-                    PropertyDataValueInputData::Html(s) => s.clone(),
-                    PropertyDataValueInputData::Markdown(s) => s.clone(),
-                    PropertyDataValueInputData::Relation(s) => s.join(","),
-                    PropertyDataValueInputData::Select(s) => s.clone(),
-                    PropertyDataValueInputData::MultiSelect(s) => {
-                        s.join(",")
-                    }
-                    PropertyDataValueInputData::Location(l) => {
-                        format!("{},{}", l.latitude(), l.longitude())
-                    }
-                    PropertyDataValueInputData::Date(s) => s.clone(),
-                    PropertyDataValueInputData::Image(s) => s.clone(),
-                };
-                database_manager::PropertyDataInputData {
-                    property_id: data.property_id.clone(),
-                    value,
-                }
+                let property = properties
+                    .iter()
+                    .find(|property| {
+                        property.id().as_str() == data.property_id
+                    })
+                    .ok_or_else(|| errors::Error::not_found("property"))?;
+                Ok(database_manager::PropertyDataInputData {
+                    property_id: property.id().clone(),
+                    value: property_value_command(property, &data.value)?,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<errors::Result<Vec<_>>>()?;
 
         let data = self
             .database

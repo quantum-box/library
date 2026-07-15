@@ -316,6 +316,17 @@ pub struct OpaquePropertyValue {
     pub raw_value: Value,
 }
 
+/// Storage-neutral representation of a normalized PropertyValue row.
+///
+/// Persistence adapters own record and Property identifiers; this envelope
+/// owns only the versioned value contract shared by every adapter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EncodedPropertyValue {
+    pub type_ref: PropertyTypeRef,
+    pub encoding_version: ValueEncodingVersion,
+    pub raw_value: Value,
+}
+
 impl OpaquePropertyValue {
     pub fn ensure_writable(&self) -> errors::Result<()> {
         Err(unsupported_property_value(

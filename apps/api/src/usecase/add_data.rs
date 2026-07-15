@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use super::property_value_adapter::property_value_command;
 use super::{
     AddDataInputData, AddDataInputPort, GetOrganizationByUsernameQuery,
     GetRepoByUsernameQuery, PropertyDataValueInputData,
 };
 
 use database_manager::{
-    domain::Data, domain::Property, PropertyDataInputData,
+    domain::Data, domain::Property, domain::PropertyValueCommand,
+    PropertyDataInputData,
 };
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 use value_object::Ulid;
@@ -14,7 +16,7 @@ use value_object::Ulid;
 fn property_value_for_database(
     property: &Property,
     value: &PropertyDataValueInputData,
-) -> String {
+) -> errors::Result<PropertyValueCommand> {
     match value {
         PropertyDataValueInputData::String(_)
             if property.name() == "id"
@@ -25,20 +27,11 @@ fn property_value_for_database(
         {
             // Legacy repositories model their generated ID as a String named
             // "id". Typed Id generation belongs to the Database BC instead.
-            Ulid::new().to_string().to_lowercase()
+            Ok(PropertyValueCommand::String(
+                Ulid::new().to_string().to_lowercase(),
+            ))
         }
-        PropertyDataValueInputData::String(value) => value.clone(),
-        PropertyDataValueInputData::Integer(value) => value.clone(),
-        PropertyDataValueInputData::Html(value) => value.clone(),
-        PropertyDataValueInputData::Markdown(value) => value.clone(),
-        PropertyDataValueInputData::Relation(value) => value.join(","),
-        PropertyDataValueInputData::Select(value) => value.clone(),
-        PropertyDataValueInputData::MultiSelect(value) => value.join(","),
-        PropertyDataValueInputData::Location(value) => {
-            format!("{},{}", value.latitude(), value.longitude())
-        }
-        PropertyDataValueInputData::Date(value) => value.clone(),
-        PropertyDataValueInputData::Image(value) => value.clone(),
+        _ => property_value_command(property, value),
     }
 }
 
@@ -78,60 +71,15 @@ impl AddData {
                 .find(|pr| p.property_id == **pr.id())
                 .ok_or_else(|| errors::Error::not_found("property"))?;
 
-            let value = property_value_for_database(property, &p.value);
+            let value = property_value_for_database(property, &p.value)?;
 
             outputs.push(PropertyDataInputData {
-                property_id: p.property_id.clone(),
+                property_id: property.id().clone(),
                 value,
             });
         }
 
         Ok(outputs)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use database_manager::domain::{
-        DatabaseId, PropertyId, PropertyType, TypeId,
-    };
-    use value_object::TenantId;
-
-    fn property(name: &str, property_type: PropertyType) -> Property {
-        Property::new(
-            &PropertyId::default(),
-            &TenantId::default(),
-            &DatabaseId::default(),
-            name,
-            &property_type,
-            false,
-            0,
-        )
-    }
-
-    #[test]
-    fn legacy_string_id_generation_stays_in_the_library_adapter() {
-        let property = property("id", PropertyType::String);
-
-        let generated = property_value_for_database(
-            &property,
-            &PropertyDataValueInputData::String(String::new()),
-        );
-
-        assert!(!generated.is_empty());
-    }
-
-    #[test]
-    fn typed_id_generation_is_left_to_the_database_context() {
-        let property = property("id", PropertyType::Id(TypeId::new(true)));
-
-        let value = property_value_for_database(
-            &property,
-            &PropertyDataValueInputData::String(String::new()),
-        );
-
-        assert!(value.is_empty());
     }
 }
 
@@ -190,5 +138,55 @@ impl AddDataInputPort for AddData {
             })
             .await?;
         Ok((data, properties))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use database_manager::domain::{
+        DatabaseId, PropertyId, PropertyType, TypeId,
+    };
+    use value_object::TenantId;
+
+    fn property(name: &str, property_type: PropertyType) -> Property {
+        Property::new(
+            &PropertyId::default(),
+            &TenantId::default(),
+            &DatabaseId::default(),
+            name,
+            &property_type,
+            false,
+            0,
+        )
+    }
+
+    #[test]
+    fn legacy_string_id_generation_stays_in_the_library_adapter() {
+        let property = property("id", PropertyType::String);
+
+        let generated = property_value_for_database(
+            &property,
+            &PropertyDataValueInputData::String(String::new()),
+        )
+        .expect("command");
+
+        assert!(matches!(
+            generated,
+            PropertyValueCommand::String(value) if !value.is_empty()
+        ));
+    }
+
+    #[test]
+    fn typed_id_generation_is_left_to_the_database_context() {
+        let property = property("id", PropertyType::Id(TypeId::new(true)));
+
+        let value = property_value_for_database(
+            &property,
+            &PropertyDataValueInputData::String(String::new()),
+        )
+        .expect("command");
+
+        assert_eq!(value, PropertyValueCommand::Clear);
     }
 }

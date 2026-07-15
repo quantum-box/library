@@ -136,21 +136,6 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DataRepository for StubDataRepository {
-        async fn create(&self, _data: &Data) -> errors::Result<()> {
-            unreachable!("not used by the scope policy")
-        }
-
-        async fn update(&self, _data: &Data) -> errors::Result<()> {
-            unreachable!("not used by the scope policy")
-        }
-
-        async fn update_all(
-            &self,
-            _data: &crate::domain::DataCollection,
-        ) -> errors::Result<()> {
-            unreachable!("not used by the scope policy")
-        }
-
         async fn find_by_id(
             &self,
             id: &DataId,

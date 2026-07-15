@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 
 use database_manager::{
-    domain::{Data, DatabaseId, PropertyType},
+    domain::{Data, DatabaseId, PropertyType, PropertyValueCommand},
     AddDataInputData, AddPropertyInputData, CreateDatabaseInputData,
     PropertyDataInputData, SearchDataInputData,
 };
 use tachyon_sdk::auth::{self, ExecutorAction, MultiTenancyAction};
 use value_object::{DatabaseUrl, OffsetPaginator, TenantId, MAX_PAGE_SIZE};
 
+#[allow(clippy::too_many_arguments)]
 async fn search(
     app: &database_manager::App,
     executor: &dyn ExecutorAction,
@@ -127,8 +128,10 @@ async fn paging_is_one_origin_stable_and_filtered() -> anyhow::Result<()> {
                 database_id: database.id(),
                 name: "matching",
                 property_data: vec![PropertyDataInputData {
-                    property_id: property.id().to_string(),
-                    value: format!("matching-{index}"),
+                    property_id: property.id().clone(),
+                    value: PropertyValueCommand::String(format!(
+                        "matching-{index}"
+                    )),
                 }],
             })
             .await?;
@@ -146,8 +149,10 @@ async fn paging_is_one_origin_stable_and_filtered() -> anyhow::Result<()> {
                 database_id: database.id(),
                 name: &format!("other-{index}"),
                 property_data: vec![PropertyDataInputData {
-                    property_id: property.id().to_string(),
-                    value: format!("other-{index}"),
+                    property_id: property.id().clone(),
+                    value: PropertyValueCommand::String(format!(
+                        "other-{index}"
+                    )),
                 }],
             })
             .await?;

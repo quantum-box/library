@@ -1,7 +1,7 @@
 use chrono::Utc;
 use database_manager::domain::{
-    Data, DataId, DataRepository, PropertyType, RelationRepository,
-    TypeRelation,
+    CreateRecordCommand, Data, DataId, PropertyType, PropertyValueCommand,
+    RecordUnitOfWork, RelationRepository, TypeRelation,
 };
 use database_manager::interface_adapter::gateway::{
     data_repository::DataRepositoryImpl, RelationRepositoryImpl,
@@ -159,8 +159,10 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             tenant_id: &tenant_a,
             name: "tenant-a-related-record",
             property_data: vec![PropertyDataInputData {
-                property_id: relation_property.id().to_string(),
-                value: relation_target_a.id().to_string(),
+                property_id: relation_property.id().clone(),
+                value: PropertyValueCommand::Relation(vec![
+                    relation_target_a.id().clone(),
+                ]),
             }],
             database_id: database_a.id(),
         })
@@ -174,8 +176,10 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             tenant_id: &tenant_a,
             name: "foreign-relation-target",
             property_data: vec![PropertyDataInputData {
-                property_id: relation_property.id().to_string(),
-                value: record_b.id().to_string(),
+                property_id: relation_property.id().clone(),
+                value: PropertyValueCommand::Relation(vec![record_b
+                    .id()
+                    .clone()]),
             }],
             database_id: database_a.id(),
         })
@@ -193,8 +197,10 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             tenant_id: &tenant_a,
             name: "missing-relation-target",
             property_data: vec![PropertyDataInputData {
-                property_id: relation_property.id().to_string(),
-                value: DataId::default().to_string(),
+                property_id: relation_property.id().clone(),
+                value: PropertyValueCommand::Relation(vec![
+                    DataId::default(),
+                ]),
             }],
             database_id: database_a.id(),
         })
@@ -212,8 +218,10 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             data_id: related_record_a.id(),
             name: "foreign-relation-update",
             data: vec![PropertyDataInputData {
-                property_id: relation_property.id().to_string(),
-                value: record_b.id().to_string(),
+                property_id: relation_property.id().clone(),
+                value: PropertyValueCommand::Relation(vec![record_b
+                    .id()
+                    .clone()]),
             }],
         })
         .await
@@ -269,9 +277,9 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         .execute(&DeleteDataInputData {
             executor,
             multi_tenancy: multi_tenancy_b,
-            tenant_id: &tenant_b.to_string(),
-            database_id: &database_a.id().to_string(),
-            data_id: &record_a.id().to_string(),
+            tenant_id: tenant_b.as_ref(),
+            database_id: database_a.id().as_ref(),
+            data_id: record_a.id().as_ref(),
         })
         .await
         .expect_err("another tenant must not delete this record");
@@ -317,7 +325,10 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         Utc::now(),
     )?;
     let repository_scope_error = data_repository
-        .create(&unowned_data)
+        .create_atomically(&CreateRecordCommand {
+            record: unowned_data,
+            changes: vec![],
+        })
         .await
         .expect_err("the scoped insert must reject an unowned database");
     assert_generic_not_found(repository_scope_error);
@@ -341,9 +352,17 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
         Utc::now(),
         Utc::now(),
     )?;
-    data_repository.create(&first).await?;
+    data_repository
+        .create_atomically(&CreateRecordCommand {
+            record: first,
+            changes: vec![],
+        })
+        .await?;
     let collision_error = data_repository
-        .create(&collision)
+        .create_atomically(&CreateRecordCommand {
+            record: collision,
+            changes: vec![],
+        })
         .await
         .expect_err("create must not overwrite an existing data id");
     assert!(matches!(collision_error, errors::Error::Conflict { .. }));

@@ -3,9 +3,9 @@ use serde_json::Value;
 use crate::PropertyDataValue;
 
 use super::{
-    BuiltinPropertyTypeHandler, OpaquePropertyConfig, OpaquePropertyValue,
-    PROPERTY_TYPE_VERSION_V1, PropertyConfig, PropertyKind,
-    PropertyTypeRef, PropertyValue, ResolvedPropertyConfig,
+    BuiltinPropertyTypeHandler, EncodedPropertyValue, OpaquePropertyConfig,
+    OpaquePropertyValue, PROPERTY_TYPE_VERSION_V1, PropertyConfig,
+    PropertyKind, PropertyTypeRef, PropertyValue, ResolvedPropertyConfig,
     ValueEncodingVersion,
 };
 
@@ -200,6 +200,19 @@ impl BuiltinPropertyTypeRegistry {
         ))
     }
 
+    pub fn decode_envelope(
+        &self,
+        config: &ResolvedPropertyConfig,
+        envelope: EncodedPropertyValue,
+    ) -> errors::Result<PropertyValue> {
+        self.decode_value(
+            envelope.type_ref,
+            envelope.encoding_version,
+            config,
+            envelope.raw_value,
+        )
+    }
+
     pub fn normalize_value(
         &self,
         config: &PropertyConfig,
@@ -220,5 +233,18 @@ impl BuiltinPropertyTypeRegistry {
         value: &PropertyDataValue,
     ) -> errors::Result<Value> {
         config.handler().encode_value(config, value)
+    }
+
+    pub fn encode_envelope(
+        &self,
+        config: &PropertyConfig,
+        value: &PropertyDataValue,
+    ) -> errors::Result<EncodedPropertyValue> {
+        let normalized = self.normalize_value(config, value)?;
+        Ok(EncodedPropertyValue {
+            type_ref: normalized.type_ref().clone(),
+            encoding_version: normalized.encoding_version(),
+            raw_value: self.encode_value(config, normalized.value())?,
+        })
     }
 }

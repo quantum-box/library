@@ -110,6 +110,13 @@ pub trait PropertySchemaMutationPort:
         &self,
         command: &AddPropertyCommand,
     ) -> errors::Result<Property>;
+
+    async fn delete_property_atomically(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        property_id: &PropertyId,
+    ) -> errors::Result<Property>;
 }
 
 #[cfg(test)]

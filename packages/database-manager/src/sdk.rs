@@ -5,6 +5,7 @@ use crate::database_app::{
 };
 use crate::domain::{self, *};
 use crate::usecase::boundary::*;
+use crate::usecase::FindAllPropertiesInputData;
 use errors;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -288,13 +289,31 @@ impl DatabaseApp for DatabaseAppImpl {
     ) -> errors::Result<AppData> {
         let operator_id = multi_tenancy.get_operator_id()?;
         let database_id = DatabaseId::new(database_id)?;
+        let properties = self
+            .app
+            .find_all_properties()
+            .execute(FindAllPropertiesInputData {
+                tenant_id: operator_id.clone(),
+                database_id: database_id.clone(),
+            })
+            .await?;
         let property_data = property_data
             .into_iter()
-            .map(|data| PropertyDataInputData {
-                property_id: data.property_id,
-                value: data.value,
+            .map(|data| {
+                let property_id = data.property_id.parse::<PropertyId>()?;
+                let property = properties
+                    .iter()
+                    .find(|property| property.id() == &property_id)
+                    .ok_or_else(|| errors::Error::not_found("property"))?;
+                Ok(PropertyDataInputData {
+                    property_id,
+                    value: PropertyValueCommand::from_legacy_command_text(
+                        property,
+                        &data.value,
+                    )?,
+                })
             })
-            .collect();
+            .collect::<errors::Result<Vec<_>>>()?;
         let input = AddDataInputData {
             executor,
             multi_tenancy,
@@ -323,48 +342,15 @@ impl DatabaseApp for DatabaseAppImpl {
 
     async fn update_data(
         &self,
-        executor: &dyn ExecutorAction,
-        multi_tenancy: &dyn MultiTenancyAction,
+        _executor: &dyn ExecutorAction,
+        _multi_tenancy: &dyn MultiTenancyAction,
         id: &str,
-        name: &str,
-        property_data: Vec<AppPropertyData>,
+        _name: &str,
+        _property_data: Vec<AppPropertyData>,
     ) -> errors::Result<AppData> {
-        let operator_id = multi_tenancy.get_operator_id()?;
-        let data_id = DataId::new(id)?;
-        let database_id = DatabaseId::new("")?;
-        let property_data = property_data
-            .into_iter()
-            .map(|data| PropertyDataInputData {
-                property_id: data.property_id,
-                value: data.value,
-            })
-            .collect();
-        let input = UpdateDataInputData {
-            executor,
-            multi_tenancy,
-
-            tenant_id: &operator_id,
-            database_id: &database_id,
-            data_id: &data_id,
-            name,
-            data: property_data,
-        };
-        let data = self.app.update_data_usecase().execute(input).await?;
-        Ok(AppData {
-            id: data.id().to_string(),
-            database_id: data.database_id().to_string(),
-            name: data.name().to_string(),
-            property_data: data
-                .property_data()
-                .iter()
-                .map(|data| AppPropertyData {
-                    property_id: data.property_id().to_string(),
-                    value: data.string_value(),
-                })
-                .collect(),
-            created_at: *data.created_at(),
-            updated_at: *data.updated_at(),
-        })
+        Err(errors::Error::not_supported(format!(
+            "update_data is not available through DatabaseAppImpl because its interface has no database_id (data_id={id})"
+        )))
     }
 
     async fn delete_data(

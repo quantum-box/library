@@ -1,5 +1,6 @@
 use super::*;
-use std::str::FromStr;
+use crate::property_value_rollout::PropertyValueStorageMode;
+use std::collections::HashSet;
 
 const CREATE_DATA_SCOPED_SQL: &str = r#"
     INSERT INTO tachyon_apps_database_manager.data (
@@ -34,88 +35,269 @@ const FIND_DATA_BY_ID_SQL: &str = r#"
 #[derive(Clone, Debug)]
 pub struct DataRepositoryImpl {
     pub db: Arc<Db>,
+    pub property_value_mode: PropertyValueStorageMode,
 }
 
 impl DataRepositoryImpl {
     pub fn new(db: Arc<Db>) -> Arc<Self> {
-        Arc::new(Self { db })
+        Self::new_with_property_value_mode(db, Default::default())
     }
 
-    fn convert_to_data(
+    pub fn new_with_property_value_mode(
+        db: Arc<Db>,
+        property_value_mode: PropertyValueStorageMode,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            db,
+            property_value_mode,
+        })
+    }
+}
+
+impl DataRepositoryImpl {
+    async fn lock_database_and_fields(
         &self,
-        data_row: DataRow,
-        fields: Vec<FieldRow>,
-    ) -> errors::Result<Data> {
-        let tenant_id = TenantId::from_str(&data_row.tenant_id)?;
-        let database_id = DatabaseId::from_str(&data_row.object_id)?;
-        let mut data = Data::new(
-            &data_row.id.parse()?,
-            &tenant_id,
-            &database_id,
-            &data_row.name,
-            vec![],
-            data_row.created_at,
-            data_row.updated_at,
-        )?;
-        for field in fields {
-            let property_type = PropertyType::from_meta(
-                &field.datatype,
-                field.datatype_meta.clone(),
-            )?;
-            let data_field_value = project_property_value(
-                &data_row.id,
-                &property_type,
-                data_row.get_field(field.field_num)?,
-            )?;
-            let property = Property::with_meta_json(
-                &field.id.parse()?,
-                &field.tenant_id.parse()?,
-                &field.object_id.parse()?,
-                &field.field_name,
-                &property_type,
-                field.is_indexed,
-                field.field_num,
-                field.meta_json.clone(),
-            );
-            let property_data =
-                PropertyData::from_storage(&property, data_field_value)?;
-            data.add_property_data(property_data)?;
+        transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+    ) -> errors::Result<Vec<FieldRow>> {
+        let database = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id FROM objects
+            WHERE tenant_id = ? AND id = ?
+            FOR SHARE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        if database.is_none() {
+            return Err(errors::Error::not_found("resource not found"));
         }
-        Ok(data)
+
+        Ok(sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ?
+            ORDER BY field_num ASC
+            FOR SHARE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_all(&mut **transaction)
+        .await?)
+    }
+
+    fn persisted_property(
+        fields: &[FieldRow],
+        requested: &Property,
+    ) -> errors::Result<(Property, u32)> {
+        let field = fields
+            .iter()
+            .find(|field| *requested.id() == field.id)
+            .ok_or_else(|| {
+                errors::Error::not_found("resource not found")
+            })?;
+        let persisted: Property = field.clone().into();
+        if persisted.tenant_id() != requested.tenant_id()
+            || persisted.database_id() != requested.database_id()
+            || persisted.property_type().canonical_type_ref()
+                != requested.property_type().canonical_type_ref()
+        {
+            return Err(errors::Error::conflict(
+                "Property definition changed during record mutation",
+            ));
+        }
+        Ok((persisted, field.field_num))
+    }
+
+    async fn ensure_existing_canonical_is_writable(
+        transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        record: &Data,
+        property: &Property,
+    ) -> errors::Result<()> {
+        let row = sqlx::query_as::<_, PropertyValueRow>(
+            r#"
+            SELECT tenant_id, database_id, data_id, property_id, type_key,
+                   type_version, value_encoding_version, value
+            FROM property_values
+            WHERE tenant_id = ? AND database_id = ?
+              AND data_id = ? AND property_id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(record.tenant_id().to_string())
+        .bind(record.database_id().to_string())
+        .bind(record.id().to_string())
+        .bind(property.id().to_string())
+        .fetch_optional(&mut **transaction)
+        .await?;
+
+        if let Some(row) = row {
+            let config = ResolvedPropertyConfig::Known(
+                property.property_type().canonical_config(),
+            );
+            BUILTIN_PROPERTY_TYPE_REGISTRY
+                .decode_envelope(&config, row.envelope()?)?
+                .ensure_writable()?;
+        }
+        Ok(())
+    }
+
+    async fn apply_change(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        record: &Data,
+        fields: &[FieldRow],
+        change: &PropertyValueChange,
+    ) -> errors::Result<()> {
+        let (property, field_num) =
+            Self::persisted_property(fields, change.property())?;
+        if self.property_value_mode.writes_canonical() {
+            Self::ensure_existing_canonical_is_writable(
+                transaction,
+                record,
+                &property,
+            )
+            .await?;
+        }
+
+        match change {
+            PropertyValueChange::Set { value, .. } => {
+                value.ensure_writable()?;
+                if value.type_ref()
+                    != &property.property_type().canonical_type_ref()
+                {
+                    return Err(errors::Error::invalid(
+                        "PropertyValue type does not match Property",
+                    ));
+                }
+                let config = property.property_type().canonical_config();
+                let envelope = BUILTIN_PROPERTY_TYPE_REGISTRY
+                    .encode_envelope(&config, value.value())?;
+
+                if self.property_value_mode.writes_canonical() {
+                    sqlx::query(
+                        r#"
+                        INSERT INTO property_values
+                            (tenant_id, database_id, data_id, property_id,
+                             type_key, type_version,
+                             value_encoding_version, value)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            type_key = VALUES(type_key),
+                            type_version = VALUES(type_version),
+                            value_encoding_version =
+                                VALUES(value_encoding_version),
+                            value = VALUES(value)
+                        "#,
+                    )
+                    .bind(record.tenant_id().to_string())
+                    .bind(record.database_id().to_string())
+                    .bind(record.id().to_string())
+                    .bind(property.id().to_string())
+                    .bind(envelope.type_ref.key.as_str())
+                    .bind(envelope.type_ref.version.get())
+                    .bind(envelope.encoding_version.get())
+                    .bind(
+                        serde_json::to_string(&envelope.raw_value)
+                            .map_err(errors::Error::invalid)?,
+                    )
+                    .execute(&mut **transaction)
+                    .await?;
+                }
+
+                let legacy = LegacyPropertyValueCodec::encode(
+                    value.value(),
+                    property.property_type(),
+                )?;
+                sqlx::query(&format!(
+                    "UPDATE data SET value{field_num} = ? \
+                     WHERE tenant_id = ? AND object_id = ? AND id = ?"
+                ))
+                .bind(legacy)
+                .bind(record.tenant_id().to_string())
+                .bind(record.database_id().to_string())
+                .bind(record.id().to_string())
+                .execute(&mut **transaction)
+                .await?;
+            }
+            PropertyValueChange::Clear { .. } => {
+                if self.property_value_mode.writes_canonical() {
+                    sqlx::query(
+                        r#"
+                        DELETE FROM property_values
+                        WHERE tenant_id = ? AND database_id = ?
+                          AND data_id = ? AND property_id = ?
+                        "#,
+                    )
+                    .bind(record.tenant_id().to_string())
+                    .bind(record.database_id().to_string())
+                    .bind(record.id().to_string())
+                    .bind(property.id().to_string())
+                    .execute(&mut **transaction)
+                    .await?;
+                }
+                sqlx::query(&format!(
+                    "UPDATE data SET value{field_num} = NULL \
+                     WHERE tenant_id = ? AND object_id = ? AND id = ?"
+                ))
+                .bind(record.tenant_id().to_string())
+                .bind(record.database_id().to_string())
+                .bind(record.id().to_string())
+                .execute(&mut **transaction)
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_changes(
+        changes: &[PropertyValueChange],
+    ) -> errors::Result<()> {
+        let mut property_ids = HashSet::with_capacity(changes.len());
+        for change in changes {
+            if !property_ids.insert(change.property().id().to_string()) {
+                return Err(errors::Error::invalid(
+                    "record mutation contains a duplicate Property",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl DataRepository for DataRepositoryImpl {
-    #[tracing::instrument(skip(self))]
-    async fn create(&self, data: &Data) -> errors::Result<()> {
-        let fields = sqlx::query_as::<_, FieldRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                tachyon_apps_database_manager.fields
-            WHERE
-                object_id = ? and tenant_id = ?
-            "#,
-        )
-        .bind(data.database_id().to_string())
-        .bind(data.tenant_id().to_string())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-
-        let mut tx = self.db.pool().begin().await?;
-        let insert_result = sqlx::query(CREATE_DATA_SCOPED_SQL)
-            .bind(data.id().to_string())
-            .bind(data.tenant_id().to_string())
-            .bind(data.name().to_string())
-            .bind(data.created_at())
-            .bind(data.updated_at())
-            .bind(data.tenant_id().to_string())
-            .bind(data.database_id().to_string())
-            .execute(&mut *tx)
+impl RecordUnitOfWork for DataRepositoryImpl {
+    async fn create_atomically(
+        &self,
+        command: &CreateRecordCommand,
+    ) -> errors::Result<()> {
+        Self::validate_changes(&command.changes)?;
+        let record = &command.record;
+        let mut transaction = self.db.pool().begin().await?;
+        let fields = self
+            .lock_database_and_fields(
+                &mut transaction,
+                record.tenant_id(),
+                record.database_id(),
+            )
+            .await?;
+        let result = sqlx::query(CREATE_DATA_SCOPED_SQL)
+            .bind(record.id().to_string())
+            .bind(record.tenant_id().to_string())
+            .bind(record.name().to_string())
+            .bind(record.created_at())
+            .bind(record.updated_at())
+            .bind(record.tenant_id().to_string())
+            .bind(record.database_id().to_string())
+            .execute(&mut *transaction)
             .await;
-        let insert_result = match insert_result {
+        let result = match result {
             Ok(result) => result,
             Err(sqlx::Error::Database(error))
                 if error.is_unique_violation() =>
@@ -126,139 +308,93 @@ impl DataRepository for DataRepositoryImpl {
             }
             Err(error) => return Err(error.into()),
         };
-        if insert_result.rows_affected() == 0 {
-            return Err(
-                crate::usecase::database_scope::DatabaseScope::not_found(),
-            );
+        if result.rows_affected() == 0 {
+            return Err(errors::Error::not_found("resource not found"));
         }
-        for val in data.property_data().iter() {
-            let field_num = fields
-                .iter()
-                .find(|f| *val.property_id() == f.id)
-                .ok_or_else(|| {
-                    errors::internal_server_error!(
-                        "Property with id {} not found",
-                        val.property_id().to_string()
-                    )
-                })?
-                .field_num;
-            sqlx::query(&format!(
-                r#"
-                update tachyon_apps_database_manager.data
-                set value{field_num} = ?
-                where object_id = ? and tenant_id = ? and id = ?
-                "#
-            ))
-            .bind(val.string_value())
-            .bind(data.database_id().to_string())
-            .bind(data.tenant_id().to_string())
-            .bind(data.id().to_string())
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self))]
-    async fn update(&self, data: &Data) -> errors::Result<()> {
-        let fields = sqlx::query_as::<_, FieldRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                tachyon_apps_database_manager.fields
-            WHERE
-                object_id = ? and tenant_id = ?
-            "#,
-        )
-        .bind(data.database_id().to_string())
-        .bind(data.tenant_id().to_string())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-        let mut tx = self.db.pool().begin().await?;
-        sqlx::query!(
-            r#"
-            update tachyon_apps_database_manager.data
-            set name = ?,
-                updated_at = ?
-            where object_id = ? and tenant_id = ? and id = ?
-            "#,
-            data.name().to_string(),
-            data.updated_at(),
-            data.database_id().to_string(),
-            data.tenant_id().to_string(),
-            data.id().to_string(),
-        )
-        .execute(&mut *tx)
-        .await?;
-        for val in data.property_data().iter() {
-            let field = fields
-                .iter()
-                .find(|f| *val.property_id() == f.id)
-                .ok_or_else(|| {
-                    errors::internal_server_error!(
-                        "Property with id {} not found",
-                        val.property_id().to_string()
-                    )
-                })?;
-            sqlx::query(&format!(
-                r#"
-                update tachyon_apps_database_manager.data
-                set value{} = ?
-                where object_id = ? and tenant_id = ? and id = ?
-                "#,
-                field.field_num
-            ))
-            .bind(val.string_value())
-            .bind(data.database_id().to_string())
-            .bind(data.tenant_id().to_string())
-            .bind(data.id().to_string())
-            .execute(&mut *tx)
-            .await?;
-        }
-        if fields.len() > data.property_data().len() {
-            // delete a property_data for will delete property
-            let current_properties: Vec<String> = data
-                .property_data()
-                .iter()
-                .map(|v| v.property_id().to_string())
-                .collect();
-            let diff: Vec<_> = fields
-                .iter()
-                .filter(|v| !current_properties.contains(&v.id))
-                .collect();
-            for field in diff {
-                sqlx::query(&format!(
-                    r#"
-                    update tachyon_apps_database_manager.data
-                    set value{} = null
-                    where object_id = ? and tenant_id = ? and id = ?
-                    "#,
-                    field.field_num
-                ))
-                .bind(data.database_id().to_string())
-                .bind(data.tenant_id().to_string())
-                .bind(data.id().to_string())
-                .execute(&mut *tx)
+        for change in &command.changes {
+            self.apply_change(&mut transaction, record, &fields, change)
                 .await?;
-            }
         }
-        tx.commit().await?;
+        transaction.commit().await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
-    async fn update_all(
+    async fn patch_atomically(
         &self,
-        data: &DataCollection,
+        command: &PatchRecordCommand,
     ) -> errors::Result<()> {
-        for d in data.value() {
-            self.update(d).await?;
+        Self::validate_changes(&command.changes)?;
+        let record = &command.record;
+        let mut transaction = self.db.pool().begin().await?;
+        let fields = self
+            .lock_database_and_fields(
+                &mut transaction,
+                record.tenant_id(),
+                record.database_id(),
+            )
+            .await?;
+        let locked = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id FROM data
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(record.tenant_id().to_string())
+        .bind(record.database_id().to_string())
+        .bind(record.id().to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if locked.is_none() {
+            return Err(errors::Error::not_found("resource not found"));
         }
+        sqlx::query(
+            r#"
+            UPDATE data SET name = ?, updated_at = ?
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            "#,
+        )
+        .bind(record.name().to_string())
+        .bind(record.updated_at())
+        .bind(record.tenant_id().to_string())
+        .bind(record.database_id().to_string())
+        .bind(record.id().to_string())
+        .execute(&mut *transaction)
+        .await?;
+        for change in &command.changes {
+            self.apply_change(&mut transaction, record, &fields, change)
+                .await?;
+        }
+        transaction.commit().await?;
         Ok(())
     }
 
+    async fn delete_atomically(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        data_id: &DataId,
+    ) -> errors::Result<()> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM data
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(data_id.to_string())
+        .execute(self.db.pool().as_ref())
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl DataRepository for DataRepositoryImpl {
     async fn find_by_id(
         &self,
         id: &DataId,
@@ -285,8 +421,23 @@ impl DataRepository for DataRepositoryImpl {
             .bind(id.to_string())
             .fetch_optional(self.db.pool().as_ref())
             .await?;
-
-        row.map(|row| self.convert_to_data(row, fields)).transpose()
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let canonical = load_canonical_values_for_mode(
+            self.db.as_ref(),
+            tenant_id,
+            database_id,
+            std::slice::from_ref(&row.id),
+            self.property_value_mode,
+        )
+        .await?;
+        Ok(Some(hydrate_data_row(
+            row,
+            &fields,
+            &canonical,
+            self.property_value_mode,
+        )?))
     }
 
     #[tracing::instrument(skip(self))]
@@ -325,9 +476,26 @@ impl DataRepository for DataRepositoryImpl {
         .bind(tenant_id.to_string())
         .fetch_all(self.db.pool().as_ref())
         .await?;
+        let data_ids = data_rows
+            .iter()
+            .map(|row| row.id.clone())
+            .collect::<Vec<_>>();
+        let canonical = load_canonical_values_for_mode(
+            self.db.as_ref(),
+            tenant_id,
+            id,
+            &data_ids,
+            self.property_value_mode,
+        )
+        .await?;
         let mut data_vec = vec![];
         for data_row in data_rows {
-            let data = self.convert_to_data(data_row, fields.clone())?;
+            let data = hydrate_data_row(
+                data_row,
+                &fields,
+                &canonical,
+                self.property_value_mode,
+            )?;
             data_vec.push(data);
         }
         Ok(DataCollection::new(data_vec))
@@ -427,9 +595,26 @@ impl DataRepository for DataRepositoryImpl {
         )
         .fetch_one(self.db.pool().as_ref())
         .await?;
+        let data_ids = data_rows
+            .iter()
+            .map(|row| row.id.clone())
+            .collect::<Vec<_>>();
+        let canonical = load_canonical_values_for_mode(
+            self.db.as_ref(),
+            tenant_id,
+            database_id,
+            &data_ids,
+            self.property_value_mode,
+        )
+        .await?;
         let mut data_vec = vec![];
         for data_row in data_rows {
-            let data = self.convert_to_data(data_row, fields.clone())?;
+            let data = hydrate_data_row(
+                data_row,
+                &fields,
+                &canonical,
+                self.property_value_mode,
+            )?;
             data_vec.push(data);
         }
         let total = u32::try_from(total).map_err(|_| {

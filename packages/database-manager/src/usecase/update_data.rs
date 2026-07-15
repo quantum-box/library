@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    Data, DataRepository, Database, DatabaseId, PropertyData, PropertyId,
-    PropertyRepository, PropertyType,
+    Data, DataRepository, Database, DatabaseId, PatchRecordCommand,
+    PropertyData, PropertyRepository, PropertyType, PropertyValueChange,
+    RecordUnitOfWork,
 };
 use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{
@@ -15,12 +16,21 @@ fn validate_auto_generated_id_update(
     property: &crate::domain::Property,
     data_id: &crate::domain::DataId,
     existing_value: Option<&PropertyData>,
-    value: &str,
+    command: &crate::domain::PropertyValueCommand,
 ) -> errors::Result<()> {
-    if matches!(
+    if !matches!(
         property.property_type(),
         PropertyType::Id(type_id) if type_id.auto_generate
-    ) && value != data_id.as_str()
+    ) {
+        return Ok(());
+    }
+
+    let crate::domain::PropertyValueCommand::Id(value) = command else {
+        return Err(errors::Error::business_logic(
+            "Auto-generated Id property is immutable",
+        ));
+    };
+    if value != data_id.as_str()
         && existing_value.map(PropertyData::string_value).as_deref()
             != Some(value)
     {
@@ -32,22 +42,12 @@ fn validate_auto_generated_id_update(
     Ok(())
 }
 
-fn find_scoped_property<'a>(
-    properties: &'a [crate::domain::Property],
-    property_id: &str,
-) -> errors::Result<&'a crate::domain::Property> {
-    let property_id = property_id.parse::<PropertyId>()?;
-    properties
-        .iter()
-        .find(|property| property.id() == &property_id)
-        .ok_or_else(DatabaseScope::not_found)
-}
-
 #[derive(Debug)]
 pub struct UpdateDataInteractorImpl {
     database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
     property_repo: Arc<dyn PropertyRepository>,
     data_repo: Arc<dyn DataRepository>,
+    record_uow: Arc<dyn RecordUnitOfWork>,
     relation_target_validator: Arc<dyn RelationTargetValidationPort>,
 }
 
@@ -56,6 +56,7 @@ impl UpdateDataInteractorImpl {
         database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
+        record_uow: Arc<dyn RecordUnitOfWork>,
     ) -> Arc<Self> {
         let relation_target_validator = RelationTargetPolicy::new(
             database_repo.clone(),
@@ -65,6 +66,7 @@ impl UpdateDataInteractorImpl {
             database_repo,
             property_repo,
             data_repo,
+            record_uow,
             relation_target_validator,
         )
     }
@@ -73,12 +75,14 @@ impl UpdateDataInteractorImpl {
         database_repo: Arc<dyn RepositoryV1<DatabaseId, Database>>,
         property_repo: Arc<dyn PropertyRepository>,
         data_repo: Arc<dyn DataRepository>,
+        record_uow: Arc<dyn RecordUnitOfWork>,
         relation_target_validator: Arc<dyn RelationTargetValidationPort>,
     ) -> Arc<Self> {
         Arc::new(Self {
             database_repo,
             property_repo,
             data_repo,
+            record_uow,
             relation_target_validator,
         })
     }
@@ -103,8 +107,12 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
             .await?;
 
         data.update_name(&input.name.parse()?);
+        let mut changes = Vec::with_capacity(input.data.len());
         for d in input.data {
-            let property = find_scoped_property(&property, &d.property_id)?;
+            let property = property
+                .iter()
+                .find(|property| property.id() == &d.property_id)
+                .ok_or_else(DatabaseScope::not_found)?;
             validate_auto_generated_id_update(
                 property,
                 input.data_id,
@@ -112,13 +120,22 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
                 &d.value,
             )?;
             let property_data =
-                PropertyData::new(property, d.value.to_string())?;
+                PropertyData::from_command(property, d.value)?;
             self.relation_target_validator
                 .validate(input.tenant_id, &property_data)
                 .await?;
             data.update_property_data(&property_data)?;
+            changes.push(PropertyValueChange::from_property_data(
+                property,
+                &property_data,
+            )?);
         }
-        self.data_repo.update(&data).await?;
+        self.record_uow
+            .patch_atomically(&PatchRecordCommand {
+                record: data.clone(),
+                changes,
+            })
+            .await?;
 
         Ok(data)
     }
@@ -127,6 +144,7 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::PropertyId;
     use crate::domain::{Property, TypeId};
     use value_object::TenantId;
 
@@ -151,7 +169,7 @@ mod tests {
             &property,
             &data_id,
             None,
-            &data_id.to_string(),
+            &crate::domain::PropertyValueCommand::Id(data_id.to_string()),
         )
         .expect("the canonical value must remain valid");
     }
@@ -162,7 +180,9 @@ mod tests {
             &auto_generated_id_property(),
             &crate::domain::DataId::default(),
             None,
-            "replacement",
+            &crate::domain::PropertyValueCommand::Id(
+                "replacement".to_string(),
+            ),
         )
         .expect_err("an auto-generated Id is immutable");
 
@@ -181,19 +201,12 @@ mod tests {
             &property,
             &crate::domain::DataId::default(),
             Some(&existing),
-            "legacy-id",
+            &crate::domain::PropertyValueCommand::Id(
+                "legacy-id".to_string(),
+            ),
         )
         .expect(
             "an existing legacy value must remain readable and immutable",
         );
-    }
-
-    #[test]
-    fn malformed_property_id_returns_a_domain_error() {
-        let error = find_scoped_property(&[], "not-a-property-id")
-            .expect_err("a malformed property id must not panic");
-
-        assert!(error.is_bad_request());
-        assert!(error.to_string().contains("PropertyId"));
     }
 }

@@ -85,6 +85,27 @@ async fn index_columns(
         .collect::<Result<Vec<_>, _>>()?)
 }
 
+async fn check_constraints(
+    pool: &MySqlPool,
+) -> anyhow::Result<Vec<String>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT CAST(CONSTRAINT_NAME AS CHAR) AS constraint_name_text
+        FROM information_schema.CHECK_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND CONSTRAINT_NAME LIKE 'chk_property_values_%'
+        ORDER BY CONSTRAINT_NAME
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| row.try_get("constraint_name_text"))
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
 fn assert_fk_violation(error: sqlx::Error, expected: &str) {
     let database_error = error
         .as_database_error()
@@ -166,6 +187,15 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
         )
         .await?,
         ["tenant_id", "database_id", "property_id", "data_id"]
+    );
+    assert_eq!(
+        check_constraints(pool.as_ref()).await?,
+        [
+            "chk_property_values_encoding_version",
+            "chk_property_values_type_key",
+            "chk_property_values_type_version",
+            "chk_property_values_value_json",
+        ]
     );
     assert_eq!(
         foreign_key_columns(
@@ -335,9 +365,42 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     .bind(&database_a)
     .bind(&data_a)
     .bind(&property_a)
-    .bind("canonical value")
+    .bind("\"canonical value\"")
     .execute(&mut *transaction)
     .await?;
+
+    for (statement, constraint) in [
+        (
+            "UPDATE property_values SET type_key = 'String' WHERE data_id = ?",
+            "chk_property_values_type_key",
+        ),
+        (
+            "UPDATE property_values SET type_version = 0 WHERE data_id = ?",
+            "chk_property_values_type_version",
+        ),
+        (
+            "UPDATE property_values SET value_encoding_version = 0 WHERE data_id = ?",
+            "chk_property_values_encoding_version",
+        ),
+        (
+            "UPDATE property_values SET value = 'not-json' WHERE data_id = ?",
+            "chk_property_values_value_json",
+        ),
+    ] {
+        let error = sqlx::query(statement)
+            .bind(&data_a)
+            .execute(&mut *transaction)
+            .await
+            .expect_err("malformed PropertyValue envelope must be rejected");
+        let database_error = error
+            .as_database_error()
+            .expect("database CHECK violation");
+        assert!(
+            database_error.message().contains(constraint),
+            "expected {constraint}, got: {}",
+            database_error.message()
+        );
+    }
 
     let wrong_data_scope = sqlx::query(
         r#"
@@ -345,7 +408,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
             tenant_id, database_id, data_id, property_id,
             type_key, value
         )
-        VALUES (?, ?, ?, ?, 'string', 'wrong data scope')
+        VALUES (?, ?, ?, ?, 'string', '\"wrong data scope\"')
         "#,
     )
     .bind(&tenant_id)
@@ -366,7 +429,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
             tenant_id, database_id, data_id, property_id,
             type_key, value
         )
-        VALUES (?, ?, ?, ?, 'string', 'wrong property scope')
+        VALUES (?, ?, ?, ?, 'string', '\"wrong property scope\"')
         "#,
     )
     .bind(&tenant_id)
@@ -407,7 +470,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     );
     assert_eq!(
         stored_value.try_get::<String, _>("value")?,
-        "canonical value"
+        "\"canonical value\""
     );
 
     sqlx::query("DELETE FROM data WHERE id = ?")

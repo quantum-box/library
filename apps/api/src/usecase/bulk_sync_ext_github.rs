@@ -229,29 +229,15 @@ impl BulkSyncExtGithubInputPort for BulkSyncExtGithub {
                 })
                 .to_string();
 
-                // Build property data for database update
-                let db_property_data: Vec<
-                    database_manager::PropertyDataInputData,
-                > = data
-                    .property_data()
-                    .iter()
-                    .filter(|pd| {
-                        pd.property_id().to_string().as_str()
-                            != input.ext_github_property_id
-                    })
-                    .map(|pd| database_manager::PropertyDataInputData {
-                        property_id: pd.property_id().to_string(),
-                        value: pd.string_value(),
-                    })
-                    .chain(std::iter::once(
-                        database_manager::PropertyDataInputData {
-                            property_id: input
-                                .ext_github_property_id
-                                .clone(),
-                            value: ext_github_value,
-                        },
-                    ))
-                    .collect();
+                // Patch only the explicitly requested property. Re-sending
+                // every value would overwrite concurrent or opaque values.
+                let db_property_data =
+                    vec![database_manager::PropertyDataInputData {
+                        property_id: input.ext_github_property_id.parse()?,
+                        value: database_manager::domain::PropertyValueCommand::String(
+                            ext_github_value,
+                        ),
+                    }];
 
                 // Update the data with ext_github property
                 let updated_data = self

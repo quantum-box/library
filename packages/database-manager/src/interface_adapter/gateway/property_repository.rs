@@ -145,6 +145,79 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         transaction.commit().await?;
         Ok(property)
     }
+
+    async fn delete_property_atomically(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        property_id: &PropertyId,
+    ) -> errors::Result<Property> {
+        let mut transaction = self.db.pool().begin().await?;
+        let database = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id FROM objects
+            WHERE tenant_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if database.is_none() {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+        let row = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(property_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or_else(|| errors::Error::not_found("resource not found"))?;
+        let field_num = row.field_num;
+        let property: Property = row.into();
+
+        sqlx::query(
+            r#"
+            DELETE FROM relationships
+            WHERE tenant_id = ? AND object_id = ? AND field_id = ?
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(property_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(&format!(
+            "UPDATE data SET value{field_num} = NULL \
+             WHERE tenant_id = ? AND object_id = ?"
+        ))
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            r#"
+            DELETE FROM fields
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(property_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(property)
+    }
 }
 
 #[async_trait::async_trait]

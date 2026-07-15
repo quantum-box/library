@@ -1,4 +1,5 @@
 use super::*;
+use crate::property_value_rollout::PropertyValueStorageMode;
 use crate::DataQuery;
 
 const SEARCH_DATA_BY_NAME_SQL: &str = r#"
@@ -16,54 +17,22 @@ const SEARCH_DATA_BY_NAME_SQL: &str = r#"
 #[derive(Clone, Debug)]
 pub struct DataQueryService {
     pub db: Arc<Db>,
+    pub property_value_mode: PropertyValueStorageMode,
 }
 
 impl DataQueryService {
     pub fn new(db: Arc<Db>) -> Arc<Self> {
-        Arc::new(Self { db })
+        Self::new_with_property_value_mode(db, Default::default())
     }
 
-    fn data_from_row(
-        &self,
-        data_row: DataRow,
-        fields: Vec<FieldRow>,
-    ) -> anyhow::Result<Data> {
-        let tenant_id = TenantId::from_str(&data_row.tenant_id)?;
-        let database_id = DatabaseId::from_str(&data_row.object_id)?;
-        let mut data = Data::new(
-            &data_row.id.parse()?,
-            &tenant_id,
-            &database_id,
-            &data_row.name,
-            vec![],
-            data_row.created_at,
-            data_row.updated_at,
-        )?;
-        for field in fields {
-            let property_type = PropertyType::from_meta(
-                &field.datatype,
-                field.datatype_meta.clone(),
-            )?;
-            let data_field_value = project_property_value(
-                &data_row.id,
-                &property_type,
-                data_row.get_field(field.field_num)?,
-            )?;
-            let property = Property::with_meta_json(
-                &field.id.parse()?,
-                &field.tenant_id.parse()?,
-                &field.object_id.parse()?,
-                &field.field_name,
-                &property_type,
-                field.is_indexed,
-                field.field_num,
-                field.meta_json.clone(),
-            );
-            let property_data =
-                PropertyData::from_storage(&property, data_field_value)?;
-            data.add_property_data(property_data)?;
-        }
-        Ok(data)
+    pub fn new_with_property_value_mode(
+        db: Arc<Db>,
+        property_value_mode: PropertyValueStorageMode,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            db,
+            property_value_mode,
+        })
     }
 }
 
@@ -134,9 +103,28 @@ impl DataQuery for DataQueryService {
                 "data count exceeds the supported pagination range"
             )
         })?;
+        let data_ids = data_rows
+            .iter()
+            .map(|row| row.id.clone())
+            .collect::<Vec<_>>();
+        let canonical = load_canonical_values_for_mode(
+            self.db.as_ref(),
+            tenant_id,
+            database_id,
+            &data_ids,
+            self.property_value_mode,
+        )
+        .await
+        .map_err(anyhow::Error::from)?;
         let mut data_vec = vec![];
         for data_row in data_rows {
-            let data = self.data_from_row(data_row, fields.clone())?;
+            let data = hydrate_data_row(
+                data_row,
+                &fields,
+                &canonical,
+                self.property_value_mode,
+            )
+            .map_err(anyhow::Error::from)?;
             data_vec.push(data);
         }
         let paginator = OffsetPaginator::new(page, total);
