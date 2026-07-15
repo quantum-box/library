@@ -11,6 +11,9 @@ pub use property_type::*;
 mod schema_mutation;
 pub use schema_mutation::*;
 
+mod kernel;
+pub use kernel::*;
+
 pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
 pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
     "Relation target database is immutable after property creation";
@@ -180,9 +183,8 @@ impl Property {
 }
 
 #[async_trait::async_trait]
-pub trait PropertyRepository:
-    PropertySchemaMutationPort + Debug + Send + Sync + 'static
-{
+pub trait PropertyRepository: Debug + Send + Sync + 'static {
+    async fn create(&self, property: &Property) -> errors::Result<()>;
     async fn update(&self, property: &Property) -> errors::Result<()>;
     async fn find_by_id(
         &self,

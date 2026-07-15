@@ -8,6 +8,8 @@ use util::def_id;
 use util::macros::*;
 use value_object::{Identifier, Text};
 
+use super::{LegacyPropertyTypeReader, PropertyConfig, PropertyTypeRef};
+
 #[derive(Debug, Clone, Default, EnumString, Display)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PropertyType {
@@ -30,60 +32,41 @@ impl PropertyType {
         typ: &str,
         meta: serde_json::Value,
     ) -> errors::Result<Self> {
-        let typ = typ.parse::<PropertyType>()?;
-        match typ {
-            PropertyType::String => Ok(PropertyType::String),
-            PropertyType::Integer => Ok(PropertyType::Integer),
-            PropertyType::Html => Ok(PropertyType::Html),
-            PropertyType::Markdown => Ok(PropertyType::Markdown),
-            PropertyType::Relation(_) => Ok(PropertyType::Relation(
-                serde_json::from_value(meta)
-                    .map_err(errors::Error::invalid)?,
-            )),
-            PropertyType::Select(_) => Ok(PropertyType::Select(
-                serde_json::from_value(meta)
-                    .map_err(errors::Error::invalid)?,
-            )),
-            PropertyType::MultiSelect(_) => Ok(PropertyType::MultiSelect(
-                serde_json::from_value(meta)
-                    .map_err(errors::Error::invalid)?,
-            )),
-            PropertyType::Id(_) => Ok(PropertyType::Id(
-                serde_json::from_value(meta)
-                    .map_err(errors::Error::invalid)?,
-            )),
-            PropertyType::Location(_) => Ok(PropertyType::Location(
-                serde_json::from_value(meta)
-                    .map_err(errors::Error::invalid)?,
-            )),
-            PropertyType::Date => Ok(PropertyType::Date),
-            PropertyType::Image => Ok(PropertyType::Image),
-        }
+        LegacyPropertyTypeReader::decode_type(typ, meta)
     }
+
     pub fn get_meta(&self) -> errors::Result<serde_json::Value> {
-        match self {
-            PropertyType::Relation(relation) => {
-                Ok(serde_json::to_value(relation)
-                    .map_err(errors::Error::invalid)?)
+        let config = self.canonical_config();
+        config.handler().encode_config(&config)
+    }
+
+    /// The stable type identity for new storage and API envelopes.
+    pub fn canonical_type_ref(&self) -> PropertyTypeRef {
+        self.canonical_config().type_ref()
+    }
+
+    /// The typed kernel config represented by this compatibility enum.
+    pub fn canonical_config(&self) -> PropertyConfig {
+        self.into()
+    }
+}
+
+impl From<&PropertyType> for PropertyConfig {
+    fn from(value: &PropertyType) -> Self {
+        match value {
+            PropertyType::String => Self::String,
+            PropertyType::Integer => Self::Integer,
+            PropertyType::Html => Self::Html,
+            PropertyType::Markdown => Self::Markdown,
+            PropertyType::Relation(value) => Self::Relation(value.clone()),
+            PropertyType::Select(value) => Self::Select(value.clone()),
+            PropertyType::MultiSelect(value) => {
+                Self::MultiSelect(value.clone())
             }
-            PropertyType::Select(select) => {
-                Ok(serde_json::to_value(select)
-                    .map_err(errors::Error::invalid)?)
-            }
-            PropertyType::MultiSelect(multi_select) => {
-                Ok(serde_json::to_value(multi_select)
-                    .map_err(errors::Error::invalid)?)
-            }
-            PropertyType::Id(id) => {
-                Ok(serde_json::to_value(id)
-                    .map_err(errors::Error::invalid)?)
-            }
-            PropertyType::Location(location) => {
-                Ok(serde_json::to_value(location)
-                    .map_err(errors::Error::invalid)?)
-            }
-            PropertyType::Date => Ok(serde_json::Value::Null),
-            _ => Ok(serde_json::Value::Null),
+            PropertyType::Id(value) => Self::Id(value.clone()),
+            PropertyType::Location(value) => Self::Location(value.clone()),
+            PropertyType::Date => Self::Date,
+            PropertyType::Image => Self::Image,
         }
     }
 }
@@ -148,6 +131,7 @@ mod tests {
         PropertyType::MultiSelect(TypeMultiSelect::default()),
         "MULTI_SELECT"
     )]
+    #[case(PropertyType::Id(TypeId::default()), "ID")]
     #[case(PropertyType::Location(TypeLocation::default()), "LOCATION")]
     #[case(PropertyType::Date, "DATE")]
     #[case(PropertyType::Image, "IMAGE")]
