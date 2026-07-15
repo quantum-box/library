@@ -4,8 +4,7 @@ use crate::{
     SearchDataInputData, SearchDataInputPort,
 };
 use errors;
-use value_object::OffsetPaginator;
-use value_object::{RepositoryV1, TenantId};
+use value_object::{OffsetPage, OffsetPaginator, RepositoryV1, TenantId};
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -17,8 +16,7 @@ pub trait DataQuery: Debug + Send + Sync + 'static {
         tenant_id: &TenantId,
         database_id: &DatabaseId,
         name: &str,
-        page: u32,
-        page_size: u32,
+        page: OffsetPage,
     ) -> anyhow::Result<(Vec<Data>, OffsetPaginator)>;
 }
 
@@ -50,8 +48,7 @@ impl SearchDataInputPort for SearchData {
         &self,
         input: &SearchDataInputData,
     ) -> errors::Result<(Vec<Data>, OffsetPaginator)> {
-        let page = input.page.unwrap_or(1);
-        let page_size = input.page_size.unwrap_or(20);
+        let page = OffsetPage::from_options(input.page, input.page_size)?;
         if let Some(database_id) = input.database_id.clone() {
             let scope = DatabaseScope::new(input.tenant_id, &database_id);
             let database =
@@ -63,7 +60,6 @@ impl SearchDataInputPort for SearchData {
                         database.tenant_id(),
                         database.id(),
                         page,
-                        page_size,
                     )
                     .await?;
                 return Ok((data.value().to_vec(), paginator));
@@ -75,7 +71,6 @@ impl SearchDataInputPort for SearchData {
                     database.id(),
                     input.query,
                     page,
-                    page_size,
                 )
                 .await?;
             return Ok((data, paginator));

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use value_object::{Location, OffsetPaginator};
 
 // TODO: add English comment
@@ -175,10 +175,34 @@ pub struct SearchRepoQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchDataQuery {
+    /// Data name to match exactly.
     pub name: String,
+    /// 1-origin page number. Defaults to 1.
+    #[param(minimum = 1)]
+    #[schema(minimum = 1)]
     pub page: Option<u32>,
+    /// Number of records per page. Defaults to 20 and is capped at 100.
+    #[param(minimum = 1, maximum = 100)]
+    #[schema(minimum = 1, maximum = 100)]
+    pub page_size: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct DataPaginationQuery {
+    /// 1-origin page number. The legacy `offset` alias is also interpreted as
+    /// a page number and therefore must be at least 1.
+    #[serde(alias = "offset")]
+    #[param(minimum = 1)]
+    #[schema(minimum = 1)]
+    pub page: Option<u32>,
+    /// Number of records per page. The legacy `limit` alias remains accepted.
+    #[serde(alias = "limit")]
+    #[param(minimum = 1, maximum = 100)]
+    #[schema(minimum = 1, maximum = 100)]
     pub page_size: Option<u32>,
 }
 

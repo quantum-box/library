@@ -83,6 +83,36 @@ components:
       required:
       - name
       type: object
+    DataListResponse:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/DataResponse'
+          type: array
+        paginator:
+          $ref: '#/components/schemas/OffsetPaginator'
+      required:
+      - data
+      - paginator
+      type: object
+    DataPaginationQuery:
+      properties:
+        page:
+          description: 1-origin page number. The legacy `offset` alias is also interpreted as a page number and therefore must be at least 1.
+          format: int32
+          minimum: 1
+          type:
+          - integer
+          - 'null'
+        page_size:
+          description: Number of records per page. The legacy `limit` alias remains accepted.
+          format: int32
+          maximum: 100
+          minimum: 1
+          type:
+          - integer
+          - 'null'
+      type: object
     DataResponse:
       properties:
         id:
@@ -139,6 +169,31 @@ components:
       required:
       - latitude
       - longitude
+      type: object
+    OffsetPaginator:
+      properties:
+        current_page:
+          format: int32
+          minimum: 1
+          type: integer
+        items_per_page:
+          format: int32
+          maximum: 100
+          minimum: 1
+          type: integer
+        total_items:
+          format: int32
+          minimum: 0
+          type: integer
+        total_pages:
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+      - current_page
+      - items_per_page
+      - total_items
+      - total_pages
       type: object
     OrganizationResponse:
       properties:
@@ -327,16 +382,20 @@ components:
     SearchDataQuery:
       properties:
         name:
+          description: Data name to match exactly.
           type: string
         page:
+          description: 1-origin page number. Defaults to 1.
           format: int32
-          minimum: 0
+          minimum: 1
           type:
           - integer
           - 'null'
         page_size:
+          description: Number of records per page. Defaults to 20 and is capped at 100.
           format: int32
-          minimum: 0
+          maximum: 100
+          minimum: 1
           type:
           - integer
           - 'null'
@@ -549,21 +608,22 @@ paths:
         required: true
         schema:
           type: string
-      - description: Page number, starting at 1
+      - description: 1-origin page number. Defaults to 1.
         in: query
         name: page
         required: false
         schema:
           format: int32
-          minimum: 0
+          minimum: 1
           type: integer
-      - description: Number of documents per page
+      - description: Number of documents per page. Defaults to 50 and is capped at 100.
         in: query
         name: page_size
         required: false
         schema:
           format: int32
-          minimum: 0
+          maximum: 100
+          minimum: 1
           type: integer
       responses:
         '200':
@@ -572,6 +632,8 @@ paths:
               schema:
                 type: string
           description: Rendered docs list HTML
+        '400':
+          description: Invalid pagination request
         '403':
           description: Private repository access denied
         '404':
@@ -944,37 +1006,38 @@ paths:
         required: true
         schema:
           type: string
-      - description: Data name to search for
+      - description: Data name to match exactly.
         in: query
         name: name
         required: true
         schema:
           type: string
-      - description: Page number
+      - description: 1-origin page number. Defaults to 1.
         in: query
         name: page
         required: false
         schema:
           format: int32
-          minimum: 0
+          minimum: 1
           type: integer
-      - description: Page size
+      - description: Number of records per page. Defaults to 20 and is capped at 100.
         in: query
         name: page_size
         required: false
         schema:
           format: int32
-          minimum: 0
+          maximum: 100
+          minimum: 1
           type: integer
       responses:
         '200':
           content:
             application/json:
               schema:
-                items:
-                  $ref: '#/components/schemas/DataResponse'
-                type: array
+                $ref: '#/components/schemas/DataListResponse'
           description: Data found
+        '400':
+          description: Invalid pagination request
         '404':
           description: Repository not found
       tags: []
@@ -1027,15 +1090,32 @@ paths:
         required: true
         schema:
           type: string
+      - description: 1-origin page number. The legacy `offset` alias is also interpreted as a page number and therefore must be at least 1.
+        in: query
+        name: page
+        required: false
+        schema:
+          format: int32
+          minimum: 1
+          type: integer
+      - description: Number of records per page. The legacy `limit` alias remains accepted.
+        in: query
+        name: page_size
+        required: false
+        schema:
+          format: int32
+          maximum: 100
+          minimum: 1
+          type: integer
       responses:
         '200':
           content:
             application/json:
               schema:
-                items:
-                  $ref: '#/components/schemas/DataResponse'
-                type: array
+                $ref: '#/components/schemas/DataListResponse'
           description: Data list found
+        '400':
+          description: Invalid pagination request
         '404':
           description: Repository not found
       tags: []

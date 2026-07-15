@@ -378,8 +378,7 @@ impl DataRepository for DataRepositoryImpl {
         &self,
         tenant_id: &TenantId,
         database_id: &DatabaseId,
-        page: u32,
-        page_size: u32,
+        page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
         let fields = sqlx::query_as::<_, FieldRow>(
             r#"
@@ -395,7 +394,6 @@ impl DataRepository for DataRepositoryImpl {
         .bind(tenant_id.to_string())
         .fetch_all(self.db.pool().as_ref())
         .await?;
-        let offset = (page - 1) * page_size;
         let data_rows = sqlx::query_as::<_, DataRow>(
             r#"
             SELECT
@@ -411,8 +409,8 @@ impl DataRepository for DataRepositoryImpl {
         )
         .bind(database_id.to_string())
         .bind(tenant_id.to_string())
-        .bind(page_size)
-        .bind(offset)
+        .bind(page.items_per_page())
+        .bind(page.offset())
         .fetch_all(self.db.pool().as_ref())
         .await?;
         let total: i64 = sqlx::query_scalar!(
@@ -434,7 +432,12 @@ impl DataRepository for DataRepositoryImpl {
             let data = self.convert_to_data(data_row, fields.clone())?;
             data_vec.push(data);
         }
-        let paginator = OffsetPaginator::new(page, total as u32, page_size);
+        let total = u32::try_from(total).map_err(|_| {
+            errors::Error::internal_server_error(
+                "data count exceeds the supported pagination range",
+            )
+        })?;
+        let paginator = OffsetPaginator::new(page, total);
         Ok((DataCollection::new(data_vec), paginator))
     }
 }

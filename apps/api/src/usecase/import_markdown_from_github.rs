@@ -8,7 +8,7 @@ use database_manager::domain as db;
 use tachyon_sdk::auth::{
     AuthApp, CheckPolicyInput, GetOAuthTokenByProviderInput,
 };
-use value_object::{Identifier, Text};
+use value_object::{Identifier, Text, MAX_PAGE_SIZE};
 
 use crate::usecase::{
     AddDataInputData, AddDataInputPort, AddPropertyInputData,
@@ -295,46 +295,53 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
             property_map.insert(mapping.frontmatter_key.clone(), prop_id);
         }
 
-        // Get existing data to check for duplicates
-        let existing_data = self
-            .view_data_list
-            .execute(&ViewDataListInputData {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                org_username: input.org_username.clone(),
-                repo_username: input.repo_username.clone(),
-                page_size: Some(1000),
-                page: Some(1),
-            })
-            .await?;
-
         // Build a map of ext_github path -> data_id for duplicate detection
         let mut path_to_data_id: HashMap<String, String> = HashMap::new();
-        for data in &existing_data.0 {
-            for prop_data in data.property_data() {
-                if *prop_data.property_id() == ext_github_prop_id {
-                    if let Some(db::PropertyDataValue::String(path)) =
-                        prop_data.value()
-                    {
-                        // Parse ext_github JSON value to get path
-                        if let Ok(github_meta) =
-                            serde_json::from_str::<serde_json::Value>(
-                                &path.to_string(),
-                            )
+        let mut page = 1;
+        loop {
+            let (existing_data, _, paginator) = self
+                .view_data_list
+                .execute(&ViewDataListInputData {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    org_username: input.org_username.clone(),
+                    repo_username: input.repo_username.clone(),
+                    page_size: Some(MAX_PAGE_SIZE),
+                    page: Some(page),
+                })
+                .await?;
+
+            for data in &existing_data {
+                for prop_data in data.property_data() {
+                    if *prop_data.property_id() == ext_github_prop_id {
+                        if let Some(db::PropertyDataValue::String(path)) =
+                            prop_data.value()
                         {
-                            if let Some(github_path) = github_meta
-                                .get("path")
-                                .and_then(|p| p.as_str())
+                            // Parse ext_github JSON value to get path
+                            if let Ok(github_meta) =
+                                serde_json::from_str::<serde_json::Value>(
+                                    &path.to_string(),
+                                )
                             {
-                                path_to_data_id.insert(
-                                    github_path.to_string(),
-                                    data.id().to_string(),
-                                );
+                                if let Some(github_path) = github_meta
+                                    .get("path")
+                                    .and_then(|p| p.as_str())
+                                {
+                                    path_to_data_id.insert(
+                                        github_path.to_string(),
+                                        data.id().to_string(),
+                                    );
+                                }
                             }
                         }
                     }
                 }
             }
+
+            if page >= paginator.total_pages {
+                break;
+            }
+            page += 1;
         }
 
         let mut imported_count = 0;

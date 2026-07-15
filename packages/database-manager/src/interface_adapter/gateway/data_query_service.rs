@@ -1,6 +1,18 @@
 use super::*;
 use crate::DataQuery;
 
+const SEARCH_DATA_BY_NAME_SQL: &str = r#"
+    SELECT
+        *
+    FROM
+        tachyon_apps_database_manager.data
+    WHERE
+        tenant_id = ? and object_id = ? and name = ?
+    ORDER BY
+        created_at ASC, id ASC
+    LIMIT ? OFFSET ?
+"#;
+
 #[derive(Clone, Debug)]
 pub struct DataQueryService {
     pub db: Arc<Db>,
@@ -62,8 +74,7 @@ impl DataQuery for DataQueryService {
         tenant_id: &TenantId,
         database_id: &DatabaseId,
         name: &str,
-        page: u32,
-        page_size: u32,
+        page: OffsetPage,
     ) -> anyhow::Result<(Vec<Data>, OffsetPaginator)> {
         // TODO: add English comment
         let fields = sqlx::query_as!(
@@ -92,31 +103,15 @@ impl DataQuery for DataQueryService {
         .fetch_all(self.db.pool().as_ref())
         .await?;
 
-        // TODO: add English comment
-        let page_i64 = page as i64;
-        let page_size_i64 = page_size as i64;
-
-        let data_rows = sqlx::query_as!(
-            DataRow,
-            r#"
-            SELECT
-                *
-            FROM
-                tachyon_apps_database_manager.data
-            WHERE
-                object_id = ? and tenant_id = ? and name = ?
-            ORDER BY
-                created_at ASC
-            LIMIT ? OFFSET ?
-            "#,
-            database_id.to_string(),
-            tenant_id.to_string(),
-            name,
-            page_size_i64,
-            page_i64
-        )
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
+        let data_rows =
+            sqlx::query_as::<_, DataRow>(SEARCH_DATA_BY_NAME_SQL)
+                .bind(tenant_id.to_string())
+                .bind(database_id.to_string())
+                .bind(name)
+                .bind(page.items_per_page())
+                .bind(page.offset())
+                .fetch_all(self.db.pool().as_ref())
+                .await?;
 
         let total = sqlx::query_scalar!(
             r#"
@@ -134,14 +129,40 @@ impl DataQuery for DataQueryService {
         .fetch_one(self.db.pool().as_ref())
         .await?;
 
-        // TODO: add English comment
-        let total_u32 = total as u32;
+        let total = u32::try_from(total).map_err(|_| {
+            anyhow::anyhow!(
+                "data count exceeds the supported pagination range"
+            )
+        })?;
         let mut data_vec = vec![];
         for data_row in data_rows {
             let data = self.data_from_row(data_row, fields.clone())?;
             data_vec.push(data);
         }
-        let paginator = OffsetPaginator::new(page, page_size, total_u32);
+        let paginator = OffsetPaginator::new(page, total);
         Ok((data_vec, paginator))
+    }
+}
+
+#[cfg(test)]
+mod query_contract_tests {
+    use super::*;
+
+    fn normalize(sql: &str) -> String {
+        sql.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase()
+    }
+
+    #[test]
+    fn filtered_search_is_tenant_scoped_and_deterministic() {
+        let sql = normalize(SEARCH_DATA_BY_NAME_SQL);
+
+        assert!(sql.contains(
+            "where tenant_id = ? and object_id = ? and name = ?"
+        ));
+        assert!(sql.contains("order by created_at asc, id asc"));
+        assert!(sql.contains("limit ? offset ?"));
     }
 }

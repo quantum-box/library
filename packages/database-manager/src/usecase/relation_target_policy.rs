@@ -77,7 +77,7 @@ mod tests {
         TypeRelation,
     };
     use chrono::Utc;
-    use value_object::OffsetPaginator;
+    use value_object::{OffsetPage, OffsetPaginator};
 
     #[derive(Debug)]
     struct StubDatabaseRepository {
@@ -188,8 +188,7 @@ mod tests {
             &self,
             _tenant_id: &TenantId,
             _database_id: &DatabaseId,
-            _page: u32,
-            _page_size: u32,
+            _page: OffsetPage,
         ) -> errors::Result<(DataCollection, OffsetPaginator)> {
             unreachable!("not used by RelationTargetPolicy")
         }
