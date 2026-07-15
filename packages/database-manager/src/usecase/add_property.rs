@@ -38,12 +38,10 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
         &self,
         input: AddPropertyInputData<'_>,
     ) -> errors::Result<Property> {
-        let database = DatabaseScope::new(
-            input.tenant_id,
-            input.database_id,
-        )
-        .require_database(self.database_repo.as_ref())
-        .await?;
+        let database =
+            DatabaseScope::new(input.tenant_id, input.database_id)
+                .require_database(self.database_repo.as_ref())
+                .await?;
         let properties = self
             .property_repo
             .find_all(database.id(), database.tenant_id())
@@ -65,12 +63,10 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
         if let PropertyType::Relation(relation) =
             new_property.property_type()
         {
-            let target_database = DatabaseScope::new(
-                input.tenant_id,
-                &relation.database_id,
-            )
-            .require_database(self.database_repo.as_ref())
-            .await?;
+            let target_database =
+                DatabaseScope::new(input.tenant_id, &relation.database_id)
+                    .require_database(self.database_repo.as_ref())
+                    .await?;
 
             let relation = Relation::new(
                 &RelationId::default(),

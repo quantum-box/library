@@ -107,8 +107,7 @@ mod tests {
                 .databases
                 .iter()
                 .find(|database| {
-                    database.tenant_id() == tenant_id
-                        && database.id() == id
+                    database.tenant_id() == tenant_id && database.id() == id
                 })
                 .cloned())
         }
@@ -196,7 +195,10 @@ mod tests {
         }
     }
 
-    fn database(tenant_id: &TenantId, database_id: &DatabaseId) -> Database {
+    fn database(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+    ) -> Database {
         Database::new(database_id, tenant_id, "database")
     }
 
@@ -326,11 +328,7 @@ mod tests {
         let error = policy(
             vec![database(&tenant_id, &target_database_id)],
             vec![
-                data(
-                    &tenant_id,
-                    &target_database_id,
-                    &existing_data_id,
-                ),
+                data(&tenant_id, &target_database_id, &existing_data_id),
                 data(&tenant_id, &other_database_id, &invalid_data_id),
             ],
         )

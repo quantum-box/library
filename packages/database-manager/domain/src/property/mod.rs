@@ -149,6 +149,7 @@ impl Property {
                 && current.database_id != requested.database_id
             {
                 return Err(errors::invalid!(
+                    "{}",
                     RELATION_TARGET_DATABASE_IMMUTABLE
                 ));
             }
@@ -316,9 +317,11 @@ mod tests {
             .expect_err("a Relation target must not change after creation");
 
         assert!(error.is_bad_request());
-        assert!(error
-            .to_string()
-            .contains(RELATION_TARGET_DATABASE_IMMUTABLE));
+        assert!(
+            error
+                .to_string()
+                .contains(RELATION_TARGET_DATABASE_IMMUTABLE)
+        );
     }
 
     #[test]
