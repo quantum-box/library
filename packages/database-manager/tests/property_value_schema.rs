@@ -9,7 +9,7 @@ async fn constraint_columns(
 ) -> anyhow::Result<Vec<String>> {
     let rows = sqlx::query(
         r#"
-        SELECT COLUMN_NAME
+        SELECT CAST(COLUMN_NAME AS CHAR) AS column_name_text
         FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = ?
@@ -24,7 +24,7 @@ async fn constraint_columns(
 
     Ok(rows
         .iter()
-        .map(|row| row.try_get("COLUMN_NAME"))
+        .map(|row| row.try_get("column_name_text"))
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -34,7 +34,9 @@ async fn foreign_key_columns(
 ) -> anyhow::Result<Vec<(String, String)>> {
     let rows = sqlx::query(
         r#"
-        SELECT COLUMN_NAME, REFERENCED_COLUMN_NAME
+        SELECT
+            CAST(COLUMN_NAME AS CHAR) AS column_name_text,
+            CAST(REFERENCED_COLUMN_NAME AS CHAR) AS referenced_column_name_text
         FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'property_values'
@@ -50,8 +52,8 @@ async fn foreign_key_columns(
         .iter()
         .map(|row| {
             Ok((
-                row.try_get("COLUMN_NAME")?,
-                row.try_get("REFERENCED_COLUMN_NAME")?,
+                row.try_get("column_name_text")?,
+                row.try_get("referenced_column_name_text")?,
             ))
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
@@ -64,7 +66,7 @@ async fn index_columns(
 ) -> anyhow::Result<Vec<String>> {
     let rows = sqlx::query(
         r#"
-        SELECT COLUMN_NAME
+        SELECT CAST(COLUMN_NAME AS CHAR) AS column_name_text
         FROM information_schema.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = ?
@@ -79,7 +81,7 @@ async fn index_columns(
 
     Ok(rows
         .iter()
-        .map(|row| row.try_get("COLUMN_NAME"))
+        .map(|row| row.try_get("column_name_text"))
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -193,7 +195,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     let property_value_columns = sqlx::query(
         r#"
         SELECT
-            COLUMN_NAME,
+            CAST(COLUMN_NAME AS CHAR) AS column_name_text,
             CAST(COLUMN_TYPE AS CHAR) AS column_type_text
         FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
@@ -206,7 +208,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     .into_iter()
     .map(|row| {
         Ok((
-            row.try_get::<String, _>("COLUMN_NAME")?,
+            row.try_get::<String, _>("column_name_text")?,
             row.try_get::<String, _>("column_type_text")?,
         ))
     })
@@ -232,7 +234,9 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
 
     let value_column = sqlx::query(
         r#"
-        SELECT DATA_TYPE, IS_NULLABLE
+        SELECT
+            CAST(DATA_TYPE AS CHAR) AS data_type_text,
+            CAST(IS_NULLABLE AS CHAR) AS is_nullable_text
         FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'property_values'
@@ -241,8 +245,14 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     )
     .fetch_one(pool.as_ref())
     .await?;
-    assert_eq!(value_column.try_get::<String, _>("DATA_TYPE")?, "longtext");
-    assert_eq!(value_column.try_get::<String, _>("IS_NULLABLE")?, "NO");
+    assert_eq!(
+        value_column.try_get::<String, _>("data_type_text")?,
+        "longtext"
+    );
+    assert_eq!(
+        value_column.try_get::<String, _>("is_nullable_text")?,
+        "NO"
+    );
 
     let marker = sqlx::query(
         r#"
