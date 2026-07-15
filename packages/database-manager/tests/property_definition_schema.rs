@@ -173,10 +173,14 @@ async fn property_definition_envelope_schema_is_additive_and_strict(
         );
     }
 
-    let zero_version =
-        insert_property(pool.as_ref(), Some("string"), Some(0), Some("null"))
-            .await
-            .expect_err("type version zero must fail");
+    let zero_version = insert_property(
+        pool.as_ref(),
+        Some("string"),
+        Some(0),
+        Some("null"),
+    )
+    .await
+    .expect_err("type version zero must fail");
     assert_check_violation(
         zero_version,
         "ck_fields_property_definition_type_version",
