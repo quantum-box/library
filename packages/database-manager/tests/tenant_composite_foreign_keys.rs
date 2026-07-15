@@ -96,7 +96,7 @@ async fn assert_constraint_absent(
     table: &str,
     constraint: &str,
 ) -> anyhow::Result<()> {
-    let count = sqlx::query_scalar::<_, u64>(
+    let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM information_schema.TABLE_CONSTRAINTS
