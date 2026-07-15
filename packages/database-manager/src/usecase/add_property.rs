@@ -4,8 +4,8 @@ use crate::usecase::database_scope::DatabaseScope;
 use crate::usecase::{AddPropertyInputData, AddPropertyInputPort};
 
 use crate::domain::{
-    AddPropertyCommand, Database, DatabaseId, Property,
-    PropertyRepository, PropertyType, RelationRepository,
+    AddPropertyCommand, Database, DatabaseId, Property, PropertyRepository,
+    PropertyType, RelationRepository,
 };
 use value_object::RepositoryV1;
 

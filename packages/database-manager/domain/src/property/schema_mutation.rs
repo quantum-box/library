@@ -153,7 +153,7 @@ mod tests {
                 .expect("schema mutation")
                 .into_parts();
 
-        assert_eq!(planned.property_num(), 1);
+        assert_eq!(*planned.property_num(), 1);
         assert!(relation.is_none());
     }
 
