@@ -21,7 +21,7 @@ const UpdateDataMutation = graphql(`
   }
 `)
 
-const normalizeValueForInput = (
+export const normalizeValueForInput = (
   value: unknown,
   nextSelectOptionId?: string | null,
 ): PropertyDataInputData['value'] => {
@@ -34,6 +34,15 @@ const normalizeValueForInput = (
   if ('string' in input) {
     return {
       string: typeof input.string === 'string' ? input.string : String(input.string ?? ''),
+    }
+  }
+
+  // Id values are returned as `IdValue`, while the Database command accepts
+  // Id input through the scalar string variant. Preserve the current Id when
+  // an inline update normalizes the complete record payload.
+  if ('id' in input) {
+    return {
+      string: typeof input.id === 'string' ? input.id : String(input.id ?? ''),
     }
   }
 

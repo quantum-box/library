@@ -340,6 +340,13 @@ export function PropertyValue({
 				})
 				return
 			}
+			if (property.typ === PropertyType.Id) {
+				emit({
+					__typename: 'IdValue',
+					id: nextValue,
+				})
+				return
+			}
 			if (property.typ === PropertyType.Relation) {
 				const relationMeta = property.meta as RelationType | undefined
 				emit({
