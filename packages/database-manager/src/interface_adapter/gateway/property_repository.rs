@@ -11,38 +11,144 @@ impl PropertyRepositoryImpl {
     }
 }
 
-#[async_trait::async_trait]
-impl PropertyRepository for PropertyRepositoryImpl {
-    async fn create(&self, property: &Property) -> errors::Result<()> {
-        sqlx::query!(
-            r#"
-            INSERT INTO tachyon_apps_database_manager.fields 
-                (id, tenant_id, object_id, field_name, datatype, datatype_meta, is_indexed, field_num, meta_json)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                field_name = VALUES(field_name),
-                datatype = VALUES(datatype),
-                datatype_meta = VALUES(datatype_meta),
-                is_indexed = VALUES(is_indexed),
-                field_num = VALUES(field_num),
-                meta_json = VALUES(meta_json);
-            "#,
-            property.id().to_string(),
-            property.tenant_id().to_string(),
-            property.database_id().to_string(),
-            property.name(),
-            property.property_type().to_string(),
-            property.property_type().get_meta()?,
-            property.is_indexed(),
-            property.property_num(),
-            property.meta_json(),
-        )
-        .execute(self.db.pool().as_ref())
-        .await?;
-        Ok(())
+fn map_schema_insert_error(
+    error: sqlx::Error,
+    property_type: &PropertyType,
+) -> errors::Error {
+    if let sqlx::Error::Database(database_error) = &error {
+        if database_error.is_unique_violation() {
+            let message = if matches!(property_type, PropertyType::Id(_)) {
+                ID_PROPERTY_ALREADY_EXISTS
+            } else {
+                "Property slot already exists"
+            };
+            return errors::Error::conflict(message);
+        }
     }
 
+    error.into()
+}
+
+#[async_trait::async_trait]
+impl PropertySchemaMutationPort for PropertyRepositoryImpl {
+    async fn add_property_atomically(
+        &self,
+        command: &AddPropertyCommand,
+    ) -> errors::Result<Property> {
+        let pool = self.db.pool();
+        let mut transaction = pool.begin().await?;
+
+        // Database rows are the serialization boundary for schema changes.
+        // Relation writers lock both endpoints in the same primary-key order
+        // so opposite A -> B and B -> A additions cannot deadlock while the
+        // relationship foreign keys are checked.
+        let source_database_id = command.database_id().to_string();
+        let target_database_id = match command.property_type() {
+            PropertyType::Relation(relation) => {
+                relation.database_id.to_string()
+            }
+            _ => source_database_id.clone(),
+        };
+        let mut endpoint_ids =
+            [source_database_id.clone(), target_database_id];
+        endpoint_ids.sort();
+        let locked_database_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM objects
+            WHERE tenant_id = ? AND id IN (?, ?)
+            ORDER BY id
+            FOR UPDATE;
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(&endpoint_ids[0])
+        .bind(&endpoint_ids[1])
+        .fetch_all(&mut *transaction)
+        .await?;
+        if !locked_database_ids.contains(&source_database_id) {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+
+        // Every writer reads fields only after acquiring the endpoint locks,
+        // so the domain evaluates slot and singleton invariants against the
+        // latest schema.
+
+        let existing_properties = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ?
+            FOR UPDATE;
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .fetch_all(&mut *transaction)
+        .await?
+        .into_iter()
+        .map(Property::from)
+        .collect::<Vec<_>>();
+
+        let mutation =
+            PropertySchema::plan_addition(&existing_properties, command)?;
+        let (property, relation) = mutation.into_parts();
+
+        let field_insert = sqlx::query(
+            r#"
+            INSERT INTO fields
+                (id, tenant_id, object_id, field_name, datatype,
+                 datatype_meta, is_indexed, field_num, meta_json)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(property.id().to_string())
+        .bind(property.tenant_id().to_string())
+        .bind(property.database_id().to_string())
+        .bind(property.name())
+        .bind(property.property_type().to_string())
+        .bind(property.property_type().get_meta()?)
+        .bind(property.is_indexed())
+        .bind(property.property_num())
+        .bind(property.meta_json())
+        .execute(&mut *transaction)
+        .await;
+        if let Err(error) = field_insert {
+            return Err(map_schema_insert_error(
+                error,
+                property.property_type(),
+            ));
+        }
+
+        if let Some(relation) = relation {
+            sqlx::query(
+                r#"
+                INSERT INTO relationships
+                    (id, tenant_id, object_id, field_id, relation_id,
+                     target_object_id)
+                VALUES
+                    (?, ?, ?, ?, ?, ?);
+                "#,
+            )
+            .bind(relation.id().to_string())
+            .bind(relation.tenant_id().to_string())
+            .bind(relation.database_id().to_string())
+            .bind(relation.property_id().to_string())
+            .bind(*relation.relation_id() as u32)
+            .bind(relation.target_database_id().to_string())
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(property)
+    }
+}
+
+#[async_trait::async_trait]
+impl PropertyRepository for PropertyRepositoryImpl {
     async fn update(&self, property: &Property) -> errors::Result<()> {
         sqlx::query!(
             "

@@ -19,26 +19,6 @@ impl RelationRepositoryImpl {
 
 #[async_trait::async_trait]
 impl RelationRepository for RelationRepositoryImpl {
-    async fn insert(&self, entity: &Relation) -> errors::Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO relationships 
-                (id, tenant_id, object_id, field_id, relation_id, target_object_id)
-            VALUES
-                (?, ?, ?, ?, ?, ?);
-            "#,
-        )
-        .bind(entity.id().to_string())
-        .bind(entity.tenant_id().to_string())
-        .bind(entity.database_id().to_string())
-        .bind(entity.property_id().to_string())
-        .bind(*entity.relation_id() as u32)
-        .bind(entity.target_database_id().to_string())
-        .execute(self.db.pool().as_ref())
-        .await?;
-        Ok(())
-    }
-
     async fn find_all_by_database(
         &self,
         database_id: &DatabaseId,

@@ -40,8 +40,6 @@ impl Relation {
 
 #[async_trait::async_trait]
 pub trait RelationRepository: Debug + Send + Sync {
-    async fn insert(&self, entity: &Relation) -> errors::Result<()>;
-
     async fn find_all_by_database(
         &self,
         database_id: &DatabaseId,
