@@ -144,12 +144,11 @@ impl Property {
                 PropertyType::Id(current),
                 PropertyType::Id(requested),
             ) = (&self.property_type, property_type)
+                && current.auto_generate != requested.auto_generate
             {
-                if current.auto_generate != requested.auto_generate {
-                    return Err(errors::invalid!(
-                        "Id auto_generate is immutable after property creation."
-                    ));
-                }
+                return Err(errors::invalid!(
+                    "Id auto_generate is immutable after property creation."
+                ));
             }
             if self.property_type.to_string() != property_type.to_string() {
                 // TODO: add English comment
