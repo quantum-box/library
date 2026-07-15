@@ -8,6 +8,8 @@ use util::macros::*;
 
 mod property_type;
 pub use property_type::*;
+mod schema_mutation;
+pub use schema_mutation::*;
 
 pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
 pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
@@ -178,8 +180,9 @@ impl Property {
 }
 
 #[async_trait::async_trait]
-pub trait PropertyRepository: Debug + Send + Sync + 'static {
-    async fn create(&self, property: &Property) -> errors::Result<()>;
+pub trait PropertyRepository:
+    PropertySchemaMutationPort + Debug + Send + Sync + 'static
+{
     async fn update(&self, property: &Property) -> errors::Result<()>;
     async fn find_by_id(
         &self,
