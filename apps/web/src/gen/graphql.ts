@@ -205,6 +205,8 @@ export type Data = {
   id: Scalars['String']['output'];
   name: Scalars['String']['output'];
   propertyData: Array<PropertyData>;
+  /** Decimal Library record revision; kept as String for JavaScript safety. */
+  recordVersion: Scalars['String']['output'];
   tenantId: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
 };

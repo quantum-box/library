@@ -17,6 +17,7 @@
 - [Library GA env / secrets Runbook](operations/library-ga-env-secrets-runbook.md)
 - [Database Manager tenant composite FK rollout](operations/database-manager-tenant-composite-fk-rollout.md)
 - [PropertyValue storage expand rollout](operations/property-value-storage-expand-rollout.md)
+- [RecordVersion expand/read rollout](operations/record-version-expand-read-rollout.md)
 - [PropertyDefinition envelope schema rollout](operations/property-definition-envelope-rollout.md)
 - [RelationDefinition control-plane rollout](operations/relation-definition-expand-rollout.md)
 - [CMS利用ガイド](guides/cms-user-guide.md)

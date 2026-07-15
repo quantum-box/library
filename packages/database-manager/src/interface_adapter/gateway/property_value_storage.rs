@@ -118,11 +118,12 @@ pub fn hydrate_data_row(
 ) -> errors::Result<Data> {
     let tenant_id = TenantId::from_str(&data_row.tenant_id)?;
     let database_id = DatabaseId::from_str(&data_row.object_id)?;
-    let mut data = Data::new(
+    let mut data = Data::restore(
         &data_row.id.parse()?,
         &tenant_id,
         &database_id,
         &data_row.name,
+        RecordVersion::new(data_row.record_version)?,
         vec![],
         data_row.created_at,
         data_row.updated_at,
@@ -239,6 +240,7 @@ mod tests {
             tenant_id: TenantId::default().to_string(),
             object_id: DatabaseId::default().to_string(),
             name: "record".to_string(),
+            record_version: 7,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             value0: Some(legacy.to_string()),
@@ -287,6 +289,7 @@ mod tests {
                 .string_value(),
             "legacy"
         );
+        assert_eq!(data.record_version().get(), 7);
     }
 
     #[test]
@@ -308,6 +311,7 @@ mod tests {
                 .string_value(),
             "7"
         );
+        assert_eq!(data.record_version().get(), 7);
 
         let error = hydrate_data_row(
             row("not-an-integer"),
@@ -319,5 +323,23 @@ mod tests {
             "missing canonical row must fall back to legacy decode",
         );
         assert!(error.is_bad_request());
+    }
+
+    #[test]
+    fn hydration_rejects_zero_record_version() {
+        let mut data_row = row("legacy");
+        data_row.record_version = 0;
+
+        let error = hydrate_data_row(
+            data_row,
+            &[],
+            &HashMap::new(),
+            PropertyValueStorageMode::LegacyOnly,
+        )
+        .expect_err("persisted record versions must be nonzero");
+
+        assert!(error
+            .to_string()
+            .contains("record version must be greater than zero"));
     }
 }

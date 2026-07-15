@@ -137,6 +137,8 @@
 1. 入力型: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/graphql/input.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/graphql/input.rs), [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/graphql/types.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/graphql/types.rs)
 2. 出力型: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/graphql/model.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/graphql/model.rs), [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/graphql/types.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/graphql/types.rs)
 3. Query では `User.organizations`、`Repo.data_list`、`Repo.properties`、`Repo.sources`、`Repo.policies`、`Repo.members` がネストして利用される。
+4. `Data.recordVersion: String!` は Database BC の 1-origin record revision。
+   JavaScript の整数精度を避けるため10進文字列であり、Photon Engine clock ではない。
 
 ## 10. 開発者向け運用メモ
 

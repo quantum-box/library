@@ -98,7 +98,9 @@ components:
     DataPaginationQuery:
       properties:
         page:
-          description: 1-origin page number. The legacy `offset` alias is also interpreted as a page number and therefore must be at least 1.
+          description: |-
+            1-origin page number. The legacy `offset` alias is also interpreted as
+            a page number and therefore must be at least 1.
           format: int32
           minimum: 1
           type:
@@ -123,9 +125,15 @@ components:
           type: array
         name:
           type: string
+        recordVersion:
+          description: |-
+            Decimal Library record revision. Serialized as a string so clients do
+            not lose precision when BIGINT values exceed JavaScript's safe range.
+          type: string
       required:
       - id
       - name
+      - recordVersion
       - items
       type: object
     GlobalIdMappingResponse:
@@ -171,6 +179,12 @@ components:
       - longitude
       type: object
     OffsetPaginator:
+      description: |-
+        Metadata for a validated [`OffsetPage`].
+
+        `current_page` is never clamped to the last page. An out-of-range request
+        therefore returns an empty item list with the requested page preserved.
+        Empty result sets have zero total pages.
       properties:
         current_page:
           format: int32
@@ -1090,7 +1104,9 @@ paths:
         required: true
         schema:
           type: string
-      - description: 1-origin page number. The legacy `offset` alias is also interpreted as a page number and therefore must be at least 1.
+      - description: |-
+          1-origin page number. The legacy `offset` alias is also interpreted as
+          a page number and therefore must be at least 1.
         in: query
         name: page
         required: false

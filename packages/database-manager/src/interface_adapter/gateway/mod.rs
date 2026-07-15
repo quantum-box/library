@@ -108,6 +108,7 @@ pub struct DataRow {
     pub tenant_id: String,
     pub object_id: String,
     pub name: String,
+    pub record_version: u64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub value0: Option<String>,

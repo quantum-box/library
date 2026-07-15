@@ -140,6 +140,8 @@ pub struct Data {
     pub id: String,
     pub database_id: String,
     pub name: String,
+    /// Decimal Library record revision, encoded as a string for client safety.
+    pub record_version: String,
     pub property_data: Vec<PropertyData>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

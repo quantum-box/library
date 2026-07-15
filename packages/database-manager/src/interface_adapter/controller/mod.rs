@@ -52,6 +52,7 @@ impl From<Data> for pb::Data {
                 .iter()
                 .map(|p| p.clone().into())
                 .collect::<Vec<pb::PropertyData>>(),
+            record_version: val.record_version().to_string(),
         }
     }
 }

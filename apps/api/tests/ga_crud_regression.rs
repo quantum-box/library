@@ -170,6 +170,7 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     let data_id = string_field(&data, "id")?;
+    assert_eq!(data["recordVersion"], "1");
     let generated_id = data["items"]
         .as_array()
         .and_then(|items| {
@@ -198,6 +199,15 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         data_updated["name"],
         format!("GA REST Data Updated {suffix}")
     );
+    assert_eq!(data_updated["recordVersion"], "1");
+
+    let data_view = get_json(
+        &client,
+        &format!("{server_url}/v1beta/repos/{org}/{repo}/data/{data_id}"),
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(data_view["recordVersion"], "1");
 
     let data_list = get_json(
         &client,
@@ -205,11 +215,15 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         StatusCode::OK,
     )
     .await?;
-    assert!(data_list["data"]
+    let listed_data = data_list["data"]
         .as_array()
-        .unwrap_or(&vec![])
+        .ok_or_else(|| anyhow::anyhow!("REST data list is not an array"))?
         .iter()
-        .any(|item| item["id"] == data_id));
+        .find(|item| item["id"] == data_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!("REST data list is missing record")
+        })?;
+    assert_eq!(listed_data["recordVersion"], "1");
 
     delete(
         &client,
@@ -466,6 +480,7 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
             addData(input: $input) {
                 id
                 name
+                recordVersion
                 propertyData {
                     propertyId
                     value { ... on IdValue { id } }
@@ -487,6 +502,7 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     let data_id = string_at(&data, &["addData", "id"])?;
+    assert_eq!(data["addData"]["recordVersion"], "1");
     let generated_id = data["addData"]["propertyData"]
         .as_array()
         .and_then(|items| {
@@ -507,6 +523,7 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
             updateData(input: $input) {
                 id
                 name
+                recordVersion
                 propertyData {
                     propertyId
                     value { __typename ... on StringValue { string } }
@@ -532,23 +549,30 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         data_update["updateData"]["name"],
         format!("GA GraphQL Data Updated {suffix}")
     );
+    assert_eq!(data_update["updateData"]["recordVersion"], "1");
 
     let data_list = graphql(
         &client,
         &server_url,
         "query DataList($org: String!, $repo: String!) {
             dataList(orgUsername: $org, repoUsername: $repo, pageSize: 20, page: 1) {
-                items { id name }
+                items { id name recordVersion }
             }
         }",
         json!({"org": org, "repo": repo}),
     )
     .await?;
-    assert!(data_list["dataList"]["items"]
+    let listed_data = data_list["dataList"]["items"]
         .as_array()
-        .unwrap_or(&vec![])
+        .ok_or_else(|| {
+            anyhow::anyhow!("GraphQL data list items is not an array")
+        })?
         .iter()
-        .any(|item| item["id"] == data_id));
+        .find(|item| item["id"] == data_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!("GraphQL data list is missing record")
+        })?;
+    assert_eq!(listed_data["recordVersion"], "1");
 
     let deleted_data = graphql(
         &client,

@@ -109,6 +109,7 @@ pub async fn view_data(
     let response = DataResponse {
         id: data.id().to_string(),
         name: data.name().to_string(),
+        record_version: data.record_version().to_string(),
         items: data
             .property_data()
             .iter()
@@ -199,6 +200,7 @@ pub async fn view_data_list(
         .map(|data| DataResponse {
             id: data.id().to_string(),
             name: data.name().to_string(),
+            record_version: data.record_version().to_string(),
             items: data
                 .property_data()
                 .iter()
@@ -266,6 +268,7 @@ pub async fn add_data(
     let response = DataResponse {
         id: data.id().to_string(),
         name: data.name().to_string(),
+        record_version: data.record_version().to_string(),
         items: data
             .property_data()
             .iter()
@@ -331,6 +334,7 @@ pub async fn update_data(
     let response = DataResponse {
         id: data.id().to_string(),
         name: data.name().to_string(),
+        record_version: data.record_version().to_string(),
         items: data
             .property_data()
             .iter()
@@ -421,6 +425,7 @@ pub async fn search_data(
         .map(|data| DataResponse {
             id: data.id().to_string(),
             name: data.name().to_string(),
+            record_version: data.record_version().to_string(),
             items: data
                 .property_data()
                 .iter()

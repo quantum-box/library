@@ -254,6 +254,10 @@ type Data {
 	tenantId: String!
 	databaseId: String!
 	name: String!
+	"""
+	Decimal Library record revision; kept as String for JavaScript safety.
+	"""
+	recordVersion: String!
 	propertyData: [PropertyData!]!
 	createdAt: DateTime!
 	updatedAt: DateTime!

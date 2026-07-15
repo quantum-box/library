@@ -2,12 +2,14 @@ mod property_data;
 mod property_data_value;
 mod property_value_command;
 mod record_mutation;
+mod record_version;
 
 use chrono::{DateTime, Utc};
 pub use property_data::*;
 pub use property_data_value::*;
 pub use property_value_command::*;
 pub use record_mutation::*;
+pub use record_version::*;
 use util::macros::*;
 
 use super::*;
@@ -41,6 +43,7 @@ pub struct Data {
     tenant_id: TenantId,
     database_id: DatabaseId,
     name: Text,
+    record_version: RecordVersion,
     property_data: Vec<PropertyData>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -56,11 +59,36 @@ impl Data {
         created_at: DateTime<Utc>,
         updated_at: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
+        Self::restore(
+            id,
+            tenant_id,
+            database_id,
+            name,
+            RecordVersion::INITIAL,
+            property_data,
+            created_at,
+            updated_at,
+        )
+    }
+
+    /// Rehydrates a persisted record without replacing its storage version.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: &DataId,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        name: &str,
+        record_version: RecordVersion,
+        property_data: Vec<PropertyData>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<Self> {
         let mut new_entity = Self {
             id: id.clone(),
             tenant_id: tenant_id.clone(),
             database_id: database_id.clone(),
             name: name.parse()?,
+            record_version,
             property_data: vec![],
             created_at,
             updated_at,
@@ -68,6 +96,8 @@ impl Data {
         for pd in property_data {
             new_entity.add_property_data(pd)?;
         }
+        // Entity validation must not replace the persisted timestamp.
+        new_entity.updated_at = updated_at;
         Ok(new_entity)
     }
 
@@ -219,6 +249,41 @@ mod tests {
             now,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn new_records_start_at_v1_and_restore_keeps_persisted_version() {
+        let tenant_id = TenantId::default();
+        let database_id = DatabaseId::default();
+        let data_id = DataId::default();
+        let created_at = Utc::now();
+        let updated_at = created_at + chrono::Duration::seconds(5);
+
+        let new_record = Data::new(
+            &data_id,
+            &tenant_id,
+            &database_id,
+            "new",
+            vec![],
+            created_at,
+            updated_at,
+        )
+        .expect("new record");
+        assert_eq!(new_record.record_version().get(), 1);
+
+        let restored = Data::restore(
+            &data_id,
+            &tenant_id,
+            &database_id,
+            "restored",
+            RecordVersion::new(9).expect("persisted version"),
+            vec![],
+            created_at,
+            updated_at,
+        )
+        .expect("restored record");
+        assert_eq!(restored.record_version().get(), 9);
+        assert_eq!(*restored.updated_at(), updated_at);
     }
 
     #[test]
