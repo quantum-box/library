@@ -32,6 +32,10 @@ async fn main() -> errors::Result<()> {
                 database_url.use_database(DATABASE_NAME),
             )
             .await;
+            database_manager::migration_preflight::ensure_check_constraints_enforced(
+                db.pool().as_ref(),
+            )
+            .await?;
             sqlx::migrate!("./migrations")
                 .run(db.pool().as_ref())
                 .await
@@ -50,6 +54,10 @@ async fn main() -> errors::Result<()> {
                 database_url.use_database(DATABASE_NAME),
             )
             .await;
+            database_manager::migration_preflight::ensure_check_constraints_enforced(
+                db.pool().as_ref(),
+            )
+            .await?;
             sqlx::migrate!("./migrations")
                 .run(db.pool().as_ref())
                 .await
@@ -69,6 +77,10 @@ async fn main() -> errors::Result<()> {
                 database_url.use_database(DATABASE_NAME),
             )
             .await;
+            database_manager::migration_preflight::ensure_check_constraints_enforced(
+                db.pool().as_ref(),
+            )
+            .await?;
             sqlx::migrate!("./migrations")
                 .run(db.pool().as_ref())
                 .await

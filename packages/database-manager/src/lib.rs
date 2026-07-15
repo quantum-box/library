@@ -2,6 +2,7 @@ pub extern crate database_domain as domain;
 
 pub mod database_app;
 pub mod interface_adapter;
+pub mod migration_preflight;
 pub mod usecase;
 
 pub mod sdk;
@@ -43,6 +44,10 @@ impl App {
     }
 
     pub async fn migrate(db: Arc<persistence::Db>) -> anyhow::Result<()> {
+        migration_preflight::ensure_check_constraints_enforced(
+            db.pool().as_ref(),
+        )
+        .await?;
         sqlx::migrate!("./migrations")
             .run(db.pool().as_ref())
             .await?;
