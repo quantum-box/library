@@ -100,6 +100,8 @@ spec:
         - apps/api/migrations/**
         - apps/api/src/migrations.rs
         - apps/api/bin/migrate.rs
+        - packages/database-manager/migrations/**
+        - packages/database-manager/src/migration_preflight.rs
         - scripts/build-library-api-migrate-lambda.sh
       build:
         package: library-api
