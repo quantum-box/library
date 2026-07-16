@@ -135,6 +135,33 @@ pub trait UpdateDataInputPort: Debug + Send + Sync + 'static {
     ) -> errors::Result<Data>;
 }
 
+/// Expand-only application boundary for versioned Record patches.
+///
+/// Public REST/GraphQL adoption is deliberately separate. This input accepts
+/// no actor string: the interactor derives the actor from the authenticated
+/// executor before it enters the Database bounded context.
+#[derive(Debug)]
+pub struct PatchRecordInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub data_id: &'a DataId,
+    pub operation_id: &'a RecordOperationId,
+    pub expected_version: RecordVersion,
+    pub name: Option<&'a str>,
+    pub properties: Vec<PropertyDataInputData>,
+}
+
+#[async_trait::async_trait]
+pub trait PatchRecordInputPort: Debug + Send + Sync + 'static {
+    async fn execute(
+        &self,
+        input: PatchRecordInputData<'_>,
+    ) -> errors::Result<RecordMutationDecision>;
+}
+
 // GetDatabaseDefinition
 #[derive(Debug)]
 pub struct GetDatabaseDefinitionInputData<'a> {

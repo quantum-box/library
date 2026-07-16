@@ -1781,6 +1781,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha2",
  "strum 0.26.3",
  "util",
  "value_object",

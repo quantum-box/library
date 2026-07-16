@@ -18,6 +18,7 @@
 - [Database Manager tenant composite FK rollout](operations/database-manager-tenant-composite-fk-rollout.md)
 - [PropertyValue storage expand rollout](operations/property-value-storage-expand-rollout.md)
 - [RecordVersion expand/read rollout](operations/record-version-expand-read-rollout.md)
+- [Record patch decision Unit of Work](operations/record-patch-decision-uow.md)
 - [PropertyDefinition envelope schema rollout](operations/property-definition-envelope-rollout.md)
 - [PropertyDefinition dual-write/read rollout](operations/property-definition-storage-rollout.md)
 - [RelationDefinition control-plane rollout](operations/relation-definition-expand-rollout.md)

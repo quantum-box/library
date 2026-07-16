@@ -25,8 +25,9 @@ use usecase::{
     CreateDatabaseInteractorImpl, DeleteDataInteractor,
     DeleteDatabaseInteractor, DeletePropertyInteractor, FindAllProperties,
     FindDatabasesInteractorImpl, GetDataInteractorImpl,
-    GetDatabaseDefinition, GetDatabaseInteractorImpl, SearchData,
-    UpdateDataInteractorImpl, UpdatePropertyInteractorImpl,
+    GetDatabaseDefinition, GetDatabaseInteractorImpl,
+    PatchRecordInteractor, SearchData, UpdateDataInteractorImpl,
+    UpdatePropertyInteractorImpl,
 };
 
 // #[async_trait::async_trait]
@@ -66,6 +67,7 @@ pub struct App {
         Arc<dyn GetDatabaseDefinitionInputPort>,
     add_data_usecase: Arc<dyn AddDataInputPort>,
     update_data_usecase: Arc<dyn UpdateDataInputPort>,
+    patch_record_usecase: Arc<dyn PatchRecordInputPort>,
     find_database_usecase: Arc<dyn FindDatabasesInputPort>,
     get_data_usecase: Arc<dyn GetDataInputPort>,
     get_database_usecase: Arc<dyn GetDatabaseInputPort>,
@@ -93,6 +95,7 @@ impl App {
         >,
         add_data_usecase: Arc<dyn AddDataInputPort>,
         update_data_usecase: Arc<dyn UpdateDataInputPort>,
+        patch_record_usecase: Arc<dyn PatchRecordInputPort>,
         find_database_usecase: Arc<dyn FindDatabasesInputPort>,
         get_data_usecase: Arc<dyn GetDataInputPort>,
         get_database_usecase: Arc<dyn GetDatabaseInputPort>,
@@ -109,6 +112,7 @@ impl App {
             get_database_definition_usecase,
             add_data_usecase,
             update_data_usecase,
+            patch_record_usecase,
             find_database_usecase,
             get_data_usecase,
             get_database_usecase,
@@ -203,6 +207,8 @@ pub async fn factory_client_with_storage_modes(
         data_repo.clone(),
         data_repo.clone(),
     );
+    let patch_record_usecase =
+        PatchRecordInteractor::new(data_repo.clone());
     let find_database_usecase =
         FindDatabasesInteractorImpl::new(database_repo.clone());
     let get_data_usecase = GetDataInteractorImpl::new(
@@ -236,6 +242,7 @@ pub async fn factory_client_with_storage_modes(
         get_database_definition_usecase,
         add_data_usecase,
         update_data_usecase,
+        patch_record_usecase,
         find_database_usecase,
         get_data_usecase,
         get_database_usecase,

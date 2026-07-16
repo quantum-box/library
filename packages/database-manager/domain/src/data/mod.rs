@@ -2,6 +2,7 @@ mod property_data;
 mod property_data_value;
 mod property_value_command;
 mod record_mutation;
+mod record_operation;
 mod record_version;
 
 use chrono::{DateTime, Utc};
@@ -9,6 +10,7 @@ pub use property_data::*;
 pub use property_data_value::*;
 pub use property_value_command::*;
 pub use record_mutation::*;
+pub use record_operation::*;
 pub use record_version::*;
 use util::macros::*;
 
