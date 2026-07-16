@@ -74,7 +74,7 @@ impl DataRepositoryImpl {
 }
 
 impl DataRepositoryImpl {
-    async fn lock_database_and_fields(
+    pub(super) async fn lock_database_and_fields(
         &self,
         transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
         tenant_id: &TenantId,
@@ -106,7 +106,7 @@ impl DataRepositoryImpl {
                    type_key, type_version, type_config
             FROM fields
             WHERE tenant_id = ? AND object_id = ?
-            ORDER BY field_num ASC
+            ORDER BY field_num ASC, id ASC
             FOR UPDATE
             "#,
         )
@@ -147,7 +147,7 @@ impl DataRepositoryImpl {
         Ok((persisted, field.field_num))
     }
 
-    async fn ensure_existing_canonical_is_writable(
+    pub(super) async fn ensure_existing_canonical_is_writable(
         transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
         record: &Data,
         property: &Property,
@@ -180,7 +180,7 @@ impl DataRepositoryImpl {
         Ok(())
     }
 
-    async fn apply_change(
+    pub(super) async fn apply_change(
         &self,
         transaction: &mut sqlx::Transaction<'_, sqlx::MySql>,
         record: &Data,

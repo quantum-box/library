@@ -135,23 +135,16 @@ pub fn hydrate_data_row(
 ) -> errors::Result<Data> {
     let tenant_id = TenantId::from_str(&data_row.tenant_id)?;
     let database_id = DatabaseId::from_str(&data_row.object_id)?;
-    let mut data = Data::restore(
-        &data_row.id.parse()?,
-        &tenant_id,
-        &database_id,
-        &data_row.name,
-        RecordVersion::new(data_row.record_version)?,
-        vec![],
-        data_row.created_at,
-        data_row.updated_at,
-    )?;
+    let data_id = data_row.id.parse()?;
+    let record_version = RecordVersion::new(data_row.record_version)?;
+    let mut property_data = Vec::with_capacity(fields.len());
 
     for field in fields {
         let definition = field.definition(definition_mode)?;
         let legacy =
             legacy_property_data(&data_row, field, definition_mode);
         if !mode.reads_or_shadows_canonical() {
-            data.add_property_data(legacy?)?;
+            property_data.push(legacy?);
             continue;
         }
         let canonical_row =
@@ -226,10 +219,19 @@ pub fn hydrate_data_row(
             }
             legacy?
         };
-        data.add_property_data(selected)?;
+        property_data.push(selected);
     }
 
-    Ok(data)
+    Ok(Data::restore(
+        &data_id,
+        &tenant_id,
+        &database_id,
+        &data_row.name,
+        record_version,
+        property_data,
+        data_row.created_at,
+        data_row.updated_at,
+    )?)
 }
 
 #[cfg(test)]
@@ -292,6 +294,8 @@ mod tests {
     #[test]
     fn legacy_only_does_not_decode_a_canonical_row() {
         let row = row("legacy");
+        let created_at = row.created_at;
+        let updated_at = row.updated_at;
         let field = field(PropertyType::String);
         let canonical = canonical(&row, &field, "String", "not-json");
 
@@ -311,6 +315,8 @@ mod tests {
             "legacy"
         );
         assert_eq!(data.record_version().get(), 7);
+        assert_eq!(data.created_at(), &created_at);
+        assert_eq!(data.updated_at(), &updated_at);
     }
 
     #[test]
