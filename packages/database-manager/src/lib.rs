@@ -209,11 +209,8 @@ pub async fn factory_client_with_storage_modes(
         database_repo.clone(),
         data_repo.clone(),
     );
-    let delete_database_usecase = DeleteDatabaseInteractor::new(
-        database_repo.clone(),
-        property_repo.clone(),
-        data_repo.clone(),
-    );
+    let delete_database_usecase =
+        DeleteDatabaseInteractor::new(database_repo.clone());
     let delete_property_usecase = DeletePropertyInteractor::new(
         database_repo.clone(),
         property_repo.clone(),
