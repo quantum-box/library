@@ -1,4 +1,5 @@
 use super::*;
+use crate::property_definition_rollout::PropertyDefinitionStorageMode;
 use crate::property_value_rollout::PropertyValueStorageMode;
 use crate::DataQuery;
 
@@ -18,20 +19,38 @@ const SEARCH_DATA_BY_NAME_SQL: &str = r#"
 pub struct DataQueryService {
     pub db: Arc<Db>,
     pub property_value_mode: PropertyValueStorageMode,
+    pub property_definition_mode: PropertyDefinitionStorageMode,
 }
 
 impl DataQueryService {
     pub fn new(db: Arc<Db>) -> Arc<Self> {
-        Self::new_with_property_value_mode(db, Default::default())
+        Self::new_with_storage_modes(
+            db,
+            Default::default(),
+            Default::default(),
+        )
     }
 
     pub fn new_with_property_value_mode(
         db: Arc<Db>,
         property_value_mode: PropertyValueStorageMode,
     ) -> Arc<Self> {
+        Self::new_with_storage_modes(
+            db,
+            property_value_mode,
+            Default::default(),
+        )
+    }
+
+    pub fn new_with_storage_modes(
+        db: Arc<Db>,
+        property_value_mode: PropertyValueStorageMode,
+        property_definition_mode: PropertyDefinitionStorageMode,
+    ) -> Arc<Self> {
         Arc::new(Self {
             db,
             property_value_mode,
+            property_definition_mode,
         })
     }
 }
@@ -46,8 +65,7 @@ impl DataQuery for DataQueryService {
         page: OffsetPage,
     ) -> anyhow::Result<(Vec<Data>, OffsetPaginator)> {
         // TODO: add English comment
-        let fields = sqlx::query_as!(
-            FieldRow,
+        let fields = sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT
                 id,
@@ -56,9 +74,12 @@ impl DataQuery for DataQueryService {
                 field_name,
                 datatype,
                 datatype_meta,
-                is_indexed as `is_indexed: bool`,
+                is_indexed,
                 field_num,
-                meta_json
+                meta_json,
+                type_key,
+                type_version,
+                type_config
             FROM
                 tachyon_apps_database_manager.fields
             WHERE
@@ -66,9 +87,9 @@ impl DataQuery for DataQueryService {
             ORDER BY
                 field_num ASC
             "#,
-            database_id.to_string(),
-            tenant_id.to_string()
         )
+        .bind(database_id.to_string())
+        .bind(tenant_id.to_string())
         .fetch_all(self.db.pool().as_ref())
         .await?;
 
@@ -123,6 +144,7 @@ impl DataQuery for DataQueryService {
                 &fields,
                 &canonical,
                 self.property_value_mode,
+                self.property_definition_mode,
             )
             .map_err(anyhow::Error::from)?;
             data_vec.push(data);

@@ -19,6 +19,7 @@
 - [PropertyValue storage expand rollout](operations/property-value-storage-expand-rollout.md)
 - [RecordVersion expand/read rollout](operations/record-version-expand-read-rollout.md)
 - [PropertyDefinition envelope schema rollout](operations/property-definition-envelope-rollout.md)
+- [PropertyDefinition dual-write/read rollout](operations/property-definition-storage-rollout.md)
 - [RelationDefinition control-plane rollout](operations/relation-definition-expand-rollout.md)
 - [CMS利用ガイド](guides/cms-user-guide.md)
 - [ドキュメントOS利用ガイド](guides/document-os-user-guide.md)

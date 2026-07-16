@@ -8,6 +8,8 @@ use util::macros::*;
 
 mod property_type;
 pub use property_type::*;
+mod definition;
+pub use definition::*;
 mod schema_mutation;
 pub use schema_mutation::*;
 
@@ -42,6 +44,42 @@ pub fn next_property_num(
             existing_properties
                 .iter()
                 .all(|property| property.property_num() != candidate)
+        })
+        .ok_or_else(|| {
+            errors::Error::business_logic(format!(
+                "Property limit reached: {} slots are available",
+                MAX_PROPERTY_NUM + 1
+            ))
+        })
+}
+
+/// Validate addition against canonical definitions, including definitions
+/// whose key/version is newer than this binary.
+pub fn validate_property_definition_addition(
+    existing_definitions: &[PropertyDefinition],
+    new_property_type: &PropertyType,
+) -> errors::Result<()> {
+    if matches!(new_property_type, PropertyType::Id(_))
+        && existing_definitions.iter().any(|definition| {
+            definition.type_ref().key.as_str() == PropertyKind::Id.key()
+        })
+    {
+        return Err(errors::Error::conflict(ID_PROPERTY_ALREADY_EXISTS));
+    }
+
+    Ok(())
+}
+
+/// Find a legacy value-column slot without projecting opaque definitions into
+/// a built-in `Property` type.
+pub fn next_property_definition_num(
+    existing_definitions: &[PropertyDefinition],
+) -> errors::Result<u32> {
+    (0..=MAX_PROPERTY_NUM)
+        .find(|candidate| {
+            existing_definitions
+                .iter()
+                .all(|definition| definition.property_num() != *candidate)
         })
         .ok_or_else(|| {
             errors::Error::business_logic(format!(
@@ -186,7 +224,6 @@ impl Property {
 pub trait PropertyRepository:
     PropertySchemaMutationPort + Debug + Send + Sync + 'static
 {
-    async fn update(&self, property: &Property) -> errors::Result<()>;
     async fn find_by_id(
         &self,
         id: &PropertyId,

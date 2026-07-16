@@ -71,6 +71,30 @@ impl From<&PropertyType> for PropertyConfig {
     }
 }
 
+impl From<&PropertyConfig> for PropertyType {
+    fn from(value: &PropertyConfig) -> Self {
+        match value {
+            PropertyConfig::String => Self::String,
+            PropertyConfig::Integer => Self::Integer,
+            PropertyConfig::Html => Self::Html,
+            PropertyConfig::Markdown => Self::Markdown,
+            PropertyConfig::Relation(value) => {
+                Self::Relation(value.clone())
+            }
+            PropertyConfig::Select(value) => Self::Select(value.clone()),
+            PropertyConfig::MultiSelect(value) => {
+                Self::MultiSelect(value.clone())
+            }
+            PropertyConfig::Id(value) => Self::Id(value.clone()),
+            PropertyConfig::Location(value) => {
+                Self::Location(value.clone())
+            }
+            PropertyConfig::Date => Self::Date,
+            PropertyConfig::Image => Self::Image,
+        }
+    }
+}
+
 def_id!(SelectItemId, "op_");
 
 #[derive(Debug, Clone, Getters, Serialize, Deserialize, new)]

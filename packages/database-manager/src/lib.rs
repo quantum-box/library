@@ -3,6 +3,7 @@ pub extern crate database_domain as domain;
 pub mod database_app;
 pub mod interface_adapter;
 pub mod migration_preflight;
+pub mod property_definition_rollout;
 pub mod property_value_rollout;
 pub mod usecase;
 
@@ -122,12 +123,30 @@ impl App {
 }
 
 pub async fn factory_client(dsn: impl ToString) -> anyhow::Result<App> {
-    factory_client_with_property_value_mode(dsn, Default::default()).await
+    factory_client_with_storage_modes(
+        dsn,
+        Default::default(),
+        Default::default(),
+    )
+    .await
 }
 
 pub async fn factory_client_with_property_value_mode(
     dsn: impl ToString,
     property_value_mode: property_value_rollout::PropertyValueStorageMode,
+) -> anyhow::Result<App> {
+    factory_client_with_storage_modes(
+        dsn,
+        property_value_mode,
+        Default::default(),
+    )
+    .await
+}
+
+pub async fn factory_client_with_storage_modes(
+    dsn: impl ToString,
+    property_value_mode: property_value_rollout::PropertyValueStorageMode,
+    property_definition_mode: property_definition_rollout::PropertyDefinitionStorageMode,
 ) -> anyhow::Result<App> {
     let dsn = dsn.to_string();
     let db = persistence::Db::new(&dsn).await;
@@ -137,15 +156,20 @@ pub async fn factory_client_with_property_value_mode(
     //     .await?;
 
     let database_repo = DatabaseRepositoryImpl::new(db.clone());
-    let property_repo = PropertyRepositoryImpl::new(db.clone());
-    let data_repo = DataRepositoryImpl::new_with_property_value_mode(
+    let property_repo = PropertyRepositoryImpl::new_with_definition_mode(
+        db.clone(),
+        property_definition_mode,
+    );
+    let data_repo = DataRepositoryImpl::new_with_storage_modes(
         db.clone(),
         property_value_mode,
+        property_definition_mode,
     );
     let relation_repo = RelationRepositoryImpl::new(db.clone());
-    let data_query = DataQueryService::new_with_property_value_mode(
+    let data_query = DataQueryService::new_with_storage_modes(
         db.clone(),
         property_value_mode,
+        property_definition_mode,
     );
 
     let create_database = CreateDatabaseInteractorImpl::new(

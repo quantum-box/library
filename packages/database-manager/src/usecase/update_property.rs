@@ -10,7 +10,10 @@ use std::sync::Arc;
 use crate::usecase::{UpdatePropertyInputData, UpdatePropertyInputPort};
 use std::fmt::Debug;
 
-use crate::domain::{Database, DatabaseId, Property, PropertyRepository};
+use crate::domain::{
+    Database, DatabaseId, Property, PropertyRepository,
+    UpdatePropertyCommand,
+};
 use value_object::RepositoryV1;
 
 #[derive(Debug, Clone)]
@@ -44,20 +47,16 @@ impl UpdatePropertyInputPort for UpdatePropertyInteractorImpl {
             .await?
             .ok_or(errors::not_found!("Database not found"))?;
 
-        let property = self
-            .property_repo
-            .find_by_id(input.property_id, database.id(), input.tenant_id)
-            .await?
-            .ok_or(errors::not_found!("Property not found"))?;
-
-        let updated_property = property.update_with_meta_json(
+        let command = UpdatePropertyCommand::new(
+            database.tenant_id(),
+            database.id(),
+            input.property_id,
             input.name,
             input.property_type,
             input.meta_json,
-        )?;
-
-        self.property_repo.update(&updated_property).await?;
-
-        Ok(updated_property)
+        );
+        self.property_repo
+            .update_property_atomically(&command)
+            .await
     }
 }

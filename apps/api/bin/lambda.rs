@@ -12,6 +12,8 @@ async fn main() -> Result<(), Error> {
     let config = library_api::Config::parse();
     config.validate_for_server_startup()?;
     let property_value_mode = config.property_value_storage_mode.parse()?;
+    let property_definition_mode =
+        config.property_definition_storage_mode.parse()?;
 
     telemetry::init_production_tracing(telemetry::TracingConfig {
         environment: config.environment.as_str(),
@@ -27,6 +29,10 @@ async fn main() -> Result<(), Error> {
         mode = ?property_value_mode,
         "configured PropertyValue storage rollout mode"
     );
+    tracing::info!(
+        mode = ?property_definition_mode,
+        "configured PropertyDefinition storage rollout mode"
+    );
 
     // Hold the Sentry guard for the Lambda runtime lifetime so events
     // forwarded by sentry_tracing are flushed before process exit.
@@ -40,9 +46,10 @@ async fn main() -> Result<(), Error> {
     tracing::debug!("start connect database...");
 
     let database_app = Arc::new(
-        database_manager::factory_client_with_property_value_mode(
+        database_manager::factory_client_with_storage_modes(
             &database_url.use_database("tachyon_apps_database_manager"),
             property_value_mode,
+            property_definition_mode,
         )
         .await?,
     );

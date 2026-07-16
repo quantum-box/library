@@ -13,6 +13,65 @@ pub struct AddPropertyCommand {
     property_type: PropertyType,
 }
 
+/// Intent to update a Property definition. The adapter loads and locks the
+/// current definition before the domain applies this command.
+#[derive(Clone, Debug)]
+pub struct UpdatePropertyCommand {
+    tenant_id: TenantId,
+    database_id: DatabaseId,
+    property_id: PropertyId,
+    name: Option<String>,
+    property_type: Option<PropertyType>,
+    meta_json: Option<Option<String>>,
+}
+
+impl UpdatePropertyCommand {
+    pub fn new(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        property_id: &PropertyId,
+        name: Option<&str>,
+        property_type: Option<&PropertyType>,
+        meta_json: Option<Option<String>>,
+    ) -> Self {
+        Self {
+            tenant_id: tenant_id.clone(),
+            database_id: database_id.clone(),
+            property_id: property_id.clone(),
+            name: name.map(str::to_string),
+            property_type: property_type.cloned(),
+            meta_json,
+        }
+    }
+
+    pub fn tenant_id(&self) -> &TenantId {
+        &self.tenant_id
+    }
+    pub fn database_id(&self) -> &DatabaseId {
+        &self.database_id
+    }
+    pub fn property_id(&self) -> &PropertyId {
+        &self.property_id
+    }
+
+    pub fn apply(
+        &self,
+        current: &PropertyDefinition,
+    ) -> errors::Result<PropertyDefinition> {
+        if current.tenant_id() != &self.tenant_id
+            || current.database_id() != &self.database_id
+            || current.id() != &self.property_id
+        {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+        current.update_known(
+            self.name.as_deref(),
+            self.property_type.as_ref(),
+            self.meta_json.clone(),
+        )
+    }
+}
+
 impl AddPropertyCommand {
     pub fn new(
         tenant_id: &TenantId,
@@ -48,13 +107,15 @@ impl AddPropertyCommand {
 /// A domain-approved schema mutation that must be persisted as one unit.
 #[derive(Debug)]
 pub struct PropertySchemaMutation {
-    property: Property,
+    definition: PropertyDefinition,
     relation_definition: Option<RelationDefinition>,
 }
 
 impl PropertySchemaMutation {
-    pub fn into_parts(self) -> (Property, Option<RelationDefinition>) {
-        (self.property, self.relation_definition)
+    pub fn into_parts(
+        self,
+    ) -> (PropertyDefinition, Option<RelationDefinition>) {
+        (self.definition, self.relation_definition)
     }
 }
 
@@ -68,14 +129,15 @@ pub struct PropertySchema;
 
 impl PropertySchema {
     pub fn plan_addition(
-        existing_properties: &[Property],
+        existing_definitions: &[PropertyDefinition],
         command: &AddPropertyCommand,
     ) -> errors::Result<PropertySchemaMutation> {
-        validate_property_type_addition(
-            existing_properties,
+        validate_property_definition_addition(
+            existing_definitions,
             command.property_type(),
         )?;
-        let property_num = next_property_num(existing_properties)?;
+        let property_num =
+            next_property_definition_num(existing_definitions)?;
         let property = Property::new(
             &PropertyId::default(),
             command.tenant_id(),
@@ -99,7 +161,7 @@ impl PropertySchema {
         };
 
         Ok(PropertySchemaMutation {
-            property,
+            definition: PropertyDefinition::from_property(&property),
             relation_definition,
         })
     }
@@ -113,6 +175,11 @@ pub trait PropertySchemaMutationPort:
     async fn add_property_atomically(
         &self,
         command: &AddPropertyCommand,
+    ) -> errors::Result<Property>;
+
+    async fn update_property_atomically(
+        &self,
+        command: &UpdatePropertyCommand,
     ) -> errors::Result<Property>;
 
     async fn delete_property_atomically(
@@ -132,8 +199,8 @@ mod tests {
         database_id: &DatabaseId,
         property_type: PropertyType,
         property_num: u32,
-    ) -> Property {
-        Property::new(
+    ) -> PropertyDefinition {
+        PropertyDefinition::from_property(&Property::new(
             &PropertyId::default(),
             tenant_id,
             database_id,
@@ -141,7 +208,7 @@ mod tests {
             &property_type,
             false,
             property_num,
-        )
+        ))
     }
 
     #[test]
@@ -164,7 +231,7 @@ mod tests {
                 .expect("schema mutation")
                 .into_parts();
 
-        assert_eq!(*planned.property_num(), 1);
+        assert_eq!(planned.property_num(), 1);
         assert!(relation_definition.is_none());
     }
 
@@ -206,5 +273,40 @@ mod tests {
             *relation_definition.on_target_delete(),
             RelationOnDelete::Restrict
         );
+    }
+
+    #[test]
+    fn opaque_sibling_does_not_block_a_known_property_addition() {
+        let tenant_id = TenantId::default();
+        let database_id = DatabaseId::default();
+        let opaque = PropertyDefinition::new(
+            &PropertyId::default(),
+            &tenant_id,
+            &database_id,
+            "future",
+            ResolvedPropertyConfig::Opaque(OpaquePropertyConfig {
+                type_ref: PropertyTypeRef::new(
+                    PropertyTypeKey::new("future_type").expect("type key"),
+                    PropertyTypeVersion::new(7).expect("type version"),
+                ),
+                raw_config: serde_json::json!({"future": true}),
+            }),
+            false,
+            0,
+            None,
+        );
+        let command = AddPropertyCommand::new(
+            &tenant_id,
+            &database_id,
+            "known",
+            &PropertyType::String,
+        );
+
+        let (definition, _) =
+            PropertySchema::plan_addition(&[opaque], &command)
+                .expect("opaque siblings are retained but not mutated")
+                .into_parts();
+
+        assert_eq!(definition.property_num(), 1);
     }
 }

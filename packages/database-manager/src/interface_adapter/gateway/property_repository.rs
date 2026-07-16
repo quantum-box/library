@@ -3,12 +3,38 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct PropertyRepositoryImpl {
     pub db: Arc<Db>,
+    pub definition_mode:
+        crate::property_definition_rollout::PropertyDefinitionStorageMode,
 }
 
 impl PropertyRepositoryImpl {
     pub fn new(db: Arc<Db>) -> Arc<Self> {
-        Arc::new(Self { db })
+        Self::new_with_definition_mode(db, Default::default())
     }
+
+    pub fn new_with_definition_mode(
+        db: Arc<Db>,
+        definition_mode: crate::property_definition_rollout::PropertyDefinitionStorageMode,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            db,
+            definition_mode,
+        })
+    }
+}
+
+fn encoded_definition(
+    definition: &PropertyDefinition,
+) -> errors::Result<(Property, String, u16, String)> {
+    definition.config().ensure_writable()?;
+    let property = definition.to_property()?;
+    Ok((
+        property,
+        definition.type_ref().key.as_str().to_string(),
+        definition.type_ref().version.get(),
+        serde_json::to_string(&definition.raw_config()?)
+            .map_err(errors::Error::invalid)?,
+    ))
 }
 
 fn map_schema_insert_error(
@@ -77,7 +103,8 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         let existing_properties = sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT id, tenant_id, object_id, field_name, datatype,
-                   datatype_meta, is_indexed, field_num, meta_json
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
             FROM fields
             WHERE tenant_id = ? AND object_id = ?
             FOR UPDATE;
@@ -88,20 +115,23 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .fetch_all(&mut *transaction)
         .await?
         .into_iter()
-        .map(Property::from)
-        .collect::<Vec<_>>();
+        .map(|row| row.definition(self.definition_mode))
+        .collect::<errors::Result<Vec<_>>>()?;
 
         let mutation =
             PropertySchema::plan_addition(&existing_properties, command)?;
-        let (property, relation_definition) = mutation.into_parts();
+        let (definition, relation_definition) = mutation.into_parts();
+        let (property, type_key, type_version, type_config) =
+            encoded_definition(&definition)?;
 
         let field_insert = sqlx::query(
             r#"
             INSERT INTO fields
                 (id, tenant_id, object_id, field_name, datatype,
-                 datatype_meta, is_indexed, field_num, meta_json)
+                 datatype_meta, is_indexed, field_num, meta_json,
+                 type_key, type_version, type_config)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         )
         .bind(property.id().to_string())
@@ -113,6 +143,9 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .bind(property.is_indexed())
         .bind(property.property_num())
         .bind(property.meta_json())
+        .bind(type_key)
+        .bind(type_version)
+        .bind(type_config)
         .execute(&mut *transaction)
         .await;
         if let Err(error) = field_insert {
@@ -156,6 +189,80 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         Ok(property)
     }
 
+    async fn update_property_atomically(
+        &self,
+        command: &UpdatePropertyCommand,
+    ) -> errors::Result<Property> {
+        let mut transaction = self.db.pool().begin().await?;
+        let database = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id FROM objects
+            WHERE tenant_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if database.is_none() {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+
+        let row = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .bind(command.property_id().to_string())
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or_else(|| errors::Error::not_found("resource not found"))?;
+
+        // Even in legacy-read mode, an unknown canonical envelope is owned by
+        // a newer binary and must never be overwritten by this writer.
+        row.ensure_canonical_definition_writable()?;
+        let current = row.definition(self.definition_mode)?;
+        let updated = command.apply(&current)?;
+        let (property, type_key, type_version, type_config) =
+            encoded_definition(&updated)?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE fields
+            SET field_name = ?, datatype = ?, datatype_meta = ?,
+                is_indexed = ?, meta_json = ?, type_key = ?,
+                type_version = ?, type_config = ?
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            "#,
+        )
+        .bind(property.name())
+        .bind(property.property_type().to_string())
+        .bind(property.property_type().get_meta()?)
+        .bind(property.is_indexed())
+        .bind(property.meta_json())
+        .bind(type_key)
+        .bind(type_version)
+        .bind(type_config)
+        .bind(property.tenant_id().to_string())
+        .bind(property.database_id().to_string())
+        .bind(property.id().to_string())
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+        transaction.commit().await?;
+        Ok(property)
+    }
+
     async fn delete_property_atomically(
         &self,
         tenant_id: &TenantId,
@@ -180,7 +287,8 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         let row = sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT id, tenant_id, object_id, field_name, datatype,
-                   datatype_meta, is_indexed, field_num, meta_json
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
             FROM fields
             WHERE tenant_id = ? AND object_id = ? AND id = ?
             FOR UPDATE
@@ -192,8 +300,10 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .fetch_optional(&mut *transaction)
         .await?
         .ok_or_else(|| errors::Error::not_found("resource not found"))?;
+        row.ensure_canonical_definition_writable()?;
         let field_num = row.field_num;
-        let property: Property = row.into();
+        let property =
+            row.definition(self.definition_mode)?.to_property()?;
 
         sqlx::query(
             r#"
@@ -232,33 +342,13 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
 
 #[async_trait::async_trait]
 impl PropertyRepository for PropertyRepositoryImpl {
-    async fn update(&self, property: &Property) -> errors::Result<()> {
-        sqlx::query!(
-            "
-            UPDATE tachyon_apps_database_manager.fields
-            SET field_name = ?, datatype = ?, is_indexed = ?, datatype_meta = ?, meta_json = ?
-            WHERE tenant_id = ? AND object_id = ? AND id = ?;
-            ",
-            property.name(),
-            property.property_type().to_string(),
-            property.is_indexed(),
-            property.property_type().get_meta()?,
-            property.meta_json(),
-            property.tenant_id().to_string(),
-            property.database_id().to_string(),
-            property.id().to_string(),
-        )
-        .execute(self.db.pool().as_ref())
-        .await?;
-        Ok(())
-    }
     async fn find_by_id(
         &self,
         id: &PropertyId,
         database_id: &DatabaseId,
         tenant_id: &TenantId,
     ) -> errors::Result<Option<Property>> {
-        Ok(sqlx::query_as::<_, FieldRow>(
+        let row = sqlx::query_as::<_, FieldRow>(
             "SELECT * 
             FROM fields
             WHERE tenant_id = ? AND object_id = ? AND id = ? LIMIT 1;
@@ -268,15 +358,16 @@ impl PropertyRepository for PropertyRepositoryImpl {
         .bind(database_id.to_string())
         .bind(id.to_string())
         .fetch_optional(self.db.pool().as_ref())
-        .await?
-        .map(|row| row.into()))
+        .await?;
+        row.map(|row| row.definition(self.definition_mode)?.to_property())
+            .transpose()
     }
     async fn find_all(
         &self,
         database_id: &DatabaseId,
         tenant_id: &TenantId,
     ) -> errors::Result<Vec<Property>> {
-        Ok(sqlx::query_as::<_, FieldRow>(
+        sqlx::query_as::<_, FieldRow>(
             "SELECT * 
             FROM fields
             WHERE tenant_id = ? AND object_id = ?;
@@ -287,8 +378,8 @@ impl PropertyRepository for PropertyRepositoryImpl {
         .fetch_all(self.db.pool().as_ref())
         .await?
         .into_iter()
-        .map(|row| row.into())
-        .collect::<Vec<Property>>())
+        .map(|row| row.definition(self.definition_mode)?.to_property())
+        .collect()
     }
 
     async fn delete_all(
@@ -325,5 +416,45 @@ impl PropertyRepository for PropertyRepositoryImpl {
         .execute(self.db.pool().as_ref())
         .await?;
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl PropertyDefinitionRepository for PropertyRepositoryImpl {
+    async fn find_definition_by_id(
+        &self,
+        id: &PropertyId,
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Option<PropertyDefinition>> {
+        let row = sqlx::query_as::<_, FieldRow>(
+            "SELECT * FROM fields
+             WHERE tenant_id = ? AND object_id = ? AND id = ? LIMIT 1",
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(id.to_string())
+        .fetch_optional(self.db.pool().as_ref())
+        .await?;
+        row.map(|row| row.definition(self.definition_mode))
+            .transpose()
+    }
+
+    async fn find_all_definitions(
+        &self,
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Vec<PropertyDefinition>> {
+        sqlx::query_as::<_, FieldRow>(
+            "SELECT * FROM fields
+             WHERE tenant_id = ? AND object_id = ? ORDER BY field_num ASC",
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_all(self.db.pool().as_ref())
+        .await?
+        .into_iter()
+        .map(|row| row.definition(self.definition_mode))
+        .collect()
     }
 }
