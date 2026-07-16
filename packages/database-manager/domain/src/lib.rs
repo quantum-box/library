@@ -1,10 +1,12 @@
 mod data;
 mod database;
+mod index;
 mod property;
 mod relation;
 
 pub use data::*;
 pub use database::*;
+pub use index::*;
 pub use property::*;
 pub use relation::*;
 

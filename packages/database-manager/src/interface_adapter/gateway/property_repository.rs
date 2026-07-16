@@ -421,6 +421,45 @@ impl PropertyRepository for PropertyRepositoryImpl {
 
 #[async_trait::async_trait]
 impl PropertyDefinitionRepository for PropertyRepositoryImpl {
+    async fn find_canonical_definition_by_id(
+        &self,
+        id: &PropertyId,
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Option<PropertyDefinition>> {
+        let row = sqlx::query_as::<_, FieldRow>(
+            "SELECT * FROM fields
+             WHERE tenant_id = ? AND object_id = ? AND id = ? LIMIT 1",
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(id.to_string())
+        .fetch_optional(self.db.pool().as_ref())
+        .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let Some(canonical) = row.canonical_definition()? else {
+            return Ok(None);
+        };
+
+        // Capability-driven consumers must not make schema decisions from an
+        // envelope that this binary cannot safely write. During dual-write,
+        // parity is also a precondition: accepting either side of a mismatch
+        // would make index behavior depend on which read path a caller uses.
+        canonical.config().ensure_writable()?;
+        let legacy = row.legacy_definition()?;
+        if canonical.type_ref() != legacy.type_ref()
+            || canonical.raw_config()? != legacy.raw_config()?
+        {
+            return Err(errors::Error::invalid(
+                "canonical PropertyDefinition does not match legacy projection",
+            ));
+        }
+
+        Ok(Some(canonical))
+    }
+
     async fn find_definition_by_id(
         &self,
         id: &PropertyId,

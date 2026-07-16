@@ -38,6 +38,30 @@ impl RelationDefinitionRepositoryImpl {
 
 #[async_trait::async_trait]
 impl RelationDefinitionRepository for RelationDefinitionRepositoryImpl {
+    async fn find_by_id(
+        &self,
+        tenant_id: &TenantId,
+        source_database_id: &DatabaseId,
+        relation_id: &crate::domain::RelationId,
+    ) -> errors::Result<Option<RelationDefinition>> {
+        let sql = format!(
+            r#"
+            SELECT {RELATION_DEFINITION_COLUMNS}
+            FROM relationships
+            WHERE tenant_id = ? AND object_id = ? AND id = ?
+            LIMIT 1;
+            "#,
+        );
+        sqlx::query_as::<_, RelationDefinitionRow>(&sql)
+            .bind(tenant_id.to_string())
+            .bind(source_database_id.to_string())
+            .bind(relation_id.to_string())
+            .fetch_optional(self.db.pool().as_ref())
+            .await?
+            .map(RelationDefinition::try_from)
+            .transpose()
+    }
+
     async fn find_by_source_property(
         &self,
         tenant_id: &TenantId,
