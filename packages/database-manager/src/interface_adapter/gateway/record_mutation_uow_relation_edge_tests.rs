@@ -22,7 +22,7 @@ use sqlx::Row;
 use tachyon_sdk::auth;
 use value_object::{DatabaseUrl, TenantId};
 
-fn database_url() -> anyhow::Result<DatabaseUrl> {
+pub(super) fn database_url() -> anyhow::Result<DatabaseUrl> {
     dotenvy::dotenv().ok();
     Ok(std::env::var("DEV_DATABASE_URL")
         .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
@@ -30,14 +30,14 @@ fn database_url() -> anyhow::Result<DatabaseUrl> {
         .use_database("tachyon_apps_database_manager"))
 }
 
-fn operation_id(
+pub(super) fn operation_id(
     tenant_id: &TenantId,
     label: &str,
 ) -> errors::Result<RecordOperationId> {
     RecordOperationId::new(format!("{tenant_id}:{label}"))
 }
 
-async fn add_record(
+pub(super) async fn add_record(
     app: &database_manager::App,
     tenant_id: &TenantId,
     database_id: &DatabaseId,
@@ -65,7 +65,7 @@ async fn add_record(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn decide_relation_patch(
+pub(super) async fn decide_relation_patch(
     repository: &DataRepositoryImpl,
     tenant_id: &TenantId,
     database_id: &DatabaseId,
@@ -90,7 +90,9 @@ async fn decide_relation_patch(
     repository.decide_patch_atomically(&command).await
 }
 
-fn accepted_version(decision: &RecordMutationDecision) -> Option<u64> {
+pub(super) fn accepted_version(
+    decision: &RecordMutationDecision,
+) -> Option<u64> {
     match decision {
         RecordMutationDecision::Accepted { record_version, .. } => {
             Some(record_version.get())
