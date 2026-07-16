@@ -81,6 +81,46 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .await?;
     let pool = db.pool();
 
+    let versioning_migration = include_str!(
+        "../migrations/20260716100000_version_relation_definitions.sql"
+    );
+    assert_eq!(
+        versioning_migration
+            .matches("ALTER TABLE relationships")
+            .count(),
+        1,
+        "guard expansion and legacy contraction must stay one atomic ALTER"
+    );
+    for (new_guard, old_guard) in [
+        (
+            "ADD CONSTRAINT fk_relationships_tenant_source_property_restrict",
+            "DROP FOREIGN KEY fk_relationships_tenant_source_property",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_forward_cardinality_strict",
+            "DROP CHECK chk_relationships_forward_cardinality",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_reverse_cardinality_strict",
+            "DROP CHECK chk_relationships_reverse_cardinality",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_on_target_delete_strict",
+            "DROP CHECK chk_relationships_on_target_delete",
+        ),
+    ] {
+        let add_position = versioning_migration
+            .find(new_guard)
+            .expect("the stronger guard must be installed");
+        let drop_position = versioning_migration
+            .find(old_guard)
+            .expect("the legacy guard must be contracted");
+        assert!(
+            add_position < drop_position,
+            "{new_guard} must be active before {old_guard}"
+        );
+    }
+
     let columns = sqlx::query(
         r#"
         SELECT CAST(COLUMN_NAME AS CHAR) AS column_name_text,
@@ -172,15 +212,15 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
 
     for (constraint, expected_fragments) in [
         (
-            "chk_relationships_forward_cardinality",
+            "chk_relationships_forward_cardinality_strict",
             &["forward_cardinality", "ONE", "MANY"][..],
         ),
         (
-            "chk_relationships_reverse_cardinality",
+            "chk_relationships_reverse_cardinality_strict",
             &["reverse_cardinality", "ONE", "MANY"][..],
         ),
         (
-            "chk_relationships_on_target_delete",
+            "chk_relationships_on_target_delete_strict",
             &["on_target_delete", "RESTRICT", "NULLIFY"][..],
         ),
         (
@@ -219,7 +259,7 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         FROM information_schema.REFERENTIAL_CONSTRAINTS
         WHERE CONSTRAINT_SCHEMA = DATABASE()
           AND TABLE_NAME = 'relationships'
-          AND CONSTRAINT_NAME = 'fk_relationships_tenant_source_property'
+          AND CONSTRAINT_NAME = 'fk_relationships_tenant_source_property_restrict'
         "#,
     )
     .fetch_one(pool.as_ref())
@@ -350,7 +390,7 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .as_database_error()
         .expect("check violation")
         .message()
-        .contains("chk_relationships_forward_cardinality"));
+        .contains("chk_relationships_forward_cardinality_strict"));
 
     let lowercase_cardinality = sqlx::query(
         r#"
@@ -373,7 +413,7 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .as_database_error()
         .expect("check violation")
         .message()
-        .contains("chk_relationships_forward_cardinality"));
+        .contains("chk_relationships_forward_cardinality_strict"));
 
     let bad_policy = sqlx::query(
         r#"
@@ -396,7 +436,7 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .as_database_error()
         .expect("check violation")
         .message()
-        .contains("chk_relationships_on_target_delete"));
+        .contains("chk_relationships_on_target_delete_strict"));
 
     let owned_without_inverse = sqlx::query(
         r#"

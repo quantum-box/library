@@ -197,7 +197,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     assert_foreign_key_columns(
         pool.as_ref(),
         "relationships",
-        "fk_relationships_tenant_source_property",
+        "fk_relationships_tenant_source_property_restrict",
         &[
             ("tenant_id", "tenant_id"),
             ("object_id", "object_id"),
@@ -405,7 +405,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
     .expect_err("a relation field must belong to its source object");
     assert_fk_violation(
         wrong_field_error,
-        &["fk_relationships_tenant_source_property"],
+        &["fk_relationships_tenant_source_property_restrict"],
     );
 
     let cross_source_error = sqlx::query(
@@ -429,7 +429,7 @@ async fn tenant_composite_foreign_keys_enforce_physical_scope(
         cross_source_error,
         &[
             "fk_relationships_tenant_object",
-            "fk_relationships_tenant_source_property",
+            "fk_relationships_tenant_source_property_restrict",
         ],
     );
 

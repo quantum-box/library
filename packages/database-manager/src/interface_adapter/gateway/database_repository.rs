@@ -92,6 +92,31 @@ impl DatabaseRepositoryImpl {
             ));
         }
 
+        // A newer RelationDefinition contract owns its deletion semantics.
+        // The Database aggregate lock serializes this check with every schema
+        // writer before the rows are removed explicitly below.
+        let read_only_definition = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM relationships
+            WHERE tenant_id = ? AND object_id = ?
+              AND definition_version <> ?
+            ORDER BY id
+            LIMIT 1
+            FOR UPDATE;
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(RELATION_DEFINITION_VERSION_V1.get())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        if read_only_definition.is_some() {
+            return Err(errors::Error::conflict(
+                "Database contains a read-only RelationDefinition version",
+            ));
+        }
+
         // `indexes.object_id` is the legacy name of its referenced Data id.
         // That foreign key intentionally has no ON DELETE CASCADE, so remove
         // the Database-owned projection rows before deleting their records.

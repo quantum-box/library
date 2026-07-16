@@ -496,6 +496,27 @@ impl PropertyRepository for PropertyRepositoryImpl {
         if database.is_none() {
             return Err(errors::Error::not_found("resource not found"));
         }
+        let read_only_definition = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM relationships
+            WHERE tenant_id = ? AND object_id = ?
+              AND definition_version <> ?
+            ORDER BY id
+            LIMIT 1
+            FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(RELATION_DEFINITION_VERSION_V1.get())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if read_only_definition.is_some() {
+            return Err(errors::Error::conflict(
+                "bulk Property delete contains a read-only RelationDefinition version",
+            ));
+        }
         let owned_external_inverse = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(

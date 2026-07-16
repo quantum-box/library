@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use database_manager::domain::{
-    PropertyType, RelationCardinality, RelationDefinitionRepository,
-    RelationInverseChange, RelationOnDelete, TypeRelation,
-    RELATION_GENERATION_V1,
+    PropertyRepository, PropertyType, RelationCardinality,
+    RelationDefinitionRepository, RelationInverseChange, RelationOnDelete,
+    TypeRelation, RELATION_GENERATION_V1,
 };
 use database_manager::interface_adapter::gateway::{
     DatabaseRepositoryImpl, PropertyRepositoryImpl,
@@ -562,5 +562,62 @@ async fn legacy_canonical_target_mismatch_never_gets_overwritten(
     .fetch_one(db.pool().as_ref())
     .await?;
     assert_eq!(name, "parent");
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn future_relation_definition_blocks_bulk_property_deletion(
+) -> anyhow::Result<()> {
+    let (db, app, _mutation, _definitions, tenant_id) = fixture().await?;
+    let database = create_database(
+        &app,
+        &tenant_id,
+        "relation-schema-future-bulk-delete",
+    )
+    .await?;
+    add_relation(
+        &app,
+        &tenant_id,
+        database.id(),
+        database.id(),
+        "future-self-relation",
+    )
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE relationships
+        SET definition_version = 2
+        WHERE tenant_id = ? AND object_id = ?
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .execute(db.pool().as_ref())
+    .await?;
+    let properties = PropertyRepositoryImpl::new(db.clone());
+
+    let error = properties
+        .delete_all(&tenant_id, database.id())
+        .await
+        .expect_err("bulk delete must not erase a future definition");
+    assert!(matches!(error, errors::Error::Conflict { .. }));
+    assert!(error.to_string().contains("read-only RelationDefinition"));
+    let field_count = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM fields WHERE tenant_id = ? AND object_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .fetch_one(db.pool().as_ref())
+    .await?;
+    let definition_count = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM relationships WHERE tenant_id = ? AND object_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .fetch_one(db.pool().as_ref())
+    .await?;
+    assert_eq!(field_count, 1);
+    assert_eq!(definition_count, 1);
     Ok(())
 }

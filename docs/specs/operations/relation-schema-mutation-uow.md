@@ -46,6 +46,25 @@ Relation inverses remain inside the Database aggregate and cascade safely.
 
 ## Apply and verify
 
+Before applying, reject any legacy spelling that the new case-sensitive
+contract would not accept:
+
+```sql
+SELECT id, forward_cardinality, reverse_cardinality, on_target_delete
+FROM relationships
+WHERE CAST(forward_cardinality AS BINARY) NOT IN ('ONE', 'MANY')
+   OR CAST(reverse_cardinality AS BINARY) NOT IN ('ONE', 'MANY')
+   OR CAST(on_target_delete AS BINARY) NOT IN ('RESTRICT', 'NULLIFY');
+```
+
+The query must return no rows. Repair invalid data with an audited operation
+before migration; do not rely on a case-insensitive collation. The migration
+adds the new binary checks and
+`fk_relationships_tenant_source_property_restrict` before dropping the old
+case-insensitive checks and cascading source FK in the same atomic
+`ALTER TABLE`. A validation failure therefore leaves the old guards installed
+and does not leave the new columns partially applied.
+
 Apply migrations with the normal database-manager migration binary:
 
 ```bash
@@ -77,12 +96,17 @@ Relation must remove both owned Properties and the definition in one commit.
 ## Rollback and compatibility
 
 Keep the additive columns in place when rolling the application back. Older
-readers and Relation creators receive safe defaults, but pre-UoW Property
-deleters must be drained before inverse creation is enabled. The migration
-changes source ownership from cascading to restrictive, so an old deleter
-fails safely instead of removing the only ownership row and orphaning a
-generated inverse. The current Property and Database deletion UoWs explicitly
-delete RelationDefinitions before fields.
+readers and Relation creators receive safe defaults, but every pre-UoW
+Property-schema writer must be drained or feature-gated before inverse
+creation is enabled. That includes updates as well as deletes: an older writer
+does not recognize `inverse_owned` and could retype a generated inverse even
+though the restrictive FK protects its row lifecycle. The migration changes
+source ownership from cascading to restrictive, so a legacy field-only or
+cascading deleter fails safely instead of orphaning a generated inverse. A
+pre-UoW deleter that explicitly removes the RelationDefinition first can bypass
+that FK and must still be drained or gated. The current Property and Database
+deletion UoWs explicitly delete RelationDefinitions before fields only after
+checking ownership and definition version.
 
 Do not drop the columns or restore cascading source ownership while any row
 has `generation <> 1` or `inverse_owned = TRUE`; doing so would lose
