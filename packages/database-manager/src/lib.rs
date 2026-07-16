@@ -5,6 +5,7 @@ pub mod interface_adapter;
 pub mod migration_preflight;
 pub mod property_definition_rollout;
 pub mod property_value_rollout;
+mod relation_edge_rollout;
 pub mod usecase;
 
 pub mod sdk;

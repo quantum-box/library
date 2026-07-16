@@ -1,6 +1,7 @@
 use super::*;
 use crate::property_definition_rollout::PropertyDefinitionStorageMode;
 use crate::property_value_rollout::PropertyValueStorageMode;
+use crate::relation_edge_rollout::RelationEdgeWriteMode;
 use std::collections::HashSet;
 
 const CREATE_DATA_SCOPED_SQL: &str = r#"
@@ -38,6 +39,7 @@ pub struct DataRepositoryImpl {
     pub db: Arc<Db>,
     pub property_value_mode: PropertyValueStorageMode,
     pub property_definition_mode: PropertyDefinitionStorageMode,
+    pub(super) relation_edge_mode: RelationEdgeWriteMode,
 }
 
 impl DataRepositoryImpl {
@@ -69,6 +71,26 @@ impl DataRepositoryImpl {
             db,
             property_value_mode,
             property_definition_mode,
+            relation_edge_mode: Default::default(),
+        })
+    }
+
+    /// Test/internal constructor for the dormant RelationEdge writer.
+    ///
+    /// Normal application factories intentionally use `new_with_storage_modes`
+    /// and therefore cannot enable edge writes in this rollout slice.
+    #[cfg(test)]
+    pub(super) fn new_with_all_storage_modes(
+        db: Arc<Db>,
+        property_value_mode: PropertyValueStorageMode,
+        property_definition_mode: PropertyDefinitionStorageMode,
+        relation_edge_mode: RelationEdgeWriteMode,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            db,
+            property_value_mode,
+            property_definition_mode,
+            relation_edge_mode,
         })
     }
 }

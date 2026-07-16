@@ -391,6 +391,7 @@ pub enum RecordRejectionCode {
     ResourceNotFound,
     InvalidPropertyValue,
     RelationProjectionRequired,
+    RelationCardinalityExceeded,
     IndexProjectionRequired,
     IdempotencyKeyReuse,
     VersionExhausted,

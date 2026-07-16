@@ -2,7 +2,13 @@ use super::*;
 use chrono::Utc;
 use sqlx::types::Json;
 use sqlx::{MySql, Transaction};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+const RELATION_DEFINITION_COLUMNS: &str = r#"
+    id, tenant_id, object_id, field_id, target_object_id,
+    forward_cardinality, reverse_cardinality, inverse_field_id,
+    inverse_owned, on_target_delete, definition_version, generation
+"#;
 
 #[derive(Debug, sqlx::FromRow)]
 struct OperationRow {
@@ -23,7 +29,39 @@ struct OperationRow {
 #[derive(Debug, sqlx::FromRow)]
 struct IndexProjectionGuardRow {
     property_id: Option<String>,
+    relation_id: Option<String>,
     policy: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RelationEdgeMutationRow {
+    tenant_id: String,
+    source_database_id: String,
+    source_data_id: String,
+    relation_id: String,
+    target_database_id: String,
+    target_data_id: String,
+}
+
+impl RelationEdgeMutationRow {
+    fn restore(
+        self,
+        definition: &RelationDefinition,
+    ) -> errors::Result<RelationEdge> {
+        RelationEdge::restore(
+            &self.tenant_id.parse()?,
+            &self.relation_id.parse()?,
+            RecordReference::new(
+                &self.source_database_id.parse()?,
+                &self.source_data_id.parse()?,
+            ),
+            RecordReference::new(
+                &self.target_database_id.parse()?,
+                &self.target_data_id.parse()?,
+            ),
+            definition,
+        )
+    }
 }
 
 enum OperationClaim {
@@ -38,6 +76,28 @@ struct PlannedPropertyChange {
     data: PropertyData,
     change: PropertyValueChange,
     delta: RecordPropertyDelta,
+}
+
+#[derive(Debug)]
+struct LockedRelationSchemaScope {
+    fields: Vec<FieldRow>,
+    definitions: BTreeMap<String, RelationDefinition>,
+    inverse_property_ids: BTreeSet<String>,
+}
+
+#[derive(Debug)]
+struct RelationPatchRequest {
+    definition: RelationDefinition,
+    requested_target_ids: Vec<DataId>,
+}
+
+#[derive(Debug)]
+struct LockedRelationEdgeScope {
+    definition: RelationDefinition,
+    source: RecordReference,
+    requested_target_ids: Vec<DataId>,
+    current_forward: Vec<RelationEdge>,
+    requested_target_backlinks: Vec<RelationEdge>,
 }
 
 impl DataRepositoryImpl {
@@ -195,9 +255,172 @@ impl DataRepositoryImpl {
         .await
     }
 
+    async fn relation_definitions_for_patch(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordPatchCommand,
+        lock: bool,
+    ) -> errors::Result<Vec<RelationDefinition>> {
+        let property_ids = command
+            .patch()
+            .properties()
+            .iter()
+            .map(|patch| patch.property_id().to_string())
+            .collect::<BTreeSet<_>>();
+        if property_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = std::iter::repeat_n("?", property_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let lock_clause = if lock { " FOR UPDATE" } else { "" };
+        let sql = format!(
+            r#"
+            SELECT {RELATION_DEFINITION_COLUMNS}
+            FROM relationships
+            WHERE tenant_id = ? AND (
+                (object_id = ? AND field_id IN ({placeholders}))
+                OR
+                (target_object_id = ? AND inverse_field_id IN ({placeholders}))
+            )
+            ORDER BY id{lock_clause}
+            "#,
+        );
+        let mut query = sqlx::query_as::<_, RelationDefinitionRow>(&sql)
+            .bind(command.tenant_id().to_string())
+            .bind(command.database_id().to_string());
+        for property_id in &property_ids {
+            query = query.bind(property_id);
+        }
+        query = query.bind(command.database_id().to_string());
+        for property_id in &property_ids {
+            query = query.bind(property_id);
+        }
+        query
+            .fetch_all(&mut **transaction)
+            .await?
+            .into_iter()
+            .map(RelationDefinition::try_from)
+            .collect()
+    }
+
+    async fn lock_relation_schema_scope(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordPatchCommand,
+    ) -> errors::Result<LockedRelationSchemaScope> {
+        // Discovery is intentionally non-locking. It exists only to compute
+        // the endpoint set that must be locked in primary-key order.
+        let discovered = Self::relation_definitions_for_patch(
+            transaction,
+            command,
+            false,
+        )
+        .await?;
+        let mut endpoint_ids =
+            BTreeSet::from([command.database_id().to_string()]);
+        endpoint_ids.extend(discovered.iter().flat_map(|definition| {
+            [
+                definition.source_database_id().to_string(),
+                definition.target_database_id().to_string(),
+            ]
+        }));
+
+        for endpoint_id in &endpoint_ids {
+            let locked = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT id
+                FROM objects
+                WHERE tenant_id = ? AND id = ?
+                FOR UPDATE
+                "#,
+            )
+            .bind(command.tenant_id().to_string())
+            .bind(endpoint_id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+            if locked.is_none() {
+                return Err(errors::Error::not_found("resource not found"));
+            }
+        }
+
+        // Re-read after endpoint locking. A definition may have appeared or
+        // changed after discovery. Never append a newly discovered endpoint
+        // lock here: it could sort before one already held and invert the
+        // Relation schema writer's lock order. Roll back and let the same
+        // operation retry from discovery instead.
+        let definitions = Self::relation_definitions_for_patch(
+            transaction,
+            command,
+            true,
+        )
+        .await?;
+        if definitions.iter().any(|definition| {
+            !endpoint_ids
+                .contains(&definition.source_database_id().to_string())
+                || !endpoint_ids
+                    .contains(&definition.target_database_id().to_string())
+        }) {
+            return Err(errors::Error::internal_server_error(
+                "RelationDefinition endpoint scope changed; retry the Record operation",
+            ));
+        }
+
+        let fields = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ?
+            ORDER BY field_num ASC, id ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .fetch_all(&mut **transaction)
+        .await?;
+
+        let changed = command
+            .patch()
+            .properties()
+            .iter()
+            .map(|patch| patch.property_id().to_string())
+            .collect::<HashSet<_>>();
+        let mut source_definitions = BTreeMap::new();
+        let mut inverse_property_ids = BTreeSet::new();
+        for definition in definitions {
+            if definition.source_database_id() == command.database_id()
+                && changed
+                    .contains(&definition.source_property_id().to_string())
+            {
+                source_definitions.insert(
+                    definition.source_property_id().to_string(),
+                    definition.clone(),
+                );
+            }
+            if definition.target_database_id() == command.database_id() {
+                if let Some(inverse_property_id) =
+                    definition.inverse_property_id()
+                {
+                    if changed.contains(&inverse_property_id.to_string()) {
+                        inverse_property_ids
+                            .insert(inverse_property_id.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(LockedRelationSchemaScope {
+            fields,
+            definitions: source_definitions,
+            inverse_property_ids,
+        })
+    }
+
     async fn lock_index_projection_guards(
         transaction: &mut Transaction<'_, MySql>,
         command: &DecideRecordPatchCommand,
+        relation_ids: &HashSet<String>,
     ) -> errors::Result<bool> {
         let changed = command
             .patch()
@@ -210,7 +433,7 @@ impl DataRepositoryImpl {
         }
         let definitions = sqlx::query_as::<_, IndexProjectionGuardRow>(
             r#"
-            SELECT property_id, policy
+            SELECT property_id, relation_id, policy
             FROM index_definitions
             WHERE tenant_id = ? AND database_id = ?
             ORDER BY id
@@ -223,11 +446,198 @@ impl DataRepositoryImpl {
         .await?;
         Ok(definitions.iter().any(|definition| {
             definition.policy != "NONE"
-                && definition
+                && (definition
                     .property_id
                     .as_ref()
                     .is_some_and(|id| changed.contains(id))
+                    || definition
+                        .relation_id
+                        .as_ref()
+                        .is_some_and(|id| relation_ids.contains(id)))
         }))
+    }
+
+    async fn lock_relation_edge_scopes(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordPatchCommand,
+        mut requests: Vec<RelationPatchRequest>,
+    ) -> errors::Result<Vec<LockedRelationEdgeScope>> {
+        requests.sort_by(|left, right| {
+            left.definition.id().cmp(right.definition.id())
+        });
+        let source =
+            RecordReference::new(command.database_id(), command.data_id());
+        let mut scopes = Vec::with_capacity(requests.len());
+
+        for request in requests {
+            let forward_rows =
+                sqlx::query_as::<_, RelationEdgeMutationRow>(
+                    r#"
+                    SELECT tenant_id, source_database_id, source_data_id,
+                           relation_id, target_database_id, target_data_id
+                    FROM relation_edges
+                    WHERE tenant_id = ?
+                      AND source_database_id = ?
+                      AND source_data_id = ?
+                      AND relation_id = ?
+                      AND target_database_id = ?
+                    ORDER BY target_data_id
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(command.tenant_id().to_string())
+                .bind(command.database_id().to_string())
+                .bind(command.data_id().to_string())
+                .bind(request.definition.id().to_string())
+                .bind(request.definition.target_database_id().to_string())
+                .fetch_all(&mut **transaction)
+                .await?;
+            let current_forward = forward_rows
+                .into_iter()
+                .map(|row| row.restore(&request.definition))
+                .collect::<errors::Result<Vec<_>>>()?;
+
+            let mut backlink_edges = BTreeSet::new();
+            let requested_targets = request
+                .requested_target_ids
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for target_data_id in requested_targets {
+                let rows = sqlx::query_as::<_, RelationEdgeMutationRow>(
+                    r#"
+                    SELECT tenant_id, source_database_id, source_data_id,
+                           relation_id, target_database_id, target_data_id
+                    FROM relation_edges
+                    WHERE tenant_id = ?
+                      AND target_database_id = ?
+                      AND target_data_id = ?
+                      AND relation_id = ?
+                      AND source_database_id = ?
+                    ORDER BY source_data_id
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(command.tenant_id().to_string())
+                .bind(request.definition.target_database_id().to_string())
+                .bind(target_data_id.to_string())
+                .bind(request.definition.id().to_string())
+                .bind(command.database_id().to_string())
+                .fetch_all(&mut **transaction)
+                .await?;
+                for row in rows {
+                    backlink_edges
+                        .insert(row.restore(&request.definition)?);
+                }
+            }
+            let requested_target_backlinks =
+                backlink_edges.into_iter().collect();
+
+            scopes.push(LockedRelationEdgeScope {
+                definition: request.definition,
+                source: source.clone(),
+                requested_target_ids: request.requested_target_ids,
+                current_forward,
+                requested_target_backlinks,
+            });
+        }
+        Ok(scopes)
+    }
+
+    async fn lock_record_and_relation_targets(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordPatchCommand,
+        scopes: &[LockedRelationEdgeScope],
+    ) -> errors::Result<(Option<DataRow>, bool)> {
+        let source = (
+            command.database_id().to_string(),
+            command.data_id().to_string(),
+        );
+        let mut records = BTreeSet::from([source.clone()]);
+        for scope in scopes {
+            records.extend(scope.requested_target_ids.iter().map(
+                |target_data_id| {
+                    (
+                        scope.definition.target_database_id().to_string(),
+                        target_data_id.to_string(),
+                    )
+                },
+            ));
+        }
+
+        let mut source_row = None;
+        let mut target_missing = false;
+        for record in records {
+            let row = sqlx::query_as::<_, DataRow>(
+                r#"
+                SELECT * FROM data
+                WHERE tenant_id = ? AND object_id = ? AND id = ?
+                FOR UPDATE
+                "#,
+            )
+            .bind(command.tenant_id().to_string())
+            .bind(&record.0)
+            .bind(&record.1)
+            .fetch_optional(&mut **transaction)
+            .await?;
+            if record == source {
+                source_row = row;
+            } else if row.is_none() {
+                target_missing = true;
+            }
+        }
+        Ok((source_row, target_missing))
+    }
+
+    async fn apply_relation_edge_plans(
+        transaction: &mut Transaction<'_, MySql>,
+        plans: &[RelationEdgeMutationPlan],
+    ) -> errors::Result<()> {
+        for plan in plans {
+            for edge in plan.deletions() {
+                let result = sqlx::query(
+                    r#"
+                    DELETE FROM relation_edges
+                    WHERE tenant_id = ? AND source_database_id = ?
+                      AND source_data_id = ? AND relation_id = ?
+                      AND target_database_id = ? AND target_data_id = ?
+                    "#,
+                )
+                .bind(edge.tenant_id().to_string())
+                .bind(edge.source().database_id().to_string())
+                .bind(edge.source().data_id().to_string())
+                .bind(edge.relation_id().to_string())
+                .bind(edge.target().database_id().to_string())
+                .bind(edge.target().data_id().to_string())
+                .execute(&mut **transaction)
+                .await?;
+                if result.rows_affected() != 1 {
+                    return Err(errors::Error::internal_server_error(
+                        "locked RelationEdge deletion affected an unexpected row count",
+                    ));
+                }
+            }
+            for edge in plan.insertions() {
+                sqlx::query(
+                    r#"
+                    INSERT INTO relation_edges (
+                        tenant_id, source_database_id, source_data_id,
+                        relation_id, target_database_id, target_data_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(edge.tenant_id().to_string())
+                .bind(edge.source().database_id().to_string())
+                .bind(edge.source().data_id().to_string())
+                .bind(edge.relation_id().to_string())
+                .bind(edge.target().database_id().to_string())
+                .bind(edge.target().data_id().to_string())
+                .execute(&mut **transaction)
+                .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn load_locked_canonical_values(
@@ -388,26 +798,21 @@ impl DataRepositoryImpl {
                 let property = field
                     .definition(self.property_definition_mode)?
                     .to_property()?;
-                if matches!(
-                    property.property_type(),
-                    PropertyType::Relation(_)
-                ) || matches!(
-                    patch.value(),
-                    PropertyValueCommand::Relation(_)
-                ) {
-                    return Err(errors::Error::not_supported(
-                        "Relation changes require the RelationEdge writer",
-                    ));
-                }
+                let value_command = match patch.value() {
+                    PropertyValueCommand::Relation(targets) => {
+                        let mut targets = targets.clone();
+                        targets.sort();
+                        PropertyValueCommand::Relation(targets)
+                    }
+                    value => value.clone(),
+                };
                 Self::validate_auto_generated_id(
                     &property,
                     current,
-                    patch.value(),
+                    &value_command,
                 )?;
-                let data = PropertyData::from_command(
-                    &property,
-                    patch.value().clone(),
-                )?;
+                let data =
+                    PropertyData::from_command(&property, value_command)?;
                 let change = PropertyValueChange::from_property_data(
                     &property, &data,
                 )?;
@@ -447,6 +852,13 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
         &self,
         command: &DecideRecordPatchCommand,
     ) -> errors::Result<RecordMutationDecision> {
+        if self.relation_edge_mode.writes_edges()
+            && !self.property_value_mode.writes_canonical()
+        {
+            return Err(errors::Error::internal_server_error(
+                "RelationEdge dual-write requires canonical PropertyValue dual-write",
+            ));
+        }
         let mut transaction = self.db.pool().begin().await?;
         match Self::claim_operation(&mut transaction, command).await? {
             OperationClaim::Replay(decision) => {
@@ -480,30 +892,45 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
             .await;
         }
 
-        let fields = match self
-            .lock_database_and_fields(
-                &mut transaction,
-                command.tenant_id(),
-                command.database_id(),
-            )
-            .await
-        {
-            Ok(fields) => fields,
-            Err(error) if error.is_not_found() => {
-                return Self::reject(
-                    transaction,
-                    command,
-                    RecordRejectionCode::ResourceNotFound,
+        let (fields, relation_definitions, inverse_property_ids) =
+            match if self.relation_edge_mode.writes_edges() {
+                Self::lock_relation_schema_scope(&mut transaction, command)
+                    .await
+                    .map(|scope| {
+                        (
+                            scope.fields,
+                            scope.definitions,
+                            scope.inverse_property_ids,
+                        )
+                    })
+            } else {
+                self.lock_database_and_fields(
+                    &mut transaction,
+                    command.tenant_id(),
+                    command.database_id(),
                 )
-                .await;
-            }
-            Err(error) => return Err(error),
-        };
+                .await
+                .map(|fields| (fields, BTreeMap::new(), BTreeSet::new()))
+            } {
+                Ok(scope) => scope,
+                Err(error) if error.is_not_found() => {
+                    return Self::reject(
+                        transaction,
+                        command,
+                        RecordRejectionCode::ResourceNotFound,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            };
 
-        // Resolve definitions before any Record value changes. Relation
-        // mutation and active Index projections remain fail-closed until their
-        // cleanup/projection-aware writers join this same UoW.
+        // Resolve definitions before any Record value changes. When the
+        // dormant writer is enabled by an internal test constructor, source
+        // Relation definitions are already locked after their sorted endpoint
+        // objects and before fields.
         let mut relation_projection_required = false;
+        let mut invalid_property_value = false;
+        let mut relation_requests = Vec::new();
         for patch in command.patch().properties() {
             let Some(field) = fields
                 .iter()
@@ -534,31 +961,101 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
                 }
                 Err(error) => return Err(error),
             };
-            if matches!(property.property_type(), PropertyType::Relation(_))
-                || matches!(
+            match property.property_type() {
+                PropertyType::Relation(relation_type) => {
+                    if !self.relation_edge_mode.writes_edges()
+                        || inverse_property_ids
+                            .contains(&patch.property_id().to_string())
+                    {
+                        relation_projection_required = true;
+                        continue;
+                    }
+                    let Some(definition) = relation_definitions
+                        .get(&patch.property_id().to_string())
+                    else {
+                        relation_projection_required = true;
+                        continue;
+                    };
+                    if definition.ensure_writable().is_err()
+                        || definition.target_database_id()
+                            != &relation_type.database_id
+                    {
+                        relation_projection_required = true;
+                        continue;
+                    }
+                    let requested_target_ids = match patch.value() {
+                        PropertyValueCommand::Clear => Vec::new(),
+                        PropertyValueCommand::Relation(targets) => {
+                            targets.clone()
+                        }
+                        _ => {
+                            invalid_property_value = true;
+                            continue;
+                        }
+                    };
+                    relation_requests.push(RelationPatchRequest {
+                        definition: definition.clone(),
+                        requested_target_ids,
+                    });
+                }
+                _ if matches!(
                     patch.value(),
                     PropertyValueCommand::Relation(_)
-                )
-            {
-                relation_projection_required = true;
+                ) =>
+                {
+                    invalid_property_value = true;
+                }
+                _ => {}
             }
         }
-        let index_projection_required =
-            Self::lock_index_projection_guards(&mut transaction, command)
-                .await?;
-
-        let row = sqlx::query_as::<_, DataRow>(
-            r#"
-            SELECT * FROM data
-            WHERE tenant_id = ? AND object_id = ? AND id = ?
-            FOR UPDATE
-            "#,
+        let relation_ids = relation_requests
+            .iter()
+            .map(|request| request.definition.id().to_string())
+            .collect::<HashSet<_>>();
+        let index_projection_required = Self::lock_index_projection_guards(
+            &mut transaction,
+            command,
+            &relation_ids,
         )
-        .bind(command.tenant_id().to_string())
-        .bind(command.database_id().to_string())
-        .bind(command.data_id().to_string())
-        .fetch_optional(&mut *transaction)
         .await?;
+
+        let locked_relation_edges =
+            if self.relation_edge_mode.writes_edges() {
+                Self::lock_relation_edge_scopes(
+                    &mut transaction,
+                    command,
+                    relation_requests,
+                )
+                .await?
+            } else {
+                Vec::new()
+            };
+
+        let (row, relation_target_missing) =
+            if self.relation_edge_mode.writes_edges() {
+                Self::lock_record_and_relation_targets(
+                    &mut transaction,
+                    command,
+                    &locked_relation_edges,
+                )
+                .await?
+            } else {
+                (
+                    sqlx::query_as::<_, DataRow>(
+                        r#"
+                        SELECT * FROM data
+                        WHERE tenant_id = ? AND object_id = ? AND id = ?
+                        FOR UPDATE
+                        "#,
+                    )
+                    .bind(command.tenant_id().to_string())
+                    .bind(command.database_id().to_string())
+                    .bind(command.data_id().to_string())
+                    .fetch_optional(&mut *transaction)
+                    .await?,
+                    false,
+                )
+            };
         let Some(row) = row else {
             return Self::reject(
                 transaction,
@@ -601,6 +1098,14 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
             )
             .await;
         }
+        if invalid_property_value {
+            return Self::reject(
+                transaction,
+                command,
+                RecordRejectionCode::InvalidPropertyValue,
+            )
+            .await;
+        }
         if index_projection_required {
             return Self::reject(
                 transaction,
@@ -608,6 +1113,74 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
                 RecordRejectionCode::IndexProjectionRequired,
             )
             .await;
+        }
+        if relation_target_missing {
+            return Self::reject(
+                transaction,
+                command,
+                RecordRejectionCode::ResourceNotFound,
+            )
+            .await;
+        }
+
+        let mut relation_edge_plans = Vec::new();
+        for scope in locked_relation_edges {
+            let current_forward = match RelationEdgeSet::new(
+                &scope.definition,
+                scope.current_forward,
+            ) {
+                Ok(edges) => edges,
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            };
+            let requested_target_backlinks = match RelationEdgeSet::new(
+                &scope.definition,
+                scope.requested_target_backlinks,
+            ) {
+                Ok(edges) => edges,
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            };
+            match RelationEdgeMutationPlan::replace_forward(
+                &scope.definition,
+                scope.source,
+                &current_forward,
+                &requested_target_backlinks,
+                scope.requested_target_ids,
+            ) {
+                Ok(plan) => relation_edge_plans.push(plan),
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(errors::Error::BadRequest { .. }) => {
+                    return Self::reject(
+                        transaction,
+                        command,
+                        RecordRejectionCode::InvalidPropertyValue,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            }
         }
         let next_version =
             match current.record_version().checked_increment() {
@@ -699,6 +1272,11 @@ impl VersionedRecordMutationUnitOfWork for DataRepositoryImpl {
             )
             .await?;
         }
+        Self::apply_relation_edge_plans(
+            &mut transaction,
+            &relation_edge_plans,
+        )
+        .await?;
 
         let update = sqlx::query(
             r#"
