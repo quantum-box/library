@@ -314,6 +314,47 @@ async fn self_relation_is_deleted_with_its_owned_schema(
 
 #[tokio::test]
 #[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn future_relation_definition_blocks_database_deletion(
+) -> anyhow::Result<()> {
+    let (db, app, tenant_id, database) =
+        mysql_fixture("delete-future-relation-definition").await?;
+    add_property(
+        &app,
+        &tenant_id,
+        database.id(),
+        "future-self-relation",
+        PropertyType::Relation(TypeRelation::new(database.id().clone())),
+    )
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE relationships
+        SET definition_version = 2
+        WHERE tenant_id = ? AND object_id = ?
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .execute(db.pool().as_ref())
+    .await?;
+    let before =
+        scoped_counts(db.as_ref(), &tenant_id, database.id()).await?;
+
+    let error = delete_database(&app, &tenant_id, database.id())
+        .await
+        .expect_err("a future RelationDefinition must remain read-only");
+    assert!(matches!(error, errors::Error::Conflict { .. }));
+    assert!(error.to_string().contains("read-only RelationDefinition"));
+    assert_eq!(
+        scoped_counts(db.as_ref(), &tenant_id, database.id()).await?,
+        before,
+        "future RelationDefinition rejection must precede every delete"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
 async fn late_root_delete_failure_rolls_back_descendant_deletes(
 ) -> anyhow::Result<()> {
     const TRIGGER: &str = "test_database_delete_atomicity_rollback";

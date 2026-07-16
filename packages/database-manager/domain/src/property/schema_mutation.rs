@@ -53,6 +53,9 @@ impl UpdatePropertyCommand {
     pub fn property_id(&self) -> &PropertyId {
         &self.property_id
     }
+    pub fn property_type(&self) -> Option<&PropertyType> {
+        self.property_type.as_ref()
+    }
 
     pub fn apply(
         &self,

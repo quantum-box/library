@@ -63,6 +63,60 @@ impl DatabaseRepositoryImpl {
             ));
         }
 
+        // A generated inverse is an owned schema child in another Database.
+        // Cascading only the source field would orphan that child. Until a
+        // multi-Database delete command is introduced, require callers to
+        // delete these Relation schemas through their endpoint-ordered UoW.
+        // Holding the source object lock closes the race with every writer.
+        let external_owned_inverse = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM relationships
+            WHERE tenant_id = ?
+              AND object_id = ?
+              AND target_object_id <> ?
+              AND inverse_owned = TRUE
+            ORDER BY target_object_id, id
+            LIMIT 1
+            FOR UPDATE;
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        if external_owned_inverse.is_some() {
+            return Err(errors::Error::conflict(
+                "Database owns an external inverse Property; delete its Relation schema first",
+            ));
+        }
+
+        // A newer RelationDefinition contract owns its deletion semantics.
+        // The Database aggregate lock serializes this check with every schema
+        // writer before the rows are removed explicitly below.
+        let read_only_definition = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM relationships
+            WHERE tenant_id = ? AND object_id = ?
+              AND definition_version <> ?
+            ORDER BY id
+            LIMIT 1
+            FOR UPDATE;
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(RELATION_DEFINITION_VERSION_V1.get())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        if read_only_definition.is_some() {
+            return Err(errors::Error::conflict(
+                "Database contains a read-only RelationDefinition version",
+            ));
+        }
+
         // `indexes.object_id` is the legacy name of its referenced Data id.
         // That foreign key intentionally has no ON DELETE CASCADE, so remove
         // the Database-owned projection rows before deleting their records.
@@ -86,6 +140,21 @@ impl DatabaseRepositoryImpl {
         sqlx::query(
             r#"
             DELETE FROM data
+            WHERE tenant_id = ? AND object_id = ?;
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .execute(&mut **transaction)
+        .await?;
+
+        // RelationDefinition source ownership is RESTRICT rather than
+        // cascading so mixed-fleet legacy deleters cannot orphan an owned
+        // inverse. This UoW has completed every preflight and may remove the
+        // Database-owned definitions explicitly before their Properties.
+        sqlx::query(
+            r#"
+            DELETE FROM relationships
             WHERE tenant_id = ? AND object_id = ?;
             "#,
         )

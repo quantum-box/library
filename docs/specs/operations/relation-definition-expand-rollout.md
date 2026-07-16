@@ -123,10 +123,12 @@ WHERE forward_cardinality <> 'MANY'
 
 Only when that query is empty, remove the additive objects in dependency order
 with a new forward migration. Recreate
-`fk_relationships_tenant_object_field` without `ON DELETE CASCADE` only if the
-rollback binary requires its old behavior; the expanded schema names the
-cascading replacement `fk_relationships_tenant_source_property`. Never delete
-or forge a migration ledger row to replay this migration.
+`fk_relationships_tenant_object_field` only if the rollback binary requires
+its old behavior. The later Relation schema mutation UoW makes
+`fk_relationships_tenant_source_property_restrict` restrictive so a mixed-fleet legacy
+deleter cannot cascade away inverse ownership. Never restore cascading source
+ownership while generated inverses exist, and never delete or forge a
+migration ledger row to replay this migration.
 
 ## Follow-up boundary
 

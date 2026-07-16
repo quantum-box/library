@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::domain::{
     DatabaseId, PropertyId, Relation, RelationCardinality,
-    RelationDefinition, RelationDefinitionRepository, RelationOnDelete,
+    RelationDefinition, RelationDefinitionRepository,
+    RelationDefinitionVersion, RelationGeneration, RelationOnDelete,
     RelationRepository,
 };
 use persistence::Db;
@@ -13,7 +14,7 @@ use super::{RelationDefinitionRow, RelationshipRow};
 const RELATION_DEFINITION_COLUMNS: &str = r#"
     id, tenant_id, object_id, field_id, target_object_id,
     forward_cardinality, reverse_cardinality, inverse_field_id,
-    on_target_delete
+    inverse_owned, on_target_delete, definition_version, generation
 "#;
 
 #[derive(Clone, Debug)]
@@ -162,7 +163,7 @@ impl TryFrom<RelationDefinitionRow> for RelationDefinition {
             .inverse_field_id
             .map(|id| id.parse::<PropertyId>())
             .transpose()?;
-        Ok(Self::new(
+        Self::restore(
             &row.id.parse()?,
             &row.tenant_id.parse()?,
             &row.object_id.parse()?,
@@ -171,8 +172,11 @@ impl TryFrom<RelationDefinitionRow> for RelationDefinition {
             row.forward_cardinality.parse::<RelationCardinality>()?,
             row.reverse_cardinality.parse::<RelationCardinality>()?,
             inverse_property_id.as_ref(),
+            row.inverse_owned,
             row.on_target_delete.parse::<RelationOnDelete>()?,
-        ))
+            RelationDefinitionVersion::new(row.definition_version)?,
+            RelationGeneration::new(row.generation)?,
+        )
     }
 }
 
@@ -206,7 +210,10 @@ mod tests {
             forward_cardinality: "ONE".to_string(),
             reverse_cardinality: "MANY".to_string(),
             inverse_field_id: Some(PropertyId::default().to_string()),
+            inverse_owned: true,
             on_target_delete: "NULLIFY".to_string(),
+            definition_version: 1,
+            generation: 3,
         }
     }
 
@@ -229,6 +236,8 @@ mod tests {
             RelationOnDelete::Nullify
         );
         assert!(definition.inverse_property_id().is_some());
+        assert!(*definition.inverse_property_owned());
+        assert_eq!(definition.generation().get(), 3);
     }
 
     #[test]

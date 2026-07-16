@@ -6,6 +6,7 @@ pub mod property_repository;
 mod property_value_backfill;
 mod property_value_storage;
 mod relation_repository;
+mod relation_schema_repository;
 
 pub use data_query_service::*;
 pub use data_repository::*;
@@ -168,6 +169,28 @@ impl FieldRow {
         }
         Ok(())
     }
+
+    /// Decode a definition for a schema write without crossing the active
+    /// rollout mode or allowing one representation to overwrite a mismatch in
+    /// the other. Unknown and malformed canonical envelopes remain read-only.
+    pub fn definition_for_schema_write(
+        &self,
+        mode: crate::property_definition_rollout::PropertyDefinitionStorageMode,
+    ) -> errors::Result<PropertyDefinition> {
+        self.ensure_canonical_definition_writable()?;
+        let selected = self.definition(mode)?;
+        if let Some(canonical) = self.canonical_definition()? {
+            let legacy = self.legacy_definition()?;
+            if canonical.type_ref() != legacy.type_ref()
+                || canonical.raw_config()? != legacy.raw_config()?
+            {
+                return Err(errors::Error::conflict(
+                    "legacy and canonical PropertyDefinition configs do not match",
+                ));
+            }
+        }
+        Ok(selected)
+    }
 }
 
 #[cfg(test)]
@@ -294,7 +317,10 @@ pub struct RelationDefinitionRow {
     pub forward_cardinality: String,
     pub reverse_cardinality: String,
     pub inverse_field_id: Option<String>,
+    pub inverse_owned: bool,
     pub on_target_delete: String,
+    pub definition_version: u16,
+    pub generation: u64,
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]

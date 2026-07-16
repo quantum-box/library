@@ -626,6 +626,7 @@ mod tests {
             None,
             RelationOnDelete::Restrict,
         )
+        .expect("valid RelationDefinition fixture")
     }
 
     #[test]

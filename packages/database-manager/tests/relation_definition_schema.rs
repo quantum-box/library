@@ -81,6 +81,46 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .await?;
     let pool = db.pool();
 
+    let versioning_migration = include_str!(
+        "../migrations/20260716100000_version_relation_definitions.sql"
+    );
+    assert_eq!(
+        versioning_migration
+            .matches("ALTER TABLE relationships")
+            .count(),
+        1,
+        "guard expansion and legacy contraction must stay one atomic ALTER"
+    );
+    for (new_guard, old_guard) in [
+        (
+            "ADD CONSTRAINT fk_relationships_tenant_source_property_restrict",
+            "DROP FOREIGN KEY fk_relationships_tenant_source_property",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_forward_cardinality_strict",
+            "DROP CHECK chk_relationships_forward_cardinality",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_reverse_cardinality_strict",
+            "DROP CHECK chk_relationships_reverse_cardinality",
+        ),
+        (
+            "ADD CONSTRAINT chk_relationships_on_target_delete_strict",
+            "DROP CHECK chk_relationships_on_target_delete",
+        ),
+    ] {
+        let add_position = versioning_migration
+            .find(new_guard)
+            .expect("the stronger guard must be installed");
+        let drop_position = versioning_migration
+            .find(old_guard)
+            .expect("the legacy guard must be contracted");
+        assert!(
+            add_position < drop_position,
+            "{new_guard} must be active before {old_guard}"
+        );
+    }
+
     let columns = sqlx::query(
         r#"
         SELECT CAST(COLUMN_NAME AS CHAR) AS column_name_text,
@@ -91,7 +131,8 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
           AND TABLE_NAME = 'relationships'
           AND COLUMN_NAME IN (
               'forward_cardinality', 'reverse_cardinality',
-              'inverse_field_id', 'on_target_delete'
+              'inverse_field_id', 'inverse_owned', 'on_target_delete',
+              'definition_version', 'generation'
           )
         ORDER BY ORDINAL_POSITION
         "#,
@@ -122,8 +163,23 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
             ),
             ("inverse_field_id".to_string(), None, "YES".to_string()),
             (
+                "inverse_owned".to_string(),
+                Some("0".to_string()),
+                "NO".to_string(),
+            ),
+            (
                 "on_target_delete".to_string(),
                 Some("RESTRICT".to_string()),
+                "NO".to_string(),
+            ),
+            (
+                "definition_version".to_string(),
+                Some("1".to_string()),
+                "NO".to_string(),
+            ),
+            (
+                "generation".to_string(),
+                Some("1".to_string()),
                 "NO".to_string(),
             ),
         ]
@@ -156,17 +212,26 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
 
     for (constraint, expected_fragments) in [
         (
-            "chk_relationships_forward_cardinality",
+            "chk_relationships_forward_cardinality_strict",
             &["forward_cardinality", "ONE", "MANY"][..],
         ),
         (
-            "chk_relationships_reverse_cardinality",
+            "chk_relationships_reverse_cardinality_strict",
             &["reverse_cardinality", "ONE", "MANY"][..],
         ),
         (
-            "chk_relationships_on_target_delete",
+            "chk_relationships_on_target_delete_strict",
             &["on_target_delete", "RESTRICT", "NULLIFY"][..],
         ),
+        (
+            "chk_relationships_owned_inverse",
+            &["inverse_owned", "inverse_field_id"][..],
+        ),
+        (
+            "chk_relationships_definition_version",
+            &["definition_version", "0"][..],
+        ),
+        ("chk_relationships_generation", &["generation", "0"][..]),
     ] {
         let clause = sqlx::query_scalar::<_, String>(
             r#"
@@ -194,12 +259,12 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         FROM information_schema.REFERENTIAL_CONSTRAINTS
         WHERE CONSTRAINT_SCHEMA = DATABASE()
           AND TABLE_NAME = 'relationships'
-          AND CONSTRAINT_NAME = 'fk_relationships_tenant_source_property'
+          AND CONSTRAINT_NAME = 'fk_relationships_tenant_source_property_restrict'
         "#,
     )
     .fetch_one(pool.as_ref())
     .await?;
-    assert_eq!(source_delete_rule, "CASCADE");
+    assert_eq!(source_delete_rule, "RESTRICT");
 
     let tenant_a = TenantId::default().to_string();
     let tenant_b = TenantId::default().to_string();
@@ -253,7 +318,8 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
     let defaults = sqlx::query(
         r#"
         SELECT forward_cardinality, reverse_cardinality,
-               inverse_field_id, on_target_delete
+               inverse_field_id, inverse_owned, on_target_delete,
+               definition_version, generation
         FROM relationships
         WHERE id = ?
         "#,
@@ -273,10 +339,13 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         defaults.try_get::<Option<String>, _>("inverse_field_id")?,
         None
     );
+    assert!(!defaults.try_get::<bool, _>("inverse_owned")?);
     assert_eq!(
         defaults.try_get::<String, _>("on_target_delete")?,
         "RESTRICT"
     );
+    assert_eq!(defaults.try_get::<u16, _>("definition_version")?, 1);
+    assert_eq!(defaults.try_get::<u64, _>("generation")?, 1);
 
     let duplicate_error = sqlx::query(
         r#"
@@ -321,7 +390,30 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .as_database_error()
         .expect("check violation")
         .message()
-        .contains("chk_relationships_forward_cardinality"));
+        .contains("chk_relationships_forward_cardinality_strict"));
+
+    let lowercase_cardinality = sqlx::query(
+        r#"
+        INSERT INTO relationships (
+            id, tenant_id, object_id, field_id, relation_id,
+            target_object_id, forward_cardinality
+        )
+        VALUES (?, ?, ?, ?, 0, ?, 'one')
+        "#,
+    )
+    .bind(RelationId::default().to_string())
+    .bind(&tenant_a)
+    .bind(&database_a)
+    .bind(&source_bad_cardinality)
+    .bind(&target_a)
+    .execute(&mut *transaction)
+    .await
+    .expect_err("stored enum spelling must be case-sensitive");
+    assert!(lowercase_cardinality
+        .as_database_error()
+        .expect("check violation")
+        .message()
+        .contains("chk_relationships_forward_cardinality_strict"));
 
     let bad_policy = sqlx::query(
         r#"
@@ -344,7 +436,54 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .as_database_error()
         .expect("check violation")
         .message()
-        .contains("chk_relationships_on_target_delete"));
+        .contains("chk_relationships_on_target_delete_strict"));
+
+    let owned_without_inverse = sqlx::query(
+        r#"
+        INSERT INTO relationships (
+            id, tenant_id, object_id, field_id, relation_id,
+            target_object_id, inverse_owned
+        )
+        VALUES (?, ?, ?, ?, 0, ?, TRUE)
+        "#,
+    )
+    .bind(RelationId::default().to_string())
+    .bind(&tenant_a)
+    .bind(&database_a)
+    .bind(&source_bad_policy)
+    .bind(&target_a)
+    .execute(&mut *transaction)
+    .await
+    .expect_err("owned inverse metadata requires an inverse Property");
+    assert!(owned_without_inverse
+        .as_database_error()
+        .expect("check violation")
+        .message()
+        .contains("chk_relationships_owned_inverse"));
+
+    let self_inverse_reuses_source = sqlx::query(
+        r#"
+        INSERT INTO relationships (
+            id, tenant_id, object_id, field_id, relation_id,
+            target_object_id, inverse_field_id
+        )
+        VALUES (?, ?, ?, ?, 0, ?, ?)
+        "#,
+    )
+    .bind(RelationId::default().to_string())
+    .bind(&tenant_a)
+    .bind(&database_a)
+    .bind(&source_bad_inverse)
+    .bind(&database_a)
+    .bind(&source_bad_inverse)
+    .execute(&mut *transaction)
+    .await
+    .expect_err("a self inverse must be a distinct Property");
+    assert!(self_inverse_reuses_source
+        .as_database_error()
+        .expect("check violation")
+        .message()
+        .contains("chk_relationships_distinct_self_inverse"));
 
     let cross_tenant_inverse = sqlx::query(
         r#"
@@ -372,6 +511,22 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .message()
         .contains("fk_relationships_tenant_target_inverse_field"));
 
+    let legacy_source_delete =
+        sqlx::query("DELETE FROM fields WHERE id = ?")
+            .bind(&source_default)
+            .execute(&mut *transaction)
+            .await
+            .expect_err(
+                "source ownership must not cascade in a mixed fleet",
+            );
+    assert!(legacy_source_delete
+        .as_database_error()
+        .expect("foreign key violation")
+        .is_foreign_key_violation());
+    sqlx::query("DELETE FROM relationships WHERE id = ?")
+        .bind(&default_definition)
+        .execute(&mut *transaction)
+        .await?;
     sqlx::query("DELETE FROM fields WHERE id = ?")
         .bind(&source_default)
         .execute(&mut *transaction)
