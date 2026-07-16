@@ -166,6 +166,113 @@ impl RelationEdgeSet {
     }
 }
 
+/// Deterministic replacement of one source Record's forward Relation value.
+///
+/// The adapter must pass the complete current forward set for `source` and
+/// every persisted backlink for the requested targets while holding the
+/// RelationDefinition row lock. That row is the serialization mutex shared
+/// with cardinality reconfiguration and cleanup-aware Record deletion.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct RelationEdgeMutationPlan {
+    definition: RelationDefinition,
+    source: RecordReference,
+    desired: RelationEdgeSet,
+    insertions: Vec<RelationEdge>,
+    deletions: Vec<RelationEdge>,
+}
+
+impl RelationEdgeMutationPlan {
+    pub fn replace_forward(
+        definition: &RelationDefinition,
+        source: RecordReference,
+        current_forward: &RelationEdgeSet,
+        requested_target_backlinks: &RelationEdgeSet,
+        requested_target_ids: Vec<DataId>,
+    ) -> errors::Result<Self> {
+        definition.ensure_writable()?;
+        if current_forward.definition() != definition
+            || requested_target_backlinks.definition() != definition
+        {
+            return Err(errors::Error::invalid(
+                "RelationEdge mutation scope uses a different RelationDefinition",
+            ));
+        }
+        if source.database_id() != definition.source_database_id() {
+            return Err(errors::Error::invalid(
+                "RelationEdge mutation source Database does not match RelationDefinition",
+            ));
+        }
+        if current_forward
+            .edges()
+            .iter()
+            .any(|edge| edge.source() != &source)
+        {
+            return Err(errors::Error::invalid(
+                "RelationEdge mutation requires one complete forward source scope",
+            ));
+        }
+
+        let requested_target_count = requested_target_ids.len();
+        let requested_target_ids =
+            requested_target_ids.into_iter().collect::<BTreeSet<_>>();
+        let desired_edges = requested_target_ids
+            .iter()
+            .map(|target_data_id| {
+                RelationEdge::new(
+                    definition,
+                    source.clone(),
+                    RecordReference::new(
+                        definition.target_database_id(),
+                        target_data_id,
+                    ),
+                )
+            })
+            .collect::<errors::Result<Vec<_>>>()?;
+
+        // Relation values are sets. Silently deduplicating a malformed
+        // command would make its accepted event differ from the caller's
+        // payload and hide a client bug.
+        if requested_target_count != requested_target_ids.len() {
+            return Err(errors::Error::invalid(
+                "duplicate RelationEdge target",
+            ));
+        }
+        let desired = RelationEdgeSet::new(definition, desired_edges)?;
+
+        for edge in requested_target_backlinks.edges() {
+            if !requested_target_ids.contains(edge.target().data_id()) {
+                return Err(errors::Error::invalid(
+                    "RelationEdge backlink scope contains an unrequested target",
+                ));
+            }
+            if *definition.reverse_cardinality() == RelationCardinality::One
+                && edge.source() != &source
+            {
+                return Err(errors::Error::conflict(
+                    "Relation reverse cardinality ONE was exceeded",
+                ));
+            }
+        }
+
+        let current = current_forward
+            .edges()
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let next = desired.edges().iter().cloned().collect::<BTreeSet<_>>();
+        let insertions = next.difference(&current).cloned().collect();
+        let deletions = current.difference(&next).cloned().collect();
+
+        Ok(Self {
+            definition: definition.clone(),
+            source,
+            desired,
+            insertions,
+            deletions,
+        })
+    }
+}
+
 /// Tenant-scoped, read-only port for forward and inverse/backlink views.
 ///
 /// Mutations deliberately do not belong to this expand contract. They will be
@@ -434,5 +541,139 @@ mod tests {
             RelationEdgeSet::new(&definition, vec![second, first])
                 .expect("valid set");
         assert_eq!(ordered, reversed);
+    }
+
+    #[test]
+    fn replacement_plan_is_a_deterministic_set_diff() {
+        let tenant_id = TenantId::default();
+        let source_database_id = DatabaseId::default();
+        let target_database_id = DatabaseId::default();
+        let definition = definition(
+            &tenant_id,
+            &source_database_id,
+            &target_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+        );
+        let source_data_id = DataId::default();
+        let source =
+            RecordReference::new(&source_database_id, &source_data_id);
+        let retained_target = DataId::default();
+        let removed_target = DataId::default();
+        let inserted_target = DataId::default();
+        let current = RelationEdgeSet::new(
+            &definition,
+            vec![
+                edge(&definition, &source_data_id, &removed_target),
+                edge(&definition, &source_data_id, &retained_target),
+            ],
+        )
+        .expect("current forward set");
+        let backlinks = RelationEdgeSet::new(&definition, Vec::new())
+            .expect("no occupied backlinks");
+
+        let plan = RelationEdgeMutationPlan::replace_forward(
+            &definition,
+            source,
+            &current,
+            &backlinks,
+            vec![inserted_target.clone(), retained_target.clone()],
+        )
+        .expect("valid replacement");
+
+        assert_eq!(plan.insertions().len(), 1);
+        assert_eq!(plan.deletions().len(), 1);
+        assert_eq!(
+            plan.insertions()[0].target().data_id(),
+            &inserted_target
+        );
+        assert_eq!(plan.deletions()[0].target().data_id(), &removed_target);
+        assert_eq!(plan.desired().edges().len(), 2);
+    }
+
+    #[test]
+    fn replacement_rejects_duplicate_targets_instead_of_deduplicating() {
+        let tenant_id = TenantId::default();
+        let source_database_id = DatabaseId::default();
+        let target_database_id = DatabaseId::default();
+        let definition = definition(
+            &tenant_id,
+            &source_database_id,
+            &target_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+        );
+        let source =
+            RecordReference::new(&source_database_id, &DataId::default());
+        let empty = RelationEdgeSet::new(&definition, Vec::new())
+            .expect("empty edge scope");
+        let target = DataId::default();
+
+        assert!(
+            RelationEdgeMutationPlan::replace_forward(
+                &definition,
+                source,
+                &empty,
+                &empty,
+                vec![target.clone(), target],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn replacement_enforces_forward_and_reverse_one() {
+        let tenant_id = TenantId::default();
+        let source_database_id = DatabaseId::default();
+        let target_database_id = DatabaseId::default();
+        let source_data_id = DataId::default();
+        let other_source_data_id = DataId::default();
+        let first_target = DataId::default();
+        let second_target = DataId::default();
+
+        let forward_one = definition(
+            &tenant_id,
+            &source_database_id,
+            &target_database_id,
+            RelationCardinality::One,
+            RelationCardinality::Many,
+        );
+        let empty = RelationEdgeSet::new(&forward_one, Vec::new())
+            .expect("empty edge scope");
+        assert!(
+            RelationEdgeMutationPlan::replace_forward(
+                &forward_one,
+                RecordReference::new(&source_database_id, &source_data_id),
+                &empty,
+                &empty,
+                vec![first_target.clone(), second_target],
+            )
+            .is_err()
+        );
+
+        let reverse_one = definition(
+            &tenant_id,
+            &source_database_id,
+            &target_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::One,
+        );
+        let empty = RelationEdgeSet::new(&reverse_one, Vec::new())
+            .expect("empty edge scope");
+        let occupied = RelationEdgeSet::new(
+            &reverse_one,
+            vec![edge(&reverse_one, &other_source_data_id, &first_target)],
+        )
+        .expect("one occupied backlink");
+        assert!(
+            RelationEdgeMutationPlan::replace_forward(
+                &reverse_one,
+                RecordReference::new(&source_database_id, &source_data_id),
+                &empty,
+                &occupied,
+                vec![first_target],
+            )
+            .is_err()
+        );
     }
 }
