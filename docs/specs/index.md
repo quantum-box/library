@@ -19,6 +19,7 @@
 - [PropertyValue storage expand rollout](operations/property-value-storage-expand-rollout.md)
 - [RecordVersion expand/read rollout](operations/record-version-expand-read-rollout.md)
 - [Record patch decision Unit of Work](operations/record-patch-decision-uow.md)
+- [Record create decision Unit of Work](operations/record-create-decision-uow.md)
 - [Record delete decision Unit of Work](operations/record-delete-decision-uow.md)
 - [PropertyDefinition envelope schema rollout](operations/property-definition-envelope-rollout.md)
 - [PropertyDefinition dual-write/read rollout](operations/property-definition-storage-rollout.md)

@@ -236,6 +236,44 @@ impl RecordPatch {
     }
 }
 
+/// The complete client-supplied state for a new Record.
+///
+/// Creation has a required name, unlike a PATCH, while Property inputs use
+/// the same typed command envelope. Sorting here makes lock planning, request
+/// fingerprinting, and the eventual created-event snapshot deterministic.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordCreate {
+    name: Text,
+    properties: Vec<RecordPropertyPatch>,
+}
+
+impl RecordCreate {
+    pub fn new(
+        name: Text,
+        mut properties: Vec<RecordPropertyPatch>,
+    ) -> Self {
+        properties.sort_by(|left, right| {
+            left.property_id().cmp(right.property_id())
+        });
+        Self { name, properties }
+    }
+
+    pub fn name(&self) -> &Text {
+        &self.name
+    }
+
+    pub fn properties(&self) -> &[RecordPropertyPatch] {
+        &self.properties
+    }
+
+    pub fn has_duplicate_properties(&self) -> bool {
+        let mut ids = HashSet::with_capacity(self.properties.len());
+        self.properties
+            .iter()
+            .any(|property| !ids.insert(property.property_id().to_string()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordRequestFingerprint {
     version: u16,
@@ -290,6 +328,55 @@ impl DecideRecordPatchCommand {
             expected_version,
             actor,
             patch,
+            fingerprint,
+        })
+    }
+}
+
+/// A versioned, idempotent request to create one Record.
+///
+/// CREATE uses `RecordVersion::INITIAL` as its journal sentinel and accepted
+/// aggregate version. The caller does not choose that value: a create request
+/// is always based on absence, and an existing Record is rejected
+/// deterministically instead of being treated as a versioned PATCH.
+#[derive(Debug, Clone, PartialEq, Getters)]
+pub struct DecideRecordCreateCommand {
+    tenant_id: TenantId,
+    database_id: DatabaseId,
+    data_id: DataId,
+    operation_id: RecordOperationId,
+    expected_version: RecordVersion,
+    actor: RecordActor,
+    create: RecordCreate,
+    fingerprint: RecordRequestFingerprint,
+}
+
+impl DecideRecordCreateCommand {
+    pub fn new(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        data_id: &DataId,
+        operation_id: &RecordOperationId,
+        actor: RecordActor,
+        create: RecordCreate,
+    ) -> errors::Result<Self> {
+        let expected_version = RecordVersion::INITIAL;
+        let fingerprint = create_fingerprint_v1(
+            tenant_id,
+            database_id,
+            data_id,
+            expected_version,
+            &actor,
+            &create,
+        )?;
+        Ok(Self {
+            tenant_id: tenant_id.clone(),
+            database_id: database_id.clone(),
+            data_id: data_id.clone(),
+            operation_id: operation_id.clone(),
+            expected_version,
+            actor,
+            create,
             fingerprint,
         })
     }
@@ -428,6 +515,47 @@ fn fingerprint_v1(
     })
 }
 
+fn create_fingerprint_v1(
+    tenant_id: &TenantId,
+    database_id: &DatabaseId,
+    data_id: &DataId,
+    expected_version: RecordVersion,
+    actor: &RecordActor,
+    create: &RecordCreate,
+) -> errors::Result<RecordRequestFingerprint> {
+    let properties = create
+        .properties()
+        .iter()
+        .map(|property| {
+            serde_json::json!({
+                "property_id": property.property_id().to_string(),
+                "value": command_value(property.value()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let material = serde_json::json!({
+        "fingerprint_version": RECORD_REQUEST_FINGERPRINT_VERSION_V1,
+        "mutation_kind": "CREATE",
+        "tenant_id": tenant_id.to_string(),
+        "database_id": database_id.to_string(),
+        "data_id": data_id.to_string(),
+        "actor_kind": actor.kind().to_string(),
+        "actor_id": actor.id(),
+        "expected_version": expected_version.to_string(),
+        "create": {
+            "name": create.name().to_string(),
+            "properties": properties,
+        },
+    });
+    let bytes = serde_json::to_vec(&material)
+        .map_err(errors::Error::internal_server_error)?;
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    Ok(RecordRequestFingerprint {
+        version: RECORD_REQUEST_FINGERPRINT_VERSION_V1,
+        digest,
+    })
+}
+
 fn delete_fingerprint_v1(
     tenant_id: &TenantId,
     database_id: &DatabaseId,
@@ -459,6 +587,7 @@ fn delete_fingerprint_v1(
 pub enum RecordRejectionCode {
     EmptyPatch,
     DuplicateProperty,
+    RecordAlreadyExists,
     ResourceNotFound,
     InvalidPropertyValue,
     RelationProjectionRequired,
@@ -597,10 +726,73 @@ pub enum RecordPropertyDelta {
     },
 }
 
+impl RecordPropertyDelta {
+    pub fn property_id(&self) -> &PropertyId {
+        match self {
+            Self::Set { property_id, .. } | Self::Clear { property_id } => {
+                property_id
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordNameDelta {
     pub previous: String,
     pub current: String,
+}
+
+/// Library-owned v1 full snapshot for a newly accepted Record.
+///
+/// Property entries use the same SET/CLEAR envelope as PATCH deltas, but this
+/// event describes the complete create input rather than a transition from a
+/// previous Record version. The constructor fixes the event type and sorts
+/// Property entries so consumers receive a stable representation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordCreatedEventV1 {
+    pub event_id: RecordEventId,
+    pub event_type: String,
+    pub operation_id: RecordOperationId,
+    pub tenant_id: TenantId,
+    pub database_id: DatabaseId,
+    pub data_id: DataId,
+    pub record_version: String,
+    pub actor: RecordActor,
+    pub name: String,
+    pub properties: Vec<RecordPropertyDelta>,
+    pub occurred_at: DateTime<Utc>,
+}
+
+impl RecordCreatedEventV1 {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        event_id: RecordEventId,
+        operation_id: RecordOperationId,
+        tenant_id: TenantId,
+        database_id: DatabaseId,
+        data_id: DataId,
+        actor: RecordActor,
+        name: String,
+        mut properties: Vec<RecordPropertyDelta>,
+        occurred_at: DateTime<Utc>,
+    ) -> Self {
+        properties.sort_by(|left, right| {
+            left.property_id().cmp(right.property_id())
+        });
+        Self {
+            event_id,
+            event_type: "database.record.created.v1".to_string(),
+            operation_id,
+            tenant_id,
+            database_id,
+            data_id,
+            record_version: RecordVersion::INITIAL.to_string(),
+            actor,
+            name,
+            properties,
+            occurred_at,
+        }
+    }
 }
 
 /// Library-owned v1 delta persisted in the Database BC transactional outbox.
@@ -681,6 +873,22 @@ mod tests {
             actor,
         )
         .expect("delete command")
+    }
+
+    fn create_command(
+        operation_id: &RecordOperationId,
+        actor: RecordActor,
+        create: RecordCreate,
+    ) -> DecideRecordCreateCommand {
+        DecideRecordCreateCommand::new(
+            &TenantId::default(),
+            &DatabaseId::default(),
+            &DataId::default(),
+            operation_id,
+            actor,
+            create,
+        )
+        .expect("create command")
     }
 
     #[test]
@@ -767,6 +975,191 @@ mod tests {
         .unwrap();
 
         assert_ne!(base.fingerprint(), changed.fingerprint());
+    }
+
+    #[test]
+    fn create_fingerprint_is_stable_for_property_and_set_order() {
+        let first_id = PropertyId::default();
+        let second_id = PropertyId::default();
+        let select_a = SelectItemId::default();
+        let select_b = SelectItemId::default();
+        let actor = RecordActor::new(RecordActorKind::System, "system")
+            .expect("actor");
+        let left = create_command(
+            &RecordOperationId::new("create-one").expect("operation id"),
+            actor.clone(),
+            RecordCreate::new(
+                "record".parse().expect("name"),
+                vec![
+                    RecordPropertyPatch::new(
+                        &second_id,
+                        PropertyValueCommand::MultiSelect(vec![
+                            select_b.clone(),
+                            select_a.clone(),
+                        ]),
+                    ),
+                    RecordPropertyPatch::new(
+                        &first_id,
+                        PropertyValueCommand::String("value".to_string()),
+                    ),
+                ],
+            ),
+        );
+        let right = DecideRecordCreateCommand::new(
+            left.tenant_id(),
+            left.database_id(),
+            left.data_id(),
+            &RecordOperationId::new("create-two").expect("operation id"),
+            actor,
+            RecordCreate::new(
+                "record".parse().expect("name"),
+                vec![
+                    RecordPropertyPatch::new(
+                        &first_id,
+                        PropertyValueCommand::String("value".to_string()),
+                    ),
+                    RecordPropertyPatch::new(
+                        &second_id,
+                        PropertyValueCommand::MultiSelect(vec![
+                            select_a, select_b,
+                        ]),
+                    ),
+                ],
+            ),
+        )
+        .expect("same create request");
+
+        let mut expected_order = vec![first_id, second_id];
+        expected_order.sort();
+        assert_eq!(
+            left.create()
+                .properties()
+                .iter()
+                .map(|property| property.property_id().clone())
+                .collect::<Vec<_>>(),
+            expected_order
+        );
+        // Operation IDs are deliberately excluded from request equivalence.
+        assert_eq!(left.fingerprint(), right.fingerprint());
+        assert_eq!(*left.expected_version(), RecordVersion::INITIAL);
+    }
+
+    #[test]
+    fn create_rejects_duplicate_property_shape_and_binds_payload() {
+        let property_id = PropertyId::default();
+        let actor = RecordActor::new(RecordActorKind::User, "user-a")
+            .expect("actor");
+        let duplicate = RecordCreate::new(
+            "record".parse().expect("name"),
+            vec![
+                RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("one".to_string()),
+                ),
+                RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("two".to_string()),
+                ),
+            ],
+        );
+        assert!(duplicate.has_duplicate_properties());
+
+        let base = create_command(
+            &RecordOperationId::default(),
+            actor.clone(),
+            RecordCreate::new(
+                "record".parse().expect("name"),
+                vec![RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("one".to_string()),
+                )],
+            ),
+        );
+        let changed_name = DecideRecordCreateCommand::new(
+            base.tenant_id(),
+            base.database_id(),
+            base.data_id(),
+            &RecordOperationId::default(),
+            actor.clone(),
+            RecordCreate::new(
+                "renamed".parse().expect("name"),
+                vec![RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("one".to_string()),
+                )],
+            ),
+        )
+        .expect("changed name");
+        let changed_actor = DecideRecordCreateCommand::new(
+            base.tenant_id(),
+            base.database_id(),
+            base.data_id(),
+            &RecordOperationId::default(),
+            RecordActor::new(RecordActorKind::User, "user-b")
+                .expect("actor"),
+            RecordCreate::new(
+                "record".parse().expect("name"),
+                vec![RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("one".to_string()),
+                )],
+            ),
+        )
+        .expect("changed actor");
+
+        assert_ne!(base.fingerprint(), changed_name.fingerprint());
+        assert_ne!(base.fingerprint(), changed_actor.fingerprint());
+    }
+
+    #[test]
+    fn create_fingerprint_is_distinct_from_patch_and_delete() {
+        let property_id = PropertyId::default();
+        let actor = RecordActor::new(RecordActorKind::System, "system")
+            .expect("actor");
+        let create = create_command(
+            &RecordOperationId::new("create").expect("operation id"),
+            actor.clone(),
+            RecordCreate::new(
+                "record".parse().expect("name"),
+                vec![RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("value".to_string()),
+                )],
+            ),
+        );
+        let patch = DecideRecordPatchCommand::new(
+            create.tenant_id(),
+            create.database_id(),
+            create.data_id(),
+            &RecordOperationId::new("patch").expect("operation id"),
+            RecordVersion::INITIAL,
+            actor.clone(),
+            RecordPatch::new(
+                Some("record".parse().expect("name")),
+                vec![RecordPropertyPatch::new(
+                    &property_id,
+                    PropertyValueCommand::String("value".to_string()),
+                )],
+            ),
+        )
+        .expect("patch command");
+        let delete = DecideRecordDeleteCommand::new(
+            create.tenant_id(),
+            create.database_id(),
+            create.data_id(),
+            &RecordOperationId::new("delete").expect("operation id"),
+            RecordVersion::INITIAL,
+            actor,
+        )
+        .expect("delete command");
+
+        assert_ne!(create.fingerprint(), patch.fingerprint());
+        assert_ne!(create.fingerprint(), delete.fingerprint());
+        assert_ne!(patch.fingerprint(), delete.fingerprint());
+        assert_eq!(
+            create.fingerprint().version(),
+            RECORD_REQUEST_FINGERPRINT_VERSION_V1
+        );
     }
 
     #[test]
@@ -875,6 +1268,82 @@ mod tests {
             Some(&serde_json::Value::String(u64::MAX.to_string()))
         );
         let restored: RecordDeletedEventV1 =
+            serde_json::from_value(json).expect("deserialize event");
+        assert_eq!(restored, event);
+    }
+
+    #[test]
+    fn create_rejection_and_full_snapshot_event_have_stable_wire_names() {
+        let operation_id = RecordOperationId::default();
+        let rejection = RecordMutationDecision::rejected(
+            &operation_id,
+            RecordRejectionCode::RecordAlreadyExists,
+        );
+        let rejection_json =
+            serde_json::to_value(&rejection).expect("serialize rejection");
+        assert_eq!(
+            rejection_json.get("code"),
+            Some(&serde_json::Value::String(
+                "RECORD_ALREADY_EXISTS".to_string()
+            ))
+        );
+
+        let first_id = PropertyId::default();
+        let second_id = PropertyId::default();
+        let config = PropertyType::String.canonical_config();
+        let encoded = BUILTIN_PROPERTY_TYPE_REGISTRY
+            .encode_envelope(
+                &config,
+                &PropertyDataValue::String("value".to_string()),
+            )
+            .expect("encoded value");
+        let event = RecordCreatedEventV1::new(
+            RecordEventId::default(),
+            operation_id,
+            TenantId::default(),
+            DatabaseId::default(),
+            DataId::default(),
+            RecordActor::new(RecordActorKind::System, "system")
+                .expect("actor"),
+            "record".to_string(),
+            vec![
+                RecordPropertyDelta::Clear {
+                    property_id: second_id.clone(),
+                },
+                RecordPropertyDelta::Set {
+                    property_id: first_id.clone(),
+                    value: encoded,
+                },
+            ],
+            Utc::now(),
+        );
+        let mut expected_order = vec![first_id, second_id];
+        expected_order.sort();
+        assert_eq!(
+            event
+                .properties
+                .iter()
+                .map(|property| property.property_id().clone())
+                .collect::<Vec<_>>(),
+            expected_order
+        );
+
+        let json = serde_json::to_value(&event).expect("serialize event");
+        assert_eq!(
+            json.get("event_type"),
+            Some(&serde_json::Value::String(
+                "database.record.created.v1".to_string()
+            ))
+        );
+        assert_eq!(
+            json.get("record_version"),
+            Some(&serde_json::Value::String("1".to_string()))
+        );
+        assert_eq!(
+            json.get("name"),
+            Some(&serde_json::Value::String("record".to_string()))
+        );
+        let restored: RecordCreatedEventV1 =
             serde_json::from_value(json).expect("deserialize event");
         assert_eq!(restored, event);
     }
