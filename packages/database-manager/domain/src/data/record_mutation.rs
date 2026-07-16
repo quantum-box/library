@@ -79,6 +79,23 @@ pub trait RecordUnitOfWork: Debug + Send + Sync + 'static {
     ) -> errors::Result<()>;
 }
 
+/// Dedicated versioned creation boundary.
+///
+/// The adapter owns idempotency, Relation target/cardinality validation,
+/// initial Record persistence, canonical projections, and Outbox insertion in
+/// one transaction. Keeping this separate from the compatibility
+/// `RecordUnitOfWork` prevents a legacy creator from appearing to satisfy the
+/// versioned decision contract.
+#[async_trait::async_trait]
+pub trait VersionedRecordCreationUnitOfWork:
+    Debug + Send + Sync + 'static
+{
+    async fn decide_create_atomically(
+        &self,
+        command: &DecideRecordCreateCommand,
+    ) -> errors::Result<RecordMutationDecision>;
+}
+
 /// Dedicated versioned deletion boundary.
 ///
 /// Keeping DELETE separate from the PATCH port lets the adapter claim the

@@ -7,6 +7,8 @@ mod property_value_backfill;
 mod property_value_storage;
 mod record_mutation_uow;
 #[cfg(test)]
+mod record_mutation_uow_create_tests;
+#[cfg(test)]
 mod record_mutation_uow_delete_tests;
 #[cfg(test)]
 mod record_mutation_uow_relation_edge_tests;

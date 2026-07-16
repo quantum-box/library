@@ -10,6 +10,17 @@ const RELATION_DEFINITION_COLUMNS: &str = r#"
     inverse_owned, on_target_delete, definition_version, generation
 "#;
 
+const VERSIONED_CREATE_DATA_SCOPED_SQL: &str = r#"
+    INSERT INTO data (
+        id, tenant_id, object_id, name, record_version,
+        created_at, updated_at
+    )
+    SELECT ?, ?, scoped_database.id, ?, ?, ?, ?
+    FROM objects AS scoped_database
+    WHERE scoped_database.tenant_id = ?
+      AND scoped_database.id = ?
+"#;
+
 #[derive(Debug, sqlx::FromRow)]
 struct OperationRow {
     tenant_id: String,
@@ -82,6 +93,19 @@ struct OperationRequest<'a> {
 }
 
 impl<'a> OperationRequest<'a> {
+    fn create(command: &'a DecideRecordCreateCommand) -> Self {
+        Self {
+            operation_id: command.operation_id(),
+            tenant_id: command.tenant_id(),
+            database_id: command.database_id(),
+            data_id: command.data_id(),
+            mutation_kind: "CREATE",
+            actor: command.actor(),
+            expected_version: *command.expected_version(),
+            fingerprint: command.fingerprint(),
+        }
+    }
+
     fn patch(command: &'a DecideRecordPatchCommand) -> Self {
         Self {
             operation_id: command.operation_id(),
@@ -115,6 +139,11 @@ struct PlannedPropertyChange {
     data: PropertyData,
     change: PropertyValueChange,
     delta: RecordPropertyDelta,
+}
+
+enum CreatePropertyPlanError {
+    Rejected(RecordRejectionCode),
+    Infrastructure(errors::Error),
 }
 
 #[derive(Debug)]
@@ -378,6 +407,19 @@ impl DataRepositoryImpl {
         .await
     }
 
+    async fn reject_create(
+        transaction: Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+        code: RecordRejectionCode,
+    ) -> errors::Result<RecordMutationDecision> {
+        Self::commit_decision(
+            transaction,
+            command.operation_id(),
+            RecordMutationDecision::rejected(command.operation_id(), code),
+        )
+        .await
+    }
+
     async fn reject_delete(
         transaction: Transaction<'_, MySql>,
         command: &DecideRecordDeleteCommand,
@@ -486,6 +528,164 @@ impl DataRepositoryImpl {
             .into_iter()
             .map(RelationDefinition::try_from)
             .collect()
+    }
+
+    async fn relation_definitions_for_create(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+        lock: bool,
+    ) -> errors::Result<Vec<RelationDefinition>> {
+        let property_ids = command
+            .create()
+            .properties()
+            .iter()
+            .map(|property| property.property_id().to_string())
+            .collect::<BTreeSet<_>>();
+        if property_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = std::iter::repeat_n("?", property_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let lock_clause = if lock { " FOR UPDATE" } else { "" };
+        let sql = format!(
+            r#"
+            SELECT {RELATION_DEFINITION_COLUMNS}
+            FROM relationships
+            WHERE tenant_id = ? AND (
+                (object_id = ? AND field_id IN ({placeholders}))
+                OR
+                (target_object_id = ? AND inverse_field_id IN ({placeholders}))
+            )
+            ORDER BY id{lock_clause}
+            "#,
+        );
+        let mut query = sqlx::query_as::<_, RelationDefinitionRow>(&sql)
+            .bind(command.tenant_id().to_string())
+            .bind(command.database_id().to_string());
+        for property_id in &property_ids {
+            query = query.bind(property_id);
+        }
+        query = query.bind(command.database_id().to_string());
+        for property_id in &property_ids {
+            query = query.bind(property_id);
+        }
+        query
+            .fetch_all(&mut **transaction)
+            .await?
+            .into_iter()
+            .map(RelationDefinition::try_from)
+            .collect()
+    }
+
+    async fn lock_relation_schema_scope_for_create(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+    ) -> errors::Result<LockedRelationSchemaScope> {
+        // Discovery is non-locking and only computes the complete endpoint
+        // set. Endpoint object rows are the outer schema/record mutexes.
+        let discovered = Self::relation_definitions_for_create(
+            transaction,
+            command,
+            false,
+        )
+        .await?;
+        let mut endpoint_ids =
+            BTreeSet::from([command.database_id().to_string()]);
+        endpoint_ids.extend(discovered.iter().flat_map(|definition| {
+            [
+                definition.source_database_id().to_string(),
+                definition.target_database_id().to_string(),
+            ]
+        }));
+
+        for endpoint_id in &endpoint_ids {
+            let locked = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT id FROM objects
+                WHERE tenant_id = ? AND id = ?
+                FOR UPDATE
+                "#,
+            )
+            .bind(command.tenant_id().to_string())
+            .bind(endpoint_id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+            if locked.is_none() {
+                return Err(errors::Error::not_found("resource not found"));
+            }
+        }
+
+        // Never append an endpoint after locks have begun: a concurrent
+        // Relation schema change could otherwise invert the global order.
+        let definitions = Self::relation_definitions_for_create(
+            transaction,
+            command,
+            true,
+        )
+        .await?;
+        if definitions.iter().any(|definition| {
+            !endpoint_ids
+                .contains(&definition.source_database_id().to_string())
+                || !endpoint_ids
+                    .contains(&definition.target_database_id().to_string())
+        }) {
+            return Err(errors::Error::internal_server_error(
+                "RelationDefinition endpoint scope changed; retry the Record creation",
+            ));
+        }
+
+        let fields = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT id, tenant_id, object_id, field_name, datatype,
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
+            FROM fields
+            WHERE tenant_id = ? AND object_id = ?
+            ORDER BY field_num ASC, id ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .fetch_all(&mut **transaction)
+        .await?;
+
+        let changed = command
+            .create()
+            .properties()
+            .iter()
+            .map(|property| property.property_id().to_string())
+            .collect::<HashSet<_>>();
+        let mut source_definitions = BTreeMap::new();
+        let mut inverse_property_ids = BTreeSet::new();
+        for definition in definitions {
+            if definition.source_database_id() == command.database_id()
+                && changed
+                    .contains(&definition.source_property_id().to_string())
+            {
+                source_definitions.insert(
+                    definition.source_property_id().to_string(),
+                    definition.clone(),
+                );
+            }
+            if definition.target_database_id() == command.database_id() {
+                if let Some(inverse_property_id) =
+                    definition.inverse_property_id()
+                {
+                    if changed.contains(&inverse_property_id.to_string()) {
+                        inverse_property_ids
+                            .insert(inverse_property_id.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(LockedRelationSchemaScope {
+            fields,
+            definitions: source_definitions,
+            inverse_property_ids,
+        })
     }
 
     async fn lock_relation_schema_scope(
@@ -1474,6 +1674,186 @@ impl DataRepositoryImpl {
         }))
     }
 
+    async fn lock_create_index_projection_guards(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+    ) -> errors::Result<bool> {
+        // A create establishes both present values and absence for every
+        // Property. Until physical projections join this transaction, any
+        // active IndexDefinition in the source Database must fail closed.
+        let definitions = sqlx::query_as::<_, IndexProjectionGuardRow>(
+            r#"
+            SELECT property_id, relation_id, policy
+            FROM index_definitions
+            WHERE tenant_id = ? AND database_id = ?
+            ORDER BY id
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .fetch_all(&mut **transaction)
+        .await?;
+        Ok(definitions
+            .iter()
+            .any(|definition| definition.policy != "NONE"))
+    }
+
+    async fn lock_relation_edge_scopes_for_create(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+        mut requests: Vec<RelationPatchRequest>,
+    ) -> errors::Result<Vec<LockedRelationEdgeScope>> {
+        requests.sort_by(|left, right| {
+            left.definition.id().cmp(right.definition.id())
+        });
+        let source =
+            RecordReference::new(command.database_id(), command.data_id());
+        let mut scopes = Vec::with_capacity(requests.len());
+
+        for request in requests {
+            let forward_rows =
+                sqlx::query_as::<_, RelationEdgeMutationRow>(
+                    r#"
+                    SELECT tenant_id, source_database_id, source_data_id,
+                           relation_id, target_database_id, target_data_id
+                    FROM relation_edges
+                    WHERE tenant_id = ?
+                      AND source_database_id = ?
+                      AND source_data_id = ?
+                      AND relation_id = ?
+                      AND target_database_id = ?
+                    ORDER BY target_data_id
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(command.tenant_id().to_string())
+                .bind(command.database_id().to_string())
+                .bind(command.data_id().to_string())
+                .bind(request.definition.id().to_string())
+                .bind(request.definition.target_database_id().to_string())
+                .fetch_all(&mut **transaction)
+                .await?;
+            let current_forward = forward_rows
+                .into_iter()
+                .map(|row| row.restore(&request.definition))
+                .collect::<errors::Result<Vec<_>>>()?;
+
+            let mut backlink_edges = BTreeSet::new();
+            let requested_targets = request
+                .requested_target_ids
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for target_data_id in requested_targets {
+                let rows = sqlx::query_as::<_, RelationEdgeMutationRow>(
+                    r#"
+                    SELECT tenant_id, source_database_id, source_data_id,
+                           relation_id, target_database_id, target_data_id
+                    FROM relation_edges
+                    WHERE tenant_id = ?
+                      AND target_database_id = ?
+                      AND target_data_id = ?
+                      AND relation_id = ?
+                      AND source_database_id = ?
+                    ORDER BY source_data_id
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(command.tenant_id().to_string())
+                .bind(request.definition.target_database_id().to_string())
+                .bind(target_data_id.to_string())
+                .bind(request.definition.id().to_string())
+                .bind(command.database_id().to_string())
+                .fetch_all(&mut **transaction)
+                .await?;
+                for row in rows {
+                    backlink_edges
+                        .insert(row.restore(&request.definition)?);
+                }
+            }
+
+            scopes.push(LockedRelationEdgeScope {
+                definition: request.definition,
+                source: source.clone(),
+                requested_target_ids: request.requested_target_ids,
+                current_forward,
+                requested_target_backlinks: backlink_edges
+                    .into_iter()
+                    .collect(),
+            });
+        }
+        Ok(scopes)
+    }
+
+    async fn lock_create_record_and_relation_targets(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+        scopes: &[LockedRelationEdgeScope],
+    ) -> errors::Result<(Option<DataRow>, bool)> {
+        let source = (
+            command.database_id().to_string(),
+            command.data_id().to_string(),
+        );
+        let mut records = BTreeSet::from([source.clone()]);
+        for scope in scopes {
+            records.extend(scope.requested_target_ids.iter().map(
+                |target_data_id| {
+                    (
+                        scope.definition.target_database_id().to_string(),
+                        target_data_id.to_string(),
+                    )
+                },
+            ));
+        }
+
+        let mut existing_source = None;
+        let mut target_missing = false;
+        for record in records {
+            let row = sqlx::query_as::<_, DataRow>(
+                r#"
+                SELECT * FROM data
+                WHERE tenant_id = ? AND object_id = ? AND id = ?
+                FOR UPDATE
+                "#,
+            )
+            .bind(command.tenant_id().to_string())
+            .bind(&record.0)
+            .bind(&record.1)
+            .fetch_optional(&mut **transaction)
+            .await?;
+            if record == source {
+                existing_source = row;
+            } else if row.is_none() {
+                target_missing = true;
+            }
+        }
+        Ok((existing_source, target_missing))
+    }
+
+    async fn lock_record_identity_history(
+        transaction: &mut Transaction<'_, MySql>,
+        command: &DecideRecordCreateCommand,
+    ) -> errors::Result<bool> {
+        let event = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT CAST(event_id AS CHAR) AS event_id
+            FROM domain_outbox_events
+            WHERE tenant_id = ? AND database_id = ?
+              AND aggregate_type = 'RECORD' AND aggregate_id = ?
+            ORDER BY aggregate_version, event_id
+            LIMIT 1
+            FOR UPDATE
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .bind(command.data_id().to_string())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        Ok(event.is_some())
+    }
+
     async fn lock_relation_edge_scopes(
         transaction: &mut Transaction<'_, MySql>,
         command: &DecideRecordPatchCommand,
@@ -1794,6 +2174,158 @@ impl DataRepositoryImpl {
         Ok(())
     }
 
+    fn planned_create_change(
+        property: Property,
+        value_command: PropertyValueCommand,
+    ) -> errors::Result<PlannedPropertyChange> {
+        let value_command = match value_command {
+            PropertyValueCommand::Relation(mut targets) => {
+                targets.sort();
+                PropertyValueCommand::Relation(targets)
+            }
+            value => value,
+        };
+        let data = PropertyData::from_command(&property, value_command)?;
+        let change =
+            PropertyValueChange::from_property_data(&property, &data)?;
+        let delta = match &change {
+            PropertyValueChange::Set { value, .. } => {
+                RecordPropertyDelta::Set {
+                    property_id: property.id().clone(),
+                    value: BUILTIN_PROPERTY_TYPE_REGISTRY.encode_envelope(
+                        &property.property_type().canonical_config(),
+                        value.value(),
+                    )?,
+                }
+            }
+            PropertyValueChange::Clear { .. } => {
+                RecordPropertyDelta::Clear {
+                    property_id: property.id().clone(),
+                }
+            }
+        };
+        Ok(PlannedPropertyChange {
+            property,
+            data,
+            change,
+            delta,
+        })
+    }
+
+    fn plan_create_property_changes(
+        &self,
+        command: &DecideRecordCreateCommand,
+        fields: &[FieldRow],
+    ) -> Result<Vec<PlannedPropertyChange>, CreatePropertyPlanError> {
+        let mut planned = Vec::with_capacity(
+            command.create().properties().len().saturating_add(1),
+        );
+        let supplied = command
+            .create()
+            .properties()
+            .iter()
+            .map(|input| input.property_id().to_string())
+            .collect::<BTreeSet<_>>();
+        let mut resolved =
+            Vec::with_capacity(command.create().properties().len());
+        let mut resource_not_found = false;
+
+        // Resolve every supplied definition before interpreting caller
+        // values. A corrupt later definition must not be hidden by an invalid
+        // value on an earlier Property.
+        for input in command.create().properties() {
+            let Some(field) = fields
+                .iter()
+                .find(|field| field.id == input.property_id().as_ref())
+            else {
+                resource_not_found = true;
+                continue;
+            };
+            let property = field
+                .definition_for_schema_write(self.property_definition_mode)
+                .and_then(|definition| definition.to_property())
+                .map_err(CreatePropertyPlanError::Infrastructure)?;
+            resolved.push((input, property));
+        }
+
+        // Auto-generated Id is server-owned and part of the complete created
+        // snapshot even when the caller omitted it. Inspecting the legacy
+        // definition first avoids blocking an unrelated future opaque type;
+        // the selected Id definition itself must still pass strict parity.
+        for field in fields {
+            if supplied.contains(&field.id) {
+                continue;
+            }
+            let legacy = field
+                .legacy_definition()
+                .and_then(|definition| definition.to_property())
+                .map_err(CreatePropertyPlanError::Infrastructure)?;
+            if !matches!(
+                legacy.property_type(),
+                PropertyType::Id(type_id) if type_id.auto_generate
+            ) {
+                continue;
+            }
+            let property = field
+                .definition_for_schema_write(self.property_definition_mode)
+                .and_then(|definition| definition.to_property())
+                .map_err(CreatePropertyPlanError::Infrastructure)?;
+            if !matches!(
+                property.property_type(),
+                PropertyType::Id(type_id) if type_id.auto_generate
+            ) {
+                return Err(CreatePropertyPlanError::Infrastructure(
+                    errors::Error::conflict(
+                        "Property definition changed during record creation",
+                    ),
+                ));
+            }
+            planned.push(
+                Self::planned_create_change(
+                    property,
+                    PropertyValueCommand::Id(command.data_id().to_string()),
+                )
+                .map_err(CreatePropertyPlanError::Infrastructure)?,
+            );
+        }
+
+        if resource_not_found {
+            return Err(CreatePropertyPlanError::Rejected(
+                RecordRejectionCode::ResourceNotFound,
+            ));
+        }
+
+        let mut invalid_property_value = false;
+        for (input, property) in resolved {
+            let value = if matches!(
+                property.property_type(),
+                PropertyType::Id(type_id) if type_id.auto_generate
+            ) {
+                if !matches!(input.value(), PropertyValueCommand::Clear) {
+                    invalid_property_value = true;
+                    continue;
+                }
+                PropertyValueCommand::Id(command.data_id().to_string())
+            } else {
+                input.value().clone()
+            };
+            match Self::planned_create_change(property, value) {
+                Ok(change) => planned.push(change),
+                Err(_) => invalid_property_value = true,
+            }
+        }
+        if invalid_property_value {
+            return Err(CreatePropertyPlanError::Rejected(
+                RecordRejectionCode::InvalidPropertyValue,
+            ));
+        }
+
+        planned.sort_by(|left, right| {
+            left.property.id().cmp(right.property.id())
+        });
+        Ok(planned)
+    }
+
     fn plan_property_changes(
         &self,
         command: &DecideRecordPatchCommand,
@@ -1860,6 +2392,405 @@ impl DataRepositoryImpl {
                 })
             })
             .collect()
+    }
+}
+
+#[async_trait::async_trait]
+impl VersionedRecordCreationUnitOfWork for DataRepositoryImpl {
+    async fn decide_create_atomically(
+        &self,
+        command: &DecideRecordCreateCommand,
+    ) -> errors::Result<RecordMutationDecision> {
+        // This boundary is deliberately unreachable from normal factories.
+        // CREATE may enter the journal only when it can maintain legacy,
+        // canonical, and normalized Relation state in one transaction.
+        if !self.relation_edge_mode.writes_edges()
+            || !self.property_value_mode.writes_canonical()
+        {
+            return Err(errors::Error::internal_server_error(
+                "versioned Record creation requires dormant RelationEdge and canonical PropertyValue writes",
+            ));
+        }
+
+        let mut transaction = self.db.pool().begin().await?;
+        let operation = OperationRequest::create(command);
+        match Self::claim_operation(&mut transaction, &operation).await? {
+            OperationClaim::Replay(decision) => {
+                transaction.commit().await?;
+                return Ok(decision);
+            }
+            OperationClaim::Reused => {
+                transaction.rollback().await?;
+                return Ok(RecordMutationDecision::rejected(
+                    command.operation_id(),
+                    RecordRejectionCode::IdempotencyKeyReuse,
+                ));
+            }
+            OperationClaim::New => {}
+        }
+
+        if command.create().has_duplicate_properties() {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::DuplicateProperty,
+            )
+            .await;
+        }
+
+        // Global lock order:
+        // operation -> discovered endpoint objects -> RelationDefinitions ->
+        // source fields -> IndexDefinitions -> forward/backlink edge scopes ->
+        // source/requested target Records -> prior aggregate history. The
+        // RelationDefinition is the shared reverse-cardinality mutex.
+        let schema = match Self::lock_relation_schema_scope_for_create(
+            &mut transaction,
+            command,
+        )
+        .await
+        {
+            Ok(schema) => schema,
+            Err(error) if error.is_not_found() => {
+                return Self::reject_create(
+                    transaction,
+                    command,
+                    RecordRejectionCode::ResourceNotFound,
+                )
+                .await;
+            }
+            Err(error) => return Err(error),
+        };
+
+        let mut resource_not_found = false;
+        let mut relation_projection_required = false;
+        let mut invalid_property_value = false;
+        let mut relation_requests = Vec::new();
+        for input in command.create().properties() {
+            let Some(field) = schema
+                .fields
+                .iter()
+                .find(|field| field.id == input.property_id().as_ref())
+            else {
+                resource_not_found = true;
+                continue;
+            };
+            let property = field
+                .definition_for_schema_write(self.property_definition_mode)
+                .and_then(|definition| definition.to_property())?;
+            match property.property_type() {
+                PropertyType::Relation(relation_type) => {
+                    if schema
+                        .inverse_property_ids
+                        .contains(&input.property_id().to_string())
+                    {
+                        relation_projection_required = true;
+                        continue;
+                    }
+                    let Some(definition) = schema
+                        .definitions
+                        .get(&input.property_id().to_string())
+                    else {
+                        relation_projection_required = true;
+                        continue;
+                    };
+                    if definition.ensure_writable().is_err()
+                        || definition.target_database_id()
+                            != &relation_type.database_id
+                    {
+                        relation_projection_required = true;
+                        continue;
+                    }
+                    let requested_target_ids = match input.value() {
+                        PropertyValueCommand::Clear => Vec::new(),
+                        PropertyValueCommand::Relation(targets) => {
+                            targets.clone()
+                        }
+                        _ => {
+                            invalid_property_value = true;
+                            continue;
+                        }
+                    };
+                    relation_requests.push(RelationPatchRequest {
+                        definition: definition.clone(),
+                        requested_target_ids,
+                    });
+                }
+                _ if matches!(
+                    input.value(),
+                    PropertyValueCommand::Relation(_)
+                ) =>
+                {
+                    invalid_property_value = true;
+                }
+                _ => {}
+            }
+        }
+
+        let index_projection_required =
+            Self::lock_create_index_projection_guards(
+                &mut transaction,
+                command,
+            )
+            .await?;
+        let locked_relation_edges =
+            Self::lock_relation_edge_scopes_for_create(
+                &mut transaction,
+                command,
+                relation_requests,
+            )
+            .await?;
+        let (existing_source, relation_target_missing) =
+            Self::lock_create_record_and_relation_targets(
+                &mut transaction,
+                command,
+                &locked_relation_edges,
+            )
+            .await?;
+        let identity_has_history =
+            Self::lock_record_identity_history(&mut transaction, command)
+                .await?;
+
+        // Expected absence is CREATE's CAS. A live row or any immutable
+        // aggregate history prevents identity resurrection at version 1.
+        if existing_source.is_some() || identity_has_history {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::RecordAlreadyExists,
+            )
+            .await;
+        }
+
+        // Resolve supplied and server-generated Property definitions before
+        // any durable policy rejection. Storage corruption is infrastructure
+        // failure and must roll the operation claim back; caller errors join
+        // the existing deterministic rejection precedence below.
+        let planned = match self
+            .plan_create_property_changes(command, &schema.fields)
+        {
+            Ok(planned) => planned,
+            Err(CreatePropertyPlanError::Rejected(
+                RecordRejectionCode::ResourceNotFound,
+            )) => {
+                resource_not_found = true;
+                Vec::new()
+            }
+            Err(CreatePropertyPlanError::Rejected(
+                RecordRejectionCode::InvalidPropertyValue,
+            )) => {
+                invalid_property_value = true;
+                Vec::new()
+            }
+            Err(CreatePropertyPlanError::Rejected(code)) => {
+                return Self::reject_create(transaction, command, code)
+                    .await;
+            }
+            Err(CreatePropertyPlanError::Infrastructure(error)) => {
+                return Err(error);
+            }
+        };
+        if resource_not_found {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::ResourceNotFound,
+            )
+            .await;
+        }
+        if relation_projection_required {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::RelationProjectionRequired,
+            )
+            .await;
+        }
+        if invalid_property_value {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::InvalidPropertyValue,
+            )
+            .await;
+        }
+        if index_projection_required {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::IndexProjectionRequired,
+            )
+            .await;
+        }
+        if relation_target_missing {
+            return Self::reject_create(
+                transaction,
+                command,
+                RecordRejectionCode::ResourceNotFound,
+            )
+            .await;
+        }
+
+        let mut relation_edge_plans = Vec::new();
+        for scope in locked_relation_edges {
+            let current_forward = match RelationEdgeSet::new(
+                &scope.definition,
+                scope.current_forward,
+            ) {
+                Ok(edges) => edges,
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject_create(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            };
+            let requested_target_backlinks = match RelationEdgeSet::new(
+                &scope.definition,
+                scope.requested_target_backlinks,
+            ) {
+                Ok(edges) => edges,
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject_create(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            };
+            match RelationEdgeMutationPlan::replace_forward(
+                &scope.definition,
+                scope.source,
+                &current_forward,
+                &requested_target_backlinks,
+                scope.requested_target_ids,
+            ) {
+                Ok(plan) => relation_edge_plans.push(plan),
+                Err(errors::Error::Conflict { .. }) => {
+                    return Self::reject_create(
+                        transaction,
+                        command,
+                        RecordRejectionCode::RelationCardinalityExceeded,
+                    )
+                    .await;
+                }
+                Err(errors::Error::BadRequest { .. }) => {
+                    return Self::reject_create(
+                        transaction,
+                        command,
+                        RecordRejectionCode::InvalidPropertyValue,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        let occurred_at = Utc::now();
+        let record = Data::new(
+            command.data_id(),
+            command.tenant_id(),
+            command.database_id(),
+            &command.create().name().to_string(),
+            planned.iter().map(|change| change.data.clone()).collect(),
+            occurred_at,
+            occurred_at,
+        )?;
+
+        let inserted = sqlx::query(VERSIONED_CREATE_DATA_SCOPED_SQL)
+            .bind(command.data_id().to_string())
+            .bind(command.tenant_id().to_string())
+            .bind(record.name().to_string())
+            .bind(command.expected_version().get())
+            .bind(record.created_at())
+            .bind(record.updated_at())
+            .bind(command.tenant_id().to_string())
+            .bind(command.database_id().to_string())
+            .execute(&mut *transaction)
+            .await;
+        let inserted = match inserted {
+            Ok(inserted) => inserted,
+            Err(sqlx::Error::Database(error))
+                if error.is_unique_violation() =>
+            {
+                return Self::reject_create(
+                    transaction,
+                    command,
+                    RecordRejectionCode::RecordAlreadyExists,
+                )
+                .await;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if inserted.rows_affected() != 1 {
+            return Err(errors::Error::internal_server_error(
+                "locked Database Record create affected an unexpected row count",
+            ));
+        }
+
+        for change in &planned {
+            self.apply_change(
+                &mut transaction,
+                &record,
+                &schema.fields,
+                &change.change,
+            )
+            .await?;
+        }
+        Self::apply_relation_edge_plans(
+            &mut transaction,
+            &relation_edge_plans,
+        )
+        .await?;
+
+        let event_id = RecordEventId::default();
+        let event = RecordCreatedEventV1::new(
+            event_id.clone(),
+            command.operation_id().clone(),
+            command.tenant_id().clone(),
+            command.database_id().clone(),
+            command.data_id().clone(),
+            command.actor().clone(),
+            record.name().to_string(),
+            planned.into_iter().map(|change| change.delta).collect(),
+            occurred_at,
+        );
+        sqlx::query(
+            r#"
+            INSERT INTO domain_outbox_events (
+                event_id, operation_id, event_sequence, tenant_id,
+                database_id, aggregate_type, aggregate_id,
+                aggregate_version, event_type, payload, occurred_at
+            )
+            VALUES (?, ?, 1, ?, ?, 'RECORD', ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(event_id.to_string())
+        .bind(command.operation_id().to_string())
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .bind(command.data_id().to_string())
+        .bind(command.expected_version().get())
+        .bind(event.event_type.clone())
+        .bind(Json(event))
+        .bind(occurred_at)
+        .execute(&mut *transaction)
+        .await?;
+
+        Self::commit_decision(
+            transaction,
+            command.operation_id(),
+            RecordMutationDecision::accepted(
+                command.operation_id(),
+                *command.expected_version(),
+                vec![event_id],
+            ),
+        )
+        .await
     }
 }
 
