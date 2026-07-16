@@ -10,6 +10,9 @@
   `library-api/env/DATABASE_URL` has an `AWSCURRENT` value.
 - `scripts/backfill-library-database-ref-secret.sh` completed in dry-run,
   apply, and verify modes without printing the DSN.
+- `scripts/backfill-library-provider-secret.sh` preserves the existing
+  `SERVICE_AUTH_TOKEN` and `SENTRY_DSN` as app-owned provider fields without
+  mixing database ownership back into the provider vault.
 - Library-dedicated database credential
   `tidb_library_api_prod/tidb` now has an `AWSCURRENT` value.
 - `tachyon manifest plan` recognizes the following server-managed refs:

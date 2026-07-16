@@ -85,6 +85,7 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 7. Backfill the database credential with `scripts/backfill-library-database-ref-secret.sh`, which transforms the existing app-env secret into the `{ "url": "..." }` provider shape without printing the DSN.
 8. Write the migration bootstrap directly under `${CARGO_TARGET_DIR}/lambda/lambda-library-api-migrate`; txcloud validates artifacts in its shared Cargo target directory rather than the source checkout's `target/` directory.
 9. Write the API bootstrap under `${CARGO_TARGET_DIR}/lambda/lambda-library-api` for the same txcloud artifact contract.
+10. Backfill `providers/library-api` from the existing production app-env material with `scripts/backfill-library-provider-secret.sh`; database ownership remains separate under `tidb_library_api_prod`.
 
 ## Validation
 
