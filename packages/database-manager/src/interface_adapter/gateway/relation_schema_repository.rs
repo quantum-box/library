@@ -2,13 +2,14 @@ use sqlx::{MySql, Transaction};
 
 use super::{
     encoded_definition, map_schema_insert_error, FieldRow,
-    PropertyRepositoryImpl, RelationDefinitionRow,
+    PropertyRepositoryImpl, PropertyValueRow, RelationDefinitionRow,
 };
 use crate::domain::{
-    DeleteRelationDefinitionCommand, InversePropertyMutation, Property,
-    PropertyDefinition, PropertyId, ReconfigureRelationDefinitionCommand,
-    RelationDefinition, RelationGeneration, RelationSchema,
-    RelationSchemaMutationPort,
+    DataId, DeleteRelationDefinitionCommand, InversePropertyMutation,
+    Property, PropertyData, PropertyDataValue, PropertyDefinition,
+    PropertyId, PropertyValue, ReconfigureRelationDefinitionCommand,
+    RecordReference, RelationDefinition, RelationEdge, RelationEdgeSet,
+    RelationGeneration, RelationSchema, RelationSchemaMutationPort,
 };
 use value_object::TenantId;
 
@@ -23,6 +24,277 @@ struct LockedRelationSchema {
     source_property: PropertyDefinition,
     current_inverse: Option<PropertyDefinition>,
     target_properties: Vec<PropertyDefinition>,
+}
+
+#[derive(sqlx::FromRow)]
+struct RelationEdgeScopeRow {
+    source_data_id: String,
+    target_data_id: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct LegacyRelationValueRow {
+    data_id: String,
+    legacy_value: Option<String>,
+}
+
+async fn lock_relation_index_definitions(
+    transaction: &mut Transaction<'_, MySql>,
+    definition: &RelationDefinition,
+) -> errors::Result<()> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM index_definitions
+        WHERE tenant_id = ? AND database_id = ? AND relation_id = ?
+        ORDER BY id
+        FOR UPDATE
+        "#,
+    )
+    .bind(definition.tenant_id().to_string())
+    .bind(definition.source_database_id().to_string())
+    .bind(definition.id().to_string())
+    .fetch_all(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn lock_and_validate_relation_edges(
+    transaction: &mut Transaction<'_, MySql>,
+    current: &RelationDefinition,
+    planned: &RelationDefinition,
+) -> errors::Result<RelationEdgeSet> {
+    let rows = sqlx::query_as::<_, RelationEdgeScopeRow>(
+        r#"
+        SELECT source_data_id, target_data_id
+        FROM relation_edges
+        WHERE tenant_id = ?
+          AND source_database_id = ?
+          AND relation_id = ?
+          AND target_database_id = ?
+        ORDER BY source_data_id, target_data_id
+        FOR UPDATE
+        "#,
+    )
+    .bind(current.tenant_id().to_string())
+    .bind(current.source_database_id().to_string())
+    .bind(current.id().to_string())
+    .bind(current.target_database_id().to_string())
+    .fetch_all(&mut **transaction)
+    .await?;
+
+    let edges = rows
+        .into_iter()
+        .map(|row| {
+            let source_data_id = row.source_data_id.parse::<DataId>()?;
+            let target_data_id = row.target_data_id.parse::<DataId>()?;
+            RelationEdge::restore(
+                current.tenant_id(),
+                current.id(),
+                RecordReference::new(
+                    current.source_database_id(),
+                    &source_data_id,
+                ),
+                RecordReference::new(
+                    current.target_database_id(),
+                    &target_data_id,
+                ),
+                current,
+            )
+        })
+        .collect::<errors::Result<Vec<_>>>()?;
+
+    // Rebuild the complete persisted set against the candidate definition.
+    // This makes both forward and reverse Many -> One narrowing fail before
+    // generation or inverse Property mutations can be persisted.
+    RelationEdgeSet::new(planned, edges)
+}
+
+fn narrows_cardinality(
+    current: &RelationDefinition,
+    planned: &RelationDefinition,
+) -> bool {
+    (*current.forward_cardinality()
+        == crate::domain::RelationCardinality::Many
+        && *planned.forward_cardinality()
+            == crate::domain::RelationCardinality::One)
+        || (*current.reverse_cardinality()
+            == crate::domain::RelationCardinality::Many
+            && *planned.reverse_cardinality()
+                == crate::domain::RelationCardinality::One)
+}
+
+fn relation_targets(
+    value: Option<&PropertyDataValue>,
+) -> errors::Result<Option<Vec<DataId>>> {
+    match value {
+        None => Ok(None),
+        Some(PropertyDataValue::Relation(_, target_ids)) => {
+            Ok(Some(target_ids.clone()))
+        }
+        Some(_) => Err(errors::Error::conflict(
+            "Relation Property storage decoded as a different Property type",
+        )),
+    }
+}
+
+async fn lock_and_validate_relation_values(
+    transaction: &mut Transaction<'_, MySql>,
+    source_property: &PropertyDefinition,
+    planned: &RelationDefinition,
+    persisted_edges: &RelationEdgeSet,
+) -> errors::Result<()> {
+    let property = source_property.to_property()?;
+    let legacy_sql = format!(
+        r#"
+        SELECT id AS data_id, value{} AS legacy_value
+        FROM data
+        WHERE tenant_id = ? AND object_id = ?
+        ORDER BY id
+        FOR UPDATE
+        "#,
+        source_property.property_num(),
+    );
+    let legacy_rows =
+        sqlx::query_as::<_, LegacyRelationValueRow>(&legacy_sql)
+            .bind(planned.tenant_id().to_string())
+            .bind(planned.source_database_id().to_string())
+            .fetch_all(&mut **transaction)
+            .await?;
+
+    let mut legacy_targets = std::collections::BTreeMap::new();
+    let mut legacy_edges = Vec::new();
+    for row in legacy_rows {
+        let source_data_id = row.data_id.parse::<DataId>()?;
+        let targets = row
+            .legacy_value
+            .map(|value| PropertyData::from_storage(&property, value))
+            .transpose()?
+            .map(|value| relation_targets(value.value().as_ref()))
+            .transpose()?
+            .flatten();
+        if let Some(targets) = &targets {
+            for target_data_id in targets {
+                legacy_edges.push(RelationEdge::new(
+                    planned,
+                    RecordReference::new(
+                        planned.source_database_id(),
+                        &source_data_id,
+                    ),
+                    RecordReference::new(
+                        planned.target_database_id(),
+                        target_data_id,
+                    ),
+                )?);
+            }
+        }
+        legacy_targets.insert(row.data_id, targets);
+    }
+    let legacy_set = RelationEdgeSet::new(planned, legacy_edges)?;
+
+    let legacy_identities = legacy_set
+        .edges()
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    if persisted_edges
+        .edges()
+        .iter()
+        .any(|edge| !legacy_identities.contains(edge))
+    {
+        return Err(errors::Error::conflict(
+            "RelationEdge projection contains an edge absent from legacy Relation storage",
+        ));
+    }
+
+    let canonical_rows = sqlx::query_as::<_, PropertyValueRow>(
+        r#"
+        SELECT tenant_id, database_id, data_id, property_id, type_key,
+               type_version, value_encoding_version, value
+        FROM property_values
+        WHERE tenant_id = ? AND database_id = ? AND property_id = ?
+        ORDER BY data_id
+        FOR UPDATE
+        "#,
+    )
+    .bind(planned.tenant_id().to_string())
+    .bind(planned.source_database_id().to_string())
+    .bind(source_property.id().to_string())
+    .fetch_all(&mut **transaction)
+    .await?;
+
+    let mut canonical_edges = Vec::new();
+    for row in canonical_rows {
+        let value = PropertyData::from_definition_envelope(
+            source_property,
+            row.envelope()?,
+        )?;
+        if !matches!(value.envelope(), Some(PropertyValue::Known(_))) {
+            return Err(errors::Error::conflict(
+                "Relation cardinality cannot narrow while a canonical value is opaque",
+            ));
+        }
+        let canonical_targets = relation_targets(value.value().as_ref())?
+            .ok_or_else(|| {
+            errors::Error::conflict(
+                "canonical Relation value is unexpectedly absent",
+            )
+        })?;
+        let Some(Some(expected_targets)) = legacy_targets.get(&row.data_id)
+        else {
+            return Err(errors::Error::conflict(
+                "canonical Relation value has no matching legacy value",
+            ));
+        };
+        let mut expected_targets = expected_targets.clone();
+        expected_targets.sort();
+        let mut canonical_targets_sorted = canonical_targets.clone();
+        canonical_targets_sorted.sort();
+        if expected_targets != canonical_targets_sorted {
+            return Err(errors::Error::conflict(
+                "legacy and canonical Relation values do not match",
+            ));
+        }
+
+        let source_data_id = row.data_id.parse::<DataId>()?;
+        for target_data_id in canonical_targets {
+            canonical_edges.push(RelationEdge::new(
+                planned,
+                RecordReference::new(
+                    planned.source_database_id(),
+                    &source_data_id,
+                ),
+                RecordReference::new(
+                    planned.target_database_id(),
+                    &target_data_id,
+                ),
+            )?);
+        }
+    }
+    RelationEdgeSet::new(planned, canonical_edges)?;
+    Ok(())
+}
+
+async fn delete_relation_edges(
+    transaction: &mut Transaction<'_, MySql>,
+    definition: &RelationDefinition,
+) -> errors::Result<()> {
+    sqlx::query(
+        r#"
+        DELETE FROM relation_edges
+        WHERE tenant_id = ?
+          AND source_database_id = ?
+          AND relation_id = ?
+          AND target_database_id = ?
+        "#,
+    )
+    .bind(definition.tenant_id().to_string())
+    .bind(definition.source_database_id().to_string())
+    .bind(definition.id().to_string())
+    .bind(definition.target_database_id().to_string())
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
 }
 
 async fn relation_target(
@@ -381,6 +653,8 @@ async fn delete_relation_schema(
     )?;
     let (definition, source_property, owned_inverse) =
         deletion.into_parts();
+    lock_relation_index_definitions(&mut transaction, &definition).await?;
+    delete_relation_edges(&mut transaction, &definition).await?;
     let result = sqlx::query(
         r#"
         DELETE FROM relationships
@@ -467,6 +741,24 @@ impl RelationSchemaMutationPort for PropertyRepositoryImpl {
             command,
         )?;
         let (definition, inverse_mutation) = mutation.into_parts();
+
+        lock_relation_index_definitions(&mut transaction, &definition)
+            .await?;
+        let persisted_edges = lock_and_validate_relation_edges(
+            &mut transaction,
+            &current.definition,
+            &definition,
+        )
+        .await?;
+        if narrows_cardinality(&current.definition, &definition) {
+            lock_and_validate_relation_values(
+                &mut transaction,
+                &current.source_property,
+                &definition,
+                &persisted_edges,
+            )
+            .await?;
+        }
 
         match &inverse_mutation {
             InversePropertyMutation::Insert(inverse) => {
