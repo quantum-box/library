@@ -23,7 +23,7 @@ impl PropertyRepositoryImpl {
     }
 }
 
-fn encoded_definition(
+pub(super) fn encoded_definition(
     definition: &PropertyDefinition,
 ) -> errors::Result<(Property, String, u16, String)> {
     definition.config().ensure_writable()?;
@@ -37,7 +37,7 @@ fn encoded_definition(
     ))
 }
 
-fn map_schema_insert_error(
+pub(super) fn map_schema_insert_error(
     error: sqlx::Error,
     property_type: &PropertyType,
 ) -> errors::Error {
@@ -162,9 +162,10 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
                     (id, tenant_id, object_id, field_id, relation_id,
                      target_object_id, forward_cardinality,
                      reverse_cardinality, inverse_field_id,
-                     on_target_delete)
+                     inverse_owned, on_target_delete,
+                     definition_version, generation)
                 VALUES
-                    (?, ?, ?, ?, 0, ?, ?, ?, ?, ?);
+                    (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?);
                 "#,
             )
             .bind(definition.id().to_string())
@@ -180,7 +181,10 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
                     .as_ref()
                     .map(ToString::to_string),
             )
+            .bind(*definition.inverse_property_owned())
             .bind(definition.on_target_delete().to_string())
+            .bind(definition.definition_version().get())
+            .bind(definition.generation().get())
             .execute(&mut *transaction)
             .await?;
         }
@@ -226,10 +230,68 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .await?
         .ok_or_else(|| errors::Error::not_found("resource not found"))?;
 
+        let generated_inverse_owner = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM relationships
+                WHERE tenant_id = ? AND target_object_id = ?
+                  AND inverse_field_id = ? AND inverse_owned = TRUE
+            )
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .bind(command.property_id().to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        if generated_inverse_owner {
+            return Err(errors::Error::conflict(
+                "generated inverse Properties are read-only; mutate their RelationDefinition",
+            ));
+        }
+
+        let relation_target = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT target_object_id
+            FROM relationships
+            WHERE tenant_id = ? AND object_id = ? AND field_id = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(command.tenant_id().to_string())
+        .bind(command.database_id().to_string())
+        .bind(command.property_id().to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if relation_target.is_some() && command.property_type().is_some() {
+            return Err(errors::Error::conflict(
+                "Relation source type/config is owned by its RelationDefinition",
+            ));
+        }
+
         // Even in legacy-read mode, an unknown canonical envelope is owned by
         // a newer binary and must never be overwritten by this writer.
-        row.ensure_canonical_definition_writable()?;
-        let current = row.definition(self.definition_mode)?;
+        let current = if let Some(target_database_id) = relation_target {
+            let definition =
+                row.definition_for_schema_write(self.definition_mode)?;
+            let property = definition.to_property()?;
+            let PropertyType::Relation(relation) = property.property_type()
+            else {
+                return Err(errors::Error::conflict(
+                    "RelationDefinition source is not a Relation Property",
+                ));
+            };
+            if relation.database_id.as_str() != target_database_id {
+                return Err(errors::Error::conflict(
+                    "RelationDefinition target does not match its source Property",
+                ));
+            }
+            definition
+        } else {
+            row.ensure_canonical_definition_writable()?;
+            row.definition(self.definition_mode)?
+        };
         let updated = command.apply(&current)?;
         let (property, type_key, type_version, type_config) =
             encoded_definition(&updated)?;
@@ -269,6 +331,18 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         database_id: &DatabaseId,
         property_id: &PropertyId,
     ) -> errors::Result<Property> {
+        if let Some(property) =
+            super::relation_schema_repository::delete_relation_property_if_present(
+                self,
+                tenant_id,
+                database_id,
+                property_id,
+            )
+            .await?
+        {
+            return Ok(property);
+        }
+
         let mut transaction = self.db.pool().begin().await?;
         let database = sqlx::query_scalar::<_, String>(
             r#"
@@ -300,6 +374,26 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .fetch_optional(&mut *transaction)
         .await?
         .ok_or_else(|| errors::Error::not_found("resource not found"))?;
+        let generated_inverse_owner = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM relationships
+                WHERE tenant_id = ? AND target_object_id = ?
+                  AND inverse_field_id = ? AND inverse_owned = TRUE
+            )
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(property_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        if generated_inverse_owner {
+            return Err(errors::Error::conflict(
+                "generated inverse Properties are read-only; mutate their RelationDefinition",
+            ));
+        }
         row.ensure_canonical_definition_writable()?;
         let field_num = row.field_num;
         let property =
@@ -387,6 +481,56 @@ impl PropertyRepository for PropertyRepositoryImpl {
         tenant_id: &TenantId,
         database_id: &DatabaseId,
     ) -> errors::Result<()> {
+        let mut transaction = self.db.pool().begin().await?;
+        let database = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id FROM objects
+            WHERE tenant_id = ? AND id = ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if database.is_none() {
+            return Err(errors::Error::not_found("resource not found"));
+        }
+        let owned_external_inverse = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM relationships
+                WHERE tenant_id = ? AND inverse_owned = TRUE
+                  AND (
+                    (object_id = ? AND target_object_id <> ?)
+                    OR (target_object_id = ? AND object_id <> ?)
+                  )
+            )
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(database_id.to_string())
+        .bind(database_id.to_string())
+        .bind(database_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        if owned_external_inverse {
+            return Err(errors::Error::conflict(
+                "bulk Property delete would orphan an owned inverse; delete Relation schemas first",
+            ));
+        }
+        sqlx::query(
+            r#"
+            DELETE FROM relationships
+            WHERE tenant_id = ? AND object_id = ?
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
         sqlx::query(
             "
             DELETE FROM fields
@@ -395,8 +539,9 @@ impl PropertyRepository for PropertyRepositoryImpl {
         )
         .bind(tenant_id.to_string())
         .bind(database_id.to_string())
-        .execute(self.db.pool().as_ref())
+        .execute(&mut *transaction)
         .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -405,16 +550,22 @@ impl PropertyRepository for PropertyRepositoryImpl {
         tenant_id: &TenantId,
         id: &PropertyId,
     ) -> errors::Result<()> {
-        sqlx::query(
-            "
-            DELETE FROM fields
-            WHERE tenant_id = ? AND id = ?;
-            ",
+        let database_id = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT object_id
+            FROM fields
+            WHERE tenant_id = ? AND id = ?
+            LIMIT 1
+            "#,
         )
         .bind(tenant_id.to_string())
         .bind(id.to_string())
-        .execute(self.db.pool().as_ref())
-        .await?;
+        .fetch_optional(self.db.pool().as_ref())
+        .await?
+        .ok_or_else(|| errors::Error::not_found("resource not found"))?
+        .parse::<DatabaseId>()?;
+        self.delete_property_atomically(tenant_id, &database_id, id)
+            .await?;
         Ok(())
     }
 }
