@@ -117,6 +117,23 @@ impl DatabaseRepositoryImpl {
             ));
         }
 
+        // Every edge owned by this Database must disappear before its source
+        // Records or RelationDefinitions. External inbound definitions were
+        // rejected above, while self edges are also outgoing edges and are
+        // therefore covered by this scoped cleanup. Record writers acquire
+        // the same Database object lock before their RelationDefinition and
+        // edge locks, so this delete cannot race a committed edge insertion.
+        sqlx::query(
+            r#"
+            DELETE FROM relation_edges
+            WHERE tenant_id = ? AND source_database_id = ?;
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .execute(&mut **transaction)
+        .await?;
+
         // `indexes.object_id` is the legacy name of its referenced Data id.
         // That foreign key intentionally has no ON DELETE CASCADE, so remove
         // the Database-owned projection rows before deleting their records.

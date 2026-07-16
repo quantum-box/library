@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use database_manager::domain::{
-    PropertyRepository, PropertyType, RelationCardinality,
+    DataId, PropertyRepository, PropertyType, RelationCardinality,
     RelationDefinitionRepository, RelationInverseChange, RelationOnDelete,
     TypeRelation, RELATION_GENERATION_V1,
 };
@@ -84,6 +84,54 @@ async fn add_relation(
             )),
         })
         .await
+}
+
+async fn insert_record(
+    db: &persistence::Db,
+    tenant_id: &TenantId,
+    database_id: &database_manager::domain::DatabaseId,
+    name: &str,
+) -> anyhow::Result<DataId> {
+    let data_id = DataId::default();
+    sqlx::query(
+        r#"
+        INSERT INTO data (id, tenant_id, object_id, name)
+        VALUES (?, ?, ?, ?)
+        "#,
+    )
+    .bind(data_id.to_string())
+    .bind(tenant_id.to_string())
+    .bind(database_id.to_string())
+    .bind(name)
+    .execute(db.pool().as_ref())
+    .await?;
+    Ok(data_id)
+}
+
+async fn insert_edge(
+    db: &persistence::Db,
+    definition: &database_manager::domain::RelationDefinition,
+    source_data_id: &DataId,
+    target_data_id: &DataId,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO relation_edges (
+            tenant_id, source_database_id, source_data_id, relation_id,
+            target_database_id, target_data_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(definition.tenant_id().to_string())
+    .bind(definition.source_database_id().to_string())
+    .bind(source_data_id.to_string())
+    .bind(definition.id().to_string())
+    .bind(definition.target_database_id().to_string())
+    .bind(target_data_id.to_string())
+    .execute(db.pool().as_ref())
+    .await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -562,6 +610,379 @@ async fn legacy_canonical_target_mismatch_never_gets_overwritten(
     .fetch_one(db.pool().as_ref())
     .await?;
     assert_eq!(name, "parent");
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn legacy_and_canonical_values_guard_narrowing_before_edge_backfill(
+) -> anyhow::Result<()> {
+    let (db, app, mutation, definitions, tenant_id) = fixture().await?;
+    let source =
+        create_database(&app, &tenant_id, "relation-value-guard-source")
+            .await?;
+    let target =
+        create_database(&app, &tenant_id, "relation-value-guard-target")
+            .await?;
+    let property =
+        add_relation(&app, &tenant_id, source.id(), target.id(), "targets")
+            .await?;
+    let definition = definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .expect("RelationDefinition");
+    let source_data =
+        insert_record(db.as_ref(), &tenant_id, source.id(), "source")
+            .await?;
+    let target_a =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-a")
+            .await?;
+    let target_b =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-b")
+            .await?;
+    let legacy_column = format!("value{}", property.property_num());
+    let set_legacy = |value: String| {
+        let db = db.clone();
+        let tenant_id = tenant_id.clone();
+        let source_database_id = source.id().clone();
+        let source_data_id = source_data.clone();
+        let legacy_column = legacy_column.clone();
+        async move {
+            sqlx::query(&format!(
+                "UPDATE data SET {legacy_column} = ? WHERE tenant_id = ? AND object_id = ? AND id = ?",
+            ))
+            .bind(value)
+            .bind(tenant_id.to_string())
+            .bind(source_database_id.to_string())
+            .bind(source_data_id.to_string())
+            .execute(db.pool().as_ref())
+            .await?;
+            Ok::<_, anyhow::Error>(())
+        }
+    };
+    set_legacy(format!("{},{},{}", target.id(), target_a, target_b))
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(definition.id().to_string())
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        0,
+        "this contract exercises the pre-backfill state"
+    );
+    let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
+    let narrow = || ReconfigureRelationDefinitionInputData {
+        executor: &auth::Executor::SystemUser,
+        multi_tenancy: &multi_tenancy,
+        tenant_id: &tenant_id,
+        source_database_id: source.id(),
+        source_property_id: property.id(),
+        expected_generation: RELATION_GENERATION_V1,
+        forward_cardinality: Some(RelationCardinality::One),
+        reverse_cardinality: None,
+        inverse: RelationInverseChange::Keep,
+        on_target_delete: None,
+    };
+
+    let legacy_error = mutation
+        .reconfigure(narrow())
+        .await
+        .expect_err("legacy values must be checked before edge backfill");
+    assert!(matches!(legacy_error, errors::Error::Conflict { .. }));
+
+    set_legacy(format!("{},{}", target.id(), target_a)).await?;
+    sqlx::query(
+        r#"
+        INSERT INTO property_values (
+            tenant_id, database_id, data_id, property_id, type_key,
+            type_version, value_encoding_version, value
+        )
+        VALUES (?, ?, ?, ?, 'relation', 1, 1, ?)
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(source.id().to_string())
+    .bind(source_data.to_string())
+    .bind(property.id().to_string())
+    .bind(
+        serde_json::json!({
+            "database_id": target.id().to_string(),
+            "data_ids": [target_b.to_string()],
+        })
+        .to_string(),
+    )
+    .execute(db.pool().as_ref())
+    .await?;
+    let parity_error = mutation
+        .reconfigure(narrow())
+        .await
+        .expect_err("canonical mismatch must fail closed");
+    assert!(matches!(parity_error, errors::Error::Conflict { .. }));
+
+    sqlx::query(
+        r#"
+        DELETE FROM property_values
+        WHERE tenant_id = ? AND database_id = ?
+          AND data_id = ? AND property_id = ?
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(source.id().to_string())
+    .bind(source_data.to_string())
+    .bind(property.id().to_string())
+    .execute(db.pool().as_ref())
+    .await?;
+    let narrowed = mutation.reconfigure(narrow()).await?;
+    assert_eq!(narrowed.generation().get(), 2);
+    assert_eq!(*narrowed.forward_cardinality(), RelationCardinality::One);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn persisted_edges_guard_cardinality_narrowing_and_are_deleted_with_schema(
+) -> anyhow::Result<()> {
+    let (db, app, mutation, definitions, tenant_id) = fixture().await?;
+    let source =
+        create_database(&app, &tenant_id, "relation-edge-guard-source")
+            .await?;
+    let target =
+        create_database(&app, &tenant_id, "relation-edge-guard-target")
+            .await?;
+    let property =
+        add_relation(&app, &tenant_id, source.id(), target.id(), "targets")
+            .await?;
+    let definition = definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .expect("RelationDefinition");
+    let source_a =
+        insert_record(db.as_ref(), &tenant_id, source.id(), "source-a")
+            .await?;
+    let source_b =
+        insert_record(db.as_ref(), &tenant_id, source.id(), "source-b")
+            .await?;
+    let target_a =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-a")
+            .await?;
+    let target_b =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-b")
+            .await?;
+    for (source_data_id, target_data_id) in [
+        (&source_a, &target_a),
+        (&source_a, &target_b),
+        (&source_b, &target_a),
+    ] {
+        insert_edge(
+            db.as_ref(),
+            &definition,
+            source_data_id,
+            target_data_id,
+        )
+        .await?;
+    }
+    let legacy_column = format!("value{}", property.property_num());
+    for (source_data_id, target_data_ids) in [
+        (&source_a, vec![&target_a, &target_b]),
+        (&source_b, vec![&target_a]),
+    ] {
+        let value = format!(
+            "{},{}",
+            target.id(),
+            target_data_ids
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        sqlx::query(&format!(
+            "UPDATE data SET {legacy_column} = ? WHERE tenant_id = ? AND object_id = ? AND id = ?",
+        ))
+        .bind(value)
+        .bind(tenant_id.to_string())
+        .bind(source.id().to_string())
+        .bind(source_data_id.to_string())
+        .execute(db.pool().as_ref())
+        .await?;
+    }
+    let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
+
+    for (forward_cardinality, reverse_cardinality) in [
+        (Some(RelationCardinality::One), None),
+        (None, Some(RelationCardinality::One)),
+    ] {
+        let error = mutation
+            .reconfigure(ReconfigureRelationDefinitionInputData {
+                executor: &auth::Executor::SystemUser,
+                multi_tenancy: &multi_tenancy,
+                tenant_id: &tenant_id,
+                source_database_id: source.id(),
+                source_property_id: property.id(),
+                expected_generation: RELATION_GENERATION_V1,
+                forward_cardinality,
+                reverse_cardinality,
+                inverse: RelationInverseChange::Keep,
+                on_target_delete: None,
+            })
+            .await
+            .expect_err(
+                "persisted edges must reject Many to One narrowing",
+            );
+        assert!(matches!(error, errors::Error::Conflict { .. }));
+    }
+
+    let unchanged = definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .expect("definition remains");
+    assert_eq!(unchanged.generation(), &RELATION_GENERATION_V1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(definition.id().to_string())
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        3
+    );
+
+    mutation
+        .delete(DeleteRelationDefinitionInputData {
+            executor: &auth::Executor::SystemUser,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            source_database_id: source.id(),
+            source_property_id: property.id(),
+            expected_generation: RELATION_GENERATION_V1,
+        })
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(definition.id().to_string())
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        0
+    );
+    assert!(definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .is_none());
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn cardinality_narrowing_waits_for_edge_writer_and_rechecks_complete_set(
+) -> anyhow::Result<()> {
+    let (db, app, mutation, definitions, tenant_id) = fixture().await?;
+    let source =
+        create_database(&app, &tenant_id, "relation-edge-race-source")
+            .await?;
+    let target =
+        create_database(&app, &tenant_id, "relation-edge-race-target")
+            .await?;
+    let property =
+        add_relation(&app, &tenant_id, source.id(), target.id(), "targets")
+            .await?;
+    let definition = definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .expect("RelationDefinition");
+    let source_data =
+        insert_record(db.as_ref(), &tenant_id, source.id(), "source")
+            .await?;
+    let target_a =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-a")
+            .await?;
+    let target_b =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target-b")
+            .await?;
+
+    let pool = db.pool();
+    let mut writer = pool.begin().await?;
+    let mut endpoint_ids =
+        [source.id().to_string(), target.id().to_string()];
+    endpoint_ids.sort();
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id FROM objects
+        WHERE tenant_id = ? AND id IN (?, ?)
+        ORDER BY id
+        FOR UPDATE
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(&endpoint_ids[0])
+    .bind(&endpoint_ids[1])
+    .fetch_all(&mut *writer)
+    .await?;
+
+    let narrowing = {
+        let mutation = mutation.clone();
+        let tenant_id = tenant_id.clone();
+        let source_database_id = source.id().clone();
+        let source_property_id = property.id().clone();
+        tokio::spawn(async move {
+            let multi_tenancy =
+                auth::MultiTenancy::new_operator(tenant_id.clone());
+            mutation
+                .reconfigure(ReconfigureRelationDefinitionInputData {
+                    executor: &auth::Executor::SystemUser,
+                    multi_tenancy: &multi_tenancy,
+                    tenant_id: &tenant_id,
+                    source_database_id: &source_database_id,
+                    source_property_id: &source_property_id,
+                    expected_generation: RELATION_GENERATION_V1,
+                    forward_cardinality: Some(RelationCardinality::One),
+                    reverse_cardinality: None,
+                    inverse: RelationInverseChange::Keep,
+                    on_target_delete: None,
+                })
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !narrowing.is_finished(),
+        "schema mutation must wait for the endpoint-ordered edge writer"
+    );
+
+    for target_data_id in [&target_a, &target_b] {
+        sqlx::query(
+            r#"
+            INSERT INTO relation_edges (
+                tenant_id, source_database_id, source_data_id,
+                relation_id, target_database_id, target_data_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(tenant_id.to_string())
+        .bind(source.id().to_string())
+        .bind(source_data.to_string())
+        .bind(definition.id().to_string())
+        .bind(target.id().to_string())
+        .bind(target_data_id.to_string())
+        .execute(&mut *writer)
+        .await?;
+    }
+    writer.commit().await?;
+
+    let error = tokio::time::timeout(Duration::from_secs(10), narrowing)
+        .await
+        .expect("writer and schema mutation must not deadlock")
+        .expect("schema mutation task must not panic")
+        .expect_err("the committed edge set must reject narrowing");
+    assert!(matches!(error, errors::Error::Conflict { .. }));
+    let unchanged = definitions
+        .find_by_source_property(&tenant_id, source.id(), property.id())
+        .await?
+        .expect("definition remains");
+    assert_eq!(unchanged.generation(), &RELATION_GENERATION_V1);
     Ok(())
 }
 

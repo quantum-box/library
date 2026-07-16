@@ -128,6 +128,55 @@ async fn insert_legacy_index(
     Ok(())
 }
 
+async fn relation_id_for_property(
+    db: &persistence::Db,
+    tenant_id: &TenantId,
+    database_id: &DatabaseId,
+    property_id: &PropertyId,
+) -> anyhow::Result<String> {
+    Ok(sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id FROM relationships
+        WHERE tenant_id = ? AND object_id = ? AND field_id = ?
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(database_id.to_string())
+    .bind(property_id.to_string())
+    .fetch_one(db.pool().as_ref())
+    .await?)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_relation_edge(
+    db: &persistence::Db,
+    tenant_id: &TenantId,
+    source_database_id: &DatabaseId,
+    source_data_id: &DataId,
+    relation_id: &str,
+    target_database_id: &DatabaseId,
+    target_data_id: &DataId,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO relation_edges (
+            tenant_id, source_database_id, source_data_id, relation_id,
+            target_database_id, target_data_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(source_database_id.to_string())
+    .bind(source_data_id.to_string())
+    .bind(relation_id)
+    .bind(target_database_id.to_string())
+    .bind(target_data_id.to_string())
+    .execute(db.pool().as_ref())
+    .await?;
+    Ok(())
+}
+
 async fn delete_database(
     app: &database_manager::App,
     tenant_id: &TenantId,
@@ -288,7 +337,7 @@ async fn self_relation_is_deleted_with_its_owned_schema(
 ) -> anyhow::Result<()> {
     let (db, app, tenant_id, database) =
         mysql_fixture("delete-self-relation").await?;
-    add_property(
+    let relation = add_property(
         &app,
         &tenant_id,
         database.id(),
@@ -296,9 +345,36 @@ async fn self_relation_is_deleted_with_its_owned_schema(
         PropertyType::Relation(TypeRelation::new(database.id().clone())),
     )
     .await?;
-    insert_data(db.as_ref(), &tenant_id, database.id()).await?;
+    let data_id =
+        insert_data(db.as_ref(), &tenant_id, database.id()).await?;
+    let relation_id = relation_id_for_property(
+        db.as_ref(),
+        &tenant_id,
+        database.id(),
+        relation.id(),
+    )
+    .await?;
+    insert_relation_edge(
+        db.as_ref(),
+        &tenant_id,
+        database.id(),
+        &data_id,
+        &relation_id,
+        database.id(),
+        &data_id,
+    )
+    .await?;
 
     delete_database(&app, &tenant_id, database.id()).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(&relation_id)
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        0
+    );
     assert_eq!(
         scoped_counts(db.as_ref(), &tenant_id, database.id()).await?,
         ScopedCounts {
@@ -308,6 +384,79 @@ async fn self_relation_is_deleted_with_its_owned_schema(
             indexes: 0,
             inbound_relations: 0,
         }
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn source_database_delete_cleans_cross_database_edges_before_records(
+) -> anyhow::Result<()> {
+    let (db, app, tenant_id, source) =
+        mysql_fixture("delete-edge-source").await?;
+    let target =
+        create_database(&app, &tenant_id, "delete-edge-target").await?;
+    let relation = add_property(
+        &app,
+        &tenant_id,
+        source.id(),
+        "targets",
+        PropertyType::Relation(TypeRelation::new(target.id().clone())),
+    )
+    .await?;
+    let source_data =
+        insert_data(db.as_ref(), &tenant_id, source.id()).await?;
+    let target_data =
+        insert_data(db.as_ref(), &tenant_id, target.id()).await?;
+    let relation_id = relation_id_for_property(
+        db.as_ref(),
+        &tenant_id,
+        source.id(),
+        relation.id(),
+    )
+    .await?;
+    insert_relation_edge(
+        db.as_ref(),
+        &tenant_id,
+        source.id(),
+        &source_data,
+        &relation_id,
+        target.id(),
+        &target_data,
+    )
+    .await?;
+
+    delete_database(&app, &tenant_id, source.id()).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(&relation_id)
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        0
+    );
+    assert_eq!(
+        scoped_counts(db.as_ref(), &tenant_id, source.id()).await?,
+        ScopedCounts {
+            objects: 0,
+            fields: 0,
+            data: 0,
+            indexes: 0,
+            inbound_relations: 0,
+        }
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM data WHERE tenant_id = ? AND object_id = ? AND id = ?",
+        )
+        .bind(tenant_id.to_string())
+        .bind(target.id().to_string())
+        .bind(target_data.to_string())
+        .fetch_one(db.pool().as_ref())
+        .await?,
+        1,
+        "Database-owned edge cleanup must not delete the target Record"
     );
     Ok(())
 }
@@ -368,9 +517,34 @@ async fn late_root_delete_failure_rolls_back_descendant_deletes(
         PropertyType::String,
     )
     .await?;
+    let relation = add_property(
+        &app,
+        &tenant_id,
+        database.id(),
+        "self",
+        PropertyType::Relation(TypeRelation::new(database.id().clone())),
+    )
+    .await?;
     let data_id =
         insert_data(db.as_ref(), &tenant_id, database.id()).await?;
     insert_legacy_index(db.as_ref(), &tenant_id, &data_id).await?;
+    let relation_id = relation_id_for_property(
+        db.as_ref(),
+        &tenant_id,
+        database.id(),
+        relation.id(),
+    )
+    .await?;
+    insert_relation_edge(
+        db.as_ref(),
+        &tenant_id,
+        database.id(),
+        &data_id,
+        &relation_id,
+        database.id(),
+        &data_id,
+    )
+    .await?;
     let before =
         scoped_counts(db.as_ref(), &tenant_id, database.id()).await?;
     let pool = db.pool();
@@ -402,6 +576,16 @@ async fn late_root_delete_failure_rolls_back_descendant_deletes(
         before,
         "indexes, data, and fields deleted earlier in the UoW must be restored"
     );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(&relation_id)
+        .fetch_one(pool.as_ref())
+        .await?,
+        1,
+        "edge cleanup must roll back with the later Database delete failure"
+    );
 
     sqlx::raw_sql(&format!("DROP TRIGGER IF EXISTS {TRIGGER}"))
         .execute(pool.as_ref())
@@ -416,6 +600,15 @@ async fn late_root_delete_failure_rolls_back_descendant_deletes(
             indexes: 0,
             inbound_relations: 0,
         }
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM relation_edges WHERE relation_id = ?",
+        )
+        .bind(&relation_id)
+        .fetch_one(pool.as_ref())
+        .await?,
+        0
     );
     Ok(())
 }
