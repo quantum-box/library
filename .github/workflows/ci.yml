@@ -109,6 +109,8 @@ jobs:
           cargo test -p database-manager --test relation_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test relation_definition_contract -- --ignored --test-threads=1
           cargo test -p database-manager --test relation_schema_mutation -- --ignored --test-threads=1
+          cargo test -p database-manager --test relation_edge_schema -- --ignored --test-threads=1
+          cargo test -p database-manager --test relation_edge_contract -- --ignored --test-threads=1
           cargo test -p database-manager --test database_delete_atomicity -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_contract -- --ignored --test-threads=1
