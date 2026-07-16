@@ -23,7 +23,7 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 | Env | Scope | Source | 確認方法 |
 | --- | --- | --- | --- |
 | `ENVIRONMENT=production` | required | Lambda env / Cloud App env | Lambda configuration または Tachyon Cloud App env |
-| `DATABASE_URL` | required secret | AWS Secrets Manager / Terraform var | `localhost` でない TiDB / MySQL DSN であること |
+| `DATABASE_URL` | required database credential | Tachyon `databaseRef` (`tidb_library_api_prod.url`) | Library 専用 TiDB cluster の `localhost` でない MySQL DSN であること |
 | `COGNITO_JWK_URL` | required | Cognito Terraform output | `https://cognito-idp.<region>.amazonaws.com/<pool>/.well-known/jwks.json` |
 | `COGNITO_USER_POOL_ID` | required | Cognito Terraform output | `COGNITO_JWK_URL` の pool id と一致 |
 | `TACHYON_API_URL` | required | Lambda env / Tachyon Cloud App env | `https://api.n1.tachy.one` など production API origin |
@@ -75,7 +75,7 @@ tachyon env list library-api \
   | sort
 ```
 
-期待する key: `DATABASE_URL`, `SERVICE_AUTH_TOKEN`, `SENTRY_DSN`。`is_secret=false` と表示される場合でも provider secret reference 経由で runtime 解決される構成があるため、expanded value は表示せず secret store / runtime 側で解決状態を確認する。
+期待する key: `DATABASE_URL`, `SERVICE_AUTH_TOKEN`, `SENTRY_DSN`。`DATABASE_URL` は `tidb_library_api_prod.url` の `databaseRef`、その他は provider secret reference 経由で runtime 解決される。expanded value は表示せず、参照名と runtime 側の解決状態だけを確認する。
 
 3. 値の検査が必要な場合は、担当者の secure terminal で secret store / Lambda configuration を直接確認し、結果だけを記録する。
 

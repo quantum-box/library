@@ -39,7 +39,9 @@ spec:
         - name: DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: SERVICE_AUTH_TOKEN
           type: credential
           valueFrom:
@@ -115,11 +117,15 @@ spec:
         - name: DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: PROD_DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: ENVIRONMENT
           value: "production"
         - name: RUST_LOG
