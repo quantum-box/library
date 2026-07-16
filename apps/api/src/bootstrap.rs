@@ -22,14 +22,21 @@ pub async fn run_api(
     tracing::debug!("start connect database...");
     let dsn = config.database_url.parse::<value_object::DatabaseUrl>()?;
     let property_value_mode = config.property_value_storage_mode.parse()?;
+    let property_definition_mode =
+        config.property_definition_storage_mode.parse()?;
     tracing::info!(
         mode = ?property_value_mode,
         "configured PropertyValue storage rollout mode"
     );
+    tracing::info!(
+        mode = ?property_definition_mode,
+        "configured PropertyDefinition storage rollout mode"
+    );
     let database_app = Arc::new(
-        database_manager::factory_client_with_property_value_mode(
+        database_manager::factory_client_with_storage_modes(
             &dsn.use_database("tachyon_apps_database_manager"),
             property_value_mode,
+            property_definition_mode,
         )
         .await?,
     );

@@ -98,10 +98,6 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
         let scope = DatabaseScope::new(input.tenant_id, input.database_id);
         let database =
             scope.require_database(self.database_repo.as_ref()).await?;
-        let property = self
-            .property_repo
-            .find_all(database.id(), database.tenant_id())
-            .await?;
         let mut data = scope
             .require_data(self.data_repo.as_ref(), input.data_id)
             .await?;
@@ -109,24 +105,32 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
         data.update_name(&input.name.parse()?);
         let mut changes = Vec::with_capacity(input.data.len());
         for d in input.data {
-            let property = property
-                .iter()
-                .find(|property| property.id() == &d.property_id)
+            // Resolve only the requested Property. A newer opaque sibling is
+            // still hydrated losslessly but must not block an unrelated
+            // record patch through this older compatibility boundary.
+            let property = self
+                .property_repo
+                .find_by_id(
+                    &d.property_id,
+                    database.id(),
+                    database.tenant_id(),
+                )
+                .await?
                 .ok_or_else(DatabaseScope::not_found)?;
             validate_auto_generated_id_update(
-                property,
+                &property,
                 input.data_id,
                 data.get_property_data(property.id()),
                 &d.value,
             )?;
             let property_data =
-                PropertyData::from_command(property, d.value)?;
+                PropertyData::from_command(&property, d.value)?;
             self.relation_target_validator
                 .validate(input.tenant_id, &property_data)
                 .await?;
             data.update_property_data(&property_data)?;
             changes.push(PropertyValueChange::from_property_data(
-                property,
+                &property,
                 &property_data,
             )?);
         }

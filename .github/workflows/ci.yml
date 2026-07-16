@@ -101,6 +101,7 @@ jobs:
           cargo test -p database-manager --test paging -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test property_definition_schema -- --ignored --test-threads=1
+          cargo test -p database-manager --test property_definition_dual_write -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_dual_write -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_backfill -- --ignored --test-threads=1
           cargo test -p database-manager --test record_version_schema -- --ignored --test-threads=1

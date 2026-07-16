@@ -59,24 +59,24 @@ impl PropertyValueBackfillGateway {
     }
 
     fn decode_property(field: &FieldRow) -> errors::Result<Property> {
-        let property_id = field.id.parse::<PropertyId>()?;
-        let tenant_id = field.tenant_id.parse::<TenantId>()?;
-        let database_id = field.object_id.parse::<DatabaseId>()?;
-        let property_type = PropertyType::from_meta(
-            &field.datatype,
-            field.datatype_meta.clone(),
-        )?;
+        let legacy = field.legacy_definition()?;
+        let Some(canonical) = field.canonical_definition()? else {
+            return legacy.to_property();
+        };
 
-        Ok(Property::with_meta_json(
-            &property_id,
-            &tenant_id,
-            &database_id,
-            &field.field_name,
-            &property_type,
-            field.is_indexed,
-            field.field_num,
-            field.meta_json.clone(),
-        ))
+        // Backfill must never invent a canonical PropertyValue from stale
+        // legacy metadata. A present canonical definition is owned by the
+        // definition rollout and is usable only when this binary understands
+        // it and both representations describe the same built-in config.
+        canonical.config().ensure_writable()?;
+        if canonical.type_ref() != legacy.type_ref()
+            || canonical.raw_config()? != legacy.raw_config()?
+        {
+            return Err(errors::Error::conflict(
+                "PropertyDefinition parity mismatch during PropertyValue backfill",
+            ));
+        }
+        canonical.to_property()
     }
 
     fn expected_legacy_value(
@@ -147,7 +147,8 @@ impl PropertyValueBackfillGateway {
         let fields = sqlx::query_as::<_, FieldRow>(&format!(
             r#"
             SELECT id, tenant_id, object_id, field_name, datatype,
-                   datatype_meta, is_indexed, field_num, meta_json
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
             FROM fields
             WHERE tenant_id = ? AND object_id = ?
             ORDER BY field_num ASC, id ASC

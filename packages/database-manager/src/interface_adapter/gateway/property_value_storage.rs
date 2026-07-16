@@ -1,4 +1,5 @@
 use super::*;
+use crate::property_definition_rollout::PropertyDefinitionStorageMode;
 use crate::property_value_rollout::PropertyValueStorageMode;
 use sqlx::{MySql, QueryBuilder};
 use std::collections::HashMap;
@@ -91,23 +92,38 @@ pub async fn load_canonical_values_for_mode(
 
 fn legacy_property_data(
     data_row: &DataRow,
-    property: &Property,
-    field_num: u32,
+    field: &FieldRow,
+    definition_mode: PropertyDefinitionStorageMode,
 ) -> errors::Result<PropertyData> {
-    let raw = data_row.get_field(field_num)?;
+    let legacy = field.legacy_definition()?;
+    if definition_mode.reads_canonical_first() {
+        if let Some(canonical) = field.canonical_definition()? {
+            canonical.config().ensure_writable()?;
+            if canonical.type_ref() != legacy.type_ref()
+                || canonical.raw_config()? != legacy.raw_config()?
+            {
+                return Err(errors::Error::conflict(
+                    "PropertyDefinition parity mismatch during legacy PropertyValue fallback",
+                ));
+            }
+        }
+    }
+
+    let property = legacy.to_property()?;
+    let raw = data_row.get_field(field.field_num)?;
     let raw = project_property_value(
         &data_row.id,
         property.property_type(),
         raw.unwrap_or_default(),
     )?;
-    PropertyData::from_storage(property, raw)
+    PropertyData::from_storage(&property, raw)
 }
 
 fn canonical_property_data(
-    property: &Property,
+    definition: &PropertyDefinition,
     row: &PropertyValueRow,
 ) -> errors::Result<PropertyData> {
-    PropertyData::from_envelope(property, row.envelope()?)
+    PropertyData::from_definition_envelope(definition, row.envelope()?)
 }
 
 pub fn hydrate_data_row(
@@ -115,6 +131,7 @@ pub fn hydrate_data_row(
     fields: &[FieldRow],
     canonical: &HashMap<(String, String), PropertyValueRow>,
     mode: PropertyValueStorageMode,
+    definition_mode: PropertyDefinitionStorageMode,
 ) -> errors::Result<Data> {
     let tenant_id = TenantId::from_str(&data_row.tenant_id)?;
     let database_id = DatabaseId::from_str(&data_row.object_id)?;
@@ -130,9 +147,9 @@ pub fn hydrate_data_row(
     )?;
 
     for field in fields {
-        let property: Property = field.clone().into();
+        let definition = field.definition(definition_mode)?;
         let legacy =
-            legacy_property_data(&data_row, &property, field.field_num);
+            legacy_property_data(&data_row, field, definition_mode);
         if !mode.reads_or_shadows_canonical() {
             data.add_property_data(legacy?)?;
             continue;
@@ -140,7 +157,7 @@ pub fn hydrate_data_row(
         let canonical_row =
             canonical.get(&(data_row.id.clone(), field.id.clone()));
         let canonical_value = canonical_row
-            .map(|row| canonical_property_data(&property, row))
+            .map(|row| canonical_property_data(&definition, row))
             .transpose();
 
         let parity = match (&legacy, canonical_row, &canonical_value) {
@@ -231,6 +248,9 @@ mod tests {
             is_indexed: false,
             field_num: 0,
             meta_json: None,
+            type_key: None,
+            type_version: None,
+            type_config: None,
         }
     }
 
@@ -280,6 +300,7 @@ mod tests {
             std::slice::from_ref(&field),
             &canonical,
             PropertyValueStorageMode::LegacyOnly,
+            PropertyDefinitionStorageMode::DualWriteLegacyRead,
         )
         .expect("legacy-only read must not depend on canonical storage");
 
@@ -303,6 +324,7 @@ mod tests {
             std::slice::from_ref(&field),
             &canonical,
             PropertyValueStorageMode::DualWriteCanonicalRead,
+            PropertyDefinitionStorageMode::DualWriteLegacyRead,
         )
         .expect("valid canonical row is authoritative");
         assert_eq!(
@@ -318,6 +340,7 @@ mod tests {
             &[field],
             &HashMap::new(),
             PropertyValueStorageMode::DualWriteCanonicalRead,
+            PropertyDefinitionStorageMode::DualWriteLegacyRead,
         )
         .expect_err(
             "missing canonical row must fall back to legacy decode",
@@ -335,11 +358,82 @@ mod tests {
             &[],
             &HashMap::new(),
             PropertyValueStorageMode::LegacyOnly,
+            PropertyDefinitionStorageMode::DualWriteLegacyRead,
         )
         .expect_err("persisted record versions must be nonzero");
 
         assert!(error
             .to_string()
             .contains("record version must be greater than zero"));
+    }
+
+    #[test]
+    fn canonical_definition_mismatch_never_retypes_a_legacy_fallback() {
+        let mut field = field(PropertyType::String);
+        field.type_key = Some("integer".to_string());
+        field.type_version = Some(1);
+        field.type_config = Some("null".to_string());
+
+        let error = hydrate_data_row(
+            row("123"),
+            std::slice::from_ref(&field),
+            &HashMap::new(),
+            PropertyValueStorageMode::DualWriteCanonicalRead,
+            PropertyDefinitionStorageMode::DualWriteCanonicalRead,
+        )
+        .expect_err("missing canonical value must not retype legacy bytes");
+        assert!(error
+            .to_string()
+            .contains("PropertyDefinition parity mismatch"));
+
+        let data_row = row("123");
+        let canonical = canonical(&data_row, &field, "integer", "123");
+        let data = hydrate_data_row(
+            data_row,
+            std::slice::from_ref(&field),
+            &canonical,
+            PropertyValueStorageMode::DualWriteCanonicalRead,
+            PropertyDefinitionStorageMode::DualWriteCanonicalRead,
+        )
+        .expect("a present canonical value is authoritative");
+        assert_eq!(
+            data.get_property_data(&field.id.parse().expect("PropertyId"))
+                .expect("canonical value")
+                .string_value(),
+            "123"
+        );
+    }
+
+    #[test]
+    fn canonical_read_preserves_unknown_definition_and_value_as_opaque() {
+        let row = row("legacy-must-not-be-retyped");
+        let mut field = field(PropertyType::String);
+        field.type_key = Some("future_type".to_string());
+        field.type_version = Some(1);
+        field.type_config = Some(r#"{"future":true}"#.to_string());
+        let canonical = canonical(
+            &row,
+            &field,
+            "future_type",
+            r#"{"payload":[1,2,3]}"#,
+        );
+
+        let data = hydrate_data_row(
+            row,
+            std::slice::from_ref(&field),
+            &canonical,
+            PropertyValueStorageMode::DualWriteCanonicalRead,
+            PropertyDefinitionStorageMode::DualWriteCanonicalRead,
+        )
+        .expect("unknown canonical definition/value must remain readable");
+        let value = data
+            .get_property_data(&field.id.parse().expect("PropertyId"))
+            .expect("opaque value projection");
+        assert!(value.value().is_none());
+        assert!(matches!(
+            value.envelope(),
+            Some(PropertyValue::Opaque(value))
+                if value.raw_value == serde_json::json!({"payload": [1, 2, 3]})
+        ));
     }
 }

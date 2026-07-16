@@ -24,6 +24,13 @@ pub struct Config {
     )]
     pub property_value_storage_mode: String,
 
+    #[clap(
+        long = "property_definition_storage_mode",
+        env = "PROPERTY_DEFINITION_STORAGE_MODE",
+        default_value = "dual_write_legacy_read"
+    )]
+    pub property_definition_storage_mode: String,
+
     #[clap(long = "cognito_jwk_url", env = "COGNITO_JWK_URL")]
     pub cognito_jwk_url: String,
 
@@ -66,6 +73,9 @@ impl Config {
     ) -> Result<(), std::io::Error> {
         self.property_value_storage_mode
             .parse::<database_manager::property_value_rollout::PropertyValueStorageMode>()
+            .map_err(|error| invalid_config(&error.to_string()))?;
+        self.property_definition_storage_mode
+            .parse::<database_manager::property_definition_rollout::PropertyDefinitionStorageMode>()
             .map_err(|error| invalid_config(&error.to_string()))?;
         let environment = self.environment.to_ascii_lowercase();
         let is_production =
@@ -263,6 +273,8 @@ mod tests {
             database_url: "mysql://library:secret@tidb.example.com:4000"
                 .to_string(),
             property_value_storage_mode: "legacy_only".to_string(),
+            property_definition_storage_mode: "dual_write_legacy_read"
+                .to_string(),
             cognito_jwk_url: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_ProdPool/.well-known/jwks.json".to_string(),
             otel_exporter_otlp_endpoint: None,
             sentry_dsn: None,

@@ -62,17 +62,24 @@ impl PropertyData {
         property: &Property,
         envelope: EncodedPropertyValue,
     ) -> errors::Result<Self> {
-        let config = ResolvedPropertyConfig::Known(
-            property.property_type().canonical_config(),
-        );
+        Self::from_definition_envelope(
+            &PropertyDefinition::from_property(property),
+            envelope,
+        )
+    }
+
+    pub fn from_definition_envelope(
+        definition: &PropertyDefinition,
+        envelope: EncodedPropertyValue,
+    ) -> errors::Result<Self> {
         let decoded = BUILTIN_PROPERTY_TYPE_REGISTRY
-            .decode_envelope(&config, envelope)?;
+            .decode_envelope(definition.config(), envelope)?;
         let value = match &decoded {
             PropertyValue::Known(value) => Some(value.value().clone()),
             PropertyValue::Opaque(_) => None,
         };
         Ok(Self {
-            property_id: property.id().clone(),
+            property_id: definition.id().clone(),
             value,
             envelope: Some(decoded),
         })

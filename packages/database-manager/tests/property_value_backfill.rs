@@ -284,6 +284,124 @@ async fn backfill_is_resumable_idempotent_opaque_safe_and_atomic(
     assert_eq!(opaque_after.0, "future_string");
     assert_eq!(opaque_after.1, r#"{"future":true}"#);
 
+    // A present canonical PropertyDefinition is part of the backfill safety
+    // boundary. Opaque or legacy-mismatched definitions must stop before a
+    // stale legacy codec can create any canonical PropertyValue.
+    let opaque_definition_database = create_database(
+        &legacy_app,
+        &tenant_id,
+        "backfill opaque definition",
+    )
+    .await?;
+    let opaque_definition_property = add_property(
+        &legacy_app,
+        &tenant_id,
+        &opaque_definition_database,
+        "future definition",
+        PropertyType::String,
+    )
+    .await?;
+    add_record(
+        &legacy_app,
+        &tenant_id,
+        &opaque_definition_database,
+        "opaque definition",
+        vec![(
+            &opaque_definition_property,
+            PropertyValueCommand::String("legacy".into()),
+        )],
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE fields SET type_key = 'future_type', type_version = 7, \
+         type_config = '{\"future\":true}' \
+         WHERE tenant_id = ? AND object_id = ? AND id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(opaque_definition_database.id().to_string())
+    .bind(opaque_definition_property.id().to_string())
+    .execute(pool.as_ref())
+    .await?;
+    backfill
+        .execute(&PropertyValueBackfillInputData {
+            tenant_id: &tenant_id,
+            database_id: opaque_definition_database.id(),
+            after_data_id: None,
+            batch_size: 10,
+            dry_run: false,
+            checksum_seed: [0; 32],
+        })
+        .await
+        .expect_err("opaque PropertyDefinition must stop backfill");
+    let opaque_definition_writes = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM property_values \
+         WHERE tenant_id = ? AND database_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(opaque_definition_database.id().to_string())
+    .fetch_one(pool.as_ref())
+    .await?;
+    assert_eq!(opaque_definition_writes, 0);
+
+    let mismatched_definition_database = create_database(
+        &legacy_app,
+        &tenant_id,
+        "backfill mismatched definition",
+    )
+    .await?;
+    let mismatched_definition_property = add_property(
+        &legacy_app,
+        &tenant_id,
+        &mismatched_definition_database,
+        "mismatched definition",
+        PropertyType::String,
+    )
+    .await?;
+    add_record(
+        &legacy_app,
+        &tenant_id,
+        &mismatched_definition_database,
+        "mismatched definition",
+        vec![(
+            &mismatched_definition_property,
+            PropertyValueCommand::String("legacy".into()),
+        )],
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE fields SET type_key = 'integer', type_version = 1, \
+         type_config = 'null' \
+         WHERE tenant_id = ? AND object_id = ? AND id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(mismatched_definition_database.id().to_string())
+    .bind(mismatched_definition_property.id().to_string())
+    .execute(pool.as_ref())
+    .await?;
+    let definition_mismatch = backfill
+        .execute(&PropertyValueBackfillInputData {
+            tenant_id: &tenant_id,
+            database_id: mismatched_definition_database.id(),
+            after_data_id: None,
+            batch_size: 10,
+            dry_run: false,
+            checksum_seed: [0; 32],
+        })
+        .await
+        .expect_err("PropertyDefinition mismatch must stop backfill");
+    assert!(definition_mismatch
+        .to_string()
+        .contains("PropertyDefinition parity mismatch"));
+    let mismatched_definition_writes = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM property_values \
+         WHERE tenant_id = ? AND database_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(mismatched_definition_database.id().to_string())
+    .fetch_one(pool.as_ref())
+    .await?;
+    assert_eq!(mismatched_definition_writes, 0);
+
     // A known mismatch fails closed. The missing first Property is inserted
     // before the mismatch is detected, proving the whole chunk rolls back.
     let mismatch_database =

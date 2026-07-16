@@ -123,6 +123,14 @@ completed run describe more than one schema generation. Do not rely on
 `FOR SHARE` for this invariant; TiDB ignores shared-lock reads by default unless
 shared-lock promotion is enabled.
 
+When a canonical PropertyDefinition envelope is present, the operator requires
+it to be a known, writable built-in config that exactly matches the legacy
+type/config before decoding any records. A partial, malformed, opaque/future,
+or legacy-mismatched definition aborts the chunk before inserts. Only a wholly
+absent definition envelope may use the legacy definition directly. Resolve
+definition parity explicitly; the PropertyValue backfill must never invent a
+value envelope from stale legacy metadata.
+
 The operator is Tenant/Database scoped, processes at most 1,000 records per
 transaction, and uses the last processed `DataId` as an exclusive stable
 cursor. It defaults to a one-chunk dry-run:
@@ -172,10 +180,11 @@ The report never emits Property values. Interpret its fields as follows:
   The operator includes it in checksum evidence but never updates it. Upgrade
   the binary or make an explicit compatibility decision before cutover.
 
-A corrupt legacy value, malformed/known canonical envelope, or known parity
-mismatch aborts and rolls back the entire chunk. Existing canonical rows are
-never updated: a concurrent insert wins by causing the chunk to fail and be
-retried. This is intentional fail-closed behavior, not an upsert repair tool.
+A corrupt legacy value, unsafe PropertyDefinition envelope,
+malformed/known canonical value envelope, or known value parity mismatch
+aborts and rolls back the entire chunk. Existing canonical rows are never
+updated: a concurrent insert wins by causing the chunk to fail and be retried.
+This is intentional fail-closed behavior, not an upsert repair tool.
 
 After apply completes, rerun the full scope as dry-run from an empty cursor and
 zero checksum seed. Expected known rows must be `matched_values`, not

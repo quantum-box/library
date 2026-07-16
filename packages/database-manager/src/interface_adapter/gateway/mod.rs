@@ -48,21 +48,224 @@ pub struct FieldRow {
     pub is_indexed: bool,
     pub field_num: u32,
     pub meta_json: Option<String>,
+    pub type_key: Option<String>,
+    pub type_version: Option<u16>,
+    pub type_config: Option<String>,
 }
 
-impl From<FieldRow> for Property {
-    fn from(val: FieldRow) -> Self {
-        Property::with_meta_json(
-            &PropertyId::new(&val.id).unwrap(),
-            &TenantId::from_str(&val.tenant_id).unwrap(),
-            &DatabaseId::from_str(&val.object_id).unwrap(),
-            &val.field_name,
-            &PropertyType::from_meta(&val.datatype, val.datatype_meta)
-                .unwrap(),
-            val.is_indexed,
-            val.field_num,
-            val.meta_json,
-        )
+impl FieldRow {
+    fn definition_with_config(
+        &self,
+        config: ResolvedPropertyConfig,
+    ) -> errors::Result<PropertyDefinition> {
+        Ok(PropertyDefinition::new(
+            &PropertyId::new(&self.id)?,
+            &TenantId::from_str(&self.tenant_id)?,
+            &DatabaseId::from_str(&self.object_id)?,
+            &self.field_name,
+            config,
+            self.is_indexed,
+            self.field_num,
+            self.meta_json.clone(),
+        ))
+    }
+
+    pub fn legacy_definition(&self) -> errors::Result<PropertyDefinition> {
+        self.definition_with_config(ResolvedPropertyConfig::Known(
+            PropertyType::from_meta(
+                &self.datatype,
+                self.datatype_meta.clone(),
+            )?
+            .canonical_config(),
+        ))
+    }
+
+    /// Decode the canonical envelope without consulting the legacy columns.
+    /// `None` is the only state where canonical-read may fall back to legacy.
+    pub fn canonical_definition(
+        &self,
+    ) -> errors::Result<Option<PropertyDefinition>> {
+        let (type_key, type_version, type_config) = match (
+            self.type_key.as_ref(),
+            self.type_version,
+            self.type_config.as_ref(),
+        ) {
+            (None, None, None) => return Ok(None),
+            (Some(key), Some(version), Some(config)) => {
+                (key, version, config)
+            }
+            _ => {
+                return Err(errors::Error::invalid(
+                    "partial PropertyDefinition envelope",
+                ));
+            }
+        };
+        let type_ref = PropertyTypeRef::new(
+            PropertyTypeKey::new(type_key.clone())?,
+            PropertyTypeVersion::new(type_version)?,
+        );
+        let raw_config = serde_json::from_str(type_config)
+            .map_err(errors::Error::invalid)?;
+        let config = BUILTIN_PROPERTY_TYPE_REGISTRY
+            .decode_config(type_ref, raw_config)?;
+        Ok(Some(self.definition_with_config(config)?))
+    }
+
+    pub fn definition(
+        &self,
+        mode: crate::property_definition_rollout::PropertyDefinitionStorageMode,
+    ) -> errors::Result<PropertyDefinition> {
+        if mode.reads_canonical_first() {
+            return match self.canonical_definition()? {
+                Some(definition) => Ok(definition),
+                None => self.legacy_definition(),
+            };
+        }
+
+        let legacy = self.legacy_definition()?;
+        let parity = match self.canonical_definition() {
+            Ok(None) => "missing_canonical",
+            Err(error) => {
+                tracing::warn!(
+                    tenant_id = %self.tenant_id,
+                    database_id = %self.object_id,
+                    property_id = %self.id,
+                    %error,
+                    "ignored canonical PropertyDefinition during legacy-first read"
+                );
+                "decode_failure"
+            }
+            Ok(Some(canonical)) => match canonical.config() {
+                ResolvedPropertyConfig::Opaque(_) => "opaque",
+                ResolvedPropertyConfig::Known(_) => {
+                    if canonical.type_ref() == legacy.type_ref()
+                        && canonical.raw_config()? == legacy.raw_config()?
+                    {
+                        "match"
+                    } else {
+                        "mismatch"
+                    }
+                }
+            },
+        };
+        tracing::debug!(
+            tenant_id = %self.tenant_id,
+            database_id = %self.object_id,
+            property_id = %self.id,
+            parity,
+            "PropertyDefinition dual-read parity"
+        );
+        Ok(legacy)
+    }
+
+    pub fn ensure_canonical_definition_writable(
+        &self,
+    ) -> errors::Result<()> {
+        if let Some(definition) = self.canonical_definition()? {
+            definition.config().ensure_writable()?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod property_definition_row_tests {
+    use super::*;
+    use crate::property_definition_rollout::PropertyDefinitionStorageMode;
+
+    fn row() -> FieldRow {
+        FieldRow {
+            id: PropertyId::default().to_string(),
+            tenant_id: TenantId::default().to_string(),
+            object_id: DatabaseId::default().to_string(),
+            field_name: "title".to_string(),
+            datatype: "STRING".to_string(),
+            datatype_meta: serde_json::Value::Null,
+            is_indexed: false,
+            field_num: 0,
+            meta_json: None,
+            type_key: None,
+            type_version: None,
+            type_config: None,
+        }
+    }
+
+    #[test]
+    fn canonical_read_falls_back_only_when_the_envelope_is_absent() {
+        let mut row = row();
+        row.datatype = "UNREADABLE_LEGACY_TYPE".to_string();
+        row.type_key = Some("string".to_string());
+        row.type_version = Some(1);
+        row.type_config = Some("null".to_string());
+
+        let canonical = row
+            .definition(
+                PropertyDefinitionStorageMode::DualWriteCanonicalRead,
+            )
+            .expect("canonical definition must not decode legacy columns");
+        assert_eq!(canonical.type_ref().key.as_str(), "string");
+
+        row.type_key = None;
+        row.type_version = None;
+        row.type_config = None;
+        assert!(row
+            .definition(
+                PropertyDefinitionStorageMode::DualWriteCanonicalRead
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn malformed_known_canonical_config_fails_closed() {
+        let mut row = row();
+        row.type_key = Some("select".to_string());
+        row.type_version = Some(1);
+        row.type_config = Some("null".to_string());
+
+        assert!(row
+            .definition(
+                PropertyDefinitionStorageMode::DualWriteCanonicalRead
+            )
+            .is_err());
+        assert!(row
+            .definition(PropertyDefinitionStorageMode::DualWriteLegacyRead)
+            .is_ok());
+    }
+
+    #[test]
+    fn partial_canonical_envelope_never_falls_back_to_legacy() {
+        let mut row = row();
+        row.type_key = Some("string".to_string());
+
+        assert!(row
+            .definition(
+                PropertyDefinitionStorageMode::DualWriteCanonicalRead
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn unknown_canonical_config_stays_opaque_and_lossless() {
+        let mut row = row();
+        row.type_key = Some("future_type".to_string());
+        row.type_version = Some(9);
+        row.type_config =
+            Some(r#"{"feature":{"enabled":true}}"#.to_string());
+
+        let definition = row
+            .definition(
+                PropertyDefinitionStorageMode::DualWriteCanonicalRead,
+            )
+            .expect("unknown envelopes are readable");
+        assert!(matches!(
+            definition.config(),
+            ResolvedPropertyConfig::Opaque(_)
+        ));
+        assert_eq!(
+            definition.raw_config().expect("opaque raw config"),
+            serde_json::json!({"feature": {"enabled": true}})
+        );
+        assert!(definition.to_property().is_err());
     }
 }
 

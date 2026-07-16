@@ -1,4 +1,5 @@
 use super::*;
+use crate::property_definition_rollout::PropertyDefinitionStorageMode;
 use crate::property_value_rollout::PropertyValueStorageMode;
 use std::collections::HashSet;
 
@@ -36,20 +37,38 @@ const FIND_DATA_BY_ID_SQL: &str = r#"
 pub struct DataRepositoryImpl {
     pub db: Arc<Db>,
     pub property_value_mode: PropertyValueStorageMode,
+    pub property_definition_mode: PropertyDefinitionStorageMode,
 }
 
 impl DataRepositoryImpl {
     pub fn new(db: Arc<Db>) -> Arc<Self> {
-        Self::new_with_property_value_mode(db, Default::default())
+        Self::new_with_storage_modes(
+            db,
+            Default::default(),
+            Default::default(),
+        )
     }
 
     pub fn new_with_property_value_mode(
         db: Arc<Db>,
         property_value_mode: PropertyValueStorageMode,
     ) -> Arc<Self> {
+        Self::new_with_storage_modes(
+            db,
+            property_value_mode,
+            Default::default(),
+        )
+    }
+
+    pub fn new_with_storage_modes(
+        db: Arc<Db>,
+        property_value_mode: PropertyValueStorageMode,
+        property_definition_mode: PropertyDefinitionStorageMode,
+    ) -> Arc<Self> {
         Arc::new(Self {
             db,
             property_value_mode,
+            property_definition_mode,
         })
     }
 }
@@ -61,11 +80,15 @@ impl DataRepositoryImpl {
         tenant_id: &TenantId,
         database_id: &DatabaseId,
     ) -> errors::Result<Vec<FieldRow>> {
+        // Record writes serialize with Property-schema writes at the Database
+        // boundary. TiDB does not enforce shared locks by default, so a
+        // `FOR SHARE` read could validate one definition and then persist a
+        // value after a concurrent writer replaced it.
         let database = sqlx::query_scalar::<_, String>(
             r#"
             SELECT id FROM objects
             WHERE tenant_id = ? AND id = ?
-            FOR SHARE
+            FOR UPDATE
             "#,
         )
         .bind(tenant_id.to_string())
@@ -79,11 +102,12 @@ impl DataRepositoryImpl {
         Ok(sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT id, tenant_id, object_id, field_name, datatype,
-                   datatype_meta, is_indexed, field_num, meta_json
+                   datatype_meta, is_indexed, field_num, meta_json,
+                   type_key, type_version, type_config
             FROM fields
             WHERE tenant_id = ? AND object_id = ?
             ORDER BY field_num ASC
-            FOR SHARE
+            FOR UPDATE
             "#,
         )
         .bind(tenant_id.to_string())
@@ -93,6 +117,7 @@ impl DataRepositoryImpl {
     }
 
     fn persisted_property(
+        &self,
         fields: &[FieldRow],
         requested: &Property,
     ) -> errors::Result<(Property, u32)> {
@@ -102,7 +127,14 @@ impl DataRepositoryImpl {
             .ok_or_else(|| {
                 errors::Error::not_found("resource not found")
             })?;
-        let persisted: Property = field.clone().into();
+        // A canonical definition owned by a newer binary is read-only even
+        // while legacy definitions remain authoritative. Without this guard,
+        // an older writer could replace its opaque canonical value with a
+        // value encoded from the stale legacy type.
+        field.ensure_canonical_definition_writable()?;
+        let persisted = field
+            .definition(self.property_definition_mode)?
+            .to_property()?;
         if persisted.tenant_id() != requested.tenant_id()
             || persisted.database_id() != requested.database_id()
             || persisted.property_type().canonical_type_ref()
@@ -156,7 +188,7 @@ impl DataRepositoryImpl {
         change: &PropertyValueChange,
     ) -> errors::Result<()> {
         let (property, field_num) =
-            Self::persisted_property(fields, change.property())?;
+            self.persisted_property(fields, change.property())?;
         if self.property_value_mode.writes_canonical() {
             Self::ensure_existing_canonical_is_writable(
                 transaction,
@@ -437,6 +469,7 @@ impl DataRepository for DataRepositoryImpl {
             &fields,
             &canonical,
             self.property_value_mode,
+            self.property_definition_mode,
         )?))
     }
 
@@ -495,6 +528,7 @@ impl DataRepository for DataRepositoryImpl {
                 &fields,
                 &canonical,
                 self.property_value_mode,
+                self.property_definition_mode,
             )?;
             data_vec.push(data);
         }
@@ -614,6 +648,7 @@ impl DataRepository for DataRepositoryImpl {
                 &fields,
                 &canonical,
                 self.property_value_mode,
+                self.property_definition_mode,
             )?;
             data_vec.push(data);
         }
