@@ -5,6 +5,7 @@ mod index_definition_repository;
 pub mod property_repository;
 mod property_value_backfill;
 mod property_value_storage;
+mod relation_edge_repository;
 mod relation_repository;
 mod relation_schema_repository;
 
@@ -15,6 +16,7 @@ pub use index_definition_repository::*;
 pub use property_repository::*;
 pub use property_value_backfill::*;
 pub use property_value_storage::*;
+pub use relation_edge_repository::*;
 pub use relation_repository::*;
 
 pub use crate::domain::*;

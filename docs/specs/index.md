@@ -23,6 +23,7 @@
 - [RelationDefinition control-plane rollout](operations/relation-definition-expand-rollout.md)
 - [IndexDefinition control-plane rollout](operations/index-definition-control-plane-rollout.md)
 - [Relation schema mutation Unit of Work](operations/relation-schema-mutation-uow.md)
+- [RelationEdge expand rollout](operations/relation-edge-expand-rollout.md)
 - [CMS利用ガイド](guides/cms-user-guide.md)
 - [ドキュメントOS利用ガイド](guides/document-os-user-guide.md)
 - [利用ユースケース](use-cases/use-cases.md)
