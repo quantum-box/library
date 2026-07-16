@@ -23,23 +23,24 @@ spec:
         installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --force-reinstall cargo-lambda==1.9.1 ziglang==0.15.2 && rustup toolchain install nightly-2026-06-04 --no-self-update && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
         command: >-
           bash -lc 'source "$HOME/.cargo/env";
+          LAMBDA_ARTIFACT_DIR="${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/lambda/lambda-library-api";
           (while true; do sleep 60; echo "cargo lambda build still running..."; done) &
           HEARTBEAT_PID=$!;
           trap '\''kill "$HEARTBEAT_PID" 2>/dev/null || true'\'' EXIT;
-          SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir target/lambda/lambda-library-api --flatten lambda-library-api;
+          SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir "$LAMBDA_ARTIFACT_DIR" --flatten lambda-library-api;
           BUILD_STATUS=$?;
           kill "$HEARTBEAT_PID" 2>/dev/null || true;
           wait "$HEARTBEAT_PID" 2>/dev/null || true;
-          if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi;
-          mkdir -p ../../target/lambda/lambda-library-api &&
-          cp target/lambda/lambda-library-api/bootstrap ../../target/lambda/lambda-library-api/bootstrap'
+          if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
       envVars:
         - name: DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: SERVICE_AUTH_TOKEN
           type: credential
           valueFrom:
@@ -115,11 +116,15 @@ spec:
         - name: DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: PROD_DATABASE_URL
           type: credential
           valueFrom:
-            secret: library-api/DATABASE_URL
+            databaseRef:
+              name: tidb_library_api_prod
+              field: url
         - name: ENVIRONMENT
           value: "production"
         - name: RUST_LOG

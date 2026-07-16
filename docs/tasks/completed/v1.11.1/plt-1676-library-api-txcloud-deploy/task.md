@@ -6,6 +6,9 @@
 - Goal: migrate Library API production deployment from direct GitHub Actions `cargo lambda deploy` to txcloud Cloud App.
 - Rollback: keep the existing AWS Lambda function `lambda-library-api` available; do not delete the function as part of this migration.
 - txcloud Cloud App: created in the Library tenant as `app_01kshpeg8ppzemk6cypbws3q3j`.
+- Migration Cloud App: `app_01ktg9y97924q92f5t5ss1v0k1`.
+- Database credential design: [design.md](./design.md).
+- Ready PR archive version: `v1.11.1`, read from `origin/main:apps/api/Cargo.toml`.
 - Current decision: Library repo does not own `library-api` deploy / migration CI. Build and deployment status are owned by txcloud Cloud Apps; migration hook work belongs to Tachyon side follow-up PLT-1954.
 
 ## Prior Attempt Findings
@@ -40,13 +43,14 @@ The prior removal was premature before the txcloud app/build path existed. Now t
 
 ## txcloud Notes
 
-- Target tenant: `tn_01j702qf86pc2j35s0kv0gv3gy`.
+- Target tenant: `tn_01j91h09tpj5ehwbwfwfxpak2b`.
 - Existing repo convention is `apps/api/tachyon.yaml`, so this task keeps the YAML manifest instead of introducing `.tachyon.json`.
 - Runtime secrets must be copied to the Tachyon SecretsApp backend without printing expanded credential values.
 - Current `tachyon init --framework none` convention generates `apiVersion: tachyon/v1`, `kind: CloudApp`, `metadata.tenant_id`, and `spec.framework`, but the production API currently rejects `framework: none`. The manifest uses `framework: cargo_lambda` with `deploymentTarget: lambda`.
 - Library production requires `tier: enterprise` and `subnet: enterprise-library` so the Lambda runtime is attached to the Library private TiDB network profile.
 - `tachyon compute apps apply --environment production` applied non-secret env values.
-- For `cloud_run` apps, `tachyon compute env set --secret` is not the correct secret path; it is currently Cloudflare Pages-only. Runtime secrets are resolved through provider-style secret references such as `library-api/DATABASE_URL`, backed by Secrets Manager path `{tenantId}/providers/library-api`.
+- Library database access uses `databaseRef.name: tidb_library_api_prod` and `field: url`. The referenced credential must point to the Library-dedicated TiDB cluster; it must not reuse the Tachyon Field cluster.
+- `SERVICE_AUTH_TOKEN` and `SENTRY_DSN` remain provider-style app secrets under `library-api/*`.
 
 ## Redacted Secret Migration Commands
 
@@ -60,11 +64,11 @@ aws lambda get-function-configuration \
   --output json
 ```
 
-Copy secret values without echoing them. Store both values as fields in the provider secret at `{tenantId}/providers/library-api`, then reference them from the manifest as `library-api/DATABASE_URL` and `library-api/SERVICE_AUTH_TOKEN`.
+Copy secret values without echoing them. Keep `SERVICE_AUTH_TOKEN` and other app-owned values in the provider secret at `{tenantId}/providers/library-api`. Store the Library-dedicated TiDB URL as the `url` field of the `tidb_library_api_prod` database credential, then reference it through `databaseRef`.
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id tn_01j702qf86pc2j35s0kv0gv3gy/providers/library-api \
+  --secret-id tn_01j91h09tpj5ehwbwfwfxpak2b/providers/library-api \
   --secret-string '<redacted JSON object>'
 ```
 
@@ -77,6 +81,11 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 3. Remove Library-owned deploy CI and rely on txcloud Cloud App build/deployment status. Keep AWS Lambda resources untouched for rollback.
 4. Inspect Lambda environment variable names only, then prepare redacted migration commands for txcloud secrets and plain variables.
 5. Apply/create/deploy the Cloud App only when the active tachyon auth profile is confirmed for the Library tenant or another safe Library-scoped profile is available.
+6. Replace the API and migration Lambda `DATABASE_URL` sources with the Library-owned `tidb_library_api_prod` `databaseRef`; validate migration before API rollout.
+7. Backfill the database credential with `scripts/backfill-library-database-ref-secret.sh`, which transforms the existing app-env secret into the `{ "url": "..." }` provider shape without printing the DSN.
+8. Write the migration bootstrap directly under `${CARGO_TARGET_DIR}/lambda/lambda-library-api-migrate`; txcloud validates artifacts in its shared Cargo target directory rather than the source checkout's `target/` directory.
+9. Write the API bootstrap under `${CARGO_TARGET_DIR}/lambda/lambda-library-api` for the same txcloud artifact contract.
+10. Backfill `providers/library-api` from the existing production app-env material with `scripts/backfill-library-provider-secret.sh`; database ownership remains separate under `tidb_library_api_prod`.
 
 ## Validation
 
@@ -87,4 +96,4 @@ Do not paste the expanded values into PRs, task comments, logs, or shell history
 
 ## Current Blocker
 
-The Cloud App is created, but production deployment is intentionally not triggered until the provider secret fields `DATABASE_URL` and `SERVICE_AUTH_TOKEN` are present and a txcloud build/smoke passes.
+The Library database credential has been backfilled and verified. Production rollout is gated on publishing the migration artifact path fix, rebuilding `library-api-migrate`, and confirming the migration Lambda before the API rollout.
