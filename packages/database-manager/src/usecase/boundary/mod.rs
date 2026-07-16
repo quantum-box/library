@@ -378,3 +378,104 @@ pub trait PropertyValueBackfillOutputPort:
         input: &PropertyValueBackfillInputData<'_>,
     ) -> errors::Result<PropertyValueBackfillReport>;
 }
+
+#[derive(Debug)]
+pub struct DeclareIndexDefinitionInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub target: IndexTarget,
+    pub policy: IndexPolicy,
+    pub unique: bool,
+}
+
+#[derive(Debug)]
+pub struct ReconfigureIndexDefinitionInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub index_definition_id: &'a IndexDefinitionId,
+    pub expected_generation: IndexGeneration,
+    pub policy: IndexPolicy,
+    pub unique: bool,
+}
+
+#[derive(Debug)]
+pub struct TransitionIndexProjectionInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub index_definition_id: &'a IndexDefinitionId,
+    pub expected_generation: IndexGeneration,
+    pub next_state: IndexProjectionState,
+}
+
+#[derive(Debug)]
+pub struct FindIndexDefinitionByIdInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub index_definition_id: &'a IndexDefinitionId,
+}
+
+#[derive(Debug)]
+pub struct FindIndexDefinitionByTargetInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub target: &'a IndexTarget,
+}
+
+#[derive(Debug)]
+pub struct FindIndexDefinitionsInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+}
+
+/// Application input port for the declarative IndexDefinition control plane.
+/// Physical projection and query planning are deliberately outside this port.
+#[async_trait::async_trait]
+pub trait IndexDefinitionInputPort: Debug + Send + Sync + 'static {
+    async fn declare(
+        &self,
+        input: DeclareIndexDefinitionInputData<'_>,
+    ) -> errors::Result<IndexDefinition>;
+
+    async fn reconfigure(
+        &self,
+        input: ReconfigureIndexDefinitionInputData<'_>,
+    ) -> errors::Result<IndexDefinition>;
+
+    async fn transition_projection(
+        &self,
+        input: TransitionIndexProjectionInputData<'_>,
+    ) -> errors::Result<IndexDefinition>;
+
+    async fn find_by_id(
+        &self,
+        input: FindIndexDefinitionByIdInputData<'_>,
+    ) -> errors::Result<Option<IndexDefinition>>;
+
+    async fn find_by_target(
+        &self,
+        input: FindIndexDefinitionByTargetInputData<'_>,
+    ) -> errors::Result<Option<IndexDefinition>>;
+
+    async fn find_all_by_database(
+        &self,
+        input: FindIndexDefinitionsInputData<'_>,
+    ) -> errors::Result<Vec<IndexDefinition>>;
+}

@@ -161,6 +161,13 @@ impl RelationDefinition {
 pub trait RelationDefinitionRepository:
     Debug + Send + Sync + 'static
 {
+    async fn find_by_id(
+        &self,
+        tenant_id: &TenantId,
+        source_database_id: &DatabaseId,
+        relation_id: &RelationId,
+    ) -> errors::Result<Option<RelationDefinition>>;
+
     async fn find_by_source_property(
         &self,
         tenant_id: &TenantId,

@@ -156,6 +156,21 @@ impl PropertyDefinition {
 pub trait PropertyDefinitionRepository:
     Debug + Send + Sync + 'static
 {
+    /// Read the canonical `type_*` envelope for capability decisions.
+    ///
+    /// This never returns the legacy Property projection as the definition.
+    /// Consumers that make decisions from handler capabilities must use this
+    /// method so an opaque or mismatched canonical definition cannot be
+    /// interpreted through stale legacy columns. Adapters must use legacy
+    /// only as a parity check and fail closed when the canonical envelope is
+    /// partial, malformed, opaque, or differs during the compatibility window.
+    async fn find_canonical_definition_by_id(
+        &self,
+        id: &PropertyId,
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Option<PropertyDefinition>>;
+
     async fn find_definition_by_id(
         &self,
         id: &PropertyId,
