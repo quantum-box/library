@@ -41,6 +41,10 @@ uses `CARGO_TARGET_DIR=/workspace/cache/target`. The script now derives the
 output from `CARGO_TARGET_DIR`, with the repository `target/` directory as the
 local fallback.
 
+The first PR API build `bld_01kxnqqjk0244hp0j3hg96kg8a` exposed the same
+contract for `lambda-library-api`. Its manifest build command now writes
+directly to `${CARGO_TARGET_DIR}/lambda/lambda-library-api`.
+
 ## Existing validation issue
 
 `tachyon manifest validate -f tachyon.yaml` with CLI `0.6.10` rejects the
