@@ -295,6 +295,51 @@ impl DecideRecordPatchCommand {
     }
 }
 
+/// A versioned, idempotent request to delete one Record.
+///
+/// Deletion has its own command and fingerprint material so a caller cannot
+/// reuse a PATCH operation for DELETE (or vice versa). The PATCH v1
+/// fingerprint remains byte-for-byte compatible with already journaled
+/// operations.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct DecideRecordDeleteCommand {
+    tenant_id: TenantId,
+    database_id: DatabaseId,
+    data_id: DataId,
+    operation_id: RecordOperationId,
+    expected_version: RecordVersion,
+    actor: RecordActor,
+    fingerprint: RecordRequestFingerprint,
+}
+
+impl DecideRecordDeleteCommand {
+    pub fn new(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        data_id: &DataId,
+        operation_id: &RecordOperationId,
+        expected_version: RecordVersion,
+        actor: RecordActor,
+    ) -> errors::Result<Self> {
+        let fingerprint = delete_fingerprint_v1(
+            tenant_id,
+            database_id,
+            data_id,
+            expected_version,
+            &actor,
+        )?;
+        Ok(Self {
+            tenant_id: tenant_id.clone(),
+            database_id: database_id.clone(),
+            data_id: data_id.clone(),
+            operation_id: operation_id.clone(),
+            expected_version,
+            actor,
+            fingerprint,
+        })
+    }
+}
+
 fn command_value(value: &PropertyValueCommand) -> serde_json::Value {
     match value {
         PropertyValueCommand::Clear => serde_json::json!({"kind": "clear"}),
@@ -383,6 +428,32 @@ fn fingerprint_v1(
     })
 }
 
+fn delete_fingerprint_v1(
+    tenant_id: &TenantId,
+    database_id: &DatabaseId,
+    data_id: &DataId,
+    expected_version: RecordVersion,
+    actor: &RecordActor,
+) -> errors::Result<RecordRequestFingerprint> {
+    let material = serde_json::json!({
+        "fingerprint_version": RECORD_REQUEST_FINGERPRINT_VERSION_V1,
+        "mutation_kind": "DELETE",
+        "tenant_id": tenant_id.to_string(),
+        "database_id": database_id.to_string(),
+        "data_id": data_id.to_string(),
+        "actor_kind": actor.kind().to_string(),
+        "actor_id": actor.id(),
+        "expected_version": expected_version.to_string(),
+    });
+    let bytes = serde_json::to_vec(&material)
+        .map_err(errors::Error::internal_server_error)?;
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    Ok(RecordRequestFingerprint {
+        version: RECORD_REQUEST_FINGERPRINT_VERSION_V1,
+        digest,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RecordRejectionCode {
@@ -392,6 +463,7 @@ pub enum RecordRejectionCode {
     InvalidPropertyValue,
     RelationProjectionRequired,
     RelationCardinalityExceeded,
+    RelationDeleteRestricted,
     IndexProjectionRequired,
     IdempotencyKeyReuse,
     VersionExhausted,
@@ -548,6 +620,23 @@ pub struct RecordPatchedEventV1 {
     pub occurred_at: DateTime<Utc>,
 }
 
+/// Library-owned v1 tombstone event persisted before the Record row is
+/// removed. `record_version` is the checked successor of `previous_version`,
+/// preserving aggregate order even though no live row remains afterwards.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordDeletedEventV1 {
+    pub event_id: RecordEventId,
+    pub event_type: String,
+    pub operation_id: RecordOperationId,
+    pub tenant_id: TenantId,
+    pub database_id: DatabaseId,
+    pub data_id: DataId,
+    pub previous_version: String,
+    pub record_version: String,
+    pub actor: RecordActor,
+    pub occurred_at: DateTime<Utc>,
+}
+
 #[async_trait::async_trait]
 pub trait VersionedRecordMutationUnitOfWork:
     std::fmt::Debug + Send + Sync + 'static
@@ -576,6 +665,22 @@ mod tests {
             RecordPatch::new(None, patches),
         )
         .expect("command")
+    }
+
+    fn delete_command(
+        operation_id: &RecordOperationId,
+        expected_version: RecordVersion,
+        actor: RecordActor,
+    ) -> DecideRecordDeleteCommand {
+        DecideRecordDeleteCommand::new(
+            &TenantId::default(),
+            &DatabaseId::default(),
+            &DataId::default(),
+            operation_id,
+            expected_version,
+            actor,
+        )
+        .expect("delete command")
     }
 
     #[test]
@@ -662,6 +767,116 @@ mod tests {
         .unwrap();
 
         assert_ne!(base.fingerprint(), changed.fingerprint());
+    }
+
+    #[test]
+    fn delete_fingerprint_is_stable_and_distinct_from_patch() {
+        let actor = RecordActor::new(RecordActorKind::System, "system")
+            .expect("actor");
+        let left = delete_command(
+            &RecordOperationId::new("delete-one").expect("operation id"),
+            RecordVersion::INITIAL,
+            actor.clone(),
+        );
+        let right = DecideRecordDeleteCommand::new(
+            left.tenant_id(),
+            left.database_id(),
+            left.data_id(),
+            &RecordOperationId::new("delete-two").expect("operation id"),
+            *left.expected_version(),
+            actor,
+        )
+        .expect("same delete request");
+        let patch = DecideRecordPatchCommand::new(
+            left.tenant_id(),
+            left.database_id(),
+            left.data_id(),
+            &RecordOperationId::new("patch").expect("operation id"),
+            *left.expected_version(),
+            left.actor().clone(),
+            RecordPatch::new(None, Vec::new()),
+        )
+        .expect(
+            "empty patch command still has canonical fingerprint material",
+        );
+
+        assert_eq!(left.fingerprint(), right.fingerprint());
+        assert_ne!(left.fingerprint(), patch.fingerprint());
+        assert_eq!(
+            left.fingerprint().version(),
+            RECORD_REQUEST_FINGERPRINT_VERSION_V1
+        );
+    }
+
+    #[test]
+    fn delete_fingerprint_binds_actor_and_expected_version() {
+        let base = delete_command(
+            &RecordOperationId::default(),
+            RecordVersion::INITIAL,
+            RecordActor::new(RecordActorKind::User, "user-a")
+                .expect("actor"),
+        );
+        let changed_actor = DecideRecordDeleteCommand::new(
+            base.tenant_id(),
+            base.database_id(),
+            base.data_id(),
+            &RecordOperationId::default(),
+            *base.expected_version(),
+            RecordActor::new(RecordActorKind::User, "user-b")
+                .expect("actor"),
+        )
+        .expect("changed actor");
+        let changed_version = DecideRecordDeleteCommand::new(
+            base.tenant_id(),
+            base.database_id(),
+            base.data_id(),
+            &RecordOperationId::default(),
+            RecordVersion::new(2).expect("version"),
+            base.actor().clone(),
+        )
+        .expect("changed version");
+
+        assert_ne!(base.fingerprint(), changed_actor.fingerprint());
+        assert_ne!(base.fingerprint(), changed_version.fingerprint());
+    }
+
+    #[test]
+    fn delete_restriction_and_tombstone_event_have_stable_wire_names() {
+        let operation_id = RecordOperationId::default();
+        let rejection = RecordMutationDecision::rejected(
+            &operation_id,
+            RecordRejectionCode::RelationDeleteRestricted,
+        );
+        let rejection_json =
+            serde_json::to_value(&rejection).expect("serialize rejection");
+        assert_eq!(
+            rejection_json.get("code"),
+            Some(&serde_json::Value::String(
+                "RELATION_DELETE_RESTRICTED".to_string()
+            ))
+        );
+
+        let event = RecordDeletedEventV1 {
+            event_id: RecordEventId::default(),
+            event_type: "database.record.deleted.v1".to_string(),
+            operation_id,
+            tenant_id: TenantId::default(),
+            database_id: DatabaseId::default(),
+            data_id: DataId::default(),
+            previous_version: "18446744073709551614".to_string(),
+            record_version: u64::MAX.to_string(),
+            actor: RecordActor::new(RecordActorKind::System, "system")
+                .expect("actor"),
+            occurred_at: Utc::now(),
+        };
+        let json = serde_json::to_value(&event).expect("serialize event");
+        assert_eq!(
+            json.get("record_version"),
+            Some(&serde_json::Value::String(u64::MAX.to_string()))
+        );
+        let restored: RecordDeletedEventV1 =
+            serde_json::from_value(json).expect("deserialize event");
+        assert_eq!(restored, event);
     }
 
     #[test]

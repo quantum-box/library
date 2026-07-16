@@ -78,3 +78,18 @@ pub trait RecordUnitOfWork: Debug + Send + Sync + 'static {
         data_id: &DataId,
     ) -> errors::Result<()>;
 }
+
+/// Dedicated versioned deletion boundary.
+///
+/// Keeping DELETE separate from the PATCH port lets the adapter claim the
+/// journal with mutation kind DELETE and execute Relation target-deletion
+/// policy without widening the already released PATCH contract.
+#[async_trait::async_trait]
+pub trait VersionedRecordDeletionUnitOfWork:
+    Debug + Send + Sync + 'static
+{
+    async fn decide_delete_atomically(
+        &self,
+        command: &DecideRecordDeleteCommand,
+    ) -> errors::Result<RecordMutationDecision>;
+}

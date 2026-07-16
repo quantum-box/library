@@ -5,7 +5,8 @@ use derive_getters::Getters;
 use value_object::TenantId;
 
 use crate::{
-    DataId, DatabaseId, RelationCardinality, RelationDefinition, RelationId,
+    DataId, DatabaseId, RelationCardinality, RelationDefinition,
+    RelationId, RelationOnDelete,
 };
 
 /// Complete Database/record identity used at either side of a RelationEdge.
@@ -273,6 +274,142 @@ impl RelationEdgeMutationPlan {
     }
 }
 
+/// One inbound Relation value that must remove the deleted target.
+///
+/// Keeping the definition with the edge gives the adapter the owning source
+/// Property while preserving the canonical forward-only edge identity.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct RelationNullification {
+    definition: RelationDefinition,
+    edge: RelationEdge,
+}
+
+/// All Nullify actions for one source Record.
+///
+/// A deletion UoW increments each affected source RecordVersion once, even if
+/// several Relation Properties on that Record reference the deleted target.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct RelationSourceNullification {
+    source: RecordReference,
+    nullifications: Vec<RelationNullification>,
+}
+
+/// Deterministic classification of every RelationEdge incident to a Record.
+///
+/// The caller supplies exactly one locked incident edge set per definition.
+/// Edges sourced by the deleted Record (including self-loops) are unconditional
+/// cleanup. Only inbound edges from another Record apply the definition's
+/// Restrict/Nullify target-deletion policy.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct RelationTargetDeletionPlan {
+    tenant_id: TenantId,
+    target: RecordReference,
+    outgoing_edges: Vec<RelationEdge>,
+    restricting_inbound_edges: Vec<RelationEdge>,
+    nullify_groups: Vec<RelationSourceNullification>,
+}
+
+impl RelationTargetDeletionPlan {
+    pub fn new(
+        tenant_id: &TenantId,
+        target: &RecordReference,
+        scopes: Vec<RelationEdgeSet>,
+    ) -> errors::Result<Self> {
+        let mut relation_ids = BTreeSet::new();
+        let mut edge_identities = BTreeSet::new();
+        let mut outgoing_edges = Vec::new();
+        let mut restricting_inbound_edges = Vec::new();
+        let mut nullifications_by_source =
+            BTreeMap::<RecordReference, Vec<RelationNullification>>::new();
+
+        for scope in scopes {
+            let RelationEdgeSet { definition, edges } = scope;
+            definition.ensure_writable()?;
+            if definition.tenant_id() != tenant_id {
+                return Err(errors::Error::invalid(
+                    "Relation target-deletion scope belongs to another tenant",
+                ));
+            }
+            if definition.source_database_id() != target.database_id()
+                && definition.target_database_id() != target.database_id()
+            {
+                return Err(errors::Error::invalid(
+                    "Relation target-deletion definition is not incident to the target Database",
+                ));
+            }
+            if !relation_ids.insert(definition.id().clone()) {
+                return Err(errors::Error::invalid(
+                    "duplicate Relation target-deletion definition scope",
+                ));
+            }
+
+            for edge in edges {
+                if !edge_identities.insert(edge.clone()) {
+                    return Err(errors::Error::invalid(
+                        "duplicate Relation target-deletion edge",
+                    ));
+                }
+
+                if edge.source() == target {
+                    // A self-loop is both incoming and outgoing. Classifying it
+                    // here first prevents a Record from restricting its own
+                    // deletion or scheduling a Nullify for a source that will
+                    // be removed in the same transaction.
+                    outgoing_edges.push(edge);
+                    continue;
+                }
+                if edge.target() != target {
+                    return Err(errors::Error::invalid(
+                        "Relation target-deletion scope contains a non-incident edge",
+                    ));
+                }
+
+                match definition.on_target_delete() {
+                    RelationOnDelete::Restrict => {
+                        restricting_inbound_edges.push(edge);
+                    }
+                    RelationOnDelete::Nullify => {
+                        let source = edge.source().clone();
+                        nullifications_by_source
+                            .entry(source)
+                            .or_default()
+                            .push(RelationNullification {
+                                definition: definition.clone(),
+                                edge,
+                            });
+                    }
+                }
+            }
+        }
+
+        outgoing_edges.sort();
+        restricting_inbound_edges.sort();
+        let nullify_groups = nullifications_by_source
+            .into_iter()
+            .map(|(source, mut nullifications)| {
+                nullifications
+                    .sort_by(|left, right| left.edge.cmp(&right.edge));
+                RelationSourceNullification {
+                    source,
+                    nullifications,
+                }
+            })
+            .collect();
+
+        Ok(Self {
+            tenant_id: tenant_id.clone(),
+            target: target.clone(),
+            outgoing_edges,
+            restricting_inbound_edges,
+            nullify_groups,
+        })
+    }
+
+    pub fn is_restricted(&self) -> bool {
+        !self.restricting_inbound_edges.is_empty()
+    }
+}
+
 /// Tenant-scoped, read-only port for forward and inverse/backlink views.
 ///
 /// Mutations deliberately do not belong to this expand contract. They will be
@@ -309,6 +446,24 @@ mod tests {
         forward: RelationCardinality,
         reverse: RelationCardinality,
     ) -> RelationDefinition {
+        definition_with_policy(
+            tenant_id,
+            source_database_id,
+            target_database_id,
+            forward,
+            reverse,
+            RelationOnDelete::Restrict,
+        )
+    }
+
+    fn definition_with_policy(
+        tenant_id: &TenantId,
+        source_database_id: &DatabaseId,
+        target_database_id: &DatabaseId,
+        forward: RelationCardinality,
+        reverse: RelationCardinality,
+        on_target_delete: RelationOnDelete,
+    ) -> RelationDefinition {
         RelationDefinition::new(
             &RelationId::default(),
             tenant_id,
@@ -318,7 +473,7 @@ mod tests {
             forward,
             reverse,
             None,
-            RelationOnDelete::Restrict,
+            on_target_delete,
         )
         .expect("valid definition")
     }
@@ -347,7 +502,7 @@ mod tests {
         let tenant_id = TenantId::default();
         let database_id = DatabaseId::default();
         let data_id = DataId::default();
-        let definition = definition(
+        let relation_definition = definition(
             &tenant_id,
             &database_id,
             &database_id,
@@ -356,8 +511,8 @@ mod tests {
         );
 
         let set = RelationEdgeSet::new(
-            &definition,
-            vec![edge(&definition, &data_id, &data_id)],
+            &relation_definition,
+            vec![edge(&relation_definition, &data_id, &data_id)],
         )
         .expect("a self loop is one canonical edge");
         assert_eq!(set.edges().len(), 1);
@@ -672,6 +827,205 @@ mod tests {
                 &empty,
                 &occupied,
                 vec![first_target],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn target_deletion_classifies_self_loops_and_groups_nullify_by_source()
+    {
+        let tenant_id = TenantId::default();
+        let deleted_database_id = DatabaseId::default();
+        let deleted_data_id = DataId::default();
+        let deleted =
+            RecordReference::new(&deleted_database_id, &deleted_data_id);
+        let other_database_id = DatabaseId::default();
+        let source_database_id = DatabaseId::default();
+        let source_a = DataId::default();
+        let source_b = DataId::default();
+
+        let outgoing_definition = definition_with_policy(
+            &tenant_id,
+            &deleted_database_id,
+            &other_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+            RelationOnDelete::Restrict,
+        );
+        let outgoing = edge(
+            &outgoing_definition,
+            &deleted_data_id,
+            &DataId::default(),
+        );
+        let self_definition = definition_with_policy(
+            &tenant_id,
+            &deleted_database_id,
+            &deleted_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+            RelationOnDelete::Restrict,
+        );
+        let self_loop =
+            edge(&self_definition, &deleted_data_id, &deleted_data_id);
+        let restrict_definition = definition_with_policy(
+            &tenant_id,
+            &source_database_id,
+            &deleted_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+            RelationOnDelete::Restrict,
+        );
+        let restrict = edge(
+            &restrict_definition,
+            &DataId::default(),
+            &deleted_data_id,
+        );
+        let nullify_a_definition = definition_with_policy(
+            &tenant_id,
+            &source_database_id,
+            &deleted_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+            RelationOnDelete::Nullify,
+        );
+        let nullify_b_definition = definition_with_policy(
+            &tenant_id,
+            &source_database_id,
+            &deleted_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+            RelationOnDelete::Nullify,
+        );
+        let nullify_a =
+            edge(&nullify_a_definition, &source_a, &deleted_data_id);
+        let nullify_b =
+            edge(&nullify_b_definition, &source_a, &deleted_data_id);
+        let nullify_other =
+            edge(&nullify_a_definition, &source_b, &deleted_data_id);
+
+        let scopes = vec![
+            RelationEdgeSet::new(
+                &nullify_a_definition,
+                vec![nullify_other.clone(), nullify_a.clone()],
+            )
+            .expect("nullify a scope"),
+            RelationEdgeSet::new(
+                &outgoing_definition,
+                vec![outgoing.clone()],
+            )
+            .expect("outgoing scope"),
+            RelationEdgeSet::new(
+                &restrict_definition,
+                vec![restrict.clone()],
+            )
+            .expect("restrict scope"),
+            RelationEdgeSet::new(&self_definition, vec![self_loop.clone()])
+                .expect("self scope"),
+            RelationEdgeSet::new(
+                &nullify_b_definition,
+                vec![nullify_b.clone()],
+            )
+            .expect("nullify b scope"),
+        ];
+        let mut reversed = scopes.clone();
+        reversed.reverse();
+
+        let plan =
+            RelationTargetDeletionPlan::new(&tenant_id, &deleted, scopes)
+                .expect("deletion plan");
+        let reversed_plan =
+            RelationTargetDeletionPlan::new(&tenant_id, &deleted, reversed)
+                .expect("input order does not affect the plan");
+
+        assert_eq!(plan, reversed_plan);
+        assert!(plan.is_restricted());
+        assert_eq!(plan.outgoing_edges().len(), 2);
+        assert!(plan.outgoing_edges().contains(&outgoing));
+        assert!(plan.outgoing_edges().contains(&self_loop));
+        assert_eq!(plan.restricting_inbound_edges(), &vec![restrict]);
+        assert_eq!(plan.nullify_groups().len(), 2);
+        let grouped = plan
+            .nullify_groups()
+            .iter()
+            .find(|group| group.source().data_id() == &source_a)
+            .expect("source A group");
+        assert_eq!(grouped.nullifications().len(), 2);
+        assert!(
+            grouped
+                .nullifications()
+                .iter()
+                .any(|item| item.edge() == &nullify_a)
+        );
+        assert!(
+            grouped
+                .nullifications()
+                .iter()
+                .any(|item| item.edge() == &nullify_b)
+        );
+    }
+
+    #[test]
+    fn target_deletion_rejects_non_incident_and_duplicate_scopes() {
+        let tenant_id = TenantId::default();
+        let source_database_id = DatabaseId::default();
+        let target_database_id = DatabaseId::default();
+        let relation_definition = definition(
+            &tenant_id,
+            &source_database_id,
+            &target_database_id,
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+        );
+        let unrelated = edge(
+            &relation_definition,
+            &DataId::default(),
+            &DataId::default(),
+        );
+        let scope =
+            RelationEdgeSet::new(&relation_definition, vec![unrelated])
+                .expect("valid relation scope");
+        let deleted =
+            RecordReference::new(&target_database_id, &DataId::default());
+
+        assert!(
+            RelationTargetDeletionPlan::new(
+                &tenant_id,
+                &deleted,
+                vec![scope.clone()]
+            )
+            .is_err()
+        );
+        assert!(
+            RelationTargetDeletionPlan::new(
+                &tenant_id,
+                &deleted,
+                vec![
+                    RelationEdgeSet::new(&relation_definition, Vec::new())
+                        .expect("empty scope"),
+                    RelationEdgeSet::new(&relation_definition, Vec::new())
+                        .expect("duplicate empty scope"),
+                ]
+            )
+            .is_err()
+        );
+
+        let unrelated_definition = definition(
+            &tenant_id,
+            &DatabaseId::default(),
+            &DatabaseId::default(),
+            RelationCardinality::Many,
+            RelationCardinality::Many,
+        );
+        assert!(
+            RelationTargetDeletionPlan::new(
+                &tenant_id,
+                &deleted,
+                vec![RelationEdgeSet::new(
+                    &unrelated_definition,
+                    Vec::new(),
+                )
+                .expect("empty unrelated scope")]
             )
             .is_err()
         );
