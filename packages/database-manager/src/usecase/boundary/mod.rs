@@ -230,6 +230,23 @@ pub trait DeleteDatabaseInputPort: Debug + Send + Sync + 'static {
     ) -> errors::Result<Database>;
 }
 
+/// Output port for deleting one tenant-scoped Database aggregate.
+///
+/// Implementations must keep the RelationDefinition preflight and every
+/// descendant/root delete in one transaction. Loading the Database is part of
+/// the same unit so a caller cannot authorize or return a stale aggregate
+/// across a delete race.
+#[async_trait::async_trait]
+pub trait DatabaseDeletionUnitOfWork:
+    Debug + Send + Sync + 'static
+{
+    async fn delete_atomically(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+    ) -> errors::Result<Database>;
+}
+
 // delete property
 #[derive(Debug)]
 pub struct DeletePropertyInputData<'a> {
