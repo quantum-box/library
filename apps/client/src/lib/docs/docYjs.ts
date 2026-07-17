@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { IndexeddbPersistence } from 'y-indexeddb'
+import { clearDocument, IndexeddbPersistence } from 'y-indexeddb'
 import {
   Awareness,
   applyAwarenessUpdate,
@@ -10,6 +10,7 @@ import {
   buildConfiguredSyncWebsocketUrl,
   buildRoomId,
   buildSyncWebsocketPath,
+  resolveBrowserSyncWebsocketUrl,
 } from '../../app/kitConfig'
 import type { DocBlock, DocBlockType } from './types'
 
@@ -76,6 +77,14 @@ const LOCAL_USER_KEY = 'photon:docs:collaboration-user'
 const MAX_BACKOFF = 30_000
 const activeDocumentSockets = new Set<WebSocket>()
 
+export function documentCollaborationRoomId(docId: string): string {
+  return buildRoomId(appKitConfig.workspace.scope, `doc:${docId}`)
+}
+
+export async function clearLocalDocumentBody(docId: string): Promise<void> {
+  await clearDocument(documentCollaborationRoomId(docId))
+}
+
 declare global {
   interface Window {
     __photonTestHooks?: {
@@ -89,14 +98,14 @@ type SyncTextMessage =
   | { type: 'awareness'; update: string }
 
 function getWsUrl(roomId: string): string {
-  const configuredUrl = buildConfiguredSyncWebsocketUrl(roomId)
-  if (configuredUrl) {
-    return configuredUrl
+  const websocketUrl = resolveBrowserSyncWebsocketUrl(
+    buildConfiguredSyncWebsocketUrl(roomId),
+    buildSyncWebsocketPath(roomId),
+  )
+  if (!websocketUrl) {
+    throw new Error('Photon Live WebSocket URL is unavailable outside a browser')
   }
-
-  const loc = window.location
-  const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${loc.host}${buildSyncWebsocketPath(roomId)}`
+  return websocketUrl
 }
 
 function seedDefaultBlocks(blocks: Y.Array<Y.Map<string | boolean>>) {
@@ -171,7 +180,7 @@ export function createDocumentCollaboration(
   onStatus?: (status: DocumentSyncStatus) => void
 ): DocumentCollaboration {
   const doc = new Y.Doc()
-  const roomId = buildRoomId(appKitConfig.workspace.scope, `doc:${docId}`)
+  const roomId = documentCollaborationRoomId(docId)
   const blocks = doc.getArray<Y.Map<string | boolean>>(appKitConfig.docs.yjsArrayName)
   const fragment = doc.getXmlFragment('document-store')
   const awareness = new Awareness(doc)
@@ -188,7 +197,13 @@ export function createDocumentCollaboration(
   }
 
   function scheduleReconnect() {
-    if (disposed) return
+    if (
+      disposed ||
+      reconnectTimer ||
+      ws?.readyState === WebSocket.OPEN ||
+      ws?.readyState === WebSocket.CONNECTING
+    ) return
+
     setStatus('connecting')
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
@@ -229,22 +244,41 @@ export function createDocumentCollaboration(
       return
     }
 
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+
     setStatus('connecting')
-    const socket = new WebSocket(getWsUrl(roomId))
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(getWsUrl(roomId))
+    } catch {
+      setStatus('offline')
+      scheduleReconnect()
+      return
+    }
     socket.binaryType = 'arraybuffer'
     ws = socket
     activeDocumentSockets.add(socket)
     let isFirstRemoteUpdate = true
 
     socket.addEventListener('open', () => {
+      if (ws !== socket) {
+        socket.close()
+        return
+      }
       backoff = 1000
       setStatus('connected')
+      doc.off('update', onDocUpdate)
       doc.on('update', onDocUpdate)
       socket.send(Y.encodeStateAsUpdate(doc))
       sendAwarenessUpdate([awareness.clientID])
     })
 
     socket.addEventListener('message', (event) => {
+      if (ws !== socket) return
+
       if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data) as Partial<SyncTextMessage>
@@ -271,6 +305,8 @@ export function createDocumentCollaboration(
 
     socket.addEventListener('close', () => {
       activeDocumentSockets.delete(socket)
+      if (ws !== socket) return
+
       doc.off('update', onDocUpdate)
       ws = null
       setStatus('offline')
@@ -278,7 +314,7 @@ export function createDocumentCollaboration(
     })
 
     socket.addEventListener('error', () => {
-      setStatus('offline')
+      if (ws === socket) setStatus('offline')
     })
   }
 
@@ -337,7 +373,10 @@ export function createDocumentCollaboration(
       }
       awareness.off('update', onAwarenessUpdate)
       if (ws) {
-        ws.close()
+        const socket = ws
+        ws = null
+        activeDocumentSockets.delete(socket)
+        socket.close()
       }
       window.removeEventListener('online', connectWs)
       document.removeEventListener('visibilitychange', reconnectWhenVisible)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowRight } from 'lucide-react'
 import { appKitConfig } from '../../app/kitConfig'
 import {
   getClientEngineDebugState,
@@ -118,14 +119,19 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`
 }
 
-function StatusPill({ ok, label }: { ok: boolean; label: string }) {
+type StatusTone = 'success' | 'danger' | 'warning' | 'neutral'
+
+function StatusPill({ tone, label }: { tone: StatusTone; label: string }) {
+  const style = {
+    success: 'bg-green-500/10 text-green-400',
+    danger: 'bg-red-500/10 text-red-400',
+    warning: 'bg-yellow-500/10 text-yellow-300',
+    neutral: 'bg-surface-hover text-muted',
+  }[tone]
+
   return (
     <span
-      className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium ${
-        ok
-          ? 'bg-green-500/10 text-green-400'
-          : 'bg-red-500/10 text-red-400'
-      }`}
+      className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium ${style}`}
     >
       {label}
     </span>
@@ -148,13 +154,15 @@ function FlowStep({
   detail,
 }: {
   title: string
-  state: 'complete' | 'active' | 'waiting'
+  state: 'complete' | 'observed' | 'active' | 'waiting' | 'failed'
   detail: string
 }) {
   const style = {
     complete: 'border-green-500/40 bg-green-500/10 text-green-300',
+    observed: 'border-blue-500/40 bg-blue-500/10 text-blue-300',
     active: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-200',
     waiting: 'border-border bg-surface text-muted',
+    failed: 'border-red-500/40 bg-red-500/10 text-red-300',
   }[state]
 
   return (
@@ -169,7 +177,7 @@ function FlowArrow() {
   return (
     <div className="hidden items-center justify-center text-subtle md:flex">
       <span className="h-px w-8 bg-border" />
-      <span className="px-1 text-xs">{'>'}</span>
+      <ArrowRight className="mx-1 size-3.5" aria-hidden="true" />
     </div>
   )
 }
@@ -181,9 +189,30 @@ interface OperationJourney {
   kind: string
   clientStatus: string | null
   clientSequence: number | null
+  clientError: unknown | null
   cloudStatus: string | null
   remoteSequence: number | null
-  edgeRequest: EdgeSyncLog | null
+  latestSyncRequest: EdgeSyncLog | null
+}
+
+function operationErrorLabel(error: unknown): string | null {
+  if (error == null) return null
+  if (typeof error === 'string') return error
+  if (typeof error === 'object') {
+    const payload = error as Record<string, unknown>
+    if (typeof payload.reason === 'string') return payload.reason
+    if (typeof payload.message === 'string') return payload.message
+    try {
+      return JSON.stringify(payload)
+    } catch {
+      return 'error details unavailable'
+    }
+  }
+  return String(error)
+}
+
+function isFailureStatus(status: string | null): status is 'rejected' | 'conflict' {
+  return status === 'rejected' || status === 'conflict'
 }
 
 function PropagationFlow({ journeys }: { journeys: OperationJourney[] }) {
@@ -191,7 +220,7 @@ function PropagationFlow({ journeys }: { journeys: OperationJourney[] }) {
     <section className="rounded border border-border bg-panel p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Propagation Flow</h2>
-        <span className="text-xs text-subtle">Client local {'>'} Edge proxy {'>'} Cloud authority</span>
+        <span className="text-xs text-subtle">Edge requests are not operation-correlated</span>
       </div>
       <div className="space-y-2">
         {journeys.length === 0 ? (
@@ -202,10 +231,25 @@ function PropagationFlow({ journeys }: { journeys: OperationJourney[] }) {
           journeys.map((journey) => {
             const clientComplete = journey.clientStatus === 'accepted'
             const cloudComplete = journey.cloudStatus === 'accepted'
-            const edgeComplete = cloudComplete || Boolean(journey.edgeRequest?.ok && clientComplete)
+            const accepted = clientComplete || cloudComplete
+            const failureStatus = isFailureStatus(journey.clientStatus)
+              ? journey.clientStatus
+              : isFailureStatus(journey.cloudStatus)
+                ? journey.cloudStatus
+                : null
+            const status = failureStatus ?? (accepted ? 'accepted' : journey.clientStatus ?? journey.cloudStatus ?? 'unobserved')
+            const error = operationErrorLabel(journey.clientError)
+            const statusTone: StatusTone = failureStatus
+              ? 'danger'
+              : accepted
+                ? 'success'
+                : status === 'pending'
+                  ? 'warning'
+                  : 'neutral'
             return (
-              <div
+              <article
                 key={journey.operationId}
+                aria-label={`Operation ${journey.operationId}`}
                 className="rounded border border-border bg-surface/70 p-3"
               >
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -217,42 +261,60 @@ function PropagationFlow({ journeys }: { journeys: OperationJourney[] }) {
                       {journey.kind} · {journey.operationId}
                     </div>
                   </div>
-                  <StatusPill ok={cloudComplete} label={cloudComplete ? 'propagated' : 'local only'} />
+                  <StatusPill tone={statusTone} label={status} />
                 </div>
                 <div className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
                   <FlowStep
                     title="Client"
-                    state={clientComplete ? 'complete' : 'active'}
+                    state={
+                      isFailureStatus(journey.clientStatus)
+                        ? 'failed'
+                        : clientComplete
+                          ? 'complete'
+                          : journey.clientStatus
+                            ? 'active'
+                            : 'waiting'
+                    }
                     detail={
                       journey.clientStatus
-                        ? `${journey.clientStatus} ${journey.clientSequence ? `L${journey.clientSequence}` : ''}`
-                        : 'not observed'
+                        ? `${journey.clientStatus}${journey.clientSequence !== null ? ` L${journey.clientSequence}` : ''}${error ? ` · ${error}` : ''}`
+                        : 'not observed locally'
                     }
                   />
                   <FlowArrow />
                   <FlowStep
                     title="Edge"
-                    state={edgeComplete ? 'complete' : journey.clientStatus ? 'active' : 'waiting'}
+                    state={journey.latestSyncRequest ? 'observed' : 'waiting'}
                     detail={
-                      journey.edgeRequest
-                        ? `${journey.edgeRequest.method} ${journey.edgeRequest.path} ${journey.edgeRequest.status}`
-                        : cloudComplete
-                          ? 'forwarded to cloud'
-                        : 'waiting for push'
+                      journey.latestSyncRequest
+                        ? `Latest ${journey.latestSyncRequest.method} ${journey.latestSyncRequest.path} ${journey.latestSyncRequest.status}; not operation-linked`
+                        : accepted || failureStatus
+                          ? 'Sync response observed; Edge request unavailable'
+                          : 'No sync request observed'
                     }
                   />
                   <FlowArrow />
                   <FlowStep
                     title="Cloud"
-                    state={cloudComplete ? 'complete' : 'waiting'}
+                    state={
+                      failureStatus
+                        ? 'failed'
+                        : accepted
+                          ? 'complete'
+                          : journey.cloudStatus
+                            ? 'active'
+                            : 'waiting'
+                    }
                     detail={
-                      journey.cloudStatus
-                        ? `${journey.cloudStatus} ${journey.remoteSequence ? `R${journey.remoteSequence}` : ''}`
-                        : 'not accepted yet'
+                      failureStatus
+                        ? `${failureStatus}${error ? ` · ${error}` : ''}`
+                        : accepted
+                          ? `accepted${journey.remoteSequence !== null ? ` R${journey.remoteSequence}` : ''}${cloudComplete ? '' : ' · client push/pull result'}`
+                          : journey.cloudStatus ?? 'not observed by Cloud debug'
                     }
                   />
                 </div>
-              </div>
+              </article>
             )
           })
         )}
@@ -273,6 +335,7 @@ function RecentOperationTable({
     status: string
     sequence: string
     time: string
+    detail?: string | null
   }>
   emptyLabel: string
 }) {
@@ -300,7 +363,14 @@ function RecentOperationTable({
               </div>
               <span className="truncate text-muted">{row.collection}</span>
               <span className="truncate text-muted">{row.kind}</span>
-              <span className="truncate text-muted">{row.status}</span>
+              <div className="min-w-0 text-muted">
+                <div className="truncate">{row.status}</div>
+                {row.detail && (
+                  <div className="truncate text-[11px] text-subtle" title={row.detail}>
+                    {row.detail}
+                  </div>
+                )}
+              </div>
               <span className="truncate font-mono text-subtle">{row.sequence}</span>
             </div>
           ))
@@ -314,26 +384,29 @@ export function EngineSyncDashboard() {
   const [state, setState] = useState<DashboardState>(() => emptyDashboardState())
 
   const refresh = useCallback(async () => {
-    try {
-      const [client, edge, engine] = await Promise.all([
-        getClientEngineDebugState(),
-        fetchJson<EdgeDebugState>('/__debug/sync'),
-        fetchJson<EngineDebugState>(engineDebugPath()),
-      ])
-      setState((current) => ({
-        ...current,
-        client,
-        edge,
-        engine,
-        loadedAt: new Date().toISOString(),
-        error: null,
-      }))
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        error: error instanceof Error ? error.message : String(error),
-      }))
+    const [clientResult, edgeResult, engineResult] = await Promise.allSettled([
+      getClientEngineDebugState(),
+      fetchJson<EdgeDebugState>('/__debug/sync'),
+      fetchJson<EngineDebugState>(engineDebugPath()),
+    ])
+    const failures: string[] = []
+    const collectFailure = (label: string, result: PromiseSettledResult<unknown>) => {
+      if (result.status !== 'rejected') return
+      const reason = result.reason
+      failures.push(`${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
     }
+    collectFailure('Client', clientResult)
+    collectFailure('Edge', edgeResult)
+    collectFailure('Cloud Engine', engineResult)
+
+    setState((current) => ({
+      ...current,
+      client: clientResult.status === 'fulfilled' ? clientResult.value : null,
+      edge: edgeResult.status === 'fulfilled' ? edgeResult.value : null,
+      engine: engineResult.status === 'fulfilled' ? engineResult.value : null,
+      loadedAt: new Date().toISOString(),
+      error: failures.length > 0 ? failures.join('; ') : null,
+    }))
   }, [])
 
   const syncNow = useCallback(async () => {
@@ -386,8 +459,12 @@ export function EngineSyncDashboard() {
         recordId: operation.recordId,
         kind: operation.kind || 'operation',
         status: operation.status,
-        sequence: `L${operation.localSequence}`,
+        sequence: [
+          `L${operation.localSequence}`,
+          operation.remoteSequence !== null ? `R${operation.remoteSequence}` : null,
+        ].filter(Boolean).join(' · '),
         time: formatTime(operation.createdAt),
+        detail: operationErrorLabel(operation.error),
       })) ?? [],
     [state.client]
   )
@@ -400,7 +477,9 @@ export function EngineSyncDashboard() {
         recordId: operation.record_id,
         kind: operation.kind || 'operation',
         status: operation.status,
-        sequence: operation.remote_sequence ? `R${operation.remote_sequence}` : `L${operation.local_sequence}`,
+        sequence: operation.remote_sequence !== null
+          ? `R${operation.remote_sequence}`
+          : `L${operation.local_sequence}`,
         time: formatTime(operation.received_at_ms),
       })) ?? [],
     [state.engine]
@@ -408,7 +487,9 @@ export function EngineSyncDashboard() {
 
   const journeys = useMemo<OperationJourney[]>(() => {
     const byOperationId = new Map<string, OperationJourney>()
-    const lastPush = state.edge?.logs.find((log) => log.path === '/api/engine/push') ?? null
+    const latestSyncRequest = state.edge?.logs.find(
+      (log) => log.path === '/api/engine/push' || log.path === '/api/engine/pull'
+    ) ?? null
 
     for (const operation of state.client?.recentOperations ?? []) {
       byOperationId.set(operation.operationId, {
@@ -418,9 +499,10 @@ export function EngineSyncDashboard() {
         kind: operation.kind || 'operation',
         clientStatus: operation.status,
         clientSequence: operation.localSequence,
+        clientError: operation.error,
         cloudStatus: null,
-        remoteSequence: null,
-        edgeRequest: operation.status === 'accepted' ? lastPush : null,
+        remoteSequence: operation.remoteSequence,
+        latestSyncRequest,
       })
     }
 
@@ -429,7 +511,6 @@ export function EngineSyncDashboard() {
       if (current) {
         current.cloudStatus = operation.status
         current.remoteSequence = operation.remote_sequence
-        current.edgeRequest = lastPush
       } else {
         byOperationId.set(operation.operation_id, {
           operationId: operation.operation_id,
@@ -438,9 +519,10 @@ export function EngineSyncDashboard() {
           kind: operation.kind || 'operation',
           clientStatus: null,
           clientSequence: null,
+          clientError: null,
           cloudStatus: operation.status,
           remoteSequence: operation.remote_sequence,
-          edgeRequest: lastPush,
+          latestSyncRequest,
         })
       }
     }
@@ -455,9 +537,9 @@ export function EngineSyncDashboard() {
         style={{ borderColor: 'var(--border-color)' }}
       >
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold">Engine Sync</h1>
+          <h1 className="text-sm font-semibold">Engine diagnostics</h1>
           <p className="mt-1 truncate text-xs text-muted">
-            Client local queue {'>'} Edge proxy {'>'} Cloud Engine authority
+            Client local queue to Edge proxy to Cloud Engine authority
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -473,14 +555,16 @@ export function EngineSyncDashboard() {
           >
             Refresh
           </button>
-          <button
-            type="button"
-            className="rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-60"
-            disabled={state.creating}
-            onClick={() => void createLocalChange()}
-          >
-            {state.creating ? 'Creating' : 'Create local change'}
-          </button>
+          {import.meta.env.DEV && (
+            <button
+              type="button"
+              className="rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-60"
+              disabled={state.creating}
+              onClick={() => void createLocalChange()}
+            >
+              {state.creating ? 'Creating' : 'Create test operation'}
+            </button>
+          )}
           <button
             type="button"
             className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-60"
@@ -493,8 +577,12 @@ export function EngineSyncDashboard() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3 md:px-4">
+        <div className="mb-3 rounded-lg border border-border bg-panel px-3 py-2 text-xs leading-5 text-muted-foreground">
+          Sync now runs one durable push-then-pull cycle. Each response cursor is stored only after
+          its decisions and remote projections have been applied locally.
+        </div>
         {state.error && (
-          <div className="mb-3 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <div role="alert" className="mb-3 rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.error}
           </div>
         )}
@@ -505,20 +593,34 @@ export function EngineSyncDashboard() {
           <section className="rounded border border-border bg-panel p-3">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Client</h2>
-              <StatusPill ok={Boolean(state.client)} label={state.client ? 'local' : 'loading'} />
+              <StatusPill
+                tone={state.client ? 'success' : 'neutral'}
+                label={state.client ? 'local' : 'loading'}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <MetricTile label="Pending" value={state.client?.operations.pending ?? '-'} />
               <MetricTile label="Accepted" value={state.client?.operations.accepted ?? '-'} />
+              <MetricTile label="Rejected" value={state.client?.operations.rejected ?? '-'} />
+              <MetricTile label="Conflicts" value={state.client?.operations.conflict ?? '-'} />
               <MetricTile label="Records" value={state.client?.records ?? '-'} detail={state.client?.scope} />
-              <MetricTile label="Total ops" value={state.client?.operations.total ?? '-'} />
+              <MetricTile
+                label="Sync cursor"
+                value={state.client?.cursor?.position ?? '-'}
+                detail={state.client?.cursor
+                  ? `${state.client.cursor.remote} · ${formatTime(state.client.cursor.updatedAtMs)}`
+                  : undefined}
+              />
             </div>
           </section>
 
           <section className="rounded border border-border bg-panel p-3">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Edge</h2>
-              <StatusPill ok={Boolean(state.edge)} label={state.edge ? 'proxy' : 'unavailable'} />
+              <StatusPill
+                tone={state.edge?.edge.status === 'ok' ? 'success' : state.edge ? 'danger' : 'neutral'}
+                label={state.edge ? state.edge.edge.status : 'unavailable'}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <MetricTile label="Proxy logs" value={state.edge?.logs.length ?? '-'} />
@@ -531,12 +633,17 @@ export function EngineSyncDashboard() {
           <section className="rounded border border-border bg-panel p-3">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Cloud Engine</h2>
-              <StatusPill ok={Boolean(state.engine)} label={state.engine ? 'authority' : 'loading'} />
+              <StatusPill
+                tone={state.engine ? 'success' : 'neutral'}
+                label={state.engine ? state.engine.role : 'unavailable'}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <MetricTile label="Accepted" value={state.engine?.counts.accepted ?? '-'} />
-              <MetricTile label="Next seq" value={state.engine?.next_remote_sequence ?? '-'} />
-              <MetricTile label="Cursor" value={state.engine?.cursor_position ?? 0} detail={state.engine?.scope} />
+              <MetricTile label="Rejected" value={state.engine?.counts.rejected ?? '-'} />
+              <MetricTile label="Conflicts" value={state.engine?.counts.conflict ?? '-'} />
+              <MetricTile label="Next remote seq" value={state.engine?.next_remote_sequence ?? '-'} />
+              <MetricTile label="Cursor" value={state.engine?.cursor_position ?? '-'} detail={state.engine?.scope} />
               <MetricTile label="Collections" value={state.engine?.collections.length ?? '-'} />
             </div>
           </section>
@@ -552,9 +659,9 @@ export function EngineSyncDashboard() {
 
           <section>
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Cloud Accepted Log</h2>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Cloud Operation Log</h2>
             </div>
-            <RecentOperationTable rows={engineRows} emptyLabel="No accepted Engine operations yet." />
+            <RecentOperationTable rows={engineRows} emptyLabel="No Cloud Engine operations yet." />
           </section>
         </div>
 
@@ -576,7 +683,7 @@ export function EngineSyncDashboard() {
                   <span className={log.ok ? 'text-green-400' : 'text-red-400'}>{log.status}</span>
                   <span className="text-muted">{log.durationMs} ms</span>
                   <span className="truncate text-subtle">
-                    {formatBytes(log.requestBytes)} {'>'} {formatBytes(log.responseBytes)}
+                    {formatBytes(log.requestBytes)} sent, {formatBytes(log.responseBytes)} received
                   </span>
                 </div>
               ))

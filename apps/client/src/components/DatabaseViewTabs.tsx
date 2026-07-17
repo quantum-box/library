@@ -111,14 +111,20 @@ export function DatabaseViewTabs({
               <button
                 data-testid="rename-view"
                 className="rounded px-2 py-1.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-foreground"
-                onClick={() => onRenameView(selectedView)}
+                onClick={() => {
+                  onRenameView(selectedView)
+                  setOptionsOpen(false)
+                }}
               >
                 Rename
               </button>
               <button
                 data-testid="duplicate-view"
                 className="rounded px-2 py-1.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-foreground"
-                onClick={() => onDuplicateView(selectedView)}
+                onClick={() => {
+                  onDuplicateView(selectedView)
+                  setOptionsOpen(false)
+                }}
               >
                 Duplicate
               </button>
@@ -126,7 +132,10 @@ export function DatabaseViewTabs({
                 data-testid="delete-view"
                 className="rounded px-2 py-1.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={views.length <= 1}
-                onClick={() => onDeleteView(selectedView)}
+                onClick={() => {
+                  onDeleteView(selectedView)
+                  setOptionsOpen(false)
+                }}
               >
                 Delete
               </button>

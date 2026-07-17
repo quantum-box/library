@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     net::SocketAddr,
     sync::{
         atomic::{AtomicI64, AtomicUsize, Ordering},
@@ -28,7 +28,7 @@ use photon_engine::{
 use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 use utoipa::{OpenApi, ToSchema};
@@ -524,6 +524,7 @@ async fn apply_engine_record_operation(
     record_id: &str,
     mutation: EngineRecordMutation,
 ) -> Result<(), AppError> {
+    let _sync_guard = state.engine_sync.lock().await;
     let scope = scope.into();
     let kind = match mutation {
         EngineRecordMutation::Upsert(value) => OperationKind::Upsert { value },
@@ -540,11 +541,9 @@ async fn apply_engine_record_operation(
     )
     .with_timestamp(HybridTimestamp::now(actor_id))
     .with_metadata(serde_json::json!({ "source": "photon-server-rest" }));
-    let remote_sequence = state.engine_next_seq.fetch_add(1, Ordering::SeqCst) + 1;
-
     state
         .engine
-        .apply_remote_operation(operation.clone(), remote_sequence)
+        .accept_authoritative_operation(operation.clone())
         .await?;
     mirror_operation_to_mock_tachyon(scope, operation);
 
@@ -1185,7 +1184,7 @@ const YJS_COMPACTION_THRESHOLD: i64 = 100;
 pub struct AppState {
     pub db: SqlitePool,
     pub engine: PhotonEngine<ServerEngineAdapter>,
-    pub engine_next_seq: AtomicI64,
+    pub engine_sync: Mutex<()>,
     pub rooms: RwLock<HashMap<String, Arc<RoomState>>>,
 }
 
@@ -1257,6 +1256,16 @@ impl StorageAdapter for ServerEngineAdapter {
         match self {
             Self::Sqlite(adapter) => adapter.append_operation(operation, status).await,
             Self::MySql(adapter) => adapter.append_operation(operation, status).await,
+        }
+    }
+
+    async fn append_authoritative_operation(
+        &self,
+        operation: Operation,
+    ) -> photon_engine::Result<(StoredOperation, Record)> {
+        match self {
+            Self::Sqlite(adapter) => adapter.append_authoritative_operation(operation).await,
+            Self::MySql(adapter) => adapter.append_authoritative_operation(operation).await,
         }
     }
 
@@ -1600,13 +1609,12 @@ async fn build_state(
     init_db(&pool).await?;
     let engine = init_engine(&pool, engine_database_url).await?;
     verify_engine_startup(&engine, engine_database_url).await?;
-    let engine_next_seq = init_engine_next_sequence(&engine).await?;
     seed_if_empty(&pool).await?;
 
     Ok(Arc::new(AppState {
         db: pool,
         engine,
-        engine_next_seq: AtomicI64::new(engine_next_seq),
+        engine_sync: Mutex::new(()),
         rooms: RwLock::new(HashMap::new()),
     }))
 }
@@ -1687,20 +1695,30 @@ async fn push_engine_operations(
     headers: HeaderMap,
     Json(payload): Json<PushRequest>,
 ) -> Result<Json<PushResult>, AppError> {
+    let _sync_guard = state.engine_sync.lock().await;
     let request_id = headers
         .get("x-photon-request-id")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("none");
     let scope = payload.scope.clone();
+    let request_cursor = payload.cursor.clone();
+    let after_remote_sequence = request_cursor
+        .as_ref()
+        .map(|cursor| cursor.position)
+        .unwrap_or_default();
     let operation_count = payload.operations.len();
+    let pushed_operation_ids = payload
+        .operations
+        .iter()
+        .map(|operation| operation.id.clone())
+        .collect::<HashSet<_>>();
     let mut decisions = Vec::with_capacity(payload.operations.len());
-    let mut max_remote_sequence = 0;
+    let mut max_remote_sequence = after_remote_sequence;
 
     for operation in payload.operations {
-        let remote_sequence = state.engine_next_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        state
+        let (_, remote_sequence) = state
             .engine
-            .apply_remote_operation(operation.clone(), remote_sequence)
+            .accept_authoritative_operation(operation.clone())
             .await?;
         decisions.push(PushDecision::Accepted {
             operation_id: operation.id,
@@ -1709,14 +1727,34 @@ async fn push_engine_operations(
         max_remote_sequence = max_remote_sequence.max(remote_sequence);
     }
 
-    let cursor = if max_remote_sequence > 0 {
+    let mut synchronized_operations = state
+        .engine
+        .storage()
+        .list_operations(OperationFilter {
+            scope: Some(scope.clone()),
+            status: Some(OperationStatus::Accepted),
+            after_remote_sequence: Some(after_remote_sequence),
+            ..OperationFilter::default()
+        })
+        .await?;
+    synchronized_operations.sort_by_key(|stored| stored.remote_sequence.unwrap_or(i64::MAX));
+    let mut server_operations = Vec::new();
+    for stored in synchronized_operations {
+        if let Some(remote_sequence) = stored.remote_sequence {
+            max_remote_sequence = max_remote_sequence.max(remote_sequence);
+        }
+        if !pushed_operation_ids.contains(&stored.operation.id) {
+            server_operations.push(stored.operation);
+        }
+    }
+    let cursor = if max_remote_sequence > after_remote_sequence {
         Some(SyncCursor::new(
-            payload.scope,
+            scope.clone(),
             RemoteId::from(ENGINE_ACTOR_ID),
             max_remote_sequence,
         ))
     } else {
-        payload.cursor
+        request_cursor
     };
 
     info!(
@@ -1724,13 +1762,14 @@ async fn push_engine_operations(
         scope = %scope,
         operation_count,
         accepted = decisions.len(),
+        server_operations = server_operations.len(),
         max_remote_sequence,
         "Photon Engine push accepted operations",
     );
 
     Ok(Json(PushResult {
         decisions,
-        server_operations: Vec::new(),
+        server_operations,
         cursor,
     }))
 }
@@ -1900,7 +1939,7 @@ async fn engine_debug_state(
         role: "photon-engine-authority".to_owned(),
         scope: scope.to_string(),
         remote: ENGINE_ACTOR_ID.to_owned(),
-        next_remote_sequence: state.engine_next_seq.load(Ordering::SeqCst) + 1,
+        next_remote_sequence: init_engine_next_sequence(&state.engine).await? + 1,
         cursor_position: cursor.map(|cursor| cursor.position),
         counts,
         collections,
@@ -2988,17 +3027,19 @@ async fn handle_ws(socket: WebSocket, state: Arc<RoomState>) {
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_receiver.next().await {
             match msg {
-                Message::Binary(data) => match apply_and_persist_update(&recv_state, &data).await {
-                    Ok(true) => {
-                        let _ = recv_state.broadcast_tx.send(data.to_vec());
+                Message::Binary(data) => {
+                    match apply_and_persist_update(&recv_state, &data).await {
+                        Ok(true) => {
+                            let _ = recv_state.broadcast_tx.send(data.to_vec());
+                        }
+                        Ok(false) => {
+                            // Malformed update; logged inside apply_and_persist_update.
+                        }
+                        Err(err) => {
+                            tracing::error!(error = %err, "Failed to persist yjs update");
+                        }
                     }
-                    Ok(false) => {
-                        // Malformed update; logged inside apply_and_persist_update.
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "Failed to persist yjs update");
-                    }
-                },
+                }
                 Message::Text(text) if is_awareness_message(&text) => {
                     let _ = recv_state.presence_tx.send(text);
                 }
@@ -3664,12 +3705,10 @@ mod tests {
 
         init_db(&pool).await.unwrap();
         let engine = init_engine(&pool, "sqlite::memory:").await.unwrap();
-        let engine_next_seq = init_engine_next_sequence(&engine).await.unwrap();
-
         Arc::new(AppState {
             db: pool,
             engine,
-            engine_next_seq: AtomicI64::new(engine_next_seq),
+            engine_sync: Mutex::new(()),
             rooms: RwLock::new(HashMap::new()),
         })
     }
@@ -3774,6 +3813,52 @@ mod tests {
                 ..
             }
         ));
+        assert!(pushed.server_operations.is_empty());
+        assert_eq!(
+            pushed.cursor.as_ref().map(|cursor| cursor.position),
+            Some(1)
+        );
+
+        let second_operation = Operation::new(
+            engine_record_key("issues", "issue-sync-2"),
+            ActorId::from("client-b"),
+            OperationKind::Upsert {
+                value: serde_json::json!({
+                    "id": "issue-sync-2",
+                    "identifier": "PLT-902",
+                    "title": "Sync after a stale cursor"
+                }),
+            },
+        );
+        let stale_push_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/engine/push")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&PushRequest {
+                            scope: default_workspace_scope(),
+                            operations: vec![second_operation.clone()],
+                            cursor: None,
+                        })
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale_push_resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(stale_push_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let stale_push: PushResult = serde_json::from_slice(&body).unwrap();
+        assert_eq!(stale_push.server_operations, vec![operation.clone()]);
+        assert_eq!(
+            stale_push.cursor.as_ref().map(|cursor| cursor.position),
+            Some(2)
+        );
 
         let pull_resp = app
             .oneshot(
@@ -3797,9 +3882,126 @@ mod tests {
             .await
             .unwrap();
         let pulled: PullResult = serde_json::from_slice(&body).unwrap();
-        assert_eq!(pulled.operations.len(), 1);
+        assert_eq!(pulled.operations.len(), 2);
         assert_eq!(pulled.operations[0].operation.id, operation.id);
         assert_eq!(pulled.operations[0].remote_sequence, 1);
+        assert_eq!(pulled.operations[1].operation.id, second_operation.id);
+        assert_eq!(pulled.operations[1].remote_sequence, 2);
+    }
+
+    #[tokio::test]
+    async fn test_authoritative_accept_is_atomic_across_engine_instances() {
+        let database_path =
+            std::env::temp_dir().join(format!("photon-authority-sequence-{}.db", Uuid::new_v4()));
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.display());
+        let engine_a = PhotonEngine::new(ServerEngineAdapter::Sqlite(
+            SqliteAdapter::connect(&database_url).await.unwrap(),
+        ));
+        let engine_b = PhotonEngine::new(ServerEngineAdapter::Sqlite(
+            SqliteAdapter::connect(&database_url).await.unwrap(),
+        ));
+        let operation_a = Operation::new(
+            engine_record_key("sequence_test", "shared-record"),
+            ActorId::from("instance-a"),
+            OperationKind::Increment {
+                field: "count".to_owned(),
+                by: 1,
+            },
+        )
+        .with_id("op-instance-a")
+        .with_timestamp(HybridTimestamp::new(10, 0, "shared-authority"));
+        let operation_b = Operation::new(
+            engine_record_key("sequence_test", "shared-record"),
+            ActorId::from("instance-b"),
+            OperationKind::Increment {
+                field: "count".to_owned(),
+                by: 1,
+            },
+        )
+        .with_id("op-instance-b")
+        .with_timestamp(HybridTimestamp::new(10, 0, "shared-authority"));
+
+        let (accepted_a, accepted_b) = tokio::join!(
+            engine_a.accept_authoritative_operation(operation_a.clone()),
+            engine_b.accept_authoritative_operation(operation_b.clone()),
+        );
+        let mut sequences = vec![accepted_a.unwrap().1, accepted_b.unwrap().1];
+        sequences.sort_unstable();
+
+        assert_eq!(sequences, vec![1, 2]);
+        let projected = engine_a
+            .record(&engine_record_key("sequence_test", "shared-record"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(projected.value["count"], serde_json::json!(2));
+        assert_eq!(projected.applied_operation_ids.len(), 2);
+        assert!(projected.applied_operation_ids.contains(&operation_a.id));
+        assert!(projected.applied_operation_ids.contains(&operation_b.id));
+
+        drop(engine_a);
+        drop(engine_b);
+        let _ = std::fs::remove_file(&database_path);
+        let _ = std::fs::remove_file(database_path.with_extension("db-shm"));
+        let _ = std::fs::remove_file(database_path.with_extension("db-wal"));
+    }
+
+    #[tokio::test]
+    async fn test_authoritative_operation_id_payload_is_immutable() {
+        let database_path =
+            std::env::temp_dir().join(format!("photon-authority-immutable-{}.db", Uuid::new_v4()));
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.display());
+        let engine = PhotonEngine::new(ServerEngineAdapter::Sqlite(
+            SqliteAdapter::connect(&database_url).await.unwrap(),
+        ));
+        let original = Operation::new(
+            engine_record_key("sequence_test", "immutable-record"),
+            ActorId::from("instance-a"),
+            OperationKind::Upsert {
+                value: serde_json::json!({ "title": "original" }),
+            },
+        )
+        .with_id("op-immutable");
+        let mismatched = Operation::new(
+            original.key.clone(),
+            original.actor_id.clone(),
+            OperationKind::Upsert {
+                value: serde_json::json!({ "title": "mutated retry" }),
+            },
+        )
+        .with_id(original.id.clone())
+        .with_timestamp(original.timestamp.clone());
+
+        engine
+            .accept_authoritative_operation(original.clone())
+            .await
+            .unwrap();
+        let error = engine
+            .accept_authoritative_operation(mismatched)
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("was reused with a different payload"));
+        let stored = engine
+            .storage()
+            .get_operation(&original.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.operation, original);
+        let projected = engine
+            .record(&engine_record_key("sequence_test", "immutable-record"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(projected.value["title"], serde_json::json!("original"));
+
+        drop(engine);
+        let _ = std::fs::remove_file(&database_path);
+        let _ = std::fs::remove_file(database_path.with_extension("db-shm"));
+        let _ = std::fs::remove_file(database_path.with_extension("db-wal"));
     }
 
     #[tokio::test]

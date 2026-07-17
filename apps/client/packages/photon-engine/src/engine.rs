@@ -53,6 +53,22 @@ where
         self.apply_to_projection(&operation).await
     }
 
+    pub async fn accept_authoritative_operation(
+        &self,
+        operation: Operation,
+    ) -> Result<(Record, i64)> {
+        let (stored, record) = self
+            .storage
+            .append_authoritative_operation(operation)
+            .await?;
+        let remote_sequence = stored.remote_sequence.ok_or_else(|| {
+            crate::EngineError::Storage(
+                "authoritative operation is missing its remote sequence".to_owned(),
+            )
+        })?;
+        Ok((record, remote_sequence))
+    }
+
     pub async fn record(&self, key: &RecordKey) -> Result<Option<Record>> {
         self.storage.get_record(key).await
     }

@@ -33,7 +33,7 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText(/15 records/)).toBeVisible()
+    await expect(canvas.getByText(/15 data/)).toBeVisible()
     await expect(canvas.getByText('Backlog')).toBeVisible()
     await expect(canvas.getByText('Todo')).toBeVisible()
     await expect(canvas.getByText('カンバンビューのドラッグ&ドロップ実装')).toBeVisible()

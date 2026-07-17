@@ -6,6 +6,10 @@ use crate::{
 };
 
 pub fn apply_operation(current: Option<Record>, operation: &Operation) -> Result<Record> {
+    let mut applied_operation_ids = current
+        .as_ref()
+        .map(|record| record.applied_operation_ids.clone())
+        .unwrap_or_default();
     let mut record = current.unwrap_or_else(|| {
         Record::new(
             operation.key.clone(),
@@ -15,12 +19,18 @@ pub fn apply_operation(current: Option<Record>, operation: &Operation) -> Result
         )
     });
 
+    if applied_operation_ids.contains(&operation.id) {
+        return Ok(record);
+    }
+
     if record.is_deleted()
         && !matches!(
             operation.kind,
             OperationKind::Restore { .. } | OperationKind::Delete
         )
     {
+        applied_operation_ids.insert(operation.id.clone());
+        record.applied_operation_ids = applied_operation_ids;
         return Ok(record);
     }
 
@@ -181,6 +191,8 @@ pub fn apply_operation(current: Option<Record>, operation: &Operation) -> Result
         }
     }
 
+    applied_operation_ids.insert(operation.id.clone());
+    record.applied_operation_ids = applied_operation_ids;
     Ok(record)
 }
 
@@ -330,5 +342,25 @@ mod tests {
         let record = apply_operation(Some(record), &second).unwrap();
 
         assert_eq!(record.value["points"], json!(5));
+    }
+
+    #[test]
+    fn replaying_the_same_increment_operation_is_idempotent() {
+        let increment = Operation::new(
+            key(),
+            "actor-a",
+            OperationKind::Increment {
+                field: "points".to_owned(),
+                by: 2,
+            },
+        )
+        .with_id("op-increment-once")
+        .with_timestamp(HybridTimestamp::new(10, 0, "actor-a"));
+
+        let record = apply_operation(None, &increment).unwrap();
+        let record = apply_operation(Some(record), &increment).unwrap();
+
+        assert_eq!(record.value["points"], json!(2));
+        assert!(record.applied_operation_ids.contains(&increment.id));
     }
 }

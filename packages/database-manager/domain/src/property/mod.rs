@@ -21,6 +21,37 @@ pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
     "Relation target database is immutable after property creation";
 pub const MAX_PROPERTY_NUM: u32 = 50;
 
+fn validate_select_option_update(
+    current: &[SelectItem],
+    requested: &[SelectItem],
+) -> errors::Result<()> {
+    let mut requested_ids = std::collections::HashSet::new();
+    let mut requested_keys = std::collections::HashSet::new();
+    for item in requested {
+        if !requested_ids.insert(item.id()) {
+            return Err(errors::Error::invalid(format!(
+                "duplicate select option id {}",
+                item.id()
+            )));
+        }
+        if !requested_keys.insert(item.key().to_string()) {
+            return Err(errors::Error::invalid(format!(
+                "duplicate select option key {}",
+                item.key()
+            )));
+        }
+    }
+    for item in current {
+        if !requested_ids.contains(item.id()) {
+            return Err(errors::Error::conflict(format!(
+                "select option id {} cannot be removed while Property values may reference it",
+                item.id()
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_property_type_addition(
     existing_properties: &[Property],
     new_property_type: &PropertyType,
@@ -204,6 +235,23 @@ impl Property {
                     "Id auto_generate is immutable after property creation."
                 ));
             }
+            match (&self.property_type, property_type) {
+                (
+                    PropertyType::Select(current),
+                    PropertyType::Select(requested),
+                ) => validate_select_option_update(
+                    current.items(),
+                    requested.items(),
+                )?,
+                (
+                    PropertyType::MultiSelect(current),
+                    PropertyType::MultiSelect(requested),
+                ) => validate_select_option_update(
+                    current.items(),
+                    requested.items(),
+                )?,
+                _ => {}
+            }
             if self.property_type.to_string() != property_type.to_string() {
                 // TODO: add English comment
                 // TODO: add English comment
@@ -381,5 +429,70 @@ mod tests {
                 Some(&PropertyType::Relation(TypeRelation::new(target))),
             )
             .expect("repeating the configured Relation target is a no-op");
+    }
+
+    fn select_item(id: &SelectItemId, key: &str, name: &str) -> SelectItem {
+        SelectItem::new(
+            id.clone(),
+            key.parse().expect("identifier"),
+            name.parse().expect("label"),
+        )
+    }
+
+    #[test]
+    fn select_update_retains_existing_option_ids() {
+        let existing_id = SelectItemId::default();
+        let added_id = SelectItemId::default();
+        let property = property(
+            PropertyType::Select(TypeSelect::new(vec![select_item(
+                &existing_id,
+                "todo",
+                "Todo",
+            )])),
+            0,
+        );
+
+        let updated = property
+            .update(
+                None,
+                Some(&PropertyType::Select(TypeSelect::new(vec![
+                    select_item(&existing_id, "todo", "To do"),
+                    select_item(&added_id, "done", "Done"),
+                ]))),
+            )
+            .expect("retaining existing IDs and adding an option is safe");
+
+        let PropertyType::Select(updated) = updated.property_type() else {
+            panic!("expected Select")
+        };
+        assert!(
+            updated.items().iter().any(|item| item.id() == &existing_id)
+        );
+        assert!(updated.items().iter().any(|item| item.id() == &added_id));
+    }
+
+    #[test]
+    fn select_update_rejects_a_stale_option_set_under_the_storage_lock() {
+        let existing_id = SelectItemId::default();
+        let concurrently_added_id = SelectItemId::default();
+        let property = property(
+            PropertyType::Select(TypeSelect::new(vec![
+                select_item(&existing_id, "todo", "Todo"),
+                select_item(&concurrently_added_id, "done", "Done"),
+            ])),
+            0,
+        );
+
+        let error = property
+            .update(
+                None,
+                Some(&PropertyType::Select(TypeSelect::new(vec![
+                    select_item(&existing_id, "todo", "To do"),
+                ]))),
+            )
+            .expect_err("a stale writer must not drop a concurrent option");
+
+        assert!(matches!(error, errors::Error::Conflict { .. }));
+        assert!(error.to_string().contains("cannot be removed"));
     }
 }

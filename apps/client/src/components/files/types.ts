@@ -34,13 +34,15 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const FILE_ICONS: Record<FileType, string> = {
-  pdf: '📄',
-  excel: '📊',
-  csv: '📊',
-  docx: '📝',
-  pptx: '📑',
-  unknown: '📎',
+export type FileIconName = 'document' | 'spreadsheet' | 'presentation' | 'attachment'
+
+const FILE_ICONS: Record<FileType, FileIconName> = {
+  pdf: 'document',
+  excel: 'spreadsheet',
+  csv: 'spreadsheet',
+  docx: 'document',
+  pptx: 'presentation',
+  unknown: 'attachment',
 }
 
 const FILE_COLORS: Record<FileType, string> = {
@@ -52,7 +54,7 @@ const FILE_COLORS: Record<FileType, string> = {
   unknown: '#8a8a9a',
 }
 
-export function getFileIcon(type: FileType): string {
+export function getFileIcon(type: FileType): FileIconName {
   return FILE_ICONS[type]
 }
 

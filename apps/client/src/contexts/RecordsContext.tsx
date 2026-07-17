@@ -5,6 +5,8 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
+  useState,
   type ReactNode,
 } from 'react'
 import * as Y from 'yjs'
@@ -44,8 +46,25 @@ interface RecordsContextValue {
   handleCreateRecord: (data: CreateRecordData) => Promise<void>
   handleDeleteRecord: (recordId: string) => void
   syncRecord: (record: DatabaseRecord) => void
-  syncRecords: (records: DatabaseRecord[]) => void
+  beginRecordsSnapshot: () => RecordsSnapshotToken
+  syncRecords: (records: DatabaseRecord[], token: RecordsSnapshotToken) => boolean
   recordCountByStatus: Record<string, number>
+  hydrationLoading: boolean
+  hydrationError: string | null
+  refreshRecords: () => void
+  mutationError: RecordMutationError | null
+  clearMutationError: () => void
+}
+
+export interface RecordMutationError {
+  action: 'move' | 'update' | 'delete'
+  recordId: string
+  message: string
+}
+
+export interface RecordsSnapshotToken {
+  readonly requestGeneration: number
+  readonly projectionGeneration: number
 }
 
 const RecordsContext = createContext<RecordsContextValue | null>(null)
@@ -110,11 +129,18 @@ function removeYDatabaseRecord(recordId: string) {
   }
 }
 
-function reconcileYRecords(serverRecords: DatabaseRecord[]) {
+function reconcileYRecords(
+  serverRecords: DatabaseRecord[],
+  protectedRecordIds: ReadonlySet<string> = new Set()
+) {
   const serverRecordIds = new Set(serverRecords.map((record) => record.id))
   for (let index = recordsArray.length - 1; index >= 0; index--) {
     const recordId = recordsArray.get(index).get('id')
-    if (typeof recordId === 'string' && !serverRecordIds.has(recordId)) {
+    if (
+      typeof recordId === 'string' &&
+      !serverRecordIds.has(recordId) &&
+      !protectedRecordIds.has(recordId)
+    ) {
       recordsArray.delete(index, 1)
     }
   }
@@ -190,23 +216,63 @@ function createOptimisticDatabaseRecord(data: CreateRecordData): DatabaseRecord 
 
 export function RecordsProvider({ children }: { children: ReactNode }) {
   const { records, ready } = useYjsRecords()
+  const [hydrationLoading, setHydrationLoading] = useState(true)
+  const [hydrationError, setHydrationError] = useState<string | null>(null)
+  const [hydrationRevision, setHydrationRevision] = useState(0)
+  const [mutationError, setMutationError] = useState<RecordMutationError | null>(null)
+  const hydrationGenerationRef = useRef(0)
+  const projectionGenerationRef = useRef(0)
+  const recordUpdateQueuesRef = useRef(new Map<string, Promise<void>>())
+  const recordUpdateGenerationsRef = useRef(new Map<string, number>())
+  const recordDeleteGenerationsRef = useRef(new Map<string, number>())
+  const recordDeleteRequestGenerationsRef = useRef(new Map<string, number>())
+  const pendingOptimisticRecordIdsRef = useRef(new Set<string>())
+  const recordsSnapshotRequestGenerationRef = useRef(0)
+
+  const transactProjection = useCallback((transaction: () => void) => {
+    projectionGenerationRef.current += 1
+    ydoc.transact(transaction)
+  }, [])
 
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
-    if (!ready) return
+    if (!ready) {
+      hydrationGenerationRef.current += 1
+      return
+    }
 
     let cancelled = false
 
-    const reload = () => {
+    const reload = (): void => {
+      // Any independently requested full snapshot that started before this
+      // hydration boundary belongs to the previous auth/refresh view.
+      recordsSnapshotRequestGenerationRef.current += 1
+      const hydrationGeneration = hydrationGenerationRef.current + 1
+      hydrationGenerationRef.current = hydrationGeneration
+      const projectionGeneration = projectionGenerationRef.current
+      setHydrationLoading(true)
+      setHydrationError(null)
+
       fetchServerRecords()
         .then((serverRecords) => {
-          if (cancelled) return
-          ydoc.transact(() => {
-            reconcileYRecords(serverRecords)
+          if (cancelled || hydrationGeneration !== hydrationGenerationRef.current) return
+          if (projectionGeneration !== projectionGenerationRef.current) {
+            reload()
+            return
+          }
+
+          transactProjection(() => {
+            reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
           })
+          setHydrationLoading(false)
         })
         .catch((error: unknown) => {
+          if (cancelled || hydrationGeneration !== hydrationGenerationRef.current) return
           console.warn('Failed to hydrate records from Library API', error)
+          setHydrationLoading(false)
+          setHydrationError(
+            error instanceof Error ? error.message : 'Failed to hydrate records'
+          )
         })
     }
 
@@ -215,9 +281,14 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true
+      hydrationGenerationRef.current += 1
       window.removeEventListener('library-auth-change', reload)
     }
-  }, [ready])
+  }, [hydrationRevision, ready, transactProjection])
+
+  const refreshRecords = useCallback(() => {
+    setHydrationRevision((revision) => revision + 1)
+  }, [])
 
   const recordCountByStatus = useMemo(
     () =>
@@ -231,36 +302,88 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     [records]
   )
 
-  const handleMoveRecord = useCallback((recordId: string, newStatus: Status) => {
-    void updateServerRecord(recordId, { status: newStatus })
-      .then((serverRecord) => {
-        ydoc.transact(() => upsertYDatabaseRecord(serverRecord))
+  const enqueueRecordUpdate = useCallback((
+    recordId: string,
+    update: ServerUpdateRecordData,
+    action: 'move' | 'update'
+  ) => {
+    const updateGeneration = (recordUpdateGenerationsRef.current.get(recordId) ?? 0) + 1
+    const deleteGeneration = recordDeleteGenerationsRef.current.get(recordId) ?? 0
+    recordUpdateGenerationsRef.current.set(recordId, updateGeneration)
+    setMutationError(null)
+
+    const previous = recordUpdateQueuesRef.current.get(recordId) ?? Promise.resolve()
+    const queued = previous
+      .catch(() => undefined)
+      .then(async () => {
+        if ((recordDeleteGenerationsRef.current.get(recordId) ?? 0) !== deleteGeneration) {
+          return
+        }
+
+        const serverRecord = await updateServerRecord(recordId, update)
+        if (
+          recordUpdateGenerationsRef.current.get(recordId) !== updateGeneration ||
+          (recordDeleteGenerationsRef.current.get(recordId) ?? 0) !== deleteGeneration
+        ) {
+          return
+        }
+
+        transactProjection(() => upsertYDatabaseRecord(serverRecord))
+        setMutationError((current) => (
+          current?.recordId === recordId && current.action === action ? null : current
+        ))
       })
       .catch((error: unknown) => {
-        console.warn('Failed to persist record status update', error)
+        if (
+          (recordDeleteGenerationsRef.current.get(recordId) ?? 0) !== deleteGeneration
+        ) {
+          return
+        }
+
+        console.warn(
+          action === 'move'
+            ? 'Failed to persist record status update'
+            : 'Failed to persist record field update',
+          error
+        )
+        setMutationError({
+          action,
+          recordId,
+          message: error instanceof Error
+            ? error.message
+            : action === 'move'
+              ? 'Failed to move data'
+              : 'Failed to update data',
+        })
       })
-  }, [])
+
+    recordUpdateQueuesRef.current.set(recordId, queued)
+    void queued.then(() => {
+      if (recordUpdateQueuesRef.current.get(recordId) === queued) {
+        recordUpdateQueuesRef.current.delete(recordId)
+      }
+    })
+  }, [transactProjection])
+
+  const handleMoveRecord = useCallback((recordId: string, newStatus: Status) => {
+    enqueueRecordUpdate(recordId, { status: newStatus }, 'move')
+  }, [enqueueRecordUpdate])
 
   const handleUpdateRecord = useCallback(
     (recordId: string, field: keyof DatabaseRecord, value: string) => {
       const serverUpdate = serverUpdateForField(field, value)
       if (Object.keys(serverUpdate).length === 0) return
 
-      void updateServerRecord(recordId, serverUpdate)
-        .then((serverRecord) => {
-          ydoc.transact(() => upsertYDatabaseRecord(serverRecord))
-        })
-        .catch((error: unknown) => {
-          console.warn('Failed to persist record field update', error)
-        })
+      enqueueRecordUpdate(recordId, serverUpdate, 'update')
     },
-    []
+    [enqueueRecordUpdate]
   )
 
   const handleCreateRecord = useCallback(async (data: CreateRecordData) => {
     const optimisticRecord = createOptimisticDatabaseRecord(data)
+    pendingOptimisticRecordIdsRef.current.add(optimisticRecord.id)
 
-    ydoc.transact(() => {
+    transactProjection(() => {
       upsertYDatabaseRecord(optimisticRecord)
     })
 
@@ -271,43 +394,87 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       project: data.project ?? appKitConfig.records.defaultProject,
     })
       .then((serverRecord) => {
-        ydoc.transact(() => {
+        pendingOptimisticRecordIdsRef.current.delete(optimisticRecord.id)
+        transactProjection(() => {
           removeYDatabaseRecord(optimisticRecord.id)
           upsertYDatabaseRecord(serverRecord)
         })
       })
       .catch((error: unknown) => {
         console.warn('Failed to persist created record', error)
-        ydoc.transact(() => {
+        pendingOptimisticRecordIdsRef.current.delete(optimisticRecord.id)
+        transactProjection(() => {
           removeYDatabaseRecord(optimisticRecord.id)
         })
         throw error
       })
-  }, [])
+  }, [transactProjection])
 
   const handleDeleteRecord = useCallback((recordId: string) => {
+    const deleteGeneration = recordDeleteGenerationsRef.current.get(recordId) ?? 0
+    const requestGeneration =
+      (recordDeleteRequestGenerationsRef.current.get(recordId) ?? 0) + 1
+    recordDeleteRequestGenerationsRef.current.set(recordId, requestGeneration)
+    setMutationError(null)
     void deleteServerRecord(recordId)
       .then(() => {
-        ydoc.transact(() => {
+        recordDeleteGenerationsRef.current.set(
+          recordId,
+          (recordDeleteGenerationsRef.current.get(recordId) ?? 0) + 1
+        )
+        recordUpdateGenerationsRef.current.set(
+          recordId,
+          (recordUpdateGenerationsRef.current.get(recordId) ?? 0) + 1
+        )
+        transactProjection(() => {
           removeYDatabaseRecord(recordId)
         })
       })
       .catch((error: unknown) => {
+        if (
+          recordDeleteRequestGenerationsRef.current.get(recordId) !== requestGeneration ||
+          (recordDeleteGenerationsRef.current.get(recordId) ?? 0) !== deleteGeneration
+        ) {
+          return
+        }
         console.warn('Failed to persist record deletion', error)
+        setMutationError({
+          action: 'delete',
+          recordId,
+          message: error instanceof Error ? error.message : 'Failed to delete data',
+        })
       })
-  }, [])
+  }, [transactProjection])
+
+  const clearMutationError = useCallback(() => setMutationError(null), [])
 
   const syncRecord = useCallback((record: DatabaseRecord) => {
-    ydoc.transact(() => {
+    transactProjection(() => {
       upsertYDatabaseRecord(record)
     })
-  }, [])
+  }, [transactProjection])
 
-  const syncRecords = useCallback((serverRecords: DatabaseRecord[]) => {
-    ydoc.transact(() => {
-      reconcileYRecords(serverRecords)
+  const beginRecordsSnapshot = useCallback((): RecordsSnapshotToken => ({
+    requestGeneration: ++recordsSnapshotRequestGenerationRef.current,
+    projectionGeneration: projectionGenerationRef.current,
+  }), [])
+
+  const syncRecords = useCallback((
+    serverRecords: DatabaseRecord[],
+    token: RecordsSnapshotToken,
+  ): boolean => {
+    if (
+      token.requestGeneration !== recordsSnapshotRequestGenerationRef.current ||
+      token.projectionGeneration !== projectionGenerationRef.current
+    ) {
+      return false
+    }
+
+    transactProjection(() => {
+      reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
     })
-  }, [])
+    return true
+  }, [transactProjection])
 
   return (
     <RecordsContext.Provider
@@ -318,8 +485,14 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         handleCreateRecord,
         handleDeleteRecord,
         syncRecord,
+        beginRecordsSnapshot,
         syncRecords,
         recordCountByStatus,
+        hydrationLoading: !ready || hydrationLoading,
+        hydrationError: ready ? hydrationError : null,
+        refreshRecords,
+        mutationError,
+        clearMutationError,
       }}
     >
       {children}
@@ -343,8 +516,14 @@ export function useDatabaseRecords() {
     handleCreateRecord,
     handleDeleteRecord,
     syncRecord,
+    beginRecordsSnapshot,
     syncRecords,
     recordCountByStatus,
+    hydrationLoading,
+    hydrationError,
+    refreshRecords,
+    mutationError,
+    clearMutationError,
   } = useRecords()
 
   return {
@@ -354,7 +533,13 @@ export function useDatabaseRecords() {
     handleCreateRecord,
     handleDeleteRecord,
     syncRecord,
+    beginRecordsSnapshot,
     syncRecords,
     recordCountByStatus,
+    hydrationLoading,
+    hydrationError,
+    refreshRecords,
+    mutationError,
+    clearMutationError,
   }
 }

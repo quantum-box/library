@@ -369,7 +369,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                   <Link
                     key={record.id}
                     to="/databases/$recordId"
-                    params={{ recordId: record.identifier }}
+                    params={{ recordId: record.id }}
                     search={{
                       database: databaseId,
                       view: getDefaultDatabaseViewId(

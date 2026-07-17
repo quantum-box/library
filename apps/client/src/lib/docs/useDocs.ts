@@ -3,7 +3,7 @@ import type { DocMetadata } from './types'
 import {
   cacheDocMetadata,
   createDoc,
-  ensureDoc,
+  deleteDoc,
   getDoc,
   listDocs,
   subscribeDocs,
@@ -11,13 +11,12 @@ import {
 } from './docsDb'
 import {
   createServerDocument,
+  deleteServerDocument,
   DocsApiError,
   fetchServerDocument,
   fetchServerDocuments,
   updateServerDocument,
 } from './docsApi'
-
-const sharedDocumentTitle = 'Shared document'
 
 export function useDocs() {
   const [docs, setDocs] = useState<DocMetadata[]>([])
@@ -85,31 +84,24 @@ export function useDocs() {
     }
   }, [])
 
-  const ensureDocument = useCallback(async (docId: string) => {
+  const ensureDocument = useCallback(async (docId: string): Promise<DocMetadata | null> => {
     const cachedDoc = await getDoc(docId)
-    if (cachedDoc) return cachedDoc
 
     try {
       const serverDoc = await fetchServerDocument(docId)
       await cacheDocMetadata(serverDoc)
       return serverDoc
     } catch (error: unknown) {
-      if (!(error instanceof DocsApiError && error.status === 404)) {
-        console.warn('Failed to fetch server document; ensuring local metadata', error)
-        return ensureDoc(docId)
+      if (error instanceof DocsApiError && error.status === 404) {
+        if (cachedDoc) await deleteDoc(docId)
+        return null
       }
-    }
 
-    try {
-      const serverDoc = await createServerDocument({
-        id: docId,
-        title: sharedDocumentTitle,
-      })
-      await cacheDocMetadata(serverDoc)
-      return serverDoc
-    } catch (error: unknown) {
-      console.warn('Failed to create server document; ensuring local metadata', error)
-      return ensureDoc(docId)
+      if (cachedDoc) {
+        console.warn('Failed to verify server document; using local metadata', error)
+        return cachedDoc
+      }
+      throw error
     }
   }, [])
 
@@ -124,8 +116,33 @@ export function useDocs() {
     }
   }, [])
 
+  const deleteDocument = useCallback(async (docId: string) => {
+    try {
+      await deleteServerDocument(docId)
+    } catch (error: unknown) {
+      if (!(error instanceof DocsApiError && error.status === 404)) throw error
+    }
+    await deleteDoc(docId)
+  }, [])
+
   return useMemo(
-    () => ({ docs, ready, refresh, createDocument, ensureDocument, renameDocument }),
-    [docs, ready, refresh, createDocument, ensureDocument, renameDocument]
+    () => ({
+      docs,
+      ready,
+      refresh,
+      createDocument,
+      ensureDocument,
+      renameDocument,
+      deleteDocument,
+    }),
+    [
+      docs,
+      ready,
+      refresh,
+      createDocument,
+      ensureDocument,
+      renameDocument,
+      deleteDocument,
+    ]
   )
 }

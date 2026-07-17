@@ -140,6 +140,20 @@ function Probe({ action }: { action: (context: ReturnType<typeof useRecords>) =>
   return null
 }
 
+function ContextCapture({
+  onChange,
+}: {
+  onChange: (context: ReturnType<typeof useRecords>) => void
+}) {
+  const context = useRecords()
+
+  useEffect(() => {
+    onChange(context)
+  }, [context, onChange])
+
+  return null
+}
+
 describe('RecordsProvider server-accepted projection', () => {
   beforeEach(() => {
     mocks.recordsArray.clear()
@@ -254,5 +268,347 @@ describe('RecordsProvider server-accepted projection', () => {
     })
 
     expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  it('ignores an older hydration response after an auth-triggered reload finishes', async () => {
+    const initialHydration = deferred<DatabaseRecord[]>()
+    const authHydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords
+      .mockReturnValueOnce(initialHydration.promise)
+      .mockReturnValueOnce(authHydration.promise)
+
+    render(
+      <RecordsProvider>
+        <div />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+    act(() => window.dispatchEvent(new Event('library-auth-change')))
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+
+    const authRecord = { ...serverDatabaseRecord, title: 'Authenticated tenant record' }
+    await act(async () => {
+      authHydration.resolve([authRecord])
+      await authHydration.promise
+    })
+    expect(mocks.recordsArray.get(0).get('title')).toBe(authRecord.title)
+
+    const staleRecord = { ...serverDatabaseRecord, title: 'Stale initial response' }
+    await act(async () => {
+      initialHydration.resolve([staleRecord])
+      await initialHydration.promise
+    })
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(authRecord.title)
+  })
+
+  it('retries hydration when the projection changes while records are loading', async () => {
+    const initialHydration = deferred<DatabaseRecord[]>()
+    const retryHydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords
+      .mockReturnValueOnce(initialHydration.promise)
+      .mockReturnValueOnce(retryHydration.promise)
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => {
+      expect(context).not.toBeNull()
+      expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1)
+    })
+
+    const concurrentRecord = { ...serverDatabaseRecord, title: 'Concurrent projection' }
+    act(() => context!.syncRecord(concurrentRecord))
+
+    await act(async () => {
+      initialHydration.resolve([{ ...serverDatabaseRecord, title: 'Stale hydration' }])
+      await initialHydration.promise
+    })
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+    expect(context!.hydrationLoading).toBe(true)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(concurrentRecord.title)
+
+    const reconciledRecord = { ...serverDatabaseRecord, title: 'Reconciled hydration' }
+    await act(async () => {
+      retryHydration.resolve([reconciledRecord])
+      await retryHydration.promise
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(reconciledRecord.title)
+    await waitFor(() => expect(context!.hydrationLoading).toBe(false))
+  })
+
+  it('keeps an optimistic create while retried hydration has not observed it yet', async () => {
+    const initialHydration = deferred<DatabaseRecord[]>()
+    const retryHydration = deferred<DatabaseRecord[]>()
+    const create = deferred<DatabaseRecord>()
+    mocks.fetchServerRecords
+      .mockReturnValueOnce(initialHydration.promise)
+      .mockReturnValueOnce(retryHydration.promise)
+    mocks.createServerRecord.mockReturnValue(create.promise)
+    let context: ReturnType<typeof useRecords> | null = null
+    let creation: Promise<void> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => {
+      expect(context).not.toBeNull()
+      expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1)
+    })
+
+    act(() => {
+      creation = context!.handleCreateRecord({ title: 'Pending optimistic create' })
+    })
+    await waitFor(() => expect(mocks.createServerRecord).toHaveBeenCalledTimes(1))
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('id')).toContain('optimistic-record-')
+
+    await act(async () => {
+      initialHydration.resolve([])
+      await initialHydration.promise
+    })
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      retryHydration.resolve([])
+      await retryHydration.promise
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('id')).toContain('optimistic-record-')
+
+    await act(async () => {
+      create.resolve(serverDatabaseRecord)
+      await create.promise
+      await creation
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('id')).toBe(serverDatabaseRecord.id)
+  })
+
+  it('ignores a full snapshot that started before a newer projection was accepted', async () => {
+    const update = deferred<DatabaseRecord>()
+    mocks.updateServerRecord.mockReturnValue(update.promise)
+    seedYDatabaseRecord(serverDatabaseRecord)
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    const staleSnapshot = context!.beginRecordsSnapshot()
+
+    act(() => context!.handleUpdateRecord(
+      serverDatabaseRecord.id,
+      'title',
+      'Accepted after snapshot started',
+    ))
+    await waitFor(() => expect(mocks.updateServerRecord).toHaveBeenCalledTimes(1))
+
+    const acceptedRecord = {
+      ...serverDatabaseRecord,
+      title: 'Accepted after snapshot started',
+      updatedAt: '2026-05-15T00:01:00.000Z',
+    }
+    await act(async () => {
+      update.resolve(acceptedRecord)
+      await update.promise
+    })
+
+    let applied = true
+    act(() => {
+      applied = context!.syncRecords(
+        [{ ...serverDatabaseRecord, title: 'Stale full snapshot' }],
+        staleSnapshot,
+      )
+    })
+
+    expect(applied).toBe(false)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(acceptedRecord.title)
+  })
+
+  it('only applies the latest independently requested full snapshot', async () => {
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    const olderSnapshot = context!.beginRecordsSnapshot()
+    const latestSnapshot = context!.beginRecordsSnapshot()
+    const latestRecord = { ...serverDatabaseRecord, title: 'Latest requested snapshot' }
+
+    expect(context!.syncRecords(
+      [{ ...serverDatabaseRecord, title: 'Older requested snapshot' }],
+      olderSnapshot,
+    )).toBe(false)
+    expect(mocks.recordsArray.length).toBe(0)
+    expect(context!.syncRecords([latestRecord], latestSnapshot)).toBe(true)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(latestRecord.title)
+  })
+
+  it('serializes updates per record and only projects the newest scheduled response', async () => {
+    const firstUpdate = deferred<DatabaseRecord>()
+    const secondUpdate = deferred<DatabaseRecord>()
+    mocks.updateServerRecord
+      .mockReturnValueOnce(firstUpdate.promise)
+      .mockReturnValueOnce(secondUpdate.promise)
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    act(() => {
+      context!.handleUpdateRecord(serverDatabaseRecord.id, 'title', 'First title')
+      context!.handleUpdateRecord(serverDatabaseRecord.id, 'title', 'Second title')
+    })
+
+    await waitFor(() => expect(mocks.updateServerRecord).toHaveBeenCalledTimes(1))
+    expect(mocks.updateServerRecord).toHaveBeenNthCalledWith(
+      1,
+      serverDatabaseRecord.id,
+      { title: 'First title' }
+    )
+
+    await act(async () => {
+      firstUpdate.resolve({ ...serverDatabaseRecord, title: 'First title' })
+      await firstUpdate.promise
+    })
+    await waitFor(() => expect(mocks.updateServerRecord).toHaveBeenCalledTimes(2))
+    expect(mocks.recordsArray.length).toBe(0)
+
+    await act(async () => {
+      secondUpdate.resolve({ ...serverDatabaseRecord, title: 'Second title' })
+      await secondUpdate.promise
+    })
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('title')).toBe('Second title')
+  })
+
+  it('surfaces an older serialized update failure after a newer update is queued', async () => {
+    const firstUpdate = deferred<DatabaseRecord>()
+    const secondUpdate = deferred<DatabaseRecord>()
+    mocks.updateServerRecord
+      .mockReturnValueOnce(firstUpdate.promise)
+      .mockReturnValueOnce(secondUpdate.promise)
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    act(() => {
+      context!.handleUpdateRecord(serverDatabaseRecord.id, 'title', 'Rejected title')
+      context!.handleUpdateRecord(serverDatabaseRecord.id, 'title', 'Accepted title')
+    })
+
+    await waitFor(() => expect(mocks.updateServerRecord).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      firstUpdate.reject(new Error('first serialized update failed'))
+      await firstUpdate.promise.catch(() => undefined)
+    })
+
+    await waitFor(() => {
+      expect(mocks.updateServerRecord).toHaveBeenCalledTimes(2)
+      expect(context!.mutationError).toEqual({
+        action: 'update',
+        recordId: serverDatabaseRecord.id,
+        message: 'first serialized update failed',
+      })
+    })
+
+    await act(async () => {
+      secondUpdate.resolve({ ...serverDatabaseRecord, title: 'Accepted title' })
+      await secondUpdate.promise
+    })
+
+    expect(mocks.recordsArray.get(0).get('title')).toBe('Accepted title')
+    await waitFor(() => expect(context!.mutationError).toBeNull())
+  })
+
+  it('does not resurrect a deleted record when an earlier update resolves later', async () => {
+    const update = deferred<DatabaseRecord>()
+    const deletion = deferred<void>()
+    mocks.updateServerRecord.mockReturnValue(update.promise)
+    mocks.deleteServerRecord.mockReturnValue(deletion.promise)
+    seedYDatabaseRecord(serverDatabaseRecord)
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    act(() => {
+      context!.handleUpdateRecord(serverDatabaseRecord.id, 'title', 'Late update')
+      context!.handleDeleteRecord(serverDatabaseRecord.id)
+    })
+    await waitFor(() => {
+      expect(mocks.updateServerRecord).toHaveBeenCalledTimes(1)
+      expect(mocks.deleteServerRecord).toHaveBeenCalledTimes(1)
+    })
+
+    await act(async () => {
+      deletion.resolve()
+      await deletion.promise
+    })
+    expect(mocks.recordsArray.length).toBe(0)
+
+    await act(async () => {
+      update.resolve({ ...serverDatabaseRecord, title: 'Late update' })
+      await update.promise
+    })
+    expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  it('exposes hydration loading and the latest hydration error', async () => {
+    const hydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords.mockReturnValue(hydration.promise)
+    const captured = { current: null as ReturnType<typeof useRecords> | null }
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { captured.current = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+    expect(captured.current?.hydrationLoading).toBe(true)
+    expect(captured.current?.hydrationError).toBeNull()
+
+    await act(async () => {
+      hydration.reject(new Error('tenant records unavailable'))
+      await hydration.promise.catch(() => undefined)
+    })
+
+    await waitFor(() => expect(captured.current?.hydrationLoading).toBe(false))
+    expect(captured.current?.hydrationError).toBe('tenant records unavailable')
   })
 })

@@ -8,6 +8,14 @@ import {
 import type { RecordToolResponse, WebSearchResponse } from './types'
 import type { DatabaseRecord } from '../../../data/mock'
 
+const repositoryTarget = {
+  id: 'quantum-box/photon-core',
+  label: 'quantum-box / Photon Core',
+  orgUsername: 'quantum-box',
+  repoUsername: 'photon-core',
+  operatorId: 'org-1',
+}
+
 describe('tool executor', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -89,10 +97,13 @@ describe('tool executor', () => {
       { title, priority: 'high', labels: ['chat'], project: 'Photon Core' },
       new AbortController().signal,
       {
+        repositoryTargets: [repositoryTarget],
+        selectedRepositoryId: repositoryTarget.id,
         recordTools: {
           records: [],
           syncRecord: (record) => synced.push(record),
-          syncRecords: () => {},
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: () => true,
         },
       }
     )
@@ -121,10 +132,13 @@ describe('tool executor', () => {
       },
       new AbortController().signal,
       {
+        repositoryTargets: [repositoryTarget],
+        selectedRepositoryId: repositoryTarget.id,
         recordTools: {
           records: [],
           syncRecord: () => {},
-          syncRecords: () => {},
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: () => true,
         },
       }
     )
@@ -137,7 +151,11 @@ describe('tool executor', () => {
         recordTools: {
           records: [],
           syncRecord: () => {},
-          syncRecords: (records) => syncedLists.push(records),
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: (records) => {
+            syncedLists.push(records)
+            return true
+          },
         },
       }
     )

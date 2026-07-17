@@ -23,7 +23,7 @@ describe('FileChip', () => {
 
     render(<FileChip file={pdfFile} onPreview={onPreview} />)
 
-    fireEvent.click(screen.getByText('workspace-brief.pdf'))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview workspace-brief.pdf' }))
 
     expect(onPreview).toHaveBeenCalledWith(pdfFile)
   })
@@ -34,9 +34,22 @@ describe('FileChip', () => {
 
     render(<FileChip file={pdfFile} onPreview={onPreview} onRemove={onRemove} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '✕' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove workspace-brief.pdf' }))
 
     expect(onRemove).toHaveBeenCalledWith('file-1')
     expect(onPreview).not.toHaveBeenCalled()
+  })
+
+  it('exposes separate keyboard-focusable preview and remove actions', () => {
+    render(<FileChip file={pdfFile} onPreview={vi.fn()} onRemove={vi.fn()} />)
+
+    const preview = screen.getByRole('button', { name: 'Preview workspace-brief.pdf' })
+    const remove = screen.getByRole('button', { name: 'Remove workspace-brief.pdf' })
+
+    preview.focus()
+    expect(preview).toHaveFocus()
+    remove.focus()
+    expect(remove).toHaveFocus()
+    expect(remove).toHaveClass('sm:group-focus-within/chip:opacity-100')
   })
 })

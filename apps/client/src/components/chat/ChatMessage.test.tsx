@@ -53,6 +53,7 @@ describe('ChatMessage', () => {
 
     expect(screen.getByText('You')).toBeInTheDocument()
     expect(screen.getByText('Please review this file.')).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'Your message' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('workspace-brief.pdf'))
 
@@ -69,11 +70,16 @@ describe('ChatMessage', () => {
 
     renderMessage(message)
 
-    fireEvent.click(screen.getByTitle('Copy message'))
+    const copyButton = screen.getByRole('button', { name: 'Copy message' })
+    expect(screen.getByRole('group', { name: 'Message actions' })).toHaveClass(
+      'sm:group-focus-within:opacity-100'
+    )
+    fireEvent.click(copyButton)
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       'Done. I updated the workspace record data.'
     )
+    expect(screen.getByRole('status')).toHaveTextContent('Message copied')
   })
 
   it('renders record tool result cards before assistant text', () => {

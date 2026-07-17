@@ -1559,6 +1559,10 @@ type Operator {
 }
 
 input OptionInput {
+	"""
+	Stable server-issued option ID. Omit when creating a new option.
+	"""
+	id: String
 	identifier: String!
 	label: String!
 }

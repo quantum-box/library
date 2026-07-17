@@ -7,6 +7,7 @@ import {
   createServerRecord,
   fetchServerRecords,
   updateServerRecord,
+  type ServerCreateRecordData,
   type ServerUpdateRecordData,
 } from '../../../lib/recordsApi'
 import type { DatabaseRecord, Priority, Status } from '../../../data/mock'
@@ -214,6 +215,23 @@ function requireRecordRuntime(context?: ToolRuntimeContext) {
   return recordTools
 }
 
+function requireRepositoryTarget(context?: ToolRuntimeContext) {
+  const targets = context?.repositoryTargets ?? []
+  if (targets.length === 0) {
+    throw new Error('No repository is available for creating data')
+  }
+
+  const selected = context?.selectedRepositoryId
+    ? targets.find((target) => target.id === context.selectedRepositoryId)
+    : undefined
+  if (selected) return selected
+  if (targets.length === 1) return targets[0]
+  if (context?.selectedRepositoryId) {
+    throw new Error('The selected repository is no longer available')
+  }
+  throw new Error('Choose a repository before creating data')
+}
+
 function asText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
@@ -244,18 +262,33 @@ function matchesRecordRef(record: DatabaseRecord, ref: string) {
   )
 }
 
-async function fetchCanonicalRecords(context?: ToolRuntimeContext) {
+const RECORD_SNAPSHOT_MAX_ATTEMPTS = 3
+
+async function fetchCanonicalRecords(
+  context?: ToolRuntimeContext,
+  signal?: AbortSignal,
+) {
   const runtime = requireRecordRuntime(context)
-  const records = await fetchServerRecords()
-  runtime.syncRecords(records)
-  return records
+  for (let attempt = 0; attempt < RECORD_SNAPSHOT_MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const snapshot = runtime.beginRecordsSnapshot()
+    const records = await fetchServerRecords()
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (runtime.syncRecords(records, snapshot)) return records
+  }
+
+  throw new Error('Data changed while loading. Try the request again.')
 }
 
-async function resolveDatabaseRecord(ref: unknown, context?: ToolRuntimeContext) {
+async function resolveDatabaseRecord(
+  ref: unknown,
+  context?: ToolRuntimeContext,
+  signal?: AbortSignal,
+) {
   const recordRef = asText(ref)
   if (!recordRef) throw new Error('Data id or identifier is required')
 
-  const records = await fetchCanonicalRecords(context)
+  const records = await fetchCanonicalRecords(context, signal)
   const record = records.find((candidate) => matchesRecordRef(candidate, recordRef))
   if (!record) throw new Error(`Data not found: ${recordRef}`)
   return record
@@ -310,7 +343,7 @@ async function executeRecordSearch(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const records = filterRecords(await fetchCanonicalRecords(context), args)
+  const records = filterRecords(await fetchCanonicalRecords(context, signal), args)
   return {
     data: {
       action: 'search',
@@ -329,7 +362,7 @@ async function executeRecordList(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const records = filterRecords(await fetchCanonicalRecords(context), args)
+  const records = filterRecords(await fetchCanonicalRecords(context, signal), args)
   return {
     data: {
       action: 'list',
@@ -348,7 +381,11 @@ async function executeRecordGet(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const record = await resolveDatabaseRecord(args.recordId ?? args.identifier ?? args.id, context)
+  const record = await resolveDatabaseRecord(
+    args.recordId ?? args.identifier ?? args.id,
+    context,
+    signal,
+  )
   return {
     data: {
       action: 'get',
@@ -366,20 +403,31 @@ async function executeRecordCreate(
   context?: ToolRuntimeContext
 ): Promise<ToolResult> {
   const runtime = requireRecordRuntime(context)
+  const target = requireRepositoryTarget(context)
   const start = Date.now()
   const title = asText(args.title)
   if (!title) throw new Error('Data title is required')
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-  const record = await createServerRecord({
+  const createData: ServerCreateRecordData = {
     title,
-    description: asText(args.description) ?? '',
-    status: asStatus(args.status) ?? 'todo',
-    priority: asPriority(args.priority) ?? 'none',
-    assignee: asText(args.assignee) ?? null,
-    labels: asLabels(args.labels) ?? [],
-    project: asText(args.project),
-  })
+    project: target.label,
+    orgUsername: target.orgUsername,
+    repoUsername: target.repoUsername,
+    operatorId: target.operatorId,
+  }
+  const description = asText(args.description)
+  const status = asStatus(args.status)
+  const priority = asPriority(args.priority)
+  const assignee = asText(args.assignee)
+  const labels = asLabels(args.labels)
+  if (description !== undefined) createData.description = description
+  if (status !== undefined) createData.status = status
+  if (priority !== undefined) createData.priority = priority
+  if (assignee !== undefined || args.assignee === null) createData.assignee = assignee ?? null
+  if (labels && labels.length > 0) createData.labels = labels
+
+  const record = await createServerRecord(createData)
   runtime.syncRecord(record)
 
   return {
@@ -421,7 +469,11 @@ async function executeRecordUpdate(
 ): Promise<ToolResult> {
   const runtime = requireRecordRuntime(context)
   const start = Date.now()
-  const existing = await resolveDatabaseRecord(args.recordId ?? args.identifier ?? args.id, context)
+  const existing = await resolveDatabaseRecord(
+    args.recordId ?? args.identifier ?? args.id,
+    context,
+    signal,
+  )
   const update = buildRecordUpdate(args)
   if (Object.keys(update).length === 0) {
     throw new Error('No data fields were provided to update')

@@ -5,6 +5,10 @@ import {
   propertyValueText,
 } from './libraryTable/libraryPropertyFormat'
 import {
+  libraryPropertyValueToGraphqlInput,
+  mergeLibraryDataProperty,
+} from './libraryTable/libraryPropertyInput'
+import {
   deleteClientEngineRecord,
   listClientEngineRecords,
   patchClientEngineRecord,
@@ -101,9 +105,21 @@ interface LibraryRepoDataResponse {
     name: string
     dataList: {
       items: LibraryDataItem[]
+      paginator?: LibraryGraphqlPaginator
     }
     properties: LibraryProperty[]
   } | null
+}
+
+interface LibraryPropertiesResponse {
+  properties?: LibraryProperty[]
+}
+
+interface LibraryGraphqlPaginator {
+  currentPage: number
+  itemsPerPage: number
+  totalItems: number
+  totalPages: number
 }
 
 interface LibraryDataResponse {
@@ -198,6 +214,12 @@ interface LibraryRestDataResponse {
 
 interface LibraryRestDataListResponse {
   data: LibraryRestDataResponse[]
+  paginator?: {
+    current_page: number
+    items_per_page: number
+    total_items: number
+    total_pages: number
+  }
 }
 
 interface LibraryRestPropertyResponse {
@@ -274,11 +296,11 @@ const priorityAliases: Record<string, Priority> = {
 const libraryRecordsCollection = 'library_data_records'
 
 const libraryRepoDataQuery = `
-  query LibraryClientRepoData($org: String!, $repo: String!, $pageSize: Int) {
+  query LibraryClientRepoData($org: String!, $repo: String!, $pageSize: Int, $page: Int) {
     repo(orgUsername: $org, repoUsername: $repo) {
       id
       name
-      dataList(pageSize: $pageSize) {
+      dataList(pageSize: $pageSize, page: $page) {
         items {
           id
           name
@@ -301,6 +323,12 @@ const libraryRepoDataQuery = `
             }
           }
         }
+        paginator {
+          currentPage
+          itemsPerPage
+          totalItems
+          totalPages
+        }
       }
       properties {
         id
@@ -313,6 +341,24 @@ const libraryRepoDataQuery = `
           ... on MultiSelectType {
             options { id key name }
           }
+        }
+      }
+    }
+  }
+`
+
+const libraryPropertiesQuery = `
+  query LibraryClientProperties($org: String!, $repo: String!) {
+    properties(orgUsername: $org, repoUsername: $repo) {
+      id
+      name
+      typ
+      meta {
+        ... on SelectType {
+          options { id key name }
+        }
+        ... on MultiSelectType {
+          options { id key name }
         }
       }
     }
@@ -460,14 +506,50 @@ const libraryDeleteDataMutation = `
   }
 `
 
+export type RecordApiFailureKind =
+  | 'transport'
+  | 'endpoint-unavailable'
+  | 'http'
+  | 'graphql'
+  | 'invalid-response'
+  | 'mapping'
+
+export type LibraryFallbackOperation = 'read' | 'create' | 'update' | 'delete'
+
 export class RecordApiError extends Error {
   readonly status: number
+  readonly kind: RecordApiFailureKind
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, kind: RecordApiFailureKind = 'http') {
     super(message)
     this.name = 'RecordApiError'
     this.status = status
+    this.kind = kind
   }
+}
+
+export class RecordPropertyMappingError extends RecordApiError {
+  readonly field: keyof ServerCreateRecordData
+
+  constructor(field: keyof ServerCreateRecordData, message: string) {
+    super(message, 422, 'mapping')
+    this.name = 'RecordPropertyMappingError'
+    this.field = field
+  }
+}
+
+const unavailableGraphqlStatuses = new Set([404, 405, 501])
+
+export function shouldFallbackLibraryRequest(
+  error: unknown,
+  operation: LibraryFallbackOperation
+): boolean {
+  if (!(error instanceof RecordApiError)) return false
+  if (error.kind === 'endpoint-unavailable') return true
+  // A create whose response is lost may already have committed. Without an
+  // idempotency key in AddDataInputData, retrying it through REST can duplicate
+  // the record, so an ambiguous transport failure must be surfaced instead.
+  return error.kind === 'transport' && operation !== 'create'
 }
 
 export function libraryApiConfigured(): boolean {
@@ -479,15 +561,11 @@ export function libraryOrgConfigured(): boolean {
 }
 
 function normalizeStatus(value: string | undefined): Status {
-  if (!value) return 'backlog'
-  const normalized = normalizedPropertyName(value)
-  return statusAliases[normalized] ?? (statuses.includes(value as Status) ? (value as Status) : 'backlog')
+  return canonicalStatus(value) ?? 'backlog'
 }
 
 function normalizePriority(value: string | undefined): Priority {
-  if (!value) return 'none'
-  const normalized = normalizedPropertyName(value)
-  return priorityAliases[normalized] ?? (priorities.includes(value as Priority) ? (value as Priority) : 'none')
+  return canonicalPriority(value) ?? 'none'
 }
 
 function normalizeLabels(value: ServerRecord['labels']): string[] {
@@ -587,27 +665,292 @@ async function requestLibraryGraphQL<TData>(
   const token = await validLibraryAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query, variables }),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, variables }),
+    })
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? `: ${error.message}` : ''
+    throw new RecordApiError(
+      `Library GraphQL transport unavailable${detail}`,
+      0,
+      'transport'
+    )
+  }
   if (!response.ok) {
-    throw new RecordApiError(`Library GraphQL request failed: ${response.status}`, response.status)
+    throw new RecordApiError(
+      `Library GraphQL request failed: ${response.status}`,
+      response.status,
+      unavailableGraphqlStatuses.has(response.status) ? 'endpoint-unavailable' : 'http'
+    )
   }
 
-  const payload = await response.json() as {
-    data?: TData
-    errors?: Array<{ message?: string }>
+  let payload: { data?: TData; errors?: Array<{ message?: string }> }
+  try {
+    payload = await response.json() as typeof payload
+  } catch {
+    throw new RecordApiError(
+      'Library GraphQL returned an invalid JSON response',
+      response.status,
+      'invalid-response'
+    )
   }
   if (payload.errors?.length) {
-    throw new RecordApiError(payload.errors[0]?.message ?? 'Library GraphQL request failed', 500)
+    throw new RecordApiError(
+      payload.errors[0]?.message ?? 'Library GraphQL request failed',
+      400,
+      'graphql'
+    )
   }
-  return payload.data as TData
+  if (payload.data == null) {
+    throw new RecordApiError(
+      'Library GraphQL returned no data',
+      response.status,
+      'invalid-response'
+    )
+  }
+  return payload.data
 }
 
 function normalizedPropertyName(value: string): string {
   return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+function canonicalStatus(value: string | undefined): Status | undefined {
+  if (!value) return undefined
+  const normalized = normalizedPropertyName(value)
+  return statusAliases[normalized] ?? (
+    statuses.includes(value as Status) ? value as Status : undefined
+  )
+}
+
+function canonicalPriority(value: string | undefined): Priority | undefined {
+  if (!value) return undefined
+  const normalized = normalizedPropertyName(value)
+  return priorityAliases[normalized] ?? (
+    priorities.includes(value as Priority) ? value as Priority : undefined
+  )
+}
+
+type StandardRecordPropertyField =
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'labels'
+  | 'description'
+  | 'project'
+
+const standardPropertySpecs: Record<
+  StandardRecordPropertyField,
+  { aliases: string[]; supportedTypes: string[] }
+> = {
+  status: { aliases: ['status', 'state'], supportedTypes: ['Select', 'String'] },
+  priority: { aliases: ['priority'], supportedTypes: ['Select', 'String'] },
+  assignee: { aliases: ['assignee', 'owner', '担当'], supportedTypes: ['Select', 'String'] },
+  labels: { aliases: ['labels', 'tags', 'tag'], supportedTypes: ['MultiSelect', 'String'] },
+  description: {
+    aliases: ['description', 'body', 'content', 'markdown', 'html'],
+    supportedTypes: ['Markdown', 'Html', 'String'],
+  },
+  project: { aliases: ['project', 'repo', 'repository'], supportedTypes: ['Select', 'String'] },
+}
+
+function standardFieldNeedsProperty(
+  field: StandardRecordPropertyField,
+  value: ServerCreateRecordData[StandardRecordPropertyField]
+): boolean {
+  if (field === 'project') return false
+  if (field === 'status' || field === 'priority') return value !== undefined
+  if (Array.isArray(value)) return value.length > 0
+  return typeof value === 'string' && value.length > 0
+}
+
+function findStandardProperty(
+  properties: LibraryProperty[],
+  field: StandardRecordPropertyField,
+  value: ServerCreateRecordData[StandardRecordPropertyField]
+): LibraryProperty | undefined {
+  const spec = standardPropertySpecs[field]
+  const aliases = new Set(spec.aliases.map(normalizedPropertyName))
+  const candidates = properties.filter((property) => aliases.has(normalizedPropertyName(property.name)))
+
+  if (candidates.length === 0) {
+    if (!standardFieldNeedsProperty(field, value)) return undefined
+    throw new RecordPropertyMappingError(
+      field,
+      `Repository schema has no Property for ${field}; expected one of: ${spec.aliases.join(', ')}`
+    )
+  }
+
+  const property = candidates.find((candidate) => spec.supportedTypes.includes(candidate.typ))
+  if (!property) {
+    throw new RecordPropertyMappingError(
+      field,
+      `Repository Property for ${field} has incompatible type ${candidates[0].typ}; expected ${spec.supportedTypes.join(' or ')}`
+    )
+  }
+  return property
+}
+
+function optionMatchesStandardField(
+  field: StandardRecordPropertyField,
+  candidate: string,
+  desired: string
+): boolean {
+  if (normalizedPropertyName(candidate) === normalizedPropertyName(desired)) return true
+  if (field === 'status') return canonicalStatus(candidate) === canonicalStatus(desired)
+  if (field === 'priority') return canonicalPriority(candidate) === canonicalPriority(desired)
+  return false
+}
+
+function resolveSelectOptionId(
+  field: StandardRecordPropertyField,
+  property: LibraryProperty,
+  desired: string
+): string {
+  if (!desired) return ''
+  const option = property.meta?.options?.find((candidate) =>
+    [candidate.id, candidate.key, candidate.name]
+      .filter((value): value is string => typeof value === 'string')
+      .some((value) => optionMatchesStandardField(field, value, desired))
+  )
+  if (!option) {
+    throw new RecordPropertyMappingError(
+      field,
+      `Repository Select Property "${property.name}" has no option matching "${desired}"`
+    )
+  }
+  return option.id
+}
+
+function standardPropertyValue(
+  field: StandardRecordPropertyField,
+  property: LibraryProperty,
+  value: ServerCreateRecordData[StandardRecordPropertyField]
+): LibraryPropertyDataValue {
+  switch (field) {
+    case 'status':
+    case 'priority': {
+      const scalar = String(value)
+      return property.typ === 'Select'
+        ? { optionId: resolveSelectOptionId(field, property, scalar) }
+        : { string: scalar }
+    }
+    case 'assignee': {
+      const scalar = typeof value === 'string' ? value : ''
+      return property.typ === 'Select'
+        ? { optionId: resolveSelectOptionId(field, property, scalar) }
+        : { string: scalar }
+    }
+    case 'labels': {
+      const labels = Array.isArray(value) ? value : []
+      return property.typ === 'MultiSelect'
+        ? { optionIds: labels.map((label) => resolveSelectOptionId(field, property, label)) }
+        : { string: labels.join(', ') }
+    }
+    case 'description': {
+      const scalar = typeof value === 'string' ? value : ''
+      if (property.typ === 'Markdown') return { markdown: scalar }
+      if (property.typ === 'Html') return { html: scalar }
+      return { string: scalar }
+    }
+    case 'project': {
+      const scalar = typeof value === 'string' ? value : ''
+      return property.typ === 'Select'
+        ? { optionId: resolveSelectOptionId(field, property, scalar) }
+        : { string: scalar }
+    }
+  }
+}
+
+function standardRecordPropertyData(
+  properties: LibraryProperty[],
+  data: ServerCreateRecordData | ServerUpdateRecordData
+): LibraryDataItem['propertyData'] {
+  const fields: StandardRecordPropertyField[] = [
+    'status',
+    'priority',
+    'assignee',
+    'labels',
+    'description',
+    'project',
+  ]
+  return fields.flatMap((field) => {
+    const value = data[field]
+    if (value === undefined) return []
+    const property = findStandardProperty(properties, field, value)
+    if (!property) return []
+    return [{ propertyId: property.id, value: standardPropertyValue(field, property, value) }]
+  })
+}
+
+function graphqlPropertyData(
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData']
+): Array<{ propertyId: string; value: Record<string, unknown> }> {
+  const propertyById = new Map(properties.map((property) => [property.id, property]))
+  return propertyData.flatMap((entry) => {
+    const property = propertyById.get(entry.propertyId)
+    if (!property) return []
+    let value: Record<string, unknown> | null
+    if (property.typ === 'Select' && entry.value.optionId !== undefined) {
+      value = { select: entry.value.optionId }
+    } else if (property.typ === 'MultiSelect' && entry.value.optionIds !== undefined) {
+      value = { multiSelect: entry.value.optionIds }
+    } else if (property.typ === 'Relation' && entry.value.dataIds !== undefined) {
+      value = { relation: entry.value.dataIds }
+    } else {
+      value = libraryPropertyValueToGraphqlInput(property, entry.value)
+    }
+    return value ? [{ propertyId: entry.propertyId, value }] : []
+  })
+}
+
+function restPropertyValue(property: LibraryProperty, value: LibraryPropertyDataValue): unknown {
+  switch (property.typ) {
+    case 'String':
+      return value.string ?? ''
+    case 'Id':
+      return value.id ?? ''
+    case 'Integer': {
+      const parsed = Number(value.number)
+      if (!Number.isInteger(parsed) || parsed < -2_147_483_648 || parsed > 2_147_483_647) {
+        throw new RecordApiError(
+          `REST fallback cannot safely encode Integer Property "${property.name}"`,
+          422,
+          'mapping'
+        )
+      }
+      return parsed
+    }
+    case 'Html':
+      return { html: value.html ?? '' }
+    case 'Markdown':
+      return { markdown: value.markdown ?? '' }
+    case 'MultiSelect':
+      return value.optionIds ?? []
+    default:
+      throw new RecordApiError(
+        `REST fallback cannot safely encode ${property.typ} Property "${property.name}"`,
+        422,
+        'mapping'
+      )
+  }
+}
+
+function restPropertyData(
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData']
+) {
+  const propertyById = new Map(properties.map((property) => [property.id, property]))
+  return propertyData.flatMap((entry) => {
+    const property = propertyById.get(entry.propertyId)
+    if (!property) return []
+    return [{ property_id: entry.propertyId, value: restPropertyValue(property, entry.value) }]
+  })
 }
 
 export function libraryDataToRecord(
@@ -671,29 +1014,55 @@ interface LibraryRepoTarget {
   repoName?: string
 }
 
-export async function fetchLibraryRepoTableData(
+function configuredLibraryPageSize(): number {
+  const configured = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
+  if (!Number.isInteger(configured) || configured < 1) return 100
+  return Math.min(configured, 100)
+}
+
+async function fetchLibraryGraphqlRepoTableData(
   target: LibraryRepoTarget
 ): Promise<LibraryRepoTableData> {
-  try {
+  const items: LibraryDataItem[] = []
+  let properties: LibraryProperty[] = []
+  let repoName = target.repoName ?? target.repo
+  let page = 1
+  let totalPages = 1
+
+  do {
     const payload = await requestLibraryGraphQL<LibraryRepoDataResponse>(
       libraryRepoDataQuery,
       {
         org: target.org,
         repo: target.repo,
-        pageSize: Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100),
+        pageSize: configuredLibraryPageSize(),
+        page,
       },
       { operatorId: target.operatorId }
     )
     const repoData = payload.repo
     if (!repoData) {
-      return { items: [], properties: [], repoName: target.repoName ?? target.repo }
+      return { items: [], properties: [], repoName }
     }
-    return {
-      items: repoData.dataList.items,
-      properties: repoData.properties,
-      repoName: target.repoName ?? repoData.name,
+    if (page === 1) {
+      properties = repoData.properties
+      repoName = target.repoName ?? repoData.name
     }
-  } catch {
+    items.push(...repoData.dataList.items)
+    totalPages = Math.max(page, repoData.dataList.paginator?.totalPages ?? page)
+    page += 1
+  } while (page <= totalPages)
+
+  return { items, properties, repoName }
+}
+
+export async function fetchLibraryRepoTableData(
+  target: LibraryRepoTarget
+): Promise<LibraryRepoTableData> {
+  try {
+    return await fetchLibraryGraphqlRepoTableData(target)
+  } catch (error: unknown) {
+    if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestRepoTableData(target)
   }
 }
@@ -703,31 +1072,23 @@ export async function fetchLibraryRecords(target?: LibraryRepoTarget): Promise<D
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
   if (!org || !repo) return []
 
+  const resolvedTarget = {
+    org,
+    repo,
+    operatorId: target?.operatorId,
+    repoName: target?.repoName,
+  }
   try {
-    const payload = await requestLibraryGraphQL<LibraryRepoDataResponse>(
-      libraryRepoDataQuery,
-      {
-        org,
-        repo,
-        pageSize: Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100),
-      },
-      { operatorId: target?.operatorId }
-    )
-    const repoData = payload.repo
-    if (!repoData) return []
-    return repoData.dataList.items.map((item) => libraryDataToRecord(
+    const repoData = await fetchLibraryGraphqlRepoTableData(resolvedTarget)
+    return repoData.items.map((item) => libraryDataToRecord(
       item,
       repoData.properties,
-      target?.repoName ?? repoData.name,
+      repoData.repoName,
       { orgUsername: org, repoUsername: repo, operatorId: target?.operatorId }
     ))
-  } catch {
-    return fetchLibraryRestRecords({
-      org,
-      repo,
-      operatorId: target?.operatorId,
-      repoName: target?.repoName,
-    })
+  } catch (error: unknown) {
+    if (!shouldFallbackLibraryRequest(error, 'read')) throw error
+    return fetchLibraryRestRecords(resolvedTarget)
   }
 }
 
@@ -749,9 +1110,13 @@ export async function fetchLibraryRepositories(): Promise<LibraryRepository[]> {
     libraryOrganizationReposQuery,
     { org }
   )
+  const operatorId = import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? payload.organization?.id
+  const platformTenantId = configuredPlatformId()
   const repos = (payload.organization?.repos ?? []).map((repo) => ({
     ...repo,
     orgUsername: org,
+    operatorId,
+    platformTenantId,
   }))
   const configuredRepo = import.meta.env.VITE_LIBRARY_REPO
   if (!configuredRepo || repos.some((repo) => repo.username === configuredRepo)) {
@@ -765,6 +1130,8 @@ export async function fetchLibraryRepositories(): Promise<LibraryRepository[]> {
       username: configuredRepo,
       name: configuredRepo,
       orgUsername: org,
+      operatorId,
+      platformTenantId,
     },
   ]
 }
@@ -910,58 +1277,6 @@ function restRepoToLibraryRepository(
   }
 }
 
-function restPropertyValueText(value: LibraryRestPropertyData['value']): string | undefined {
-  if (value == null) return undefined
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (Array.isArray(value)) return value.join(', ')
-  if (typeof value === 'object') {
-    const candidate = Object.values(value)[0]
-    if (typeof candidate === 'string' || typeof candidate === 'number') return String(candidate)
-    if (Array.isArray(candidate)) return candidate.join(', ')
-  }
-  return undefined
-}
-
-function restDataToRecord(
-  item: LibraryRestDataResponse,
-  repoName: string,
-  source?: { orgUsername?: string; repoUsername?: string; operatorId?: string }
-): DatabaseRecord {
-  const byName = new Map<string, string>()
-  item.items.forEach((propertyData) => {
-    const text = restPropertyValueText(propertyData.value)
-    if (text) byName.set(normalizedPropertyName(propertyData.key), text)
-  })
-  const textValue = (...names: string[]) => {
-    for (const name of names) {
-      const value = byName.get(normalizedPropertyName(name))
-      if (value) return value
-    }
-    return undefined
-  }
-  const listValue = (...names: string[]) => {
-    const value = textValue(...names)
-    return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : []
-  }
-
-  return {
-    id: item.id,
-    identifier: textValue('identifier', 'id', 'slug') ?? item.id,
-    title: item.name,
-    status: normalizeStatus(textValue('status', 'state')),
-    priority: normalizePriority(textValue('priority')),
-    assignee: textValue('assignee', 'owner', '担当') ?? null,
-    labels: listValue('labels', 'tags', 'tag'),
-    project: textValue('project', 'repo', 'repository') ?? repoName,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    description: textValue('description', 'body', 'content', 'markdown', 'html') ?? '',
-    orgUsername: source?.orgUsername,
-    repoUsername: source?.repoUsername,
-    operatorId: source?.operatorId,
-  }
-}
-
 function restValueToLibraryPropertyDataValue(
   value: LibraryRestPropertyData['value']
 ): LibraryPropertyDataValue {
@@ -974,16 +1289,24 @@ function restValueToLibraryPropertyDataValue(
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
     if (typeof record.string === 'string') return { string: record.string }
+    if (typeof record.integer === 'string' || typeof record.integer === 'number') {
+      return { number: String(record.integer) }
+    }
     if (typeof record.number === 'string' || typeof record.number === 'number') {
       return { number: String(record.number) }
     }
     if (typeof record.html === 'string') return { html: record.html }
     if (typeof record.markdown === 'string') return { markdown: record.markdown }
     if (typeof record.date === 'string') return { date: record.date }
+    if (typeof record.image === 'string') return { url: record.image }
     if (typeof record.url === 'string') return { url: record.url }
     if (typeof record.id === 'string') return { id: record.id }
+    if (typeof record.select === 'string') return { optionId: record.select }
     if (typeof record.optionId === 'string') return { optionId: record.optionId }
     if (typeof record.option_id === 'string') return { optionId: record.option_id }
+    if (Array.isArray(record.multiSelect)) {
+      return { optionIds: record.multiSelect.map((item) => String(item)) }
+    }
     if (Array.isArray(record.optionIds)) {
       return { optionIds: record.optionIds.map((item) => String(item)) }
     }
@@ -992,6 +1315,22 @@ function restValueToLibraryPropertyDataValue(
     }
     if (Array.isArray(record.dataIds)) {
       return { dataIds: record.dataIds.map((item) => String(item)) }
+    }
+    if (record.relation && typeof record.relation === 'object') {
+      const relation = record.relation as Record<string, unknown>
+      const ids = Array.isArray(relation.data_id)
+        ? relation.data_id.map((item) => String(item))
+        : []
+      return {
+        dataIds: ids,
+        databaseId: typeof relation.database_id === 'string' ? relation.database_id : undefined,
+      }
+    }
+    if (record.location && typeof record.location === 'object') {
+      const location = record.location as Record<string, unknown>
+      if (typeof location.latitude === 'number' && typeof location.longitude === 'number') {
+        return { latitude: location.latitude, longitude: location.longitude }
+      }
     }
     if (typeof record.latitude === 'number' && typeof record.longitude === 'number') {
       return { latitude: record.latitude, longitude: record.longitude }
@@ -1023,27 +1362,86 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
   }
 }
 
+async function fetchLibraryRestProperties(target: LibraryRepoTarget): Promise<LibraryProperty[]> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/properties`,
+    { headers: await libraryRestHeaders(target.operatorId) }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library REST properties request failed: ${response.status}`,
+      response.status
+    )
+  }
+  const payload = await response.json() as LibraryRestPropertyResponse[]
+  if (!Array.isArray(payload)) {
+    throw new RecordApiError(
+      'Library REST properties returned an invalid response',
+      response.status,
+      'invalid-response'
+    )
+  }
+  return payload.map(restPropertyToLibraryProperty)
+}
+
+export async function fetchLibraryRepoProperties(
+  target: LibraryRepoTarget
+): Promise<LibraryProperty[]> {
+  try {
+    const payload = await requestLibraryGraphQL<LibraryPropertiesResponse>(
+      libraryPropertiesQuery,
+      { org: target.org, repo: target.repo },
+      { operatorId: target.operatorId }
+    )
+    if (!Array.isArray(payload.properties)) {
+      throw new RecordApiError(
+        'Library GraphQL returned no Property definitions',
+        200,
+        'invalid-response'
+      )
+    }
+    return payload.properties
+  } catch (error: unknown) {
+    if (!shouldFallbackLibraryRequest(error, 'read')) throw error
+    return fetchLibraryRestProperties(target)
+  }
+}
+
 async function fetchLibraryRestRepoTableData(
   target: LibraryRepoTarget
 ): Promise<LibraryRepoTableData> {
-  const limit = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
+  const pageSize = configuredLibraryPageSize()
   const headers = await libraryRestHeaders(target.operatorId)
   const baseUrl = configuredLibraryApiBaseUrl()
-  const [dataResponse, propertiesResponse] = await Promise.all([
-    fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?limit=${limit}`, { headers }),
-    fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/properties`, { headers }),
-  ])
-  if (!dataResponse.ok) {
-    throw new RecordApiError(`Library REST data list failed: ${dataResponse.status}`, dataResponse.status)
-  }
-  const dataPayload = await dataResponse.json() as LibraryRestDataListResponse
+  const propertiesResponsePromise = fetch(
+    `${baseUrl}/v1beta/repos/${target.org}/${target.repo}/properties`,
+    { headers }
+  )
+  const items: LibraryDataItem[] = []
+  let page = 1
+  let totalPages = 1
+  do {
+    const dataResponse = await fetch(
+      `${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?page=${page}&page_size=${pageSize}`,
+      { headers }
+    )
+    if (!dataResponse.ok) {
+      throw new RecordApiError(`Library REST data list failed: ${dataResponse.status}`, dataResponse.status)
+    }
+    const dataPayload = await dataResponse.json() as LibraryRestDataListResponse
+    items.push(...(dataPayload.data ?? []).map(restDataToLibraryDataItem))
+    totalPages = Math.max(page, dataPayload.paginator?.total_pages ?? page)
+    page += 1
+  } while (page <= totalPages)
+
+  const propertiesResponse = await propertiesResponsePromise
   let properties: LibraryProperty[] = []
   if (propertiesResponse.ok) {
     const propertiesPayload = await propertiesResponse.json() as LibraryRestPropertyResponse[]
     properties = (Array.isArray(propertiesPayload) ? propertiesPayload : []).map(restPropertyToLibraryProperty)
   }
   return {
-    items: (dataPayload.data ?? []).map(restDataToLibraryDataItem),
+    items,
     properties,
     repoName: target.repoName ?? target.repo,
   }
@@ -1059,25 +1457,47 @@ async function fetchLibraryRestRecords(target: LibraryRepoTarget): Promise<Datab
   ))
 }
 
-async function createLibraryRestRecord(
+async function createLibraryRestData(
   data: ServerCreateRecordData,
-  target: LibraryRepoTarget
-): Promise<DatabaseRecord> {
+  target: LibraryRepoTarget,
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData']
+): Promise<LibraryDataItem> {
   const response = await fetch(`${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data`, {
     method: 'POST',
     headers: await libraryRestHeaders(target.operatorId),
     body: JSON.stringify({
       name: data.title,
-      property_data: [],
+      property_data: restPropertyData(properties, propertyData),
     }),
   })
   if (!response.ok) throw new RecordApiError(`Library REST data create failed: ${response.status}`, response.status)
   const payload = await response.json() as LibraryRestDataResponse
-  return restDataToRecord(
-    payload,
-    target.repoName ?? data.project ?? target.repo,
-    { orgUsername: target.org, repoUsername: target.repo, operatorId: target.operatorId }
+  return restDataToLibraryDataItem(payload)
+}
+
+async function updateLibraryRestData(
+  dataId: string,
+  dataName: string,
+  target: LibraryRepoTarget,
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData']
+): Promise<LibraryDataItem> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}`,
+    {
+      method: 'PUT',
+      headers: await libraryRestHeaders(target.operatorId),
+      body: JSON.stringify({
+        name: dataName,
+        property_data: restPropertyData(properties, propertyData),
+      }),
+    }
   )
+  if (!response.ok) {
+    throw new RecordApiError(`Library REST data update failed: ${response.status}`, response.status)
+  }
+  return restDataToLibraryDataItem(await response.json() as LibraryRestDataResponse)
 }
 
 function reposFromRestForOrganization(
@@ -1149,7 +1569,27 @@ async function fetchLibraryOrganizationRepos(
   }))
 }
 
-async function fetchLibraryDataDetail(dataId: string, target?: Partial<LibraryRepoTarget>): Promise<{
+async function fetchLibraryRestDataDetail(
+  dataId: string,
+  target: LibraryRepoTarget
+): Promise<{ item: LibraryDataItem; properties: LibraryProperty[] }> {
+  const headers = await libraryRestHeaders(target.operatorId)
+  const baseUrl = configuredLibraryApiBaseUrl()
+  const [dataResponse, properties] = await Promise.all([
+    fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}`, { headers }),
+    fetchLibraryRestProperties(target),
+  ])
+  if (!dataResponse.ok) {
+    throw new RecordApiError(
+      `Library REST data detail failed: ${dataResponse.status}`,
+      dataResponse.status
+    )
+  }
+  const payload = await dataResponse.json() as LibraryRestDataResponse
+  return { item: restDataToLibraryDataItem(payload), properties }
+}
+
+export async function fetchLibraryDataDetail(dataId: string, target?: Partial<LibraryRepoTarget>): Promise<{
   item: LibraryDataItem
   properties: LibraryProperty[]
 }> {
@@ -1157,13 +1597,26 @@ async function fetchLibraryDataDetail(dataId: string, target?: Partial<LibraryRe
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
   if (!org || !repo) throw new RecordApiError('Library API is not configured', 400)
 
-  const payload = await requestLibraryGraphQL<LibraryDataResponse>(
-    libraryDataDetailQuery,
-    { org, repo, dataId },
-    { operatorId: target?.operatorId }
-  )
-  if (!payload.data) throw new RecordApiError('Data not found', 404)
-  return { item: payload.data, properties: payload.properties ?? [] }
+  const resolvedTarget = { org, repo, operatorId: target?.operatorId }
+  try {
+    const payload = await requestLibraryGraphQL<LibraryDataResponse>(
+      libraryDataDetailQuery,
+      { org, repo, dataId },
+      { operatorId: target?.operatorId }
+    )
+    if (!payload.data) throw new RecordApiError('Data not found', 404)
+    if (!Array.isArray(payload.properties)) {
+      throw new RecordApiError(
+        'Library GraphQL returned no Property definitions',
+        200,
+        'invalid-response'
+      )
+    }
+    return { item: payload.data, properties: payload.properties }
+  } catch (error: unknown) {
+    if (!shouldFallbackLibraryRequest(error, 'read')) throw error
+    return fetchLibraryRestDataDetail(dataId, resolvedTarget)
+  }
 }
 
 export function toRecord(serverRecord: ServerRecord): DatabaseRecord {
@@ -1262,47 +1715,49 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
   const targetRepo = data.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = data.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
   if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
-    try {
-      return await createLibraryRestRecord(data, {
-        org: targetOrg,
-        repo: targetRepo,
-        operatorId: targetOperatorId,
-        repoName: data.project ?? targetRepo,
-      })
-    } catch {
-      // Fall back to GraphQL for deployments that have not enabled the REST write path.
-    }
-
-    const payload = await requestLibraryGraphQL<LibraryAddDataResponse>(
-      libraryAddDataMutation,
-      {
-        input: {
-          actor: configuredLibraryActor(),
-          orgUsername: targetOrg,
-          repoUsername: targetRepo,
-          dataName: data.title,
-          propertyData: [],
-        },
-      },
-      { operatorId: targetOperatorId }
-    )
-    if (!payload.addData) throw new RecordApiError('Library API did not return created data', 500)
-
-    const libraryRecords = await fetchLibraryRecords({
+    const target = {
       org: targetOrg,
       repo: targetRepo,
       operatorId: targetOperatorId,
       repoName: data.project ?? targetRepo,
+    }
+    const properties = await fetchLibraryRepoProperties(target)
+    const propertyData = standardRecordPropertyData(properties, data)
+    let created: LibraryDataItem
+    try {
+      const payload = await requestLibraryGraphQL<LibraryAddDataResponse>(
+        libraryAddDataMutation,
+        {
+          input: {
+            actor: configuredLibraryActor(),
+            orgUsername: targetOrg,
+            repoUsername: targetRepo,
+            dataName: data.title,
+            propertyData: graphqlPropertyData(properties, propertyData),
+          },
+        },
+        { operatorId: targetOperatorId }
+      )
+      if (!payload.addData) {
+        throw new RecordApiError(
+          'Library API did not return created data',
+          500,
+          'invalid-response'
+        )
+      }
+      created = payload.addData
+    } catch (error: unknown) {
+      if (!shouldFallbackLibraryRequest(error, 'create')) throw error
+      created = await createLibraryRestData(data, target, properties, propertyData)
+    }
+
+    const record = libraryDataToRecord(created, properties, target.repoName, {
+      orgUsername: targetOrg,
+      repoUsername: targetRepo,
+      operatorId: targetOperatorId,
     })
-    await Promise.all(
-      libraryRecords.map((record) => upsertClientEngineRecord(libraryRecordsCollection, record.id, record))
-    )
-    return libraryRecords.find((record) => record.id === payload.addData?.id) ??
-      libraryDataToRecord(payload.addData, [], data.project ?? targetRepo ?? 'Library', {
-        orgUsername: targetOrg,
-        repoUsername: targetRepo,
-        operatorId: targetOperatorId,
-      })
+    await upsertClientEngineRecord(libraryRecordsCollection, record.id, record)
+    return record
   }
 
   const collection = activeRecordsCollection()
@@ -1338,28 +1793,58 @@ export async function updateServerRecord(
   const targetRepo = data.repoUsername ?? cachedLibraryRecord?.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = data.operatorId ?? cachedLibraryRecord?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
   if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
-    const existing = await fetchLibraryDataDetail(recordId, {
+    const target = {
       org: targetOrg,
       repo: targetRepo,
       operatorId: targetOperatorId,
-    })
+      repoName: data.project ?? cachedLibraryRecord?.project ?? targetRepo,
+    }
+    const existing = await fetchLibraryDataDetail(recordId, target)
     const nextName = data.title ?? existing.item.name
-    const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
-      libraryUpdateDataMutation,
-      {
-        input: {
-          actor: configuredLibraryActor(),
-          orgUsername: targetOrg,
-          repoUsername: targetRepo,
-          dataId: recordId,
-          dataName: nextName,
-          propertyData: existing.item.propertyData,
+    const changedPropertyData = standardRecordPropertyData(existing.properties, data)
+    const propertyData = changedPropertyData.reduce(
+      (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
+      existing.item
+    ).propertyData
+    let updated: LibraryDataItem
+    try {
+      const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
+        libraryUpdateDataMutation,
+        {
+          input: {
+            actor: configuredLibraryActor(),
+            orgUsername: targetOrg,
+            repoUsername: targetRepo,
+            dataId: recordId,
+            dataName: nextName,
+            propertyData: graphqlPropertyData(existing.properties, propertyData),
+          },
         },
-      },
-      { operatorId: targetOperatorId }
+        { operatorId: targetOperatorId }
+      )
+      if (!payload.updateData) {
+        throw new RecordApiError(
+          'Library API did not return updated data',
+          500,
+          'invalid-response'
+        )
+      }
+      updated = payload.updateData
+    } catch (error: unknown) {
+      if (!shouldFallbackLibraryRequest(error, 'update')) throw error
+      updated = await updateLibraryRestData(
+        recordId,
+        nextName,
+        target,
+        existing.properties,
+        propertyData
+      )
+    }
+    const completeUpdated = updated.propertyData.reduce(
+      (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
+      { ...updated, propertyData }
     )
-    if (!payload.updateData) throw new RecordApiError('Library API did not return updated data', 500)
-    const record = libraryDataToRecord(payload.updateData, existing.properties, data.project ?? targetRepo ?? 'Library', {
+    const record = libraryDataToRecord(completeUpdated, existing.properties, target.repoName, {
       orgUsername: targetOrg,
       repoUsername: targetRepo,
       operatorId: targetOperatorId,
@@ -1394,12 +1879,32 @@ export async function deleteServerRecord(recordId: string): Promise<void> {
   const targetRepo = existing?.repoUsername ?? import.meta.env.VITE_LIBRARY_REPO
   const targetOperatorId = existing?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID
   if (targetOrg && targetRepo && (libraryApiConfigured() || await validLibraryAccessToken())) {
-    const payload = await requestLibraryGraphQL<LibraryDeleteDataResponse>(
-      libraryDeleteDataMutation,
-      { org: targetOrg, repo: targetRepo, dataId: recordId },
-      { operatorId: targetOperatorId }
-    )
-    if (!payload.deleteData) throw new RecordApiError('Library API did not delete data', 500)
+    try {
+      const payload = await requestLibraryGraphQL<LibraryDeleteDataResponse>(
+        libraryDeleteDataMutation,
+        { org: targetOrg, repo: targetRepo, dataId: recordId },
+        { operatorId: targetOperatorId }
+      )
+      if (!payload.deleteData) {
+        throw new RecordApiError(
+          'Library API did not delete data',
+          500,
+          'invalid-response'
+        )
+      }
+    } catch (error: unknown) {
+      if (!shouldFallbackLibraryRequest(error, 'delete')) throw error
+      const response = await fetch(
+        `${configuredLibraryApiBaseUrl()}/v1beta/repos/${targetOrg}/${targetRepo}/data/${recordId}`,
+        {
+          method: 'DELETE',
+          headers: await libraryRestHeaders(targetOperatorId),
+        }
+      )
+      if (!response.ok && response.status !== 404) {
+        throw new RecordApiError(`Library REST data delete failed: ${response.status}`, response.status)
+      }
+    }
     await deleteClientEngineRecord(libraryRecordsCollection, recordId)
     return
   }

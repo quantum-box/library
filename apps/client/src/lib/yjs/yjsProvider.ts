@@ -1,6 +1,9 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
-import { appKitConfig } from '../../app/kitConfig.js'
+import {
+  appKitConfig,
+  resolveBrowserSyncWebsocketUrl,
+} from '../../app/kitConfig.js'
 
 // ---------------------------------------------------------------------------
 // Y.Doc singleton
@@ -98,11 +101,21 @@ const MAX_BACKOFF = 30_000
 let disposed = false
 
 function getWsUrl(): string | undefined {
-  return appKitConfig.sync.websocketUrl
+  return resolveBrowserSyncWebsocketUrl(
+    appKitConfig.sync.websocketUrl,
+    appKitConfig.sync.websocketPath,
+  )
 }
 
 function scheduleReconnect() {
-  if (disposed || !getWsUrl()) return
+  if (
+    disposed ||
+    reconnectTimer ||
+    !getWsUrl() ||
+    ws?.readyState === WebSocket.OPEN ||
+    ws?.readyState === WebSocket.CONNECTING
+  ) return
+
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connectWs()
@@ -131,22 +144,42 @@ export function connectWs() {
     return
   }
 
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
   setStatus('connecting')
 
-  const socket = new WebSocket(wsUrl)
+  let socket: WebSocket
+  try {
+    socket = new WebSocket(wsUrl)
+  } catch {
+    setStatus('disconnected')
+    setPresence({ onlineCount: 0 })
+    scheduleReconnect()
+    return
+  }
   socket.binaryType = 'arraybuffer'
   ws = socket
 
   let isFirstMessage = true
 
   socket.addEventListener('open', () => {
+    if (ws !== socket) {
+      socket.close()
+      return
+    }
     backoff = 1000 // reset backoff on successful connect
     setStatus('connected')
+    ydoc.off('update', onDocUpdate)
     ydoc.on('update', onDocUpdate)
     socket.send(Y.encodeStateAsUpdate(ydoc))
   })
 
   socket.addEventListener('message', (event) => {
+    if (ws !== socket) return
+
     if (typeof event.data === 'string') {
       try {
         const message = JSON.parse(event.data) as {
@@ -176,6 +209,8 @@ export function connectWs() {
   })
 
   socket.addEventListener('close', () => {
+    if (ws !== socket) return
+
     ydoc.off('update', onDocUpdate)
     ws = null
     setStatus('disconnected')
@@ -200,6 +235,8 @@ export function disconnectWs() {
     ws = null
   }
   setStatus('disconnected')
+  setPresence({ onlineCount: 0 })
+  window.removeEventListener('online', connectWs)
 }
 
 // ---------------------------------------------------------------------------
@@ -251,4 +288,5 @@ export const initialSyncReady: Promise<void> = new Promise((resolve) => {
 // Auto-connect
 // ---------------------------------------------------------------------------
 
+window.addEventListener('online', connectWs)
 connectWs()

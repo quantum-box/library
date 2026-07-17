@@ -9,12 +9,15 @@ vi.mock('./photonEngine/client', () => ({
 import { appKitConfig } from '../app/kitConfig'
 import { clearAuthTokens } from './auth'
 import {
+  createServerRecord,
   fetchLibraryOrganizations,
   fetchLibraryRecords,
   fetchLibraryRepoTableData,
   fetchLibraryRepositories,
   libraryDataToRecord,
+  RecordPropertyMappingError,
   toRecord,
+  updateServerRecord,
   type LibraryDataItem,
   type LibraryProperty,
   type ServerRecord,
@@ -24,6 +27,7 @@ describe('recordsApi', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
+    vi.clearAllMocks()
     clearAuthTokens()
   })
 
@@ -186,6 +190,220 @@ describe('recordsApi', () => {
     })
   })
 
+  it('loads every GraphQL data-list page using the documented paginator', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        variables: { page: number }
+      }
+      const page = body.variables.page
+      return Response.json({
+        data: {
+          repo: {
+            id: 'repo-1',
+            name: 'Docs',
+            dataList: {
+              items: [{ id: `data-${page}`, name: `Page ${page}`, propertyData: [] }],
+              paginator: {
+                currentPage: page,
+                itemsPerPage: 100,
+                totalItems: 2,
+                totalPages: 2,
+              },
+            },
+            properties: [],
+          },
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchLibraryRepoTableData({ org: 'acme', repo: 'docs' })).resolves.toMatchObject({
+      items: [
+        { id: 'data-1', name: 'Page 1' },
+        { id: 'data-2', name: 'Page 2' },
+      ],
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).variables.page).toBe(2)
+  })
+
+  it('maps canonical record fields to typed repository Properties on create', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'acme')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'work')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const properties: LibraryProperty[] = [
+      {
+        id: 'status',
+        name: 'Status',
+        typ: 'Select',
+        meta: { options: [{ id: 'status-progress', key: 'progress', name: 'In progress' }] },
+      },
+      {
+        id: 'priority',
+        name: 'Priority',
+        typ: 'Select',
+        meta: { options: [{ id: 'priority-high', key: 'high', name: 'High' }] },
+      },
+      { id: 'owner', name: 'Owner', typ: 'String' },
+      {
+        id: 'labels',
+        name: 'Labels',
+        typ: 'MultiSelect',
+        meta: { options: [{ id: 'label-api', key: 'api', name: 'API' }] },
+      },
+      { id: 'body', name: 'Body', typ: 'Markdown' },
+      { id: 'project', name: 'Project', typ: 'String' },
+    ]
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        query: string
+        variables: { input?: { propertyData?: unknown[] } }
+      }
+      if (body.query.includes('LibraryClientProperties')) {
+        return Response.json({ data: { properties } })
+      }
+      return Response.json({
+        data: {
+          addData: {
+            id: 'data-new',
+            name: 'Typed record',
+            propertyData: [
+              { propertyId: 'status', value: { optionId: 'status-progress' } },
+              { propertyId: 'priority', value: { optionId: 'priority-high' } },
+              { propertyId: 'owner', value: { string: 'Ada' } },
+              { propertyId: 'labels', value: { optionIds: ['label-api'] } },
+              { propertyId: 'body', value: { markdown: 'Canonical body' } },
+              { propertyId: 'project', value: { string: 'Work' } },
+            ],
+          },
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerRecord({
+      title: 'Typed record',
+      status: 'in_progress',
+      priority: 'high',
+      assignee: 'Ada',
+      labels: ['API'],
+      description: 'Canonical body',
+      project: 'Work',
+    })).resolves.toMatchObject({
+      id: 'data-new',
+      status: 'in_progress',
+      priority: 'high',
+      assignee: 'Ada',
+      labels: ['API'],
+      description: 'Canonical body',
+      project: 'Work',
+    })
+
+    const mutationCall = fetchMock.mock.calls.find(([, init]) =>
+      String(init?.body).includes('LibraryClientAddData')
+    )
+    const mutationBody = JSON.parse(String(mutationCall?.[1]?.body)) as {
+      variables: { input: { dataName: string; propertyData: unknown[] } }
+    }
+    expect(mutationBody.variables.input).toMatchObject({
+      dataName: 'Typed record',
+      propertyData: [
+        { propertyId: 'status', value: { select: 'status-progress' } },
+        { propertyId: 'priority', value: { select: 'priority-high' } },
+        { propertyId: 'owner', value: { string: 'Ada' } },
+        { propertyId: 'labels', value: { multiSelect: ['label-api'] } },
+        { propertyId: 'body', value: { markdown: 'Canonical body' } },
+        { propertyId: 'project', value: { string: 'Work' } },
+      ],
+    })
+  })
+
+  it('fails explicitly before create when a supplied standard field has no Property', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'acme')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const fetchMock = vi.fn(async () => Response.json({ data: { properties: [] } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerRecord({ title: 'Unsafe', status: 'todo' })).rejects.toBeInstanceOf(
+      RecordPropertyMappingError
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the complete canonical Property payload and preserves untouched values', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'acme')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'work')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const properties: LibraryProperty[] = [
+      {
+        id: 'status',
+        name: 'Status',
+        typ: 'Select',
+        meta: {
+          options: [
+            { id: 'status-todo', key: 'todo', name: 'To do' },
+            { id: 'status-done', key: 'done', name: 'Done' },
+          ],
+        },
+      },
+      { id: 'owner', name: 'Owner', typ: 'String' },
+      { id: 'body', name: 'Body', typ: 'Markdown' },
+    ]
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string }
+      if (body.query.includes('LibraryClientDataDetail')) {
+        return Response.json({
+          data: {
+            data: {
+              id: 'data-1',
+              name: 'Existing',
+              propertyData: [
+                { propertyId: 'status', value: { optionId: 'status-todo' } },
+                { propertyId: 'owner', value: { string: 'Ada' } },
+                { propertyId: 'body', value: { markdown: 'Keep this body' } },
+                { propertyId: 'future-property', value: { string: 'preserve me' } },
+              ],
+            },
+            properties,
+          },
+        })
+      }
+      return Response.json({
+        data: {
+          updateData: {
+            id: 'data-1',
+            name: 'Existing',
+            propertyData: [{ propertyId: 'status', value: { optionId: 'status-done' } }],
+          },
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(updateServerRecord('data-1', { status: 'done' })).resolves.toMatchObject({
+      id: 'data-1',
+      status: 'done',
+      assignee: 'Ada',
+      description: 'Keep this body',
+    })
+    const mutationCall = fetchMock.mock.calls.find(([, init]) =>
+      String(init?.body).includes('LibraryClientUpdateData')
+    )
+    const mutationBody = JSON.parse(String(mutationCall?.[1]?.body)) as {
+      variables: { input: { propertyData: Array<{ propertyId: string }> } }
+    }
+    expect(mutationBody.variables.input.propertyData).toEqual([
+      { propertyId: 'status', value: { select: 'status-done' } },
+      { propertyId: 'owner', value: { string: 'Ada' } },
+      { propertyId: 'body', value: { markdown: 'Keep this body' } },
+    ])
+    expect(mutationBody.variables.input.propertyData).not.toContainEqual(
+      expect.objectContaining({ propertyId: 'future-property' })
+    )
+  })
+
   it('fetches Library repo data through the GraphQL API contract', async () => {
     vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
     vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
@@ -246,6 +464,7 @@ describe('recordsApi', () => {
   it('fetches Library repositories for the sidebar from the GraphQL API', async () => {
     vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({
       data: {
         organization: {
@@ -271,6 +490,8 @@ describe('recordsApi', () => {
         name: 'Docs',
         description: 'Documentation repo',
         orgUsername: 'quantum-box',
+        operatorId: 'org-1',
+        platformTenantId: 'platform-1',
       },
     ])
     expect(fetch).toHaveBeenCalledWith(

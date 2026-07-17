@@ -104,6 +104,111 @@ where
         .unwrap();
     assert_eq!(records.len(), 1);
 
+    let authoritative = patch(
+        "issue-authority",
+        "authority-a",
+        20,
+        json!({ "title": "canonical payload" }),
+    )
+    .with_id("op-authority-immutable");
+    let (accepted_once, projected_once) = adapter
+        .append_authoritative_operation(authoritative.clone())
+        .await
+        .unwrap();
+    let (accepted_retry, projected_retry) = adapter
+        .append_authoritative_operation(authoritative.clone())
+        .await
+        .unwrap();
+    assert_eq!(accepted_once.status, OperationStatus::Accepted);
+    assert_eq!(
+        accepted_once.remote_sequence,
+        accepted_retry.remote_sequence
+    );
+    assert_eq!(projected_once, projected_retry);
+    assert_eq!(projected_once.value["title"], json!("canonical payload"));
+
+    let mismatched = patch(
+        "issue-authority",
+        "authority-a",
+        20,
+        json!({ "title": "mutated retry" }),
+    )
+    .with_id(authoritative.id.clone());
+    let mismatch = adapter
+        .append_authoritative_operation(mismatched)
+        .await
+        .unwrap_err();
+    assert!(mismatch
+        .to_string()
+        .contains("was reused with a different payload"));
+    let canonical = adapter
+        .get_operation(&authoritative.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(canonical.operation, authoritative);
+
+    let accepted_later = Operation::new(
+        RecordKey::new("workspace:ordering", "issues", "accepted-later"),
+        ActorId::from("ordering-a"),
+        OperationKind::Patch {
+            fields: BTreeMap::from([("title".to_owned(), json!("remote sequence 2"))]),
+        },
+    )
+    .with_id("op-remote-sequence-2");
+    let accepted_first = Operation::new(
+        RecordKey::new("workspace:ordering", "issues", "accepted-first"),
+        ActorId::from("ordering-b"),
+        OperationKind::Patch {
+            fields: BTreeMap::from([("title".to_owned(), json!("remote sequence 1"))]),
+        },
+    )
+    .with_id("op-remote-sequence-1");
+    adapter
+        .append_operation(accepted_later.clone(), OperationStatus::Pending)
+        .await
+        .unwrap();
+    adapter
+        .append_operation(accepted_first.clone(), OperationStatus::Pending)
+        .await
+        .unwrap();
+    adapter
+        .mark_operation_status(&accepted_later.id, OperationStatus::Accepted, Some(2))
+        .await
+        .unwrap();
+    adapter
+        .mark_operation_status(&accepted_first.id, OperationStatus::Accepted, Some(1))
+        .await
+        .unwrap();
+
+    let first_page = adapter
+        .list_operations(OperationFilter {
+            scope: Some(ScopeId::from("workspace:ordering")),
+            status: Some(OperationStatus::Accepted),
+            after_remote_sequence: Some(0),
+            limit: Some(1),
+            ..OperationFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(first_page.len(), 1);
+    assert_eq!(first_page[0].operation.id, accepted_first.id);
+    assert_eq!(first_page[0].remote_sequence, Some(1));
+
+    let second_page = adapter
+        .list_operations(OperationFilter {
+            scope: Some(ScopeId::from("workspace:ordering")),
+            status: Some(OperationStatus::Accepted),
+            after_remote_sequence: Some(1),
+            limit: Some(1),
+            ..OperationFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].operation.id, accepted_later.id);
+    assert_eq!(second_page[0].remote_sequence, Some(2));
+
     let snapshot_key = RecordKey::new("workspace:test", "yjs_documents", "doc-1");
     let first_update = SnapshotUpdate::new(snapshot_key.clone(), 1, vec![1, 2, 3], "yjs-update-v1")
         .with_metadata(json!({ "room": "doc-1" }));
@@ -197,4 +302,8 @@ async fn reset_mysql_storage(adapter: &photon_engine::MySqlAdapter) {
             .await
             .unwrap();
     }
+    sqlx::query("UPDATE photon_engine_sync_state SET next_sequence = 1 WHERE id = 1")
+        .execute(adapter.pool())
+        .await
+        .unwrap();
 }

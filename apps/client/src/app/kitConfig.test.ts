@@ -11,6 +11,7 @@ import {
   resolveChatStreamTransport,
   resolveDeploymentMode,
   resolveFrontendWorkerRuntime,
+  resolveBrowserSyncWebsocketUrl,
   resolveSyncBackend,
   resolveTenantWorkspaceOptions,
   resolveTenantWorkspaceSelection,
@@ -117,7 +118,10 @@ describe('appKitConfig', () => {
     expect(resolveAppServerBackend('external-api')).toBe('external-api')
 
     expect(resolveChatStreamMode('local', undefined)).toBe('mock')
-    expect(resolveChatStreamMode('cloud', undefined)).toBe('backend')
+    expect(resolveChatStreamMode('cloud', undefined)).toBe('mock')
+    expect(resolveChatStreamMode('onprem', undefined)).toBe('mock')
+    expect(resolveChatStreamMode('cloud', 'backend')).toBe('backend')
+    expect(resolveChatStreamMode('onprem', 'backend')).toBe('backend')
     expect(resolveChatStreamMode('onprem', 'mock')).toBe('mock')
     expect(resolveChatStreamTransport(undefined)).toBe('sse')
     expect(resolveChatStreamTransport('websocket')).toBe('websocket')
@@ -228,8 +232,23 @@ describe('buildRoomId', () => {
   })
 
   it('builds room-scoped websocket paths', () => {
-    expect(buildSyncWebsocketPath('tenant:acme-corp:workspace:acme:doc:42')).toBe(
-      '/ws?room=tenant:acme-corp:workspace:acme:doc:42'
-    )
+    const path = buildSyncWebsocketPath('tenant:acme-corp:workspace:acme:doc:42')
+    expect(path).toBe('/ws?room=tenant:acme-corp:workspace:acme:doc:42')
+    expect(resolveBrowserSyncWebsocketUrl(undefined, path, {
+      protocol: 'http:',
+      host: '127.0.0.1:5173',
+    })).toBe('ws://127.0.0.1:5173/ws?room=tenant:acme-corp:workspace:acme:doc:42')
+    expect(resolveBrowserSyncWebsocketUrl(undefined, path, {
+      protocol: 'https:',
+      host: 'library.example.test',
+    })).toBe('wss://library.example.test/ws?room=tenant:acme-corp:workspace:acme:doc:42')
+  })
+
+  it('keeps an explicit sync WebSocket URL instead of replacing its origin', () => {
+    expect(resolveBrowserSyncWebsocketUrl(
+      'wss://sync.example.test/ws?room=tenant:acme:workspace:roadmap:records',
+      '/ws?room=ignored',
+      { protocol: 'https:', host: 'library.example.test' },
+    )).toBe('wss://sync.example.test/ws?room=tenant:acme:workspace:roadmap:records')
   })
 })

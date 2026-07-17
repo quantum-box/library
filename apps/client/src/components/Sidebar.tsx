@@ -35,7 +35,6 @@ import {
 } from '@tachyon-sdk/native-ui'
 import {
   AlertCircle,
-  BookOpen,
   Bot,
   Check,
   ChevronsUpDown,
@@ -57,6 +56,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import { appKitConfig, switchTenantWorkspace } from '../app/kitConfig'
 import type { TenantWorkspaceOption } from '../app/kitConfig'
 import {
@@ -445,7 +445,7 @@ export function Sidebar() {
     <>
       <div className="shrink-0 border-b border-border bg-surface md:hidden">
         <div className="flex h-11 items-center gap-2 px-3">
-          <BookOpen className="size-4 text-primary" aria-hidden="true" />
+          <img src={libraryAppIcon} alt="" className="size-4" />
           <span className="text-sm font-semibold">Library</span>
           <span data-testid="sync-presence-status-mobile" className="ml-1">
             {connectionIndicator}
@@ -528,7 +528,7 @@ export function Sidebar() {
         aria-label="Library navigation"
       >
         <SidebarHeader className="h-7 px-1.5 text-xs">
-          <BookOpen className="text-primary" aria-hidden="true" />
+          <img src={libraryAppIcon} alt="" className="size-4" />
           <span className="min-w-0 flex-1 truncate">{appKitConfig.workspace.name}</span>
           {expanded && <span data-testid="sync-presence-status">{connectionIndicator}</span>}
           {expanded && (

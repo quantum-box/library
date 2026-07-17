@@ -22,7 +22,7 @@ function StreamingMessage({ content, isStreaming }: { content: string; isStreami
     <div className="relative">
       <MarkdownRenderer content={displayed} />
       {isStreaming && displayed.length < content.length && (
-        <span className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom animate-blink bg-accent" />
+        <span aria-hidden="true" className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom animate-blink bg-accent" />
       )}
     </div>
   )
@@ -31,9 +31,11 @@ function StreamingMessage({ content, isStreaming }: { content: string; isStreami
 function ActionButton({ icon, title, onClick }: { icon: React.ReactNode; title: string; onClick: () => void }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
-      className="w-7 h-7 rounded-md flex items-center justify-center transition-colors cursor-pointer text-subtle hover:text-foreground hover:bg-surface-hover"
+      aria-label={title}
+      className="w-7 h-7 rounded-md flex items-center justify-center transition-colors cursor-pointer text-subtle hover:text-foreground hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       {icon}
     </button>
@@ -96,9 +98,13 @@ export const ChatMessage = memo(function ChatMessage({
   const showActions = !isStreaming && message.content.length > 0
 
   return (
-    <div className={`group relative flex gap-2 px-3 py-3 md:gap-3 md:px-4 ${isUser ? '' : 'bg-surface/30'}`}>
+    <article
+      aria-label={isUser ? 'Your message' : 'Assistant message'}
+      className={`group relative flex gap-2 px-3 py-3 md:gap-3 md:px-4 ${isUser ? '' : 'bg-surface/30'}`}
+    >
       {/* Avatar */}
       <div
+        aria-hidden="true"
         className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold md:h-7 md:w-7 ${
           isUser ? 'bg-surface-hover text-muted' : 'bg-accent text-white'
         }`}
@@ -112,9 +118,12 @@ export const ChatMessage = memo(function ChatMessage({
           <span className="text-xs font-medium text-foreground">
             {isUser ? 'You' : 'Assistant'}
           </span>
-          <span className="text-xs text-subtle">
+          <time
+            dateTime={new Date(message.timestamp).toISOString()}
+            className="text-xs text-subtle"
+          >
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
+          </time>
         </div>
 
         {/* File attachments */}
@@ -149,7 +158,11 @@ export const ChatMessage = memo(function ChatMessage({
 
         {/* Action bar */}
         {showActions && (
-          <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div
+            role="group"
+            aria-label="Message actions"
+            className="flex items-center gap-0.5 mt-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+          >
             <ActionButton
               icon={copied ? CheckIcon : CopyIcon}
               title={copied ? 'Copied!' : 'Copy message'}
@@ -163,7 +176,10 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         )}
+        <span className="sr-only" role="status" aria-live="polite">
+          {copied ? 'Message copied' : ''}
+        </span>
       </div>
-    </div>
+    </article>
   )
 })

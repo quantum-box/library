@@ -9,6 +9,7 @@ use std::{
 use async_trait::async_trait;
 
 use crate::{
+    projection::apply_operation,
     storage::StorageAdapter,
     types::{
         unix_time_ms, CollectionName, Conflict, Operation, OperationFilter, OperationId,
@@ -82,6 +83,62 @@ impl StorageAdapter for MemoryAdapter {
         Ok(stored)
     }
 
+    async fn append_authoritative_operation(
+        &self,
+        operation: Operation,
+    ) -> Result<(StoredOperation, Record)> {
+        let mut state = self.write_state()?;
+
+        let existing = state.operations.get(&operation.id).cloned();
+        if let Some(existing) = &existing {
+            if existing.operation != operation {
+                return Err(EngineError::Storage(format!(
+                    "operation id {} was reused with a different payload",
+                    operation.id
+                )));
+            }
+        }
+
+        let projected = apply_operation(
+            state.records.get(&operation.key).cloned(),
+            existing
+                .as_ref()
+                .map(|stored| &stored.operation)
+                .unwrap_or(&operation),
+        )?;
+
+        let stored = if let Some(mut existing) = existing {
+            if existing.remote_sequence.is_none() {
+                let remote_sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+                existing.remote_sequence = Some(remote_sequence);
+            }
+            existing.status = OperationStatus::Accepted;
+            state
+                .operations
+                .insert(existing.operation.id.clone(), existing.clone());
+            existing
+        } else {
+            let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+            let stored = StoredOperation {
+                operation,
+                status: OperationStatus::Accepted,
+                local_sequence: sequence,
+                remote_sequence: Some(sequence),
+                received_at_ms: unix_time_ms(),
+            };
+            state.operation_order.push(stored.operation.id.clone());
+            state
+                .operations
+                .insert(stored.operation.id.clone(), stored.clone());
+            stored
+        };
+
+        state
+            .records
+            .insert(projected.key.clone(), projected.clone());
+        Ok((stored, projected))
+    }
+
     async fn get_operation(&self, operation_id: &OperationId) -> Result<Option<StoredOperation>> {
         let state = self.read_state()?;
         Ok(state.operations.get(operation_id).cloned())
@@ -139,12 +196,18 @@ impl StorageAdapter for MemoryAdapter {
             }
 
             operations.push(stored.clone());
+        }
 
-            if let Some(limit) = filter.limit {
-                if operations.len() >= limit {
-                    break;
-                }
-            }
+        if filter.after_remote_sequence.is_some() {
+            operations.sort_by_key(|stored| {
+                (
+                    stored.remote_sequence.unwrap_or(i64::MAX),
+                    stored.local_sequence,
+                )
+            });
+        }
+        if let Some(limit) = filter.limit {
+            operations.truncate(limit);
         }
 
         Ok(operations)

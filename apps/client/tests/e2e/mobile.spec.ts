@@ -1,21 +1,22 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test.describe('Library mobile shell', () => {
   test('supports core workspace flows on a phone viewport', async ({ page }) => {
-    const title = `Mobile smoke record ${Date.now()}`
+    const title = `Mobile smoke data ${Date.now()}`
 
     await page.goto('/databases')
 
     await expect(page.getByTestId('sync-presence-status-mobile')).toBeVisible()
     await expect(page.getByTestId('side-nav')).toBeHidden()
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'photon-core' })).toBeVisible()
 
     await page.getByTestId('open-create-record').click()
-    await page.getByLabel(/Record title/i).fill(title)
-    await page.getByLabel('Description').fill('Created from mobile Playwright')
+    await expect(page.getByTestId('create-record-repository')).toHaveValue('quantum-box/photon-core')
+    await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
 
-    await page.getByPlaceholder('Filter records...').fill(title)
+    await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByTestId('mobile-record-card')).toHaveCount(1)
     await expect(page.getByTestId('mobile-record-card').getByText(title)).toBeVisible()
 
@@ -35,6 +36,6 @@ test.describe('Library mobile shell', () => {
 
     await page.getByTestId('view-sync-mobile').click()
     await expect(page).toHaveURL(/\/sync/)
-    await expect(page.getByRole('heading', { name: 'Engine Sync' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Engine diagnostics' })).toBeVisible()
   })
 })

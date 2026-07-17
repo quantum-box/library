@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
+import { configurePdfJsWorker } from '../../lib/pdfJsWorker'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
+configurePdfJsWorker(pdfjsLib)
 
 interface PdfViewerProps {
   url: string

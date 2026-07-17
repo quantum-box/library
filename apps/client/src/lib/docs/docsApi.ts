@@ -1,9 +1,11 @@
 import { appKitConfig } from '../../app/kitConfig'
 import type { CreateDocInput, DocMetadata, UpdateDocInput } from './types'
 import {
+  deleteClientEngineRecord,
   listClientEngineRecords,
   getClientEngineRecord,
   patchClientEngineRecord,
+  syncClientEngineOperations,
   upsertClientEngineRecord,
 } from '../photonEngine/client'
 
@@ -30,6 +32,8 @@ export class DocsApiError extends Error {
   }
 }
 
+const DOCUMENT_SYNC_TIMEOUT_MS = 5_000
+
 function withoutUndefined<T extends object>(payload: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined)
@@ -46,7 +50,18 @@ export function toDocMetadata(serverDocument: ServerDocumentMetadata): DocMetada
   }
 }
 
+async function syncDocumentsBestEffort(): Promise<boolean> {
+  try {
+    await syncClientEngineOperations(undefined, undefined, DOCUMENT_SYNC_TIMEOUT_MS)
+    return true
+  } catch (error: unknown) {
+    console.warn('Failed to sync document metadata; using the local Photon Engine projection', error)
+    return false
+  }
+}
+
 export async function fetchServerDocuments(): Promise<DocMetadata[]> {
+  await syncDocumentsBestEffort()
   const records = await listClientEngineRecords<DocMetadata>('documents')
   return records
     .map((record) => record.value)
@@ -54,8 +69,10 @@ export async function fetchServerDocuments(): Promise<DocMetadata[]> {
 }
 
 export async function fetchServerDocument(docId: string): Promise<DocMetadata> {
+  const syncSucceeded = await syncDocumentsBestEffort()
   const record = await getClientEngineRecord<DocMetadata>('documents', docId)
-  if (!record) throw new DocsApiError('Document metadata not found', 404)
+  if (!record && syncSucceeded) throw new DocsApiError('Document metadata not found', 404)
+  if (!record) throw new Error('Document metadata is temporarily unavailable')
   return record.value
 }
 
@@ -69,6 +86,7 @@ export async function createServerDocument(input: CreateDocInput = {}): Promise<
     updatedAt: now,
   }
   const record = await upsertClientEngineRecord('documents', document.id, document)
+  await syncDocumentsBestEffort()
   return record.value
 }
 
@@ -84,5 +102,12 @@ export async function updateServerDocument(
   }
   const record = await patchClientEngineRecord<DocMetadata>('documents', docId, document)
   if (!record) throw new DocsApiError('Document metadata not found', 404)
+  await syncDocumentsBestEffort()
   return record.value
+}
+
+export async function deleteServerDocument(docId: string): Promise<void> {
+  await fetchServerDocument(docId)
+  await deleteClientEngineRecord('documents', docId)
+  await syncDocumentsBestEffort()
 }

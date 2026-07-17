@@ -17,6 +17,15 @@ pub trait StorageAdapter: Send + Sync {
         status: OperationStatus,
     ) -> Result<StoredOperation>;
 
+    /// Atomically validates operation-id immutability, assigns the authority's
+    /// next remote sequence, persists the accepted operation, and updates its
+    /// materialized record projection. Implementations backed by a shared
+    /// database must serialize the whole acceptance across processes.
+    async fn append_authoritative_operation(
+        &self,
+        operation: Operation,
+    ) -> Result<(StoredOperation, Record)>;
+
     async fn get_operation(&self, operation_id: &OperationId) -> Result<Option<StoredOperation>>;
 
     async fn mark_operation_status(
