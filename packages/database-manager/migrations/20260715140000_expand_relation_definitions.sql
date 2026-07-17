@@ -4,32 +4,69 @@
 --
 -- Existing definitions came from a multi-value CSV representation and had no
 -- inverse or lifecycle configuration. Preserve those semantics as
--- Many/Many/Restrict with no inverse Property.
-ALTER TABLE relationships
-    ADD COLUMN forward_cardinality VARCHAR(4) NOT NULL DEFAULT 'MANY',
-    ADD COLUMN reverse_cardinality VARCHAR(4) NOT NULL DEFAULT 'MANY',
-    ADD COLUMN inverse_field_id VARCHAR(31) NULL,
-    ADD COLUMN on_target_delete VARCHAR(8) NOT NULL DEFAULT 'RESTRICT',
-    ADD CONSTRAINT chk_relationships_forward_cardinality
-        CHECK (forward_cardinality IN ('ONE', 'MANY')),
-    ADD CONSTRAINT chk_relationships_reverse_cardinality
-        CHECK (reverse_cardinality IN ('ONE', 'MANY')),
-    ADD CONSTRAINT chk_relationships_on_target_delete
-        CHECK (on_target_delete IN ('RESTRICT', 'NULLIFY')),
-    ADD CONSTRAINT uq_relationships_tenant_source_field
-        UNIQUE (tenant_id, object_id, field_id),
-    ADD CONSTRAINT uq_relationships_tenant_inverse_field
-        UNIQUE (tenant_id, target_object_id, inverse_field_id),
-    ADD CONSTRAINT fk_relationships_tenant_target_inverse_field
-        FOREIGN KEY (tenant_id, target_object_id, inverse_field_id)
-        REFERENCES fields (tenant_id, object_id, id);
+-- Many/Many/Restrict with no inverse Property. Dynamic DDL lets this migration
+-- resume if TiDB committed any columns before rejecting the original combined
+-- ALTER statement.
+SET @library_relation_forward_cardinality_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND COLUMN_NAME = 'forward_cardinality'
+    ) = 0,
+    'ALTER TABLE relationships ADD COLUMN forward_cardinality VARCHAR(4) NOT NULL DEFAULT ''MANY''',
+    'SELECT 1'
+);
+PREPARE library_relation_column_stmt
+    FROM @library_relation_forward_cardinality_ddl;
+EXECUTE library_relation_column_stmt;
+DEALLOCATE PREPARE library_relation_column_stmt;
 
--- A RelationDefinition is owned by its source Property. Deleting that
--- Property removes only the definition; target Database deletion remains
--- restricted while a definition points at it.
-ALTER TABLE relationships
-    DROP FOREIGN KEY fk_relationships_tenant_object_field,
-    ADD CONSTRAINT fk_relationships_tenant_source_property
-        FOREIGN KEY (tenant_id, object_id, field_id)
-        REFERENCES fields (tenant_id, object_id, id)
-        ON DELETE CASCADE;
+SET @library_relation_reverse_cardinality_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND COLUMN_NAME = 'reverse_cardinality'
+    ) = 0,
+    'ALTER TABLE relationships ADD COLUMN reverse_cardinality VARCHAR(4) NOT NULL DEFAULT ''MANY''',
+    'SELECT 1'
+);
+PREPARE library_relation_column_stmt
+    FROM @library_relation_reverse_cardinality_ddl;
+EXECUTE library_relation_column_stmt;
+DEALLOCATE PREPARE library_relation_column_stmt;
+
+SET @library_relation_inverse_field_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND COLUMN_NAME = 'inverse_field_id'
+    ) = 0,
+    'ALTER TABLE relationships ADD COLUMN inverse_field_id VARCHAR(31) NULL',
+    'SELECT 1'
+);
+PREPARE library_relation_column_stmt
+    FROM @library_relation_inverse_field_ddl;
+EXECUTE library_relation_column_stmt;
+DEALLOCATE PREPARE library_relation_column_stmt;
+
+SET @library_relation_target_delete_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND COLUMN_NAME = 'on_target_delete'
+    ) = 0,
+    'ALTER TABLE relationships ADD COLUMN on_target_delete VARCHAR(8) NOT NULL DEFAULT ''RESTRICT''',
+    'SELECT 1'
+);
+PREPARE library_relation_column_stmt
+    FROM @library_relation_target_delete_ddl;
+EXECUTE library_relation_column_stmt;
+DEALLOCATE PREPARE library_relation_column_stmt;

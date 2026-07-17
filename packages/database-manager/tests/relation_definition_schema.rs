@@ -66,31 +66,94 @@ async fn insert_relation_field(
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
-async fn relation_definition_schema_enforces_control_plane_invariants(
-) -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
-    let dsn: DatabaseUrl = std::env::var("DEV_DATABASE_URL")
-        .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
-        .parse::<DatabaseUrl>()?
-        .use_database("tachyon_apps_database_manager");
-    let db = persistence::Db::new(dsn.to_string()).await;
-    sqlx::migrate!("./migrations")
-        .run(db.pool().as_ref())
-        .await?;
-    let pool = db.pool();
+#[test]
+fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
+    let expansion = include_str!(
+        "../migrations/20260715140000_expand_relation_definitions.sql"
+    );
+    let expansion_checks = [
+        include_str!(
+            "../migrations/20260715140001_check_relation_forward_cardinality.sql"
+        ),
+        include_str!(
+            "../migrations/20260715140002_check_relation_reverse_cardinality.sql"
+        ),
+        include_str!(
+            "../migrations/20260715140003_check_relation_target_delete.sql"
+        ),
+    ];
+    let versioning_migrations = [
+        include_str!(
+            "../migrations/20260716100000_version_relation_definitions.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100001_add_relation_definition_version.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100002_add_relation_generation.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100003_check_relation_forward_cardinality_strict.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100004_check_relation_reverse_cardinality_strict.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100005_check_relation_target_delete_strict.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100006_check_relation_owned_inverse.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100007_check_relation_distinct_self_inverse.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100008_check_relation_definition_version.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100009_check_relation_generation.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100010_replace_relation_source_foreign_key.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100011_drop_legacy_relation_source_foreign_key.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100012_drop_legacy_relation_forward_check.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100013_drop_legacy_relation_reverse_check.sql"
+        ),
+        include_str!(
+            "../migrations/20260716100014_drop_legacy_relation_target_delete_check.sql"
+        ),
+    ];
 
-    let versioning_migration = include_str!(
-        "../migrations/20260716100000_version_relation_definitions.sql"
+    assert_eq!(
+        expansion
+            .matches("\nPREPARE library_relation_column_stmt")
+            .count(),
+        4
     );
     assert_eq!(
-        versioning_migration
-            .matches("ALTER TABLE relationships")
+        expansion
+            .matches("EXECUTE library_relation_column_stmt")
             .count(),
-        1,
-        "guard expansion and legacy contraction must stay one atomic ALTER"
+        4
     );
+    assert!(!expansion.contains("ADD CONSTRAINT"));
+
+    for migration in
+        expansion_checks.iter().chain(versioning_migrations.iter())
+    {
+        assert!(
+            migration.matches("ADD CONSTRAINT chk_").count() <= 1,
+            "each TiDB migration may add at most one CHECK constraint"
+        );
+    }
+
+    let versioning_plan = versioning_migrations.join("\n");
     for (new_guard, old_guard) in [
         (
             "ADD CONSTRAINT fk_relationships_tenant_source_property_restrict",
@@ -109,10 +172,10 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
             "DROP CHECK chk_relationships_on_target_delete",
         ),
     ] {
-        let add_position = versioning_migration
+        let add_position = versioning_plan
             .find(new_guard)
             .expect("the stronger guard must be installed");
-        let drop_position = versioning_migration
+        let drop_position = versioning_plan
             .find(old_guard)
             .expect("the legacy guard must be contracted");
         assert!(
@@ -120,6 +183,22 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
             "{new_guard} must be active before {old_guard}"
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn relation_definition_schema_enforces_control_plane_invariants(
+) -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    let dsn: DatabaseUrl = std::env::var("DEV_DATABASE_URL")
+        .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
+        .parse::<DatabaseUrl>()?
+        .use_database("tachyon_apps_database_manager");
+    let db = persistence::Db::new(dsn.to_string()).await;
+    sqlx::migrate!("./migrations")
+        .run(db.pool().as_ref())
+        .await?;
+    let pool = db.pool();
 
     let columns = sqlx::query(
         r#"
