@@ -1,3 +1,5 @@
+-- MySQL and TiDB allow this CHECK only after the source columns no longer
+-- participate in an ON DELETE CASCADE referential action.
 ALTER TABLE relationships
     ADD CONSTRAINT chk_relationships_distinct_self_inverse
         CHECK (
