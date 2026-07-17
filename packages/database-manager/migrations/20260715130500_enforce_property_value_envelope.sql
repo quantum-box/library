@@ -6,10 +6,4 @@ ALTER TABLE property_values
             type_key,
             '^[a-z][a-z0-9]*(_[a-z0-9]+)*$',
             'c'
-        )),
-    ADD CONSTRAINT chk_property_values_type_version
-        CHECK (type_version > 0),
-    ADD CONSTRAINT chk_property_values_encoding_version
-        CHECK (value_encoding_version > 0),
-    ADD CONSTRAINT chk_property_values_value_json
-        CHECK (JSON_VALID(value));
+        ));

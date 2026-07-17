@@ -4,16 +4,37 @@ use value_object::{DatabaseUrl, TenantId};
 
 #[test]
 fn property_definition_columns_precede_check_constraints() {
-    let migration = include_str!(
+    let envelope_migration = include_str!(
         "../migrations/20260715130400_add_property_definition_envelope.sql"
     );
-    let column_statement = migration
+    let constraint_migrations = [
+        envelope_migration,
+        include_str!(
+            "../migrations/20260715130401_check_property_definition_type_version.sql"
+        ),
+        include_str!(
+            "../migrations/20260715130402_check_property_definition_type_key.sql"
+        ),
+        include_str!(
+            "../migrations/20260715130403_check_property_definition_type_config.sql"
+        ),
+    ];
+    let column_statement = envelope_migration
         .split(';')
         .find(|statement| statement.contains("ADD COLUMN type_key"))
         .expect("property definition column statement must exist");
 
     assert!(!column_statement.contains("ADD CONSTRAINT"));
-    assert_eq!(migration.matches("ALTER TABLE fields").count(), 2);
+    assert_eq!(
+        envelope_migration
+            .matches("\nPREPARE library_property_column_stmt")
+            .count(),
+        3
+    );
+    assert_eq!(envelope_migration.matches("DEALLOCATE PREPARE").count(), 3);
+    for migration in constraint_migrations {
+        assert_eq!(migration.matches("ADD CONSTRAINT").count(), 1);
+    }
 }
 
 async fn insert_property(
