@@ -133,6 +133,13 @@ On MySQL, the TiDB variable query returns no rows. On TiDB it must return
 `ON`. The normal migration entrypoint rejects TiDB with disabled `CHECK`
 constraints.
 
+The target columns intentionally have `ON DELETE CASCADE` foreign keys and do
+not appear in SQL `CHECK` expressions. MySQL and TiDB reject that combination.
+Exactly-one-target and Relation policy rules remain enforced by the domain
+constructor, and the repository decoder fails closed if stored target state is
+malformed. The foreign keys, scoped unique keys, and cascade lifecycle remain
+database-enforced.
+
 Record the two legacy counts before migration. They are evidence that the
 expand step did not mutate existing compatibility state.
 
