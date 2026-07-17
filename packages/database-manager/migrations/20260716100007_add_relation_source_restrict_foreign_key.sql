@@ -1,3 +1,4 @@
+-- Install the restrictive guard before removing the compatibility CASCADE FK.
 ALTER TABLE relationships
     ADD CONSTRAINT fk_relationships_tenant_source_property_restrict
         FOREIGN KEY (tenant_id, object_id, field_id)

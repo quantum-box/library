@@ -105,7 +105,7 @@ fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
             "../migrations/20260716100006_check_relation_owned_inverse.sql"
         ),
         include_str!(
-            "../migrations/20260716100007_check_relation_distinct_self_inverse.sql"
+            "../migrations/20260716100007_add_relation_source_restrict_foreign_key.sql"
         ),
         include_str!(
             "../migrations/20260716100008_check_relation_definition_version.sql"
@@ -114,10 +114,10 @@ fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
             "../migrations/20260716100009_check_relation_generation.sql"
         ),
         include_str!(
-            "../migrations/20260716100010_replace_relation_source_foreign_key.sql"
+            "../migrations/20260716100010_drop_legacy_relation_source_foreign_key.sql"
         ),
         include_str!(
-            "../migrations/20260716100011_drop_legacy_relation_source_foreign_key.sql"
+            "../migrations/20260716100011_check_relation_distinct_self_inverse.sql"
         ),
         include_str!(
             "../migrations/20260716100012_drop_legacy_relation_forward_check.sql"
@@ -183,6 +183,17 @@ fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
             "{new_guard} must be active before {old_guard}"
         );
     }
+
+    let cascade_drop = versioning_plan
+        .find("DROP FOREIGN KEY fk_relationships_tenant_source_property")
+        .expect("the CASCADE source foreign key must be removed");
+    let self_inverse_check = versioning_plan
+        .find("ADD CONSTRAINT chk_relationships_distinct_self_inverse")
+        .expect("the distinct self-inverse guard must be installed");
+    assert!(
+        cascade_drop < self_inverse_check,
+        "the CASCADE referential action must be removed before its columns are used in a CHECK"
+    );
 }
 
 #[tokio::test]
