@@ -186,6 +186,9 @@ fn index_definition_migration_resumes_after_partial_tidb_ddl() {
     assert!(
         migration.contains("CREATE TABLE IF NOT EXISTS index_definitions")
     );
+    assert!(migration.contains("ON DELETE CASCADE"));
+    assert!(!migration.contains("chk_index_definitions_exactly_one_target"));
+    assert!(!migration.contains("chk_index_definitions_relation_policy"));
 }
 
 #[tokio::test]
@@ -301,12 +304,10 @@ async fn index_definition_schema_is_scoped_additive_and_strict(
     assert_eq!(
         checks,
         [
-            "chk_index_definitions_exactly_one_target",
             "chk_index_definitions_generation",
             "chk_index_definitions_policy",
             "chk_index_definitions_policy_projection",
             "chk_index_definitions_projection_state",
-            "chk_index_definitions_relation_policy",
             "chk_index_definitions_unique_policy",
             "chk_index_definitions_version",
         ]
@@ -590,26 +591,6 @@ async fn index_definition_schema_is_scoped_additive_and_strict(
         constraint,
     ) in [
         (
-            Some(&property_a),
-            Some(&relation_a),
-            "EXACT",
-            false,
-            1,
-            1,
-            "PENDING",
-            "chk_index_definitions_exactly_one_target",
-        ),
-        (
-            None,
-            None,
-            "EXACT",
-            false,
-            1,
-            1,
-            "PENDING",
-            "chk_index_definitions_exactly_one_target",
-        ),
-        (
             None,
             Some(&relation_a),
             "MAGIC",
@@ -638,26 +619,6 @@ async fn index_definition_schema_is_scoped_additive_and_strict(
             1,
             "PENDING",
             "chk_index_definitions_unique_policy",
-        ),
-        (
-            None,
-            Some(&relation_a),
-            "RANGE",
-            false,
-            1,
-            1,
-            "PENDING",
-            "chk_index_definitions_relation_policy",
-        ),
-        (
-            None,
-            Some(&relation_a),
-            "EXACT",
-            true,
-            1,
-            1,
-            "PENDING",
-            "chk_index_definitions_relation_policy",
         ),
         (
             None,
