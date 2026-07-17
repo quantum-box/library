@@ -300,7 +300,7 @@ async fn normalized_property_value_schema_is_scoped_and_expand_only(
     assert!(marker
         .try_get::<String, _>("extra_text")?
         .to_ascii_uppercase()
-        .contains("STORED GENERATED"));
+        .contains("VIRTUAL GENERATED"));
     assert!(marker
         .try_get::<String, _>("generation_expression_text")?
         .to_ascii_uppercase()
