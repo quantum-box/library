@@ -174,6 +174,20 @@ fn assert_foreign_key_violation(error: sqlx::Error, constraint: &str) {
     );
 }
 
+#[test]
+fn index_definition_migration_resumes_after_partial_tidb_ddl() {
+    let migration = include_str!(
+        "../migrations/20260715160000_create_index_definitions.sql"
+    );
+
+    assert!(migration.contains("information_schema.STATISTICS"));
+    assert!(migration
+        .contains("INDEX_NAME = 'uq_relationships_tenant_object_id'"));
+    assert!(
+        migration.contains("CREATE TABLE IF NOT EXISTS index_definitions")
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
 async fn index_definition_schema_is_scoped_additive_and_strict(
