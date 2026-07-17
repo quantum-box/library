@@ -2,6 +2,20 @@ use database_manager::domain::{DatabaseId, PropertyId};
 use sqlx::{MySqlPool, Row};
 use value_object::{DatabaseUrl, TenantId};
 
+#[test]
+fn property_definition_columns_precede_check_constraints() {
+    let migration = include_str!(
+        "../migrations/20260715130400_add_property_definition_envelope.sql"
+    );
+    let column_statement = migration
+        .split(';')
+        .find(|statement| statement.contains("ADD COLUMN type_key"))
+        .expect("property definition column statement must exist");
+
+    assert!(!column_statement.contains("ADD CONSTRAINT"));
+    assert_eq!(migration.matches("ALTER TABLE fields").count(), 2);
+}
+
 async fn insert_property(
     pool: &MySqlPool,
     type_key: Option<&str>,

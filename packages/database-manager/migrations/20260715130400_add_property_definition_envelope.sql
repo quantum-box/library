@@ -1,10 +1,14 @@
 -- Add the canonical PropertyDefinition type/config envelope without changing
 -- the legacy reader or writer. Existing rows remain valid with all three
 -- columns NULL until a later dual-write/backfill rollout.
+-- Add the columns before the constraints because TiDB cannot resolve columns
+-- added earlier in the same multi-schema ALTER inside CHECK expressions.
 ALTER TABLE fields
     ADD COLUMN type_key VARCHAR(64) NULL,
     ADD COLUMN type_version SMALLINT UNSIGNED NULL,
-    ADD COLUMN type_config LONGTEXT NULL,
+    ADD COLUMN type_config LONGTEXT NULL;
+
+ALTER TABLE fields
     ADD CONSTRAINT ck_fields_property_definition_envelope_complete
         CHECK (
             (
