@@ -14,6 +14,20 @@ fn database_url() -> anyhow::Result<DatabaseUrl> {
         .use_database("tachyon_apps_database_manager"))
 }
 
+#[test]
+fn record_version_column_and_check_use_separate_tidb_migrations() {
+    let column = include_str!(
+        "../migrations/20260715150000_expand_record_version.sql"
+    );
+    let check = include_str!(
+        "../migrations/20260715150001_check_record_version.sql"
+    );
+
+    assert!(column.contains("ADD COLUMN record_version"));
+    assert!(!column.contains("ADD CONSTRAINT"));
+    assert_eq!(check.matches("ADD CONSTRAINT chk_").count(), 1);
+}
+
 #[tokio::test]
 #[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
 async fn record_version_column_is_nonzero_unsigned_and_defaults_to_one(

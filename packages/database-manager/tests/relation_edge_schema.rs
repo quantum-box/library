@@ -187,6 +187,19 @@ async fn foreign_key_columns(
     .collect::<Result<Vec<_>, _>>()?)
 }
 
+#[test]
+fn relation_edge_migration_resumes_after_partial_tidb_ddl() {
+    let migration = include_str!(
+        "../migrations/20260716110000_create_relation_edges.sql"
+    );
+
+    assert!(migration.contains("information_schema.STATISTICS"));
+    assert!(
+        migration.contains("INDEX_NAME = 'uq_relationships_edge_scope'")
+    );
+    assert!(migration.contains("CREATE TABLE IF NOT EXISTS relation_edges"));
+}
+
 #[tokio::test]
 #[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
 async fn relation_edge_schema_enforces_complete_scoped_identity(
@@ -209,7 +222,7 @@ async fn relation_edge_schema_enforces_complete_scoped_identity(
         .find("ADD CONSTRAINT uq_relationships_edge_scope")
         .expect("definition candidate key must be explicit");
     let table_position = migration
-        .find("CREATE TABLE relation_edges")
+        .find("CREATE TABLE IF NOT EXISTS relation_edges")
         .expect("edge table must be created");
     assert!(candidate_key_position < table_position);
     assert!(!migration

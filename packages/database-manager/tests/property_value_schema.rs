@@ -18,6 +18,28 @@ fn generated_marker_is_added_before_its_unique_constraint() {
     assert_eq!(migration.matches("ALTER TABLE fields").count(), 3);
 }
 
+#[test]
+fn property_value_check_constraints_use_individual_migrations() {
+    let constraint_migrations = [
+        include_str!(
+            "../migrations/20260715130500_enforce_property_value_envelope.sql"
+        ),
+        include_str!(
+            "../migrations/20260715130501_check_property_value_type_version.sql"
+        ),
+        include_str!(
+            "../migrations/20260715130502_check_property_value_encoding_version.sql"
+        ),
+        include_str!(
+            "../migrations/20260715130503_check_property_value_json.sql"
+        ),
+    ];
+
+    for migration in constraint_migrations {
+        assert_eq!(migration.matches("ADD CONSTRAINT").count(), 1);
+    }
+}
+
 async fn constraint_columns(
     pool: &MySqlPool,
     table: &str,

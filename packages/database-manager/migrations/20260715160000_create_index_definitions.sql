@@ -4,11 +4,24 @@
 
 -- RelationDefinition ids need a tenant/database-leading candidate key before
 -- they can be referenced without weakening the Database BC scope.
-ALTER TABLE relationships
-    ADD CONSTRAINT uq_relationships_tenant_object_id
-        UNIQUE (tenant_id, object_id, id);
+-- Resume safely if TiDB committed this key before a later statement failed.
+SET @library_relation_identity_key_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND INDEX_NAME = 'uq_relationships_tenant_object_id'
+    ) = 0,
+    'ALTER TABLE relationships ADD CONSTRAINT uq_relationships_tenant_object_id UNIQUE (tenant_id, object_id, id)',
+    'SELECT 1'
+);
+PREPARE library_relation_identity_key_stmt
+    FROM @library_relation_identity_key_ddl;
+EXECUTE library_relation_identity_key_stmt;
+DEALLOCATE PREPARE library_relation_identity_key_stmt;
 
-CREATE TABLE index_definitions (
+CREATE TABLE IF NOT EXISTS index_definitions (
     id VARCHAR(29) NOT NULL,
     tenant_id VARCHAR(29) NOT NULL,
     database_id VARCHAR(29) NOT NULL,
@@ -31,23 +44,16 @@ CREATE TABLE index_definitions (
     CONSTRAINT uq_index_definitions_relation_target
         UNIQUE (tenant_id, database_id, relation_id),
 
-    CONSTRAINT chk_index_definitions_exactly_one_target CHECK (
-        (property_id IS NOT NULL AND relation_id IS NULL)
-        OR (property_id IS NULL AND relation_id IS NOT NULL)
-    ),
+    -- MySQL and TiDB prohibit CHECK constraints from reading columns used by
+    -- ON DELETE CASCADE foreign keys. The domain constructor and fail-closed
+    -- repository decoder enforce exactly one target; keep CASCADE here so
+    -- Property and Relation lifecycle deletion remains atomic.
     CONSTRAINT chk_index_definitions_policy CHECK (
         CAST(policy AS BINARY) IN ('NONE', 'EXACT', 'RANGE', 'FULL_TEXT')
     ),
     CONSTRAINT chk_index_definitions_unique_policy CHECK (
         is_unique = FALSE
         OR CAST(policy AS BINARY) IN ('EXACT', 'RANGE')
-    ),
-    CONSTRAINT chk_index_definitions_relation_policy CHECK (
-        relation_id IS NULL
-        OR (
-            CAST(policy AS BINARY) IN ('NONE', 'EXACT')
-            AND is_unique = FALSE
-        )
     ),
     CONSTRAINT chk_index_definitions_version CHECK (
         definition_version > 0
