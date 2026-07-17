@@ -193,11 +193,11 @@ export function resolveAppServerBackend(value: string | undefined): AppServerBac
 }
 
 export function resolveChatStreamMode(
-  deploymentMode: DeploymentMode,
+  _deploymentMode: DeploymentMode,
   value: string | undefined
 ): ChatStreamMode {
   if (isChatStreamMode(value)) return value
-  return deploymentMode === 'local' ? 'mock' : 'backend'
+  return 'mock'
 }
 
 export function resolveChatStreamTransport(value: string | undefined): ChatStreamTransport {
@@ -351,6 +351,26 @@ export function buildSyncWebsocketPath(roomId: string): string {
 
 export function buildConfiguredSyncWebsocketUrl(roomId: string): string | undefined {
   return websocketBaseUrl ? appendRoomQuery(websocketBaseUrl, roomId) : undefined
+}
+
+/**
+ * Resolve the browser-facing Photon Live URL.
+ *
+ * Hosted deployments can provide an explicit WebSocket origin. Local and
+ * on-prem web builds default to the current origin so Vite or the serving
+ * ingress can route the configured `/ws` path alongside the application.
+ */
+export function resolveBrowserSyncWebsocketUrl(
+  configuredUrl: string | undefined,
+  websocketPath: string,
+  location: Pick<Location, 'protocol' | 'host'> | undefined =
+    typeof window === 'undefined' ? undefined : window.location,
+): string | undefined {
+  if (configuredUrl) return configuredUrl
+  if (!location?.host) return undefined
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${location.host}${websocketPath}`
 }
 
 const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {}

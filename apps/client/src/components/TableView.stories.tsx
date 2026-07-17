@@ -34,8 +34,8 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByPlaceholderText('Filter records...')).toBeVisible()
-    await expect(canvas.getByText(/24 records/)).toBeVisible()
+    await expect(canvas.getByPlaceholderText('Filter data...')).toBeVisible()
+    await expect(canvas.getByText(/24 data/)).toBeVisible()
     await expect(canvas.getByText('ダッシュボードのレスポンシブ対応')).toBeVisible()
   },
 }
@@ -43,7 +43,7 @@ export const Default: Story = {
 export const Filtered: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.type(canvas.getByPlaceholderText('Filter records...'), 'Slack')
+    await userEvent.type(canvas.getByPlaceholderText('Filter data...'), 'Slack')
     await expect(canvas.getByText('Slack連携の通知機能')).toBeVisible()
     await expect(canvas.queryByText('ダッシュボードのレスポンシブ対応')).not.toBeInTheDocument()
   },
@@ -55,8 +55,8 @@ export const CreateInline: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /new record/i }))
-    await userEvent.type(canvas.getByPlaceholderText('Record title を入力して Enter...'), 'Storybook database record{Enter}')
+    await userEvent.click(canvas.getByRole('button', { name: /new data/i }))
+    await userEvent.type(canvas.getByPlaceholderText('Data name を入力して Enter...'), 'Storybook database record{Enter}')
     await expect(args.onCreateRecord).toHaveBeenCalledWith({
       title: 'Storybook database record',
     })

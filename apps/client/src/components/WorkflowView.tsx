@@ -10,14 +10,17 @@ import {
   Position,
   ReactFlow,
   addEdge,
+  applyEdgeChanges,
   applyNodeChanges,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
   type NodeChange,
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
+import { ListPlus, PanelLeftClose, Trash2 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import {
@@ -205,6 +208,7 @@ export function WorkflowView({
   const [savedSignature, setSavedSignature] = useState('')
   const [savedCountSignature, setSavedCountSignature] = useState('')
   const [previewRecordId, setPreviewRecordId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const nodeSequence = useRef(0)
   const hasLocalCanvasChanges = useRef(false)
   const skipNextSyncWrite = useRef(false)
@@ -219,7 +223,7 @@ export function WorkflowView({
     (template) => template.id === selectedTemplateId
   ) ?? workflowTemplates[0]
 
-  const visibleRecords = useMemo(() => records.slice(0, 40), [records])
+  const visibleRecords = records
   const previewRecord = useMemo<DatabaseRecord | null>(() => {
     if (!previewRecordId) return null
 
@@ -246,6 +250,10 @@ export function WorkflowView({
   const canvasCountSignature = useMemo(
     () => `${selectedTemplateId}:${nodes.length}:${edges.length}`,
     [edges.length, nodes.length, selectedTemplateId]
+  )
+  const renderedEdges = useMemo(
+    () => edges.map((edge) => ({ ...edge, selected: edge.id === selectedEdgeId })),
+    [edges, selectedEdgeId]
   )
   const canvasSignature = useMemo(
     () =>
@@ -355,6 +363,8 @@ export function WorkflowView({
     let cancelled = false
     hasLocalCanvasChanges.current = false
     setLoadedDatabaseId(null)
+    setPreviewRecordId(null)
+    setSelectedEdgeId(null)
 
     void initialSyncReady
       .then(() => {
@@ -579,6 +589,19 @@ export function WorkflowView({
     []
   )
 
+  const handleEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => {
+    if (changes.some((change) => change.type !== 'select')) {
+      hasLocalCanvasChanges.current = true
+    }
+    if (
+      selectedEdgeId &&
+      changes.some((change) => change.type === 'remove' && change.id === selectedEdgeId)
+    ) {
+      setSelectedEdgeId(null)
+    }
+    setEdges((current) => applyEdgeChanges(changes, current))
+  }, [selectedEdgeId])
+
   const handleConnect = useCallback((connection: Connection) => {
     hasLocalCanvasChanges.current = true
     setEdges((current) =>
@@ -594,18 +617,39 @@ export function WorkflowView({
     )
   }, [])
 
-  const handleNodeDoubleClick = useCallback(
+  const handleNodeClick = useCallback(
     (_event: MouseEvent, node: WorkflowRecordNode) => {
       setPreviewRecordId(node.data.recordId)
     },
     []
   )
 
+  const handleSelectionChange = useCallback(
+    ({ nodes: selectedNodes, edges: selectedEdges }: {
+      nodes: WorkflowRecordNode[]
+      edges: Edge[]
+    }) => {
+      if (selectedNodes.length === 1) {
+        setPreviewRecordId(selectedNodes[0].data.recordId)
+      }
+      setSelectedEdgeId(selectedEdges.length === 1 ? selectedEdges[0].id : null)
+    },
+    []
+  )
+
+  const deleteSelectedEdge = useCallback(() => {
+    if (!selectedEdgeId) return
+    hasLocalCanvasChanges.current = true
+    setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId))
+    setSelectedEdgeId(null)
+  }, [selectedEdgeId])
+
   return (
-    <div className="flex h-full min-h-0 bg-canvas">
+    <div className="relative flex h-full min-h-0 bg-canvas">
       {!itemsPanelOpen && (
         <aside className="hidden w-16 shrink-0 border-r border-border bg-panel p-2 md:flex md:flex-col md:items-center">
           <button
+            type="button"
             data-testid="toggle-workflow-items"
             className="flex min-h-7 w-full items-center justify-center rounded bg-surface-hover px-1.5 py-1 text-[10px] font-medium text-muted hover:text-foreground"
             title="Open Library data"
@@ -619,7 +663,7 @@ export function WorkflowView({
       {itemsPanelOpen && (
       <aside
         data-testid="workflow-elements-panel"
-        className="hidden w-72 shrink-0 border-r border-border bg-panel p-2.5 md:flex md:flex-col"
+        className="absolute inset-x-2 bottom-2 top-2 z-30 flex min-h-0 shrink-0 flex-col rounded-md border border-border bg-panel p-2.5 shadow-soft md:static md:inset-auto md:z-auto md:w-72 md:rounded-none md:border-y-0 md:border-l-0 md:shadow-none"
       >
         <div className="mb-2 px-0.5">
           <div className="flex items-center justify-between gap-2">
@@ -627,12 +671,14 @@ export function WorkflowView({
               Library Data
             </div>
             <button
+              type="button"
               data-testid="toggle-workflow-items"
-              className="flex h-6 w-6 items-center justify-center rounded bg-surface-hover text-xs text-muted hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded bg-surface-hover text-muted hover:text-foreground"
               title="Close Library data"
+              aria-label="Close Library data"
               onClick={() => setItemsPanelOpen(false)}
             >
-              ‹
+              <PanelLeftClose className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
           <p className="mt-1 text-[11px] leading-snug text-subtle">
@@ -670,6 +716,7 @@ export function WorkflowView({
                   </div>
                 </div>
                 <button
+                  type="button"
                   data-testid="workflow-add-record"
                   className="shrink-0 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!workflowLoaded}
@@ -692,6 +739,17 @@ export function WorkflowView({
       <div className="flex min-w-0 flex-1 flex-col p-1 md:p-2">
         <div className="shrink-0 border-b border-border px-3 py-2 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
+            {!itemsPanelOpen && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded bg-surface-hover px-2 py-1 text-[11px] font-medium text-muted hover:text-foreground md:hidden"
+                aria-label="Open Library data"
+                onClick={() => setItemsPanelOpen(true)}
+              >
+                <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                Items
+              </button>
+            )}
             <span className="text-xs font-medium text-foreground">Workflow Canvas</span>
             <span className="min-w-0 truncate text-xs text-subtle">
               {selectedTemplate.canvasHint}
@@ -709,6 +767,7 @@ export function WorkflowView({
           <div className="mt-2 flex flex-wrap gap-1">
             {workflowTemplates.map((template) => (
               <button
+                type="button"
                 key={template.id}
                 data-testid={`workflow-template-${template.id}`}
                 className={`rounded px-2.5 py-1.5 text-xs font-medium transition-colors ${
@@ -724,6 +783,17 @@ export function WorkflowView({
             <span className="ml-1 self-center text-xs text-subtle">
               {selectedTemplate.description}
             </span>
+            {selectedEdgeId && (
+              <button
+                type="button"
+                data-testid="workflow-delete-edge"
+                className="ml-auto inline-flex items-center gap-1 rounded bg-status-cancelled px-2.5 py-1.5 text-xs font-medium text-white"
+                onClick={deleteSelectedEdge}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Delete connection
+              </button>
+            )}
           </div>
         </div>
 
@@ -736,15 +806,19 @@ export function WorkflowView({
         >
           <ReactFlow<WorkflowRecordNode>
             nodes={nodes}
-            edges={edges}
+            edges={renderedEdges}
             nodeTypes={nodeTypes}
             nodesDraggable
             nodesConnectable
             connectOnClick
-            edgesFocusable={false}
+            edgesFocusable
             onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
             onConnect={handleConnect}
-            onNodeDoubleClick={handleNodeDoubleClick}
+            onNodeClick={handleNodeClick}
+            onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)}
+            onSelectionChange={handleSelectionChange}
+            onPaneClick={() => setSelectedEdgeId(null)}
             onInit={setReactFlowInstance}
             fitView
             fitViewOptions={{ padding: 0.25 }}
@@ -767,19 +841,21 @@ export function WorkflowView({
           </ReactFlow>
         </div>
       </div>
-      <DetailPanel
-        record={previewRecord}
-        onClose={() => setPreviewRecordId(null)}
-        onUpdateRecord={onUpdateRecord}
-        onDeleteRecord={
-          onDeleteRecord
-            ? (recordId: string) => {
-                onDeleteRecord(recordId)
-                setPreviewRecordId(null)
-              }
-            : undefined
-        }
-      />
+      {previewRecord && (
+        <DetailPanel
+          record={previewRecord}
+          onClose={() => setPreviewRecordId(null)}
+          onUpdateRecord={onUpdateRecord}
+          onDeleteRecord={
+            onDeleteRecord
+              ? (recordId: string) => {
+                  onDeleteRecord(recordId)
+                  setPreviewRecordId(null)
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   )
 }

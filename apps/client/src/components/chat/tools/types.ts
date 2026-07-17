@@ -39,6 +39,14 @@ export interface RecordToolRuntime {
   syncRecords: (records: DatabaseRecord[]) => void
 }
 
+export interface RecordToolRepositoryTarget {
+  id: string
+  label: string
+  orgUsername: string
+  repoUsername: string
+  operatorId?: string
+}
+
 export interface RecordToolResponse {
   action: 'search' | 'list' | 'get' | 'create' | 'update' | 'move'
   records: DatabaseRecord[]
@@ -48,6 +56,8 @@ export interface RecordToolResponse {
 
 export interface ToolRuntimeContext {
   recordTools?: RecordToolRuntime
+  repositoryTargets?: RecordToolRepositoryTarget[]
+  selectedRepositoryId?: string
   documentContext?: WorkspaceDocContext | null
 }
 

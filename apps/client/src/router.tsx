@@ -11,8 +11,8 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
-import { ChevronRight, Database, Filter, FolderGit2, Plus, X } from 'lucide-react'
-import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef } from 'react'
+import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RotateCcw, X } from 'lucide-react'
+import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { TableView } from './components/TableView'
@@ -20,6 +20,10 @@ import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
 import { WorkflowView } from './components/WorkflowView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
+import {
+  DeleteDatabaseViewDialog,
+  RenameDatabaseViewDialog,
+} from './components/DatabaseViewDialogs'
 import { DatabaseViewSettingsPanel } from './components/DatabaseViewSettingsPanel'
 import { DetailPanel } from './components/DetailPanel'
 import { DataEditorPage } from './components/DataEditorPage'
@@ -27,10 +31,13 @@ import { CreateRecordModal } from './components/CreateRecordModal'
 import { LibraryHome } from './components/LibraryHome'
 import { OrganizationOverview } from './components/OrganizationOverview'
 import { RepositoryOverview } from './components/RepositoryOverview'
+import { RepositorySettingsView } from './components/RepositorySettingsView'
 import { Kbd, KbdGroup } from './components/Kbd'
 import { ChatView } from './components/chat/ChatView'
 import { DocsView } from './components/docs/DocsView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
+import { CommandPalette } from './components/CommandPalette'
+import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
 import {
   DatabasesProvider,
@@ -57,6 +64,14 @@ import {
   saveDatabaseViewDraft,
 } from './lib/databaseViews/drafts'
 import type { DatabaseViewDefinition, DatabaseViewType } from './lib/databaseViews/types'
+import {
+  OPEN_COMMAND_PALETTE_EVENT,
+  OPEN_CREATE_DATA_EVENT,
+} from './lib/ui/workspaceEvents'
+import {
+  focusRecordSearchInput,
+  focusRecordSearchInputWhenReady,
+} from './lib/ui/focusRecordSearch'
 
 // ── Search params ──────────────────────────────────────────────
 
@@ -66,6 +81,12 @@ interface RecordSearchParams {
   status?: Status
   sort?: string
   desc?: boolean
+}
+
+function parseRecordStatus(value: unknown): Status | undefined {
+  return typeof value === 'string' && Object.hasOwn(statusConfig, value)
+    ? value as Status
+    : undefined
 }
 
 const isMacPlatform = () =>
@@ -138,7 +159,7 @@ function validateRecordSearch(search: Record<string, unknown>): RecordSearchPara
   return {
     database: typeof search.database === 'string' ? search.database : undefined,
     view: typeof search.view === 'string' ? search.view : undefined,
-    status: typeof search.status === 'string' ? (search.status as Status) : undefined,
+    status: parseRecordStatus(search.status),
     sort: typeof search.sort === 'string' ? search.sort : undefined,
     desc: search.desc === true || search.desc === 'true' ? true : undefined,
   }
@@ -163,10 +184,11 @@ function filterRecordsByDatabase(
   databases: WorkspaceDatabase[],
   databaseId: string | undefined
 ) {
+  if (!databaseId) return records
   const database = getDatabaseProject(databases, databaseId)
   return database
     ? records.filter((record) => recordMatchesDatabase(record, database))
-    : records
+    : []
 }
 
 // ── Create DatabaseRecord Modal context ─────────────────────────────────
@@ -274,7 +296,7 @@ function DatabaseHeader({
               data-testid="toggle-database-filters"
               variant="ghost"
               size="sm"
-              className="hidden md:inline-flex"
+              className="inline-flex"
               onClick={onToggleFilters}
             >
               <Filter aria-hidden="true" />
@@ -340,16 +362,9 @@ function SignedInLibraryDashboard({
 }
 
 function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  useEffect(() => {
-    if (!open) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  useDialogFocus({ open, dialogRef, initialFocusRef: closeButtonRef, onClose })
 
   if (!open) return null
 
@@ -373,20 +388,28 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     <div
       data-testid="keyboard-shortcuts-panel"
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
-      onClick={(event) => {
+      onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-4 text-foreground shadow-soft">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keyboard-shortcuts-title"
+        tabIndex={-1}
+        className="w-full max-w-sm rounded-lg border border-border bg-surface p-4 text-foreground shadow-soft"
+      >
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold">Command Menu</h2>
+          <h2 id="keyboard-shortcuts-title" className="text-sm font-semibold">Keyboard shortcuts</h2>
           <button
+            ref={closeButtonRef}
             type="button"
             aria-label="Close keyboard shortcuts"
-            className="flex h-7 w-7 items-center justify-center rounded bg-surface-hover text-xs text-muted hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded bg-surface-hover text-xs text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={onClose}
           >
-            x
+            <X className="size-4" aria-hidden="true" />
           </button>
         </div>
         <div className="space-y-1">
@@ -405,6 +428,7 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
 function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void) {
   const navigate = useNavigate()
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const goModeTimerRef = useRef<number | null>(null)
   const location = useRouterState({ select: (state) => state.location })
   const search = location.search as RecordSearchParams
@@ -419,7 +443,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   const navigateToDatabaseView = useCallback(
     (type: DatabaseViewType) => {
       const database = search.database
-      void navigate({
+      return navigate({
         to: '/databases',
         search: {
           database,
@@ -439,24 +463,60 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
       } else if (target === 'sync') {
         void navigate({ to: '/sync' })
       } else {
-        navigateToDatabaseView(target)
+        void navigateToDatabaseView(target)
       }
     },
     [navigate, navigateToDatabaseView]
   )
 
   const focusRecordSearch = useCallback(() => {
-    navigateToDatabaseView('table')
-    window.setTimeout(() => {
-      const input = document.querySelector<HTMLInputElement>('[data-testid="records-global-filter"]')
-      input?.focus()
-      input?.select()
-    }, 50)
-  }, [navigateToDatabaseView])
+    const isDatabaseRoute = location.pathname === '/databases' || location.pathname === '/databases/'
+    const isDefaultTable = search.view?.includes(':table') ?? false
+    if (isDatabaseRoute && isDefaultTable) {
+      if (!focusRecordSearchInput()) void focusRecordSearchInputWhenReady()
+      return
+    }
+    if (isDatabaseRoute && focusRecordSearchInput()) return
+
+    void navigateToDatabaseView('table').then(() => focusRecordSearchInputWhenReady())
+  }, [location.pathname, navigateToDatabaseView, search.view])
+
+  const openCreateDataAtDatabaseIndex = useCallback(() => {
+    if (location.pathname === '/databases' || location.pathname === '/databases/') {
+      setCreateModalOpen(true)
+      return
+    }
+
+    const database = search.database
+    void navigate({
+      to: '/databases',
+      search: {
+        database,
+        view: getDefaultDatabaseViewId(getDatabaseViewScopeId(database), 'table'),
+      },
+    }).then(() => setCreateModalOpen(true))
+  }, [location.pathname, navigate, search.database, setCreateModalOpen])
+
+  useEffect(() => {
+    const openCommandPalette = () => {
+      setShortcutsOpen(false)
+      setCommandPaletteOpen(true)
+    }
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette)
+    return () => window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener(OPEN_CREATE_DATA_EVENT, openCreateDataAtDatabaseIndex)
+    return () => window.removeEventListener(OPEN_CREATE_DATA_EVENT, openCreateDataAtDatabaseIndex)
+  }, [openCreateDataAtDatabaseIndex])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const usesShortcutModifier = isMacPlatform() ? event.metaKey : event.ctrlKey
+      // Browser automation, remote desktops, and user-agent overrides can report
+      // a platform that differs from the physical keyboard. Accept either
+      // primary modifier while keeping the displayed hint platform-specific.
+      const usesShortcutModifier = event.metaKey || event.ctrlKey
 
       if (!isEditableShortcutTarget(event.target) && (event.key === '?' || (event.key === '/' && event.shiftKey))) {
         event.preventDefault()
@@ -477,10 +537,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
       if (!isEditableShortcutTarget(event.target) && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key.toLowerCase() === 'c') {
           event.preventDefault()
-          if (!location.pathname.startsWith('/databases')) {
-            navigateToDatabaseView('table')
-          }
-          setCreateModalOpen(true)
+          openCreateDataAtDatabaseIndex()
           return
         }
 
@@ -505,7 +562,8 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
       if (key === 'k') {
         event.preventDefault()
-        setShortcutsOpen(true)
+        setShortcutsOpen(false)
+        setCommandPaletteOpen(true)
         return
       }
 
@@ -518,7 +576,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
       if (key === 'b') {
         event.preventDefault()
         const currentView = typeof search.view === 'string' && search.view.includes(':board') ? 'board' : 'table'
-        navigateToDatabaseView(currentView === 'board' ? 'table' : 'board')
+        void navigateToDatabaseView(currentView === 'board' ? 'table' : 'board')
       }
     }
 
@@ -533,6 +591,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     location.pathname,
     navigate,
     navigateToDatabaseView,
+    openCreateDataAtDatabaseIndex,
     runShortcutAction,
     search.view,
     setCreateModalOpen,
@@ -541,6 +600,8 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   return {
     shortcutsOpen,
     closeShortcuts: () => setShortcutsOpen(false),
+    commandPaletteOpen,
+    closeCommandPalette: () => setCommandPaletteOpen(false),
   }
 }
 
@@ -548,7 +609,12 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
 function AuthenticatedWorkspaceRoot() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
-  const { shortcutsOpen, closeShortcuts } = useGlobalKeyboardShortcuts(setCreateModalOpen)
+  const {
+    shortcutsOpen,
+    closeShortcuts,
+    commandPaletteOpen,
+    closeCommandPalette,
+  } = useGlobalKeyboardShortcuts(setCreateModalOpen)
 
   return (
     <DatabaseRecordsProvider>
@@ -560,12 +626,112 @@ function AuthenticatedWorkspaceRoot() {
                 <Sidebar />
                 <Outlet />
               </div>
+              <WorkspaceHydrationStatus />
+              <WorkspaceMutationError />
               <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
+              <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
             </CreateModalContext.Provider>
           </AttachmentsProvider>
         </DatabaseViewsProvider>
       </DatabasesProvider>
     </DatabaseRecordsProvider>
+  )
+}
+
+function WorkspaceHydrationStatus() {
+  const { records, hydrationLoading, hydrationError, refreshRecords } = useDatabaseRecords()
+  if (!hydrationError && (!hydrationLoading || records.length > 0)) return null
+
+  return (
+    <div
+      role={hydrationError ? 'alert' : 'status'}
+      aria-live={hydrationError ? 'assertive' : 'polite'}
+      className="fixed left-1/2 top-3 z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-sm shadow-overlay"
+    >
+      {hydrationLoading ? (
+        <RotateCcw className="mt-0.5 size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
+      ) : (
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">
+          {hydrationLoading ? 'Loading Library data' : 'Library data could not load'}
+        </p>
+        {hydrationError ? (
+          <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
+            {hydrationError} Cached local data remains available.
+          </p>
+        ) : null}
+      </div>
+      {hydrationError ? (
+        <Button size="sm" onClick={refreshRecords}>Try again</Button>
+      ) : null}
+    </div>
+  )
+}
+
+function WorkspaceMutationError() {
+  const { mutationError, clearMutationError } = useDatabaseRecords()
+  if (!mutationError) return null
+
+  const actionLabel = mutationError.action === 'move'
+    ? 'move'
+    : mutationError.action === 'delete'
+      ? 'delete'
+      : 'update'
+
+  return (
+    <div
+      role="alert"
+      className="fixed bottom-4 left-1/2 z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-destructive/30 bg-background px-3 py-3 text-sm shadow-overlay"
+    >
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Couldn’t {actionLabel} data</p>
+        <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
+          {mutationError.message} The current server-backed value was kept.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        aria-label="Dismiss data error"
+        onClick={clearMutationError}
+      >
+        <X className="size-4" aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
+function RouteState({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: string
+  action?: ReactNode
+}) {
+  return (
+    <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-surface px-5 py-12">
+      <div className="w-full max-w-md rounded-xl border border-border bg-background p-6 text-center shadow-soft">
+        <span className="mx-auto flex size-10 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
+          <AlertTriangle className="size-5" aria-hidden="true" />
+        </span>
+        <h1 className="mt-4 text-lg font-semibold tracking-tight">{title}</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          {action}
+          <Button variant="primary" asChild>
+            <Link to="/home">
+              <Home aria-hidden="true" />
+              Home
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </main>
   )
 }
 
@@ -577,6 +743,24 @@ const rootRoute = createRootRoute({
       </AuthGate>
     )
   },
+  notFoundComponent: () => (
+    <RouteState
+      title="Page not found"
+      description="This Library page does not exist or may have moved."
+    />
+  ),
+  errorComponent: ({ reset }) => (
+    <RouteState
+      title="Library could not open this page"
+      description="Your local data is still on this device. Retry the page, or return home and choose another view."
+      action={(
+        <Button variant="secondary" onClick={reset}>
+          <RotateCcw aria-hidden="true" />
+          Retry
+        </Button>
+      )}
+    />
+  ),
 })
 
 // ── Index Route (redirect → /home) ────────────────────────────
@@ -617,6 +801,29 @@ function RepositoryPage() {
   return <RepositoryOverview organization={organization} repository={repository} />
 }
 
+const repositorySettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'repositories/$organization/$repository/settings',
+  component: RepositorySettingsPage,
+})
+
+function RepositorySettingsPage() {
+  const { organization, repository } = repositorySettingsRoute.useParams()
+  const { databases } = useWorkspaceDatabases()
+  const operatorId = databases.find(
+    (database) =>
+      database.orgUsername === organization && database.repoUsername === repository,
+  )?.operatorId
+
+  return (
+    <RepositorySettingsView
+      organization={organization}
+      repository={repository}
+      operatorId={operatorId}
+    />
+  )
+}
+
 // ── Databases Layout Route (/databases) ───────────────────────
 
 const databasesRoute = createRoute({
@@ -639,12 +846,15 @@ function DatabasesLayout() {
     databases,
     organizations,
     selectedOrganizationId,
+    repositoriesLoading,
+    repositoriesError,
   } = useWorkspaceDatabases()
   const selectedDatabase = getDatabaseProject(databases, database)
   const visibleDatabases = selectedOrganizationId
     ? databases.filter((item) => item.operatorId === selectedOrganizationId)
     : databases
   const {
+    ready: databaseViewsReady,
     getViewsForDatabase,
     createDatabaseView,
     updateDatabaseView,
@@ -656,6 +866,8 @@ function DatabasesLayout() {
   const { open: createModalOpen, setOpen: setCreateModalOpen } = useCreateModal()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [draftView, setDraftView] = useState<DatabaseViewDefinition | null>(null)
+  const [renameViewTarget, setRenameViewTarget] = useState<DatabaseViewDefinition | null>(null)
+  const [deleteViewTarget, setDeleteViewTarget] = useState<DatabaseViewDefinition | null>(null)
   const databaseScopeId = getDatabaseViewScopeId(database)
   const scopedViews = useMemo(
     () => getViewsForDatabase(database),
@@ -694,12 +906,12 @@ function DatabasesLayout() {
   )
 
   useEffect(() => {
-    if (!savedSelectedView || viewId === savedSelectedView.id) return
+    if (!databaseViewsReady || !savedSelectedView || viewId === savedSelectedView.id) return
     navigateWithinDatabase(
       { database, view: savedSelectedView.id, status, sort, desc },
       true
     )
-  }, [database, desc, navigateWithinDatabase, savedSelectedView, sort, status, viewId])
+  }, [database, databaseViewsReady, desc, navigateWithinDatabase, savedSelectedView, sort, status, viewId])
 
   useEffect(() => {
     if (!savedSelectedView) return
@@ -714,12 +926,12 @@ function DatabasesLayout() {
 
   const organizationRecords = useMemo(
     () =>
-      selectedOrganizationId && !selectedDatabase
+      selectedOrganizationId && !database
         ? records.filter((record) =>
             visibleDatabases.some((candidate) => recordMatchesDatabase(record, candidate)),
           )
         : records,
-    [records, selectedDatabase, selectedOrganizationId, visibleDatabases],
+    [database, records, selectedOrganizationId, visibleDatabases],
   )
   const databaseRecords = useMemo(
     () => filterRecordsByDatabase(organizationRecords, databases, database),
@@ -814,7 +1026,7 @@ function DatabasesLayout() {
       } else {
         void navigate({
           to: '/databases/$recordId',
-          params: { recordId: record.identifier },
+          params: { recordId: record.id },
           search: { database, view: savedSelectedView.id },
         })
       }
@@ -824,12 +1036,12 @@ function DatabasesLayout() {
 
   const handleCreateRecordInDatabase = useCallback(
     (data: Parameters<typeof handleCreateRecord>[0]) => {
-      handleCreateRecord({
+      return handleCreateRecord({
         ...data,
-        project: selectedDatabase?.label ?? data.project,
-        orgUsername: selectedDatabase?.orgUsername,
-        repoUsername: selectedDatabase?.repoUsername,
-        operatorId: selectedDatabase?.operatorId,
+        project: data.project ?? selectedDatabase?.label,
+        orgUsername: data.orgUsername ?? selectedDatabase?.orgUsername,
+        repoUsername: data.repoUsername ?? selectedDatabase?.repoUsername,
+        operatorId: data.operatorId ?? selectedDatabase?.operatorId,
       })
     },
     [handleCreateRecord, selectedDatabase]
@@ -877,10 +1089,17 @@ function DatabasesLayout() {
 
   const handleRenameView = useCallback(
     (view: DatabaseViewDefinition) => {
-      const name = window.prompt('View name', view.name)
-      if (name) renameDatabaseView(view.id, name)
+      setRenameViewTarget(view)
     },
-    [renameDatabaseView]
+    []
+  )
+
+  const confirmRenameView = useCallback(
+    (name: string) => {
+      if (!renameViewTarget) return
+      renameDatabaseView(renameViewTarget.id, name)
+    },
+    [renameDatabaseView, renameViewTarget]
   )
 
   const handleDuplicateView = useCallback(
@@ -896,24 +1115,54 @@ function DatabasesLayout() {
 
   const handleDeleteView = useCallback(
     (view: DatabaseViewDefinition) => {
-      deleteDatabaseView(view)
-      const nextView = scopedViews.find((candidate) => candidate.id !== view.id)
+      setDeleteViewTarget(view)
+    },
+    []
+  )
+
+  const confirmDeleteView = useCallback(
+    async () => {
+      if (!deleteViewTarget) return
+      const nextView = scopedViews.find((candidate) => candidate.id !== deleteViewTarget.id)
       if (nextView) {
-        void navigate({
+        await navigate({
           to: '/databases',
           search: { database, view: nextView.id },
         })
       }
+      deleteDatabaseView(deleteViewTarget)
     },
-    [database, deleteDatabaseView, navigate, scopedViews]
+    [database, deleteDatabaseView, deleteViewTarget, navigate, scopedViews]
   )
   const showSignedInDashboard = records.length === 0 && visibleDatabases.length === 0
   const useLibraryRepoTable = Boolean(
     selectedDatabase?.orgUsername && selectedDatabase?.repoUsername
   )
   const showDataEditorPage = Boolean(
-    selectedIdentifier && effectiveView.type !== 'workflow'
+    selectedIdentifier && effectiveView.type !== 'workflow' && (!database || selectedDatabase)
   )
+
+  if (database && !selectedDatabase && !repositoriesLoading && !repositoriesError) {
+    return (
+      <RouteState
+        title="Repository not found"
+        description="This repository is not available in the current Library workspace. It may have been removed or you may need access."
+        action={(
+          <Button variant="secondary" asChild>
+            <Link
+              to="/databases"
+              search={{
+                view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
+              }}
+            >
+              <Database aria-hidden="true" />
+              Open all data
+            </Link>
+          </Button>
+        )}
+      />
+    )
+  }
 
   if (showDataEditorPage) {
     return (
@@ -1052,13 +1301,33 @@ function DatabasesLayout() {
         records={databaseRecords}
         view={effectiveView}
         onChangeView={updateDraftView}
+        onClose={() => setFiltersOpen(false)}
       />
       </div>
       <Outlet />
+      {renameViewTarget ? (
+        <RenameDatabaseViewDialog
+          key={renameViewTarget.id}
+          view={renameViewTarget}
+          onCancel={() => setRenameViewTarget(null)}
+          onConfirm={confirmRenameView}
+        />
+      ) : null}
+      {deleteViewTarget ? (
+        <DeleteDatabaseViewDialog
+          key={deleteViewTarget.id}
+          view={deleteViewTarget}
+          onCancel={() => setDeleteViewTarget(null)}
+          onConfirm={confirmDeleteView}
+        />
+      ) : null}
       <CreateRecordModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateRecordInDatabase}
+        repositories={visibleDatabases}
+        initialRepositoryId={selectedDatabase?.id}
+        requireRepository
       />
     </>
   )
@@ -1157,7 +1426,7 @@ function RecordDetailPanel() {
   ) {
     return (
       <DataEditorPage
-        dataId={recordId}
+        dataId={record?.id ?? recordId}
         org={selectedDatabase.orgUsername}
         repo={selectedDatabase.repoUsername}
         operatorId={selectedDatabase.operatorId}
@@ -1192,7 +1461,7 @@ const kanbanRoute = createRoute({
   path: 'databases/board',
   validateSearch: (search: Record<string, unknown>): { database?: string; status?: Status } => ({
     database: typeof search.database === 'string' ? search.database : undefined,
-    status: typeof search.status === 'string' ? (search.status as Status) : undefined,
+    status: parseRecordStatus(search.status),
   }),
   beforeLoad: ({ search }) => {
     const databaseId = getDatabaseViewScopeId(search.database)
@@ -1269,12 +1538,19 @@ const syncRoute = createRoute({
 const docsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'docs',
+  validateSearch: (search: Record<string, unknown>): { create?: boolean; database?: string } => ({
+    create: search.create === true || search.create === 'true' ? true : undefined,
+    database: typeof search.database === 'string' ? search.database : undefined,
+  }),
   component: DocsPage,
 })
 
 const documentDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'documents/$documentId',
+  validateSearch: (search: Record<string, unknown>): { database?: string } => ({
+    database: typeof search.database === 'string' ? search.database : undefined,
+  }),
   component: DocsPage,
 })
 
@@ -1283,24 +1559,43 @@ const documentDetailRoute = createRoute({
 const legacyKanbanRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'kanban',
-  beforeLoad: () => {
+  validateSearch: (search: Record<string, unknown>): { database?: string; status?: Status } => ({
+    database: typeof search.database === 'string' ? search.database : undefined,
+    status: parseRecordStatus(search.status),
+  }),
+  beforeLoad: ({ search }) => {
+    const databaseId = getDatabaseViewScopeId(search.database)
     throw redirect({
       to: '/databases',
       search: {
-        view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'board'),
+        database: search.database,
+        view: getDefaultDatabaseViewId(databaseId, 'board'),
+        ...(search.status ? { status: search.status } : {}),
       },
     })
   },
 })
 
 function DocsPage() {
+  const location = useRouterState({ select: (state) => state.location })
   const detailMatch = useMatch({
     from: documentDetailRoute.id,
     shouldThrow: false,
   })
   const selectedDocId = (detailMatch?.params as { documentId?: string })?.documentId ?? null
 
-  return <DocsView selectedDocId={selectedDocId} />
+  const createOnOpen = location.pathname === '/docs' && (
+    (location.search as { create?: boolean }).create === true
+  )
+  const initialDatabaseId = (location.search as { database?: string }).database
+
+  return (
+    <DocsView
+      selectedDocId={selectedDocId}
+      createOnOpen={createOnOpen}
+      initialDatabaseId={initialDatabaseId}
+    />
+  )
 }
 
 // ── Route Tree & Router ───────────────────────────────────────
@@ -1310,6 +1605,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   organizationRoute,
   repositoryRoute,
+  repositorySettingsRoute,
   databasesRoute.addChildren([recordsIndexRoute, recordDetailRoute]),
   kanbanRoute,
   workflowRoute,

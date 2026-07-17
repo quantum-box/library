@@ -7,6 +7,7 @@ import {
   createServerRecord,
   fetchServerRecords,
   updateServerRecord,
+  type ServerCreateRecordData,
   type ServerUpdateRecordData,
 } from '../../../lib/recordsApi'
 import type { DatabaseRecord, Priority, Status } from '../../../data/mock'
@@ -214,6 +215,23 @@ function requireRecordRuntime(context?: ToolRuntimeContext) {
   return recordTools
 }
 
+function requireRepositoryTarget(context?: ToolRuntimeContext) {
+  const targets = context?.repositoryTargets ?? []
+  if (targets.length === 0) {
+    throw new Error('No repository is available for creating data')
+  }
+
+  const selected = context?.selectedRepositoryId
+    ? targets.find((target) => target.id === context.selectedRepositoryId)
+    : undefined
+  if (selected) return selected
+  if (targets.length === 1) return targets[0]
+  if (context?.selectedRepositoryId) {
+    throw new Error('The selected repository is no longer available')
+  }
+  throw new Error('Choose a repository before creating data')
+}
+
 function asText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
@@ -366,20 +384,31 @@ async function executeRecordCreate(
   context?: ToolRuntimeContext
 ): Promise<ToolResult> {
   const runtime = requireRecordRuntime(context)
+  const target = requireRepositoryTarget(context)
   const start = Date.now()
   const title = asText(args.title)
   if (!title) throw new Error('Data title is required')
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-  const record = await createServerRecord({
+  const createData: ServerCreateRecordData = {
     title,
-    description: asText(args.description) ?? '',
-    status: asStatus(args.status) ?? 'todo',
-    priority: asPriority(args.priority) ?? 'none',
-    assignee: asText(args.assignee) ?? null,
-    labels: asLabels(args.labels) ?? [],
-    project: asText(args.project),
-  })
+    project: target.label,
+    orgUsername: target.orgUsername,
+    repoUsername: target.repoUsername,
+    operatorId: target.operatorId,
+  }
+  const description = asText(args.description)
+  const status = asStatus(args.status)
+  const priority = asPriority(args.priority)
+  const assignee = asText(args.assignee)
+  const labels = asLabels(args.labels)
+  if (description !== undefined) createData.description = description
+  if (status !== undefined) createData.status = status
+  if (priority !== undefined) createData.priority = priority
+  if (assignee !== undefined || args.assignee === null) createData.assignee = assignee ?? null
+  if (labels && labels.length > 0) createData.labels = labels
+
+  const record = await createServerRecord(createData)
   runtime.syncRecord(record)
 
   return {

@@ -178,16 +178,6 @@ export async function createDoc(input: CreateDocInput = {}): Promise<DocMetadata
   return doc
 }
 
-export async function ensureDoc(docId: string): Promise<DocMetadata> {
-  const existing = await getDoc(docId)
-  if (existing) return existing
-
-  return createDoc({
-    id: docId,
-    title: 'Shared document',
-  })
-}
-
 export async function updateDoc(docId: string, input: UpdateDocInput): Promise<DocMetadata | null> {
   const existing = await getDoc(docId)
   if (!existing) return null
@@ -208,6 +198,28 @@ export async function updateDoc(docId: string, input: UpdateDocInput): Promise<D
 
   emitDocsChanged()
   return result.rows[0] ? toDoc(result.rows[0]) : null
+}
+
+export async function deleteDoc(docId: string): Promise<boolean> {
+  const db = await dbPromise
+  const deleted = await db.transaction(async (tx) => {
+    await tx.query(
+      `DELETE FROM document_record_links WHERE doc_id = $1`,
+      [docId]
+    )
+    const result = await tx.query<{ id: string }>(
+      `
+        DELETE FROM documents
+        WHERE id = $1 AND workspace_id = $2
+        RETURNING id
+      `,
+      [docId, appKitConfig.workspace.id]
+    )
+    return result.rows.length > 0
+  })
+
+  if (deleted) emitDocsChanged()
+  return deleted
 }
 
 export async function touchDoc(docId: string): Promise<void> {

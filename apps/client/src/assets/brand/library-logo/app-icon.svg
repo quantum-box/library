@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library compact app icon</title>
+  <circle cx="512" cy="512" r="286" fill="none" stroke="#07172f" stroke-width="124"/>
+  <path d="M244 690C445 680 690 592 814 354" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="142"/>
+  <path d="M244 690C445 680 690 592 814 354" fill="none" stroke="#1557ff" stroke-linecap="round" stroke-width="100"/>
+  <circle cx="244" cy="690" r="99" fill="#fff"/>
+  <circle cx="244" cy="690" r="82" fill="#1557ff"/>
+  <circle cx="814" cy="354" r="99" fill="#fff"/>
+  <circle cx="814" cy="354" r="82" fill="#1557ff"/>
+</svg>

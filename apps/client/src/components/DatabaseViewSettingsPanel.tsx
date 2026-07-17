@@ -1,4 +1,6 @@
 import { priorityConfig, statusConfig, type DatabaseRecord, type Priority, type Status } from '../data/mock'
+import { X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   RECORD_PROPERTIES,
   isRecordPropertyKey,
@@ -9,8 +11,26 @@ import type {
   DatabaseViewSorting,
   RecordPropertyKey,
 } from '../lib/databaseViews/types'
+import { useDialogFocus } from './useDialogFocus'
 
 const sortableProperties = RECORD_PROPERTIES.filter((property) => property.id !== 'labels')
+const desktopMediaQuery = '(min-width: 768px)'
+
+function useDesktopLayout() {
+  const [desktop, setDesktop] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(desktopMediaQuery).matches
+  ))
+
+  useEffect(() => {
+    const media = window.matchMedia(desktopMediaQuery)
+    const update = () => setDesktop(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return desktop
+}
 
 function uniqueValues(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) =>
@@ -57,15 +77,29 @@ export function DatabaseViewSettingsPanel({
   records,
   view,
   onChangeView,
+  onClose,
 }: {
   open: boolean
   records: DatabaseRecord[]
   view: DatabaseViewDefinition
   onChangeView: (view: DatabaseViewDefinition) => void
+  onClose?: () => void
 }) {
   const assignees = uniqueValues(records.map((record) => record.assignee))
   const projects = uniqueValues(records.map((record) => record.project))
   const labels = uniqueValues(records.flatMap((record) => record.labels))
+  const desktop = useDesktopLayout()
+  const panelRef = useRef<HTMLElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const requestClose = useCallback(() => onClose?.(), [onClose])
+  const mobileDialogOpen = open && view.type !== 'workflow' && !desktop
+
+  useDialogFocus({
+    open: mobileDialogOpen,
+    dialogRef: panelRef,
+    initialFocusRef: closeButtonRef,
+    onClose: requestClose,
+  })
 
   if (!open || view.type === 'workflow') return null
 
@@ -74,15 +108,39 @@ export function DatabaseViewSettingsPanel({
   }
 
   return (
-    <aside
-      data-testid="database-filter-panel"
-      className="hidden w-72 shrink-0 border-l border-border bg-panel p-3 md:flex md:flex-col"
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider text-subtle">
-          View Settings
-        </span>
-      </div>
+    <>
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 z-40 bg-black/40 md:hidden"
+        onClick={requestClose}
+      />
+      <aside
+        id="database-view-settings"
+        ref={panelRef}
+        data-testid="database-filter-panel"
+        role={desktop ? undefined : 'dialog'}
+        aria-modal={desktop ? undefined : 'true'}
+        aria-labelledby="database-view-settings-title"
+        tabIndex={desktop ? undefined : -1}
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] shrink-0 flex-col overflow-y-auto rounded-t-xl border-t border-border bg-panel p-3 shadow-overlay md:static md:z-auto md:w-72 md:rounded-none md:border-l md:border-t-0 md:shadow-none"
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <span
+            id="database-view-settings-title"
+            className="text-xs font-medium uppercase tracking-wider text-subtle"
+          >
+            View Settings
+          </span>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
+            aria-label="Close view settings"
+            onClick={requestClose}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
 
       <label className="mb-3 flex flex-col gap-1 text-xs text-subtle">
         Search
@@ -99,8 +157,11 @@ export function DatabaseViewSettingsPanel({
 
       <div className="mb-4">
         <span className="mb-1 block text-xs font-medium text-subtle">Status</span>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1" role="group" aria-label="Status filter">
           <button
+            type="button"
+            aria-label={`All data (${records.length})`}
+            aria-pressed={!view.filters.status}
             className={`flex items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
               !view.filters.status
                 ? 'bg-surface-hover text-foreground'
@@ -115,6 +176,9 @@ export function DatabaseViewSettingsPanel({
             ([key, config]) => (
               <button
                 key={key}
+                type="button"
+                aria-label={`${config.label} (${records.filter((record) => record.status === key).length})`}
+                aria-pressed={view.filters.status === key}
                 className={`flex items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
                   view.filters.status === key
                     ? 'bg-surface-hover text-foreground'
@@ -214,10 +278,12 @@ export function DatabaseViewSettingsPanel({
       {labels.length > 0 && (
         <div className="mb-4">
           <span className="mb-1 block text-xs font-medium text-subtle">Labels</span>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Label filters">
             {labels.map((label) => (
               <button
                 key={label}
+                type="button"
+                aria-pressed={view.filters.labels.includes(label)}
                 className={`rounded px-2 py-1 text-xs transition-colors ${
                   view.filters.labels.includes(label)
                     ? 'bg-accent text-white'
@@ -254,7 +320,10 @@ export function DatabaseViewSettingsPanel({
           </select>
         </label>
         <button
+          type="button"
           data-testid="toggle-sort-direction"
+          aria-label="Sort descending"
+          aria-pressed={view.sorting?.desc ?? false}
           className="self-end rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-40"
           disabled={!view.sorting}
           onClick={() =>
@@ -300,6 +369,7 @@ export function DatabaseViewSettingsPanel({
           ))}
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   )
 }

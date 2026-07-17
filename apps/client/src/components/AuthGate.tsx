@@ -1,6 +1,7 @@
 import { Badge, Button, Input, Label, Separator } from '@tachyon-sdk/native-ui'
-import { BookOpen, GitBranch, LoaderCircle, LockKeyhole, Network } from 'lucide-react'
+import { GitBranch, LoaderCircle, LockKeyhole, Network } from 'lucide-react'
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import {
   getValidAuthTokens,
   signInWithCredentials,
@@ -92,7 +93,7 @@ export function AuthGate({ children }: AuthGateProps) {
         <div className="relative flex w-full flex-col justify-between p-10 xl:p-14">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-md border border-border bg-background shadow-soft">
-              <BookOpen className="size-4 text-primary" aria-hidden="true" />
+              <img src={libraryAppIcon} alt="" className="size-5" />
             </span>
             <div>
               <div className="text-sm font-semibold">Library</div>
@@ -131,7 +132,7 @@ export function AuthGate({ children }: AuthGateProps) {
         <div className="w-full max-w-[380px]">
           <div className="mb-8 lg:hidden">
             <span className="mb-4 flex size-9 items-center justify-center rounded-md border border-border bg-surface shadow-soft">
-              <BookOpen className="size-4 text-primary" aria-hidden="true" />
+              <img src={libraryAppIcon} alt="" className="size-5" />
             </span>
             <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
             <p className="mt-1 text-sm text-muted-foreground">Sign in to your knowledge workspace.</p>

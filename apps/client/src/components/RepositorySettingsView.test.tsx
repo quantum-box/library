@@ -1,0 +1,245 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const apiMocks = vi.hoisted(() => ({
+  createRepositoryProperty: vi.fn(),
+  deleteRepositoryProperty: vi.fn(),
+  fetchRepositorySettings: vi.fn(),
+  updateRepositoryProperty: vi.fn(),
+  updateRepositorySettings: vi.fn(),
+}))
+
+vi.mock('../lib/repositorySettingsApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/repositorySettingsApi')>(),
+  ...apiMocks,
+}))
+
+import { RepositorySettingsApiError } from '../lib/repositorySettingsApi'
+import { RepositorySettingsView } from './RepositorySettingsView'
+
+const settings = {
+  repository: {
+    id: 'repo-1',
+    name: 'Library',
+    username: 'library',
+    description: 'Knowledge workspace',
+    isPublic: false,
+  },
+  properties: [
+    {
+      id: 'property-summary',
+      name: 'Summary',
+      typ: 'STRING' as const,
+      meta: null,
+    },
+    {
+      id: 'property-extension',
+      name: 'ext_github',
+      typ: 'STRING' as const,
+      meta: null,
+    },
+    {
+      id: 'property-html',
+      name: 'Legacy body',
+      typ: 'HTML' as const,
+      meta: null,
+    },
+  ],
+  policies: [{ userId: 'user-1', role: 'owner' }],
+}
+
+function renderView() {
+  return render(
+    <RepositorySettingsView
+      organization="quantum-box"
+      repository="library"
+      operatorId="operator-1"
+    />,
+  )
+}
+
+describe('RepositorySettingsView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.fetchRepositorySettings.mockResolvedValue(settings)
+    apiMocks.updateRepositorySettings.mockImplementation(async (_target, update) => ({
+      ...settings.repository,
+      ...update,
+    }))
+    apiMocks.createRepositoryProperty.mockResolvedValue({
+      id: 'property-status',
+      name: 'Status',
+      typ: 'STRING',
+      meta: null,
+    })
+    apiMocks.updateRepositoryProperty.mockResolvedValue({
+      id: 'property-summary',
+      name: 'Abstract',
+      typ: 'STRING',
+      meta: null,
+    })
+    apiMocks.deleteRepositoryProperty.mockResolvedValue(undefined)
+  })
+
+  it('shows an explicit loading state before rendering repository metadata and schema', async () => {
+    let resolveSettings: ((value: typeof settings) => void) | undefined
+    apiMocks.fetchRepositorySettings.mockImplementation(() => new Promise((resolve) => {
+      resolveSettings = resolve
+    }))
+
+    renderView()
+    expect(screen.getByTestId('repository-settings-loading')).toHaveTextContent(
+      'Loading quantum-box/library settings',
+    )
+
+    resolveSettings?.(settings)
+    expect(await screen.findByTestId('repository-settings-page')).toBeInTheDocument()
+    expect(screen.getByText('Knowledge workspace')).toBeInTheDocument()
+    expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Summary')
+    expect(screen.getByTestId('repository-property-list')).toHaveTextContent('ext_github')
+    expect(screen.getByText('Beta · read-only')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Legacy body' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Delete Legacy body' })).toBeDisabled()
+  })
+
+  it('shows permission failure distinctly and retries the same GraphQL settings read', async () => {
+    apiMocks.fetchRepositorySettings
+      .mockRejectedValueOnce(new RepositorySettingsApiError(
+        'You do not have permission to manage this repository.',
+        403,
+        'permission',
+      ))
+      .mockResolvedValueOnce(settings)
+
+    renderView()
+    expect(await screen.findByRole('heading', { name: 'Permission required' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByTestId('repository-settings-page')).toBeInTheDocument()
+    expect(apiMocks.fetchRepositorySettings).toHaveBeenCalledTimes(2)
+  })
+
+  it('updates description and visibility with one explicit save action', async () => {
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Public knowledge workspace' },
+    })
+    fireEvent.click(screen.getByRole('radio', { name: /Public/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(apiMocks.updateRepositorySettings).toHaveBeenCalledWith(
+      {
+        orgUsername: 'quantum-box',
+        repoUsername: 'library',
+        operatorId: 'operator-1',
+      },
+      {
+        description: 'Public knowledge workspace',
+        isPublic: true,
+      },
+    ))
+    expect(await screen.findByText('Repository settings saved.')).toBeInTheDocument()
+  })
+
+  it('blocks description removal because the current backend cannot represent it', async () => {
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'current API cannot remove an existing description',
+    )
+    expect(apiMocks.updateRepositorySettings).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).not.toBeDisabled()
+  })
+
+  it('searches the schema ledger and distinguishes no matches from an empty repository', async () => {
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    fireEvent.change(screen.getByLabelText('Search Properties'), {
+      target: { value: 'not-a-property' },
+    })
+    expect(screen.getByTestId('repository-property-search-empty')).toHaveTextContent(
+      'No matching Properties',
+    )
+    expect(screen.queryByText('No Property definitions')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Summary')
+  })
+
+  it('invites creation when the repository has no Property definitions', async () => {
+    apiMocks.fetchRepositorySettings.mockResolvedValueOnce({ ...settings, properties: [] })
+    renderView()
+
+    expect(await screen.findByText('No Property definitions')).toBeInTheDocument()
+    expect(screen.getByText('Add the first field before creating structured data.')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Search Properties')).not.toBeInTheDocument()
+  })
+
+  it('adds, renames, and confirms deletion of Property definitions', async () => {
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Property' }))
+    let dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Status' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add Property' }))
+
+    await waitFor(() => expect(apiMocks.createRepositoryProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
+      { name: 'Status', type: 'STRING' },
+    ))
+    expect(await screen.findByText('Property added.')).toBeInTheDocument()
+    expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Status')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Summary' }))
+    dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Abstract' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
+
+    await waitFor(() => expect(apiMocks.updateRepositoryProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
+      'property-summary',
+      { name: 'Abstract', type: 'STRING' },
+    ))
+    expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Abstract')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Abstract' }))
+    dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/cannot be undone/i)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Property' }))
+
+    await waitFor(() => expect(apiMocks.deleteRepositoryProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
+      'property-summary',
+    ))
+    expect(screen.getByTestId('repository-property-list')).not.toHaveTextContent('Abstract')
+  }, 30_000)
+
+  it('switches write controls to read-only after a permission failure', async () => {
+    apiMocks.updateRepositorySettings.mockRejectedValueOnce(new RepositorySettingsApiError(
+      'You do not have permission to manage this repository.',
+      403,
+      'permission',
+    ))
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Changed' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByTestId('repository-settings-permission-error')).toHaveTextContent(
+      'Changes are read-only',
+    )
+    expect(screen.getByRole('button', { name: 'Add Property' })).toBeDisabled()
+    expect(screen.getByLabelText('Description')).toBeDisabled()
+  })
+})

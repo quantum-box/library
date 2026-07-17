@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 const host = process.env.TAURI_DEV_HOST
 const tauriPlatform = process.env.TAURI_ENV_PLATFORM
 const isTauriDebug = Boolean(process.env.TAURI_ENV_DEBUG)
+const devServerPort = Number(process.env.LIBRARY_DEV_SERVER_PORT ?? 5173)
+const appServerUrl = process.env.LIBRARY_APP_SERVER_URL ?? 'http://127.0.0.1:3001'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -21,7 +23,7 @@ export default defineConfig({
   },
   server: {
     host: host || false,
-    port: 5173,
+    port: devServerPort,
     strictPort: true,
     allowedHosts: true,
     hmr: host ? { protocol: 'ws', host, port: 5174 } : undefined,
@@ -30,10 +32,10 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: appServerUrl,
       },
       '/ws': {
-        target: 'http://localhost:3001',
+        target: appServerUrl,
         ws: true,
       },
     },

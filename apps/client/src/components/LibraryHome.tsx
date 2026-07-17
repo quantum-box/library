@@ -3,7 +3,6 @@ import { Badge, Button, Kbd } from '@tachyon-sdk/native-ui'
 import {
   Activity,
   ArrowRight,
-  BookOpen,
   ChevronRight,
   Clock3,
   FileText,
@@ -13,7 +12,12 @@ import {
   Search,
 } from 'lucide-react'
 import { useMemo } from 'react'
-import { useWorkspaceDatabases } from '../contexts/DatabasesContext'
+import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
+import { openCommandPalette, openCreateData } from '../lib/ui/workspaceEvents'
+import {
+  type WorkspaceDatabase,
+  useWorkspaceDatabases,
+} from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import {
@@ -57,9 +61,30 @@ function recordPath(record: DatabaseRecord) {
   return record.project
 }
 
+function databasePath(database: WorkspaceDatabase) {
+  if (database.orgUsername && database.repoUsername) {
+    return `${database.orgUsername}/${database.repoUsername}`
+  }
+  return database.label
+}
+
+function findDatabaseForRecord(
+  databases: WorkspaceDatabase[],
+  record: DatabaseRecord,
+) {
+  const canonicalMatch = record.orgUsername && record.repoUsername
+    ? databases.find(
+        (database) =>
+          database.orgUsername === record.orgUsername &&
+          database.repoUsername === record.repoUsername,
+      )
+    : undefined
+  return canonicalMatch ?? databases.find((database) => database.label === record.project)
+}
+
 export function LibraryHome() {
   const navigate = useNavigate()
-  const { records } = useDatabaseRecords()
+  const { records, hydrationLoading, hydrationError } = useDatabaseRecords()
   const {
     databases,
     organizations,
@@ -81,20 +106,21 @@ export function LibraryHome() {
     [recentRecords],
   )
 
-  const recordCountsByProject = useMemo(() => {
+  const recordCountsByRepository = useMemo(() => {
     const counts = new Map<string, number>()
     for (const record of records) {
-      counts.set(record.project, (counts.get(record.project) ?? 0) + 1)
+      const database = findDatabaseForRecord(databases, record)
+      if (database) counts.set(database.id, (counts.get(database.id) ?? 0) + 1)
     }
     return counts
-  }, [records])
+  }, [databases, records])
 
   const openRecord = (record: DatabaseRecord) => {
-    const database = databases.find((candidate) => candidate.label === record.project)
+    const database = findDatabaseForRecord(databases, record)
     const databaseId = database?.id
     void navigate({
       to: '/databases/$recordId',
-      params: { recordId: record.identifier },
+      params: { recordId: record.id },
       search: {
         database: databaseId,
         view: getDefaultDatabaseViewId(getDatabaseViewScopeId(databaseId), 'table'),
@@ -106,7 +132,7 @@ export function LibraryHome() {
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
         <div className="flex min-w-0 items-center gap-2 text-sm">
-          <BookOpen className="size-4 text-primary" aria-hidden="true" />
+          <img src={libraryAppIcon} alt="" className="size-4" />
           <span className="font-semibold">Library</span>
           <span className="text-subtle-foreground">/</span>
           <span className="truncate text-muted-foreground">Home</span>
@@ -116,39 +142,25 @@ export function LibraryHome() {
           variant="ghost"
           size="sm"
           className="ml-auto hidden w-64 justify-start border border-border bg-surface text-muted-foreground shadow-none lg:inline-flex"
-          asChild
+          onClick={openCommandPalette}
         >
-          <Link
-            to="/databases"
-            search={{
-              view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-            }}
-          >
-            <Search aria-hidden="true" />
-            <span>Search Library</span>
-            <Kbd className="ml-auto">⌘ K</Kbd>
-          </Link>
+          <Search aria-hidden="true" />
+          <span>Search Library</span>
+          <Kbd className="ml-auto">⌘ K</Kbd>
         </Button>
 
         <Badge variant="outline" className="hidden sm:inline-flex">
           {organizations.length} {organizations.length === 1 ? 'organization' : 'organizations'}
         </Badge>
-        <Button variant="primary" size="sm" asChild>
-          <Link
-            to="/databases"
-            search={{
-              view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-            }}
-          >
-            <Plus aria-hidden="true" />
-            New
-          </Link>
+        <Button variant="primary" size="sm" onClick={openCreateData}>
+          <Plus aria-hidden="true" />
+          New data
         </Button>
       </header>
 
       <div className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1.5">
         <div className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
-          <BookOpen className="size-3.5 text-primary" aria-hidden="true" />
+          <img src={libraryAppIcon} alt="" className="size-3.5" />
           Home
         </div>
         {recentRecords.slice(0, 2).map((record) => (
@@ -176,21 +188,14 @@ export function LibraryHome() {
             </div>
             <div className="flex items-center gap-2">
               <Button size="sm" asChild>
-                <Link to="/docs">
+                <Link to="/docs" search={{ create: true }}>
                   <FileText aria-hidden="true" />
                   New document
                 </Link>
               </Button>
-              <Button variant="primary" size="sm" asChild>
-                <Link
-                  to="/databases"
-                  search={{
-                    view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-                  }}
-                >
-                  <Plus aria-hidden="true" />
-                  New data
-                </Link>
+              <Button variant="primary" size="sm" onClick={openCreateData}>
+                <Plus aria-hidden="true" />
+                New data
               </Button>
             </div>
           </section>
@@ -285,6 +290,17 @@ export function LibraryHome() {
                     </button>
                   )
                 })
+              ) : hydrationLoading ? (
+                <div className="px-5 py-10 text-center" aria-busy="true">
+                  <RefreshCw className="mx-auto size-5 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
+                  <p className="mt-3 text-sm font-medium">Loading recent activity</p>
+                </div>
+              ) : hydrationError ? (
+                <div className="px-5 py-10 text-center">
+                  <FileText className="mx-auto size-5 text-destructive" aria-hidden="true" />
+                  <p className="mt-3 text-sm font-medium">Recent activity unavailable</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{hydrationError}</p>
+                </div>
               ) : (
                 <div className="px-5 py-10 text-center">
                   <FileText className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
@@ -343,10 +359,8 @@ export function LibraryHome() {
                   </div>
                 ) : databases.length > 0 ? (
                   databases.slice(0, 7).map((database) => {
-                    const path = database.orgUsername && database.repoUsername
-                      ? `${database.orgUsername}/${database.repoUsername}`
-                      : database.label
-                    const count = recordCountsByProject.get(database.label) ?? 0
+                    const path = databasePath(database)
+                    const count = recordCountsByRepository.get(database.id) ?? 0
                     const repositoryContent = (
                       <>
                         <FolderGit2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

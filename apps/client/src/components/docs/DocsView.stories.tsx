@@ -15,6 +15,15 @@ const doc: DocMetadata = {
   updatedAt: now,
 }
 
+const databases = [
+  {
+    id: 'quantum-box/library',
+    label: 'quantum-box / library',
+    orgUsername: 'quantum-box',
+    repoUsername: 'library',
+  },
+]
+
 const attachments: FileAttachment[] = [
   {
     id: 'attachment-1',
@@ -67,11 +76,13 @@ export const DocumentEditorWorkspace: Story = {
   render: () => (
     <DocumentEditor
       doc={doc}
+      databases={databases}
       records={mockDatabaseRecords.slice(0, 8)}
       links={[]}
       onRecordLinked={async () => undefined}
       onCreateRecordFromSelection={async () => null}
       onRename={fn()}
+      onDelete={fn()}
       attachments={attachments}
       onAttachFiles={fn()}
     />
@@ -79,8 +90,9 @@ export const DocumentEditorWorkspace: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByLabelText('Document title')).toHaveValue('Customer research notes')
-    await expect(canvas.getByLabelText('Link record to document')).toBeVisible()
-    await expect(canvas.getByRole('button', { name: 'Create record from selection' })).toBeDisabled()
+    await expect(canvas.getByLabelText('Document repository')).toBeVisible()
+    await expect(canvas.getByLabelText('Document data')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Create data from selection' })).toBeDisabled()
     await expect(canvas.getByText('research-summary.pdf')).toBeVisible()
     await waitFor(
       async () => {
@@ -99,11 +111,13 @@ export const DocumentEditorEmptyRelations: Story = {
         id: 'storybook-doc-empty-relations',
         title: 'Draft product spec',
       }}
+      databases={databases}
       records={mockDatabaseRecords.slice(0, 3)}
       links={[]}
       onRecordLinked={async () => undefined}
       onCreateRecordFromSelection={async () => null}
       onRename={fn()}
+      onDelete={fn()}
       attachments={[]}
       onAttachFiles={fn()}
     />

@@ -1,107 +1,88 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { e2eAuthState } from './auth-state'
+import { expect, test } from './test-fixtures'
 
-async function mockLibraryRepository(page: Page) {
-  const repository = {
-    id: 'repo-1',
-    username: 'photon-core',
-    name: 'Photon Core',
-    description: 'Library E2E repository',
-  }
+const e2eRepositoryId = 'quantum-box/photon-core'
+const e2eApiUrl = 'http://127.0.0.1:50063'
 
-  await page.route('**/v1beta/repos', async (route) => {
-    await route.fulfill({
-      json: [
-        {
-          ...repository,
-          organization_id: 'org-1',
-          org_username: 'quantum-box',
-        },
-      ],
-    })
-  })
+interface E2eFixtureData {
+  id: string
+  name: string
+  propertyData: Array<{
+    propertyId: string
+    value: Record<string, unknown>
+  }>
+}
 
-  await page.route('**/v1/graphql', async (route) => {
-    const body = route.request().postDataJSON() as { query?: string }
-    const query = body.query ?? ''
+async function e2eFixtureData(page: Page): Promise<E2eFixtureData[]> {
+  const response = await page.request.get(`${e2eApiUrl}/__e2e/state`)
+  expect(response.ok()).toBe(true)
+  return (await response.json() as { data: E2eFixtureData[] }).data
+}
 
-    if (query.includes('LibraryClientMeOrganizations')) {
-      await route.fulfill({
-        json: {
-          data: {
-            me: {
-              id: 'library-e2e-user',
-              email: 'library-e2e@local.test',
-              tenantIdList: ['org-1'],
-              organizations: [
-                {
-                  id: 'org-1',
-                  operatorName: 'quantum-box',
-                  platformTenantId: 'tn_01j702qf86pc2j35s0kv0gv3gy',
-                  repos: [repository],
-                },
-              ],
-            },
-          },
-        },
-      })
-      return
-    }
+function fixtureDataByIdentifier(data: E2eFixtureData[], identifier: string) {
+  return data.find((item) => item.propertyData.some((property) => (
+    property.propertyId === 'prop-identifier' && property.value.id === identifier
+  )))
+}
 
-    if (query.includes('LibraryClientOrganizationRepos')) {
-      await route.fulfill({
-        json: {
-          data: {
-            organization: {
-              id: 'org-1',
-              name: 'Quantum Box',
-              username: 'quantum-box',
-              repos: [repository],
-            },
-          },
-        },
-      })
-      return
-    }
+function fixtureProperty(data: E2eFixtureData, propertyId: string) {
+  return data.propertyData.find((property) => property.propertyId === propertyId)?.value
+}
 
-    await route.fulfill({
-      json: {
-        data: {
-          repo: {
-            id: repository.id,
-            name: repository.name,
-            dataList: { items: [] },
-            properties: [],
-          },
+async function seedCreatedFixtureProperties(
+  page: Page,
+  data: E2eFixtureData,
+  priority: string,
+  body: string,
+) {
+  const response = await page.request.post(`${e2eApiUrl}/v1/graphql`, {
+    data: {
+      query: 'mutation LibraryClientUpdateData { updateData { id } }',
+      variables: {
+        input: {
+          orgUsername: 'quantum-box',
+          repoUsername: 'photon-core',
+          dataId: data.id,
+          dataName: data.name,
+          propertyData: [
+            { propertyId: 'prop-priority', value: { select: priority } },
+            { propertyId: 'prop-description', value: { markdown: body } },
+          ],
         },
       },
-    })
+    },
   })
+  expect(response.ok()).toBe(true)
+}
+
+async function expectCreateRepository(page: Page) {
+  await expect(page.getByTestId('create-record-repository')).toHaveValue(e2eRepositoryId)
 }
 
 test.describe('Library shell', () => {
   test('opens the database table and creates a new record', async ({ page }) => {
-    const title = `E2E smoke record ${Date.now()}`
+    const title = `E2E smoke data ${Date.now()}`
 
     await page.goto('/')
 
     await expect(page).toHaveURL(/\/home/)
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
-    await page.getByRole('link', { name: 'New data' }).click()
+    await page.getByRole('button', { name: 'New data', exact: true }).first().click()
     await expect(page).toHaveURL(/\/databases/)
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
-    await expect(page.getByText(/\d+ records/)).toBeVisible()
+    await expect(page.getByText(/\d+ data/)).toBeVisible()
 
-    await page.getByTestId('open-create-record').click()
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
+    await expectCreateRepository(page)
 
-    await page.getByLabel(/Record title/i).fill(title)
-    await page.getByLabel('Description').fill('Created from Playwright')
+    await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
 
     await expect(page.getByTestId('create-record-modal')).toBeHidden()
-    await page.getByPlaceholder('Filter records...').fill(title)
+    await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title)).toBeVisible()
+    await expect(page.locator('tbody tr', { hasText: 'DATA-103' })).toBeVisible()
   })
 
   test('switches between table, board, workflow, docs, and chat views', async ({ page }) => {
@@ -161,11 +142,10 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('create-record-modal')).toHaveCount(0)
 
     await page.keyboard.press('ControlOrMeta+K')
-    await expect(page.getByTestId('keyboard-shortcuts-panel')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Command Menu' })).toBeVisible()
-    await expect(page.getByTestId('keyboard-shortcuts-panel').locator('kbd').filter({ hasText: 'G' }).first()).toBeVisible()
-    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog').getByRole('combobox', { name: 'Search Library' })).toBeVisible()
     await expect(page.getByTestId('keyboard-shortcuts-panel')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog').getByRole('combobox', { name: 'Search Library' })).toHaveCount(0)
 
     await page.keyboard.press('Shift+/')
     await expect(page.getByTestId('keyboard-shortcuts-panel')).toBeVisible()
@@ -174,19 +154,19 @@ test.describe('Library shell', () => {
   })
 
   test('adds database items to the workflow canvas', async ({ page }) => {
-    test.setTimeout(90_000)
+    test.setTimeout(120_000)
 
-    const canvasDatabase = `workflow-e2e-${Date.now()}`
+    const canvasDatabase = e2eRepositoryId
 
-    await page.goto(`/databases/workflow?database=${canvasDatabase}`)
+    await page.goto(`/databases/workflow?database=${encodeURIComponent(canvasDatabase)}`)
 
     await page.getByTestId('workflow-add-record').first().click()
     await page.getByTestId('workflow-template-kpi-tree').click()
     await page.getByTestId('workflow-add-record').nth(1).click()
 
-    await expect(page).toHaveURL(/database=workflow-e2e-\d+/)
+    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
     await expect(page).toHaveURL(/view=.*workflow/)
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.getByText('KPI tree item')).toBeVisible()
 
@@ -214,10 +194,9 @@ test.describe('Library shell', () => {
 
     await page.locator('.react-flow__node').first().dblclick()
     await expect(page.getByTestId('detail-panel')).toBeVisible()
-    await expect(page.getByTestId('detail-panel').locator('.font-mono').filter({ hasText: /PLT-/ })).toBeVisible()
+    await expect(page.getByTestId('detail-panel').locator('.font-mono').filter({ hasText: /DATA-/ })).toBeVisible()
     await page.getByTestId('detail-panel').locator('h2').click()
     await expect(page.getByTestId('detail-panel').locator('input').first()).toBeVisible()
-    await page.keyboard.press('Escape')
     await page.getByTestId('detail-panel-close').click()
     await expect(page.getByTestId('detail-panel')).toHaveCount(0)
 
@@ -248,12 +227,19 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('view-home').getByText('Home')).toBeVisible()
   })
 
-  test('syncs workflow canvas changes between browser tabs', async ({ page, context }) => {
-    const canvasDatabase = `workflow-sync-${Date.now()}`
-    const secondPage = await context.newPage()
+  test('syncs workflow canvas changes between browser tabs', async ({ page, browser }) => {
+    test.setTimeout(90_000)
+    const canvasDatabase = e2eRepositoryId
 
-    await page.goto(`/databases/workflow?database=${canvasDatabase}`)
-    await secondPage.goto(`/databases/workflow?database=${canvasDatabase}`)
+    await page.goto(`/databases/workflow?database=${encodeURIComponent(canvasDatabase)}`)
+    await page.getByTestId('view-options').click()
+    await page.getByTestId('new-workflow-view').click()
+    const defaultWorkflowView = `${canvasDatabase}:workflow`
+    await expect.poll(() => new URL(page.url()).searchParams.get('view')).not.toBe(defaultWorkflowView)
+    const sharedViewUrl = page.url()
+    const secondContext = await browser.newContext({ storageState: e2eAuthState })
+    const secondPage = await secondContext.newPage()
+    await secondPage.goto(sharedViewUrl)
     await expect(page.getByTestId('sync-presence-status')).toHaveText(/([2-9]|\d{2,}) online/, {
       timeout: 15_000,
     })
@@ -291,11 +277,10 @@ test.describe('Library shell', () => {
       .poll(async () => secondNode.getAttribute('style'), { timeout: 15_000 })
       .not.toBe(beforeTransform)
 
-    await secondPage.close()
+    await secondContext.close()
   })
 
   test('preserves the selected database when switching database views', async ({ page }) => {
-    await mockLibraryRepository(page)
     await page.goto('/databases')
 
     await page.getByTestId('database-quantum-box/photon-core').click()
@@ -337,7 +322,6 @@ test.describe('Library shell', () => {
   })
 
   test('opens an organization overview and continues into its repository', async ({ page }) => {
-    await mockLibraryRepository(page)
     await page.goto('/organizations/quantum-box')
 
     await expect(page.getByTestId('organization-page')).toBeVisible()
@@ -350,26 +334,64 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('repository-page')).toBeVisible()
   })
 
+  test('opens repository settings and saves the repository description', async ({ page }) => {
+    const description = `Updated by Library E2E ${Date.now()}`
+
+    await page.goto('/repositories/quantum-box/photon-core/settings')
+
+    await expect(page.getByTestId('repository-settings-page')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Repository settings' })).toBeVisible()
+    await expect(page.getByTestId('repository-property-list')).toContainText('Status')
+
+    await page.getByLabel('Description').fill(description)
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.getByTestId('repository-settings-page').getByRole('status')).toHaveText(
+      'Repository settings saved.',
+    )
+
+    await page.reload()
+    await expect(page.getByLabel('Description')).toHaveValue(description)
+  })
+
   test('creates, renames, duplicates, and deletes named database views', async ({ page }) => {
     await page.goto('/databases')
 
+    await page.getByTestId('view-options').click()
     await page.getByTestId('new-board-view').click()
     await expect(page).toHaveURL(/view=.*board/)
     await expect(page.getByRole('button', { name: /New Board/ })).toBeVisible()
+    const savedBoardViewId = new URL(page.url()).searchParams.get('view')
+    expect(savedBoardViewId).toBeTruthy()
+    expect(savedBoardViewId).not.toBe('__all__:board')
 
-    page.once('dialog', async (dialog) => {
-      await dialog.accept('Saved Board')
-    })
     await page.getByTestId('view-options').click()
     await page.getByTestId('rename-view').click()
+    const renameDialog = page.getByRole('dialog', { name: 'Rename view' })
+    await expect(renameDialog).toBeVisible()
+    await renameDialog.getByLabel('View name').fill('Saved Board')
+    await renameDialog.getByRole('button', { name: 'Rename view' }).click()
     await expect(page.getByRole('button', { name: /Saved Board/ })).toBeVisible()
 
+    await page.getByTestId('view-options').click()
     await page.getByTestId('duplicate-view').click()
     await expect(page.getByRole('button', { name: /Saved Board Copy/ })).toBeVisible()
 
+    await page.getByTestId('view-options').click()
     await page.getByTestId('delete-view').click()
+    const deleteDialog = page.getByRole('dialog', { name: 'Delete view?' })
+    await expect(deleteDialog).toContainText('Saved Board Copy')
+    await deleteDialog.getByRole('button', { name: 'Delete view' }).click()
     await expect(page.getByRole('button', { name: /Saved Board Copy/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Saved Board/ })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Saved Board', exact: true }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe(savedBoardViewId)
+    await page.getByTestId('view-options').click()
+    await page.getByTestId('delete-view').click()
+    const originalDeleteDialog = page.getByRole('dialog', { name: 'Delete view?' })
+    await expect(originalDeleteDialog).toContainText('Saved Board')
+    await originalDeleteDialog.getByRole('button', { name: 'Delete view' }).click()
+    await expect(page.getByRole('button', { name: /Saved Board/ })).toHaveCount(0)
   })
 
   test('uses repository status filters from the right panel', async ({ page }) => {
@@ -385,7 +407,6 @@ test.describe('Library shell', () => {
   })
 
   test('opens a database context menu from the sidebar', async ({ page }) => {
-    await mockLibraryRepository(page)
     await page.goto('/databases')
 
     await expect(page.getByTestId('nav-databases')).toHaveCount(0)
@@ -402,7 +423,6 @@ test.describe('Library shell', () => {
   })
 
   test('shows a repository not-found state for an unavailable path', async ({ page }) => {
-    await mockLibraryRepository(page)
     await page.goto('/repositories/quantum-box/missing-repository')
 
     await expect(page.getByRole('heading', { name: 'Repository not found' })).toBeVisible()
@@ -435,42 +455,49 @@ test.describe('Library shell', () => {
     await secondPage.close()
   })
 
-  test('syncs record creation between browser tabs', async ({ page, context }) => {
-    const title = `E2E synced record ${Date.now()}`
+  test('syncs record creation between browser tabs', async ({ page, browser }) => {
+    test.setTimeout(90_000)
+    const title = `E2E synced data ${Date.now()}`
 
     await page.goto('/databases')
-    const secondPage = await context.newPage()
+    const secondContext = await browser.newContext({ storageState: e2eAuthState })
+    const secondPage = await secondContext.newPage()
     await secondPage.goto('/databases')
+    await secondPage.getByPlaceholder('Filter data...').fill(title)
 
     await page.getByTestId('open-create-record').click()
-    await page.getByLabel(/Record title/i).fill(title)
-    await page.getByLabel('Description').fill('Created in the first tab and observed in the second tab')
+    await expectCreateRepository(page)
+    await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
     await expect(page.getByTestId('create-record-modal')).toBeHidden()
 
-    await expect(async () => {
-      await secondPage.reload()
-      await secondPage.getByPlaceholder('Filter records...').fill(title)
-      await expect(secondPage.getByText(title).first()).toBeVisible({ timeout: 15_000 })
-    }).toPass({ timeout: 60_000 })
+    await expect(secondPage.getByText(title).first()).toBeVisible({ timeout: 60_000 })
 
-    await secondPage.close()
+    await secondContext.close()
   })
 
-  test('sends a chat prompt and streams an assistant response', async ({ page }) => {
+  test('marks local chat as demo mode and streams a supported response', async ({ page }) => {
     await page.goto('/chat')
 
-    await page.getByTestId('chat-message-input').fill('search for React 19')
+    await expect(page.getByText('Demo mode · local sample responses')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Library Data' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'File context' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Web Search' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'API Calls' })).toHaveCount(0)
+
+    await page.getByTestId('chat-message-input').fill('Summarize this workspace')
     await page.getByTestId('chat-send').click()
 
     await expect(page.getByText('You', { exact: true })).toBeVisible()
-    await expect(page.getByText('search for React 19')).toBeVisible()
-    await expect(page.getByText('Assistant')).toBeVisible()
-    await expect(page.getByText('Web Search')).toBeVisible()
-    await expect(page.getByText(/Based on the search results|Here's a summary/)).toBeVisible({
-      timeout: 15_000,
-    })
-    await expect(page.getByText(/Key Findings|Recommendations/)).toBeVisible()
+    await expect(page.getByText('Summarize this workspace')).toBeVisible()
+    const assistantMessage = page.getByRole('article', { name: 'Assistant message' }).last()
+    await expect(assistantMessage.getByText('Assistant', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('chat-stop')).toBeVisible()
+    await expect(page.getByTestId('chat-stop')).toHaveCount(0, { timeout: 15_000 })
+    await expect(assistantMessage).toContainText(
+      'Library Chat is running in local demo mode, so no assistant backend is connected. I can search, list, open, create, and move Library data in this workspace without inventing external results.',
+    )
+    await expect(assistantMessage.getByRole('button', { name: 'Copy message' })).toBeVisible()
   })
 
   test('syncs chat attachment metadata back into the workspace view', async ({ page }) => {
@@ -500,76 +527,103 @@ test.describe('Library shell', () => {
   })
 
   test('creates and searches records from chat tools', async ({ page }) => {
-    const title = `Chat command record ${Date.now()}`
+    const title = `Chat command data ${Date.now()}`
+    const body = `Chat move preservation ${Date.now()}`
 
     await page.goto('/chat')
+    await expect(page.getByTestId('chat-repository-select')).toHaveValue(e2eRepositoryId)
     await page.getByTestId('chat-message-input').fill(`create record "${title}"`)
     await page.getByTestId('chat-send').click()
 
-    await expect(page.getByTestId('record-tool-result').getByText('Create Record')).toBeVisible()
+    await expect(page.getByTestId('record-tool-result').getByText('Create Data')).toBeVisible()
     await expect(page.getByTestId('record-tool-result').getByText(title)).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.getByText('Created PLT-')).toBeVisible()
+    await expect(page.getByText('Created DATA-')).toBeVisible()
     const createResultText = await page.getByTestId('record-tool-result').innerText()
-    const identifier = createResultText.match(/PLT-\d+/)?.[0]
+    const identifier = createResultText.match(/DATA-\d+/)?.[0]
     expect(identifier).toBeTruthy()
     const recordIdentifier = identifier ?? ''
+    const createdBeforeMove = fixtureDataByIdentifier(await e2eFixtureData(page), recordIdentifier)
+    expect(createdBeforeMove).toBeTruthy()
+    await seedCreatedFixtureProperties(page, createdBeforeMove!, 'priority-high', body)
 
     await page.getByTestId('chat-message-input').fill(`move ${recordIdentifier} to done`)
     await page.getByTestId('chat-send').click()
 
-    await expect(page.getByTestId('record-tool-result').last().getByText('Move Record')).toBeVisible()
+    await expect(page.getByTestId('record-tool-result').last().getByText('Move Data')).toBeVisible()
     await expect(page.getByTestId('record-tool-result').last().getByText('Done')).toBeVisible({
       timeout: 15_000,
     })
+    await expect(page.getByTestId('chat-stop')).toHaveCount(0, { timeout: 15_000 })
+
+    const createdAfterMove = fixtureDataByIdentifier(await e2eFixtureData(page), recordIdentifier)
+    expect(createdAfterMove).toBeTruthy()
+    expect(fixtureProperty(createdAfterMove!, 'prop-priority')).toEqual({ optionId: 'priority-high' })
+    expect(fixtureProperty(createdAfterMove!, 'prop-description')).toEqual({ markdown: body })
+
+    await page.getByTestId('chat-message-input').fill('move DATA-201 to done')
+    await page.getByTestId('chat-send').click()
+    await expect(page.getByTestId('record-tool-result').last()).toContainText('DATA-201', {
+      timeout: 15_000,
+    })
+    await expect(page.getByTestId('chat-stop')).toHaveCount(0, { timeout: 15_000 })
+
+    const seedAfterMove = fixtureDataByIdentifier(await e2eFixtureData(page), 'DATA-201')
+    expect(seedAfterMove).toBeTruthy()
+    expect(fixtureProperty(seedAfterMove!, 'prop-priority')).toEqual({ optionId: 'priority-high' })
+    expect(fixtureProperty(seedAfterMove!, 'prop-description')).toEqual({
+      markdown: 'Seed data for deterministic E2E coverage.',
+    })
 
     await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
-    await page.getByPlaceholder('Filter records...').fill(title)
+    await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title)).toBeVisible()
 
     await page.getByTestId('view-chat').click()
     await page.getByTestId('chat-message-input').fill(`search record "${title}"`)
     await page.getByTestId('chat-send').click()
 
-    await expect(page.getByTestId('record-tool-result').last().getByText('Database Search')).toBeVisible()
+    await expect(page.getByTestId('record-tool-result').last().getByText('Library Data Search')).toBeVisible()
     await expect(page.getByTestId('record-tool-result').last().getByText(title)).toBeVisible({
       timeout: 15_000,
     })
   })
 
   test('shows chat-created records in the database table', async ({ page }) => {
-    const title = `Detail command record ${Date.now()}`
+    const title = `Detail command data ${Date.now()}`
 
     await page.goto('/chat')
+    await expect(page.getByTestId('chat-repository-select')).toHaveValue(e2eRepositoryId)
     await page.getByTestId('chat-message-input').fill(`create record "${title}"`)
     await page.getByTestId('chat-send').click()
 
-    await expect(page.getByTestId('record-tool-result').getByText('Create Record')).toBeVisible()
+    await expect(page.getByTestId('record-tool-result').getByText('Create Data')).toBeVisible()
     await expect(page.getByTestId('record-tool-result').getByText(title)).toBeVisible({
       timeout: 15_000,
     })
 
     const createResultText = await page.getByTestId('record-tool-result').innerText()
-    const identifier = createResultText.match(/PLT-\d+/)?.[0]
+    const identifier = createResultText.match(/DATA-\d+/)?.[0]
     expect(identifier).toBeTruthy()
     const recordIdentifier = identifier ?? ''
 
     await page.getByTestId('chat-message-input').fill(`move ${recordIdentifier} to done`)
     await page.getByTestId('chat-send').click()
 
-    await expect(page.getByTestId('record-tool-result').last().getByText('Move Record')).toBeVisible()
+    await expect(page.getByTestId('record-tool-result').last().getByText('Move Data')).toBeVisible()
     await expect(page.getByTestId('record-tool-result').last().getByText('Done')).toBeVisible({
       timeout: 15_000,
     })
 
     await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
-    await page.getByPlaceholder('Filter records...').fill(title)
+    await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
   })
 
   test('creates a doc and syncs Yjs blocks from a shared document URL', async ({ page, browser }) => {
+    test.setTimeout(120_000)
     const title = `E2E local doc ${Date.now()}`
 
     await page.goto('/docs')
@@ -590,8 +644,8 @@ test.describe('Library shell', () => {
     const sharedPage = await sharedContext.newPage()
     await sharedPage.goto(documentUrl)
 
-    await expect(sharedPage.getByText('Server connected')).toBeVisible({ timeout: 20_000 })
-    await expect(sharedPage.getByText('Reload proof body')).toBeVisible({ timeout: 20_000 })
+    await expect(sharedPage.getByText('Server connected')).toBeVisible({ timeout: 45_000 })
+    await expect(sharedPage.getByText('Reload proof body')).toBeVisible({ timeout: 45_000 })
 
     await editor.click()
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
@@ -630,8 +684,8 @@ test.describe('Library shell', () => {
     const verifierContext = await browser.newContext({ storageState: e2eAuthState })
     const verifierPage = await verifierContext.newPage()
     await verifierPage.goto(documentUrl)
-    await expect(verifierPage.getByText('Server connected')).toBeVisible({ timeout: 20_000 })
-    await expect(verifierPage.getByText(initialText)).toBeVisible({ timeout: 20_000 })
+    await expect(verifierPage.getByText('Server connected')).toBeVisible({ timeout: 45_000 })
+    await expect(verifierPage.getByText(initialText)).toBeVisible({ timeout: 45_000 })
 
     await editingContext.setOffline(true)
     await editingPage.evaluate(() => window.__photonTestHooks?.closeDocumentSockets?.())
@@ -656,6 +710,7 @@ test.describe('Library shell', () => {
   })
 
   test('links docs and records from selected editor text', async ({ page }) => {
+    test.setTimeout(120_000)
     const title = `E2E linked doc ${Date.now()}`
     const selectedText = `Selected follow-up ${Date.now()}`
 
@@ -664,6 +719,7 @@ test.describe('Library shell', () => {
     await expect(page).toHaveURL(/\/documents\/[^/]+$/, { timeout: 20_000 })
     await page.getByLabel('Document title').fill(title)
     await page.keyboard.press('Tab')
+    await expect(page.getByRole('link', { name: new RegExp(title) })).toBeVisible()
 
     const editor = page.locator('.bn-editor[contenteditable="true"]')
     await editor.click()
@@ -695,8 +751,10 @@ test.describe('Library shell', () => {
     await page.getByTestId('doc-create-record-from-selection').click()
 
     const relatedDatabases = page.getByTestId('doc-related-records')
-    await expect(relatedDatabases.getByText(/PLT-\d+/)).toBeVisible({ timeout: 15_000 })
-    const recordIdentifier = (await relatedDatabases.innerText()).match(/PLT-\d+/)?.[0]
+    await expect(relatedDatabases.getByRole('link', { name: /DATA-\d+/ })).toBeVisible({
+      timeout: 30_000,
+    })
+    const recordIdentifier = (await relatedDatabases.innerText()).match(/DATA-\d+/)?.[0]
     expect(recordIdentifier).toBeTruthy()
 
     await page.goto(`/databases/${recordIdentifier}`)
@@ -706,6 +764,6 @@ test.describe('Library shell', () => {
 
     await page.getByTestId('view-chat').click()
     await expect(page.getByTestId('chat-document-context').getByText(title)).toBeVisible()
-    await expect(page.getByTestId('chat-document-context').getByText('1 related records')).toBeVisible()
+    await expect(page.getByTestId('chat-document-context').getByText('1 related data')).toBeVisible()
   })
 })

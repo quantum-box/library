@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -42,7 +42,27 @@ const kanbanStatuses: Status[] = [
   'in_progress',
   'in_review',
   'done',
+  'cancelled',
 ]
+
+function isStatus(value: unknown): value is Status {
+  return kanbanStatuses.includes(value as Status)
+}
+
+function resolveKanbanDropStatus(
+  records: DatabaseRecord[],
+  overId: string,
+  overStatus: unknown
+): Status | null {
+  if (isStatus(overStatus)) return overStatus
+
+  if (overId.startsWith('column-')) {
+    const columnStatus = overId.slice('column-'.length)
+    return isStatus(columnStatus) ? columnStatus : null
+  }
+
+  return records.find((record) => record.id === overId)?.status ?? null
+}
 
 // Compact card for kanban
 export function KanbanCard({
@@ -219,6 +239,7 @@ export function KanbanColumn({
 
       <div
         ref={setNodeRef}
+        data-testid={`kanban-column-${status}`}
         className="flex-1 overflow-y-auto px-2 pb-4 rounded-md transition-colors"
         style={{
           minHeight: '100px',
@@ -261,7 +282,10 @@ export function KanbanView({
   visibleProperties,
 }: KanbanViewProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [dragPreviewStatus, setDragPreviewStatus] = useState<Status | null>(null)
   const [internalCompact, setInternalCompact] = useState(false)
+  const activeOriginStatus = useRef<Status | null>(null)
+  const dragPreviewStatusRef = useRef<Status | null>(null)
   const compact = controlledCompact ?? internalCompact
   const setCompact = onCompactChange ?? setInternalCompact
 
@@ -270,71 +294,79 @@ export function KanbanView({
     useSensor(KeyboardSensor)
   )
 
-  const recordsByStatus = kanbanStatuses.reduce(
-    (acc, status) => {
-      acc[status] = records.filter((i) => i.status === status)
-      return acc
-    },
-    {} as Record<Status, DatabaseRecord[]>
+  const displayedRecords = useMemo(
+    () =>
+      activeId && dragPreviewStatus
+        ? records.map((record) =>
+            record.id === activeId ? { ...record, status: dragPreviewStatus } : record
+          )
+        : records,
+    [activeId, dragPreviewStatus, records]
+  )
+
+  const recordsByStatus = useMemo(
+    () =>
+      kanbanStatuses.reduce(
+        (acc, status) => {
+          acc[status] = displayedRecords.filter((record) => record.status === status)
+          return acc
+        },
+        {} as Record<Status, DatabaseRecord[]>
+      ),
+    [displayedRecords]
   )
 
   const activeDatabaseRecord = activeId
-    ? records.find((i) => i.id === activeId)
+    ? displayedRecords.find((record) => record.id === activeId)
     : null
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string)
+    const recordId = String(event.active.id)
+    const record = records.find((candidate) => candidate.id === recordId)
+    activeOriginStatus.current = record?.status ?? null
+    dragPreviewStatusRef.current = record?.status ?? null
+    setDragPreviewStatus(record?.status ?? null)
+    setActiveId(recordId)
   }
 
   function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event
+    const { over } = event
     if (!over) return
 
-    const activeRecordId = active.id as string
-    const overId = over.id as string
+    const nextStatus = resolveKanbanDropStatus(
+      records,
+      String(over.id),
+      over.data.current?.status
+    )
+    if (!nextStatus || nextStatus === dragPreviewStatusRef.current) return
 
-    // Dropped over a column droppable
-    if (overId.startsWith('column-')) {
-      const newStatus = over.data.current?.status as Status
-      const activeRecordItem = records.find((i) => i.id === activeRecordId)
-      if (activeRecordItem && activeRecordItem.status !== newStatus) {
-        onMoveRecord(activeRecordId, newStatus)
-      }
-      return
-    }
-
-    // Dropped over another card
-    const overDatabaseRecord = records.find((i) => i.id === overId)
-    if (overDatabaseRecord) {
-      const activeRecordItem = records.find((i) => i.id === activeRecordId)
-      if (activeRecordItem && activeRecordItem.status !== overDatabaseRecord.status) {
-        onMoveRecord(activeRecordId, overDatabaseRecord.status)
-      }
-    }
+    dragPreviewStatusRef.current = nextStatus
+    setDragPreviewStatus(nextStatus)
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
+    const activeRecordId = String(active.id)
+    const nextStatus = over
+      ? resolveKanbanDropStatus(records, String(over.id), over.data.current?.status)
+      : null
+    const originalStatus = activeOriginStatus.current
+
     setActiveId(null)
+    setDragPreviewStatus(null)
+    activeOriginStatus.current = null
+    dragPreviewStatusRef.current = null
 
-    if (!over) return
-
-    const activeRecordId = active.id as string
-    const overId = over.id as string
-
-    if (overId.startsWith('column-')) {
-      const newStatus = over.data.current?.status as Status
-      onMoveRecord(activeRecordId, newStatus)
-      return
+    if (nextStatus && originalStatus && nextStatus !== originalStatus) {
+      onMoveRecord(activeRecordId, nextStatus)
     }
+  }
 
-    const overDatabaseRecord = records.find((i) => i.id === overId)
-    if (overDatabaseRecord) {
-      const activeRecordItem = records.find((i) => i.id === activeRecordId)
-      if (activeRecordItem && activeRecordItem.status !== overDatabaseRecord.status) {
-        onMoveRecord(activeRecordId, overDatabaseRecord.status)
-      }
-    }
+  function handleDragCancel() {
+    setActiveId(null)
+    setDragPreviewStatus(null)
+    activeOriginStatus.current = null
+    dragPreviewStatusRef.current = null
   }
 
   return (
@@ -361,6 +393,7 @@ export function KanbanView({
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
           {kanbanStatuses.map((status) => (
             <KanbanColumn

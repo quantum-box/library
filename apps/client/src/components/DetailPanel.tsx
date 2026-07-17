@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@tachyon-sdk/native-ui'
-import { ArrowLeft, Database, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Database, RefreshCw, Trash2, X } from 'lucide-react'
 import {
   type DatabaseRecord,
   type Status,
@@ -148,6 +148,7 @@ export function DetailPanel({
         <div className="flex items-center gap-1">
           {onDeleteRecord && (
             <button
+              type="button"
               onClick={() => setDeleteConfirm(true)}
               className="w-6 h-6 flex items-center justify-center rounded transition-colors text-sm"
               style={{ color: 'var(--text-muted)' }}
@@ -160,19 +161,22 @@ export function DetailPanel({
                 e.currentTarget.style.color = 'var(--text-muted)'
               }}
               title="Delete record"
+              aria-label={`Delete ${record.title}`}
             >
-              🗑
+              <Trash2 className="size-3.5" aria-hidden="true" />
             </button>
           )}
           <button
+            type="button"
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded transition-colors text-sm"
             data-testid="detail-panel-close"
             style={{ color: 'var(--text-muted)' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+            aria-label="Close data details"
           >
-            ✕
+            <X className="size-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -753,11 +757,13 @@ function EditableLabels({
           >
             {label}
             <button
+              type="button"
               onClick={() => removeLabel(label)}
               className="opacity-50 hover:opacity-100 transition-opacity"
               style={{ fontSize: '10px' }}
+              aria-label={`Remove ${label} label`}
             >
-              ✕
+              <X className="size-3" aria-hidden="true" />
             </button>
           </span>
         ))}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input } from '@tachyon-sdk/native-ui'
-import { Plus, RefreshCw, Rows3, Search } from 'lucide-react'
+import { Plus, RefreshCw, Rows3, Search, Trash2 } from 'lucide-react'
 import {
   createColumnHelper,
   flexRender,
@@ -202,13 +202,14 @@ export function LibraryTableView({
             className="rounded px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-status-cancelled"
             disabled={saving}
             title="Delete row"
+            aria-label={`Delete ${row.original.name}`}
             onClick={(event) => {
               event.stopPropagation()
               setPendingDelete(row.original)
               setDeleteError(null)
             }}
           >
-            ×
+            <Trash2 className="size-3.5" aria-hidden="true" />
           </button>
         ),
       }),

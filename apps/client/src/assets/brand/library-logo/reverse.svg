@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library reversed orbit logo</title>
+  <rect width="1024" height="1024" fill="#07172f"/>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#fff" stroke-width="96"/>
+  <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#07172f" stroke-linecap="round" stroke-width="126"/>
+  <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#4d7cff" stroke-linecap="round" stroke-width="86"/>
+  <circle cx="235" cy="700" r="94" fill="#07172f"/>
+  <circle cx="235" cy="700" r="78" fill="#4d7cff"/>
+  <circle cx="835" cy="335" r="94" fill="#07172f"/>
+  <circle cx="835" cy="335" r="78" fill="#4d7cff"/>
+</svg>

@@ -1,155 +1,22 @@
 /**
  * Mock SSE stream that simulates an AI assistant responding.
- * Detects tool-triggering keywords and executes tools before streaming text.
+ * Detects Library data tool requests and executes them before streaming text.
+ *
+ * This adapter is intentionally local-only. It must not fabricate web search,
+ * arbitrary API, or code-execution results that look like production output.
  */
 
 import type { ToolCall, ToolRuntimeContext, ToolType } from './tools/types'
 import { executeTool, generateToolCallId } from './tools/toolExecutor'
 
-const SAMPLE_RESPONSES = [
-  `## Library Workspace Analysis
-
-Here's a breakdown of the current architecture:
-
-1. **Frontend Layer** - React with TypeScript
-2. **State Management** - Hooks-based with \`useState\` and \`useCallback\`
-3. **Styling** - Tailwind CSS with CSS custom properties
-
-### Key Observations
-
-The codebase follows a component-based architecture with clear separation of concerns. Each view component handles its own state while the parent \`App\` manages shared state.
-
-\`\`\`typescript
-// Example: Optimistic update pattern
-const handleMoveData = useCallback((dataId: string, newStatus: Status) => {
-  setData(prev =>
-    prev.map(i => (i.id === dataId ? { ...i, status: newStatus } : i))
-  )
-}, [])
-\`\`\`
-
-### Recommendations
-
-- Consider adding **virtual scrolling** for large datasets
-- Implement \`useMemo\` for expensive filter operations
-- Add error boundaries around view components
-
-> The current implementation is solid for the scale, but will benefit from these optimizations as data grows.
-
-| Component | Complexity | Status |
-|-----------|-----------|--------|
-| TableView | Medium | Done |
-| KanbanView | High | Done |
-| DetailPanel | Low | Done |`,
-
-  `I can help with that! Let me walk you through the solution.
-
-### Step 1: Setup
-
-First, install the required dependencies:
-
-\`\`\`bash
-npm install @tanstack/react-query zod
-\`\`\`
-
-### Step 2: Define the Schema
-
-\`\`\`typescript
-import { z } from 'zod'
-
-const UserSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  email: z.string().email(),
-  role: z.enum(['admin', 'user', 'viewer']),
-})
-
-type User = z.infer<typeof UserSchema>
-\`\`\`
-
-### Step 3: Create the Hook
-
-\`\`\`typescript
-function useUsers() {
-  return useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const res = await fetch('/api/users')
-      const data = await res.json()
-      return UserSchema.array().parse(data)
-    },
-  })
-}
-\`\`\`
-
-This gives you **type-safe data fetching** with runtime validation. Any malformed response will throw immediately rather than causing silent bugs downstream.`,
-
-  `That's a great question. Here's a concise comparison:
-
-- **SSE (Server-Sent Events)**: One-way server-to-client, auto-reconnect, simple HTTP
-- **WebSockets**: Full duplex, lower latency, more complex setup
-- **Long Polling**: Simple fallback, higher overhead, works everywhere
-
-For streaming AI responses, SSE is usually the best choice because:
-
-1. We only need server-to-client communication
-2. Built-in reconnection handling
-3. Works through proxies and load balancers
-4. Simple to implement with \`EventSource\` API`,
-]
-
-const SEARCH_FOLLOW_UP_RESPONSES = [
-  `Based on the search results, here's what I found:
-
-### Key Findings
-
-The latest documentation and community resources confirm the following:
-
-1. **Performance** — The newest versions ship significant performance improvements through engine rewrites and optimized build pipelines
-2. **Migration** — Official migration guides are available for major version upgrades
-3. **Best Practices** — The community has established clear patterns for large-scale applications
-
-I'd recommend checking the official documentation links above for the most up-to-date details. Let me know if you'd like me to dive deeper into any specific area.`,
-
-  `Here's a summary of what the search results reveal:
-
-### Overview
-
-The search results provide several relevant resources. The key takeaway is that the ecosystem is actively evolving with strong community support and comprehensive documentation.
-
-### Recommendations
-
-- Start with the **official guides** linked above for the most accurate information
-- Review the **best practices** articles for production-ready patterns
-- Consider the **comparison articles** to make informed architectural decisions
-
-Would you like me to search for anything more specific?`,
-]
-
-const API_FOLLOW_UP_RESPONSES = [
-  `The API returned successfully. Here's my analysis:
-
-### Status Overview
-
-All services are reporting **healthy** status with good connectivity. The key metrics look solid:
-
-- Response times are within acceptable thresholds
-- Error rates are minimal
-- All dependent services are connected and responsive
-
-This suggests the system is operating normally. Let me know if you'd like to investigate any specific endpoint or metric further.`,
-
-  `The API response looks good. Let me break down what we're seeing:
-
-### Analysis
-
-The data shows a healthy system with normal operating parameters. All critical metrics are within expected ranges.
-
-If you need to drill deeper into any particular service or need historical trending data, I can make additional API calls to gather that information.`,
-]
-
 const DOCUMENT_CONTEXT_RESPONSE =
   'I have the current document context available, including the active document, selected text, and related Library data. I can use that context when creating or searching data.'
+
+const LOCAL_DEMO_RESPONSE =
+  'Library Chat is running in local demo mode, so no assistant backend is connected. I can search, list, open, create, and move Library data in this workspace without inventing external results.'
+
+const LOCAL_FILE_RESPONSE =
+  'I received the attached file content, but Library Chat is running in local demo mode without an assistant backend. The content was not sent externally. Connect the configured chat backend for document analysis, or ask me to search, create, or move Library data.'
 
 export interface SSECallbacks {
   onChunk: (text: string) => void
@@ -213,9 +80,8 @@ function extractCreateTitle(message: string) {
 }
 
 function detectToolTriggers(message: string): DetectedTool[] {
-  const lower = message.toLowerCase()
   const tools: DetectedTool[] = []
-  const hasRecordIntent = /(?:record|records|database|databases|record|records|チケット|課題|plt-\d+|<record)/i.test(message)
+  const hasRecordIntent = /(?:record|records|database|databases|record|records|チケット|課題|(?:data|plt)-\d+|<record)/i.test(message)
 
   if (hasRecordIntent) {
     const recordRef = extractRecordRef(message)
@@ -265,42 +131,6 @@ function detectToolTriggers(message: string): DetectedTool[] {
     }
   }
 
-  // Web search triggers
-  const searchPatterns = [
-    /(?:search|検索|調べ|look\s*up|find\s+(?:info|information|details)|google|ググ|探し)/i,
-    /(?:what\s+is|what\s+are|how\s+to|latest|newest|最新)/i,
-  ]
-  if (searchPatterns.some((p) => p.test(lower))) {
-    // Extract a search query from the message
-    const query = message
-      .replace(/(?:search|検索|調べ|look\s*up|google|ググ|please|して|について|を|の|で|に|は|が)/gi, '')
-      .trim()
-      .slice(0, 100) || message.slice(0, 60)
-    tools.push({ type: 'web_search', args: { query } })
-  }
-
-  // API call triggers
-  const apiPatterns = [
-    /(?:api|endpoint|fetch|status|health\s*check|call|request|リクエスト)/i,
-  ]
-  if (apiPatterns.some((p) => p.test(lower)) && !tools.some((t) => t.type === 'web_search')) {
-    tools.push({
-      type: 'api_call',
-      args: { endpoint: '/api/v1/status', method: 'GET' },
-    })
-  }
-
-  // Code execution triggers
-  const codePatterns = [
-    /(?:run|execute|eval|実行|コード)/i,
-  ]
-  if (codePatterns.some((p) => p.test(lower)) && lower.includes('code') || lower.includes('コード')) {
-    tools.push({
-      type: 'code_exec',
-      args: { code: 'console.log("Analysis complete")' },
-    })
-  }
-
   return tools
 }
 
@@ -323,7 +153,9 @@ export function startMockSSE(
     // Normal text-only response
     const response = wantsDocumentContext
       ? DOCUMENT_CONTEXT_RESPONSE
-      : SAMPLE_RESPONSES[Math.floor(Math.random() * SAMPLE_RESPONSES.length)]
+      : userMessage.includes('[Attached file:')
+        ? LOCAL_FILE_RESPONSE
+        : LOCAL_DEMO_RESPONSE
     streamText(response, signal, onChunk, onDone)
   }
 
@@ -339,10 +171,7 @@ async function executeToolsAndStream(
   onToolCallUpdate: (toolCall: ToolCall) => void,
   context?: ToolRuntimeContext,
 ) {
-  let hasSearch = false
-  let hasApi = false
-  let hasRecord = false
-
+  let failureResponse: string | null = null
   for (const tool of tools) {
     if (signal.aborted) { onDone(); return }
 
@@ -365,10 +194,6 @@ async function executeToolsAndStream(
     // Notify: tool started
     onToolCallStart(toolCall)
 
-    if (tool.type === 'web_search') hasSearch = true
-    if (tool.type === 'api_call') hasApi = true
-    if (tool.type.startsWith('record_')) hasRecord = true
-
     let updatedToolCall: ToolCall
     try {
       const result = await executeTool(tool.type, tool.args, signal, context)
@@ -377,16 +202,23 @@ async function executeToolsAndStream(
         status: result.cancelled ? 'cancelled' : result.error ? 'error' : 'completed',
         result,
       }
+      if (result.cancelled) {
+        failureResponse = 'I did not apply the requested change because the tool was cancelled.'
+      } else if (result.error) {
+        failureResponse = `I could not apply the requested change: ${result.error}`
+      }
     } catch {
       updatedToolCall = {
         ...toolCall,
         status: 'error',
         result: { data: null, error: 'Tool execution failed' },
       }
+      failureResponse = 'I could not apply the requested change: Tool execution failed'
     }
 
     // Notify: tool completed
     onToolCallUpdate(updatedToolCall)
+    if (failureResponse) break
   }
 
   if (signal.aborted) { onDone(); return }
@@ -397,19 +229,12 @@ async function executeToolsAndStream(
     signal.addEventListener('abort', () => clearTimeout(t))
   })
 
-  // Pick a follow-up response based on what tools ran
-  let response: string
-  if (hasRecord) {
-    response = `Done. I updated the Library data through the Library API backed store.`
-  } else if (hasSearch) {
-    response = SEARCH_FOLLOW_UP_RESPONSES[Math.floor(Math.random() * SEARCH_FOLLOW_UP_RESPONSES.length)]
-  } else if (hasApi) {
-    response = API_FOLLOW_UP_RESPONSES[Math.floor(Math.random() * API_FOLLOW_UP_RESPONSES.length)]
-  } else {
-    response = SAMPLE_RESPONSES[Math.floor(Math.random() * SAMPLE_RESPONSES.length)]
-  }
-
-  streamText(response, signal, onChunk, onDone)
+  streamText(
+    failureResponse ?? 'Done. I applied the requested change through the Library data store.',
+    signal,
+    onChunk,
+    onDone,
+  )
 }
 
 function streamText(

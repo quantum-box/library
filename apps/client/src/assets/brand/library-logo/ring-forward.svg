@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library ring-forward orbit logo</title>
+  <circle cx="512" cy="512" r="296" fill="none" stroke="#07172f" stroke-width="112"/>
+  <path d="M245 694C442 682 700 596 827 344" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="104"/>
+  <path d="M245 694C442 682 700 596 827 344" fill="none" stroke="#1557ff" stroke-linecap="round" stroke-width="68"/>
+  <circle cx="245" cy="694" r="80" fill="#fff"/>
+  <circle cx="245" cy="694" r="62" fill="#1557ff"/>
+  <circle cx="827" cy="344" r="80" fill="#fff"/>
+  <circle cx="827" cy="344" r="62" fill="#1557ff"/>
+</svg>

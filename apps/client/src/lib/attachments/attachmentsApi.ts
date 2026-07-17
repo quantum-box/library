@@ -203,6 +203,38 @@ export async function linkServerAttachment(
   return nextRecord.value
 }
 
+export async function unlinkServerAttachment(
+  attachmentId: string,
+  surface: AttachmentSurfaceRef
+): Promise<WorkspaceAttachment | null> {
+  const record = await getClientEngineRecord<WorkspaceAttachment>('attachments', attachmentId)
+  if (!record) throw new AttachmentApiError('Attachment not found', 404)
+
+  const links = record.value.links.filter(
+    (link) =>
+      link.surfaceType !== surface.surfaceType || link.surfaceId !== surface.surfaceId
+  )
+  if (links.length === record.value.links.length) return record.value
+
+  if (links.length === 0) {
+    await deleteClientEngineRecord('attachments', attachmentId)
+    return null
+  }
+
+  const attachment: WorkspaceAttachment = {
+    ...record.value,
+    links,
+    updatedAt: new Date().toISOString(),
+  }
+  const nextRecord = await patchClientEngineRecord<WorkspaceAttachment>(
+    'attachments',
+    attachmentId,
+    attachment
+  )
+  if (!nextRecord) throw new AttachmentApiError('Attachment not found', 404)
+  return nextRecord.value
+}
+
 export async function deleteServerAttachment(attachmentId: string): Promise<void> {
   await deleteClientEngineRecord('attachments', attachmentId)
 }

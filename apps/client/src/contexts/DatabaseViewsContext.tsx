@@ -28,6 +28,7 @@ import {
 import type { DatabaseViewDefinition, DatabaseViewType } from '../lib/databaseViews/types'
 
 interface DatabaseViewsContextValue {
+  ready: boolean
   views: DatabaseViewDefinition[]
   getViewsForDatabase: (databaseId: string | undefined) => DatabaseViewDefinition[]
   createDatabaseView: (
@@ -231,6 +232,7 @@ export function DatabaseViewsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      ready,
       views,
       getViewsForDatabase,
       createDatabaseView,
@@ -244,6 +246,7 @@ export function DatabaseViewsProvider({ children }: { children: ReactNode }) {
       deleteDatabaseView,
       duplicateDatabaseView,
       getViewsForDatabase,
+      ready,
       renameDatabaseView,
       updateDatabaseView,
       views,

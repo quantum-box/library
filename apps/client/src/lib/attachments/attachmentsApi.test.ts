@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import { toWorkspaceAttachment } from './attachmentsApi'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toWorkspaceAttachment, unlinkServerAttachment } from './attachmentsApi'
+
+const engineMocks = vi.hoisted(() => ({
+  deleteClientEngineRecord: vi.fn(),
+  getClientEngineRecord: vi.fn(),
+  listClientEngineRecords: vi.fn(),
+  patchClientEngineRecord: vi.fn(),
+  upsertClientEngineRecord: vi.fn(),
+}))
+
+vi.mock('../photonEngine/client', () => engineMocks)
 
 describe('attachment metadata API mapping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('keeps content metadata separate from preview metadata and links', () => {
     const attachment = toWorkspaceAttachment({
       id: 'att-1',
@@ -48,5 +62,79 @@ describe('attachment metadata API mapping', () => {
       'record:record-1',
       'document:doc-1',
     ])
+  })
+
+  it('unlinks a deleted document while preserving an attachment used by another surface', async () => {
+    const attachment = {
+      id: 'att-shared',
+      workspaceId: 'photon-default',
+      filename: 'shared.pdf',
+      contentType: 'application/pdf',
+      byteSize: 100,
+      storageProvider: 'web-object-storage' as const,
+      storageKey: 'shared.pdf',
+      contentStatus: 'local_cache' as const,
+      previewMetadata: { fileType: 'pdf' as const, previewStatus: 'available' as const },
+      createdBy: null,
+      createdAt: '2026-05-14T00:00:00.000Z',
+      updatedAt: '2026-05-14T00:00:00.000Z',
+      links: [
+        {
+          id: 'doc-link',
+          attachmentId: 'att-shared',
+          surfaceType: 'document' as const,
+          surfaceId: 'doc-1',
+          createdAt: '2026-05-14T00:00:00.000Z',
+        },
+        {
+          id: 'record-link',
+          attachmentId: 'att-shared',
+          surfaceType: 'record' as const,
+          surfaceId: 'record-1',
+          createdAt: '2026-05-14T00:00:00.000Z',
+        },
+      ],
+    }
+    engineMocks.getClientEngineRecord.mockResolvedValue({ value: attachment })
+    engineMocks.patchClientEngineRecord.mockImplementation(
+      async (_collection: string, _id: string, value: typeof attachment) => ({ value })
+    )
+
+    const result = await unlinkServerAttachment('att-shared', {
+      surfaceType: 'document',
+      surfaceId: 'doc-1',
+    })
+
+    expect(result?.links).toHaveLength(1)
+    expect(result?.links[0]).toMatchObject({ surfaceType: 'record', surfaceId: 'record-1' })
+    expect(engineMocks.deleteClientEngineRecord).not.toHaveBeenCalled()
+  })
+
+  it('deletes orphaned attachment metadata after its final document link is removed', async () => {
+    engineMocks.getClientEngineRecord.mockResolvedValue({
+      value: {
+        id: 'att-doc-only',
+        links: [
+          {
+            id: 'doc-link',
+            attachmentId: 'att-doc-only',
+            surfaceType: 'document',
+            surfaceId: 'doc-1',
+            createdAt: '2026-05-14T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    await expect(
+      unlinkServerAttachment('att-doc-only', {
+        surfaceType: 'document',
+        surfaceId: 'doc-1',
+      })
+    ).resolves.toBeNull()
+    expect(engineMocks.deleteClientEngineRecord).toHaveBeenCalledWith(
+      'attachments',
+      'att-doc-only'
+    )
   })
 })

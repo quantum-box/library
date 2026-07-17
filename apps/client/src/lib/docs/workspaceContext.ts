@@ -27,9 +27,31 @@ export function setCurrentDocContext(docId: string, title: string, url: string) 
 
 export function setCurrentDocSelectedText(docId: string, text: string) {
   try {
+    if (!text.trim()) {
+      window.localStorage.removeItem(SELECTED_TEXT_KEY)
+      return
+    }
     window.localStorage.setItem(SELECTED_TEXT_KEY, JSON.stringify({ docId, text }))
   } catch {
     // LocalStorage can be unavailable in restricted browser modes.
+  }
+}
+
+export function clearCurrentDocContext(docId?: string) {
+  try {
+    const current = readStoredDocContext()
+    if (!docId || current?.docId === docId) {
+      window.localStorage.removeItem(CURRENT_DOC_KEY)
+    }
+
+    const selected = window.localStorage.getItem(SELECTED_TEXT_KEY)
+    if (!selected) return
+    const parsed = JSON.parse(selected) as { docId?: string }
+    if (!docId || parsed.docId === docId) {
+      window.localStorage.removeItem(SELECTED_TEXT_KEY)
+    }
+  } catch {
+    // LocalStorage can be unavailable or contain state from an older client.
   }
 }
 

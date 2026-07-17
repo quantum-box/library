@@ -14,6 +14,7 @@ import {
   GitBranch,
   LayoutList,
   RefreshCw,
+  Settings,
   Workflow,
 } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
@@ -207,7 +208,16 @@ export function RepositoryOverview({
           <span className="truncate font-semibold">{repository}</span>
         </div>
         <Badge variant="outline" className="hidden sm:inline-flex">Repository</Badge>
-        <Button className="ml-auto" variant="primary" size="sm" asChild>
+        <Button className="ml-auto" variant="ghost" size="sm" asChild>
+          <Link
+            to="/repositories/$organization/$repository/settings"
+            params={{ organization, repository }}
+          >
+            <Settings aria-hidden="true" />
+            <span className="hidden sm:inline">Settings</span>
+          </Link>
+        </Button>
+        <Button variant="primary" size="sm" asChild>
           <Link
             data-testid="repository-open-data"
             to="/databases"
@@ -242,6 +252,14 @@ export function RepositoryOverview({
             {label}
           </Link>
         ))}
+        <Link
+          to="/docs"
+          search={{ database: database.id }}
+          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <FileText className="size-3.5" aria-hidden="true" />
+          Documents
+        </Link>
         <a
           href="#activity"
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -249,6 +267,14 @@ export function RepositoryOverview({
           <Activity className="size-3.5" aria-hidden="true" />
           Activity
         </a>
+        <Link
+          to="/repositories/$organization/$repository/settings"
+          params={{ organization, repository }}
+          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <Settings className="size-3.5" aria-hidden="true" />
+          Settings
+        </Link>
       </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-background">
@@ -283,7 +309,7 @@ export function RepositoryOverview({
                   <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
                     Browse this repository as a table, shape work on a board, or connect it as a workflow.
                   </p>
-                  <div className="mt-4 grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
+                  <div className="mt-4 grid border-y border-border sm:grid-cols-4 sm:divide-x sm:divide-border">
                     {([
                       ['table', 'Data table', 'Browse and filter every entry.', LayoutList],
                       ['board', 'Board', 'Group work by status.', Columns3],
@@ -303,6 +329,20 @@ export function RepositoryOverview({
                         <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">{detail}</span>
                       </Link>
                     ))}
+                    <Link
+                      to="/docs"
+                      search={{ database: database.id }}
+                      className="group min-h-20 border-t border-border bg-background px-3 py-3 no-underline transition-colors duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:border-t-0"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        <FileText className="size-4 text-primary" aria-hidden="true" />
+                        Documents
+                        <ArrowRight className="ml-auto size-3.5 text-subtle-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100" aria-hidden="true" />
+                      </span>
+                      <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
+                        Write with this repository&apos;s data context.
+                      </span>
+                    </Link>
                   </div>
                 </div>
               </section>
@@ -328,7 +368,7 @@ export function RepositoryOverview({
                       <Link
                         key={record.id}
                         to="/databases/$recordId"
-                        params={{ recordId: record.identifier }}
+                        params={{ recordId: record.id }}
                         search={tableSearch}
                         className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2 text-left no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:grid-cols-[minmax(0,1fr)_110px_78px] md:px-5"
                       >

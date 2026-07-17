@@ -15,6 +15,7 @@ import {
   deleteServerAttachment,
   fetchServerAttachments,
   linkServerAttachment,
+  unlinkServerAttachment,
 } from './attachmentsApi'
 import type {
   AttachmentSurfaceRef,
@@ -29,6 +30,7 @@ interface AttachmentsContextValue {
   ready: boolean
   createAttachment: (input: CreateWorkspaceAttachmentInput) => Promise<WorkspaceAttachment>
   linkAttachment: (attachmentId: string, surface: AttachmentSurfaceRef) => Promise<WorkspaceAttachment | null>
+  unlinkAttachment: (attachmentId: string, surface: AttachmentSurfaceRef) => Promise<WorkspaceAttachment | null>
   deleteAttachment: (attachmentId: string) => Promise<void>
   attachmentsForSurface: (surface: AttachmentSurfaceRef) => WorkspaceAttachment[]
 }
@@ -181,8 +183,8 @@ export function AttachmentsProvider({ children }: { children: ReactNode }) {
   }, [ready])
 
   const createAttachment = useCallback(async (input: CreateWorkspaceAttachmentInput) => {
-    const objectUrl = URL.createObjectURL(input.file)
     const attachment = await createServerAttachment(input)
+    const objectUrl = URL.createObjectURL(input.file)
     runtimeFiles.set(attachment.id, { file: input.file, objectUrl })
     const withRuntime = { ...attachment, file: input.file, objectUrl }
     ydoc.transact(() => upsertYAttachment(withRuntime))
@@ -191,6 +193,27 @@ export function AttachmentsProvider({ children }: { children: ReactNode }) {
 
   const linkAttachment = useCallback(async (attachmentId: string, surface: AttachmentSurfaceRef) => {
     const attachment = await linkServerAttachment(attachmentId, surface)
+    const runtime = runtimeFiles.get(attachment.id)
+    const withRuntime = { ...attachment, file: runtime?.file, objectUrl: runtime?.objectUrl }
+    ydoc.transact(() => upsertYAttachment(withRuntime))
+    return withRuntime
+  }, [])
+
+  const unlinkAttachment = useCallback(async (
+    attachmentId: string,
+    surface: AttachmentSurfaceRef
+  ) => {
+    const attachment = await unlinkServerAttachment(attachmentId, surface)
+    if (!attachment) {
+      const runtime = runtimeFiles.get(attachmentId)
+      if (runtime) {
+        URL.revokeObjectURL(runtime.objectUrl)
+        runtimeFiles.delete(attachmentId)
+      }
+      ydoc.transact(() => removeYAttachment(attachmentId))
+      return null
+    }
+
     const runtime = runtimeFiles.get(attachment.id)
     const withRuntime = { ...attachment, file: runtime?.file, objectUrl: runtime?.objectUrl }
     ydoc.transact(() => upsertYAttachment(withRuntime))
@@ -223,10 +246,19 @@ export function AttachmentsProvider({ children }: { children: ReactNode }) {
       ready,
       createAttachment,
       linkAttachment,
+      unlinkAttachment,
       deleteAttachment,
       attachmentsForSurface,
     }),
-    [attachments, attachmentsForSurface, createAttachment, deleteAttachment, linkAttachment, ready]
+    [
+      attachments,
+      attachmentsForSurface,
+      createAttachment,
+      deleteAttachment,
+      linkAttachment,
+      ready,
+      unlinkAttachment,
+    ]
   )
 
   return <AttachmentsContext.Provider value={value}>{children}</AttachmentsContext.Provider>
