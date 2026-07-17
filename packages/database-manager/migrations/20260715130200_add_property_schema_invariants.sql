@@ -6,12 +6,18 @@
 -- Database while every non-Id property remains unconstrained by this marker.
 -- Keep this column VIRTUAL: TiDB supports indexing virtual generated columns
 -- but does not support adding a stored generated column through ALTER TABLE.
+-- Add the column separately because TiDB cannot reference a column added in
+-- the same multi-schema ALTER when it builds the following unique index.
 ALTER TABLE fields
     ADD COLUMN id_singleton_marker TINYINT UNSIGNED
         GENERATED ALWAYS AS (
             CASE WHEN UPPER(datatype) = 'ID' THEN 1 ELSE NULL END
-        ) VIRTUAL,
+        ) VIRTUAL;
+
+ALTER TABLE fields
     ADD CONSTRAINT uq_fields_tenant_object_field_num
-        UNIQUE (tenant_id, object_id, field_num),
+        UNIQUE (tenant_id, object_id, field_num);
+
+ALTER TABLE fields
     ADD CONSTRAINT uq_fields_tenant_object_id_singleton
         UNIQUE (tenant_id, object_id, id_singleton_marker);

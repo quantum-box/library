@@ -2,6 +2,22 @@ use database_manager::domain::{DataId, DatabaseId, PropertyId};
 use sqlx::{MySqlPool, Row};
 use value_object::{DatabaseUrl, TenantId};
 
+#[test]
+fn generated_marker_is_added_before_its_unique_constraint() {
+    let migration = include_str!(
+        "../migrations/20260715130200_add_property_schema_invariants.sql"
+    );
+    let marker_statement = migration
+        .split(';')
+        .find(|statement| {
+            statement.contains("ADD COLUMN id_singleton_marker")
+        })
+        .expect("generated marker statement must exist");
+
+    assert!(!marker_statement.contains("ADD CONSTRAINT"));
+    assert_eq!(migration.matches("ALTER TABLE fields").count(), 3);
+}
+
 async fn constraint_columns(
     pool: &MySqlPool,
     table: &str,
