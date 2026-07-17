@@ -14,10 +14,34 @@ interface E2eFixtureData {
   }>
 }
 
+interface E2eEngineOperation {
+  operation: {
+    key: { collection: string; record_id: string }
+    kind: unknown
+  }
+}
+
 async function e2eFixtureData(page: Page): Promise<E2eFixtureData[]> {
   const response = await page.request.get(`${e2eApiUrl}/__e2e/state`)
   expect(response.ok()).toBe(true)
   return (await response.json() as { data: E2eFixtureData[] }).data
+}
+
+async function expectFixtureDocumentOperation(
+  page: Page,
+  documentId: string,
+  expectedTitle: string,
+) {
+  await expect.poll(async () => {
+    const response = await page.request.get(`${e2eApiUrl}/__e2e/engine`)
+    if (!response.ok()) return false
+    const body = await response.json() as { operations: E2eEngineOperation[] }
+    return body.operations.some(({ operation }) => (
+      operation.key.collection === 'documents'
+      && operation.key.record_id === documentId
+      && JSON.stringify(operation.kind).includes(expectedTitle)
+    ))
+  }, { timeout: 20_000 }).toBe(true)
 }
 
 function fixtureDataByIdentifier(data: E2eFixtureData[], identifier: string) {
@@ -634,6 +658,9 @@ test.describe('Library shell', () => {
     await page.getByLabel('Document title').fill(title)
     await page.keyboard.press('Tab')
     await expect(page.getByRole('link', { name: new RegExp(title) })).toBeVisible()
+    const documentId = new URL(page.url()).pathname.split('/').at(-1)
+    expect(documentId).toBeTruthy()
+    await expectFixtureDocumentOperation(page, documentId!, title)
     const editor = page.locator('.bn-editor[contenteditable="true"]')
     await editor.click()
     await page.keyboard.type('Reload proof body')
@@ -675,6 +702,9 @@ test.describe('Library shell', () => {
     await expect(editingPage.getByText('Server connected')).toBeVisible()
     await editingPage.getByLabel('Document title').fill(title)
     await editingPage.keyboard.press('Tab')
+    const documentId = new URL(editingPage.url()).pathname.split('/').at(-1)
+    expect(documentId).toBeTruthy()
+    await expectFixtureDocumentOperation(editingPage, documentId!, title)
 
     const editor = editingPage.locator('.bn-editor[contenteditable="true"]')
     await editor.fill(initialText)

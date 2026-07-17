@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     net::SocketAddr,
     sync::{
         atomic::{AtomicI64, Ordering},
@@ -33,6 +33,7 @@ const DEFAULT_REMOTE_ID: &str = "mock-tachyon-api";
 struct MockTachyonState {
     engine: PhotonEngine<SqliteAdapter>,
     next_sequence: Arc<AtomicI64>,
+    sync_lock: Arc<Mutex<()>>,
     events: Arc<Mutex<Vec<AdminEvent>>>,
 }
 
@@ -188,6 +189,7 @@ async fn init_state(database_url: &str) -> photon_engine::Result<MockTachyonStat
     Ok(MockTachyonState {
         engine: PhotonEngine::new(adapter),
         next_sequence: Arc::new(AtomicI64::new(next_sequence)),
+        sync_lock: Arc::new(Mutex::new(())),
         events: Arc::new(Mutex::new(Vec::new())),
     })
 }
@@ -332,6 +334,7 @@ async fn apply_admin_scenario(
     State(state): State<MockTachyonState>,
     Path(scenario_id): Path<String>,
 ) -> Result<Json<AdminScenarioResponse>, MockApiError> {
+    let _sync_guard = state.sync_lock.lock().await;
     let scenario = admin_scenarios()
         .into_iter()
         .find(|scenario| scenario.id == scenario_id)
@@ -432,6 +435,18 @@ async fn push_sync(
     State(state): State<MockTachyonState>,
     Json(request): Json<PushRequest>,
 ) -> Result<Json<PushResult>, MockApiError> {
+    let _sync_guard = state.sync_lock.lock().await;
+    let request_cursor = request.cursor.clone();
+    let after_remote_sequence = request_cursor
+        .as_ref()
+        .map(|cursor| cursor.position)
+        .unwrap_or_default();
+    let scope = request.scope.clone();
+    let pushed_operation_ids = request
+        .operations
+        .iter()
+        .map(|operation| operation.id.clone())
+        .collect::<HashSet<_>>();
     let mut decisions = Vec::with_capacity(request.operations.len());
 
     for operation in request.operations {
@@ -538,11 +553,41 @@ async fn push_sync(
         });
     }
 
-    let cursor = SyncCursor::new(request.scope, DEFAULT_REMOTE_ID, current_position(&state));
+    let mut synchronized_operations = state
+        .engine
+        .storage()
+        .list_operations(OperationFilter {
+            scope: Some(scope.clone()),
+            status: Some(OperationStatus::Accepted),
+            after_remote_sequence: Some(after_remote_sequence),
+            ..OperationFilter::default()
+        })
+        .await?;
+    synchronized_operations.sort_by_key(|stored| stored.remote_sequence.unwrap_or(i64::MAX));
+    let mut max_remote_sequence = after_remote_sequence;
+    let mut server_operations = Vec::new();
+    for stored in synchronized_operations {
+        if let Some(remote_sequence) = stored.remote_sequence {
+            max_remote_sequence = max_remote_sequence.max(remote_sequence);
+        }
+        if !pushed_operation_ids.contains(&stored.operation.id) {
+            server_operations.push(stored.operation);
+        }
+    }
+    let cursor = if max_remote_sequence > after_remote_sequence {
+        Some(SyncCursor::new(
+            scope,
+            DEFAULT_REMOTE_ID,
+            max_remote_sequence,
+        ))
+    } else {
+        request_cursor
+    };
+
     Ok(Json(PushResult {
         decisions,
-        server_operations: Vec::new(),
-        cursor: Some(cursor),
+        server_operations,
+        cursor,
     }))
 }
 
@@ -550,6 +595,7 @@ async fn pull_sync(
     State(state): State<MockTachyonState>,
     Json(request): Json<PullRequest>,
 ) -> Result<Json<PullResult>, MockApiError> {
+    let _sync_guard = state.sync_lock.lock().await;
     let since = request
         .cursor
         .as_ref()
@@ -565,7 +611,7 @@ async fn pull_sync(
             ..OperationFilter::default()
         })
         .await?;
-    let operations = stored_operations
+    let mut operations = stored_operations
         .into_iter()
         .filter_map(|stored| {
             stored
@@ -576,6 +622,12 @@ async fn pull_sync(
                 })
         })
         .collect::<Vec<_>>();
+    operations.sort_by_key(|pulled| pulled.remote_sequence);
+    let cursor_position = operations
+        .iter()
+        .map(|pulled| pulled.remote_sequence)
+        .max()
+        .unwrap_or(since);
     record_event(
         &state,
         "pull",
@@ -584,7 +636,7 @@ async fn pull_sync(
         serde_json::json!({ "since": since, "returned": operations.len() }),
     )
     .await;
-    let cursor = SyncCursor::new(request.scope, DEFAULT_REMOTE_ID, current_position(&state));
+    let cursor = SyncCursor::new(request.scope, DEFAULT_REMOTE_ID, cursor_position);
 
     Ok(Json(PullResult {
         operations,
@@ -611,6 +663,7 @@ async fn get_record(
 }
 
 async fn reset_state(State(state): State<MockTachyonState>) -> Result<StatusCode, MockApiError> {
+    let _sync_guard = state.sync_lock.lock().await;
     reset_state_inner(&state).await?;
     Ok(StatusCode::NO_CONTENT)
 }

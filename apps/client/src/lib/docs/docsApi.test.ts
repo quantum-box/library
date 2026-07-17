@@ -25,18 +25,25 @@ vi.mock('../photonEngine/client', () => engineMocks)
 function halfOpenSync(
   _apiBaseUrl?: string,
   signal?: AbortSignal,
+  requestTimeoutMs?: number,
 ): Promise<never> {
   return new Promise((_resolve, reject) => {
-    if (!signal) {
-      reject(new Error('Expected an AbortSignal'))
+    const timeoutController = requestTimeoutMs === undefined ? null : new AbortController()
+    const effectiveSignal = timeoutController?.signal ?? signal
+    if (!effectiveSignal) {
+      reject(new Error('Expected an AbortSignal or request timeout'))
       return
     }
 
+    if (timeoutController) {
+      globalThis.setTimeout(() => timeoutController.abort(), requestTimeoutMs)
+    }
+
     const rejectAbort = () => reject(
-      signal.reason ?? new DOMException('The operation was aborted', 'AbortError'),
+      effectiveSignal.reason ?? new DOMException('The operation was aborted', 'AbortError'),
     )
-    if (signal.aborted) rejectAbort()
-    else signal.addEventListener('abort', rejectAbort, { once: true })
+    if (effectiveSignal.aborted) rejectAbort()
+    else effectiveSignal.addEventListener('abort', rejectAbort, { once: true })
   })
 }
 
@@ -125,6 +132,11 @@ describe('docsApi', () => {
     await expect(fetchServerDocuments()).resolves.toHaveLength(1)
 
     expect(engineMocks.syncClientEngineOperations).toHaveBeenCalledOnce()
+    expect(engineMocks.syncClientEngineOperations).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      5_000,
+    )
     expect(engineMocks.syncClientEngineOperations.mock.invocationCallOrder[0]).toBeLessThan(
       engineMocks.listClientEngineRecords.mock.invocationCallOrder[0],
     )
@@ -185,11 +197,15 @@ describe('docsApi', () => {
   it('aborts a half-open sync after five seconds and keeps local metadata readable', async () => {
     vi.useFakeTimers()
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const request = { signal: null as AbortSignal | null }
+    const request = { timeoutMs: null as number | null }
     engineMocks.syncClientEngineOperations.mockImplementation(
-      (_apiBaseUrl: string | undefined, signal: AbortSignal | undefined) => {
-        request.signal = signal ?? null
-        return halfOpenSync(_apiBaseUrl, signal)
+      (
+        apiBaseUrl: string | undefined,
+        signal: AbortSignal | undefined,
+        requestTimeoutMs: number | undefined,
+      ) => {
+        request.timeoutMs = requestTimeoutMs ?? null
+        return halfOpenSync(apiBaseUrl, signal, requestTimeoutMs)
       },
     )
     engineMocks.listClientEngineRecords.mockResolvedValue([{
@@ -206,7 +222,7 @@ describe('docsApi', () => {
     await vi.advanceTimersByTimeAsync(5_000)
 
     await expect(documents).resolves.toMatchObject([{ id: 'doc-half-open' }])
-    expect(request.signal?.aborted).toBe(true)
+    expect(request.timeoutMs).toBe(5_000)
     expect(warning).toHaveBeenCalledOnce()
   })
 

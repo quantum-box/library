@@ -180,6 +180,42 @@ describe('WorkflowView', () => {
     expect(screen.getByTestId('workflow-detail-panel')).toHaveTextContent('First node')
   })
 
+  it('keeps selected details open when records hydrate for the same database', async () => {
+    const first = record('one', 'Snapshot title')
+    workflowMocks.canvas = {
+      databaseId: 'database-one',
+      selectedTemplateId: 'business-flow',
+      nodes: [
+        {
+          id: 'node-one',
+          recordId: first.id,
+          templateId: 'business-flow',
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+      updatedAt: '2026-05-15T00:00:00.000Z',
+    }
+
+    const { rerender } = render(
+      <WorkflowView databaseId="database-one" records={[first]} />
+    )
+
+    fireEvent.click(await screen.findByTestId('mock-workflow-node-node-one'))
+    expect(screen.getByTestId('workflow-detail-panel')).toHaveTextContent('Snapshot title')
+
+    rerender(
+      <WorkflowView
+        databaseId="database-one"
+        records={[{ ...first, title: 'Hydrated title' }]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workflow-detail-panel')).toHaveTextContent('Hydrated title')
+    })
+  })
+
   it('provides a visible delete affordance for a selected connection', async () => {
     const first = record('one', 'First node')
     const second = record('two', 'Second node')

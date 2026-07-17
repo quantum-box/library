@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -231,6 +231,8 @@ pub struct Record {
     pub value: Value,
     pub version: HybridTimestamp,
     pub field_versions: BTreeMap<String, HybridTimestamp>,
+    #[serde(default)]
+    pub applied_operation_ids: BTreeSet<OperationId>,
     pub deleted_at: Option<HybridTimestamp>,
     pub updated_by: ActorId,
 }
@@ -257,6 +259,7 @@ impl Record {
             value,
             version,
             field_versions,
+            applied_operation_ids: BTreeSet::new(),
             deleted_at: None,
             updated_by: updated_by.into(),
         }

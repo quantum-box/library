@@ -15,6 +15,7 @@ const engineScope = 'tenant:library:workspace:library-default'
 type TestOperationKind =
   | { type: 'upsert'; value: unknown }
   | { type: 'patch'; fields: Record<string, unknown> }
+  | { type: 'increment'; field: string; by: number }
   | { type: 'delete' }
 
 function remoteOperation(
@@ -57,6 +58,7 @@ describe('client Photon Engine', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -110,7 +112,7 @@ describe('client Photon Engine', () => {
             operation_id: operation.id,
             remote_sequence: index + 1,
           })),
-          server_operations: [serverProjection],
+          server_operations: [...(body.operations ?? []), serverProjection],
           cursor: cursor(body.operations?.length ?? 0),
         }), { status: 200 })
       }
@@ -201,6 +203,30 @@ describe('client Photon Engine', () => {
     expect(debug.cursor?.position).toBe(8)
     expect(debug.operations.accepted).toBe(2)
     expect(debug.recentOperations.map((operation) => operation.remoteSequence)).toEqual([8, 7])
+  })
+
+  it('does not reapply an increment when a remote batch is replayed', async () => {
+    const increment = remoteOperation(
+      'remote-increment-1',
+      'remote-counter-1',
+      { type: 'increment', field: 'count', by: 1 },
+      100
+    )
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        operations: [
+          { operation: increment, remote_sequence: 1 },
+          { operation: increment, remote_sequence: 1 },
+        ],
+        cursor: cursor(1),
+      }), { status: 200 })
+    )
+
+    await syncClientEngineOperations()
+
+    await expect(
+      getClientEngineRecord<{ count: number }>('remote_records', 'remote-counter-1')
+    ).resolves.toMatchObject({ value: { count: 1 } })
   })
 
   it('keeps rejected and conflict decisions with their error payloads', async () => {
@@ -312,5 +338,34 @@ describe('client Photon Engine', () => {
 
     controller.abort()
     await expect(sync).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('starts the request timeout at the fetch boundary', async () => {
+    vi.useFakeTimers()
+    let requestSignal: AbortSignal | null = null
+    let markRequestStarted: (() => void) | null = null
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      requestSignal = init?.signal ?? null
+      markRequestStarted?.()
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => {
+          reject(requestSignal?.reason)
+        }, { once: true })
+      })
+    })
+
+    const outcome = syncClientEngineOperations(undefined, undefined, 5_000)
+      .catch((error: unknown) => error)
+    await requestStarted
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect((requestSignal as unknown as AbortSignal).aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(outcome).resolves.toMatchObject({ name: 'TimeoutError' })
+    expect((requestSignal as unknown as AbortSignal).aborted).toBe(true)
   })
 })

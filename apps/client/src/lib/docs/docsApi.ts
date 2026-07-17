@@ -51,16 +51,12 @@ export function toDocMetadata(serverDocument: ServerDocumentMetadata): DocMetada
 }
 
 async function syncDocumentsBestEffort(): Promise<boolean> {
-  const controller = new AbortController()
-  const timeout = globalThis.setTimeout(() => controller.abort(), DOCUMENT_SYNC_TIMEOUT_MS)
   try {
-    await syncClientEngineOperations(undefined, controller.signal)
+    await syncClientEngineOperations(undefined, undefined, DOCUMENT_SYNC_TIMEOUT_MS)
     return true
   } catch (error: unknown) {
     console.warn('Failed to sync document metadata; using the local Photon Engine projection', error)
     return false
-  } finally {
-    globalThis.clearTimeout(timeout)
   }
 }
 

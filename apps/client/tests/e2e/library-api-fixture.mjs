@@ -164,8 +164,11 @@ function engineCursor(scope, position) {
 
 function pushEngineOperations(payload = {}) {
   const scope = String(payload.scope ?? '')
+  const after = Number(payload.cursor?.position ?? 0)
   const decisions = []
-  let cursorPosition = Number(payload.cursor?.position ?? 0)
+  const requestOperationIds = new Set(
+    (payload.operations ?? []).map((operation) => operation?.id).filter(Boolean),
+  )
 
   for (const operation of payload.operations ?? []) {
     if (!operation?.id || operation.key?.scope !== scope) continue
@@ -179,7 +182,6 @@ function pushEngineOperations(payload = {}) {
         remote_sequence: remoteSequence,
       })
     }
-    cursorPosition = Math.max(cursorPosition, remoteSequence)
     decisions.push({
       type: 'accepted',
       operation_id: operation.id,
@@ -187,10 +189,25 @@ function pushEngineOperations(payload = {}) {
     })
   }
 
+  const synchronizedOperations = engineOperations.filter((entry) => (
+    entry.operation.key?.scope === scope && entry.remote_sequence > after
+  ))
+  const serverOperations = synchronizedOperations.filter(
+    (entry) => !requestOperationIds.has(entry.operation.id),
+  )
+  const cursorPosition = synchronizedOperations.reduce(
+    (position, entry) => Math.max(position, entry.remote_sequence),
+    after,
+  )
+
   return {
     decisions,
-    server_operations: [],
-    cursor: engineCursor(scope, cursorPosition),
+    server_operations: clone(
+      serverOperations.map((entry) => entry.operation),
+    ),
+    cursor: cursorPosition > after
+      ? engineCursor(scope, cursorPosition)
+      : payload.cursor ? clone(payload.cursor) : null,
   }
 }
 
@@ -539,6 +556,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/__e2e/state') {
       sendJson(response, 200, state)
+      return
+    }
+
+    if (request.method === 'GET' && url.pathname === '/__e2e/engine') {
+      sendJson(response, 200, { operations: clone(engineOperations) })
       return
     }
 

@@ -360,11 +360,14 @@ export function WorkflowView({
   )
 
   useEffect(() => {
-    let cancelled = false
     hasLocalCanvasChanges.current = false
     setLoadedDatabaseId(null)
     setPreviewRecordId(null)
     setSelectedEdgeId(null)
+  }, [databaseId])
+
+  useEffect(() => {
+    let cancelled = false
 
     void initialSyncReady
       .then(() => {

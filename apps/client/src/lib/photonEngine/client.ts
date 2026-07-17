@@ -198,6 +198,7 @@ interface EngineRuntimeRecord {
     actor_id: string
   }
   field_versions: Record<string, EngineRuntimeRecord['version']>
+  applied_operation_ids?: string[]
   deleted_at: EngineRuntimeRecord['version'] | null
   updated_by: string
 }
@@ -424,6 +425,7 @@ function runtimeRecordForOperation(
     value,
     version: { ...operation.timestamp },
     field_versions: fieldVersions,
+    applied_operation_ids: [],
     deleted_at: null,
     updated_by: operation.actor_id,
   }
@@ -450,15 +452,20 @@ function applyRuntimeOperationFallback(
   current: EngineRuntimeRecord | null,
   operation: EngineRuntimeOperation
 ): EngineRuntimeRecord {
+  const appliedOperationIds = new Set(current?.applied_operation_ids ?? [])
   let record = current
     ? JSON.parse(JSON.stringify(current)) as EngineRuntimeRecord
     : runtimeRecordForOperation(operation, {})
+
+  if (appliedOperationIds.has(operation.id)) return record
 
   if (
     record.deleted_at &&
     operation.kind.type !== 'restore' &&
     operation.kind.type !== 'delete'
   ) {
+    appliedOperationIds.add(operation.id)
+    record.applied_operation_ids = [...appliedOperationIds].sort()
     return record
   }
 
@@ -580,6 +587,8 @@ function applyRuntimeOperationFallback(
     }
   }
 
+  appliedOperationIds.add(operation.id)
+  record.applied_operation_ids = [...appliedOperationIds].sort()
   return record
 }
 
@@ -1303,22 +1312,42 @@ async function postEngineSync<T>(
   payload: object,
   operation: 'push' | 'pull',
   signal?: AbortSignal,
+  requestTimeoutMs?: number,
 ): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  })
-  if (!response.ok) {
-    throw new Error(`Photon Engine ${operation} failed: ${response.status}`)
+  const timeoutController = requestTimeoutMs === undefined ? null : new AbortController()
+  const forwardAbort = () => timeoutController?.abort(signal?.reason)
+  if (signal && timeoutController) {
+    if (signal.aborted) forwardAbort()
+    else signal.addEventListener('abort', forwardAbort, { once: true })
   }
-  return response.json() as Promise<T>
+  const timeout = timeoutController === null
+    ? undefined
+    : globalThis.setTimeout(
+        () => timeoutController.abort(new DOMException('Photon Engine request timed out', 'TimeoutError')),
+        requestTimeoutMs,
+      )
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: timeoutController?.signal ?? signal,
+    })
+    if (!response.ok) {
+      throw new Error(`Photon Engine ${operation} failed: ${response.status}`)
+    }
+    return await response.json() as T
+  } finally {
+    if (timeout !== undefined) globalThis.clearTimeout(timeout)
+    signal?.removeEventListener('abort', forwardAbort)
+  }
 }
 
 export async function syncClientEngineOperations(
   apiBaseUrl = appKitConfig.server.apiBaseUrl ?? '',
   signal?: AbortSignal,
+  requestTimeoutMs?: number,
 ): Promise<{ pushed: number; accepted: number }> {
   // One durable Engine cycle always runs push first and pull second. The pull
   // still runs when there are no pending operations so remote-only changes are
@@ -1337,6 +1366,7 @@ export async function syncClientEngineOperations(
       },
       'push',
       signal,
+      requestTimeoutMs,
     )
 
     for (const decision of pushResult.decisions ?? []) {
@@ -1356,6 +1386,7 @@ export async function syncClientEngineOperations(
     },
     'pull',
     signal,
+    requestTimeoutMs,
   )
   const pulled = [...(pullResult.operations ?? [])].sort(
     (left, right) => left.remote_sequence - right.remote_sequence
