@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library logo light badge</title>
+  <rect x="48" y="48" width="928" height="928" rx="176" fill="#f3f6fb"/>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#07172f" stroke-width="96"/>
+  <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#f3f6fb" stroke-linecap="round" stroke-width="126"/>
+  <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#1557ff" stroke-linecap="round" stroke-width="86"/>
+  <circle cx="235" cy="700" r="94" fill="#f3f6fb"/>
+  <circle cx="235" cy="700" r="78" fill="#1557ff"/>
+  <circle cx="835" cy="335" r="94" fill="#f3f6fb"/>
+  <circle cx="835" cy="335" r="78" fill="#1557ff"/>
+</svg>

@@ -57,6 +57,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
+import libraryAppbarLogoDark from '../assets/brand/library-logo/library-logo-appbar-dark.png'
+import libraryAppbarLogo from '../assets/brand/library-logo/library-logo-appbar.png'
 import { appKitConfig, switchTenantWorkspace } from '../app/kitConfig'
 import type { TenantWorkspaceOption } from '../app/kitConfig'
 import {
@@ -528,8 +530,22 @@ export function Sidebar() {
         aria-label="Library navigation"
       >
         <SidebarHeader className="h-7 px-1.5 text-xs">
-          <img src={libraryAppIcon} alt="" className="size-4" />
-          <span className="min-w-0 flex-1 truncate">{appKitConfig.workspace.name}</span>
+          {expanded ? (
+            <Link to="/home" className="min-w-0 flex-1" aria-label={`${appKitConfig.workspace.name} home`}>
+              <img
+                src={libraryAppbarLogo}
+                alt="Library"
+                className="h-5 w-auto max-w-[7.5rem] object-contain dark:hidden"
+              />
+              <img
+                src={libraryAppbarLogoDark}
+                alt="Library"
+                className="hidden h-5 w-auto max-w-[7.5rem] object-contain dark:block"
+              />
+            </Link>
+          ) : (
+            <img src={libraryAppIcon} alt="Library" className="size-4" />
+          )}
           {expanded && <span data-testid="sync-presence-status">{connectionIndicator}</span>}
           {expanded && (
             <Button
