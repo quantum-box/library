@@ -2,7 +2,6 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LpLanguage } from '@/app/lp'
-import { PlanetMark } from './PlanetMark'
 
 const copy = {
 	en: {
@@ -115,13 +114,12 @@ export function Header({ lang }: { lang: LpLanguage }) {
 			}`}
 		>
 			<div className='mx-auto flex h-14 max-w-6xl items-stretch justify-between gap-6 px-4 sm:px-6 lg:px-8'>
-				<Link to='/' className='flex items-center gap-2.5'>
-					<span className='flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-white'>
-						<PlanetMark className='h-[18px] w-[18px]' />
-					</span>
-					<span className='font-display text-xl leading-none text-slate-900'>
-						Library
-					</span>
+				<Link to='/' className='flex items-center gap-2.5' aria-label='Library home'>
+					<img
+						src='/brand/library-logo-appbar.png'
+						alt='Library'
+						className='h-7 w-auto'
+					/>
 					<span className='hidden items-center gap-2.5 md:flex'>
 						<span className='h-4 w-px bg-slate-200' />
 						<span className='font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400'>

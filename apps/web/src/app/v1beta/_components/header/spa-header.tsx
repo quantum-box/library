@@ -28,8 +28,17 @@ export function SpaHeader() {
     <header className='sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60'>
       <div className='container flex h-14 items-center'>
         <div className='mr-4 flex items-center'>
-          <Link to='/' className='mr-6 flex items-center space-x-2'>
-            <span className='font-bold'>Library</span>
+          <Link to='/' className='mr-6 flex items-center' aria-label='Library home'>
+            <img
+              src='/brand/library-logo-appbar.png'
+              alt='Library'
+              className='h-7 w-auto dark:hidden'
+            />
+            <img
+              src='/brand/library-logo-appbar-dark.png'
+              alt='Library'
+              className='hidden h-7 w-auto dark:block'
+            />
           </Link>
         </div>
         <ClientHeader
