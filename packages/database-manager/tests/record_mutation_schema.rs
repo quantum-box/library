@@ -24,6 +24,15 @@ fn assert_check_violation(error: sqlx::Error, constraint: &str) {
     );
 }
 
+#[test]
+fn record_mutation_tables_are_retryable_after_partial_tidb_ddl() {
+    let migration = include_str!(
+        "../migrations/20260716120000_create_record_mutation_journal.sql"
+    );
+
+    assert_eq!(migration.matches("CREATE TABLE IF NOT EXISTS").count(), 3);
+}
+
 #[tokio::test]
 #[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
 async fn record_mutation_journal_is_expand_only_and_strict(

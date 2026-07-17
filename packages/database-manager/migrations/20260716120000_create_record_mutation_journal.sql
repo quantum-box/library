@@ -2,7 +2,7 @@
 -- domain events. The existing updateData path remains unchanged until the API
 -- and apps/web adopt mandatory expected_version and operation_id inputs.
 
-CREATE TABLE record_mutation_operations (
+CREATE TABLE IF NOT EXISTS record_mutation_operations (
     operation_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     tenant_id VARCHAR(29) NOT NULL,
     database_id VARCHAR(29) NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE record_mutation_operations (
 
 -- Outbox rows intentionally have no FK to objects/data. A pending event must
 -- survive aggregate deletion until every consumer reaches a terminal state.
-CREATE TABLE domain_outbox_events (
+CREATE TABLE IF NOT EXISTS domain_outbox_events (
     event_id VARCHAR(31) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     operation_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     event_sequence INT UNSIGNED NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE domain_outbox_events (
 -- Event lifecycle and per-consumer delivery lifecycle are deliberately
 -- separate. Rows are created by a later dispatcher/consumer registration
 -- slice; the API Lambda does not spawn a resident poller.
-CREATE TABLE domain_outbox_deliveries (
+CREATE TABLE IF NOT EXISTS domain_outbox_deliveries (
     event_id VARCHAR(31) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     consumer_name VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     state VARCHAR(9) CHARACTER SET ascii COLLATE ascii_bin NOT NULL

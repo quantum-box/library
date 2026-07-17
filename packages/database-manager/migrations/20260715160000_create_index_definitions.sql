@@ -4,11 +4,24 @@
 
 -- RelationDefinition ids need a tenant/database-leading candidate key before
 -- they can be referenced without weakening the Database BC scope.
-ALTER TABLE relationships
-    ADD CONSTRAINT uq_relationships_tenant_object_id
-        UNIQUE (tenant_id, object_id, id);
+-- Resume safely if TiDB committed this key before a later statement failed.
+SET @library_relation_identity_key_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND INDEX_NAME = 'uq_relationships_tenant_object_id'
+    ) = 0,
+    'ALTER TABLE relationships ADD CONSTRAINT uq_relationships_tenant_object_id UNIQUE (tenant_id, object_id, id)',
+    'SELECT 1'
+);
+PREPARE library_relation_identity_key_stmt
+    FROM @library_relation_identity_key_ddl;
+EXECUTE library_relation_identity_key_stmt;
+DEALLOCATE PREPARE library_relation_identity_key_stmt;
 
-CREATE TABLE index_definitions (
+CREATE TABLE IF NOT EXISTS index_definitions (
     id VARCHAR(29) NOT NULL,
     tenant_id VARCHAR(29) NOT NULL,
     database_id VARCHAR(29) NOT NULL,

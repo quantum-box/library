@@ -4,18 +4,29 @@
 -- until every Relation/Record/Database deletion path removes or evaluates
 -- edges in its cleanup-aware Unit of Work; otherwise these RESTRICT guards
 -- will safely reject the legacy delete rather than orphan an edge.
--- MySQL commits the ALTER and CREATE as separate DDL statements. If execution
--- stops between them, use the partial-DDL repair in the rollout runbook before
--- asking sqlx to retry; a duplicate candidate-key ALTER is not idempotent.
+-- MySQL and TiDB commit the ALTER and CREATE as separate DDL statements, so
+-- both operations must be safe when sqlx retries after a partial execution.
 
 -- The scoped definition FK below must bind both endpoints to the canonical
 -- RelationDefinition. `relationships.id` remains globally unique, but this
 -- tenant/source/target-leading candidate key makes the whole scope physical.
-ALTER TABLE relationships
-    ADD CONSTRAINT uq_relationships_edge_scope
-        UNIQUE (tenant_id, object_id, id, target_object_id);
+SET @library_relation_edge_scope_key_ddl = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'relationships'
+          AND INDEX_NAME = 'uq_relationships_edge_scope'
+    ) = 0,
+    'ALTER TABLE relationships ADD CONSTRAINT uq_relationships_edge_scope UNIQUE (tenant_id, object_id, id, target_object_id)',
+    'SELECT 1'
+);
+PREPARE library_relation_edge_scope_key_stmt
+    FROM @library_relation_edge_scope_key_ddl;
+EXECUTE library_relation_edge_scope_key_stmt;
+DEALLOCATE PREPARE library_relation_edge_scope_key_stmt;
 
-CREATE TABLE relation_edges (
+CREATE TABLE IF NOT EXISTS relation_edges (
     tenant_id VARCHAR(29) NOT NULL,
     source_database_id VARCHAR(29) NOT NULL,
     source_data_id VARCHAR(31) NOT NULL,
