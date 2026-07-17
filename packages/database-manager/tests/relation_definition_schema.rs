@@ -117,7 +117,7 @@ fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
             "../migrations/20260716100010_drop_legacy_relation_source_foreign_key.sql"
         ),
         include_str!(
-            "../migrations/20260716100011_check_relation_distinct_self_inverse.sql"
+            "../migrations/20260716100011_document_relation_self_inverse_guard.sql"
         ),
         include_str!(
             "../migrations/20260716100012_drop_legacy_relation_forward_check.sql"
@@ -184,16 +184,9 @@ fn relation_definition_migrations_keep_each_tidb_check_change_isolated() {
         );
     }
 
-    let cascade_drop = versioning_plan
-        .find("DROP FOREIGN KEY fk_relationships_tenant_source_property")
-        .expect("the CASCADE source foreign key must be removed");
-    let self_inverse_check = versioning_plan
-        .find("ADD CONSTRAINT chk_relationships_distinct_self_inverse")
-        .expect("the distinct self-inverse guard must be installed");
-    assert!(
-        cascade_drop < self_inverse_check,
-        "the CASCADE referential action must be removed before its columns are used in a CHECK"
-    );
+    assert!(!versioning_plan.contains(
+        "ADD CONSTRAINT chk_relationships_distinct_self_inverse"
+    ));
 }
 
 #[tokio::test]
@@ -550,30 +543,6 @@ async fn relation_definition_schema_enforces_control_plane_invariants(
         .expect("check violation")
         .message()
         .contains("chk_relationships_owned_inverse"));
-
-    let self_inverse_reuses_source = sqlx::query(
-        r#"
-        INSERT INTO relationships (
-            id, tenant_id, object_id, field_id, relation_id,
-            target_object_id, inverse_field_id
-        )
-        VALUES (?, ?, ?, ?, 0, ?, ?)
-        "#,
-    )
-    .bind(RelationId::default().to_string())
-    .bind(&tenant_a)
-    .bind(&database_a)
-    .bind(&source_bad_inverse)
-    .bind(&database_a)
-    .bind(&source_bad_inverse)
-    .execute(&mut *transaction)
-    .await
-    .expect_err("a self inverse must be a distinct Property");
-    assert!(self_inverse_reuses_source
-        .as_database_error()
-        .expect("check violation")
-        .message()
-        .contains("chk_relationships_distinct_self_inverse"));
 
     let cross_tenant_inverse = sqlx::query(
         r#"
