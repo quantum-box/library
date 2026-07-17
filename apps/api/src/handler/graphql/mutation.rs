@@ -727,24 +727,25 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
+        // Resolve the current definition before converting select metadata so
+        // stable option IDs can be retained. Older clients omit `OptionInput.id`;
+        // for those requests the converter preserves IDs by identifier.
+        let properties = app
+            .get_properties
+            .execute(usecase::GetPropertiesInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username.clone(),
+                repo_username: input.repo_username.clone(),
+            })
+            .await
+            .map_err(|e| e.extend())?;
+        let existing_property =
+            properties.iter().find(|property| *property.id() == id);
+
         // Validate that property name doesn't start with "ext_" (reserved for system extensions)
         // Exception: Allow updating existing ext_* properties if the name is not being changed
         if input.property_name.starts_with("ext_") {
-            // Get the existing property to check if this is a rename attempt
-            let properties = app
-                .get_properties
-                .execute(usecase::GetPropertiesInputData {
-                    executor,
-                    multi_tenancy,
-                    org_username: input.org_username.clone(),
-                    repo_username: input.repo_username.clone(),
-                })
-                .await
-                .map_err(|e| e.extend())?;
-
-            let existing_property =
-                properties.iter().find(|p| *p.id() == id);
-
             match existing_property {
                 Some(prop) if *prop.name() == input.property_name => {
                     // Same name as existing ext_* property - allow update (e.g., meta changes)
@@ -771,6 +772,10 @@ impl LibraryMutation {
             Some(PropertyMetaInput::Json(json)) => Some(Some(json.clone())),
             _ => None,
         };
+        let property_type = property_type_from_input(
+            input.clone(),
+            existing_property.map(|property| property.property_type()),
+        )?;
 
         Ok(app
             .update_property
@@ -781,7 +786,7 @@ impl LibraryMutation {
                 org_username: input.org_username.clone(),
                 repo_username: input.repo_username.clone(),
                 property_name: Some(input.property_name.clone()),
-                property_type: Some(&input.try_into()?),
+                property_type: Some(&property_type),
                 meta_json,
             })
             .await?
@@ -1864,6 +1869,132 @@ pub struct UpdateDataInputData {
 
 pub use crate::usecase::change_repo_username::ChangeRepoUsernameInput;
 
+fn property_type_from_input(
+    value: PropertyInput,
+    existing: Option<&database_manager::domain::PropertyType>,
+) -> errors::Result<database_manager::domain::PropertyType> {
+    use database_manager::domain as db;
+
+    let changes_option_property_type = match existing {
+        Some(db::PropertyType::Select(current)) => {
+            !current.items().is_empty()
+                && value.property_type != PropertyType::Select
+        }
+        Some(db::PropertyType::MultiSelect(current)) => {
+            !current.items().is_empty()
+                && value.property_type != PropertyType::MultiSelect
+        }
+        _ => false,
+    };
+    if changes_option_property_type {
+        return Err(errors::Error::invalid(
+            "Select Property type cannot be changed while options exist",
+        ));
+    }
+
+    fn select_items(
+        options: Vec<OptionInput>,
+        existing: Option<&[db::SelectItem]>,
+    ) -> errors::Result<Vec<db::SelectItem>> {
+        let updated = options
+            .into_iter()
+            .map(|option| {
+                let id = match option.id {
+                    Some(id) => {
+                        let id: SelectItemId = id.parse()?;
+                        if !existing.is_some_and(|items| {
+                            items.iter().any(|item| item.id() == &id)
+                        }) {
+                            return Err(errors::Error::invalid(format!(
+                                "select option id {id} does not belong to the Property being updated"
+                            )));
+                        }
+                        id
+                    }
+                    None => existing
+                        .and_then(|items| {
+                            items
+                                .iter()
+                                .find(|item| {
+                                    item.key().to_string()
+                                        == option.identifier
+                                })
+                                .map(|item| item.id().clone())
+                        })
+                        .unwrap_or_default(),
+                };
+                Ok(db::SelectItem::new(
+                    id,
+                    option.identifier.parse()?,
+                    option.label.parse()?,
+                ))
+            })
+            .collect::<errors::Result<Vec<_>>>()?;
+        let mut ids = std::collections::HashSet::new();
+        let mut identifiers = std::collections::HashSet::new();
+        for item in &updated {
+            if !ids.insert(item.id()) {
+                return Err(errors::Error::invalid(format!(
+                    "duplicate select option id {}",
+                    item.id()
+                )));
+            }
+            if !identifiers.insert(item.key().to_string()) {
+                return Err(errors::Error::invalid(format!(
+                    "duplicate select option identifier {}",
+                    item.key()
+                )));
+            }
+        }
+        if let Some(existing) = existing {
+            for item in existing {
+                if !updated.iter().any(|updated| updated.id() == item.id())
+                {
+                    return Err(errors::Error::invalid(format!(
+                        "select option id {} cannot be removed while Property values may reference it",
+                        item.id()
+                    )));
+                }
+            }
+        }
+        Ok(updated)
+    }
+
+    match value {
+        PropertyInput {
+            property_type: PropertyType::Select,
+            meta: Some(PropertyMetaInput::Select(options)),
+            ..
+        } => Ok(db::PropertyType::Select(db::TypeSelect {
+            items: select_items(
+                options,
+                match existing {
+                    Some(db::PropertyType::Select(current)) => {
+                        Some(current.items())
+                    }
+                    _ => None,
+                },
+            )?,
+        })),
+        PropertyInput {
+            property_type: PropertyType::MultiSelect,
+            meta: Some(PropertyMetaInput::MultiSelect(options)),
+            ..
+        } => Ok(db::PropertyType::MultiSelect(db::TypeMultiSelect {
+            items: select_items(
+                options,
+                match existing {
+                    Some(db::PropertyType::MultiSelect(current)) => {
+                        Some(current.items())
+                    }
+                    _ => None,
+                },
+            )?,
+        })),
+        value => value.try_into(),
+    }
+}
+
 impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
     type Error = errors::Error;
     fn try_from(value: PropertyInput) -> Result<Self, Self::Error> {
@@ -1971,6 +2102,8 @@ pub enum PropertyMetaInput {
 
 #[derive(InputObject, Debug, Clone)]
 pub struct OptionInput {
+    /// Stable server-issued option ID. Omit when creating a new option.
+    pub id: Option<String>,
     pub identifier: String,
     pub label: String,
 }
@@ -2028,5 +2161,133 @@ mod github_markdown_ga_tests {
         assert!(err
             .to_string()
             .contains("GitHub sync/writeback is not part of Library GA"));
+    }
+}
+
+#[cfg(test)]
+mod select_option_input_tests {
+    use super::{
+        property_type_from_input, OptionInput, PropertyInput,
+        PropertyMetaInput, PropertyType,
+    };
+    use database_manager::domain::{
+        PropertyType as DomainPropertyType, SelectItem, SelectItemId,
+        TypeSelect,
+    };
+
+    fn option(
+        id: Option<&SelectItemId>,
+        identifier: &str,
+        label: &str,
+    ) -> OptionInput {
+        OptionInput {
+            id: id.map(ToString::to_string),
+            identifier: identifier.to_string(),
+            label: label.to_string(),
+        }
+    }
+
+    fn input(options: Vec<OptionInput>) -> PropertyInput {
+        PropertyInput {
+            org_username: "quantum-box".to_string(),
+            repo_username: "library".to_string(),
+            property_name: "Status".to_string(),
+            property_type: PropertyType::Select,
+            meta: Some(PropertyMetaInput::Select(options)),
+        }
+    }
+
+    fn existing(id: &SelectItemId) -> DomainPropertyType {
+        DomainPropertyType::Select(TypeSelect::new(vec![SelectItem::new(
+            id.clone(),
+            "todo".parse().expect("identifier"),
+            "Todo".parse().expect("label"),
+        )]))
+    }
+
+    #[test]
+    fn explicit_option_id_survives_identifier_and_label_edits() {
+        let id = SelectItemId::default();
+        let updated = property_type_from_input(
+            input(vec![option(Some(&id), "inProgress", "In progress")]),
+            Some(&existing(&id)),
+        )
+        .expect("stable option update");
+
+        let DomainPropertyType::Select(updated) = updated else {
+            panic!("expected Select")
+        };
+        assert_eq!(updated.items()[0].id(), &id);
+        assert_eq!(updated.items()[0].key().to_string(), "inProgress");
+        assert_eq!(updated.items()[0].name().to_string(), "In progress");
+    }
+
+    #[test]
+    fn legacy_update_without_id_preserves_id_by_identifier() {
+        let id = SelectItemId::default();
+        let updated = property_type_from_input(
+            input(vec![option(None, "todo", "To do")]),
+            Some(&existing(&id)),
+        )
+        .expect("legacy option update");
+
+        let DomainPropertyType::Select(updated) = updated else {
+            panic!("expected Select")
+        };
+        assert_eq!(updated.items()[0].id(), &id);
+        assert_eq!(updated.items()[0].name().to_string(), "To do");
+    }
+
+    #[test]
+    fn update_rejects_an_option_id_from_another_property() {
+        let current_id = SelectItemId::default();
+        let foreign_id = SelectItemId::default();
+        let error = property_type_from_input(
+            input(vec![option(Some(&foreign_id), "todo", "Todo")]),
+            Some(&existing(&current_id)),
+        )
+        .expect_err("foreign option IDs must fail closed");
+
+        assert!(error.to_string().contains("does not belong"));
+    }
+
+    #[test]
+    fn update_rejects_duplicate_option_ids() {
+        let id = SelectItemId::default();
+        let error = property_type_from_input(
+            input(vec![
+                option(Some(&id), "todo", "Todo"),
+                option(Some(&id), "done", "Done"),
+            ]),
+            Some(&existing(&id)),
+        )
+        .expect_err("duplicate option IDs must fail closed");
+
+        assert!(error.to_string().contains("duplicate select option id"));
+    }
+
+    #[test]
+    fn update_fails_closed_when_an_existing_option_is_removed() {
+        let id = SelectItemId::default();
+        let error = property_type_from_input(
+            input(Vec::new()),
+            Some(&existing(&id)),
+        )
+        .expect_err("option removal must not leave dangling values");
+
+        assert!(error.to_string().contains("cannot be removed"));
+    }
+
+    #[test]
+    fn update_fails_closed_when_a_select_with_options_changes_type() {
+        let id = SelectItemId::default();
+        let mut changed = input(Vec::new());
+        changed.property_type = PropertyType::String;
+        changed.meta = None;
+
+        let error = property_type_from_input(changed, Some(&existing(&id)))
+            .expect_err("Select type changes must retain option identity");
+
+        assert!(error.to_string().contains("type cannot be changed"));
     }
 }

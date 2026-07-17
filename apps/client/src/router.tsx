@@ -1352,7 +1352,13 @@ const recordDetailRoute = createRoute({
 function RecordDetailPanel() {
   const { recordId } = recordDetailRoute.useParams()
   const { database, view } = databasesRoute.useSearch()
-  const { records, handleUpdateRecord, handleDeleteRecord, syncRecords } = useDatabaseRecords()
+  const {
+    records,
+    handleUpdateRecord,
+    handleDeleteRecord,
+    beginRecordsSnapshot,
+    syncRecords,
+  } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
   const { getViewsForDatabase } = useDatabaseViews()
   const navigate = useNavigate()
@@ -1388,21 +1394,30 @@ function RecordDetailPanel() {
   useEffect(() => {
     if (useLibraryEditor || record) return
     let cancelled = false
-    void fetchServerRecords()
-      .then((serverRecords) => {
-        if (cancelled) return
-        syncRecords(serverRecords)
-        const found = serverRecords.some(
-          (candidate) => candidate.identifier === recordId || candidate.id === recordId,
-        )
-        if (!found) {
-          setDetailFailure({
-            recordId,
-            message: `${recordId} is not available in this data view.`,
-          })
+    void (async () => {
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const snapshot = beginRecordsSnapshot()
+          const serverRecords = await fetchServerRecords()
+          if (cancelled) return
+          if (!syncRecords(serverRecords, snapshot)) continue
+
+          const found = serverRecords.some(
+            (candidate) => candidate.identifier === recordId || candidate.id === recordId,
+          )
+          if (!found) {
+            setDetailFailure({
+              recordId,
+              message: `${recordId} is not available in this data view.`,
+            })
+          }
+          return
         }
-      })
-      .catch((error: unknown) => {
+        setDetailFailure({
+          recordId,
+          message: 'Data changed while loading. Close this panel and try again.',
+        })
+      } catch (error: unknown) {
         console.warn('Failed to hydrate data detail from Library API', error)
         if (!cancelled) {
           setDetailFailure({
@@ -1410,11 +1425,12 @@ function RecordDetailPanel() {
             message: error instanceof Error ? error.message : 'Failed to load data',
           })
         }
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
-  }, [record, recordId, syncRecords, useLibraryEditor])
+  }, [beginRecordsSnapshot, record, recordId, syncRecords, useLibraryEditor])
 
   const closeEditor = () =>
     void navigate({ to: '/databases', search: { database, view } })

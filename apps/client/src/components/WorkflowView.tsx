@@ -20,7 +20,7 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
-import { ListPlus, PanelLeftClose, Trash2 } from 'lucide-react'
+import { ListPlus, PanelLeftClose, Search, Trash2 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import {
@@ -128,6 +128,7 @@ const nodeTypes = {
 
 const WORKFLOW_SYNC_THROTTLE_MS = 80
 const WORKFLOW_CACHE_WRITE_DELAY_MS = 220
+const WORKFLOW_ITEM_PAGE_SIZE = 100
 
 type PendingWorkflowSync = {
   databaseId: string
@@ -209,6 +210,8 @@ export function WorkflowView({
   const [savedCountSignature, setSavedCountSignature] = useState('')
   const [previewRecordId, setPreviewRecordId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [recordQuery, setRecordQuery] = useState('')
+  const [recordPage, setRecordPage] = useState(0)
   const nodeSequence = useRef(0)
   const hasLocalCanvasChanges = useRef(false)
   const skipNextSyncWrite = useRef(false)
@@ -223,7 +226,35 @@ export function WorkflowView({
     (template) => template.id === selectedTemplateId
   ) ?? workflowTemplates[0]
 
-  const visibleRecords = records
+  const normalizedRecordQuery = recordQuery.trim().toLowerCase()
+  const matchingRecords = useMemo(() => {
+    if (!normalizedRecordQuery) return records
+
+    return records.filter((record) => [
+      record.identifier,
+      record.title,
+      statusConfig[record.status].label,
+      priorityConfig[record.priority].label,
+    ].some((value) => value.toLowerCase().includes(normalizedRecordQuery)))
+  }, [normalizedRecordQuery, records])
+  const recordPageCount = Math.max(
+    1,
+    Math.ceil(matchingRecords.length / WORKFLOW_ITEM_PAGE_SIZE)
+  )
+  const visibleRecordPage = Math.min(recordPage, recordPageCount - 1)
+  const visibleRecords = useMemo(
+    () => matchingRecords.slice(
+      visibleRecordPage * WORKFLOW_ITEM_PAGE_SIZE,
+      (visibleRecordPage + 1) * WORKFLOW_ITEM_PAGE_SIZE
+    ),
+    [matchingRecords, visibleRecordPage]
+  )
+  const visibleRecordStart = matchingRecords.length === 0
+    ? 0
+    : visibleRecordPage * WORKFLOW_ITEM_PAGE_SIZE + 1
+  const visibleRecordEnd = matchingRecords.length === 0
+    ? 0
+    : visibleRecordStart + visibleRecords.length - 1
   const previewRecord = useMemo<DatabaseRecord | null>(() => {
     if (!previewRecordId) return null
 
@@ -364,6 +395,8 @@ export function WorkflowView({
     setLoadedDatabaseId(null)
     setPreviewRecordId(null)
     setSelectedEdgeId(null)
+    setRecordQuery('')
+    setRecordPage(0)
   }, [databaseId])
 
   useEffect(() => {
@@ -688,6 +721,28 @@ export function WorkflowView({
             Add data to the canvas.
           </p>
         </div>
+        <div className="mb-2 px-0.5">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              aria-label="Search Library data"
+              value={recordQuery}
+              onChange={(event) => {
+                setRecordQuery(event.target.value)
+                setRecordPage(0)
+              }}
+              placeholder="Search items"
+              className="h-8 w-full rounded border border-border bg-surface pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-subtle focus:border-accent"
+            />
+          </div>
+          <p className="mt-1 text-[10px] tabular-nums text-subtle" data-testid="workflow-item-count">
+            Showing {visibleRecordStart}-{visibleRecordEnd} of {matchingRecords.length} matching items
+          </p>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="flex flex-col gap-1">
             {visibleRecords.map((record) => (
@@ -729,9 +784,36 @@ export function WorkflowView({
                 </button>
               </div>
             ))}
-            {visibleRecords.length === 0 && (
+            {matchingRecords.length === 0 && (
               <div className="rounded-md border border-dashed border-border bg-surface p-3 text-xs leading-relaxed text-subtle">
-                No items in this database yet.
+                {records.length === 0
+                  ? 'No items in this database yet.'
+                  : 'No items match this search.'}
+              </div>
+            )}
+            {recordPageCount > 1 && (
+              <div className="sticky bottom-0 mt-1 flex items-center justify-between gap-2 rounded border border-border bg-panel px-2 py-1.5">
+                <button
+                  type="button"
+                  className="rounded bg-surface-hover px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={visibleRecordPage === 0}
+                  aria-label="Previous Library data page"
+                  onClick={() => setRecordPage((page) => Math.max(0, page - 1))}
+                >
+                  Previous
+                </button>
+                <span className="text-[10px] tabular-nums text-subtle">
+                  {visibleRecordPage + 1}/{recordPageCount}
+                </span>
+                <button
+                  type="button"
+                  className="rounded bg-surface-hover px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={visibleRecordPage >= recordPageCount - 1}
+                  aria-label="Next Library data page"
+                  onClick={() => setRecordPage((page) => Math.min(recordPageCount - 1, page + 1))}
+                >
+                  Next
+                </button>
               </div>
             )}
           </div>

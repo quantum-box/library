@@ -152,6 +152,41 @@ describe('WorkflowView', () => {
     await waitFor(() => expect(workflowMocks.flowProps).not.toBeNull())
   })
 
+  it('paginates more than 100 matching records without exceeding the DOM bound', async () => {
+    const records = Array.from({ length: 160 }, (_, index) =>
+      record(String(index), 'Shared result')
+    )
+
+    render(<WorkflowView databaseId="database-large" records={records} />)
+
+    expect(screen.getAllByTestId('workflow-database-item')).toHaveLength(100)
+    expect(screen.getByTestId('workflow-item-count')).toHaveTextContent(
+      'Showing 1-100 of 160 matching items',
+    )
+    expect(screen.queryByText('DATA-159')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Library data' }), {
+      target: { value: 'Shared result' },
+    })
+
+    expect(screen.getAllByTestId('workflow-database-item')).toHaveLength(100)
+    fireEvent.click(screen.getByRole('button', { name: 'Next Library data page' }))
+
+    expect(screen.getAllByTestId('workflow-database-item')).toHaveLength(60)
+    expect(screen.getByText('DATA-159')).toBeInTheDocument()
+    expect(screen.queryByText('DATA-0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workflow-item-count')).toHaveTextContent(
+      'Showing 101-160 of 160 matching items',
+    )
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Library data' }), {
+      target: { value: 'DATA-0' },
+    })
+    expect(screen.getAllByTestId('workflow-database-item')).toHaveLength(1)
+    expect(screen.getByText('DATA-0')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next Library data page' })).not.toBeInTheDocument()
+  })
+
   it('opens details from single click and keyboard selection without an empty panel', async () => {
     const first = record('one', 'First node')
     workflowMocks.canvas = {

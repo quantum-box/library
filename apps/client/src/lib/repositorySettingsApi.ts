@@ -66,6 +66,8 @@ export interface RepositoryPropertyDraft {
   name: string
   type: RepositoryPropertyType
   options?: Array<{
+    /** Existing server-issued option ID. Omit for a newly created option. */
+    id?: string
     identifier: string
     label: string
   }>
@@ -345,10 +347,14 @@ function propertyInput(
 
   let meta: Record<string, unknown> | undefined
   if (draft.type === 'SELECT' || draft.type === 'MULTI_SELECT') {
-    const options = (draft.options ?? []).map((option) => ({
-      identifier: option.identifier.trim(),
-      label: option.label.trim(),
-    }))
+    const options = (draft.options ?? []).map((option) => {
+      const id = option.id?.trim()
+      return {
+        ...(id ? { id } : {}),
+        identifier: option.identifier.trim(),
+        label: option.label.trim(),
+      }
+    })
     if (options.some((option) => !option.identifier || !option.label)) {
       throw new RepositorySettingsApiError(
         'Every select option needs an identifier and label.',

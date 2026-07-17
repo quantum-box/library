@@ -262,18 +262,33 @@ function matchesRecordRef(record: DatabaseRecord, ref: string) {
   )
 }
 
-async function fetchCanonicalRecords(context?: ToolRuntimeContext) {
+const RECORD_SNAPSHOT_MAX_ATTEMPTS = 3
+
+async function fetchCanonicalRecords(
+  context?: ToolRuntimeContext,
+  signal?: AbortSignal,
+) {
   const runtime = requireRecordRuntime(context)
-  const records = await fetchServerRecords()
-  runtime.syncRecords(records)
-  return records
+  for (let attempt = 0; attempt < RECORD_SNAPSHOT_MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const snapshot = runtime.beginRecordsSnapshot()
+    const records = await fetchServerRecords()
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (runtime.syncRecords(records, snapshot)) return records
+  }
+
+  throw new Error('Data changed while loading. Try the request again.')
 }
 
-async function resolveDatabaseRecord(ref: unknown, context?: ToolRuntimeContext) {
+async function resolveDatabaseRecord(
+  ref: unknown,
+  context?: ToolRuntimeContext,
+  signal?: AbortSignal,
+) {
   const recordRef = asText(ref)
   if (!recordRef) throw new Error('Data id or identifier is required')
 
-  const records = await fetchCanonicalRecords(context)
+  const records = await fetchCanonicalRecords(context, signal)
   const record = records.find((candidate) => matchesRecordRef(candidate, recordRef))
   if (!record) throw new Error(`Data not found: ${recordRef}`)
   return record
@@ -328,7 +343,7 @@ async function executeRecordSearch(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const records = filterRecords(await fetchCanonicalRecords(context), args)
+  const records = filterRecords(await fetchCanonicalRecords(context, signal), args)
   return {
     data: {
       action: 'search',
@@ -347,7 +362,7 @@ async function executeRecordList(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const records = filterRecords(await fetchCanonicalRecords(context), args)
+  const records = filterRecords(await fetchCanonicalRecords(context, signal), args)
   return {
     data: {
       action: 'list',
@@ -366,7 +381,11 @@ async function executeRecordGet(
 ): Promise<ToolResult> {
   const start = Date.now()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  const record = await resolveDatabaseRecord(args.recordId ?? args.identifier ?? args.id, context)
+  const record = await resolveDatabaseRecord(
+    args.recordId ?? args.identifier ?? args.id,
+    context,
+    signal,
+  )
   return {
     data: {
       action: 'get',
@@ -450,7 +469,11 @@ async function executeRecordUpdate(
 ): Promise<ToolResult> {
   const runtime = requireRecordRuntime(context)
   const start = Date.now()
-  const existing = await resolveDatabaseRecord(args.recordId ?? args.identifier ?? args.id, context)
+  const existing = await resolveDatabaseRecord(
+    args.recordId ?? args.identifier ?? args.id,
+    context,
+    signal,
+  )
   const update = buildRecordUpdate(args)
   if (Object.keys(update).length === 0) {
     throw new Error('No data fields were provided to update')

@@ -102,7 +102,8 @@ describe('tool executor', () => {
         recordTools: {
           records: [],
           syncRecord: (record) => synced.push(record),
-          syncRecords: () => {},
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: () => true,
         },
       }
     )
@@ -136,7 +137,8 @@ describe('tool executor', () => {
         recordTools: {
           records: [],
           syncRecord: () => {},
-          syncRecords: () => {},
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: () => true,
         },
       }
     )
@@ -149,7 +151,11 @@ describe('tool executor', () => {
         recordTools: {
           records: [],
           syncRecord: () => {},
-          syncRecords: (records) => syncedLists.push(records),
+          beginRecordsSnapshot: () => ({ requestGeneration: 1, projectionGeneration: 0 }),
+          syncRecords: (records) => {
+            syncedLists.push(records)
+            return true
+          },
         },
       }
     )

@@ -94,7 +94,7 @@ interface ActiveChatRun {
 }
 
 export function ChatView() {
-  const { records, syncRecord, syncRecords } = useDatabaseRecords()
+  const { records, syncRecord, beginRecordsSnapshot, syncRecords } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
   const [messages, setMessages] = useState<Message[]>(() => loadChatHistory(CHAT_HISTORY_STORAGE_KEY))
@@ -279,7 +279,7 @@ export function ChatView() {
           prompt,
           messages: conversation.map((message) => ({ role: message.role, content: message.content })),
           context: {
-            recordTools: { records, syncRecord, syncRecords },
+            recordTools: { records, syncRecord, beginRecordsSnapshot, syncRecords },
             repositoryTargets,
             selectedRepositoryId: effectiveRepositoryId || undefined,
             documentContext,
@@ -360,6 +360,7 @@ export function ChatView() {
     isCurrentRun,
     records,
     repositoryTargets,
+    beginRecordsSnapshot,
     syncRecord,
     syncRecords,
   ])

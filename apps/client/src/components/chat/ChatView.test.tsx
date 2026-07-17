@@ -24,7 +24,8 @@ vi.mock('../../contexts/RecordsContext', () => ({
   useDatabaseRecords: () => ({
     records: [],
     syncRecord: vi.fn(),
-    syncRecords: vi.fn(),
+    beginRecordsSnapshot: vi.fn(() => ({ requestGeneration: 1, projectionGeneration: 0 })),
+    syncRecords: vi.fn(() => true),
   }),
 }))
 

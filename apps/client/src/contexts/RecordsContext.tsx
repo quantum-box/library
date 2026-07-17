@@ -46,7 +46,8 @@ interface RecordsContextValue {
   handleCreateRecord: (data: CreateRecordData) => Promise<void>
   handleDeleteRecord: (recordId: string) => void
   syncRecord: (record: DatabaseRecord) => void
-  syncRecords: (records: DatabaseRecord[]) => void
+  beginRecordsSnapshot: () => RecordsSnapshotToken
+  syncRecords: (records: DatabaseRecord[], token: RecordsSnapshotToken) => boolean
   recordCountByStatus: Record<string, number>
   hydrationLoading: boolean
   hydrationError: string | null
@@ -59,6 +60,11 @@ export interface RecordMutationError {
   action: 'move' | 'update' | 'delete'
   recordId: string
   message: string
+}
+
+export interface RecordsSnapshotToken {
+  readonly requestGeneration: number
+  readonly projectionGeneration: number
 }
 
 const RecordsContext = createContext<RecordsContextValue | null>(null)
@@ -123,11 +129,18 @@ function removeYDatabaseRecord(recordId: string) {
   }
 }
 
-function reconcileYRecords(serverRecords: DatabaseRecord[]) {
+function reconcileYRecords(
+  serverRecords: DatabaseRecord[],
+  protectedRecordIds: ReadonlySet<string> = new Set()
+) {
   const serverRecordIds = new Set(serverRecords.map((record) => record.id))
   for (let index = recordsArray.length - 1; index >= 0; index--) {
     const recordId = recordsArray.get(index).get('id')
-    if (typeof recordId === 'string' && !serverRecordIds.has(recordId)) {
+    if (
+      typeof recordId === 'string' &&
+      !serverRecordIds.has(recordId) &&
+      !protectedRecordIds.has(recordId)
+    ) {
       recordsArray.delete(index, 1)
     }
   }
@@ -213,6 +226,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const recordUpdateGenerationsRef = useRef(new Map<string, number>())
   const recordDeleteGenerationsRef = useRef(new Map<string, number>())
   const recordDeleteRequestGenerationsRef = useRef(new Map<string, number>())
+  const pendingOptimisticRecordIdsRef = useRef(new Set<string>())
+  const recordsSnapshotRequestGenerationRef = useRef(0)
 
   const transactProjection = useCallback((transaction: () => void) => {
     projectionGenerationRef.current += 1
@@ -228,7 +243,10 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false
 
-    const reload = () => {
+    const reload = (): void => {
+      // Any independently requested full snapshot that started before this
+      // hydration boundary belongs to the previous auth/refresh view.
+      recordsSnapshotRequestGenerationRef.current += 1
       const hydrationGeneration = hydrationGenerationRef.current + 1
       hydrationGenerationRef.current = hydrationGeneration
       const projectionGeneration = projectionGenerationRef.current
@@ -238,11 +256,14 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       fetchServerRecords()
         .then((serverRecords) => {
           if (cancelled || hydrationGeneration !== hydrationGenerationRef.current) return
-          if (projectionGeneration === projectionGenerationRef.current) {
-            transactProjection(() => {
-              reconcileYRecords(serverRecords)
-            })
+          if (projectionGeneration !== projectionGenerationRef.current) {
+            reload()
+            return
           }
+
+          transactProjection(() => {
+            reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+          })
           setHydrationLoading(false)
         })
         .catch((error: unknown) => {
@@ -308,10 +329,12 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         }
 
         transactProjection(() => upsertYDatabaseRecord(serverRecord))
+        setMutationError((current) => (
+          current?.recordId === recordId && current.action === action ? null : current
+        ))
       })
       .catch((error: unknown) => {
         if (
-          recordUpdateGenerationsRef.current.get(recordId) !== updateGeneration ||
           (recordDeleteGenerationsRef.current.get(recordId) ?? 0) !== deleteGeneration
         ) {
           return
@@ -358,6 +381,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
   const handleCreateRecord = useCallback(async (data: CreateRecordData) => {
     const optimisticRecord = createOptimisticDatabaseRecord(data)
+    pendingOptimisticRecordIdsRef.current.add(optimisticRecord.id)
 
     transactProjection(() => {
       upsertYDatabaseRecord(optimisticRecord)
@@ -370,6 +394,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       project: data.project ?? appKitConfig.records.defaultProject,
     })
       .then((serverRecord) => {
+        pendingOptimisticRecordIdsRef.current.delete(optimisticRecord.id)
         transactProjection(() => {
           removeYDatabaseRecord(optimisticRecord.id)
           upsertYDatabaseRecord(serverRecord)
@@ -377,6 +402,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         console.warn('Failed to persist created record', error)
+        pendingOptimisticRecordIdsRef.current.delete(optimisticRecord.id)
         transactProjection(() => {
           removeYDatabaseRecord(optimisticRecord.id)
         })
@@ -428,10 +454,26 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     })
   }, [transactProjection])
 
-  const syncRecords = useCallback((serverRecords: DatabaseRecord[]) => {
+  const beginRecordsSnapshot = useCallback((): RecordsSnapshotToken => ({
+    requestGeneration: ++recordsSnapshotRequestGenerationRef.current,
+    projectionGeneration: projectionGenerationRef.current,
+  }), [])
+
+  const syncRecords = useCallback((
+    serverRecords: DatabaseRecord[],
+    token: RecordsSnapshotToken,
+  ): boolean => {
+    if (
+      token.requestGeneration !== recordsSnapshotRequestGenerationRef.current ||
+      token.projectionGeneration !== projectionGenerationRef.current
+    ) {
+      return false
+    }
+
     transactProjection(() => {
-      reconcileYRecords(serverRecords)
+      reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
     })
+    return true
   }, [transactProjection])
 
   return (
@@ -443,6 +485,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         handleCreateRecord,
         handleDeleteRecord,
         syncRecord,
+        beginRecordsSnapshot,
         syncRecords,
         recordCountByStatus,
         hydrationLoading: !ready || hydrationLoading,
@@ -473,6 +516,7 @@ export function useDatabaseRecords() {
     handleCreateRecord,
     handleDeleteRecord,
     syncRecord,
+    beginRecordsSnapshot,
     syncRecords,
     recordCountByStatus,
     hydrationLoading,
@@ -489,6 +533,7 @@ export function useDatabaseRecords() {
     handleCreateRecord,
     handleDeleteRecord,
     syncRecord,
+    beginRecordsSnapshot,
     syncRecords,
     recordCountByStatus,
     hydrationLoading,

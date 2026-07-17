@@ -173,6 +173,101 @@ describe('RepositorySettingsView', () => {
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Summary')
   })
 
+  it('preserves Select option IDs while renaming labels and adding options', async () => {
+    apiMocks.fetchRepositorySettings.mockResolvedValueOnce({
+      ...settings,
+      properties: [
+        ...settings.properties,
+        {
+          id: 'property-status',
+          name: 'Status',
+          typ: 'SELECT' as const,
+          meta: {
+            options: [{ id: 'option-todo', key: 'todo', name: 'Todo' }],
+          },
+        },
+        {
+          id: 'property-labels',
+          name: 'Labels',
+          typ: 'MULTI_SELECT' as const,
+          meta: {
+            options: [{ id: 'option-bug', key: 'bug', name: 'Bug' }],
+          },
+        },
+      ],
+    })
+    apiMocks.updateRepositoryProperty.mockResolvedValueOnce({
+      id: 'property-status',
+      name: 'Status',
+      typ: 'SELECT',
+      meta: {
+        options: [
+          { id: 'option-todo', key: 'todo', name: 'To do' },
+          { id: 'option-done', key: 'done', name: 'Done' },
+        ],
+      },
+    })
+    renderView()
+
+    await screen.findByTestId('repository-settings-page')
+
+    const edit = screen.getByRole('button', { name: 'Edit Status' })
+    const editMultiSelect = screen.getByRole('button', { name: 'Edit Labels' })
+    expect(edit).toBeEnabled()
+    expect(editMultiSelect).toBeEnabled()
+
+    fireEvent.click(edit)
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Options'), {
+      target: { value: 'todo = To do\ndone = Done' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
+
+    await waitFor(() => expect(apiMocks.updateRepositoryProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
+      'property-status',
+      {
+        name: 'Status',
+        type: 'SELECT',
+        options: [
+          { id: 'option-todo', identifier: 'todo', label: 'To do' },
+          { identifier: 'done', label: 'Done' },
+        ],
+      },
+    ))
+  })
+
+  it('blocks removing or changing an existing Select option identifier', async () => {
+    apiMocks.fetchRepositorySettings.mockResolvedValueOnce({
+      ...settings,
+      properties: [
+        ...settings.properties,
+        {
+          id: 'property-status',
+          name: 'Status',
+          typ: 'SELECT' as const,
+          meta: {
+            options: [{ id: 'option-todo', key: 'todo', name: 'Todo' }],
+          },
+        },
+      ],
+    })
+    renderView()
+
+    await screen.findByTestId('repository-settings-page')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Status' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Options'), {
+      target: { value: 'backlog = Backlog' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Existing option identifier "todo" cannot be removed or changed',
+    )
+    expect(apiMocks.updateRepositoryProperty).not.toHaveBeenCalled()
+  })
+
   it('invites creation when the repository has no Property definitions', async () => {
     apiMocks.fetchRepositorySettings.mockResolvedValueOnce({ ...settings, properties: [] })
     renderView()

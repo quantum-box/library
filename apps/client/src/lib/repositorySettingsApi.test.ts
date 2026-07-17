@@ -184,6 +184,45 @@ describe('repositorySettingsApi', () => {
     })
   })
 
+  it('sends stable option IDs when updating a Select Property', async () => {
+    const fetchMock = vi.fn(async () => graphqlResponse({
+      data: {
+        updateProperty: {
+          id: 'property-status',
+          name: 'Status',
+          typ: 'SELECT',
+          meta: { options: [{ id: 'op_existing', key: 'todo', name: 'To do' }] },
+        },
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateRepositoryProperty(target, 'property-status', {
+      name: 'Status',
+      type: 'SELECT',
+      options: [
+        { id: ' op_existing ', identifier: 'todo', label: 'To do' },
+        { identifier: 'done', label: 'Done' },
+      ],
+    })
+
+    expect(requestBody(fetchMock).variables).toEqual({
+      id: 'property-status',
+      input: {
+        orgUsername: 'quantum-box',
+        repoUsername: 'library',
+        propertyName: 'Status',
+        propertyType: 'SELECT',
+        meta: {
+          select: [
+            { id: 'op_existing', identifier: 'todo', label: 'To do' },
+            { identifier: 'done', label: 'Done' },
+          ],
+        },
+      },
+    })
+  })
+
   it('updates Property name and type with type-specific Relation metadata', async () => {
     const fetchMock = vi.fn(async () => graphqlResponse({
       data: {

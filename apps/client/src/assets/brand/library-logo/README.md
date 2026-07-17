@@ -21,6 +21,4 @@ channel keep it crisp at different sizes.
 - Reverse blue: `#4d7cff`
 - White: `#ffffff`
 
-The confirmed raster reference is `generated/00-selected-final.png`. Other
-generated raster explorations are kept beside it for design history. Raster
-exports from the deterministic SVG sources are kept under `png/`.
+Raster exports from the deterministic SVG sources are kept under `png/`.

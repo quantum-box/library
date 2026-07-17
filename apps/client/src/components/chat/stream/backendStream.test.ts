@@ -104,7 +104,11 @@ describe('backend chat stream adapter', () => {
             recordTools: {
               records: [],
               syncRecord: vi.fn(),
-              syncRecords: vi.fn(),
+              beginRecordsSnapshot: vi.fn(() => ({
+                requestGeneration: 1,
+                projectionGeneration: 0,
+              })),
+              syncRecords: vi.fn(() => true),
             },
           },
         },

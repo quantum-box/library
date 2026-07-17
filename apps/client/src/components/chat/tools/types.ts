@@ -3,6 +3,7 @@
  */
 
 import type { DatabaseRecord } from '../../../data/mock'
+import type { RecordsSnapshotToken } from '../../../contexts/RecordsContext'
 import type { WorkspaceDocContext } from '../../../lib/docs/workspaceContext'
 
 export type ToolType =
@@ -36,7 +37,8 @@ export interface ToolResult {
 export interface RecordToolRuntime {
   records: DatabaseRecord[]
   syncRecord: (record: DatabaseRecord) => void
-  syncRecords: (records: DatabaseRecord[]) => void
+  beginRecordsSnapshot: () => RecordsSnapshotToken
+  syncRecords: (records: DatabaseRecord[], token: RecordsSnapshotToken) => boolean
 }
 
 export interface RecordToolRepositoryTarget {

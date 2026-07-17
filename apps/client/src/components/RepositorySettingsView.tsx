@@ -250,11 +250,46 @@ function PropertyEditorDialog({
       return
     }
     try {
+      const parsedOptions = type === 'SELECT' || type === 'MULTI_SELECT'
+        ? parseOptions(options)
+        : undefined
+      const existingOptions = property && (
+        property.typ === 'SELECT' || property.typ === 'MULTI_SELECT'
+      )
+        ? property.meta?.options ?? []
+        : []
+      if (existingOptions.length > 0) {
+        if (type !== property?.typ) {
+          throw new Error('The type of an existing Select Property cannot be changed safely.')
+        }
+        const submittedIdentifiers = new Set(
+          parsedOptions?.map((option) => option.identifier) ?? [],
+        )
+        const removedOption = existingOptions.find(
+          (option) => !submittedIdentifiers.has(option.key),
+        )
+        if (removedOption) {
+          throw new Error(
+            `Existing option identifier "${removedOption.key}" cannot be removed or changed because data may reference it.`,
+          )
+        }
+      }
+      const existingOptionsByIdentifier = new Map(
+        existingOptions.map((option) => [option.key, option]),
+      )
       onSave({
         name: trimmedName,
         type,
         ...(type === 'SELECT' || type === 'MULTI_SELECT'
-          ? { options: parseOptions(options) }
+          ? {
+              options: (parsedOptions ?? []).map((option) => {
+                const existingOption = existingOptionsByIdentifier.get(option.identifier)
+                return {
+                  ...option,
+                  ...(existingOption?.id ? { id: existingOption.id } : {}),
+                }
+              }),
+            }
           : {}),
         ...(type === 'RELATION' ? { relationDatabaseId: relationDatabaseId.trim() } : {}),
         ...(type === 'ID' ? { autoGenerateId } : {}),
@@ -325,7 +360,10 @@ function PropertyEditorDialog({
                 rows={5}
                 className="w-full resize-y rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-50"
               />
-              <p className="text-2xs text-muted-foreground">One lower camelCase identifier and label per line.</p>
+              <p className="text-2xs text-muted-foreground">
+                One lower camelCase identifier and label per line. Existing identifiers are stable;
+                rename labels or add options without removing them.
+              </p>
             </div>
           ) : null}
 

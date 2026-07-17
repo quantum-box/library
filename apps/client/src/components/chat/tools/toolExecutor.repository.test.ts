@@ -44,7 +44,8 @@ function runtimeContext(repositoryTargets: RecordToolRepositoryTarget[], selecte
     recordTools: {
       records: [],
       syncRecord: vi.fn(),
-      syncRecords: vi.fn(),
+      beginRecordsSnapshot: vi.fn(() => ({ requestGeneration: 1, projectionGeneration: 0 })),
+      syncRecords: vi.fn(() => true),
     },
   }
 }
@@ -125,5 +126,43 @@ describe('record create repository routing', () => {
 
     expect(result.error).toContain('Choose a repository before creating data')
     expect(recordsApi.createServerRecord).not.toHaveBeenCalled()
+  })
+
+  it('retries record snapshots and only returns the first stable projection', async () => {
+    const staleRecord = createdRecord({ title: 'Stale snapshot' })
+    const stableRecord = createdRecord({ title: 'Stable snapshot' })
+    recordsApi.fetchServerRecords
+      .mockResolvedValueOnce([staleRecord])
+      .mockResolvedValueOnce([stableRecord])
+    const context = runtimeContext([])
+    context.recordTools.beginRecordsSnapshot
+      .mockReturnValueOnce({ requestGeneration: 2, projectionGeneration: 0 })
+      .mockReturnValueOnce({ requestGeneration: 3, projectionGeneration: 1 })
+    context.recordTools.syncRecords
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+
+    const result = await executeTool(
+      'record_list',
+      {},
+      new AbortController().signal,
+      context,
+    )
+
+    expect(recordsApi.fetchServerRecords).toHaveBeenCalledTimes(2)
+    expect(context.recordTools.syncRecords).toHaveBeenNthCalledWith(
+      1,
+      [staleRecord],
+      { requestGeneration: 2, projectionGeneration: 0 },
+    )
+    expect(context.recordTools.syncRecords).toHaveBeenNthCalledWith(
+      2,
+      [stableRecord],
+      { requestGeneration: 3, projectionGeneration: 1 },
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.data).toMatchObject({
+      records: [expect.objectContaining({ title: 'Stable snapshot' })],
+    })
   })
 })
