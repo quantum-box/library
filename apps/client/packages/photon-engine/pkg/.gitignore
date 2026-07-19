@@ -1,0 +1,8 @@
+*
+!.gitignore
+!README.md
+!package.json
+!photon_engine.d.ts
+!photon_engine.js
+!photon_engine_bg.wasm
+!photon_engine_bg.wasm.d.ts

@@ -1,0 +1,20 @@
+{
+  "name": "photon-engine",
+  "type": "module",
+  "collaborators": [
+    "Quantum Box"
+  ],
+  "description": "Universal offline sync core for Photon and Tachyon runtimes",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "photon_engine_bg.wasm",
+    "photon_engine.js",
+    "photon_engine.d.ts"
+  ],
+  "main": "photon_engine.js",
+  "types": "photon_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
