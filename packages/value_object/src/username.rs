@@ -33,7 +33,11 @@ impl Username {
         }
 
         // Validate consecutive hyphens/underscores
-        if value.contains("--") || value.contains("__") {
+        if value.contains("--")
+            || value.contains("__")
+            || value.contains("-_")
+            || value.contains("_-")
+        {
             return Err(errors::Error::type_error(
                 "Username cannot contain consecutive hyphens or underscores",
             ));
@@ -88,6 +92,7 @@ mod tests {
             "x_y_z",
             "Dev1",
             "user-name_123",
+            "user_name-123",
         ];
 
         for case in valid_cases {
@@ -105,6 +110,8 @@ mod tests {
             ("abc_", "ends with underscore"),
             ("ab--c", "consecutive hyphens"),
             ("ab__c", "consecutive underscores"),
+            ("ab-_c", "consecutive mixed separators"),
+            ("ab_-c", "consecutive mixed separators"),
             ("abc@def", "invalid character"),
             ("user name", "contains space"),
             ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "too long"),
@@ -117,6 +124,16 @@ mod tests {
                 case,
                 reason
             );
+        }
+    }
+
+    #[test]
+    fn test_identifier_username_round_trip() {
+        for value in ["hello-world_test", "hello_world-test"] {
+            let identifier: Identifier = value.parse().unwrap();
+            let username = Username::from(&identifier);
+
+            assert_eq!(Identifier::from(&username), identifier);
         }
     }
 }
