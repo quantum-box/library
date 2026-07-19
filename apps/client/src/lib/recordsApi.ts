@@ -193,6 +193,21 @@ interface LibraryMeTenantListResponse {
   } | null
 }
 
+export interface CreateLibraryOrganizationInput {
+  name: string
+  username: string
+}
+
+export interface CreatedLibraryOrganization {
+  id: string
+  name: string
+  username: string
+}
+
+interface LibraryCreateOrganizationResponse {
+  createOrganization: CreatedLibraryOrganization
+}
+
 interface TachyonOperatorResponse {
   id: string
   name?: string
@@ -402,6 +417,16 @@ const libraryMeTenantListQuery = `
       id
       email
       tenantIdList
+    }
+  }
+`
+
+const libraryCreateOrganizationMutation = `
+  mutation LibraryClientCreateOrganization($input: CreateOrganizationInput!) {
+    createOrganization(input: $input) {
+      id
+      name
+      username
     }
   }
 `
@@ -1196,6 +1221,21 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
       return hydrateOrganizationsFromRestRepositories(restRepos)
     }
   }
+}
+
+export async function createLibraryOrganization(
+  input: CreateLibraryOrganizationInput
+): Promise<CreatedLibraryOrganization> {
+  const payload = await requestLibraryGraphQL<LibraryCreateOrganizationResponse>(
+    libraryCreateOrganizationMutation,
+    {
+      input: {
+        name: input.name.trim(),
+        username: input.username.trim(),
+      },
+    }
+  )
+  return payload.createOrganization
 }
 
 async function fetchTachyonOperator(tenantId: string): Promise<TachyonOperatorResponse | null> {

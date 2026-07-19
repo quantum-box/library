@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  createLibraryOrganization,
   fetchLibraryOrganizations,
   fetchLibraryRepositories,
   type LibraryOrganization,
@@ -31,6 +32,7 @@ interface DatabasesContextValue {
   repositoriesError: string | null
   setSelectedOrganizationId: (organizationId: string | null) => void
   refreshRepositories: () => Promise<void>
+  createOrganization: (name: string, username: string) => Promise<WorkspaceOrganization>
   addDatabase: (label: string) => WorkspaceDatabase | null
   removeDatabase: (databaseId: string) => boolean
   canRemoveDatabase: (databaseId: string | null | undefined) => boolean
@@ -114,6 +116,21 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const createOrganization = useCallback(async (name: string, username: string) => {
+    const created = await createLibraryOrganization({ name, username })
+    await refreshRepositories()
+    const organization = {
+      id: created.id,
+      label: created.username,
+      platformTenantId: '',
+    }
+    setOrganizations((current) => current.some((candidate) => candidate.id === created.id)
+      ? current
+      : [...current, organization])
+    setSelectedOrganizationId(created.id)
+    return organization
+  }, [refreshRepositories])
+
   useEffect(() => {
     void refreshRepositories()
   }, [refreshRepositories])
@@ -145,6 +162,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       repositoriesError,
       setSelectedOrganizationId,
       refreshRepositories,
+      createOrganization,
       addDatabase,
       removeDatabase,
       canRemoveDatabase,
@@ -154,6 +172,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       addDatabase,
       canRemoveDatabase,
       databases,
+      createOrganization,
       getDatabase,
       organizations,
       refreshRepositories,

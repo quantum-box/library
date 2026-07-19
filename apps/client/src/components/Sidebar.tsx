@@ -50,6 +50,7 @@ import {
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   RefreshCw,
   Sun,
   WifiOff,
@@ -75,6 +76,7 @@ import {
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
+import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
@@ -233,6 +235,7 @@ export function Sidebar() {
     repositoriesLoading,
     repositoriesError,
     refreshRepositories,
+    createOrganization,
   } = useWorkspaceDatabases()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
@@ -244,6 +247,7 @@ export function Sidebar() {
   const connectionStatus = useConnectionStatus()
   const { onlineCount } = useSyncPresence()
   const [expanded, setExpanded] = useState(true)
+  const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
 
   const repositoryPathMatch = pathname.match(/^\/repositories\/([^/]+)\/([^/]+)\/?$/)
   const pathDatabase = repositoryPathMatch
@@ -357,6 +361,14 @@ export function Sidebar() {
     })
   }
 
+  const handleCreateOrganization = async (name: string, username: string) => {
+    await createOrganization(name, username)
+    void navigate({
+      to: '/organizations/$organization',
+      params: { organization: username },
+    })
+  }
+
   const copyDatabaseLink = async (databaseId: string | null) => {
     const database = databaseId
       ? databases.find((candidate) => candidate.id === databaseId)
@@ -457,17 +469,28 @@ export function Sidebar() {
           </div>
         </div>
 
-        {organizations.length > 0 && (
-          <div className="border-t border-border px-3 py-2">
-            <Combobox
-              options={organizationOptions}
-              value={selectedOrganizationId ?? 'all'}
-              onValueChange={handleOrganizationSelect}
-              placeholder="All organizations"
-              searchPlaceholder="Find an organization…"
-            />
-          </div>
-        )}
+        <div className="flex gap-1 border-t border-border px-3 py-2">
+          {organizations.length > 0 && (
+            <div className="min-w-0 flex-1">
+              <Combobox
+                options={organizationOptions}
+                value={selectedOrganizationId ?? 'all'}
+                onValueChange={handleOrganizationSelect}
+                placeholder="All organizations"
+                searchPlaceholder="Find an organization…"
+              />
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Create organization"
+            onClick={() => setCreateOrganizationOpen(true)}
+          >
+            <Plus aria-hidden="true" />
+          </Button>
+        </div>
 
         <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5">
           {workspaceLinks.map((link) => {
@@ -606,16 +629,35 @@ export function Sidebar() {
 
         <TenantWorkspaceSwitcher />
 
-        {expanded && organizations.length > 0 && (
-          <div className="px-1.5 pt-1.5">
-            <Combobox
-              options={organizationOptions}
-              value={selectedOrganizationId ?? 'all'}
-              onValueChange={handleOrganizationSelect}
-              placeholder="All organizations"
-              searchPlaceholder="Find an organization…"
-              className="bg-surface"
-            />
+        {expanded && (
+          <div className="flex gap-1 px-1.5 pt-1.5">
+            {organizations.length > 0 && (
+              <div className="min-w-0 flex-1">
+                <Combobox
+                  options={organizationOptions}
+                  value={selectedOrganizationId ?? 'all'}
+                  onValueChange={handleOrganizationSelect}
+                  placeholder="All organizations"
+                  searchPlaceholder="Find an organization…"
+                  className="bg-surface"
+                />
+              </div>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  aria-label="Create organization"
+                  onClick={() => setCreateOrganizationOpen(true)}
+                >
+                  <Plus aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Create organization</TooltipContent>
+            </Tooltip>
           </div>
         )}
 
@@ -735,6 +777,11 @@ export function Sidebar() {
           <AccountMenu />
         </SidebarFooter>
       </NativeSidebar>
+      <CreateOrganizationDialog
+        open={createOrganizationOpen}
+        onClose={() => setCreateOrganizationOpen(false)}
+        onCreate={handleCreateOrganization}
+      />
     </>
   )
 }

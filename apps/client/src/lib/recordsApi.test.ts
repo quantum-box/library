@@ -9,6 +9,7 @@ vi.mock('./photonEngine/client', () => ({
 import { appKitConfig } from '../app/kitConfig'
 import { clearAuthTokens } from './auth'
 import {
+  createLibraryOrganization,
   createServerRecord,
   fetchLibraryOrganizations,
   fetchLibraryRecords,
@@ -499,6 +500,54 @@ describe('recordsApi', () => {
       expect.objectContaining({
         method: 'POST',
         body: expect.stringContaining('"org":"quantum-box"'),
+      })
+    )
+  })
+
+  it('creates a Library organization through the authenticated GraphQL API', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      data: {
+        createOrganization: {
+          id: 'org-2',
+          name: 'Acme Research',
+          username: 'acme-research',
+        },
+      },
+    })))
+
+    await expect(createLibraryOrganization({
+      name: ' Acme Research ',
+      username: ' acme-research ',
+    })).resolves.toEqual({
+      id: 'org-2',
+      name: 'Acme Research',
+      username: 'acme-research',
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://library.example.test/v1/graphql',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token',
+          'x-platform-id': 'platform-1',
+        }),
+        body: expect.stringContaining('LibraryClientCreateOrganization'),
+      })
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"username":"acme-research"'),
       })
     )
   })

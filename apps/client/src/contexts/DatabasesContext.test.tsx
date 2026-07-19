@@ -5,11 +5,13 @@ import { DatabasesProvider, useWorkspaceDatabases } from './DatabasesContext'
 const mocks = vi.hoisted(() => ({
   fetchLibraryRepositories: vi.fn(),
   fetchLibraryOrganizations: vi.fn(),
+  createLibraryOrganization: vi.fn(),
 }))
 
 vi.mock('../lib/recordsApi', () => ({
   fetchLibraryRepositories: mocks.fetchLibraryRepositories,
   fetchLibraryOrganizations: mocks.fetchLibraryOrganizations,
+  createLibraryOrganization: mocks.createLibraryOrganization,
 }))
 
 function Probe() {
@@ -19,6 +21,8 @@ function Probe() {
     repositoriesLoading,
     repositoriesError,
     refreshRepositories,
+    createOrganization,
+    selectedOrganizationId,
   } = useWorkspaceDatabases()
 
   return (
@@ -27,6 +31,7 @@ function Probe() {
       <span data-testid="error">{repositoriesError ?? ''}</span>
       <span data-testid="database-count">{databases.length}</span>
       <span data-testid="organization-count">{organizations.length}</span>
+      <span data-testid="selected-organization">{selectedOrganizationId ?? ''}</span>
       <ul data-testid="database-labels">
         {databases.map((database) => (
           <li key={database.id}>{database.label}</li>
@@ -34,6 +39,13 @@ function Probe() {
       </ul>
       <button type="button" data-testid="refresh" onClick={() => void refreshRepositories()}>
         Refresh
+      </button>
+      <button
+        type="button"
+        data-testid="create-organization"
+        onClick={() => void createOrganization('New Org', 'new-org')}
+      >
+        Create organization
       </button>
     </div>
   )
@@ -59,6 +71,11 @@ describe('DatabasesProvider', () => {
         repos: [],
       },
     ])
+    mocks.createLibraryOrganization.mockResolvedValue({
+      id: 'org-2',
+      name: 'New Org',
+      username: 'new-org',
+    })
   })
 
   it('loads sidebar repositories via fetchLibraryRepositories on mount', async () => {
@@ -112,6 +129,46 @@ describe('DatabasesProvider', () => {
       expect(screen.getByTestId('database-count')).toHaveTextContent('1')
     })
     expect(mocks.fetchLibraryRepositories).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes organizations and selects the newly created organization', async () => {
+    mocks.fetchLibraryOrganizations
+      .mockResolvedValueOnce([
+        {
+          id: 'org-1',
+          operatorName: 'Acme',
+          platformTenantId: 'tn_test',
+          repos: [],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'org-1',
+          operatorName: 'Acme',
+          platformTenantId: 'tn_test',
+          repos: [],
+        },
+      ])
+
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
+
+    await act(async () => {
+      screen.getByTestId('create-organization').click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-count')).toHaveTextContent('2')
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+    })
+    expect(mocks.createLibraryOrganization).toHaveBeenCalledWith({
+      name: 'New Org',
+      username: 'new-org',
+    })
   })
 
   it('reloads repositories when library-auth-change fires', async () => {
