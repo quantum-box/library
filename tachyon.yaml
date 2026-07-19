@@ -34,14 +34,16 @@ spec:
           if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
-      hooks:
-        preDeploy:
-          - name: migrate
-            lambdaInvoke:
-              functionName: lambda-library-api-migrate
-              payload:
-                task: migrate
-            timeoutSeconds: 900
+      environments:
+        production:
+          hooks:
+            preDeploy:
+              - name: migrate
+                lambdaInvoke:
+                  functionName: lambda-library-api-migrate
+                  payload:
+                    task: migrate
+                timeoutSeconds: 900
       envVars:
         - name: DATABASE_URL
           type: credential
