@@ -135,10 +135,8 @@ spec:
       deploymentTarget: cloudflare_pages
       build:
         installCommand: >-
-          npm ci --ignore-scripts && rustup target add wasm32-unknown-unknown &&
-          cargo install wasm-pack --version 0.13.1 --locked &&
-          npm run engine:wasm && npm run build:package
-        command: npm run build
+          npm ci --ignore-scripts
+        command: npm run build:cloud
         outputDirectory: dist
         nodeVersion: "22"
       envVars:
