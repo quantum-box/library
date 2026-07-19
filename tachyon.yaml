@@ -122,3 +122,38 @@ spec:
           value: tn_01j91h09tpj5ehwbwfwfxpak2b
         - name: VITE_COGNITO_USER_POOL_ID
           value: ap-northeast-1_8Ga4bK5M4
+    - name: library-client
+      repository:
+        url: https://github.com/quantum-box/library
+        owner: quantum-box
+        name: library
+        defaultBranch: main
+      rootDirectory: apps/client
+      watchPaths:
+        - apps/client/**
+      framework: vite
+      deploymentTarget: cloudflare_pages
+      build:
+        installCommand: >-
+          npm ci && rustup target add wasm32-unknown-unknown &&
+          cargo install wasm-pack --version 0.13.1 --locked
+        command: npm run build
+        outputDirectory: dist
+        nodeVersion: "22"
+      envVars:
+        - name: VITE_LIBRARY_DEPLOYMENT_MODE
+          value: cloud
+        - name: VITE_LIBRARY_SYNC_BACKEND
+          value: cloudflare-durable-object
+        - name: VITE_LIBRARY_SYNC_WS_URL
+          value: wss://photon-sync.quantum-box.workers.dev/ws
+        - name: VITE_LIBRARY_CHAT_STREAM_MODE
+          value: mock
+        - name: VITE_LIBRARY_API_BASE_URL
+          value: https://library-api.txcloud.app
+        - name: VITE_LIBRARY_PLATFORM_ID
+          value: tn_01j91h09tpj5ehwbwfwfxpak2b
+        - name: VITE_COGNITO_CLIENT_ID
+          value: 5b0a8ncbi6v189p3un146fb6rf
+        - name: VITE_COGNITO_REGION
+          value: ap-northeast-1
