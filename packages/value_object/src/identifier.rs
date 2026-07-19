@@ -76,7 +76,11 @@ impl FromStr for Identifier {
             ));
         }
         // Validate consecutive hyphens/underscores
-        if s.contains("--") || s.contains("__") {
+        if s.contains("--")
+            || s.contains("__")
+            || s.contains("-_")
+            || s.contains("_-")
+        {
             return Err(Error::type_error(
                 "username cannot contain consecutive hyphens or underscores",
             ));
@@ -96,6 +100,8 @@ mod tests {
     #[rstest]
     #[case("hello_world123", Ok(()))]
     #[case("HELLO_WORLD", Ok(()))]
+    #[case("hello-world_test", Ok(()))]
+    #[case("hello_world-test", Ok(()))]
     #[case(
         "hello world",
         Err("TypeError: invalid character. username must be alphanumeric, hyphen, underscore")
@@ -108,6 +114,14 @@ mod tests {
     #[case(
         "_hello_world",
         Err("TypeError: username cannot start or end with hyphens or underscores")
+    )]
+    #[case(
+        "hello-_world",
+        Err("TypeError: username cannot contain consecutive hyphens or underscores")
+    )]
+    #[case(
+        "hello_-world",
+        Err("TypeError: username cannot contain consecutive hyphens or underscores")
     )]
     #[case(
         "hello_world_1234567890123456789012345678901234567890",
