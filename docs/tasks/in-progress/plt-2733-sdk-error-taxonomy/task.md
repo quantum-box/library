@@ -24,20 +24,20 @@ Library API の public operator alias lookup で、upstream transport / HTTP sta
 
 ## Implementation plan
 
-1. 現行の SDK error mapping と GraphQL error capture 経路を確認する。
-2. transport / HTTP status / decode の typed taxonomy と public error mapping を導入する。
-3. retryable connect / timeout に、試行上限、jitter、総時間 budget を持つ retry を追加する。
-4. root failure の capture は一度に限定し、wrapper context は breadcrumb/span として扱う。
-5. fake connector の contract tests を workspace の required CI (`cargo nextest run --workspace`) で実行される通常 test target に追加する。
+1. [x] 現行の SDK error mapping と GraphQL error capture 経路を確認する。
+2. [x] transport / HTTP status / decode の typed taxonomy と public error mapping を導入する。
+3. [x] retryable connect / timeout に、試行上限、jitter、総時間 budget を持つ retry を追加する。
+4. [x] root failure の capture は一度に限定し、wrapper context は breadcrumb/span として扱う。
+5. [x] fake connector の contract tests を workspace の required CI (`cargo nextest run --workspace`) で実行される通常 test target に追加する。
 
 ## Acceptance criteria
 
-- [ ] transport failure は authN/authZ error ではなく `ServiceUnavailable` に分類される。
-- [ ] 401 / 403 / 404 / 5xx / decode / timeout / connect の mapping test がある。
-- [ ] 401 / 403 / 404 / decode は retry されず、connect / timeout だけが bounded retry される。
-- [ ] user-facing message と error event title に接続先、query、identifier、credential が含まれない。
-- [ ] 一つの upstream failure が一つの error event だけを生成する。
-- [ ] 対象 test が required CI の `rust-test` job で実走し、PR CI が green になる。
+- [x] transport failure は authN/authZ error ではなく `ServiceUnavailable` に分類される。
+- [x] 401 / 403 / 404 / 5xx / decode / timeout / connect の mapping test がある。
+- [x] 401 / 403 / 404 / decode は retry されず、connect / timeout だけが bounded retry される。
+- [x] user-facing message と error event title に接続先、query、identifier、credential が含まれない。
+- [x] 一つの upstream failure が一つの error event だけを生成する。
+- [ ] 対象 test が required CI の `rust-test` job で実走し、PR CI が green になる（local required path は 687/687 passed）。
 
 ## Verification plan
 
@@ -46,6 +46,14 @@ Library API の public operator alias lookup で、upstream transport / HTTP sta
 - `cargo nextest run --workspace`（required CI path）
 - `cargo clippy --workspace -- -D warnings`
 - PR required checks の完了確認
+
+## Local verification
+
+- `cargo fmt --all -- --check`: passed
+- `cargo check --workspace`: passed
+- `cargo clippy --workspace -- -D warnings`: passed
+- `cargo test -p library-api --lib -- --test-threads=1`: 97 passed / 3 ignored
+- `cargo nextest run --workspace`: 687 passed / 63 skipped
 
 ## References
 

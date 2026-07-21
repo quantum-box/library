@@ -29,26 +29,18 @@ pub(crate) struct IntegrationQueryState {
 
 pub(crate) fn log_graphql_operation_error(
     operation: &'static str,
-    error: &errors::Error,
+    _error: &errors::Error,
 ) {
-    match error {
-        errors::Error::InternalServerError { .. }
-        | errors::Error::ServiceUnavailable { .. } => {
-            tracing::error!(
-                operation,
-                error = ?error,
-                "graphql operation failed"
-            );
-        }
-        _ => {
-            tracing::warn!(
-                operation,
-                error = ?error,
-                error_type = "client",
-                "graphql operation rejected"
-            );
-        }
-    }
+    tracing::warn!(operation, "graphql operation context");
+    sentry::add_breadcrumb(sentry::Breadcrumb {
+        category: Some("graphql".to_string()),
+        message: Some("graphql operation context".to_string()),
+        level: sentry::Level::Warning,
+        data: [("operation".to_string(), operation.into())]
+            .into_iter()
+            .collect(),
+        ..Default::default()
+    });
 }
 
 #[derive(async_graphql::MergedObject, Default)]
