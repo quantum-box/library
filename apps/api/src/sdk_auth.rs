@@ -7,6 +7,7 @@
 
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tachyon_sdk::apis::configuration::Configuration;
@@ -18,6 +19,165 @@ use tachyon_sdk::auth::{
 
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
+
+const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
+    max_attempts: 3,
+    per_attempt_timeout: Duration::from_millis(500),
+    total_budget: Duration::from_millis(1_500),
+    base_delay: Duration::from_millis(50),
+    max_jitter: Duration::from_millis(25),
+};
+
+#[derive(Clone, Copy)]
+struct SdkGetRetryPolicy {
+    max_attempts: usize,
+    per_attempt_timeout: Duration,
+    total_budget: Duration,
+    base_delay: Duration,
+    max_jitter: Duration,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SdkRequestError {
+    Transport {
+        retryable: bool,
+        timeout: bool,
+        connect: bool,
+        attempts: usize,
+    },
+    HttpStatus {
+        status: reqwest::StatusCode,
+        attempts: usize,
+    },
+    Decode {
+        attempts: usize,
+    },
+}
+
+impl SdkRequestError {
+    fn transport(error: &reqwest::Error) -> Self {
+        let timeout = error.is_timeout();
+        let connect = error.is_connect();
+        Self::Transport {
+            retryable: timeout || connect,
+            timeout,
+            connect,
+            attempts: 1,
+        }
+    }
+
+    fn http_status(status: reqwest::StatusCode) -> Self {
+        Self::HttpStatus {
+            status,
+            attempts: 1,
+        }
+    }
+
+    fn decode() -> Self {
+        Self::Decode { attempts: 1 }
+    }
+
+    fn with_attempts(self, attempts: usize) -> Self {
+        match self {
+            Self::Transport {
+                retryable,
+                timeout,
+                connect,
+                ..
+            } => Self::Transport {
+                retryable,
+                timeout,
+                connect,
+                attempts,
+            },
+            Self::HttpStatus { status, .. } => {
+                Self::HttpStatus { status, attempts }
+            }
+            Self::Decode { .. } => Self::Decode { attempts },
+        }
+    }
+
+    fn error_kind(self) -> &'static str {
+        match self {
+            Self::Transport { .. } => "transport",
+            Self::HttpStatus { .. } => "http_status",
+            Self::Decode { .. } => "decode",
+        }
+    }
+
+    fn retryable(self) -> bool {
+        matches!(
+            self,
+            Self::Transport {
+                retryable: true,
+                ..
+            }
+        )
+    }
+
+    fn timeout(self) -> bool {
+        matches!(self, Self::Transport { timeout: true, .. })
+    }
+
+    fn connect(self) -> bool {
+        matches!(self, Self::Transport { connect: true, .. })
+    }
+
+    fn attempts(self) -> usize {
+        match self {
+            Self::Transport { attempts, .. } => attempts,
+            Self::HttpStatus { attempts, .. }
+            | Self::Decode { attempts } => attempts,
+        }
+    }
+
+    fn into_public_error(self) -> errors::Error {
+        match self {
+            Self::Transport { .. } => errors::Error::service_unavailable(
+                "Upstream dependency unavailable",
+            ),
+            Self::HttpStatus {
+                status: reqwest::StatusCode::UNAUTHORIZED,
+                ..
+            } => errors::Error::unauthorized(
+                "Upstream authentication rejected",
+            ),
+            Self::HttpStatus {
+                status: reqwest::StatusCode::FORBIDDEN,
+                ..
+            } => {
+                errors::Error::forbidden("Upstream authorization rejected")
+            }
+            Self::HttpStatus {
+                status: reqwest::StatusCode::NOT_FOUND,
+                ..
+            } => errors::Error::not_found("Upstream resource not found"),
+            Self::HttpStatus { status, .. }
+                if status.is_server_error()
+                    || status == reqwest::StatusCode::REQUEST_TIMEOUT
+                    || status == reqwest::StatusCode::TOO_MANY_REQUESTS =>
+            {
+                errors::Error::service_unavailable(
+                    "Upstream dependency unavailable",
+                )
+            }
+            Self::HttpStatus { status, .. } if status.is_client_error() => {
+                errors::Error::bad_request("Upstream request rejected")
+            }
+            Self::HttpStatus { .. } | Self::Decode { .. } => {
+                errors::Error::internal_server_error(
+                    "Upstream protocol error",
+                )
+            }
+        }
+    }
+}
+
+impl From<SdkRequestError> for errors::Error {
+    fn from(error: SdkRequestError) -> Self {
+        error.into_public_error()
+    }
+}
 
 /// AuthApp implementation that delegates to tachyon-api
 /// REST endpoints via the tachyon-sdk.
@@ -223,13 +383,7 @@ impl SdkAuthApp {
         config: &Configuration,
         path: &str,
     ) -> errors::Result<T> {
-        let resp = config
-            .client
-            .get(format!("{}{}", config.base_path, path))
-            .send()
-            .await
-            .map_err(|e| sdk_err(e))?;
-        handle_rest_response(resp).await
+        Self::rest_get_typed(config, path).await.map_err(Into::into)
     }
 
     /// Make a GET request with query params.
@@ -238,14 +392,115 @@ impl SdkAuthApp {
         path: &str,
         query: &[(&str, &str)],
     ) -> errors::Result<T> {
-        let resp = config
-            .client
-            .get(format!("{}{}", config.base_path, path))
-            .query(query)
-            .send()
+        Self::rest_get_query_typed(config, path, query)
             .await
-            .map_err(|e| sdk_err(e))?;
-        handle_rest_response(resp).await
+            .map_err(Into::into)
+    }
+
+    async fn rest_get_typed<T: serde::de::DeserializeOwned>(
+        config: &Configuration,
+        path: &str,
+    ) -> Result<T, SdkRequestError> {
+        Self::rest_get_query_with_policy(
+            config,
+            path,
+            &[],
+            SDK_GET_RETRY_POLICY,
+        )
+        .await
+    }
+
+    async fn rest_get_query_typed<T: serde::de::DeserializeOwned>(
+        config: &Configuration,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T, SdkRequestError> {
+        Self::rest_get_query_with_policy(
+            config,
+            path,
+            query,
+            SDK_GET_RETRY_POLICY,
+        )
+        .await
+    }
+
+    async fn rest_get_query_with_policy<T: serde::de::DeserializeOwned>(
+        config: &Configuration,
+        path: &str,
+        query: &[(&str, &str)],
+        policy: SdkGetRetryPolicy,
+    ) -> Result<T, SdkRequestError> {
+        let started_at = Instant::now();
+        let mut last_error = SdkRequestError::Transport {
+            retryable: true,
+            timeout: true,
+            connect: false,
+            attempts: 0,
+        };
+
+        for attempt in 0..policy.max_attempts.max(1) {
+            let Some(remaining_budget) =
+                policy.total_budget.checked_sub(started_at.elapsed())
+            else {
+                return Err(last_error);
+            };
+            if remaining_budget.is_zero() {
+                return Err(last_error);
+            }
+
+            let response = config
+                .client
+                .get(format!("{}{}", config.base_path, path))
+                .query(query)
+                .timeout(policy.per_attempt_timeout.min(remaining_budget))
+                .send()
+                .await;
+
+            match response {
+                Ok(response) => {
+                    return handle_rest_response(response)
+                        .await
+                        .map_err(|error| error.with_attempts(attempt + 1))
+                }
+                Err(error) => {
+                    last_error = SdkRequestError::transport(&error)
+                        .with_attempts(attempt + 1);
+                    if !last_error.retryable()
+                        || attempt + 1 >= policy.max_attempts.max(1)
+                    {
+                        return Err(last_error);
+                    }
+                }
+            }
+
+            let exponent =
+                u32::try_from(attempt).unwrap_or(u32::MAX).min(8);
+            let backoff = policy
+                .base_delay
+                .saturating_mul(2_u32.saturating_pow(exponent));
+            let jitter_millis =
+                u64::try_from(policy.max_jitter.as_millis())
+                    .unwrap_or(u64::MAX);
+            let jitter = if jitter_millis == 0 {
+                Duration::ZERO
+            } else {
+                Duration::from_millis(
+                    rand::random::<u64>() % (jitter_millis + 1),
+                )
+            };
+            let delay = backoff.saturating_add(jitter);
+            let Some(remaining_budget) =
+                policy.total_budget.checked_sub(started_at.elapsed())
+            else {
+                return Err(last_error);
+            };
+            if delay >= remaining_budget {
+                return Err(last_error);
+            }
+            tokio::time::sleep(delay).await;
+        }
+
+        Err(last_error)
     }
 
     /// Make a POST request with a JSON body.
@@ -260,8 +515,8 @@ impl SdkAuthApp {
             .json(body)
             .send()
             .await
-            .map_err(|e| sdk_err(e))?;
-        handle_rest_response(resp).await
+            .map_err(|error| SdkRequestError::transport(&error))?;
+        handle_rest_response(resp).await.map_err(Into::into)
     }
 
     /// Make a PUT request with a JSON body.
@@ -276,8 +531,8 @@ impl SdkAuthApp {
             .json(body)
             .send()
             .await
-            .map_err(|e| sdk_err(e))?;
-        handle_rest_response(resp).await
+            .map_err(|error| SdkRequestError::transport(&error))?;
+        handle_rest_response(resp).await.map_err(Into::into)
     }
 
     /// Make a DELETE request.
@@ -290,11 +545,9 @@ impl SdkAuthApp {
             .delete(format!("{}{}", config.base_path, path))
             .send()
             .await
-            .map_err(|e| sdk_err(e))?;
+            .map_err(|error| SdkRequestError::transport(&error))?;
         if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(map_http_error(status, &body));
+            return Err(SdkRequestError::http_status(resp.status()).into());
         }
         Ok(())
     }
@@ -308,24 +561,12 @@ impl SdkAuthApp {
         tenant_id: &TenantId,
     ) -> errors::Result<OAuthBootstrapConfig> {
         let config = self.sdk_config_public();
-        let resp = config
-            .client
-            .get(format!("{}/v1/iac/oauth-providers", self.base_url))
-            .query(&[("tenant_id", tenant_id.as_str())])
-            .send()
-            .await
-            .map_err(|e| sdk_err(e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(sdk_err(format!(
-                "fetch_oauth_config failed: {status} {body}"
-            )));
-        }
-
-        let body: OAuthProvidersResp =
-            resp.json().await.map_err(|e| sdk_err(e))?;
+        let body: OAuthProvidersResp = Self::rest_get_query(
+            &config,
+            "/v1/iac/oauth-providers",
+            &[("tenant_id", tenant_id.as_str())],
+        )
+        .await?;
 
         let mut bootstrap = OAuthBootstrapConfig::default();
 
@@ -475,17 +716,24 @@ impl SdkAuthApp {
         alias: &str,
     ) -> errors::Result<OperatorResp> {
         let config = self.sdk_config_public();
-        let resp: SdkOperatorResp = Self::rest_get_query(
+        let resp: SdkOperatorResp = Self::rest_get_query_typed(
             &config,
             "/v1/auth/operators/by-alias",
             &[("platform_id", platform_id.as_str()), ("alias", alias)],
         )
         .await
-        .map_err(|e| {
-            if is_not_found(&e) {
+        .map_err(|error| {
+            observe_sdk_request_failure("get_operator_by_alias", error);
+            if matches!(
+                error,
+                SdkRequestError::HttpStatus {
+                    status: reqwest::StatusCode::NOT_FOUND,
+                    ..
+                }
+            ) {
                 errors::Error::not_found("Operator".to_string())
             } else {
-                e
+                error.into_public_error()
             }
         })?;
 
@@ -529,13 +777,15 @@ impl SdkAuthApp {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             "Authorization",
-            format!("Bearer {token}").parse().map_err(sdk_err)?,
+            format!("Bearer {token}")
+                .parse()
+                .map_err(sdk_internal_err)?,
         );
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()
-            .map_err(sdk_err)?;
+            .map_err(sdk_internal_err)?;
         let config = Configuration {
             base_path: self.base_url.clone(),
             client,
@@ -574,16 +824,11 @@ impl SdkAuthApp {
 
         let resp: RestVerifyApiKeyResp =
             Self::rest_post(&config, "/v1/auth/api-keys/verify", &body)
-                .await
-                .map_err(|_| {
-                    errors::Error::unauthorized(
-                        "API key verification failed".to_string(),
-                    )
-                })?;
+                .await?;
 
         let id: ServiceAccountId =
             resp.service_account_id.parse().map_err(|e| {
-                sdk_err(format!("Invalid service account id: {e}"))
+                sdk_internal_err(format!("Invalid service account id: {e}"))
             })?;
         let sa_tenant_id = TenantId::new(&resp.tenant_id)?;
 
@@ -634,9 +879,9 @@ impl SdkAuthApp {
             .json(&req)
             .send()
             .await
-            .map_err(|e| sdk_err(format!("HTTP request failed: {e}")))?;
+            .map_err(|error| SdkRequestError::transport(&error))?;
 
-        handle_rest_response(resp).await
+        handle_rest_response(resp).await.map_err(Into::into)
     }
 
     /// Search user by username via REST.
@@ -684,16 +929,16 @@ impl SdkAuthApp {
             .map(|m| {
                 let assigned_at =
                     chrono::DateTime::parse_from_rfc3339(&m.assigned_at)
-                        .map_err(sdk_err)?
+                        .map_err(sdk_internal_err)?
                         .with_timezone(&chrono::Utc);
 
                 let policy_id: PolicyId =
                     m.policy_id.parse().map_err(|e| {
-                        sdk_err(format!("Invalid policy_id: {e}"))
+                        sdk_internal_err(format!("Invalid policy_id: {e}"))
                     })?;
 
                 let user_id: UserId = m.user_id.parse().map_err(|e| {
-                    sdk_err(format!("Invalid user_id: {e}"))
+                    sdk_internal_err(format!("Invalid user_id: {e}"))
                 })?;
                 Ok(UserPolicy {
                     user_id,
@@ -902,8 +1147,41 @@ pub struct OAuthBootstrapConfig {
 
 // ---- Helpers ----
 
-fn sdk_err(msg: impl std::fmt::Display) -> errors::Error {
-    errors::Error::internal_server_error(format!("SDK auth error: {msg}"))
+fn sdk_internal_err(msg: impl std::fmt::Display) -> errors::Error {
+    errors::Error::internal_server_error(format!(
+        "SDK integration error: {msg}"
+    ))
+}
+
+fn observe_sdk_request_failure(
+    operation: &'static str,
+    error: SdkRequestError,
+) {
+    debug_assert!(error.attempts() > 0);
+    tracing::warn!(
+        operation,
+        error_kind = error.error_kind(),
+        retryable = error.retryable(),
+        timeout = error.timeout(),
+        connect = error.connect(),
+        "upstream SDK request failed"
+    );
+
+    sentry::add_breadcrumb(sentry::Breadcrumb {
+        category: Some("sdk_auth".to_string()),
+        message: Some("upstream SDK request failed".to_string()),
+        level: sentry::Level::Warning,
+        data: [
+            ("operation".to_string(), operation.into()),
+            ("error_kind".to_string(), error.error_kind().into()),
+            ("retryable".to_string(), error.retryable().into()),
+            ("timeout".to_string(), error.timeout().into()),
+            ("connect".to_string(), error.connect().into()),
+        ]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    });
 }
 
 /// Convert a tachyon-sdk API error into an errors::Error.
@@ -912,46 +1190,33 @@ fn sdk_api_err<T: std::fmt::Debug>(
 ) -> errors::Error {
     match err {
         tachyon_sdk::apis::Error::ResponseError(resp) => {
-            let msg = if let Some(entity) = &resp.entity {
-                format!("API error ({}): {:?}", resp.status, entity)
-            } else {
-                format!("API error ({}): {}", resp.status, resp.content)
-            };
-
-            map_http_error(resp.status, &msg)
+            SdkRequestError::http_status(resp.status).into_public_error()
         }
         tachyon_sdk::apis::Error::Reqwest(e) => {
-            sdk_err(format!("HTTP request failed: {e}"))
+            SdkRequestError::transport(&e).into_public_error()
         }
         tachyon_sdk::apis::Error::Serde(e) => {
-            sdk_err(format!("Response parse error: {e}"))
+            let _ = e;
+            SdkRequestError::decode().into_public_error()
         }
         tachyon_sdk::apis::Error::Io(e) => {
-            sdk_err(format!("IO error: {e}"))
+            let _ = e;
+            errors::Error::internal_server_error("Upstream protocol error")
         }
-    }
-}
-
-/// Map HTTP status to errors::Error.
-fn map_http_error(status: reqwest::StatusCode, msg: &str) -> errors::Error {
-    match status.as_u16() {
-        401 => errors::Error::unauthorized(msg.to_string()),
-        403 => errors::Error::forbidden(msg.to_string()),
-        404 => errors::Error::not_found(msg.to_string()),
-        _ => errors::Error::internal_server_error(msg.to_string()),
     }
 }
 
 /// Handle a REST response: check status and deserialize.
 async fn handle_rest_response<T: serde::de::DeserializeOwned>(
     resp: reqwest::Response,
-) -> errors::Result<T> {
+) -> Result<T, SdkRequestError> {
     let status = resp.status();
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(map_http_error(status, &body));
+        return Err(SdkRequestError::http_status(status));
     }
-    resp.json::<T>().await.map_err(|e| sdk_err(e))
+    resp.json::<T>()
+        .await
+        .map_err(|_| SdkRequestError::decode())
 }
 
 /// Check if an error is a 404 not-found error.
@@ -973,10 +1238,10 @@ fn operator_resp_from_rest(resp: SdkOperatorResp) -> OperatorResp {
 fn operator_from_rest(resp: &SdkOperatorResp) -> errors::Result<Operator> {
     let id = TenantId::new(&resp.id)?;
     let platform_id = TenantId::new(&resp.platform_id)?;
-    let operator_name: Identifier = resp
-        .operator_name
-        .parse()
-        .map_err(|e| sdk_err(format!("Invalid operator_name: {e}")))?;
+    let operator_name: Identifier =
+        resp.operator_name.parse().map_err(|e| {
+            sdk_internal_err(format!("Invalid operator_name: {e}"))
+        })?;
     let now = chrono::Utc::now();
     Ok(Operator {
         id,
@@ -992,10 +1257,10 @@ fn operator_from_rest(resp: &SdkOperatorResp) -> errors::Result<Operator> {
 pub fn operator_from_resp(resp: &OperatorResp) -> errors::Result<Operator> {
     let id = TenantId::new(&resp.id)?;
     let platform_id = TenantId::new(&resp.platform_id)?;
-    let operator_name: Identifier = resp
-        .operator_name
-        .parse()
-        .map_err(|e| sdk_err(format!("Invalid operator_name: {e}")))?;
+    let operator_name: Identifier =
+        resp.operator_name.parse().map_err(|e| {
+            sdk_internal_err(format!("Invalid operator_name: {e}"))
+        })?;
     let now = chrono::Utc::now();
     Ok(Operator {
         id,
@@ -1014,7 +1279,7 @@ fn user_from_sdk_model(
     let id: UserId = user
         .id
         .parse()
-        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+        .map_err(|e| sdk_internal_err(format!("Invalid user id: {e}")))?;
     let username = id.to_string();
     let email: Option<String> =
         user.email.as_ref().and_then(|e| e.as_ref()).cloned();
@@ -1048,7 +1313,7 @@ fn user_from_sdk_user_response(
     let id: UserId = resp
         .id
         .parse()
-        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+        .map_err(|e| sdk_internal_err(format!("Invalid user id: {e}")))?;
     let username = id.to_string();
     let email: Option<String> =
         resp.email.as_ref().and_then(|e| e.as_ref()).cloned();
@@ -1083,11 +1348,10 @@ fn user_from_sdk_user_response(
 fn user_from_bootstrap_response(
     resp: &BootstrapResponse,
 ) -> errors::Result<User> {
-    let id: UserId = resp
-        .user
-        .id
-        .parse()
-        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+    let id: UserId =
+        resp.user.id.parse().map_err(|e| {
+            sdk_internal_err(format!("Invalid user id: {e}"))
+        })?;
     let tenants: Vec<TenantId> = resp
         .tenants
         .iter()
@@ -1116,7 +1380,7 @@ fn user_from_rest_user_response(
     let id: UserId = resp
         .id
         .parse()
-        .map_err(|e| sdk_err(format!("Invalid user id: {e}")))?;
+        .map_err(|e| sdk_internal_err(format!("Invalid user id: {e}")))?;
     let username = id.to_string();
     let email: Option<String> = resp.email.clone();
     let name: Option<String> = resp.name.clone();
@@ -1151,7 +1415,7 @@ fn service_account_from_sdk(
     let id: ServiceAccountId = resp.id.clone().into();
     let tenant_id = TenantId::new(&resp.tenant_id)?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(sdk_err)?
+        .map_err(sdk_internal_err)?
         .with_timezone(&chrono::Utc);
     Ok(ServiceAccount {
         id,
@@ -1165,17 +1429,15 @@ fn api_key_from_sdk(
     resp: &tachyon_sdk::models::ApiKeyResponse,
     tenant_id: &TenantId,
 ) -> errors::Result<PublicApiKey> {
-    let id: PublicApiKeyId = resp
-        .id
-        .parse()
-        .map_err(|e| sdk_err(format!("Invalid api key id: {e}")))?;
+    let id: PublicApiKeyId = resp.id.parse().map_err(|e| {
+        sdk_internal_err(format!("Invalid api key id: {e}"))
+    })?;
     let sa_id: ServiceAccountId = resp.service_account_id.clone().into();
-    let value: PublicApiKeyValue = resp
-        .value
-        .parse()
-        .map_err(|e| sdk_err(format!("Invalid api key value: {e}")))?;
+    let value: PublicApiKeyValue = resp.value.parse().map_err(|e| {
+        sdk_internal_err(format!("Invalid api key value: {e}"))
+    })?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&resp.created_at)
-        .map_err(sdk_err)?
+        .map_err(sdk_internal_err)?
         .with_timezone(&chrono::Utc);
     Ok(PublicApiKey {
         id,
@@ -1262,28 +1524,34 @@ impl AuthApp for SdkAuthApp {
         &self,
         _tenant_id: &'a TenantId,
     ) -> errors::Result<TenantHierarchy> {
-        Err(sdk_err("get_tenant_hierarchy not supported via SDK"))
+        Err(sdk_internal_err(
+            "get_tenant_hierarchy not supported via SDK",
+        ))
     }
 
     async fn get_user_id_by_user_provider_id<'a>(
         &self,
         _input: &auth::GetUserIdByUserProviderIdInput<'a>,
     ) -> errors::Result<Option<String>> {
-        Err(sdk_err("get_user_id_by_user_provider_id not supported"))
+        Err(sdk_internal_err(
+            "get_user_id_by_user_provider_id not supported",
+        ))
     }
 
     async fn delete_operator<'a>(
         &self,
         _input: &auth::DeleteOperatorInput<'a>,
     ) -> errors::Result<()> {
-        Err(sdk_err("delete_operator not supported via SDK"))
+        Err(sdk_internal_err("delete_operator not supported via SDK"))
     }
 
     async fn get_operator_by_identifier<'a>(
         &self,
         _input: &auth::GetOperatorByIdentifierInput<'a>,
     ) -> errors::Result<Option<Operator>> {
-        Err(sdk_err("get_operator_by_identifier not supported via SDK"))
+        Err(sdk_internal_err(
+            "get_operator_by_identifier not supported via SDK",
+        ))
     }
 
     async fn get_operator_by_id<'a>(
@@ -1354,7 +1622,7 @@ impl AuthApp for SdkAuthApp {
             Ok(resp) => {
                 let expires_at =
                     chrono::DateTime::parse_from_rfc3339(&resp.expires_at)
-                        .map_err(sdk_err)?
+                        .map_err(sdk_internal_err)?
                         .with_timezone(&chrono::Utc);
 
                 Ok(Some(auth::OAuthTokenDetail {
@@ -1427,7 +1695,9 @@ impl AuthApp for SdkAuthApp {
         &self,
         _input: &auth::UpdateServiceAccountInput<'a>,
     ) -> errors::Result<ServiceAccount> {
-        Err(sdk_err("update_service_account not supported via SDK"))
+        Err(sdk_internal_err(
+            "update_service_account not supported via SDK",
+        ))
     }
 
     async fn get_service_account_by_name<'a>(
@@ -1823,7 +2093,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _policy_id: &tachyon_sdk::auth::PolicyId,
         _tenant_id: &TenantId,
     ) -> errors::Result<()> {
-        Err(sdk_err("create_mapping: use AuthApp trait"))
+        Err(sdk_internal_err("create_mapping: use AuthApp trait"))
     }
 
     async fn delete_mapping(
@@ -1832,7 +2102,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _policy_id: &tachyon_sdk::auth::PolicyId,
         _tenant_id: &TenantId,
     ) -> errors::Result<()> {
-        Err(sdk_err("delete_mapping: use AuthApp trait"))
+        Err(sdk_internal_err("delete_mapping: use AuthApp trait"))
     }
 
     async fn find_policies_by_user(
@@ -1840,7 +2110,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _user_id: &tachyon_sdk::auth::UserId,
         _tenant_id: &TenantId,
     ) -> errors::Result<Vec<tachyon_sdk::auth::PolicyId>> {
-        Err(sdk_err("find_policies_by_user: use AuthApp"))
+        Err(sdk_internal_err("find_policies_by_user: use AuthApp"))
     }
 
     async fn find_users_by_policy(
@@ -1848,7 +2118,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _policy_id: &tachyon_sdk::auth::PolicyId,
         _tenant_id: &TenantId,
     ) -> errors::Result<Vec<tachyon_sdk::auth::UserId>> {
-        Err(sdk_err("find_users_by_policy: use AuthApp"))
+        Err(sdk_internal_err("find_users_by_policy: use AuthApp"))
     }
 
     async fn exists_mapping(
@@ -1857,7 +2127,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _policy_id: &tachyon_sdk::auth::PolicyId,
         _tenant_id: &TenantId,
     ) -> errors::Result<bool> {
-        Err(sdk_err("exists_mapping: use AuthApp"))
+        Err(sdk_internal_err("exists_mapping: use AuthApp"))
     }
 
     async fn create_mapping_with_scope(
@@ -1867,7 +2137,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _tenant_id: &TenantId,
         _resource_scope: &str,
     ) -> errors::Result<()> {
-        Err(sdk_err("create_mapping_with_scope: use AuthApp"))
+        Err(sdk_internal_err("create_mapping_with_scope: use AuthApp"))
     }
 
     async fn delete_mapping_with_scope(
@@ -1877,7 +2147,7 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
         _tenant_id: &TenantId,
         _resource_scope: &str,
     ) -> errors::Result<()> {
-        Err(sdk_err("delete_mapping_with_scope: use AuthApp"))
+        Err(sdk_internal_err("delete_mapping_with_scope: use AuthApp"))
     }
 
     async fn find_by_resource_scope(
@@ -2070,7 +2340,381 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_graphql::ErrorExtensions;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tracing_subscriber::prelude::*;
+
+    const TEST_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
+
+    fn public_error_class(error: &errors::Error) -> &'static str {
+        match error {
+            errors::Error::Unauthorized { .. } => "unauthorized",
+            errors::Error::Forbidden { .. } => "forbidden",
+            errors::Error::NotFound { .. } => "not_found",
+            errors::Error::BadRequest { .. } => "bad_request",
+            errors::Error::ServiceUnavailable { .. } => {
+                "service_unavailable"
+            }
+            errors::Error::InternalServerError { .. } => "internal",
+            errors::Error::Conflict { .. }
+            | errors::Error::PaymentRequired { .. } => "other",
+        }
+    }
+
+    fn test_config(base_url: String) -> Configuration {
+        Configuration {
+            base_path: base_url,
+            client: reqwest::Client::new(),
+            ..Default::default()
+        }
+    }
+
+    fn fast_retry_policy() -> SdkGetRetryPolicy {
+        SdkGetRetryPolicy {
+            max_attempts: 3,
+            per_attempt_timeout: Duration::from_millis(20),
+            total_budget: Duration::from_millis(150),
+            base_delay: Duration::from_millis(2),
+            max_jitter: Duration::ZERO,
+        }
+    }
+
+    async fn single_response_case(
+        status: &str,
+        body: &str,
+    ) -> SdkRequestError {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = tokio::time::timeout(
+                Duration::from_secs(1),
+                listener.accept(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let mut request = vec![0_u8; 4096];
+            let _ = socket.read(&mut request).await;
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let config = test_config(format!("http://{addr}"));
+        let error =
+            SdkAuthApp::rest_get_query_with_policy::<SdkOperatorResp>(
+                &config,
+                "/v1/auth/operators/by-alias",
+                &[("platform_id", TEST_TENANT_ID), ("alias", "safe-alias")],
+                fast_retry_policy(),
+            )
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+
+        error
+    }
+
+    #[test]
+    fn sdk_request_error_mapping_separates_auth_and_dependency_failures() {
+        let cases = [
+            (
+                "401",
+                SdkRequestError::http_status(
+                    reqwest::StatusCode::UNAUTHORIZED,
+                ),
+                "http_status",
+                "unauthorized",
+                true,
+            ),
+            (
+                "403",
+                SdkRequestError::http_status(
+                    reqwest::StatusCode::FORBIDDEN,
+                ),
+                "http_status",
+                "forbidden",
+                true,
+            ),
+            (
+                "404",
+                SdkRequestError::http_status(
+                    reqwest::StatusCode::NOT_FOUND,
+                ),
+                "http_status",
+                "not_found",
+                false,
+            ),
+            (
+                "5xx",
+                SdkRequestError::http_status(
+                    reqwest::StatusCode::BAD_GATEWAY,
+                ),
+                "http_status",
+                "service_unavailable",
+                false,
+            ),
+            (
+                "decode",
+                SdkRequestError::decode(),
+                "decode",
+                "internal",
+                false,
+            ),
+            (
+                "timeout",
+                SdkRequestError::Transport {
+                    retryable: true,
+                    timeout: true,
+                    connect: false,
+                    attempts: 1,
+                },
+                "transport",
+                "service_unavailable",
+                false,
+            ),
+            (
+                "connect",
+                SdkRequestError::Transport {
+                    retryable: true,
+                    timeout: false,
+                    connect: true,
+                    attempts: 1,
+                },
+                "transport",
+                "service_unavailable",
+                false,
+            ),
+        ];
+
+        for (name, sdk_error, error_kind, public_class, is_auth) in cases {
+            assert_eq!(sdk_error.error_kind(), error_kind, "case={name}");
+            let public_error = sdk_error.into_public_error();
+            assert_eq!(
+                public_error_class(&public_error),
+                public_class,
+                "case={name}"
+            );
+            assert_eq!(
+                matches!(
+                    public_error,
+                    errors::Error::Unauthorized { .. }
+                        | errors::Error::Forbidden { .. }
+                ),
+                is_auth,
+                "case={name}"
+            );
+            assert!(
+                !public_error.to_string().contains("SDK auth error"),
+                "case={name}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn status_and_decode_failures_are_not_retried() {
+        let cases = [
+            ("401 Unauthorized", "{}", "unauthorized"),
+            ("403 Forbidden", "{}", "forbidden"),
+            ("404 Not Found", "{}", "not_found"),
+            ("502 Bad Gateway", "{}", "service_unavailable"),
+            ("200 OK", "not-json", "internal"),
+        ];
+
+        for (status, body, expected_class) in cases {
+            let sdk_error = single_response_case(status, body).await;
+            assert_eq!(sdk_error.attempts(), 1, "status={status}");
+            assert_eq!(
+                public_error_class(&sdk_error.into_public_error()),
+                expected_class,
+                "status={status}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_and_connect_send_failures_are_bounded_and_retryable() {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let timeout_addr = listener.local_addr().unwrap();
+        let timeout_attempts = Arc::new(AtomicUsize::new(0));
+        let server_attempts = timeout_attempts.clone();
+        let server = tokio::spawn(async move {
+            let mut sockets = Vec::new();
+            for _ in 0..3 {
+                let (socket, _) = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    listener.accept(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                server_attempts.fetch_add(1, Ordering::SeqCst);
+                sockets.push(socket);
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        });
+
+        let timeout_error =
+            SdkAuthApp::rest_get_query_with_policy::<SdkOperatorResp>(
+                &test_config(format!("http://{timeout_addr}")),
+                "/v1/auth/operators/by-alias",
+                &[],
+                fast_retry_policy(),
+            )
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert_eq!(timeout_attempts.load(Ordering::SeqCst), 3);
+        assert!(timeout_error.retryable());
+        assert!(timeout_error.timeout());
+        assert!(!timeout_error.connect());
+        assert_eq!(timeout_error.attempts(), 3);
+
+        let closed_listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed_addr = closed_listener.local_addr().unwrap();
+        drop(closed_listener);
+        let connect_error =
+            SdkAuthApp::rest_get_query_with_policy::<SdkOperatorResp>(
+                &test_config(format!("http://{closed_addr}")),
+                "/v1/auth/operators/by-alias",
+                &[],
+                fast_retry_policy(),
+            )
+            .await
+            .unwrap_err();
+        assert!(connect_error.retryable());
+        assert!(connect_error.connect());
+        assert!(!connect_error.timeout());
+        assert_eq!(connect_error.attempts(), 3);
+    }
+
+    #[test]
+    fn transport_failure_is_redacted_and_captured_once() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut rendered_error = String::new();
+        let mut redacted_inputs = Vec::new();
+
+        let events = sentry::test::with_captured_events(|| {
+            let subscriber = tracing_subscriber::registry().with(
+                sentry_tracing::layer().event_filter(|metadata| {
+                    if metadata.level() == &tracing::Level::ERROR {
+                        sentry_tracing::EventFilter::Event
+                    } else {
+                        sentry_tracing::EventFilter::Ignore
+                    }
+                }),
+            );
+            tracing::subscriber::with_default(subscriber, || {
+                runtime.block_on(async {
+                    let listener =
+                        tokio::net::TcpListener::bind("127.0.0.1:0")
+                            .await
+                            .unwrap();
+                    let closed_addr = listener.local_addr().unwrap();
+                    drop(listener);
+
+                    let base_url = format!("http://{closed_addr}");
+                    let alias = "query-identifier-marker";
+                    let credential = "credential-marker";
+                    let tenant_id: TenantId =
+                        TEST_TENANT_ID.parse().unwrap();
+                    let sdk = SdkAuthApp::new(
+                        base_url.clone(),
+                        &tenant_id,
+                        credential,
+                    );
+                    let error = sdk
+                        .get_operator_by_alias(&tenant_id, alias)
+                        .await
+                        .unwrap_err();
+
+                    assert!(matches!(
+                        error,
+                        errors::Error::ServiceUnavailable { .. }
+                    ));
+                    assert!(!matches!(
+                        error,
+                        errors::Error::Unauthorized { .. }
+                            | errors::Error::Forbidden { .. }
+                    ));
+
+                    rendered_error = format!("{error:?}\n{error}");
+                    redacted_inputs = vec![
+                        base_url,
+                        closed_addr.to_string(),
+                        alias.to_string(),
+                        tenant_id.as_str().to_string(),
+                        credential.to_string(),
+                    ];
+
+                    crate::handler::graphql::log_graphql_operation_error(
+                        "library_query",
+                        &error,
+                    );
+                    let _ = error.extend();
+                });
+            });
+        });
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].message.as_deref(),
+            Some("ServiceUnavailable: Upstream dependency unavailable")
+        );
+
+        let sdk_breadcrumb = events[0]
+            .breadcrumbs
+            .iter()
+            .find(|breadcrumb| {
+                breadcrumb.category.as_deref() == Some("sdk_auth")
+            })
+            .expect(
+                "sdk_auth breadcrumb must be attached to the error event",
+            );
+        assert_eq!(
+            sdk_breadcrumb
+                .data
+                .get("operation")
+                .and_then(|value| value.as_str()),
+            Some("get_operator_by_alias")
+        );
+        assert_eq!(
+            sdk_breadcrumb
+                .data
+                .get("error_kind")
+                .and_then(|value| value.as_str()),
+            Some("transport")
+        );
+        assert_eq!(
+            sdk_breadcrumb
+                .data
+                .get("retryable")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            sdk_breadcrumb
+                .data
+                .get("connect")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+
+        let sentry_payload = format!("{:#?}", events[0]);
+        for sensitive in redacted_inputs {
+            assert!(!rendered_error.contains(&sensitive));
+            assert!(!sentry_payload.contains(&sensitive));
+        }
+    }
 
     #[tokio::test]
     async fn sign_in_with_platform_sends_operator_header_directly(
