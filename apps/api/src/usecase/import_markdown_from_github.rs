@@ -5,9 +5,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use database_manager::domain as db;
-use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyInput, GetOAuthTokenByProviderInput,
-};
+use tachyon_sdk::auth::{CheckPolicyInput, GetOAuthTokenByProviderInput};
 use value_object::{Identifier, Text, MAX_PAGE_SIZE};
 
 use crate::usecase::{
@@ -24,7 +22,6 @@ use super::get_markdown_previews::{extract_title, parse_frontmatter};
 
 #[derive(Clone)]
 pub struct ImportMarkdownFromGitHub {
-    auth: Arc<dyn AuthApp>,
     view_org: Arc<dyn ViewOrganizationInputPort>,
     create_repo: Arc<dyn CreateRepoInputPort>,
     get_properties: Arc<dyn GetPropertiesInputPort>,
@@ -44,7 +41,6 @@ impl std::fmt::Debug for ImportMarkdownFromGitHub {
 impl ImportMarkdownFromGitHub {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        auth: Arc<dyn AuthApp>,
         view_org: Arc<dyn ViewOrganizationInputPort>,
         create_repo: Arc<dyn CreateRepoInputPort>,
         get_properties: Arc<dyn GetPropertiesInputPort>,
@@ -54,7 +50,6 @@ impl ImportMarkdownFromGitHub {
         update_data: Arc<dyn UpdateDataInputPort>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            auth,
             view_org,
             create_repo,
             get_properties,
@@ -77,7 +72,8 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
         input: ImportMarkdownFromGitHubInputData<'a>,
     ) -> errors::Result<ImportMarkdownResult> {
         // Check permission
-        self.auth
+        input
+            .auth
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
@@ -86,7 +82,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
             .await?;
 
         // Get GitHub OAuth token
-        let token = self
+        let token = input
             .auth
             .get_oauth_token_by_provider(&GetOAuthTokenByProviderInput {
                 executor: input.executor,
@@ -133,6 +129,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
             let new_repo = self
                 .create_repo
                 .execute(CreateRepoInputData {
+                    auth: input.auth.clone(),
                     executor: input.executor,
                     multi_tenancy: input.multi_tenancy,
                     org_username: input.org_username.clone(),

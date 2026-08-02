@@ -12,6 +12,7 @@ use crate::handler::types::{
     ChangeRepoUsernameRequest, CreateRepoRequest, RepoResponse,
     SearchRepoQuery, UpdateRepoRequest,
 };
+use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::LibraryOrg;
 use crate::usecase::{
     CreateRepoInputData, DeleteRepoInputData, SearchRepoInputData,
@@ -82,10 +83,13 @@ pub async fn create_repo(
     library_org: LibraryOrg,
     AxumPath(org): AxumPath<String>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    Extension(base_sdk): Extension<Arc<SdkAuthApp>>,
     Json(payload): Json<CreateRepoRequest>,
 ) -> errors::Result<Json<RepoResponse>> {
+    let caller_auth = executor.caller_auth_app(&base_sdk)?.auth_app();
     let user_id = executor.get_id().to_string();
     let input = CreateRepoInputData {
+        auth: caller_auth,
         executor: &executor,
         multi_tenancy: &library_org,
         org_username: org,

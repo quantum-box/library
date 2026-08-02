@@ -13,7 +13,6 @@ use database_manager::usecase::CreateDatabaseInputData;
 use database_manager::{domain::DatabaseId, AddPropertyInputData};
 use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
-use tachyon_sdk::auth::AuthApp;
 use value_object::LongText;
 
 #[derive(Debug, Clone, new)]
@@ -21,7 +20,6 @@ pub struct CreateRepo {
     repo_repository: Arc<dyn RepoRepository>,
     get_organization_by_username: Arc<dyn GetOrganizationByUsernameQuery>,
     database_client: Arc<database_manager::App>,
-    auth: Arc<dyn AuthApp>,
 }
 
 fn parse_optional_description(
@@ -43,7 +41,8 @@ impl CreateRepoInputPort for CreateRepo {
         input: CreateRepoInputData<'a>,
     ) -> errors::Result<Repo> {
         // TODO: add English comment
-        self.auth
+        input
+            .auth
             .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
@@ -153,7 +152,8 @@ impl CreateRepoInputPort for CreateRepo {
 
         // Attach Owner policy to IAM (with repository scope)
         let resource_trn = format!("trn:library:repo:{}", repo.id());
-        self.auth
+        input
+            .auth
             .attach_user_policy_with_scope(
                 &tachyon_sdk::auth::AttachUserPolicyWithScopeInput {
                     executor: input.executor,

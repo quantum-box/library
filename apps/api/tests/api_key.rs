@@ -320,6 +320,7 @@ async fn test_api_key_access_control() -> anyhow::Result<()> {
     let repo1 = app
         .create_repo
         .execute(CreateRepoInputData {
+            auth: app.auth_app.clone(),
             executor: &executor,
             multi_tenancy: &multi_tenancy,
             org_username: organization1.username().to_string(),
@@ -374,6 +375,7 @@ async fn test_api_key_access_control() -> anyhow::Result<()> {
     let repo2 = app
         .create_repo
         .execute(CreateRepoInputData {
+            auth: app.auth_app.clone(),
             executor: &executor,
             multi_tenancy: &multi_tenancy2,
             org_username: organization2.username().to_string(),
