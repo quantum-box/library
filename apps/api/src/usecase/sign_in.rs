@@ -6,10 +6,17 @@ use inbound_sync::sdk::SystemExecutor;
 use tachyon_sdk::auth::{AuthApp as AuthAppTrait, DefaultRole, User};
 use value_object::{PlatformId, TenantId};
 
-use crate::domain::{library_repo_owner_policy_id, library_user_policy_id};
+use crate::domain::{
+    library_repo_owner_policy_id, library_user_policy_id, LIBRARY_TENANT,
+};
 use crate::sdk_auth::SdkAuthApp;
 
-const LIBRARY_PLATFORM_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
+fn should_attach_library_policy(
+    platform_id: &str,
+    library_tenant_id: &str,
+) -> bool {
+    platform_id == library_tenant_id
+}
 
 #[derive(Debug, Clone)]
 pub struct SignIn {
@@ -64,12 +71,15 @@ impl SignIn {
         user: &User,
         platform_id: &PlatformId,
     ) -> errors::Result<()> {
-        if platform_id.as_ref() != LIBRARY_PLATFORM_ID {
+        if !should_attach_library_policy(
+            platform_id.as_ref(),
+            LIBRARY_TENANT.as_ref(),
+        ) {
             return Ok(());
         }
 
         let policy_id = library_user_policy_id();
-        let platform_tenant = TenantId::new(LIBRARY_PLATFORM_ID)?;
+        let platform_tenant = TenantId::new(LIBRARY_TENANT.as_ref())?;
         let executor = &SystemExecutor;
         let platform_scope = tachyon_sdk::auth::MultiTenancy::new(
             Some(platform_tenant.clone()),
@@ -149,7 +159,7 @@ impl SignIn {
         let policy_id = library_repo_owner_policy_id();
         let executor = &SystemExecutor;
         let multi_tenancy = tachyon_sdk::auth::MultiTenancy::new(
-            Some(TenantId::new(LIBRARY_PLATFORM_ID)?),
+            Some(TenantId::new(LIBRARY_TENANT.as_ref())?),
             Some(tenant_id.clone()),
         );
 
@@ -172,5 +182,26 @@ impl SignIn {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_attach_library_policy;
+
+    #[test]
+    fn attaches_policy_for_the_configured_library_tenant() {
+        assert!(should_attach_library_policy(
+            "tn_01j91h09tpj5ehwbwfwfxpak2b",
+            "tn_01j91h09tpj5ehwbwfwfxpak2b",
+        ));
+    }
+
+    #[test]
+    fn skips_policy_for_an_unrelated_platform() {
+        assert!(!should_attach_library_policy(
+            "tn_01j702qf86pc2j35s0kv0gv3gy",
+            "tn_01j91h09tpj5ehwbwfwfxpak2b",
+        ));
     }
 }

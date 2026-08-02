@@ -7,7 +7,7 @@ Production builds read `apps/client/.env.production`:
 | Variable | Value |
 |----------|--------|
 | `VITE_LIBRARY_API_BASE_URL` | `https://library-api.txcloud.app` |
-| `VITE_LIBRARY_PLATFORM_ID` | `tn_01j702qf86pc2j35s0kv0gv3gy` (Library platform tenant) |
+| `VITE_LIBRARY_PLATFORM_ID` | `tn_01j91h09tpj5ehwbwfwfxpak2b` (Library platform tenant) |
 
 `recordsApi.ts` resolves the API base URL in this order:
 
