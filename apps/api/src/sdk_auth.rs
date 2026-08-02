@@ -5,6 +5,7 @@
 //! `tachyon-sdk` crate where available, and falls back to raw
 //! reqwest for endpoints not yet covered by the SDK.
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -52,6 +53,12 @@ enum SdkRequestError {
     Decode {
         attempts: usize,
     },
+}
+
+#[derive(Debug)]
+struct SdkRequestFailure {
+    error: SdkRequestError,
+    correlation_id: Option<String>,
 }
 
 impl SdkRequestError {
@@ -128,6 +135,13 @@ impl SdkRequestError {
             Self::Transport { attempts, .. } => attempts,
             Self::HttpStatus { attempts, .. }
             | Self::Decode { attempts } => attempts,
+        }
+    }
+
+    fn status(self) -> Option<reqwest::StatusCode> {
+        match self {
+            Self::HttpStatus { status, .. } => Some(status),
+            Self::Transport { .. } | Self::Decode { .. } => None,
         }
     }
 
@@ -519,6 +533,39 @@ impl SdkAuthApp {
         handle_rest_response(resp).await.map_err(Into::into)
     }
 
+    /// Make a POST request while retaining safe downstream diagnostics.
+    async fn rest_post_observed<
+        B: Serialize,
+        T: serde::de::DeserializeOwned,
+    >(
+        config: &Configuration,
+        path: &str,
+        body: &B,
+    ) -> Result<T, SdkRequestFailure> {
+        let resp = config
+            .client
+            .post(format!("{}{}", config.base_path, path))
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| SdkRequestFailure {
+                error: SdkRequestError::transport(&error),
+                correlation_id: None,
+            })?;
+        let correlation_id = downstream_correlation_id(resp.headers());
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(SdkRequestFailure {
+                error: SdkRequestError::http_status(status),
+                correlation_id,
+            });
+        }
+        resp.json::<T>().await.map_err(|_| SdkRequestFailure {
+            error: SdkRequestError::decode(),
+            correlation_id,
+        })
+    }
+
     /// Make a PUT request with a JSON body.
     async fn rest_put<B: Serialize, T: serde::de::DeserializeOwned>(
         config: &Configuration,
@@ -723,7 +770,11 @@ impl SdkAuthApp {
         )
         .await
         .map_err(|error| {
-            observe_sdk_request_failure("get_operator_by_alias", error);
+            observe_sdk_request_failure(
+                "get_operator_by_alias",
+                error,
+                None,
+            );
             if matches!(
                 error,
                 SdkRequestError::HttpStatus {
@@ -1156,32 +1207,65 @@ fn sdk_internal_err(msg: impl std::fmt::Display) -> errors::Error {
 fn observe_sdk_request_failure(
     operation: &'static str,
     error: SdkRequestError,
+    correlation_id: Option<&str>,
 ) {
     debug_assert!(error.attempts() > 0);
     tracing::warn!(
         operation,
         error_kind = error.error_kind(),
+        http_status = error.status().map(|status| status.as_u16()),
+        upstream_request_id = correlation_id.unwrap_or(""),
+        attempts = error.attempts(),
         retryable = error.retryable(),
         timeout = error.timeout(),
         connect = error.connect(),
         "upstream SDK request failed"
     );
 
+    let mut data: BTreeMap<String, sentry::protocol::Value> = [
+        ("operation".to_string(), operation.into()),
+        ("error_kind".to_string(), error.error_kind().into()),
+        ("attempts".to_string(), error.attempts().into()),
+        ("retryable".to_string(), error.retryable().into()),
+        ("timeout".to_string(), error.timeout().into()),
+        ("connect".to_string(), error.connect().into()),
+    ]
+    .into_iter()
+    .collect();
+    if let Some(status) = error.status() {
+        data.insert("http_status".to_string(), status.as_u16().into());
+    }
+    if let Some(correlation_id) = correlation_id {
+        data.insert(
+            "upstream_request_id".to_string(),
+            correlation_id.into(),
+        );
+    }
+
     sentry::add_breadcrumb(sentry::Breadcrumb {
         category: Some("sdk_auth".to_string()),
         message: Some("upstream SDK request failed".to_string()),
         level: sentry::Level::Warning,
-        data: [
-            ("operation".to_string(), operation.into()),
-            ("error_kind".to_string(), error.error_kind().into()),
-            ("retryable".to_string(), error.retryable().into()),
-            ("timeout".to_string(), error.timeout().into()),
-            ("connect".to_string(), error.connect().into()),
-        ]
-        .into_iter()
-        .collect(),
+        data,
         ..Default::default()
     });
+}
+
+fn downstream_correlation_id(
+    headers: &reqwest::header::HeaderMap,
+) -> Option<String> {
+    headers
+        .get(telemetry::http::REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 128
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'-' | b'_' | b':' | b'.')
+                })
+        })
+        .map(ToOwned::to_owned)
 }
 
 /// Convert a tachyon-sdk API error into an errors::Error.
@@ -1463,21 +1547,20 @@ impl AuthApp for SdkAuthApp {
             actions: vec![input.action.to_string()],
         };
 
-        let resp =
-            tachyon_sdk::apis::auth_policies_api::evaluate_policies_batch(
-                &config, req,
+        let resp: tachyon_sdk::models::EvaluatePoliciesBatchResponse =
+            Self::rest_post_observed(
+                &config,
+                "/v1/auth/policies/check",
+                &req,
             )
             .await
-            .map_err(|e| {
-                tracing::debug!(
-                    action = %input.action,
-                    error = %e,
-                    "check_policy failed"
+            .map_err(|failure| {
+                observe_sdk_request_failure(
+                    "check_policy",
+                    failure.error,
+                    failure.correlation_id.as_deref(),
                 );
-                errors::Error::forbidden(format!(
-                    "Policy check failed for action: {}",
-                    input.action
-                ))
+                failure.error.into_public_error()
             })?;
 
         if let Some(result) = resp.results.first() {
@@ -2419,6 +2502,56 @@ mod tests {
         error
     }
 
+    async fn policy_check_response_case(
+        status: &str,
+        body: &str,
+        request_id: Option<&str>,
+    ) -> errors::Result<()> {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let request_id_header = request_id
+            .map(|request_id| format!("x-request-id: {request_id}\r\n"))
+            .unwrap_or_default();
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{request_id_header}connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0_u8; 4096];
+            let n = socket.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..n]);
+            assert!(request.contains("POST /v1/auth/policies/check "));
+            assert!(request.contains("authorization: Bearer caller-token"));
+            assert!(request
+                .contains("x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gz"));
+            assert!(request.contains("library:CreateRepo"));
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let default_tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let operator: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gz".parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &default_tenant,
+            "caller-token",
+        );
+        let executor = tachyon_sdk::auth::Executor::SystemUser;
+        let multi_tenancy =
+            tachyon_sdk::auth::MultiTenancy::new(None, Some(operator));
+        let result = sdk
+            .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                action: "library:CreateRepo",
+            })
+            .await;
+        server.await.unwrap();
+        result
+    }
+
     #[test]
     fn sdk_request_error_mapping_separates_auth_and_dependency_failures() {
         let cases = [
@@ -2534,6 +2667,107 @@ mod tests {
                 "status={status}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn check_policy_distinguishes_deny_from_upstream_failures() {
+        let deny = policy_check_response_case(
+            "200 OK",
+            r#"{"results":[{"action":"library:CreateRepo","allowed":false}]}"#,
+            Some("auth-deny-request"),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(deny, errors::Error::Forbidden { .. }));
+        assert!(deny.to_string().contains("library:CreateRepo"));
+
+        let authentication_failure = policy_check_response_case(
+            "401 Unauthorized",
+            "{}",
+            Some("auth-401-request"),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            authentication_failure,
+            errors::Error::Unauthorized { .. }
+        ));
+        assert!(!authentication_failure
+            .to_string()
+            .contains("library:CreateRepo"));
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed_addr = listener.local_addr().unwrap();
+        drop(listener);
+        let tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{closed_addr}"),
+            &tenant,
+            "caller-token",
+        );
+        let transport_failure = sdk
+            .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
+                executor: &tachyon_sdk::auth::Executor::SystemUser,
+                multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
+                action: "library:CreateRepo",
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            transport_failure,
+            errors::Error::ServiceUnavailable { .. }
+        ));
+    }
+
+    #[test]
+    fn check_policy_breadcrumb_keeps_status_and_correlation() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let events = sentry::test::with_captured_events(|| {
+            let error = runtime.block_on(policy_check_response_case(
+                "401 Unauthorized",
+                "{}",
+                Some("auth-correlation-401"),
+            ));
+            assert!(matches!(
+                error,
+                Err(errors::Error::Unauthorized { .. })
+            ));
+            sentry::capture_message(
+                "check policy observability test",
+                sentry::Level::Error,
+            );
+        });
+
+        let breadcrumb = events[0]
+            .breadcrumbs
+            .iter()
+            .find(|breadcrumb| {
+                breadcrumb.category.as_deref() == Some("sdk_auth")
+                    && breadcrumb
+                        .data
+                        .get("operation")
+                        .and_then(|value| value.as_str())
+                        == Some("check_policy")
+            })
+            .expect("check_policy breadcrumb must be captured");
+        assert_eq!(
+            breadcrumb
+                .data
+                .get("http_status")
+                .and_then(|value| value.as_u64()),
+            Some(401)
+        );
+        assert_eq!(
+            breadcrumb
+                .data
+                .get("upstream_request_id")
+                .and_then(|value| value.as_str()),
+            Some("auth-correlation-401")
+        );
     }
 
     #[tokio::test]

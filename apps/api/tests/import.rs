@@ -111,6 +111,7 @@ async fn test_import_and_create_database() -> anyhow::Result<()> {
     let database_id = DatabaseId::default();
     app.create_repo
         .execute(library_api::usecase::CreateRepoInputData {
+            auth: app.auth_app.clone(),
             executor: &tachyon_sdk::auth::Executor::SystemUser,
             multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
             database_id: Some(database_id.to_string()),

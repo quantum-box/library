@@ -7,7 +7,8 @@ use crate::domain::{Organization, Repo};
 use async_graphql::{InputObject, OneofObject};
 use database_manager::domain::{self, Data, Property};
 use std::fmt::Debug;
-use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction};
+use std::sync::Arc;
+use tachyon_sdk::auth::{AuthApp, ExecutorAction, MultiTenancyAction};
 use value_object::{Location, OffsetPaginator};
 
 /// TODO: add English documentation
@@ -344,6 +345,8 @@ pub struct CreatePullRequestInputData {
 /// TODO: add English documentation
 #[derive(Debug, Clone)]
 pub struct CreateRepoInputData<'a> {
+    /// Request-scoped Auth client carrying the caller's credential.
+    pub auth: Arc<dyn AuthApp>,
     pub executor: &'a dyn ExecutorAction,
     pub multi_tenancy: &'a dyn MultiTenancyAction,
 
@@ -993,6 +996,8 @@ pub struct PropertyMapping {
 /// TODO: add English documentation
 #[derive(Debug, Clone)]
 pub struct ImportMarkdownFromGitHubInputData<'a> {
+    /// Request-scoped Auth client carrying the caller's credential.
+    pub auth: Arc<dyn AuthApp>,
     pub executor: &'a dyn ExecutorAction,
     pub multi_tenancy: &'a dyn MultiTenancyAction,
     /// TODO: add English documentation
