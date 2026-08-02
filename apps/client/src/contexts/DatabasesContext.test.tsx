@@ -6,12 +6,14 @@ const mocks = vi.hoisted(() => ({
   fetchLibraryRepositories: vi.fn(),
   fetchLibraryOrganizations: vi.fn(),
   createLibraryOrganization: vi.fn(),
+  createLibraryRepository: vi.fn(),
 }))
 
 vi.mock('../lib/recordsApi', () => ({
   fetchLibraryRepositories: mocks.fetchLibraryRepositories,
   fetchLibraryOrganizations: mocks.fetchLibraryOrganizations,
   createLibraryOrganization: mocks.createLibraryOrganization,
+  createLibraryRepository: mocks.createLibraryRepository,
 }))
 
 function Probe() {
@@ -22,6 +24,7 @@ function Probe() {
     repositoriesError,
     refreshRepositories,
     createOrganization,
+    createRepository,
     selectedOrganizationId,
   } = useWorkspaceDatabases()
 
@@ -46,6 +49,19 @@ function Probe() {
         onClick={() => void createOrganization('New Org', 'new-org')}
       >
         Create organization
+      </button>
+      <button
+        type="button"
+        data-testid="create-repository"
+        onClick={() => void createRepository(
+          'org-1',
+          'Research Library',
+          'research-library',
+          'Research notes',
+          false,
+        )}
+      >
+        Create repository
       </button>
     </div>
   )
@@ -75,6 +91,14 @@ describe('DatabasesProvider', () => {
       id: 'org-2',
       name: 'New Org',
       username: 'new-org',
+    })
+    mocks.createLibraryRepository.mockResolvedValue({
+      id: 'repo-2',
+      name: 'Research Library',
+      username: 'research-library',
+      description: 'Research notes',
+      orgUsername: 'acme',
+      isPublic: false,
     })
   })
 
@@ -188,6 +212,34 @@ describe('DatabasesProvider', () => {
 
     await waitFor(() => {
       expect(mocks.fetchLibraryRepositories).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('creates a repository and exposes it immediately after refresh', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
+
+    await act(async () => {
+      screen.getByTestId('create-repository').click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('database-count')).toHaveTextContent('2')
+      expect(screen.getByTestId('database-labels')).toHaveTextContent(
+        'acme / Research Library',
+      )
+    })
+    expect(mocks.createLibraryRepository).toHaveBeenCalledWith({
+      orgUsername: 'acme',
+      operatorId: 'org-1',
+      name: 'Research Library',
+      username: 'research-library',
+      description: 'Research notes',
+      isPublic: false,
     })
   })
 })

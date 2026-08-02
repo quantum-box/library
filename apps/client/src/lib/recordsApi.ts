@@ -208,6 +208,28 @@ interface LibraryCreateOrganizationResponse {
   createOrganization: CreatedLibraryOrganization
 }
 
+export interface CreateLibraryRepositoryInput {
+  orgUsername: string
+  operatorId: string
+  name: string
+  username: string
+  description?: string
+  isPublic: boolean
+}
+
+export interface CreatedLibraryRepository {
+  id: string
+  name: string
+  username: string
+  description?: string | null
+  orgUsername: string
+  isPublic: boolean
+}
+
+interface LibraryCreateRepositoryResponse {
+  createRepo: CreatedLibraryRepository
+}
+
 interface TachyonOperatorResponse {
   id: string
   name?: string
@@ -427,6 +449,19 @@ const libraryCreateOrganizationMutation = `
       id
       name
       username
+    }
+  }
+`
+
+const libraryCreateRepositoryMutation = `
+  mutation LibraryClientCreateRepository($input: CreateRepoInput!) {
+    createRepo(input: $input) {
+      id
+      name
+      username
+      description
+      orgUsername
+      isPublic
     }
   }
 `
@@ -1236,6 +1271,26 @@ export async function createLibraryOrganization(
     }
   )
   return payload.createOrganization
+}
+
+export async function createLibraryRepository(
+  input: CreateLibraryRepositoryInput
+): Promise<CreatedLibraryRepository> {
+  const payload = await requestLibraryGraphQL<LibraryCreateRepositoryResponse>(
+    libraryCreateRepositoryMutation,
+    {
+      input: {
+        orgUsername: input.orgUsername.trim(),
+        repoName: input.name.trim(),
+        repoUsername: input.username.trim(),
+        userId: configuredLibraryActor(),
+        isPublic: input.isPublic,
+        description: input.description?.trim() || null,
+      },
+    },
+    { operatorId: input.operatorId },
+  )
+  return payload.createRepo
 }
 
 async function fetchTachyonOperator(tenantId: string): Promise<TachyonOperatorResponse | null> {
