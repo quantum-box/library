@@ -26,6 +26,20 @@ As a result, authenticated users could load the application but received
   same tenant used by `library-client`'s `VITE_LIBRARY_PLATFORM_ID`.
 - Keep the production configuration documentation aligned with the manifest.
 
+## New organization policy correction
+
+After organization creation, the creator's `LibraryUserPolicy` attachment used
+an empty multi-tenancy context and silently ignored attachment failures. The
+organization could therefore be returned successfully while the immediately
+following `library:CreateRepo` policy check failed.
+
+- Attach `LibraryUserPolicy` and `LibraryRepoOwnerPolicy` to the creator before
+  returning the new organization.
+- Use the configured Library tenant as platform and the new organization tenant
+  as operator for both attachments.
+- Propagate attachment failures instead of returning a partially provisioned
+  Library organization as successful.
+
 ## Verify
 
 ```bash
@@ -34,6 +48,7 @@ cd apps/client && mise run type-check
 cd apps/client && mise run test
 cd apps/client && mise run build
 cargo +nightly-2026-06-04 test -p library-api usecase::sign_in::tests --no-default-features
+cargo +nightly-2026-06-04 test -p library-api usecase::create_organization::tests --no-default-features
 ```
 
 Expected: health, version, GraphQL introspection pass against `https://library-api.txcloud.app`; the `library-client` Cloud App build and browser smoke test pass.
@@ -43,8 +58,17 @@ Expected: health, version, GraphQL introspection pass against `https://library-a
 - `cargo +nightly-2026-06-04 fmt --all -- --check`: passed
 - `cargo +nightly-2026-06-04 clippy -p library-api --no-default-features --all-targets -- -D warnings`: passed
 - `cargo +nightly-2026-06-04 test -p library-api usecase::sign_in::tests --no-default-features`: passed
+- `cargo +nightly-2026-06-04 test -p library-api usecase::create_organization::tests --no-default-features`: passed (2 tests)
+- `cargo +nightly-2026-06-04 test -p library-api --lib --no-default-features`: passed (101 passed, 3 ignored)
+- `cargo +nightly-2026-06-04 build -p library-api --no-default-features`: passed
 - `mise run type-check`: passed
 - `mise run test`: passed (40 files, 241 tests)
 - `npm run build:cloud`: passed
 - Manifest check: `LIBRARY_TENANT_ID` equals `VITE_LIBRARY_PLATFORM_ID`
 - Production create-organization retest: pending deployment of this change
+
+TDD evidence for the new-organization regression:
+
+- Red: the focused test failed because `attach_creator_policies` did not exist.
+- Green: both correct-scope/two-policy attachment and failure propagation tests
+  pass.
