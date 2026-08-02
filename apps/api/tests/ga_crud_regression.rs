@@ -618,8 +618,8 @@ async fn create_repo_forwards_general_users_caller_token_and_operator(
     let (server_url, shutdown_tx, auth_state) = setup_test_server().await?;
     let client = create_test_client();
     let suffix = unique_suffix();
-    let org = format!("caller-auth-org-{suffix}");
-    let repo = format!("caller-auth-repo-{suffix}");
+    let org = format!("ca-org-{suffix}");
+    let repo = format!("ca-repo-{suffix}");
 
     let created_org = graphql(
         &client,
