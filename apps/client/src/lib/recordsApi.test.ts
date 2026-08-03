@@ -10,6 +10,7 @@ import { appKitConfig } from '../app/kitConfig'
 import { clearAuthTokens } from './auth'
 import {
   createLibraryOrganization,
+  createLibraryRepository,
   createServerRecord,
   fetchLibraryOrganizations,
   fetchLibraryRecords,
@@ -549,6 +550,60 @@ describe('recordsApi', () => {
       expect.objectContaining({
         body: expect.stringContaining('"username":"acme-research"'),
       })
+    )
+  })
+
+  it('creates a Library repository with the selected organization context', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      data: {
+        createRepo: {
+          id: 'repo-2',
+          name: 'Research Library',
+          username: 'research-library',
+          description: 'Research notes',
+          orgUsername: 'quantum-box',
+          isPublic: false,
+        },
+      },
+    })))
+
+    await expect(createLibraryRepository({
+      orgUsername: ' quantum-box ',
+      operatorId: 'org-1',
+      name: ' Research Library ',
+      username: ' research-library ',
+      description: ' Research notes ',
+      isPublic: false,
+    })).resolves.toMatchObject({
+      id: 'repo-2',
+      username: 'research-library',
+      orgUsername: 'quantum-box',
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://library.example.test/v1/graphql',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token',
+          'x-operator-id': 'org-1',
+        }),
+        body: expect.stringContaining('LibraryClientCreateRepository'),
+      }),
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"userId":"user-1"'),
+      }),
     )
   })
 

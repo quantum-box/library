@@ -210,7 +210,7 @@ export function RepositoryOverview({
         <Badge variant="outline" className="hidden sm:inline-flex">Repository</Badge>
         <Button className="ml-auto" variant="ghost" size="sm" asChild>
           <Link
-            to="/repositories/$organization/$repository/settings"
+            to="/$organization/$repository/settings"
             params={{ organization, repository }}
           >
             <Settings aria-hidden="true" />
@@ -268,7 +268,7 @@ export function RepositoryOverview({
           Activity
         </a>
         <Link
-          to="/repositories/$organization/$repository/settings"
+          to="/$organization/$repository/settings"
           params={{ organization, repository }}
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >

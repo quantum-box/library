@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::{
-    LibraryExecutor, LibraryExecutorKind,
+    CallerAuthApp, LibraryExecutor, LibraryExecutorKind,
 };
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::markdown_composer::compose_markdown;
@@ -772,11 +772,22 @@ async fn create_repo(
     auth: McpAuthContext,
     args: CreateRepoArgs,
 ) -> Result<Value, Value> {
+    let caller_auth = auth
+        .caller_auth
+        .as_ref()
+        .ok_or_else(|| {
+            json_rpc_error(
+                -32001,
+                "Authentication required for create_repo",
+            )
+        })?
+        .auth_app();
     let executor = require_executor(auth, "create_repo")?;
     let library_org = authenticated_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let input = CreateRepoInputData {
+        auth: caller_auth,
         executor: &executor,
         multi_tenancy: &library_org,
         org_username: args.org,
@@ -1640,6 +1651,7 @@ fn anonymous_executor() -> LibraryExecutor {
 #[derive(Debug, Clone)]
 struct McpAuthContext {
     executor: Option<LibraryExecutor>,
+    caller_auth: Option<CallerAuthApp>,
     accepted_credentials: bool,
     write_tools_available: bool,
 }
@@ -1648,14 +1660,19 @@ impl McpAuthContext {
     fn anonymous() -> Self {
         Self {
             executor: None,
+            caller_auth: None,
             accepted_credentials: false,
             write_tools_available: false,
         }
     }
 
-    fn authenticated(executor: LibraryExecutor) -> Self {
+    fn authenticated(
+        executor: LibraryExecutor,
+        caller_auth: CallerAuthApp,
+    ) -> Self {
         Self {
             executor: Some(executor),
+            caller_auth: Some(caller_auth),
             accepted_credentials: true,
             write_tools_available: true,
         }
@@ -1664,6 +1681,7 @@ impl McpAuthContext {
     fn accepted_without_executor(write_tools_available: bool) -> Self {
         Self {
             executor: None,
+            caller_auth: None,
             accepted_credentials: true,
             write_tools_available,
         }
@@ -1715,13 +1733,18 @@ async fn resolve_auth_context(
                 if let Ok(service_account) =
                     sdk.verify_api_key(org.organization.id(), &token).await
                 {
+                    let executor = LibraryExecutor {
+                        inner: LibraryExecutorKind::ServiceAccount(
+                            Box::new(service_account),
+                        ),
+                        original_token: Some(token),
+                    };
+                    let caller_auth = executor
+                        .caller_auth_app(&sdk)
+                        .expect("authenticated MCP executor has a token");
                     return McpAuthContext::authenticated(
-                        LibraryExecutor {
-                            inner: LibraryExecutorKind::ServiceAccount(
-                                Box::new(service_account),
-                            ),
-                            original_token: Some(token),
-                        },
+                        executor,
+                        caller_auth,
                     );
                 }
             }
@@ -1730,10 +1753,16 @@ async fn resolve_auth_context(
     }
 
     match sdk.verify_token(&token).await {
-        Ok(user) => McpAuthContext::authenticated(LibraryExecutor {
-            inner: LibraryExecutorKind::User(Box::new(user)),
-            original_token: Some(token),
-        }),
+        Ok(user) => {
+            let executor = LibraryExecutor {
+                inner: LibraryExecutorKind::User(Box::new(user)),
+                original_token: Some(token),
+            };
+            let caller_auth = executor
+                .caller_auth_app(&sdk)
+                .expect("authenticated MCP executor has a token");
+            McpAuthContext::authenticated(executor, caller_auth)
+        }
         Err(error) => {
             tracing::warn!("MCP bearer token verification failed: {error}");
             McpAuthContext::anonymous()

@@ -351,7 +351,7 @@ export function DataEditorPage({
           </Link>
           <span className="text-subtle-foreground">/</span>
           <Link
-            to="/repositories/$organization/$repository"
+            to="/$organization/$repository"
             params={{ organization: org, repository: repo }}
             className="max-w-36 truncate text-muted-foreground no-underline hover:text-foreground"
           >

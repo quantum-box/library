@@ -9,7 +9,7 @@ use axum_extra::{
     TypedHeader,
 };
 use inbound_sync::sdk::SystemExecutor;
-use tachyon_sdk::auth::{ExecutorAction, ServiceAccount, User};
+use tachyon_sdk::auth::{AuthApp, ExecutorAction, ServiceAccount, User};
 use value_object::TenantId;
 
 use crate::sdk_auth::SdkAuthApp;
@@ -105,6 +105,42 @@ pub struct LibraryExecutor {
     /// Used by graphql_handler to create a request-scoped
     /// SdkAuthApp that forwards the user's JWT.
     pub original_token: Option<String>,
+}
+
+/// Auth client that is guaranteed to carry the current request's caller
+/// credential rather than the process-level fallback credential.
+#[derive(Clone)]
+pub struct CallerAuthApp(Arc<SdkAuthApp>);
+
+impl std::fmt::Debug for CallerAuthApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CallerAuthApp").finish_non_exhaustive()
+    }
+}
+
+impl CallerAuthApp {
+    pub fn auth_app(&self) -> Arc<dyn AuthApp> {
+        self.0.clone()
+    }
+
+    pub fn sdk_app(&self) -> Arc<SdkAuthApp> {
+        self.0.clone()
+    }
+}
+
+impl LibraryExecutor {
+    /// Build an Auth client from the credential verified for this request.
+    pub fn caller_auth_app(
+        &self,
+        base_sdk: &SdkAuthApp,
+    ) -> errors::Result<CallerAuthApp> {
+        let token = self.original_token.as_deref().ok_or_else(|| {
+            errors::Error::unauthorized(
+                "Caller credential is required for this operation",
+            )
+        })?;
+        Ok(CallerAuthApp(Arc::new(base_sdk.with_caller_token(token))))
+    }
 }
 
 #[derive(Debug, Clone)]

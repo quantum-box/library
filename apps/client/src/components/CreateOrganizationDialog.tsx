@@ -25,6 +25,18 @@ function normalizeUsername(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
+const reservedOrganizationUsernames = new Set([
+  'chat',
+  'databases',
+  'docs',
+  'documents',
+  'home',
+  'kanban',
+  'organizations',
+  'repositories',
+  'sync',
+])
+
 export function CreateOrganizationDialog({
   open,
   onClose,
@@ -48,6 +60,7 @@ export function CreateOrganizationDialog({
   const trimmedName = name.trim()
   const trimmedUsername = username.trim()
   const usernameValid = /^[a-zA-Z0-9_-]{3,40}$/.test(trimmedUsername)
+  const usernameReserved = reservedOrganizationUsernames.has(trimmedUsername.toLowerCase())
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -58,6 +71,10 @@ export function CreateOrganizationDialog({
     }
     if (!usernameValid) {
       setError('Username must be 3–40 characters using letters, numbers, hyphens, or underscores.')
+      return
+    }
+    if (usernameReserved) {
+      setError('This username is reserved for a Library page.')
       return
     }
 
@@ -118,8 +135,13 @@ export function CreateOrganizationDialog({
             <p id="organization-username-help" className="text-2xs text-muted-foreground">
               3–40 characters. Letters, numbers, hyphens, and underscores only.
             </p>
+            {usernameReserved && (
+              <p role="alert" className="text-xs text-destructive">
+                This username is reserved for a Library page.
+              </p>
+            )}
           </div>
-          {error && (
+          {error && !usernameReserved && (
             <p role="alert" className="text-xs text-destructive">{error}</p>
           )}
           <DialogFooter>
@@ -129,7 +151,7 @@ export function CreateOrganizationDialog({
             <Button
               type="submit"
               variant="primary"
-              disabled={busy || !trimmedName || !usernameValid}
+              disabled={busy || !trimmedName || !usernameValid || usernameReserved}
             >
               {busy ? 'Creating…' : 'Create organization'}
             </Button>

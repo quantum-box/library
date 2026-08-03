@@ -147,7 +147,6 @@ impl LibraryApp {
             repo_repo.clone(),
             get_organization_by_username.clone(),
             database_app.clone(),
-            auth_app.clone(),
         ));
         let update_repo = usecase::UpdateRepo::new(
             get_organization_by_username.clone(),
@@ -359,7 +358,6 @@ impl LibraryApp {
             usecase::AnalyzeFrontmatter::new(get_markdown_previews.clone());
         let import_markdown_from_github =
             usecase::ImportMarkdownFromGitHub::new(
-                auth_app.clone(),
                 view_org.clone(),
                 create_repo.clone(),
                 get_properties.clone(),

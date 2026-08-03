@@ -8,6 +8,7 @@ use super::model::{
 };
 use crate::app::LibraryApp;
 use crate::domain::{library_repo_owner_policy_id, library_user_policy_id};
+use crate::handler::library_executor_extractor::CallerAuthApp;
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{self};
 use async_graphql::{
@@ -447,11 +448,13 @@ impl LibraryMutation {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let caller_auth = ctx.data::<CallerAuthApp>()?.auth_app();
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
             .create_repo
             .execute(usecase::CreateRepoInputData {
+                auth: caller_auth,
                 executor,
                 multi_tenancy,
                 org_username: input.org_username.clone(),
@@ -1529,6 +1532,7 @@ impl LibraryMutation {
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
+        let caller_auth = ctx.data::<CallerAuthApp>()?.auth_app();
 
         require_one_shot_github_markdown_import(input.enable_github_sync)
             .map_err(|e| e.extend())?;
@@ -1556,6 +1560,7 @@ impl LibraryMutation {
         let result = app
             .import_markdown_from_github
             .execute(usecase::ImportMarkdownFromGitHubInputData {
+                auth: caller_auth,
                 executor,
                 multi_tenancy,
                 org_username: input.org_username,

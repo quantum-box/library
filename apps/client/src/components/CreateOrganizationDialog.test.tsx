@@ -51,4 +51,19 @@ describe('CreateOrganizationDialog', () => {
     })
     expect(screen.getByRole('button', { name: 'Create organization' })).toBeDisabled()
   })
+
+  it('reserves top-level Library routes from organization usernames', () => {
+    render(
+      <CreateOrganizationDialog open onClose={vi.fn()} onCreate={vi.fn()} />
+    )
+
+    fireEvent.change(screen.getByLabelText('Organization name'), {
+      target: { value: 'Databases' },
+    })
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This username is reserved for a Library page.',
+    )
+    expect(screen.getByRole('button', { name: 'Create organization' })).toBeDisabled()
+  })
 })

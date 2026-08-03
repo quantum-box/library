@@ -387,6 +387,25 @@ function graphqlResponse(query, variables) {
     }
   }
 
+  if (query.includes('LibraryClientCreateRepository')) {
+    const input = variables.input ?? {}
+    state.repository = {
+      id: `repo-${Date.now()}`,
+      username: input.repoUsername,
+      name: input.repoName,
+      description: input.description ?? null,
+      isPublic: input.isPublic ?? false,
+      policies: [{ userId: input.userId, role: 'owner' }],
+    }
+    return {
+      createRepo: {
+        ...publicRepository(),
+        orgUsername: input.orgUsername,
+        isPublic: state.repository.isPublic,
+      },
+    }
+  }
+
   if (query.includes('LibraryClientOrganizationRepos')) {
     return {
       organization: variables.org === 'quantum-box'

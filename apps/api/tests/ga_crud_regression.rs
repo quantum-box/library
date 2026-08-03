@@ -17,13 +17,14 @@ use serde_json::{json, Value};
 use tokio::{net::TcpListener, sync::oneshot};
 use value_object::{DatabaseUrl, TenantId};
 
-const TOKEN: &str = "test-token";
+const TOKEN: &str = "caller-user-token";
+const BASE_AUTH_TOKEN: &str = "base-service-token";
 const USER_ID: &str = "us_01hs2yepy5hw4rz8pdq2wywnwt";
 const LIBRARY_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
 
 #[tokio::test]
 async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
-    let (server_url, shutdown_tx) = setup_test_server().await?;
+    let (server_url, shutdown_tx, _) = setup_test_server().await?;
     let client = create_test_client();
     let suffix = unique_suffix();
 
@@ -280,7 +281,7 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
-    let (server_url, shutdown_tx) = setup_test_server().await?;
+    let (server_url, shutdown_tx, _) = setup_test_server().await?;
     let client = create_test_client();
     let suffix = unique_suffix();
 
@@ -611,14 +612,97 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn create_repo_forwards_general_users_caller_token_and_operator(
+) -> anyhow::Result<()> {
+    let (server_url, shutdown_tx, auth_state) = setup_test_server().await?;
+    let client = create_test_client();
+    let suffix = unique_suffix();
+    let org = format!("ca-org-{suffix}");
+    let repo = format!("ca-repo-{suffix}");
+
+    let created_org = graphql(
+        &client,
+        &server_url,
+        "mutation CreateOrg($input: CreateOrganizationInput!) {
+            createOrganization(input: $input) { id username }
+        }",
+        json!({
+            "input": {
+                "name": format!("Caller Auth Org {suffix}"),
+                "username": org,
+                "description": "caller auth regression",
+                "website": null
+            }
+        }),
+    )
+    .await?;
+    let operator_id =
+        string_at(&created_org, &["createOrganization", "id"])?;
+    assert_ne!(operator_id, LIBRARY_TENANT_ID);
+
+    let created_repo = graphql_for_operator(
+        &client,
+        &server_url,
+        &operator_id,
+        "mutation CreateRepo($input: CreateRepoInput!) {
+            createRepo(input: $input) { id username }
+        }",
+        json!({
+            "input": {
+                "orgUsername": org,
+                "repoName": format!("Caller Auth Repo {suffix}"),
+                "repoUsername": repo,
+                "userId": USER_ID,
+                "isPublic": false,
+                "description": "caller auth regression"
+            }
+        }),
+    )
+    .await?;
+    assert_eq!(created_repo["createRepo"]["username"], repo);
+
+    let checks = auth_state.policy_checks.lock().unwrap();
+    let create_repo_check = checks
+        .iter()
+        .find(|check| check.actions == ["library:CreateRepo"])
+        .ok_or_else(|| {
+            anyhow::anyhow!("CreateRepo policy check missing")
+        })?;
+    assert_eq!(
+        create_repo_check.authorization.as_deref(),
+        Some("Bearer caller-user-token")
+    );
+    assert_ne!(
+        create_repo_check.authorization.as_deref(),
+        Some("Bearer base-service-token")
+    );
+    assert_eq!(
+        create_repo_check.operator_id.as_deref(),
+        Some(operator_id.as_str())
+    );
+    drop(checks);
+
+    shutdown_tx.send(()).ok();
+    Ok(())
+}
+
 #[derive(Clone)]
 struct FakeAuthState {
     library_tenant: String,
     operators: Arc<Mutex<HashMap<String, String>>>,
+    policy_checks: Arc<Mutex<Vec<PolicyCheck>>>,
 }
 
-async fn setup_test_server() -> anyhow::Result<(String, oneshot::Sender<()>)>
-{
+#[derive(Debug, Clone)]
+struct PolicyCheck {
+    authorization: Option<String>,
+    operator_id: Option<String>,
+    actions: Vec<String>,
+}
+
+async fn setup_test_server(
+) -> anyhow::Result<(String, oneshot::Sender<()>, FakeAuthState)> {
     std::env::set_var("ENVIRONMENT", "test");
     std::env::set_var("SKIP_MINIO_SETUP", "1");
     std::env::set_var("AWS_EC2_METADATA_DISABLED", "true");
@@ -636,12 +720,12 @@ async fn setup_test_server() -> anyhow::Result<(String, oneshot::Sender<()>)>
         })
         .parse::<DatabaseUrl>()?;
 
-    let fake_auth_url = spawn_fake_auth_server().await?;
+    let (fake_auth_url, fake_auth_state) = spawn_fake_auth_server().await?;
     let library_tenant = LIBRARY_TENANT_ID.parse::<TenantId>()?;
     let sdk = Arc::new(library_api::sdk_auth::SdkAuthApp::new(
         fake_auth_url,
         &library_tenant,
-        TOKEN,
+        BASE_AUTH_TOKEN,
     ));
     let database_app = Arc::new(
         database_manager::factory_client(
@@ -684,13 +768,15 @@ async fn setup_test_server() -> anyhow::Result<(String, oneshot::Sender<()>)>
             .unwrap();
     });
 
-    Ok((server_url, shutdown_tx))
+    Ok((server_url, shutdown_tx, fake_auth_state))
 }
 
-async fn spawn_fake_auth_server() -> anyhow::Result<String> {
+async fn spawn_fake_auth_server() -> anyhow::Result<(String, FakeAuthState)>
+{
     let state = FakeAuthState {
         library_tenant: LIBRARY_TENANT_ID.to_string(),
         operators: Arc::new(Mutex::new(HashMap::new())),
+        policy_checks: Arc::new(Mutex::new(Vec::new())),
     };
     let app = Router::new()
         .route("/auth/v1beta/verify", post(fake_verify))
@@ -708,17 +794,39 @@ async fn spawn_fake_auth_server() -> anyhow::Result<String> {
         .route("/v1/auth/users/{id}", get(fake_get_user))
         .route("/v1/auth/user-policies/attach", post(fake_ok))
         .route("/v1/auth/user-policies/attach-with-scope", post(fake_ok))
-        .with_state(state);
+        .with_state(state.clone());
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    Ok(format!("http://{addr}"))
+    Ok((format!("http://{addr}"), state))
 }
 
-async fn fake_check_policy(Json(body): Json<Value>) -> Json<Value> {
+async fn fake_check_policy(
+    State(state): State<FakeAuthState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let actions = body["actions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|action| action.as_str().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+    state.policy_checks.lock().unwrap().push(PolicyCheck {
+        authorization: headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned),
+        operator_id: headers
+            .get("x-operator-id")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned),
+        actions: actions.clone(),
+    });
     let results = body["actions"]
         .as_array()
         .cloned()
@@ -744,7 +852,7 @@ async fn fake_verify() -> Json<Value> {
             "id": USER_ID,
             "email": "ga-crud@example.com",
             "name": "GA CRUD Test User",
-            "role": "Owner",
+            "role": "General",
             "tenants": [LIBRARY_TENANT_ID]
         }
     }))
@@ -961,13 +1069,53 @@ async fn graphql(
     query: &str,
     variables: Value,
 ) -> anyhow::Result<Value> {
-    let response = post_json(
-        client,
-        &format!("{server_url}/v1/graphql"),
-        json!({"query": query, "variables": variables}),
-        StatusCode::OK,
+    graphql_with_optional_operator(
+        client, server_url, None, query, variables,
     )
-    .await?;
+    .await
+}
+
+async fn graphql_for_operator(
+    client: &Client,
+    server_url: &str,
+    operator_id: &str,
+    query: &str,
+    variables: Value,
+) -> anyhow::Result<Value> {
+    graphql_with_optional_operator(
+        client,
+        server_url,
+        Some(operator_id),
+        query,
+        variables,
+    )
+    .await
+}
+
+async fn graphql_with_optional_operator(
+    client: &Client,
+    server_url: &str,
+    operator_id: Option<&str>,
+    query: &str,
+    variables: Value,
+) -> anyhow::Result<Value> {
+    let mut request = client
+        .post(format!("{server_url}/v1/graphql"))
+        .header("Authorization", format!("Bearer {TOKEN}"))
+        .header("Content-Type", "application/json")
+        .header("x-platform-id", LIBRARY_TENANT_ID)
+        .header("x-user-id", USER_ID)
+        .json(&json!({"query": query, "variables": variables}));
+    if let Some(operator_id) = operator_id {
+        request = request.header("x-operator-id", operator_id);
+    }
+    let response = request.send().await?;
+    let status = response.status();
+    let text = response.text().await?;
+    if status != StatusCode::OK {
+        anyhow::bail!("expected 200 OK, got {status}; response: {text}");
+    }
+    let response: Value = serde_json::from_str(&text)?;
 
     if let Some(errors) = response.get("errors") {
         anyhow::bail!("GraphQL errors: {errors}");

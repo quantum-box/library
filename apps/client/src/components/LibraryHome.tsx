@@ -372,7 +372,7 @@ export function LibraryHome() {
                     return database.orgUsername && database.repoUsername ? (
                       <Link
                         key={database.id}
-                        to="/repositories/$organization/$repository"
+                        to="/$organization/$repository"
                         params={{
                           organization: database.orgUsername,
                           repository: database.repoUsername,
