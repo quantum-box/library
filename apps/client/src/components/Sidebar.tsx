@@ -77,6 +77,8 @@ import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
+import { CreateRepositoryDialog } from './CreateRepositoryDialog'
+import { OPEN_CREATE_REPOSITORY_EVENT } from '../lib/ui/workspaceEvents'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
@@ -236,6 +238,7 @@ export function Sidebar() {
     repositoriesError,
     refreshRepositories,
     createOrganization,
+    createRepository,
   } = useWorkspaceDatabases()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
@@ -248,13 +251,18 @@ export function Sidebar() {
   const { onlineCount } = useSyncPresence()
   const [expanded, setExpanded] = useState(true)
   const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
+  const [createRepositoryOpen, setCreateRepositoryOpen] = useState(false)
+  const [createRepositoryOrganizationId, setCreateRepositoryOrganizationId] = useState<string | null>(null)
 
-  const repositoryPathMatch = pathname.match(/^\/repositories\/([^/]+)\/([^/]+)\/?$/)
-  const pathDatabase = repositoryPathMatch
+  const pathSegments = pathname.split('/').filter(Boolean).map(decodePathSegment)
+  const repositoryPathSegments = pathSegments[0] === 'repositories'
+    ? pathSegments.slice(1)
+    : pathSegments
+  const pathDatabase = repositoryPathSegments.length >= 2
     ? databases.find(
         (database) =>
-          database.orgUsername === decodePathSegment(repositoryPathMatch[1]) &&
-          database.repoUsername === decodePathSegment(repositoryPathMatch[2]),
+          database.orgUsername === repositoryPathSegments[0] &&
+          database.repoUsername === repositoryPathSegments[1],
       )
     : undefined
   const selectedDatabaseId = search.database ?? pathDatabase?.id
@@ -267,7 +275,7 @@ export function Sidebar() {
     ? 'home'
     : pathname.startsWith('/organizations')
       ? 'organization'
-      : pathname.startsWith('/repositories')
+      : pathDatabase || pathname.startsWith('/repositories')
         ? 'repository'
         : pathname.startsWith('/databases')
           ? 'data'
@@ -303,6 +311,16 @@ export function Sidebar() {
     [organizations],
   )
 
+  useEffect(() => {
+    const openCreateRepository = (event: Event) => {
+      const organizationId = (event as CustomEvent<{ organizationId?: string }>).detail?.organizationId
+      setCreateRepositoryOrganizationId(organizationId ?? selectedOrganizationId)
+      setCreateRepositoryOpen(true)
+    }
+    window.addEventListener(OPEN_CREATE_REPOSITORY_EVENT, openCreateRepository)
+    return () => window.removeEventListener(OPEN_CREATE_REPOSITORY_EVENT, openCreateRepository)
+  }, [selectedOrganizationId])
+
   const handleDatabaseSelect = (databaseId: string | null) => {
     const nextDatabaseId = databaseId ?? undefined
     void navigate({
@@ -320,7 +338,7 @@ export function Sidebar() {
   const handleRepositorySelect = (database: WorkspaceDatabase) => {
     if (database.orgUsername && database.repoUsername) {
       void navigate({
-        to: '/repositories/$organization/$repository',
+        to: '/$organization/$repository',
         params: {
           organization: database.orgUsername,
           repository: database.repoUsername,
@@ -369,6 +387,30 @@ export function Sidebar() {
     })
   }
 
+  const handleCreateRepository = async (
+    organizationId: string,
+    name: string,
+    username: string,
+    description: string,
+    isPublic: boolean,
+  ) => {
+    const database = await createRepository(
+      organizationId,
+      name,
+      username,
+      description,
+      isPublic,
+    )
+    await navigate({
+      to: '/$organization/$repository',
+      params: {
+        organization: database.orgUsername!,
+        repository: database.repoUsername!,
+      },
+    })
+    return database
+  }
+
   const copyDatabaseLink = async (databaseId: string | null) => {
     const database = databaseId
       ? databases.find((candidate) => candidate.id === databaseId)
@@ -377,7 +419,7 @@ export function Sidebar() {
       const organization = encodeURIComponent(database.orgUsername)
       const repository = encodeURIComponent(database.repoUsername)
       await navigator.clipboard.writeText(
-        new URL(`/repositories/${organization}/${repository}`, window.location.origin).toString(),
+        new URL(`/${organization}/${repository}`, window.location.origin).toString(),
       )
       return
     }
@@ -519,6 +561,17 @@ export function Sidebar() {
         </div>
 
         <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setCreateRepositoryOrganizationId(selectedOrganizationId)
+              setCreateRepositoryOpen(true)
+            }}
+          >
+            <Plus aria-hidden="true" />
+            New repository
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -669,6 +722,17 @@ export function Sidebar() {
           <SidebarSectionLabel className="h-5 px-1.5 text-2xs">
             Repositories
             <span className="ml-auto">{visibleDatabases.length}</span>
+            <button
+              type="button"
+              className="ml-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label="Create repository"
+              onClick={() => {
+                setCreateRepositoryOrganizationId(selectedOrganizationId)
+                setCreateRepositoryOpen(true)
+              }}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+            </button>
           </SidebarSectionLabel>
 
           <Tooltip>
@@ -781,6 +845,13 @@ export function Sidebar() {
         open={createOrganizationOpen}
         onClose={() => setCreateOrganizationOpen(false)}
         onCreate={handleCreateOrganization}
+      />
+      <CreateRepositoryDialog
+        open={createRepositoryOpen}
+        organizations={organizations}
+        defaultOrganizationId={createRepositoryOrganizationId ?? selectedOrganizationId}
+        onClose={() => setCreateRepositoryOpen(false)}
+        onCreate={handleCreateRepository}
       />
     </>
   )

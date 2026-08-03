@@ -139,7 +139,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       run: () => {
         if (database.orgUsername && database.repoUsername) {
           void navigate({
-            to: '/repositories/$organization/$repository',
+            to: '/$organization/$repository',
             params: {
               organization: database.orgUsername,
               repository: database.repoUsername,

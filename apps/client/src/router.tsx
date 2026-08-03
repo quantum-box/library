@@ -67,6 +67,7 @@ import type { DatabaseViewDefinition, DatabaseViewType } from './lib/databaseVie
 import {
   OPEN_COMMAND_PALETTE_EVENT,
   OPEN_CREATE_DATA_EVENT,
+  openCreateRepository,
 } from './lib/ui/workspaceEvents'
 import {
   focusRecordSearchInput,
@@ -259,7 +260,7 @@ function DatabaseHeader({
               </Link>
               <ChevronRight className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
               <Link
-                to="/repositories/$organization/$repository"
+                to="/$organization/$repository"
                 params={{ organization, repository }}
                 className="max-w-36 truncate text-muted-foreground no-underline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
@@ -349,8 +350,12 @@ function SignedInLibraryDashboard({
         <Badge variant="success" className="mt-5">Authenticated</Badge>
         <h2 className="mt-3 text-xl font-semibold tracking-tight">No repository data yet</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          Library organizes pages beneath GitHub-style repository paths. Repositories available to this account will appear here as soon as they are connected.
+          Library organizes pages beneath GitHub-style repository paths. Create a repository to start adding data, documents, and workflows.
         </p>
+        <Button className="mt-5" variant="primary" onClick={() => openCreateRepository()}>
+          <Plus aria-hidden="true" />
+          Create repository
+        </Button>
         <div className="mt-5 flex items-center justify-center gap-3 font-mono text-2xs text-subtle-foreground">
           <span>{organizationCount} organizations</span>
           <span aria-hidden="true">·</span>
@@ -792,7 +797,7 @@ function OrganizationPage() {
 
 const repositoryRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: 'repositories/$organization/$repository',
+  path: '$organization/$repository',
   component: RepositoryPage,
 })
 
@@ -803,7 +808,7 @@ function RepositoryPage() {
 
 const repositorySettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: 'repositories/$organization/$repository/settings',
+  path: '$organization/$repository/settings',
   component: RepositorySettingsPage,
 })
 
@@ -823,6 +828,28 @@ function RepositorySettingsPage() {
     />
   )
 }
+
+const legacyRepositoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'repositories/$organization/$repository',
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/$organization/$repository',
+      params,
+    })
+  },
+})
+
+const legacyRepositorySettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'repositories/$organization/$repository/settings',
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/$organization/$repository/settings',
+      params,
+    })
+  },
+})
 
 // ── Databases Layout Route (/databases) ───────────────────────
 
@@ -1622,6 +1649,8 @@ const routeTree = rootRoute.addChildren([
   organizationRoute,
   repositoryRoute,
   repositorySettingsRoute,
+  legacyRepositoryRoute,
+  legacyRepositorySettingsRoute,
   databasesRoute.addChildren([recordsIndexRoute, recordDetailRoute]),
   kanbanRoute,
   workflowRoute,

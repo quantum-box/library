@@ -8,6 +8,7 @@ import {
   Database,
   FileText,
   FolderGit2,
+  Plus,
   RefreshCw,
   Rows3,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ import {
   getDatabaseViewScopeId,
   getDefaultDatabaseViewId,
 } from '../lib/databaseViews/databaseViews'
+import { openCreateRepository } from '../lib/ui/workspaceEvents'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
@@ -223,7 +225,16 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
         <Building2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
         <span className="truncate text-sm font-semibold">{slug}</span>
         <Badge variant="outline" className="hidden sm:inline-flex">Organization</Badge>
-        <Button className="ml-auto" variant="primary" size="sm" asChild>
+        <Button
+          className="ml-auto"
+          variant="primary"
+          size="sm"
+          onClick={() => openCreateRepository(organization.id)}
+        >
+          <Plus aria-hidden="true" />
+          New repository
+        </Button>
+        <Button variant="ghost" size="sm" asChild>
           <Link to="/databases" search={allDataSearch}>
             <Database aria-hidden="true" />
             Open all data
@@ -310,7 +321,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                   <Link
                     key={repository.id}
                     data-testid={`organization-repository-${repository.id}`}
-                    to="/repositories/$organization/$repository"
+                    to="/$organization/$repository"
                     params={{
                       organization: repository.orgUsername,
                       repository: repository.repoUsername,
@@ -340,7 +351,16 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                 <div className="border-t border-border px-5 py-9 text-center">
                   <FolderGit2 className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
                   <p className="mt-3 text-sm font-medium">No repositories available</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Repositories connected to this organization will appear here.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Create the first repository for this organization.</p>
+                  <Button
+                    className="mt-4"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => openCreateRepository(organization.id)}
+                  >
+                    <Plus aria-hidden="true" />
+                    Create repository
+                  </Button>
                 </div>
               )}
             </section>

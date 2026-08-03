@@ -309,7 +309,7 @@ test.describe('Library shell', () => {
 
     await page.getByTestId('database-quantum-box/photon-core').click()
 
-    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core$/)
     await expect(page.getByTestId('repository-page')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'photon-core', exact: true })).toBeVisible()
     await expect(page.getByText('Library E2E repository')).toBeVisible()
@@ -354,14 +354,29 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('organization-repository-quantum-box/photon-core')).toBeVisible()
 
     await page.getByTestId('organization-repository-quantum-box/photon-core').click()
-    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core$/)
     await expect(page.getByTestId('repository-page')).toBeVisible()
+  })
+
+  test('creates a repository and opens its GitHub-style URL', async ({ page }) => {
+    await page.goto('/organizations/quantum-box')
+    await page.getByRole('button', { name: 'New repository' }).click()
+
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await page.getByLabel('Repository name').fill('Research Library')
+    await expect(page.getByLabel('Repository slug')).toHaveValue('research-library')
+    await page.getByLabel('Description').fill('Research notes and source material')
+    await page.getByRole('button', { name: 'Create repository' }).click()
+
+    await expect(page).toHaveURL(/\/quantum-box\/research-library$/)
+    await expect(page.getByTestId('repository-page')).toBeVisible()
+    await expect(page.getByText('Research notes and source material')).toBeVisible()
   })
 
   test('opens repository settings and saves the repository description', async ({ page }) => {
     const description = `Updated by Library E2E ${Date.now()}`
 
-    await page.goto('/repositories/quantum-box/photon-core/settings')
+    await page.goto('/quantum-box/photon-core/settings')
 
     await expect(page.getByTestId('repository-settings-page')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Repository settings' })).toBeVisible()
@@ -441,7 +456,7 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('database-context-menu').getByText('quantum-box/photon-core')).toBeVisible()
 
     await page.getByTestId('database-context-open').click()
-    await expect(page).toHaveURL(/\/repositories\/quantum-box\/photon-core$/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core$/)
     await expect(page.getByTestId('repository-page')).toBeVisible()
     await expect(page.getByTestId('database-context-menu')).toHaveCount(0)
   })
@@ -449,6 +464,7 @@ test.describe('Library shell', () => {
   test('shows a repository not-found state for an unavailable path', async ({ page }) => {
     await page.goto('/repositories/quantum-box/missing-repository')
 
+    await expect(page).toHaveURL(/\/quantum-box\/missing-repository$/)
     await expect(page.getByRole('heading', { name: 'Repository not found' })).toBeVisible()
     await expect(page.getByText('quantum-box/missing-repository is not available')).toBeVisible()
   })

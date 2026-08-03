@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import {
   createLibraryOrganization,
+  createLibraryRepository,
   fetchLibraryOrganizations,
   fetchLibraryRepositories,
   type LibraryOrganization,
@@ -33,6 +34,13 @@ interface DatabasesContextValue {
   setSelectedOrganizationId: (organizationId: string | null) => void
   refreshRepositories: () => Promise<void>
   createOrganization: (name: string, username: string) => Promise<WorkspaceOrganization>
+  createRepository: (
+    organizationId: string,
+    name: string,
+    username: string,
+    description: string,
+    isPublic: boolean,
+  ) => Promise<WorkspaceDatabase>
   addDatabase: (label: string) => WorkspaceDatabase | null
   removeDatabase: (databaseId: string) => boolean
   canRemoveDatabase: (databaseId: string | null | undefined) => boolean
@@ -131,6 +139,41 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     return organization
   }, [refreshRepositories])
 
+  const createRepository = useCallback(async (
+    organizationId: string,
+    name: string,
+    username: string,
+    description: string,
+    isPublic: boolean,
+  ) => {
+    const organization = organizations.find((candidate) => candidate.id === organizationId)
+    if (!organization) throw new Error('Select an organization for this repository.')
+
+    const orgUsername = databases.find(
+      (database) => database.operatorId === organization.id && database.orgUsername,
+    )?.orgUsername ?? organization.label
+    const created = await createLibraryRepository({
+      orgUsername,
+      operatorId: organization.id,
+      name,
+      username,
+      description,
+      isPublic,
+    })
+    await refreshRepositories()
+    const database = repoToDatabase({
+      ...created,
+      orgUsername: created.orgUsername || orgUsername,
+      operatorId: organization.id,
+      platformTenantId: organization.platformTenantId,
+    })
+    setDatabases((current) => current.some((candidate) => candidate.id === database.id)
+      ? current
+      : [...current, database])
+    setSelectedOrganizationId(organization.id)
+    return database
+  }, [databases, organizations, refreshRepositories])
+
   useEffect(() => {
     void refreshRepositories()
   }, [refreshRepositories])
@@ -163,6 +206,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       setSelectedOrganizationId,
       refreshRepositories,
       createOrganization,
+      createRepository,
       addDatabase,
       removeDatabase,
       canRemoveDatabase,
@@ -173,6 +217,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       canRemoveDatabase,
       databases,
       createOrganization,
+      createRepository,
       getDatabase,
       organizations,
       refreshRepositories,
