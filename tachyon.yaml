@@ -63,6 +63,8 @@ spec:
           value: "https://api.n1.tachy.one"
         - name: LIBRARY_API_BASE_URL
           value: "https://library-api.txcloud.app"
+        - name: LIBRARY_TENANT_ID
+          value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
