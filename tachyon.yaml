@@ -34,10 +34,29 @@ spec:
           if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
+      hooks:
+        preDeploy:
+          - name: plt-2993-deploy-warning
+            command:
+              run: |-
+                printf '%s\n' \
+                  'WARNING [PLT-2993]: library-api deploy currently fails because DB traffic is blocked by a Security Group mismatch.' \
+                  'Tracking: PLT-2993.' \
+                  'Action: DO NOT DEPLOY library-api until the Security Group mismatch is fixed.'
+                exit 0
       environments:
         production:
           hooks:
             preDeploy:
+              # Environment hooks replace base hooks; repeat the warning before migrate.
+              - name: plt-2993-deploy-warning
+                command:
+                  run: |-
+                    printf '%s\n' \
+                      'WARNING [PLT-2993]: library-api deploy currently fails because DB traffic is blocked by a Security Group mismatch.' \
+                      'Tracking: PLT-2993.' \
+                      'Action: DO NOT DEPLOY library-api until the Security Group mismatch is fixed.'
+                    exit 0
               - name: migrate
                 lambdaInvoke:
                   functionName: lambda-library-api-migrate
