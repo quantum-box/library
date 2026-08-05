@@ -37,12 +37,19 @@ spec:
       environments:
         production:
           hooks:
-            preDeploy:
-              - name: migrate
-                lambdaInvoke:
-                  functionName: lambda-library-api-migrate
-                  payload:
-                    task: migrate
+            postDeploy:
+              - name: migrate-candidate-before-promotion
+                command:
+                  run: >-
+                    set -eu;
+                    wget --quiet --output-document=/dev/null
+                    --header="Authorization: Bearer $LIBRARY_DEPLOY_HOOK_TOKEN"
+                    --post-data=''
+                    "${TACHYON_DEPLOYMENT_URL%/}/internal/deploy/migrate"
+                envVars:
+                  - name: LIBRARY_DEPLOY_HOOK_TOKEN
+                    valueFrom:
+                      secret: library-api/LIBRARY_DEPLOY_HOOK_TOKEN
                 timeoutSeconds: 900
       envVars:
         - name: DATABASE_URL
@@ -55,6 +62,10 @@ spec:
           type: credential
           valueFrom:
             secret: library-api/SERVICE_AUTH_TOKEN
+        - name: LIBRARY_DEPLOY_HOOK_TOKEN
+          type: credential
+          valueFrom:
+            secret: library-api/LIBRARY_DEPLOY_HOOK_TOKEN
         - name: COGNITO_JWK_URL
           value: "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_8Ga4bK5M4/.well-known/jwks.json"
         - name: COGNITO_USER_POOL_ID

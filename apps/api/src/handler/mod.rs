@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod data;
+pub mod deploy;
 pub mod docs;
 pub mod global_id_mapping;
 pub mod graphql;

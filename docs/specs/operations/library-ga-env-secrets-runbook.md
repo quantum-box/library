@@ -138,16 +138,18 @@ PLT-1680 では CloudWatch log metric filter / alarm の新規作成はしない
 
 Library repo には `library-api` の deploy / migration CI を置かない。API build / deploy は txcloud Cloud App 側の build / deployment status を正とする。
 
-PLT-1954 が完了するまでは、Library 側に GitHub Actions の migration bridge を追加しない。migration 実行が必要な場合は txcloud / Tachyon 側の運用手順として扱い、Library repo の CI から AWS credential / Lambda invoke を実行しない。
+Migrationはcandidate Library APIの
+`POST /internal/deploy/migrate`から実行する。`tachyon.yaml`のproduction
+`postDeploy.command`はcandidate URLへこのendpointを呼び出し、成功後にだけ
+production Aliasの昇格を許可する。Tachyon上のphase名は`postDeploy`だが、
+production trafficへの昇格前に実行されるrelease gateである。
 
-Tachyon 側に Cloud App migration hook が実装されるまでは、`tachyon.yaml` に hook 設定は追加しない。現時点では hook phase / schema が未確定のため、Library 側は `library-api-migrate` Cloud App の定義だけを保持する。
-
-PLT-1954 完了後の切替手順:
-
-1. Tachyon 側の実装に合わせて、`tachyon.yaml` に migration hook 設定を追加する。
-2. txcloud 側の build / deployment flow で migration hook が `library-api` deploy 前に実行されることを確認する。
-3. Library repo に deploy / migration CI を再追加しない。
-4. txcloud build / deploy 後に `/health`, `/version`, GraphQL introspection, `planet-library` sign-in route を確認する。
+- endpointは専用`LIBRARY_DEPLOY_HOOK_TOKEN`のbearer認証を必須とする。
+- manifestにはsecret referenceだけを置き、値を保存しない。
+- 専用`lambda-library-api-migrate`はdeploy pathで使用しない。
+- Library repoにdeploy / migration GitHub Actionsを追加しない。
+- txcloud deploy後に`/health`、`/version`、GraphQL introspection、
+  authenticated CRUD smokeを確認する。
 
 ## ロールバック
 

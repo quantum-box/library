@@ -1,6 +1,6 @@
 [package]
 name = "library-api"
-version = "1.11.2"
+version = "1.11.3"
 edition = "2021"
 license.workspace = true
 
@@ -118,10 +118,6 @@ path = "./bin/lambda.rs"
 
 [[bin]]
 name = "library_api_migrate"
-path = "./bin/migrate.rs"
-
-[[bin]]
-name = "lambda-library-api-migrate"
 path = "./bin/migrate.rs"
 
 [dev-dependencies]

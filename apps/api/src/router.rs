@@ -542,6 +542,10 @@ pub async fn router(
         .route("/", axum::routing::get(health_check))
         .route("/version", get(version))
         .route(
+            "/internal/deploy/migrate",
+            post(handler::deploy::run_migrations),
+        )
+        .route(
             "/.well-known/oauth-protected-resource",
             get(handler::mcp::protected_resource_metadata),
         )

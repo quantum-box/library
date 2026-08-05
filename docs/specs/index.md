@@ -37,6 +37,7 @@
 - [利用ガイド（開発者向け / エンドユーザー向け）](guides/usage-guide.md)
 - [ADR-0004: Library/bakuure stub の責務境界](decisions/ADR-0004-library-bakuure-stub-boundary.md)
 - [ADR-0005: Shared Kernel を最小型セットに制限する](decisions/ADR-0005-shared-kernel-slim.md)
+- [ADR-0007: Library migrationはcandidate APIをproduction昇格前に実行する](decisions/ADR-0007-library-candidate-migration-gate.md)
 - [テスト戦略](testing/test-strategy.md)
 - [新規登録 / 認証フローのテストカバレッジ](testing/auth-registration-tests.md)
 
