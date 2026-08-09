@@ -41,7 +41,7 @@ impl AllRepoQueryServiceImpl {
 
         for repo_id in repo_rows.iter().map(|r| r.id.as_str()) {
             let mut rows = sqlx::query_as::<_, DatabaseRow>(
-                "SELECT database_id, repo_id FROM databases
+                "SELECT database_id, repo_id FROM `databases`
                 WHERE platform_id = ? AND repo_id = ?",
             )
             .bind(crate::domain::LIBRARY_TENANT.to_string())

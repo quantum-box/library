@@ -17,6 +17,11 @@ const MIGRATION_SOURCES: &[&str] =
     &[DATABASE_MANAGER_SOURCE, LIBRARY_SOURCE];
 const LOGICAL_DATABASE_QUALIFIERS: &[&str] =
     &["library", "tachyon_apps_database_manager"];
+// These identifiers are quoted only when removing a logical database
+// qualifier would otherwise turn valid qualified SQL into invalid MySQL.
+// Keep this list restricted to MySQL reserved words actually present in the
+// immutable migration sources.
+const RESERVED_IDENTIFIERS_AFTER_DEQUALIFICATION: &[&str] = &["databases"];
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -196,15 +201,36 @@ fn migration_source_namespace(source: &str) -> Result<i64, String> {
 }
 
 // PLT-3328 intentionally limits preview/production SQL divergence to removal
-// of the two logical database qualifiers. No other SQL rewrite belongs here.
+// of the two logical database qualifiers. A dequalified MySQL reserved word is
+// backtick-quoted so the same identifier remains syntactically valid; no other
+// SQL rewrite belongs here.
 fn strip_logical_database_qualifiers(sql: &str) -> String {
-    LOGICAL_DATABASE_QUALIFIERS.iter().fold(
-        sql.to_string(),
-        |sql, qualifier| {
-            sql.replace(&format!("{qualifier}."), "")
-                .replace(&format!("`{qualifier}`."), "")
-        },
-    )
+    static QUALIFIED_IDENTIFIER: OnceLock<Regex> = OnceLock::new();
+    let pattern = QUALIFIED_IDENTIFIER.get_or_init(|| {
+        let qualifiers = LOGICAL_DATABASE_QUALIFIERS.join("|");
+        Regex::new(&format!(
+            r"(?i)(?:`?(?:{qualifiers})`?)\.(?P<identifier>`?[A-Za-z_][A-Za-z0-9_]*`?)"
+        ))
+        .expect("qualified identifier regex must compile")
+    });
+
+    pattern
+        .replace_all(sql, |captures: &regex::Captures<'_>| {
+            let identifier = captures
+                .name("identifier")
+                .expect("qualified identifier must be captured")
+                .as_str();
+            let unquoted = identifier.trim_matches('`');
+            if RESERVED_IDENTIFIERS_AFTER_DEQUALIFICATION
+                .iter()
+                .any(|reserved| unquoted.eq_ignore_ascii_case(reserved))
+            {
+                format!("`{unquoted}`")
+            } else {
+                identifier.to_string()
+            }
+        })
+        .into_owned()
 }
 
 fn ensure_table_names_do_not_collide(
@@ -330,11 +356,24 @@ mod tests {
     #[test]
     fn rewrites_only_logical_database_qualifiers() {
         let sql = "INSERT INTO library.repos SELECT * FROM \
-                   `tachyon_apps_database_manager`.objects;";
+                   `tachyon_apps_database_manager`.objects; \
+                   ALTER TABLE library.databases ADD COLUMN enabled BOOL; \
+                   SELECT library_database FROM metadata;";
+        let transformed = strip_logical_database_qualifiers(sql);
 
         assert_eq!(
-            strip_logical_database_qualifiers(sql),
-            "INSERT INTO repos SELECT * FROM objects;"
+            transformed,
+            "INSERT INTO repos SELECT * FROM objects; ALTER TABLE \
+             `databases` ADD COLUMN enabled BOOL; SELECT \
+             library_database FROM metadata;"
+        );
+
+        // Removing the one syntax-preserving reserved-word quote leaves
+        // exactly the result of qualifier removal and no other rewrite.
+        assert_eq!(
+            transformed.replace("`databases`", "databases"),
+            sql.replace("library.", "")
+                .replace("`tachyon_apps_database_manager`.", "")
         );
     }
 
@@ -452,10 +491,12 @@ mod tests {
             )
             .await
             .map_err(|error| error.to_string())?;
-            let result = migrator
-                .run(&pool)
-                .await
-                .map_err(|error| error.to_string());
+            let result = match migrator.run(&pool).await {
+                Ok(()) => exercise_reserved_database_runtime_queries(&pool)
+                    .await
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
             pool.close().await;
             result
         }
@@ -468,5 +509,64 @@ mod tests {
         admin_pool.close().await;
         replay_result.expect("transformed preview migrations must replay");
         cleanup_result.expect("throwaway preview database must be removed");
+    }
+
+    async fn exercise_reserved_database_runtime_queries(
+        pool: &sqlx::MySqlPool,
+    ) -> Result<(), sqlx::Error> {
+        const PLATFORM_ID: &str = "tn_01j91h09tpj5ehwbwfwfxpak2b";
+        const REPO_ID: &str = "rp_01j91h09tpj5ehwbwfwfxpak2b";
+        const DATABASE_ID: &str = "db_01j91h09tpj5ehwbwfwfxpak2b";
+
+        // This database is throwaway and single-connection. Disabling FK
+        // checks lets the test exercise the exact runtime INSERT without
+        // manufacturing unrelated application fixtures.
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+            .execute(pool)
+            .await?;
+        sqlx::query("DELETE FROM `databases` WHERE repo_id = ?")
+            .bind(REPO_ID)
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO `databases` (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
+        )
+        .bind(DATABASE_ID)
+        .bind(REPO_ID)
+        .bind(PLATFORM_ID)
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
+        )
+        .bind(PLATFORM_ID)
+        .bind(REPO_ID)
+        .fetch_all(pool)
+        .await?;
+        sqlx::query(
+            "SELECT id, database_id, repo_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
+        )
+        .bind(PLATFORM_ID)
+        .bind(REPO_ID)
+        .fetch_all(pool)
+        .await?;
+        sqlx::query(
+            "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
+        )
+        .bind(PLATFORM_ID)
+        .bind(REPO_ID)
+        .fetch_all(pool)
+        .await?;
+        sqlx::query(
+            "SELECT database_id, repo_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
+        )
+        .bind(PLATFORM_ID)
+        .bind(REPO_ID)
+        .fetch_all(pool)
+        .await?;
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 }

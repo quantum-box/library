@@ -92,7 +92,7 @@ impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
 
         if let Some(row) = row_opt {
             let databases = sqlx::query!(
-                "SELECT id, database_id FROM databases WHERE platform_id = ? AND repo_id = ?",
+                "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 row.id
             )

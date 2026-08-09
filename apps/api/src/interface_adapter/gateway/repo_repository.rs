@@ -91,7 +91,7 @@ impl RepoRepository for RepoRepositoryImpl {
         .map_err(errors::Error::internal_server_error)?;
 
         sqlx::query!(
-            "DELETE FROM databases WHERE repo_id = ?",
+            "DELETE FROM `databases` WHERE repo_id = ?",
             entity.id().to_string()
         )
         .execute(&mut *tx)
@@ -100,7 +100,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         for database in entity.databases() {
             sqlx::query!(
-                "INSERT INTO databases (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
+                "INSERT INTO `databases` (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
                 database.to_string(),
                 entity.id().to_string(),
                 crate::domain::LIBRARY_TENANT.to_string()
@@ -185,7 +185,7 @@ impl RepoRepository for RepoRepositoryImpl {
         .map_err(errors::Error::internal_server_error)?;
 
         let databases = sqlx::query!(
-            "SELECT id, database_id FROM databases WHERE platform_id = ? AND repo_id = ?",
+            "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )
@@ -260,7 +260,7 @@ impl RepoRepository for RepoRepositoryImpl {
         let mut repos = vec![];
         for row in rows.iter() {
             let database_rows = sqlx::query!(
-                "SELECT id, database_id, repo_id FROM databases WHERE platform_id = ? AND repo_id = ?",
+                "SELECT id, database_id, repo_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 row.id.to_string()
             )
