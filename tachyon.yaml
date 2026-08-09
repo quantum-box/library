@@ -35,6 +35,19 @@ spec:
         release: true
         arch: arm64
       environments:
+        preview:
+          # ADR-0049 provisions one isolated database and scoped user per PR.
+          # Production keeps its existing databaseRef and migration hook below.
+          provisionedDatabase:
+            provider: tidb
+            engine: mysql
+            envVar: DATABASE_URL
+            migration:
+              command: >-
+                SQLX_OFFLINE=true cargo run --package library-api
+                --bin library_api_preview_migrate --
+                --database-url-env DATABASE_URL
+              timeoutSeconds: 1800
         production:
           hooks:
             preDeploy:
