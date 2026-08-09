@@ -3,9 +3,9 @@
 use sqlx::{mysql::MySqlPoolOptions, Executor};
 use value_object::DatabaseUrl;
 
-const LIBRARY_DATABASE_NAME: &str = "library";
-const DATABASE_MANAGER_DATABASE_NAME: &str =
-    "tachyon_apps_database_manager";
+use crate::database_layout::{
+    DATABASE_MANAGER_DATABASE_NAME, LIBRARY_DATABASE_NAME,
+};
 
 /// Resolves the production admin database URL from the runtime environment.
 ///
@@ -25,6 +25,10 @@ pub fn resolve_prod_database_url() -> errors::Result<DatabaseUrl> {
 }
 
 /// Ensures schemas required by library-api exist and applies pending migrations.
+///
+/// PLT-3328: this production-only path deliberately keeps two physical
+/// databases and two SQLx histories. Only the separate preview migrator may
+/// combine them into the one app/PR database required by ADR-0049.
 pub async fn run_library_migrations(
     admin_database_url: &DatabaseUrl,
 ) -> errors::Result<()> {

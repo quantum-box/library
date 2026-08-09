@@ -122,6 +122,7 @@ jobs:
           cargo test -p database-manager --test index_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_contract -- --ignored --test-threads=1
           cargo run -p library-api --bin library_api_migrate dev
+          cargo test -p library-api --bin library_api_preview_migrate preview_migrations_replay_on_empty_mysql -- --ignored --test-threads=1
           cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
 
   node:

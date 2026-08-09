@@ -1,5 +1,12 @@
 use std::str::FromStr;
 
+pub fn is_missing_table(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|database_error| database_error.code())
+        .is_some_and(|code| code == "1146")
+}
+
 pub fn parse_stored<T>(
     entity: &str,
     field: &str,

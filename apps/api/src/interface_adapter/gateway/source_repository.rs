@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     domain::repo::{RepoId, Source, SourceId, SourceRepository},
-    interface_adapter::gateway::row_parse::parse_stored,
+    interface_adapter::gateway::row_parse::{
+        is_missing_table, parse_stored,
+    },
 };
 use persistence;
 
@@ -47,7 +49,7 @@ impl SourceRepository for SourceRepositoryImpl {
             .map_err(errors::Error::internal_server_error)?;
 
         let result = sqlx::query!(
-            "INSERT INTO library.sources (id, repo_id, name, url) 
+            "INSERT INTO sources (id, repo_id, name, url)
              VALUES (?, ?, ?, ?) 
              ON DUPLICATE KEY UPDATE 
                 name = VALUES(name), 
@@ -71,12 +73,10 @@ impl SourceRepository for SourceRepositoryImpl {
                 tx.rollback()
                     .await
                     .map_err(errors::Error::internal_server_error)?;
-                if e.to_string()
-                    .contains("Table 'library.sources' doesn't exist")
-                {
+                if is_missing_table(&e) {
                     // TODO: add English comment
                     sqlx::query!(
-                        "CREATE TABLE IF NOT EXISTS library.sources (
+                        "CREATE TABLE IF NOT EXISTS sources (
                             id VARCHAR(255) NOT NULL PRIMARY KEY,
                             repo_id VARCHAR(255) NOT NULL,
                             name VARCHAR(255) NOT NULL,
@@ -97,7 +97,7 @@ impl SourceRepository for SourceRepositoryImpl {
                         )?;
 
                     sqlx::query!(
-                        "INSERT INTO library.sources (id, repo_id, name, url) 
+                        "INSERT INTO sources (id, repo_id, name, url)
                          VALUES (?, ?, ?, ?)",
                         entity.id().to_string(),
                         entity.repo_id().to_string(),
@@ -125,7 +125,7 @@ impl SourceRepository for SourceRepositoryImpl {
     ) -> errors::Result<Option<Source>> {
         let source = sqlx::query_as!(
             SourceRow,
-            "SELECT id, repo_id, name, url FROM library.sources WHERE id = ?",
+            "SELECT id, repo_id, name, url FROM sources WHERE id = ?",
             id.to_string()
         )
         .fetch_optional(self.db.pool().as_ref())
@@ -141,7 +141,7 @@ impl SourceRepository for SourceRepositoryImpl {
     ) -> errors::Result<Vec<Source>> {
         let sources = sqlx::query_as!(
             SourceRow,
-            "SELECT id, repo_id, name, url FROM library.sources WHERE repo_id = ?",
+            "SELECT id, repo_id, name, url FROM sources WHERE repo_id = ?",
             repo_id.to_string()
         )
         .fetch_all(self.db.pool().as_ref())
@@ -153,7 +153,7 @@ impl SourceRepository for SourceRepositoryImpl {
 
     async fn delete(&self, id: &SourceId) -> errors::Result<()> {
         let result = sqlx::query!(
-            "DELETE FROM library.sources WHERE id = ?",
+            "DELETE FROM sources WHERE id = ?",
             id.to_string()
         )
         .execute(self.db.pool().as_ref())

@@ -65,7 +65,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
             SELECT id, name, username, description, website
-            FROM library.organizations
+            FROM organizations
             WHERE platform_id = ? AND id = ?
             "#,
         )
@@ -85,7 +85,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
             SELECT id, name, username, description, website
-            FROM library.organizations
+            FROM organizations
             WHERE platform_id = ? AND username = ?
             "#,
         )
@@ -102,7 +102,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         let orgs = sqlx::query_as::<_, OrganizationRow>(
             r#"
             SELECT id, name, username, description, website
-            FROM library.organizations
+            FROM organizations
             WHERE platform_id = ?
             "#,
         )
@@ -120,7 +120,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
 
     async fn delete(&self, org_id: &TenantId) -> errors::Result<()> {
         sqlx::query(
-            r#"DELETE FROM library.organizations WHERE platform_id = ? AND id = ?"#,
+            r#"DELETE FROM organizations WHERE platform_id = ? AND id = ?"#,
         )
         .bind(LIBRARY_TENANT.to_string())
         .bind(org_id.to_string())
@@ -135,7 +135,7 @@ impl OrganizationRepositoryImpl {
     async fn save(&self, entity: &Organization) -> errors::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO library.organizations (id, name, username, description, website, platform_id)
+            INSERT INTO organizations (id, name, username, description, website, platform_id)
             VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
@@ -181,13 +181,11 @@ mod tests {
         let db = setup_test_db("library").await;
 
         // Cleanup existing data - use non-macro query for test code to avoid SQLX_OFFLINE cache issues
-        sqlx::query(
-            "DELETE FROM library.organizations WHERE platform_id = ?",
-        )
-        .bind(LIBRARY_TENANT.to_string())
-        .execute(db.pool().as_ref())
-        .await
-        .unwrap();
+        sqlx::query("DELETE FROM organizations WHERE platform_id = ?")
+            .bind(LIBRARY_TENANT.to_string())
+            .execute(db.pool().as_ref())
+            .await
+            .unwrap();
 
         let repo = OrganizationRepositoryImpl::new(db.clone());
         (db, repo)

@@ -340,7 +340,8 @@ impl WebhookEventWorker {
 fn is_expected_worker_infra_error(error: &errors::Error) -> bool {
     let message = error.to_string();
     message.contains("pool timed out while waiting for an open connection")
-        || message.contains("Table 'library.webhook_events' doesn't exist")
+        || (message.contains("1146 (42S02)")
+            && message.contains(".webhook_events' doesn't exist"))
 }
 
 #[cfg(test)]
@@ -371,7 +372,7 @@ mod tests {
     #[test]
     fn missing_optional_webhook_table_is_expected_infra_error() {
         let error = errors::Error::internal_server_error(
-            "error returned from database: 1146 (42S02): Table 'library.webhook_events' doesn't exist",
+            "error returned from database: 1146 (42S02): Table 'pr_3328_library.webhook_events' doesn't exist",
         );
 
         assert!(is_expected_worker_infra_error(&error));

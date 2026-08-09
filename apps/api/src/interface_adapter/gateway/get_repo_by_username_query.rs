@@ -5,7 +5,10 @@ use sqlx::prelude::FromRow;
 use value_object::Identifier;
 
 use crate::{
-    domain::Repo, interface_adapter::gateway::row_parse::parse_stored,
+    domain::Repo,
+    interface_adapter::gateway::row_parse::{
+        is_missing_table, parse_stored,
+    },
     usecase::GetRepoByUsernameQuery,
 };
 
@@ -79,7 +82,7 @@ impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
     ) -> Result<Option<Repo>> {
         let row_opt = sqlx::query_as!(
             RepoRow,
-            "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ? AND org_username = ? AND username = ?",
+            "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND org_username = ? AND username = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             operator_alias.to_string(),
             repo_alias.to_string()
@@ -89,14 +92,14 @@ impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
 
         if let Some(row) = row_opt {
             let databases = sqlx::query!(
-                "SELECT id, database_id FROM library.databases WHERE platform_id = ? AND repo_id = ?",
+                "SELECT id, database_id FROM databases WHERE platform_id = ? AND repo_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 row.id
             )
             .fetch_all(self.db.pool().as_ref())
             .await?;
             let tags_result = sqlx::query!(
-                "SELECT tag FROM library.tags WHERE platform_id = ? AND repo_id = ?",
+                "SELECT tag FROM tags WHERE platform_id = ? AND repo_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 row.id
             )
@@ -105,9 +108,7 @@ impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
             let tags = match tags_result {
                 Ok(tags) => tags,
                 Err(e) => {
-                    if e.to_string()
-                        .contains("Table 'library.tags' doesn't exist")
-                    {
+                    if is_missing_table(&e) {
                         vec![]
                     } else {
                         return Err(errors::Error::internal_server_error(
