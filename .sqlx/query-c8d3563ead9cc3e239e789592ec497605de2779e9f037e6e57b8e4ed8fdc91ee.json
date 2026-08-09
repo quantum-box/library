@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "\n            update tachyon_apps_database_manager.data\n            set name = ?,\n                updated_at = ?\n            where object_id = ? and tenant_id = ? and id = ?\n            ",
+  "query": "\n            update data\n            set name = ?,\n                updated_at = ?\n            where object_id = ? and tenant_id = ? and id = ?\n            ",
   "describe": {
     "columns": [],
     "parameters": {

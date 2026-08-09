@@ -5,7 +5,7 @@ use crate::relation_edge_rollout::RelationEdgeWriteMode;
 use std::collections::HashSet;
 
 const CREATE_DATA_SCOPED_SQL: &str = r#"
-    INSERT INTO tachyon_apps_database_manager.data (
+    INSERT INTO data (
         id,
         tenant_id,
         object_id,
@@ -20,7 +20,7 @@ const CREATE_DATA_SCOPED_SQL: &str = r#"
         ?,
         ?,
         ?
-    FROM tachyon_apps_database_manager.objects AS scoped_database
+    FROM objects AS scoped_database
     WHERE scoped_database.tenant_id = ?
       AND scoped_database.id = ?
 "#;
@@ -29,7 +29,7 @@ const FIND_DATA_BY_ID_SQL: &str = r#"
     SELECT
         *
     FROM
-        tachyon_apps_database_manager.data
+        data
     WHERE
         tenant_id = ? and object_id = ? and id = ?
 "#;
@@ -460,7 +460,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 *
             FROM
-                tachyon_apps_database_manager.fields
+                fields
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
@@ -506,7 +506,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 *
             FROM
-                tachyon_apps_database_manager.fields
+                fields
             WHERE
                 object_id = ? and tenant_id = ?
             ORDER BY
@@ -522,7 +522,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 *
             FROM
-                tachyon_apps_database_manager.data
+                data
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
@@ -566,7 +566,7 @@ impl DataRepository for DataRepositoryImpl {
     ) -> errors::Result<()> {
         sqlx::query(
             r#"
-            DELETE FROM tachyon_apps_database_manager.data
+            DELETE FROM data
             WHERE object_id = ? and tenant_id = ? and id = ?
             "#,
         )
@@ -586,7 +586,7 @@ impl DataRepository for DataRepositoryImpl {
     ) -> errors::Result<()> {
         sqlx::query(
             r#"
-            DELETE FROM tachyon_apps_database_manager.data
+            DELETE FROM data
             WHERE object_id = ? and tenant_id = ?
             "#,
         )
@@ -609,7 +609,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 *
             FROM
-                tachyon_apps_database_manager.fields
+                fields
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
@@ -623,7 +623,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 *
             FROM
-                tachyon_apps_database_manager.data
+                data
             WHERE
                 object_id = ? and tenant_id = ?
             ORDER BY
@@ -642,7 +642,7 @@ impl DataRepository for DataRepositoryImpl {
             SELECT
                 COUNT(*)
             FROM
-                tachyon_apps_database_manager.data
+                data
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
@@ -705,9 +705,7 @@ mod scope_query_tests {
     fn create_is_scoped_and_never_upserts_an_existing_data_id() {
         let sql = normalize(CREATE_DATA_SCOPED_SQL);
 
-        assert!(sql.contains(
-            "from tachyon_apps_database_manager.objects as scoped_database"
-        ));
+        assert!(sql.contains("from objects as scoped_database"));
         assert!(sql.contains(
             "where scoped_database.tenant_id = ? and scoped_database.id = ?"
         ));

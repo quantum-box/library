@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT id, repo_id, name, url FROM library.sources WHERE id = ?",
+  "query": "SELECT id, repo_id, name, url FROM sources WHERE repo_id = ?",
   "describe": {
     "columns": [
       {
@@ -50,5 +50,5 @@
       true
     ]
   },
-  "hash": "8e1d22b7f22340b8d20de29ac333ec5a7dcd83e3fd62125a645ff1189aa1662f"
+  "hash": "99609730222ccb56e44c7c02452da10df3899eb67e20ddfd151c6bd18648498f"
 }

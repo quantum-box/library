@@ -41,7 +41,7 @@ impl AllRepoQueryServiceImpl {
 
         for repo_id in repo_rows.iter().map(|r| r.id.as_str()) {
             let mut rows = sqlx::query_as::<_, DatabaseRow>(
-                "SELECT database_id, repo_id FROM library.databases
+                "SELECT database_id, repo_id FROM `databases`
                 WHERE platform_id = ? AND repo_id = ?",
             )
             .bind(crate::domain::LIBRARY_TENANT.to_string())
@@ -92,7 +92,7 @@ impl AllRepoQuery for AllRepoQueryServiceImpl {
         let repo_rows = if let Some(name) = &query.name {
             sqlx::query_as!(
                 RepoRowOnQuery,
-                "SELECT id, name, username, org_id, org_username, description, is_public FROM library.repos
+                "SELECT id, name, username, org_id, org_username, description, is_public FROM repos
                 WHERE platform_id = ? AND name LIKE ? LIMIT ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 format!("%{}%", name),
@@ -101,7 +101,7 @@ impl AllRepoQuery for AllRepoQueryServiceImpl {
             .fetch_all(self.db.pool().as_ref())
             .await
         } else {
-            sqlx::query_as!(RepoRowOnQuery, "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ?", crate::domain::LIBRARY_TENANT.to_string()) 
+            sqlx::query_as!(RepoRowOnQuery, "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ?", crate::domain::LIBRARY_TENANT.to_string())
                 .fetch_all(self.db.pool().as_ref())
                 .await
         }
@@ -127,7 +127,7 @@ impl AllRepoQuery for AllRepoQueryServiceImpl {
     ) -> Result<Vec<Repo>> {
         let repo_rows = if let Some(name) = &query.name {
             sqlx::query_as::<_, RepoRowOnQuery>(
-                "SELECT id, name, username, org_id, org_username, description, is_public FROM library.repos
+                "SELECT id, name, username, org_id, org_username, description, is_public FROM repos
                 WHERE platform_id = ? AND org_username = ? AND name LIKE ? LIMIT ?",
             )
             .bind(crate::domain::LIBRARY_TENANT.to_string())
@@ -138,7 +138,7 @@ impl AllRepoQuery for AllRepoQueryServiceImpl {
             .await
         } else {
             sqlx::query_as::<_, RepoRowOnQuery>(
-                "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos
+                "SELECT id, org_id, org_username, name, username, description, is_public FROM repos
                 WHERE platform_id = ? AND org_username = ? LIMIT ?",
             )
             .bind(crate::domain::LIBRARY_TENANT.to_string())

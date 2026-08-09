@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ?",
+  "query": "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND id = ?",
   "describe": {
     "columns": [
       {
@@ -68,7 +68,7 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
@@ -80,5 +80,5 @@
       false
     ]
   },
-  "hash": "512c5802cc826518a8ad83a3ce38260911c5f3a0ff33f88c5e1aa61f41409bf0"
+  "hash": "ea4d6d68c2929a88184aab0604f5408c833ee45a9b59cc9df0e56e17eec5c241"
 }

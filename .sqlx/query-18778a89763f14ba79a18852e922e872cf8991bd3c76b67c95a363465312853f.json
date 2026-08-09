@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "INSERT INTO library.databases (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
+  "query": "INSERT INTO `databases` (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
   "describe": {
     "columns": [],
     "parameters": {

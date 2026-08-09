@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT id, database_id, repo_id FROM library.databases WHERE platform_id = ? AND repo_id = ?",
+  "query": "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
   "describe": {
     "columns": [
       {
@@ -20,15 +20,6 @@
           "flags": "NOT_NULL | NO_DEFAULT_VALUE",
           "max_size": 116
         }
-      },
-      {
-        "ordinal": 2,
-        "name": "repo_id",
-        "type_info": {
-          "type": "VarString",
-          "flags": "NOT_NULL | MULTIPLE_KEY | NO_DEFAULT_VALUE",
-          "max_size": 116
-        }
       }
     ],
     "parameters": {
@@ -36,9 +27,8 @@
     },
     "nullable": [
       false,
-      false,
       false
     ]
   },
-  "hash": "4c05bb7cb37ed9c861153b6a73b5e4e6940ed95a90101f625992dbb041d24558"
+  "hash": "7549dad45d2d156b33b8ac85be7153e99769705a6813e8065b321b756bee5c50"
 }

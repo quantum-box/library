@@ -4,6 +4,7 @@ pub mod app;
 mod bootstrap;
 pub mod collaboration;
 pub mod config;
+mod database_layout;
 mod db_pool_metrics;
 mod domain;
 pub mod error;

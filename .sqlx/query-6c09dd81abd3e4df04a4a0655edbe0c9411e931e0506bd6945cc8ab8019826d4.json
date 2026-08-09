@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ? AND org_id = ?",
+  "query": "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND org_id = ?",
   "describe": {
     "columns": [
       {

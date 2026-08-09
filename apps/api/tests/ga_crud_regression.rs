@@ -741,9 +741,11 @@ async fn setup_test_server(
     > = Arc::new(InMemoryOAuthTokenRepository::default());
     let provider_secrets =
         Arc::new(inbound_sync::WebhookSecretStore::new());
+    let database_layout =
+        library_api::DatabaseLayout::resolve(&dsn, Some("test"))?;
 
     let app = library_api::router(
-        dsn.to_string(),
+        database_layout,
         sdk,
         database_app,
         github,

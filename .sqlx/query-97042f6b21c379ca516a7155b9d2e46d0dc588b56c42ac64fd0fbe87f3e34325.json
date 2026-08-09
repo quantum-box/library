@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "INSERT INTO library.sources (id, repo_id, name, url) \n                         VALUES (?, ?, ?, ?)",
+  "query": "INSERT INTO sources (id, repo_id, name, url)\n                         VALUES (?, ?, ?, ?)",
   "describe": {
     "columns": [],
     "parameters": {

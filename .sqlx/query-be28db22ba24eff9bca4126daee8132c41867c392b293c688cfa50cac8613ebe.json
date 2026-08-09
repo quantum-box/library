@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT name, url FROM library.sources WHERE repo_id = ?",
+  "query": "SELECT name, url FROM sources WHERE repo_id = ?",
   "describe": {
     "columns": [
       {

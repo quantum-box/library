@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "DELETE FROM library.sources WHERE id = ?",
+  "query": "DELETE FROM sources WHERE id = ?",
   "describe": {
     "columns": [],
     "parameters": {

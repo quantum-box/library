@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "DELETE FROM library.repos WHERE platform_id = ? AND id = ?",
+  "query": "DELETE FROM repos WHERE platform_id = ? AND id = ?",
   "describe": {
     "columns": [],
     "parameters": {

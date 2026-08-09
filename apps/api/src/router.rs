@@ -2,6 +2,7 @@ use crate::app::LibraryApp;
 use crate::collaboration::handler::CollaborationState;
 use crate::collaboration::manager::DocumentManager;
 use crate::collaboration::persistence::SqlxDocumentPersistence;
+use crate::database_layout::DatabaseLayout;
 use crate::handler;
 use crate::handler::graphql;
 use crate::interface_adapter::gateway::LibraryDataRepositoryImpl;
@@ -14,6 +15,7 @@ use axum::routing::get;
 use axum::routing::post;
 use axum::Extension;
 use axum::Json;
+use persistence::{MinioConfiguration, MinioDriver, S3Driver, Storage};
 use serde::Serialize;
 use std::sync::Arc;
 use telemetry::http::{
@@ -21,9 +23,6 @@ use telemetry::http::{
     create_trace_layer,
 };
 use tower_http::cors::{Any, CorsLayer};
-use value_object::DatabaseUrl;
-
-use persistence::{MinioConfiguration, MinioDriver, S3Driver, Storage};
 
 use crate::handler::data::ParquetStorage;
 
@@ -69,7 +68,7 @@ fn env_flag_enabled(value: &str) -> bool {
 }
 
 pub async fn router(
-    dsn: impl ToString,
+    database_layout: DatabaseLayout,
     sdk: Arc<SdkAuthApp>,
     database_app: Arc<database_manager::App>,
     github: Arc<github_provider::GitHub>,
@@ -77,15 +76,12 @@ pub async fn router(
     oauth_token_repo: Arc<dyn inbound_sync_domain::OAuthTokenRepository>,
     provider_secrets: Arc<WebhookSecretStore>,
 ) -> Result<axum::Router, Box<dyn std::error::Error>> {
-    let dsn = dsn.to_string().parse::<DatabaseUrl>()?;
-
-    // Database connection for library
-    let library_db =
-        persistence::Db::new(&dsn.use_database("library")).await;
-    let database_manager_db = persistence::Db::new(
-        &dsn.use_database("tachyon_apps_database_manager"),
-    )
-    .await;
+    // Each repository executes unqualified SQL on the pool for its logical
+    // role. Production resolves these roles to two physical databases, while
+    // ADR-0049 previews intentionally resolve both to the injected PR DB.
+    let library_db = persistence::Db::new(database_layout.library()).await;
+    let database_manager_db =
+        persistence::Db::new(database_layout.database_manager()).await;
     let _db_pool_metric_tasks =
         crate::db_pool_metrics::start_default_pool_acquire_metrics([
             ("library", library_db.pool()),
@@ -448,7 +444,7 @@ pub async fn router(
 
     let library_app: Arc<LibraryApp> = Arc::new(
         LibraryApp::new(
-            &dsn,
+            database_layout.library(),
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),

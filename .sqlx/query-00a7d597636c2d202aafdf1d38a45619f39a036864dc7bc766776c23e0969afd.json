@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "DELETE FROM library.tags WHERE repo_id = ?",
+  "query": "DELETE FROM tags WHERE repo_id = ?",
   "describe": {
     "columns": [],
     "parameters": {

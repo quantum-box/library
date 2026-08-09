@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "\n            SELECT\n                id,\n                tenant_id,\n                object_id,\n                field_name,\n                datatype,\n                datatype_meta,\n                is_indexed as `is_indexed: bool`,\n                field_num,\n                meta_json\n            FROM\n                tachyon_apps_database_manager.fields\n            WHERE\n                object_id = ? and tenant_id = ?\n            ORDER BY\n                field_num ASC\n            ",
+  "query": "\n            SELECT\n                id,\n                tenant_id,\n                object_id,\n                field_name,\n                datatype,\n                datatype_meta,\n                is_indexed as `is_indexed: bool`,\n                field_num,\n                meta_json\n            FROM\n                fields\n            WHERE\n                object_id = ? and tenant_id = ?\n            ORDER BY\n                field_num ASC\n            ",
   "describe": {
     "columns": [
       {

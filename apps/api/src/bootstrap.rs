@@ -21,6 +21,8 @@ pub async fn run_api(
 
     tracing::debug!("start connect database...");
     let dsn = config.database_url.parse::<value_object::DatabaseUrl>()?;
+    let database_layout =
+        crate::database_layout::DatabaseLayout::from_runtime(dsn)?;
     let property_value_mode = config.property_value_storage_mode.parse()?;
     let property_definition_mode =
         config.property_definition_storage_mode.parse()?;
@@ -34,7 +36,7 @@ pub async fn run_api(
     );
     let database_app = Arc::new(
         database_manager::factory_client_with_storage_modes(
-            &dsn.use_database("tachyon_apps_database_manager"),
+            database_layout.database_manager(),
             property_value_mode,
             property_definition_mode,
         )
@@ -59,7 +61,7 @@ pub async fn run_api(
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let app = router::router(
-        config.database_url,
+        database_layout,
         sdk,
         database_app,
         github,

@@ -4,6 +4,7 @@
 mod app;
 pub mod collaboration;
 mod config;
+pub mod database_layout;
 mod db_pool_metrics;
 pub mod domain;
 mod error;
@@ -18,6 +19,7 @@ pub use crate::domain::LIBRARY_TENANT;
 
 pub use app::LibraryApp;
 pub use config::Config;
+pub use database_layout::DatabaseLayout;
 use handler::graphql;
 pub use router::router;
 

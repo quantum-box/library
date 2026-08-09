@@ -43,11 +43,13 @@ async fn main() -> Result<(), Error> {
 
     let database_url =
         config.database_url.parse::<value_object::DatabaseUrl>()?;
+    let database_layout =
+        library_api::DatabaseLayout::from_runtime(database_url)?;
     tracing::debug!("start connect database...");
 
     let database_app = Arc::new(
         database_manager::factory_client_with_storage_modes(
-            &database_url.use_database("tachyon_apps_database_manager"),
+            database_layout.database_manager(),
             property_value_mode,
             property_definition_mode,
         )
@@ -129,7 +131,7 @@ async fn main() -> Result<(), Error> {
         Arc::new(inbound_sync::WebhookSecretStore::new());
 
     let app = library_api::router(
-        database_url.use_database("library"),
+        database_layout,
         sdk,
         database_app,
         github,

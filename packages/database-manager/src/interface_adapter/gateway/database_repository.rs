@@ -248,7 +248,7 @@ impl RepositoryV1<DatabaseId, Database> for DatabaseRepositoryImpl {
     async fn save(&self, database: &Database) -> errors::Result<()> {
         sqlx::query!(
             r#"
-            INSERT INTO tachyon_apps_database_manager.objects (id, tenant_id, object_name) 
+            INSERT INTO objects (id, tenant_id, object_name)
             VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 object_name = VALUES(object_name);
@@ -259,7 +259,11 @@ impl RepositoryV1<DatabaseId, Database> for DatabaseRepositoryImpl {
         )
         .execute(self.db.pool().as_ref())
         .await
-        .map_err(|e| errors::Error::internal_server_error(format!("Fail to save database: {e}")))?;
+        .map_err(|e| {
+            errors::Error::internal_server_error(format!(
+                "Fail to save database: {e}"
+            ))
+        })?;
         Ok(())
     }
 

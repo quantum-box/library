@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "SELECT tag FROM library.tags WHERE platform_id = ? AND repo_id = ?",
+  "query": "SELECT tag FROM tags WHERE platform_id = ? AND repo_id = ?",
   "describe": {
     "columns": [
       {

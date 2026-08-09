@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "\n            SELECT\n                *\n            FROM\n                tachyon_apps_database_manager.data\n            WHERE\n                object_id = ? and tenant_id = ? and name = ?\n            ORDER BY\n                created_at ASC\n            LIMIT ? OFFSET ?\n            ",
+  "query": "\n            SELECT\n                *\n            FROM\n                data\n            WHERE\n                object_id = ? and tenant_id = ? and name = ?\n            ORDER BY\n                created_at ASC\n            LIMIT ? OFFSET ?\n            ",
   "describe": {
     "columns": [
       {

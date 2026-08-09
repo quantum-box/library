@@ -7,7 +7,7 @@ const SEARCH_DATA_BY_NAME_SQL: &str = r#"
     SELECT
         *
     FROM
-        tachyon_apps_database_manager.data
+        data
     WHERE
         tenant_id = ? and object_id = ? and name = ?
     ORDER BY
@@ -81,7 +81,7 @@ impl DataQuery for DataQueryService {
                 type_version,
                 type_config
             FROM
-                tachyon_apps_database_manager.fields
+                fields
             WHERE
                 object_id = ? and tenant_id = ?
             ORDER BY
@@ -108,7 +108,7 @@ impl DataQuery for DataQueryService {
             SELECT
                 COUNT(*)
             FROM
-                tachyon_apps_database_manager.data
+                data
             WHERE
                 tenant_id = ? and object_id = ? and name = ?    
             "#,

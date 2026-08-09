@@ -1,6 +1,6 @@
 {
   "db_name": "MySQL",
-  "query": "INSERT INTO library.tags (id, repo_id, tag, platform_id) VALUES (?, ?, ?, ?)",
+  "query": "INSERT INTO tags (id, repo_id, tag, platform_id) VALUES (?, ?, ?, ?)",
   "describe": {
     "columns": [],
     "parameters": {
