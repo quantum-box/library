@@ -33,7 +33,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
-      - run: cargo clippy --workspace -- -D warnings
+      # PLT-3335 tracks the pre-existing warnings exposed by nightly drift.
+      # Only these two lints are temporarily allowed; all others stay denied.
+      - run: cargo clippy --workspace -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names
 
   rust-check:
     runs-on: ubuntu-latest
