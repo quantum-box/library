@@ -212,6 +212,56 @@ pub struct SdkAuthApp {
     auth_token: String,
 }
 
+tokio::task_local! {
+    /// Bearer token of the request currently being handled.
+    ///
+    /// tachyon-api authenticates every operator lookup, but the
+    /// organization-resolution path runs deep inside use cases that
+    /// have no request context of their own. Carrying the credential
+    /// in task-local storage lets those calls authenticate as the
+    /// requester without threading a parameter through every use case.
+    ///
+    /// Set by [`caller_token_scope`] at the HTTP boundary.
+    static REQUEST_CALLER_TOKEN: Option<String>;
+}
+
+/// Run `future` with `token` recorded as the request's caller credential.
+pub async fn caller_token_scope<F>(
+    token: Option<String>,
+    future: F,
+) -> F::Output
+where
+    F: std::future::Future,
+{
+    REQUEST_CALLER_TOKEN.scope(token, future).await
+}
+
+/// Record the request's `Authorization: Bearer` value for the duration
+/// of the request so downstream SDK calls can authenticate as the caller.
+pub async fn caller_token_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let token = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_string);
+
+    caller_token_scope(token, next.run(request)).await
+}
+
+/// The caller credential of the request currently being handled, if any.
+fn request_caller_token() -> Option<String> {
+    REQUEST_CALLER_TOKEN
+        .try_with(|token| token.clone())
+        .ok()
+        .flatten()
+}
+
 impl Debug for SdkAuthApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SdkAuthApp")
@@ -277,6 +327,39 @@ impl SdkAuthApp {
         let mut headers = reqwest::header::HeaderMap::new();
         headers
             .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap_or_default();
+
+        Configuration {
+            base_path: self.base_url.clone(),
+            client,
+            ..Default::default()
+        }
+    }
+
+    /// Build an SDK Configuration authenticated as the current
+    /// request's caller when one is known, falling back to the
+    /// process-level credential otherwise.
+    fn sdk_config_as_caller(&self) -> Configuration {
+        match request_caller_token() {
+            Some(token) => self.sdk_config_with_token(&token),
+            None => self.sdk_config(),
+        }
+    }
+
+    /// Build an SDK Configuration using an explicit bearer token.
+    fn sdk_config_with_token(&self, token: &str) -> Configuration {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(value) = format!("Bearer {token}").parse() {
+            headers.insert("Authorization", value);
+        }
+        headers.insert(
+            "x-operator-id",
+            self.default_operator_id.parse().unwrap(),
+        );
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
@@ -752,17 +835,16 @@ impl SdkAuthApp {
 
     /// Get an operator by alias within a platform.
     ///
-    /// Uses the public SDK configuration (no Authorization
-    /// header) because tachyon-api's handler ignores the
-    /// caller's executor and always uses SystemUser
-    /// internally. This allows anonymous library visitors to
-    /// resolve organizations without a valid token.
+    /// tachyon-api requires authentication on this endpoint, so the
+    /// request's caller credential is forwarded when one is available
+    /// (see [`caller_token_scope`]). Anonymous requests fall back to
+    /// the process-level credential.
     pub async fn get_operator_by_alias(
         &self,
         platform_id: &TenantId,
         alias: &str,
     ) -> errors::Result<OperatorResp> {
-        let config = self.sdk_config_public();
+        let config = self.sdk_config_as_caller();
         let resp: SdkOperatorResp = Self::rest_get_query_typed(
             &config,
             "/v1/auth/operators/by-alias",
@@ -3073,5 +3155,79 @@ mod tests {
         server.await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod caller_token_scope_tests {
+    use super::*;
+    use tachyon_sdk::auth::test_helper::TEST_TENANT_ID;
+
+    #[tokio::test]
+    async fn forwards_the_request_caller_token() {
+        let observed =
+            caller_token_scope(Some("caller-jwt".to_string()), async {
+                request_caller_token()
+            })
+            .await;
+
+        assert_eq!(observed.as_deref(), Some("caller-jwt"));
+    }
+
+    #[tokio::test]
+    async fn reports_no_token_for_anonymous_requests() {
+        let observed =
+            caller_token_scope(None, async { request_caller_token() })
+                .await;
+
+        assert_eq!(observed, None);
+    }
+
+    #[tokio::test]
+    async fn reports_no_token_outside_a_request() {
+        assert_eq!(request_caller_token(), None);
+    }
+
+    #[tokio::test]
+    async fn operator_lookup_sends_the_caller_token() {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/auth/operators/by-alias",
+            axum::routing::get(move |headers: axum::http::HeaderMap| {
+                let captured = captured.clone();
+                async move {
+                    let auth = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    captured.lock().unwrap().push(auth);
+                    axum::http::StatusCode::NOT_FOUND
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        let _ = caller_token_scope(Some("caller-jwt".to_string()), async {
+            sdk.get_operator_by_alias(&tenant_id, "some-org").await
+        })
+        .await;
+
+        let seen = requests.lock().unwrap().clone();
+        assert_eq!(seen, vec![Some("Bearer caller-jwt".to_string())]);
     }
 }
