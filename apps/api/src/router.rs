@@ -596,6 +596,11 @@ pub async fn router(
         .layer(middleware::from_fn(
             crate::sentry_context::sentry_request_context_middleware,
         ))
+        // Must wrap the handlers (and their extractors) so organization
+        // resolution can authenticate against tachyon-api as the caller.
+        .layer(middleware::from_fn(
+            crate::sdk_auth::caller_token_middleware,
+        ))
         .layer(create_request_id_layer())
         .layer(Extension(sdk))
         .layer(Extension(library_app))
