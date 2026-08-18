@@ -236,20 +236,37 @@ where
     REQUEST_CALLER_TOKEN.scope(token, future).await
 }
 
-/// Record the request's `Authorization: Bearer` value for the duration
-/// of the request so downstream SDK calls can authenticate as the caller.
+/// Extract the bearer credential from an `Authorization` header.
+///
+/// The scheme is matched case-insensitively, as required by RFC 9110 and
+/// as the `Authorization<Bearer>` extractor already does. Matching it
+/// exactly here would drop the credential for a request the extractor
+/// authenticates, silently downgrading the lookup to the process-level
+/// token.
+fn bearer_token_from_headers(
+    headers: &axum::http::HeaderMap,
+) -> Option<String> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = value.split_once(char::is_whitespace)?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+/// Record the request's `Authorization` bearer credential for the
+/// duration of the request so downstream SDK calls can authenticate as
+/// the caller.
 pub async fn caller_token_middleware(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    let token = request
-        .headers()
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .map(str::to_string);
+    let token = bearer_token_from_headers(request.headers());
 
     caller_token_scope(token, next.run(request)).await
 }
@@ -3186,6 +3203,52 @@ mod caller_token_scope_tests {
     #[tokio::test]
     async fn reports_no_token_outside_a_request() {
         assert_eq!(request_caller_token(), None);
+    }
+
+    fn headers_with_authorization(value: &str) -> axum::http::HeaderMap {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            value.parse().unwrap(),
+        );
+        headers
+    }
+
+    #[test]
+    fn accepts_the_bearer_scheme_in_any_case() {
+        for scheme in ["Bearer", "bearer", "BEARER", "BeArEr"] {
+            let headers = headers_with_authorization(&format!(
+                "{scheme} token-value"
+            ));
+
+            assert_eq!(
+                bearer_token_from_headers(&headers).as_deref(),
+                Some("token-value"),
+                "scheme {scheme} must be accepted",
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_non_bearer_and_empty_credentials() {
+        for value in ["Basic dXNlcjpwYXNz", "Bearer", "Bearer   ", "token"]
+        {
+            let headers = headers_with_authorization(value);
+
+            assert_eq!(
+                bearer_token_from_headers(&headers),
+                None,
+                "value {value:?} must not yield a token",
+            );
+        }
+    }
+
+    #[test]
+    fn reports_no_token_without_an_authorization_header() {
+        assert_eq!(
+            bearer_token_from_headers(&axum::http::HeaderMap::new()),
+            None
+        );
     }
 
     #[tokio::test]
