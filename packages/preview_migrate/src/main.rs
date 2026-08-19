@@ -1,14 +1,25 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
-use std::path::Path;
 use std::process::ExitCode;
 use std::sync::OnceLock;
 
+use lambda_runtime::{service_fn, Error as LambdaError, LambdaEvent};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use sqlx::migrate::{Migration, Migrator};
 use sqlx::mysql::MySqlPoolOptions;
 use url::Url;
+
+// The per-PR preview database is PrivateLink-only, so this binary runs as
+// the `lambda-library-api-preview-migrate` deploy hook inside the
+// enterprise-library network (field PLT-3561 pattern). A Lambda has no
+// workspace checkout, so both migration sets are embedded at compile time;
+// build.rs makes newly added migration files trigger a rebuild.
+static DATABASE_MANAGER_MIGRATOR: Migrator =
+    sqlx::migrate!("../database-manager/migrations");
+static LIBRARY_MIGRATOR: Migrator =
+    sqlx::migrate!("../../apps/api/migrations");
 
 const DATABASE_MANAGER_SOURCE: &str =
     "packages/database-manager/migrations";
@@ -25,7 +36,17 @@ const RESERVED_IDENTIFIERS_AFTER_DEQUALIFICATION: &[&str] = &["databases"];
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    match run().await {
+    if env::var("AWS_LAMBDA_RUNTIME_API").is_ok() {
+        return match lambda_runtime::run(service_fn(lambda_handler)).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    match run_cli().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
@@ -34,7 +55,76 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run() -> Result<(), String> {
+/// Invoke payload for the `provisioned-database-migrate` deploy hook. The
+/// platform injects the resolved per-PR connection URL as `databaseUrl` and
+/// the manifest's env var name as `databaseUrlEnv`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationPayload {
+    database_url: Option<String>,
+    database_url_env: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationResponse {
+    migration_applied: bool,
+}
+
+struct ResolvedDatabaseUrl {
+    value: String,
+    source: String,
+}
+
+async fn lambda_handler(
+    event: LambdaEvent<MigrationPayload>,
+) -> Result<MigrationResponse, LambdaError> {
+    let resolved =
+        resolve_database_url(event.payload, |name| env::var(name))
+            .map_err(LambdaError::from)?;
+    run_preview_migrations(&resolved.value, &resolved.source)
+        .await
+        .map_err(LambdaError::from)?;
+    Ok(MigrationResponse {
+        migration_applied: true,
+    })
+}
+
+fn resolve_database_url<F, E>(
+    payload: MigrationPayload,
+    lookup_env: F,
+) -> Result<ResolvedDatabaseUrl, String>
+where
+    F: FnOnce(&str) -> Result<String, E>,
+{
+    if let Some(database_url) = payload.database_url {
+        return Ok(ResolvedDatabaseUrl {
+            value: database_url,
+            source: "databaseUrl".to_string(),
+        });
+    }
+
+    let database_url_env = payload.database_url_env.ok_or_else(|| {
+        "databaseUrl or databaseUrlEnv is required for preview migrations"
+            .to_string()
+    })?;
+    if database_url_env.trim().is_empty() {
+        return Err(
+            "databaseUrlEnv must not be empty for preview migrations"
+                .to_string(),
+        );
+    }
+    let database_url = lookup_env(&database_url_env).map_err(|_| {
+        format!("{database_url_env} is required for preview migrations")
+    })?;
+
+    Ok(ResolvedDatabaseUrl {
+        value: database_url,
+        source: database_url_env,
+    })
+}
+
+async fn run_cli() -> Result<(), String> {
     let args = Args::parse(env::args().skip(1))?;
     let raw_database_url =
         env::var(&args.database_url_env).map_err(|_| {
@@ -43,12 +133,21 @@ async fn run() -> Result<(), String> {
                 args.database_url_env
             )
         })?;
+    run_preview_migrations(&raw_database_url, &args.database_url_env).await
+}
+
+async fn run_preview_migrations(
+    raw_database_url: &str,
+    database_url_source: &str,
+) -> Result<(), String> {
     if raw_database_url.trim().is_empty() {
         return Err(format!(
-            "{} must not be empty for preview migrations",
-            args.database_url_env
+            "{database_url_source} must not be empty for preview migrations"
         ));
     }
+    // Connect with the raw URL (via url::Url): the provisioned URL carries
+    // `?ssl-mode=REQUIRED`, which TiDB enforces, and dropping the query
+    // string would silently disable TLS.
     let database_url = parse_database_url(raw_database_url.trim())?;
     let database_name = require_preview_target(
         env::var("TACHYON_ENV").ok().as_deref(),
@@ -56,8 +155,7 @@ async fn run() -> Result<(), String> {
     )?
     .to_string();
 
-    let migrator =
-        load_combined_migrator(workspace_root(), MIGRATION_SOURCES).await?;
+    let migrator = load_combined_migrator(embedded_migration_sources())?;
     let pool = MySqlPoolOptions::new()
         .max_connections(1)
         .connect(database_url.as_str())
@@ -86,14 +184,14 @@ async fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn workspace_root() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect(
-            "packages/preview_migrate must be two levels below the \
-             workspace root",
-        )
+fn embedded_migration_sources() -> Vec<(String, &'static Migrator)> {
+    vec![
+        (
+            DATABASE_MANAGER_SOURCE.to_string(),
+            &DATABASE_MANAGER_MIGRATOR,
+        ),
+        (LIBRARY_SOURCE.to_string(), &LIBRARY_MIGRATOR),
+    ]
 }
 
 fn parse_database_url(raw: &str) -> Result<Url, String> {
@@ -132,27 +230,15 @@ fn require_preview_target<'a>(
     Ok(database_name)
 }
 
-async fn load_combined_migrator(
-    workspace_root: &Path,
-    sources: &[&str],
+fn load_combined_migrator(
+    source_migrators: Vec<(String, &Migrator)>,
 ) -> Result<Migrator, String> {
-    let mut source_migrators = Vec::with_capacity(sources.len());
-    for source in sources {
-        let migrator = Migrator::new(workspace_root.join(source).as_path())
-            .await
-            .map_err(|error| {
-                format!(
-                    "failed to load preview migrations from {source}: {error}"
-                )
-            })?;
-        source_migrators.push(((*source).to_string(), migrator));
-    }
     ensure_table_names_do_not_collide(&source_migrators)?;
     combine_migrators(source_migrators)
 }
 
 fn combine_migrators(
-    source_migrators: Vec<(String, Migrator)>,
+    source_migrators: Vec<(String, &Migrator)>,
 ) -> Result<Migrator, String> {
     let mut migrations = BTreeMap::<i64, (Migration, String)>::new();
 
@@ -247,7 +333,7 @@ fn strip_logical_database_qualifiers(sql: &str) -> String {
 }
 
 fn ensure_table_names_do_not_collide(
-    source_migrators: &[(String, Migrator)],
+    source_migrators: &[(String, &Migrator)],
 ) -> Result<(), String> {
     let mut owners = BTreeMap::<String, String>::new();
     for (source, migrator) in source_migrators {
@@ -321,6 +407,7 @@ impl Args {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use sqlx::migrate::MigrationType;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -367,6 +454,93 @@ mod tests {
     }
 
     #[test]
+    fn preview_database_url_keeps_tls_query_parameters() {
+        // The provisioned URL carries `?ssl-mode=REQUIRED`; the parsed URL
+        // handed to sqlx must keep it, or TiDB rejects the connection.
+        let url = parse_database_url(
+            "mysql://app:password@host:4000/pr_3328_library?ssl-mode=REQUIRED",
+        )
+        .unwrap();
+
+        assert_eq!(
+            require_preview_target(Some("preview"), &url).unwrap(),
+            "pr_3328_library"
+        );
+        assert!(url.as_str().ends_with("?ssl-mode=REQUIRED"));
+    }
+
+    #[test]
+    fn deserializes_platform_payload_contract() {
+        let payload: MigrationPayload = serde_json::from_value(json!({
+            "databaseUrl": "direct-database-url",
+            "databaseUrlEnv": "DATABASE_URL"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            payload.database_url.as_deref(),
+            Some("direct-database-url")
+        );
+        assert_eq!(
+            payload.database_url_env.as_deref(),
+            Some("DATABASE_URL")
+        );
+    }
+
+    #[test]
+    fn direct_database_url_takes_priority_without_reading_environment() {
+        let resolved = resolve_database_url(
+            MigrationPayload {
+                database_url: Some("direct-database-url".to_string()),
+                database_url_env: Some("DATABASE_URL".to_string()),
+            },
+            |_| -> Result<String, ()> {
+                panic!("environment fallback must not be read")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.value, "direct-database-url");
+        assert_eq!(resolved.source, "databaseUrl");
+    }
+
+    #[test]
+    fn database_url_env_fallback_reads_named_environment_variable() {
+        let resolved = resolve_database_url(
+            MigrationPayload {
+                database_url: None,
+                database_url_env: Some("PREVIEW_DATABASE_URL".to_string()),
+            },
+            |name| {
+                assert_eq!(name, "PREVIEW_DATABASE_URL");
+                Ok::<_, ()>("fallback-database-url".to_string())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.value, "fallback-database-url");
+        assert_eq!(resolved.source, "PREVIEW_DATABASE_URL");
+    }
+
+    #[test]
+    fn missing_database_url_contract_fails_closed() {
+        let error = resolve_database_url(
+            MigrationPayload {
+                database_url: None,
+                database_url_env: None,
+            },
+            |_| Ok::<_, ()>(String::new()),
+        )
+        .err()
+        .unwrap();
+
+        assert_eq!(
+            error,
+            "databaseUrl or databaseUrlEnv is required for preview migrations"
+        );
+    }
+
+    #[test]
     fn rewrites_only_logical_database_qualifiers() {
         let sql = "INSERT INTO library.repos SELECT * FROM \
                    `tachyon_apps_database_manager`.objects; \
@@ -405,54 +579,53 @@ mod tests {
 
     #[test]
     fn rejects_table_names_owned_by_both_migration_sets() {
+        let database_manager = test_migrator(
+            1,
+            "database manager",
+            "CREATE TABLE duplicate_table (id INT)",
+        );
+        let library = test_migrator(
+            2,
+            "library",
+            "CREATE TABLE library.duplicate_table (id INT)",
+        );
         let result = ensure_table_names_do_not_collide(&[
-            (
-                DATABASE_MANAGER_SOURCE.to_string(),
-                test_migrator(
-                    1,
-                    "database manager",
-                    "CREATE TABLE duplicate_table (id INT)",
-                ),
-            ),
-            (
-                LIBRARY_SOURCE.to_string(),
-                test_migrator(
-                    2,
-                    "library",
-                    "CREATE TABLE library.duplicate_table (id INT)",
-                ),
-            ),
+            (DATABASE_MANAGER_SOURCE.to_string(), &database_manager),
+            (LIBRARY_SOURCE.to_string(), &library),
         ]);
 
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn repository_migration_sets_have_disjoint_table_names() {
-        let mut source_migrators = Vec::new();
-        for source in MIGRATION_SOURCES {
-            let migrator =
-                Migrator::new(workspace_root().join(source).as_path())
-                    .await
-                    .unwrap();
-            source_migrators.push(((*source).to_string(), migrator));
-        }
+    #[test]
+    fn embedded_migration_sets_have_disjoint_table_names() {
+        ensure_table_names_do_not_collide(&[
+            (
+                DATABASE_MANAGER_SOURCE.to_string(),
+                &DATABASE_MANAGER_MIGRATOR,
+            ),
+            (LIBRARY_SOURCE.to_string(), &LIBRARY_MIGRATOR),
+        ])
+        .unwrap();
+    }
 
-        ensure_table_names_do_not_collide(&source_migrators).unwrap();
+    #[test]
+    fn embedded_migration_sets_are_not_empty() {
+        // The Lambda ships these migrations compiled in; an empty embed
+        // would "succeed" while applying nothing.
+        assert!(DATABASE_MANAGER_MIGRATOR.iter().next().is_some());
+        assert!(LIBRARY_MIGRATOR.iter().next().is_some());
     }
 
     #[test]
     fn migration_versions_use_stable_source_namespaces() {
         let version = 20260809000000;
+        let library = test_migrator(version, "library", "SELECT 1");
+        let database_manager =
+            test_migrator(version, "database manager", "SELECT 2");
         let migrator = combine_migrators(vec![
-            (
-                LIBRARY_SOURCE.to_string(),
-                test_migrator(version, "library", "SELECT 1"),
-            ),
-            (
-                DATABASE_MANAGER_SOURCE.to_string(),
-                test_migrator(version, "database manager", "SELECT 2"),
-            ),
+            (LIBRARY_SOURCE.to_string(), &library),
+            (DATABASE_MANAGER_SOURCE.to_string(), &database_manager),
         ])
         .unwrap();
         let versions = migrator
@@ -463,18 +636,13 @@ mod tests {
         assert_eq!(versions, vec![version * 100 + 1, version * 100 + 2]);
     }
 
-    fn with_database(base_url: &Url, database: &str) -> Url {
-        let mut url = base_url.clone();
-        url.set_path(&format!("/{database}"));
-        url
-    }
-
     #[tokio::test]
     #[ignore = "requires MySQL configured by DEV_DATABASE_URL"]
     async fn preview_migrations_replay_on_empty_mysql() {
         let base_url = parse_database_url(
-            &env::var("DEV_DATABASE_URL")
-                .expect("DEV_DATABASE_URL must be set"),
+            env::var("DEV_DATABASE_URL")
+                .expect("DEV_DATABASE_URL must be set")
+                .trim(),
         )
         .expect("DEV_DATABASE_URL must be valid");
         let database_name = format!(
@@ -482,9 +650,11 @@ mod tests {
             std::process::id(),
             DATABASE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
+        let mut admin_url = base_url.clone();
+        admin_url.set_path("/mysql");
         let admin_pool = MySqlPoolOptions::new()
             .max_connections(1)
-            .connect(with_database(&base_url, "mysql").as_str())
+            .connect(admin_url.as_str())
             .await
             .expect("MySQL must be available");
 
@@ -497,11 +667,12 @@ mod tests {
 
         let replay_result = async {
             let migrator =
-                load_combined_migrator(workspace_root(), MIGRATION_SOURCES)
-                    .await?;
+                load_combined_migrator(embedded_migration_sources())?;
+            let mut replay_url = base_url.clone();
+            replay_url.set_path(&format!("/{database_name}"));
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
-                .connect(with_database(&base_url, &database_name).as_str())
+                .connect(replay_url.as_str())
                 .await
                 .map_err(|error| error.to_string())?;
             migration_preflight::ensure_check_constraints_enforced(&pool)

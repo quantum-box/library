@@ -1,0 +1,114 @@
+name: library-api preview migrate Lambda
+
+# The preview deploy hook invokes lambda-library-api-preview-migrate
+# (PrivateLink-only per-PR TiDB; the hook runner has no route to it).
+# The binary embeds both migration sets via sqlx::migrate!, so it must be
+# redeployed whenever the migrations or the hook binary change. PRs get a
+# build-only verification; pushes to main deploy via OIDC
+# (LibraryRepoLambdaDeployRole trusts refs/heads/main only).
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/api/migrations/**"
+      - "packages/database-manager/migrations/**"
+      - "packages/preview_migrate/**"
+      - "packages/migration_preflight/**"
+      - "scripts/build-library-api-preview-migrate-lambda.sh"
+      - ".github/workflows/library-api-preview-migrate-deploy.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/api/migrations/**"
+      - "packages/database-manager/migrations/**"
+      - "packages/preview_migrate/**"
+      - "packages/migration_preflight/**"
+      - "scripts/build-library-api-preview-migrate-lambda.sh"
+      - ".github/workflows/library-api-preview-migrate-deploy.yml"
+
+# A newer main push supersedes an older one, but never cancel a deploy that
+# already started updating the function.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build preview migrate Lambda package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-04
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-lambda@1.9.1
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: library-api-preview-migrate-lambda
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Build ARM64 Lambda deployment package
+        run: ./scripts/build-library-api-preview-migrate-lambda.sh
+
+      - name: Upload Lambda deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-api-preview-migrate-lambda-${{ github.sha }}
+          path: target/lambda/lambda-library-api-preview-migrate/bootstrap.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: deploy to lambda-library-api-preview-migrate
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: library-api-preview-migrate-lambda-${{ github.sha }}
+          path: ${{ runner.temp }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Update function code
+        env:
+          PACKAGE: ${{ runner.temp }}/bootstrap.zip
+        run: |
+          aws lambda update-function-code \
+            --function-name lambda-library-api-preview-migrate \
+            --zip-file "fileb://${PACKAGE}" \
+            --no-cli-pager
+          aws lambda wait function-updated-v2 \
+            --function-name lambda-library-api-preview-migrate
+          {
+            echo "### library-api preview migrate Lambda"
+            echo
+            echo "- Function: \`lambda-library-api-preview-migrate\`"
+            echo "- Revision: \`${GITHUB_SHA}\`"
+          } >>"${GITHUB_STEP_SUMMARY}"

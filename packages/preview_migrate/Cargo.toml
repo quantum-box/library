@@ -1,6 +1,7 @@
-# Built from a cold cache by the preview-database deploy hook on every
-# preview deployment (tachyon.yaml, ADR-0049). Keep the dependency tree
-# minimal: no axum/arrow/tonic/AWS stacks, no build scripts needing protoc.
+# Ships as the lambda-library-api-preview-migrate deploy hook (the per-PR
+# TiDB is PrivateLink-only, so migrations run inside the enterprise-library
+# network). Keep the dependency tree minimal: no axum/arrow/tonic/AWS
+# stacks, no build scripts needing protoc.
 [package]
 name = "library-api-preview-migrate"
 version = "0.1.0"
@@ -13,7 +14,9 @@ path = "src/main.rs"
 
 [dependencies]
 migration-preflight = { path = "../migration_preflight" }
+lambda_runtime = { workspace = true }
 regex = { workspace = true }
+serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [
     "macros",
@@ -21,3 +24,6 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
 ], default-features = false }
 url = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
