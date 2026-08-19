@@ -28,3 +28,22 @@
         effect: allow
       - action: auth:AttachUserPolicy
         effect: allow
+
+# Every Library user may create organizations. `library:CreateOrganization`
+# in LibraryUserPolicy is the product-level permission library-api checks;
+# this one is the tachyon-side capability the same flow then needs, because
+# `create_operator` is authorized against the caller and derives the new
+# organization's owner from the caller's identity. LibraryUserPolicy is a
+# system policy and cannot be amended through the API, so the action lives
+# in this companion policy, attached alongside it at sign-in
+# (`LIBRARY_ORG_CREATOR_POLICY_ID` names its applied id).
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:org-creator
+    namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
+  spec:
+    description: Allow Library platform users to create organizations (operators)
+    actions:
+      - action: auth:CreateOperator
+        effect: allow
