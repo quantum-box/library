@@ -123,7 +123,7 @@ impl LibraryMutation {
     }
 
     /// [AUTH] Verify the token and return the user
-    #[tracing::instrument(skip(self, ctx))]
+    #[tracing::instrument(skip(self, ctx, token))]
     async fn verify(
         &self,
         ctx: &async_graphql::Context<'_>,
@@ -140,7 +140,7 @@ impl LibraryMutation {
     }
 
     /// [AUTH] Sign in or sign up via platform access token (library)
-    #[tracing::instrument(skip(self, ctx))]
+    #[tracing::instrument(skip(self, ctx, access_token))]
     #[graphql(name = "signInWithPlatform")]
     async fn sign_in(
         &self,
