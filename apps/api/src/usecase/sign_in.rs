@@ -7,7 +7,8 @@ use tachyon_sdk::auth::{AuthApp as AuthAppTrait, DefaultRole, User};
 use value_object::{PlatformId, TenantId};
 
 use crate::domain::{
-    library_repo_owner_policy_id, library_user_policy_id, LIBRARY_TENANT,
+    library_org_creator_policy_id, library_repo_owner_policy_id,
+    library_user_policy_id, LIBRARY_TENANT,
 };
 use crate::sdk_auth::SdkAuthApp;
 
@@ -103,6 +104,32 @@ impl SignIn {
             tenant = %platform_tenant,
             "attached platform-scope library policy"
         );
+
+        // Organization creation is authorized as the caller, and the
+        // tachyon side of it (`create_operator`) demands
+        // `auth:CreateOperator` from that caller. LibraryUserPolicy is
+        // a system policy that cannot be amended to carry the action,
+        // so it rides in this companion policy.
+        if let Some(org_creator_policy_id) = library_org_creator_policy_id()
+        {
+            AuthAppTrait::attach_user_policy(
+                self.sdk.as_ref(),
+                &tachyon_sdk::auth::AttachUserPolicyInput {
+                    executor,
+                    multi_tenancy: &platform_scope,
+                    user_id: user.id(),
+                    policy_id: &org_creator_policy_id,
+                    tenant_id: &platform_tenant,
+                },
+            )
+            .await?;
+
+            info!(
+                user = %user.id(),
+                tenant = %platform_tenant,
+                "attached platform-scope org creator policy"
+            );
+        }
 
         let mut seen = HashSet::new();
         for tenant in user.tenants() {

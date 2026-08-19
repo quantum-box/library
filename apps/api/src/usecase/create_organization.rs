@@ -7,12 +7,22 @@ use crate::domain::{
 };
 use tachyon_sdk::auth::{
     AttachUserPolicyInput, AuthApp, CheckPolicyInput, CreateOperatorInput,
-    Executor, MultiTenancy, NewOperatorOwnerMethod,
+    ExecutorAction, MultiTenancy, NewOperatorOwnerMethod,
 };
 use value_object::{FromStr, LongText, TenantId, Text, UserId};
 
+/// Grant the creator the Library policies for the organization they
+/// just created.
+///
+/// The creator is the executor: `create_operator` makes them the owner
+/// of the new tenant and attaches `AdministratorAccess` there, so they
+/// are authorized to grant these policies inside it. A system executor
+/// would fall back to the service account, which belongs to the Library
+/// platform tenant and is therefore rejected in any per-organization
+/// scope.
 async fn attach_creator_policies(
     auth_app: &dyn AuthApp,
+    executor: &dyn ExecutorAction,
     user_id: &UserId,
     tenant_id: &TenantId,
 ) -> errors::Result<()> {
@@ -20,14 +30,13 @@ async fn attach_creator_policies(
         Some(LIBRARY_TENANT.clone()),
         Some(tenant_id.clone()),
     );
-    let executor = Executor::SystemUser;
 
     for policy_id in
         [library_user_policy_id(), library_repo_owner_policy_id()]
     {
         auth_app
             .attach_user_policy(&AttachUserPolicyInput {
-                executor: &executor,
+                executor,
                 multi_tenancy: &scope,
                 user_id,
                 policy_id: &policy_id,
@@ -108,6 +117,7 @@ impl CreateOrganizationInputPort for CreateOrganization {
         let user_id = input.executor.get_user_id()?;
         attach_creator_policies(
             self.auth_app.as_ref(),
+            input.executor,
             &user_id,
             &tenant_id,
         )
@@ -127,8 +137,35 @@ mod tests {
         LIBRARY_USER_POLICY_ID,
     };
     use std::sync::{Arc, Mutex};
-    use tachyon_sdk::auth::MockAuthApp;
+    use tachyon_sdk::auth::{ExecutorAction, MockAuthApp};
     use value_object::{TenantId, UserId};
+
+    /// Stand-in for the signed-in caller. Only `is_user` matters: it is
+    /// what makes the SDK layer carry the caller's own credential
+    /// instead of the service account's.
+    #[derive(Debug)]
+    struct CallerExecutor(&'static str);
+
+    impl ExecutorAction for CallerExecutor {
+        fn get_id(&self) -> &str {
+            self.0
+        }
+        fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+            true
+        }
+        fn is_system_user(&self) -> bool {
+            false
+        }
+        fn is_user(&self) -> bool {
+            true
+        }
+        fn is_service_account(&self) -> bool {
+            false
+        }
+        fn is_none(&self) -> bool {
+            false
+        }
+    }
 
     #[tokio::test]
     async fn attaches_creator_policies_in_the_new_org_scope() {
@@ -153,10 +190,11 @@ mod tests {
             }
         });
 
+        let executor = CallerExecutor("us_01testcreator");
         let user_id = UserId::new("us_01testcreator").unwrap();
         let tenant_id = TenantId::new("tn_01testorganization").unwrap();
 
-        attach_creator_policies(&auth, &user_id, &tenant_id)
+        attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
             .await
             .unwrap();
 
@@ -188,13 +226,44 @@ mod tests {
             })
         });
 
+        let executor = CallerExecutor("us_01testcreator");
         let user_id = UserId::new("us_01testcreator").unwrap();
         let tenant_id = TenantId::new("tn_01testorganization").unwrap();
 
-        let error = attach_creator_policies(&auth, &user_id, &tenant_id)
-            .await
-            .unwrap_err();
+        let error =
+            attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
+                .await
+                .unwrap_err();
 
         assert!(error.to_string().contains("attach failed"));
+    }
+
+    #[tokio::test]
+    async fn forwards_the_caller_as_the_attaching_executor() {
+        let is_user_flags = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_attach_user_policy().times(2).returning({
+            let is_user_flags = is_user_flags.clone();
+            move |input| {
+                is_user_flags
+                    .lock()
+                    .unwrap()
+                    .push(input.executor.is_user());
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let executor = CallerExecutor("us_01testcreator");
+        let user_id = UserId::new("us_01testcreator").unwrap();
+        let tenant_id = TenantId::new("tn_01testorganization").unwrap();
+
+        attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
+            .await
+            .unwrap();
+
+        // A system executor here would resolve to the service account,
+        // which is scoped to the Library platform tenant and therefore
+        // rejected inside the new organization's tenant.
+        assert_eq!(is_user_flags.lock().unwrap().as_slice(), &[true, true]);
     }
 }

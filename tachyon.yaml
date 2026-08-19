@@ -84,6 +84,12 @@ spec:
           value: "https://library-api.txcloud.app"
         - name: LIBRARY_TENANT_ID
           value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
+        # Applied id of the library:org-creator custom policy
+        # (.tachyon/manifests/library-api-runtime.yml). Attached to
+        # users at sign-in so organization creation, which tachyon-api
+        # authorizes as the caller, can pass auth:CreateOperator.
+        - name: LIBRARY_ORG_CREATOR_POLICY_ID
+          value: "pol_01m0cdez8p62f0a8dz3tzsqzey"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN

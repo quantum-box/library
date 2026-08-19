@@ -418,15 +418,35 @@ impl SdkAuthApp {
 
     /// Build an SDK Configuration with auth headers derived
     /// from executor and multi-tenancy context.
+    ///
+    /// The bearer follows the executor. A user executor means the call
+    /// is a decision about what *that user* may do, so it carries the
+    /// caller's own credential and tachyon-api evaluates the user's
+    /// policies. A system executor means internal provisioning, which
+    /// keeps the process-level credential.
+    ///
+    /// The `x-user-id` header below cannot stand in for the caller:
+    /// tachyon-api only honours it in debug builds running with
+    /// `ENVIRONMENT=development|test`, so in production every context
+    /// call used to resolve to this service account no matter which
+    /// user was acting.
     fn sdk_config_with_context(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
+        // `get_user_id` is not the test here: it succeeds for a system
+        // executor too, whose id is the literal "system".
+        let bearer = if executor.is_user() {
+            request_caller_token()
+                .unwrap_or_else(|| self.auth_token.clone())
+        } else {
+            self.auth_token.clone()
+        };
         headers.insert(
             "Authorization",
-            format!("Bearer {}", self.auth_token).parse().unwrap(),
+            format!("Bearer {bearer}").parse().unwrap(),
         );
 
         let resolved_op = multi_tenancy.get_operator_id().ok();
@@ -3292,5 +3312,110 @@ mod caller_token_scope_tests {
 
         let seen = requests.lock().unwrap().clone();
         assert_eq!(seen, vec![Some("Bearer caller-jwt".to_string())]);
+    }
+
+    /// Runs one `check_policy` call against a stub tachyon-api and
+    /// returns the Authorization header it received.
+    async fn authorization_for_check_policy(
+        executor: &dyn auth::ExecutorAction,
+    ) -> Option<String> {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/auth/policies/check",
+            axum::routing::post(move |headers: axum::http::HeaderMap| {
+                let captured = captured.clone();
+                async move {
+                    let auth = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    captured.lock().unwrap().push(auth);
+                    axum::Json(serde_json::json!({ "results": [] }))
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+        let multi_tenancy = auth::MultiTenancy::new(
+            Some(tenant_id.clone()),
+            Some(tenant_id.clone()),
+        );
+
+        let _ = caller_token_scope(Some("caller-jwt".to_string()), async {
+            AuthApp::check_policy(
+                &sdk,
+                &auth::CheckPolicyInput {
+                    executor,
+                    multi_tenancy: &multi_tenancy,
+                    action: "library:CreateOrganization",
+                },
+            )
+            .await
+        })
+        .await;
+
+        let seen = requests.lock().unwrap().clone();
+        seen.into_iter().next().flatten()
+    }
+
+    #[derive(Debug)]
+    struct UserExecutor;
+
+    impl auth::ExecutorAction for UserExecutor {
+        fn get_id(&self) -> &str {
+            "us_01testcaller"
+        }
+        fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+            true
+        }
+        fn is_system_user(&self) -> bool {
+            false
+        }
+        fn is_user(&self) -> bool {
+            true
+        }
+        fn is_service_account(&self) -> bool {
+            false
+        }
+        fn is_none(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_a_user_send_the_caller_token() {
+        // Otherwise tachyon-api resolves the executor from this
+        // service account's key and evaluates its policies instead of
+        // the signed-in user's. `x-user-id` cannot substitute: it is
+        // honoured only in debug builds.
+        assert_eq!(
+            authorization_for_check_policy(&UserExecutor).await,
+            Some("Bearer caller-jwt".to_string()),
+        );
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_the_system_keep_the_process_credential() {
+        // Provisioning done on nobody's behalf — sign-in policy
+        // seeding, for one — has no caller to borrow.
+        assert_eq!(
+            authorization_for_check_policy(&auth::Executor::SystemUser)
+                .await,
+            Some("Bearer process-level-token".to_string()),
+        );
     }
 }
