@@ -43,20 +43,15 @@ spec:
             engine: mysql
             envVar: DATABASE_URL
             migration:
-              # The deploy hook runs in its own JobRun, which does not carry
-              # the toolchain installed by the build step. rust-toolchain.toml
-              # asks for `nightly`, so pin the same toolchain the build uses
-              # and install it here before invoking cargo.
-              # The binary lives in the minimal library-api-preview-migrate
-              # crate (not library-api) so this cold, uncached build compiles
-              # only sqlx and friends instead of the full API dependency tree.
-              command: >-
-                rustup toolchain install nightly-2026-06-04 --no-self-update &&
-                cargo +nightly-2026-06-04 run
-                --package library-api-preview-migrate
-                --bin library_api_preview_migrate --
-                --database-url-env DATABASE_URL
-              timeoutSeconds: 1800
+              # PLT-3561: the per-PR TiDB is PrivateLink-only, so the
+              # deploy-hook runner has no route to it and a `command`
+              # migration can only time out. Run the migration as a Lambda
+              # inside the enterprise-library network instead; the platform
+              # injects the resolved per-PR connection URL into the invoke
+              # payload (databaseUrl / databaseUrlEnv).
+              lambdaInvoke:
+                functionName: lambda-library-api-preview-migrate
+              timeoutSeconds: 900
         production:
           hooks:
             preDeploy:
