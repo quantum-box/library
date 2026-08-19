@@ -4,6 +4,8 @@ members = [
     "packages/database-manager",
     "packages/database-manager/domain",
     "packages/errors",
+    "packages/migration_preflight",
+    "packages/preview_migrate",
     "packages/value_object",
     "packages/util",
     "packages/persistence",

@@ -2,7 +2,9 @@ pub extern crate database_domain as domain;
 
 pub mod database_app;
 pub mod interface_adapter;
-pub mod migration_preflight;
+// The preflight lives in its own tiny crate so the preview-migrate deploy
+// hook can build it without database-manager's gRPC/web dependency tree.
+pub use migration_preflight;
 pub mod property_definition_rollout;
 pub mod property_value_rollout;
 mod relation_edge_rollout;

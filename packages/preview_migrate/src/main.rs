@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use sqlx::migrate::{Migration, Migrator};
 use sqlx::mysql::MySqlPoolOptions;
-use value_object::DatabaseUrl;
+use url::Url;
 
 const DATABASE_MANAGER_SOURCE: &str =
     "packages/database-manager/migrations";
@@ -49,30 +49,27 @@ async fn run() -> Result<(), String> {
             args.database_url_env
         ));
     }
-    let database_url: DatabaseUrl = raw_database_url
-        .parse()
-        .map_err(|_| "preview DATABASE_URL is invalid".to_string())?;
+    let database_url = parse_database_url(raw_database_url.trim())?;
     let database_name = require_preview_target(
         env::var("TACHYON_ENV").ok().as_deref(),
         &database_url,
-    )?;
+    )?
+    .to_string();
 
     let migrator =
         load_combined_migrator(workspace_root(), MIGRATION_SOURCES).await?;
     let pool = MySqlPoolOptions::new()
         .max_connections(1)
-        .connect(&database_url.to_string())
+        .connect(database_url.as_str())
         .await
         .map_err(|error| {
             format!(
                 "failed to connect to preview database `{database_name}`: {error}"
             )
         })?;
-    database_manager::migration_preflight::ensure_check_constraints_enforced(
-        &pool,
-    )
-    .await
-    .map_err(|error| error.to_string())?;
+    migration_preflight::ensure_check_constraints_enforced(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
     migrator.run(&pool).await.map_err(|error| {
         format!(
             "failed to apply {} to preview database `{database_name}`: {error}",
@@ -93,12 +90,29 @@ fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
-        .expect("apps/api must be two levels below the workspace root")
+        .expect(
+            "packages/preview_migrate must be two levels below the \
+             workspace root",
+        )
+}
+
+fn parse_database_url(raw: &str) -> Result<Url, String> {
+    let url = Url::parse(raw)
+        .map_err(|_| "preview DATABASE_URL is invalid".to_string())?;
+    if url.scheme() != "mysql" || url.host_str().is_none() {
+        return Err("preview DATABASE_URL is invalid".to_string());
+    }
+    Ok(url)
+}
+
+fn database_name(database_url: &Url) -> Option<&str> {
+    let name = database_url.path().trim_start_matches('/');
+    (!name.is_empty()).then_some(name)
 }
 
 fn require_preview_target<'a>(
     tachyon_environment: Option<&str>,
-    database_url: &'a DatabaseUrl,
+    database_url: &'a Url,
 ) -> Result<&'a str, String> {
     if tachyon_environment != Some("preview") {
         return Err(
@@ -106,10 +120,9 @@ fn require_preview_target<'a>(
         );
     }
 
-    let database_name =
-        database_url.database().as_deref().ok_or_else(|| {
-            "preview DATABASE_URL must select a database".to_string()
-        })?;
+    let database_name = database_name(database_url).ok_or_else(|| {
+        "preview DATABASE_URL must select a database".to_string()
+    })?;
     if !database_name.starts_with("pr_") {
         return Err(
             "preview DATABASE_URL must select a PR-scoped database"
@@ -334,14 +347,14 @@ mod tests {
 
     #[test]
     fn accepts_only_pr_scoped_tachyon_preview_target() {
-        let preview: DatabaseUrl =
-            "mysql://app:password@host:4000/pr_3328_library"
-                .parse()
-                .unwrap();
-        let shared: DatabaseUrl =
-            "mysql://app:password@host:4000/shared_preview"
-                .parse()
-                .unwrap();
+        let preview = parse_database_url(
+            "mysql://app:password@host:4000/pr_3328_library",
+        )
+        .unwrap();
+        let shared = parse_database_url(
+            "mysql://app:password@host:4000/shared_preview",
+        )
+        .unwrap();
 
         assert_eq!(
             require_preview_target(Some("preview"), &preview).unwrap(),
@@ -450,13 +463,20 @@ mod tests {
         assert_eq!(versions, vec![version * 100 + 1, version * 100 + 2]);
     }
 
+    fn with_database(base_url: &Url, database: &str) -> Url {
+        let mut url = base_url.clone();
+        url.set_path(&format!("/{database}"));
+        url
+    }
+
     #[tokio::test]
     #[ignore = "requires MySQL configured by DEV_DATABASE_URL"]
     async fn preview_migrations_replay_on_empty_mysql() {
-        let base_url: DatabaseUrl = env::var("DEV_DATABASE_URL")
-            .expect("DEV_DATABASE_URL must be set")
-            .parse()
-            .expect("DEV_DATABASE_URL must be valid");
+        let base_url = parse_database_url(
+            &env::var("DEV_DATABASE_URL")
+                .expect("DEV_DATABASE_URL must be set"),
+        )
+        .expect("DEV_DATABASE_URL must be valid");
         let database_name = format!(
             "pr_plt3328_replay_{}_{}",
             std::process::id(),
@@ -464,7 +484,7 @@ mod tests {
         );
         let admin_pool = MySqlPoolOptions::new()
             .max_connections(1)
-            .connect(&base_url.use_database("mysql").to_string())
+            .connect(with_database(&base_url, "mysql").as_str())
             .await
             .expect("MySQL must be available");
 
@@ -481,16 +501,12 @@ mod tests {
                     .await?;
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
-                .connect(
-                    &base_url.use_database(&database_name).to_string(),
-                )
+                .connect(with_database(&base_url, &database_name).as_str())
                 .await
                 .map_err(|error| error.to_string())?;
-            database_manager::migration_preflight::ensure_check_constraints_enforced(
-                &pool,
-            )
-            .await
-            .map_err(|error| error.to_string())?;
+            migration_preflight::ensure_check_constraints_enforced(&pool)
+                .await
+                .map_err(|error| error.to_string())?;
             let result = match migrator.run(&pool).await {
                 Ok(()) => exercise_reserved_database_runtime_queries(&pool)
                     .await

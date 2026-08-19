@@ -47,10 +47,13 @@ spec:
               # the toolchain installed by the build step. rust-toolchain.toml
               # asks for `nightly`, so pin the same toolchain the build uses
               # and install it here before invoking cargo.
+              # The binary lives in the minimal library-api-preview-migrate
+              # crate (not library-api) so this cold, uncached build compiles
+              # only sqlx and friends instead of the full API dependency tree.
               command: >-
                 rustup toolchain install nightly-2026-06-04 --no-self-update &&
-                SQLX_OFFLINE=true cargo +nightly-2026-06-04 run
-                --package library-api
+                cargo +nightly-2026-06-04 run
+                --package library-api-preview-migrate
                 --bin library_api_preview_migrate --
                 --database-url-env DATABASE_URL
               timeoutSeconds: 1800
