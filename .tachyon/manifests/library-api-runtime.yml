@@ -1,0 +1,30 @@
+# Permissions the library-api service account needs for the work it does
+# on nobody's behalf.
+#
+# Everything a signed-in user asks for is authorized as that user, using
+# the caller's own credential (see `sdk_config_with_context`). What is
+# left is provisioning the API performs itself, and this policy covers
+# exactly that:
+#
+#   auth:AttachUserPolicy   sign-in seeds the Library policy for the
+#                           user in the platform tenant
+#   auth:GetOperatorByAlias resolving an organization by username when
+#                           the local table misses, including for
+#                           anonymous readers who have no credential to
+#                           borrow
+#
+# Attach it to the `library-api-service` service account. Applying this
+# manifest only registers the policy; the attachment is a separate
+# mutation.
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:api-runtime
+    namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
+  spec:
+    description: Library API service runtime permissions (operator lookup and user policy attachment)
+    actions:
+      - action: auth:GetOperatorByAlias
+        effect: allow
+      - action: auth:AttachUserPolicy
+        effect: allow
