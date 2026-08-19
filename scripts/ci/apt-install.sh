@@ -19,6 +19,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WITH_RETRY="${SCRIPT_DIR}/with-retry.sh"
 
+"${SCRIPT_DIR}/apt-harden.sh"
+
 export DEBIAN_FRONTEND=noninteractive
 
 APT_OPTS=(
@@ -30,10 +32,10 @@ APT_OPTS=(
 
 # `timeout` runs under sudo so that it signals apt-get itself; the outer timeout in
 # with-retry.sh is a backstop in case sudo is the process that wedges.
-if ! "${WITH_RETRY}" --attempts 2 --timeout 120 -- \
+if ! "${WITH_RETRY}" --attempts 2 --timeout 120 --cleanup "${SCRIPT_DIR}/apt-unlock.sh" -- \
 	sudo timeout --kill-after=10s 90 apt-get update "${APT_OPTS[@]}"; then
 	echo "::warning::apt-get update did not succeed; installing from the runner image's cached package lists"
 fi
 
-"${WITH_RETRY}" --attempts 3 --timeout 180 -- \
+"${WITH_RETRY}" --attempts 3 --timeout 180 --cleanup "${SCRIPT_DIR}/apt-unlock.sh" -- \
 	sudo timeout --kill-after=10s 150 apt-get install -y "${APT_OPTS[@]}" "$@"

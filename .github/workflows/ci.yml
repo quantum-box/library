@@ -176,7 +176,8 @@ jobs:
         run: yarn build
       - name: Install Playwright browsers
         run: |
-          scripts/ci/with-retry.sh --attempts 3 --timeout 300 -- \
+          scripts/ci/apt-harden.sh
+          scripts/ci/with-retry.sh --attempts 3 --timeout 300 --cleanup scripts/ci/apt-unlock.sh -- \
             yarn workspace library-web exec playwright install --with-deps chromium
       - name: E2E tests
         run: yarn test:e2e
@@ -228,7 +229,9 @@ jobs:
         run: cargo test --locked --manifest-path packages/server/Cargo.toml
       - name: Install Playwright Chromium
         run: |
-          "${{ github.workspace }}/scripts/ci/with-retry.sh" --attempts 3 --timeout 300 -- \
+          "${{ github.workspace }}/scripts/ci/apt-harden.sh"
+          "${{ github.workspace }}/scripts/ci/with-retry.sh" --attempts 3 --timeout 300 \
+            --cleanup "${{ github.workspace }}/scripts/ci/apt-unlock.sh" -- \
             npx playwright install --with-deps chromium
       - name: Run client E2E
         id: client_e2e
