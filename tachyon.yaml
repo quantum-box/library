@@ -49,8 +49,14 @@ spec:
               # inside the enterprise-library network instead; the platform
               # injects the resolved per-PR connection URL into the invoke
               # payload (databaseUrl / databaseUrlEnv).
+              #
+              # `qualifier: prod` pins the invoke to the migrate app's
+              # production alias. Without it the hook would reach $LATEST,
+              # which any PR's preview build of that app overwrites, so one
+              # PR's migrations could land in another PR's database.
               lambdaInvoke:
-                functionName: lambda-library-api-preview-migrate
+                appName: library-api-preview-migrate
+                qualifier: prod
               timeoutSeconds: 900
         production:
           hooks:
@@ -120,6 +126,53 @@ spec:
           value: "0.05"
         - name: OTEL_PROPAGATORS
           value: "tracecontext"
+    # Preview-database migration runner (PLT-3561). Declared as a Cloud App
+    # rather than hand-rolled infrastructure so the platform builds it from
+    # this repository and deploys it into the enterprise-library subnet,
+    # whose security group already has 4000/tcp egress to the user TiDB
+    # endpoint. `library-api`'s preview migration hook invokes it by
+    # appName; the resulting function is `lambda-library-api-preview-migrate`.
+    - name: library-api-preview-migrate
+      repository:
+        owner: quantum-box
+        name: library
+        url: https://github.com/quantum-box/library
+        defaultBranch: main
+      framework: cargo_lambda
+      deploymentTarget: lambda
+      tier: enterprise
+      subnet: enterprise-library
+      rootDirectory: packages/preview_migrate
+      dockerContext: .
+      watchPaths:
+        - packages/preview_migrate/**
+        - apps/api/migrations/**
+        - packages/database-manager/migrations/**
+        - scripts/build-library-api-preview-migrate-lambda.sh
+      build:
+        package: library-api-preview-migrate
+        binary: lambda-library-api-preview-migrate
+        # The migration crate depends on sqlx and lambda_runtime only, so
+        # unlike library-api this build needs no protoc.
+        installCommand: >-
+          PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --force-reinstall
+          cargo-lambda==1.9.1 ziglang==0.15.2 &&
+          rustup toolchain install nightly-2026-06-04 --no-self-update &&
+          rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
+        command: >-
+          bash -lc 'bash ../../scripts/build-library-api-preview-migrate-lambda.sh'
+        release: true
+        arch: arm64
+      envVars:
+        # The binary refuses to run against anything but a pr_-scoped
+        # database, and asserts its own environment rather than trusting the
+        # invoke payload. This app exists only to migrate preview databases.
+        - name: ENVIRONMENT
+          value: "preview"
+        - name: RUST_LOG
+          value: "info"
+        - name: RUST_BACKTRACE
+          value: "1"
     - name: planet-library
       repository:
         url: https://github.com/quantum-box/library

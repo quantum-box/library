@@ -19,22 +19,27 @@ subnet の `enterprise_library_lambda_sg` には `user_tidb_endpoint_sg` への 
 egress が既にある。platform は解決済みの接続 URL を invoke payload の
 `databaseUrl` / `databaseUrlEnv` に入れて渡す。
 
-Lambda 本体は tachyon-apps の `cluster/n1-aws/library_preview_migrate.tf` が
-宣言する。Terraform は設定だけを固定し、コードは out-of-band で配布する
-(`lambda-library-api-migrate` と同じ方式)。
+Lambda 本体は `tachyon.yaml` の `library-api-preview-migrate` Cloud App として
+宣言する。Terraform で手作りせず Cloud App にしているのは、platform が
+このリポジトリからビルドして `enterprise-library` subnet へ配布してくれるためで、
+`aws lambda update-function-code` も専用の IAM も要らない。関数名は
+`lambda-{app 名}` の規約で `lambda-library-api-preview-migrate` になる。
 
 ## コードのデプロイ
 
-migration SQL は `sqlx::migrate!` でビルド時に埋め込まれる。**preview データベース
-には、成果物をビルドした時点の migration しか適用されない。**
-`apps/api/migrations` または `packages/database-manager/migrations` を変更したら、
-必ず再ビルドして再デプロイすること。
+main にマージされると Cloud App が再デプロイされ、production alias (`prod`) が
+更新される。`library-api` 側の hook は `qualifier: prod` でこの alias を指しており、
+`$LATEST` は見ない。`$LATEST` は任意の PR の preview build に上書きされるため、
+pin しないと別の PR の migration が流れ込む。
+
+migration SQL は `sqlx::migrate!` でビルド時に埋め込まれる。したがって
+**PR で追加した migration は、その PR が main にマージされるまで preview
+データベースには適用されない。** field (PLT-3561) も同じ制約で運用している。
+
+手元でクロスコンパイルの健全性だけ確認したい場合:
 
 ```bash
 scripts/build-library-api-preview-migrate-lambda.sh
-aws lambda update-function-code \
-  --function-name lambda-library-api-preview-migrate \
-  --zip-file "fileb://target/lambda/lambda-library-api-preview-migrate/bootstrap.zip"
 ```
 
 ## 失敗の切り分け
