@@ -1,23 +1,37 @@
-# Built from a cold cache by the preview-database deploy hook on every
-# preview deployment (tachyon.yaml, ADR-0049). Keep the dependency tree
-# minimal: no axum/arrow/tonic/AWS stacks, no build scripts needing protoc.
+# Kept deliberately small: this crate is built into a Lambda deployment
+# package (scripts/build-library-api-preview-migrate-lambda.sh) and must not
+# pull the web/AWS/gRPC stacks the larger workspace crates depend on.
 [package]
 name = "library-api-preview-migrate"
 version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "library_api_preview_migrate"
-path = "src/main.rs"
+path = "src/bin/cli.rs"
+
+[[bin]]
+name = "lambda-library-api-preview-migrate"
+path = "src/bin/lambda.rs"
 
 [dependencies]
+lambda_runtime = { workspace = true }
 migration-preflight = { path = "../migration_preflight" }
 regex = { workspace = true }
+serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [
     "macros",
+    "net",
     "rt",
     "rt-multi-thread",
+    "time",
 ], default-features = false }
 url = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
