@@ -1,0 +1,12 @@
+# Deliberately tiny: the preview-migrate deploy hook builds this crate from a
+# cold cache on every preview deployment, so it must not pull the web/AWS/gRPC
+# stacks that the larger workspace crates depend on.
+[package]
+name = "migration-preflight"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+errors = { path = "../errors", default-features = false }
+sqlx = { workspace = true }

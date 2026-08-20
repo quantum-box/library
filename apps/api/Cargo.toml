@@ -99,7 +99,6 @@ hex = "0.4"
 # test
 mockall = "0.13"
 rstest = { workspace = true }
-regex = "1.10.3"
 
 [build-dependencies]
 tonic-build = { workspace = true }
@@ -123,10 +122,6 @@ path = "./bin/migrate.rs"
 [[bin]]
 name = "lambda-library-api-migrate"
 path = "./bin/migrate.rs"
-
-[[bin]]
-name = "library_api_preview_migrate"
-path = "./bin/preview_migrate.rs"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
