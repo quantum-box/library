@@ -5,15 +5,21 @@ set -euo pipefail
 #
 # The per-PR TiDB is PrivateLink-only, so `tachyon.yaml` runs preview
 # migrations by invoking this function instead of running a command on the
-# deploy-hook runner, which has no route to port 4000. This is the build
-# command of the `library-api-preview-migrate` Cloud App, so the platform
-# runs it and deploys the artifact; it is also runnable locally to check
-# that the cross-compile still works.
+# deploy-hook runner, which has no route to port 4000.
+#
+# This function cannot be a Cloud App: Lambda Cloud App deploys require a
+# Function URL and HTTP-probe it, and this binary answers invoke payloads.
+# So the code ships out-of-band, the way lambda-library-api-migrate does:
+#
+#   scripts/build-library-api-preview-migrate-lambda.sh
+#   aws lambda update-function-code \
+#     --function-name lambda-library-api-preview-migrate \
+#     --zip-file "fileb://target/lambda/lambda-library-api-preview-migrate/bootstrap.zip"
 #
 # The migration SQL is embedded at compile time, so a preview database only
-# receives migrations that existed when this artifact was built. A migration
-# added in a PR reaches preview databases once that PR is merged and the
-# Cloud App redeploys from main.
+# receives migrations that existed when this artifact was built. Rebuild and
+# redeploy whenever apps/api/migrations or
+# packages/database-manager/migrations changes.
 
 # shellcheck source=/dev/null
 source "$HOME/.cargo/env"
@@ -23,7 +29,7 @@ cd "$REPOSITORY_ROOT"
 
 TARGET_ROOT="${CARGO_TARGET_DIR:-${REPOSITORY_ROOT}/target}"
 BINARY_NAME="lambda-library-api-preview-migrate"
-LAMBDA_ARTIFACT_DIR="${TARGET_ROOT}/lambda/${BINARY_NAME}"
+LAMBDA_DIR="${TARGET_ROOT}/lambda"
 
 export CARGO_INCREMENTAL=0
 
@@ -32,20 +38,14 @@ cargo +nightly-2026-06-04 lambda build \
   --bin "${BINARY_NAME}" \
   --release \
   --arm64 \
-  --lambda-dir "${LAMBDA_ARTIFACT_DIR}" \
-  --flatten "${BINARY_NAME}"
+  --output-format zip \
+  --lambda-dir "${LAMBDA_DIR}"
 
-mkdir -p "${LAMBDA_ARTIFACT_DIR}"
-if [ ! -f "${LAMBDA_ARTIFACT_DIR}/bootstrap" ]; then
-  NESTED="$(find "${LAMBDA_ARTIFACT_DIR}" -type f 2>/dev/null | head -1 || true)"
-  if [ -n "${NESTED}" ]; then
-    cp "${NESTED}" "${LAMBDA_ARTIFACT_DIR}/bootstrap"
-    chmod +x "${LAMBDA_ARTIFACT_DIR}/bootstrap"
-  fi
-fi
-
-if [ ! -f "${LAMBDA_ARTIFACT_DIR}/bootstrap" ]; then
-  echo "${BINARY_NAME} bootstrap not found" >&2
-  ls -laR "${LAMBDA_ARTIFACT_DIR}" 2>/dev/null >&2 || true
+ARTIFACT="${LAMBDA_DIR}/${BINARY_NAME}/bootstrap.zip"
+if [ ! -f "${ARTIFACT}" ]; then
+  echo "${BINARY_NAME} bootstrap.zip not found" >&2
+  ls -laR "${LAMBDA_DIR}/${BINARY_NAME}" 2>/dev/null >&2 || true
   exit 1
 fi
+
+echo "${ARTIFACT}"
