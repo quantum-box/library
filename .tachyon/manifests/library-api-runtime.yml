@@ -47,3 +47,11 @@
     actions:
       - action: auth:CreateOperator
         effect: allow
+      # Creating an organization does not end at `create_operator`: the
+      # same flow then grants the creator their Library policies inside
+      # the new organization, and that call is authorized as the caller
+      # too. Without this action it is refused, and the organization is
+      # created but unusable — its creator cannot even make a
+      # repository in it.
+      - action: auth:AttachUserPolicy
+        effect: allow
