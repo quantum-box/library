@@ -929,7 +929,10 @@ impl SdkAuthApp {
         match self.bootstrap_token(token).await {
             Ok(user) => return Ok(user),
             Err(err) => {
-                tracing::debug!(
+                // Warn, not debug: this fallback drops the tenant list
+                // tachyon only reports through `/v1/me`, so a request
+                // served this way is authenticated but less informed.
+                tracing::warn!(
                     error = %err,
                     "bootstrap token verification failed; falling back to legacy verify"
                 );
@@ -945,7 +948,58 @@ impl SdkAuthApp {
             .await
             .map_err(sdk_api_err)?;
 
-        user_from_sdk_model(&resp.user)
+        let mut user = user_from_sdk_model(&resp.user)?;
+
+        // Legacy verify reports no memberships, and the executor built
+        // from this user answers `has_tenant_id` straight from them. An
+        // empty list therefore reads as "belongs to nothing" and hides
+        // every repository and dataset the caller can actually see, so
+        // a tachyon outage would look like a permission change. Resolve
+        // the memberships separately instead.
+        if user.tenants.is_empty() {
+            user.tenants = self.memberships_for(&user).await;
+        }
+
+        Ok(user)
+    }
+
+    /// Tenant memberships for `user`, or an empty list when they cannot
+    /// be resolved. Only used to repair a legacy-verify result, which
+    /// carries none of its own.
+    async fn memberships_for(&self, user: &User) -> Vec<TenantId> {
+        let operator_id = match TenantId::new(&self.default_operator_id) {
+            Ok(operator_id) => operator_id,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "cannot resolve tenant memberships: \
+                     the default operator id is not a tenant id"
+                );
+                return Vec::new();
+            }
+        };
+
+        match self
+            .get_user_by_id_full(&operator_id, user.id.as_ref())
+            .await
+        {
+            Ok(Some(full)) => full.tenants,
+            Ok(None) => {
+                tracing::warn!(
+                    user_id = %user.id,
+                    "cannot resolve tenant memberships: unknown user"
+                );
+                Vec::new()
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    user_id = %user.id,
+                    "cannot resolve tenant memberships"
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Verify a bearer token with Tachyon's bootstrap endpoint.
@@ -1517,6 +1571,20 @@ fn user_from_sdk_model(
         .parse()
         .unwrap_or(tachyon_sdk::auth::DefaultRole::General);
 
+    // `models::User` carries memberships when tachyon reports them.
+    // Keep whatever arrives; the caller repairs an empty list.
+    let tenants: Vec<TenantId> = user
+        .tenants
+        .as_ref()
+        .map(|tenants| {
+            tenants
+                .iter()
+                .map(|tenant| TenantId::new(tenant))
+                .collect::<errors::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+
     Ok(User {
         id,
         username,
@@ -1525,7 +1593,7 @@ fn user_from_sdk_model(
         email_verified: None,
         image: None,
         role,
-        tenants: vec![],
+        tenants,
         metadata: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
@@ -3440,6 +3508,108 @@ mod caller_token_scope_tests {
             authorization_for_check_policy(&auth::Executor::SystemUser)
                 .await,
             Some("Bearer process-level-token".to_string()),
+        );
+    }
+
+    /// Serves a tachyon whose `/v1/me` is down, so `verify_token` has to
+    /// fall back to legacy verify. `verify_tenants` is what that
+    /// fallback reports, and `user_tenants` is what a follow-up user
+    /// lookup would report.
+    async fn verify_token_falling_back(
+        verify_tenants: Option<&[&str]>,
+        user_tenants: &[&str],
+    ) -> User {
+        let verify_body = match verify_tenants {
+            Some(tenants) => serde_json::json!({
+                "user": {
+                    "id": "us_01testcaller",
+                    "role": "general",
+                    "tenants": tenants,
+                }
+            }),
+            None => serde_json::json!({
+                "user": { "id": "us_01testcaller", "role": "general" }
+            }),
+        };
+        let user_body = serde_json::json!({
+            "id": "us_01testcaller",
+            "role": "general",
+            "tenants": user_tenants,
+        });
+
+        let app = axum::Router::new()
+            .route(
+                "/v1/me",
+                axum::routing::get(|| async {
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                }),
+            )
+            .route(
+                "/auth/v1beta/verify",
+                axum::routing::post(move || {
+                    let body = verify_body.clone();
+                    async move { axum::Json(body) }
+                }),
+            )
+            .route(
+                "/v1/auth/users/:id",
+                axum::routing::get(move || {
+                    let body = user_body.clone();
+                    async move { axum::Json(body) }
+                }),
+            );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        sdk.verify_token("caller-jwt").await.unwrap()
+    }
+
+    /// The executor built from this user answers `has_tenant_id` from
+    /// its tenant list, so dropping the list during a `/v1/me` outage
+    /// would read as "member of nothing" and hide everything the caller
+    /// can see.
+    #[tokio::test]
+    async fn the_legacy_fallback_resolves_the_missing_memberships() {
+        let user =
+            verify_token_falling_back(None, &["tn_01memberofthis"]).await;
+
+        assert_eq!(
+            user.tenants
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["tn_01memberofthis".to_string()],
+        );
+    }
+
+    /// When legacy verify does report memberships, they are the answer:
+    /// no second lookup gets to overwrite them.
+    #[tokio::test]
+    async fn the_legacy_fallback_keeps_the_memberships_it_is_given() {
+        let user = verify_token_falling_back(
+            Some(&["tn_01reportedbyverify"]),
+            &["tn_01fetchedseparately"],
+        )
+        .await;
+
+        assert_eq!(
+            user.tenants
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["tn_01reportedbyverify".to_string()],
         );
     }
 }
