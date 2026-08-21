@@ -1883,6 +1883,18 @@ impl AuthApp for SdkAuthApp {
         let resp: RestCreateOperatorResp =
             Self::rest_post(&config, "/v1/auth/operators", &body).await?;
 
+        // Tachyon decides the owner; the request only asks. Whether the
+        // assignment matches the request is what decides if the creator
+        // can grant policies inside the tenant they just made, and the
+        // answer was being dropped here along with the rest of the
+        // response.
+        tracing::info!(
+            operator_id = %resp.operator.id,
+            requested_owner = %input.new_operator_owner_id,
+            assigned_owner = %resp.owner_id,
+            "created operator"
+        );
+
         operator_from_rest(&resp.operator)
     }
 
