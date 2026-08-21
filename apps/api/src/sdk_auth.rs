@@ -21,10 +21,22 @@ use tachyon_sdk::auth::{
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
 
+/// Budgets for GET requests to tachyon-api.
+///
+/// The per-attempt timeout has to cover a full TLS handshake, because
+/// every call builds its own `reqwest::Client` and so opens a new
+/// connection. A handshake to tachyon measures 130-200ms from outside
+/// the VPC, and the Lambda reaches it through a NAT, so 500ms left
+/// almost nothing for the response itself: `/v1/me` timed out on every
+/// production request, silently downgrading each caller's tenant list.
+///
+/// Widened to a budget the handshake fits inside. Pooling the client so
+/// the handshake stops repeating is the real fix; this keeps GETs
+/// working until then.
 const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
     max_attempts: 3,
-    per_attempt_timeout: Duration::from_millis(500),
-    total_budget: Duration::from_millis(1_500),
+    per_attempt_timeout: Duration::from_millis(2_000),
+    total_budget: Duration::from_millis(5_000),
     base_delay: Duration::from_millis(50),
     max_jitter: Duration::from_millis(25),
 };
