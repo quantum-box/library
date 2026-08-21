@@ -21,10 +21,23 @@ use tachyon_sdk::auth::{
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
 
+/// Budgets for GET requests to tachyon-api.
+///
+/// Sized from what the slowest GET actually costs. `/v1/me` answers an
+/// authenticated request in 2.0-2.5s measured end to end, nearly all of
+/// it server-side: connect and TLS together account for under 0.35s,
+/// and the time to first byte is the rest. An unauthenticated probe
+/// returns in 0.25s, which is why a smaller budget looked sufficient
+/// until it was measured against a real token.
+///
+/// Anything at or below that 2.5s ceiling makes `/v1/me` time out on
+/// every request, and `verify_token` then falls back to legacy verify,
+/// which reports no tenant memberships — so every caller silently
+/// becomes a member of nothing.
 const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
     max_attempts: 3,
-    per_attempt_timeout: Duration::from_millis(500),
-    total_budget: Duration::from_millis(1_500),
+    per_attempt_timeout: Duration::from_millis(5_000),
+    total_budget: Duration::from_millis(12_000),
     base_delay: Duration::from_millis(50),
     max_jitter: Duration::from_millis(25),
 };
