@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 use inbound_sync::sdk::SystemExecutor;
 use tachyon_sdk::auth::{AuthApp as AuthAppTrait, DefaultRole, User};
@@ -131,33 +131,59 @@ impl SignIn {
             );
         }
 
+        // Signing in is authentication; seeding these policies is
+        // provisioning that happens to ride along. One organization
+        // refusing a grant is not a reason to deny the caller every
+        // other organization they belong to — and refusing it fails
+        // sign-in outright, locking them out of the product. Record
+        // each failure and carry on.
         let mut seen = HashSet::new();
         for tenant in user.tenants() {
-            if seen.insert(tenant.to_string()) {
-                let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-                    Some(platform_tenant.clone()),
-                    Some(tenant.clone()),
-                );
-                AuthAppTrait::attach_user_policy(
-                    self.sdk.as_ref(),
-                    &tachyon_sdk::auth::AttachUserPolicyInput {
-                        executor,
-                        multi_tenancy: &tenant_scope,
-                        user_id: user.id(),
-                        policy_id: &policy_id,
-                        tenant_id: tenant,
-                    },
-                )
-                .await?;
+            if !seen.insert(tenant.to_string()) {
+                continue;
+            }
 
-                info!(
+            let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+                Some(platform_tenant.clone()),
+                Some(tenant.clone()),
+            );
+            if let Err(error) = AuthAppTrait::attach_user_policy(
+                self.sdk.as_ref(),
+                &tachyon_sdk::auth::AttachUserPolicyInput {
+                    executor,
+                    multi_tenancy: &tenant_scope,
+                    user_id: user.id(),
+                    policy_id: &policy_id,
+                    tenant_id: tenant,
+                },
+            )
+            .await
+            {
+                warn!(
+                    error = ?error,
                     user = %user.id(),
                     tenant = %tenant,
-                    "attached operator-scope library policy"
+                    "failed to attach the operator-scope library policy"
                 );
+                continue;
+            }
 
-                self.attach_repo_owner_policy_if_org_owner(user, tenant)
-                    .await?;
+            info!(
+                user = %user.id(),
+                tenant = %tenant,
+                "attached operator-scope library policy"
+            );
+
+            if let Err(error) = self
+                .attach_repo_owner_policy_if_org_owner(user, tenant)
+                .await
+            {
+                warn!(
+                    error = ?error,
+                    user = %user.id(),
+                    tenant = %tenant,
+                    "failed to attach the repo owner policy"
+                );
             }
         }
 
@@ -214,7 +240,12 @@ impl SignIn {
 
 #[cfg(test)]
 mod tests {
-    use super::should_attach_library_policy;
+    use super::{should_attach_library_policy, SignIn};
+    use crate::domain::LIBRARY_TENANT;
+    use crate::sdk_auth::SdkAuthApp;
+    use std::sync::{Arc, Mutex};
+    use tachyon_sdk::auth::{DefaultRole, User};
+    use value_object::{PlatformId, TenantId};
 
     #[test]
     fn attaches_policy_for_the_configured_library_tenant() {
@@ -230,5 +261,131 @@ mod tests {
             "tn_01j702qf86pc2j35s0kv0gv3gy",
             "tn_01j91h09tpj5ehwbwfwfxpak2b",
         ));
+    }
+
+    fn user_belonging_to(tenants: &[&str]) -> User {
+        User {
+            id: "us_01testcaller".parse().unwrap(),
+            username: "us_01testcaller".to_string(),
+            tenants: tenants
+                .iter()
+                .map(|tenant| TenantId::new(tenant).unwrap())
+                .collect(),
+            email: None,
+            name: None,
+            email_verified: None,
+            image: None,
+            role: DefaultRole::General,
+            metadata: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Serves a tachyon that accepts the platform-scope grants and
+    /// refuses every per-organization one, which is what production
+    /// does. Returns the `tenantId` of each attach it was asked for.
+    async fn attach_targets_when_org_grants_are_refused(
+        user: &User,
+    ) -> Vec<String> {
+        let platform_tenant = LIBRARY_TENANT.as_str().to_string();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let captured = seen.clone();
+        let refuse_below = platform_tenant.clone();
+
+        let app = axum::Router::new()
+            .route(
+                "/v1/auth/user-policies/attach",
+                axum::routing::post(
+                    move |body: axum::Json<serde_json::Value>| {
+                        let captured = captured.clone();
+                        let refuse_below = refuse_below.clone();
+                        async move {
+                            let tenant = body
+                                .get("tenantId")
+                                .and_then(|id| id.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let is_platform = tenant == refuse_below;
+                            captured.lock().unwrap().push(tenant);
+                            if is_platform {
+                                (
+                                    axum::http::StatusCode::OK,
+                                    axum::Json(serde_json::json!({})),
+                                )
+                            } else {
+                                (
+                                    axum::http::StatusCode::FORBIDDEN,
+                                    axum::Json(serde_json::json!({})),
+                                )
+                            }
+                        }
+                    },
+                ),
+            )
+            .route(
+                "/v1/auth/users/:id",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "id": "us_01testcaller",
+                        "role": "general",
+                        "tenants": [],
+                    }))
+                }),
+            );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id = TenantId::new(&platform_tenant).unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+        let sign_in = SignIn::new(Arc::new(sdk));
+        let platform_id: PlatformId = platform_tenant.parse().unwrap();
+
+        sign_in
+            .attach_library_policy(user, &platform_id)
+            .await
+            .expect(
+                "a refused per-organization grant must not fail sign-in",
+            );
+
+        let seen = seen.lock().unwrap().clone();
+        seen
+    }
+
+    /// Signing in is authentication. A refused per-organization grant
+    /// used to abort it, locking the caller out of the product entirely
+    /// — including the organizations whose grants were fine.
+    #[tokio::test]
+    async fn a_refused_organization_grant_does_not_fail_sign_in() {
+        let user = user_belonging_to(&["tn_01firstorganization"]);
+
+        let seen = attach_targets_when_org_grants_are_refused(&user).await;
+
+        assert!(seen.contains(&"tn_01firstorganization".to_string()));
+    }
+
+    /// And it must not stop the ones after it either.
+    #[tokio::test]
+    async fn a_refused_grant_does_not_skip_the_remaining_organizations() {
+        let user = user_belonging_to(&[
+            "tn_01firstorganization",
+            "tn_01secondorganizatio",
+        ]);
+
+        let seen = attach_targets_when_org_grants_are_refused(&user).await;
+
+        assert!(
+            seen.contains(&"tn_01secondorganizatio".to_string()),
+            "the second organization was never attempted: {seen:?}"
+        );
     }
 }
