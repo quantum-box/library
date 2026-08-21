@@ -19,28 +19,37 @@ subnet の `enterprise_library_lambda_sg` には `user_tidb_endpoint_sg` への 
 egress が既にある。platform は解決済みの接続 URL を invoke payload の
 `databaseUrl` / `databaseUrlEnv` に入れて渡す。
 
-Lambda 本体は `tachyon.yaml` の `library-api-preview-migrate` Cloud App として
-宣言する。Terraform で手作りせず Cloud App にしているのは、platform が
-このリポジトリからビルドして `enterprise-library` subnet へ配布してくれるためで、
-`aws lambda update-function-code` も専用の IAM も要らない。関数名は
-`lambda-{app 名}` の規約で `lambda-library-api-preview-migrate` になる。
+Lambda 本体は tachyon-apps の `cluster/n1-aws/library_preview_migrate.tf` が
+宣言する。Terraform は関数の器（実行ロール、VPC 配置、timeout）と fail-loud
+placeholder だけを持ち、コードは out-of-band で配布する。
+
+## なぜ Cloud App にできないのか
+
+`create_deployment.rs` の `deploy_to_lambda` は Lambda Cloud App 共通の唯一の経路で、
+candidate alias が Function URL を返さなければ hard fail し、その URL に HTTP GET の
+serving probe をかける。この関数は `databaseUrl` を含む invoke payload を処理する
+ものなので、コードを配るたびに probe で落ちる。
+
+probe に応答させることは可能だが、VPC 内にいて呼び出し側が渡した URL に対して
+migration を実行する関数に public Function URL が付くことになる。`databaseUrl` は
+呼び出し側が指定できるため、内部への pivot に使える。field-preview-migrate が
+out-of-band で配布されているのも同じ理由。
 
 ## コードのデプロイ
 
-main にマージされると Cloud App が再デプロイされ、production alias (`prod`) が
-更新される。`library-api` 側の hook は `qualifier: prod` でこの alias を指しており、
-`$LATEST` は見ない。`$LATEST` は任意の PR の preview build に上書きされるため、
-pin しないと別の PR の migration が流れ込む。
-
-migration SQL は `sqlx::migrate!` でビルド時に埋め込まれる。したがって
-**PR で追加した migration は、その PR が main にマージされるまで preview
-データベースには適用されない。** field (PLT-3561) も同じ制約で運用している。
-
-手元でクロスコンパイルの健全性だけ確認したい場合:
+migration SQL は `sqlx::migrate!` でビルド時に埋め込まれる。**preview データベース
+には、成果物をビルドした時点の migration しか適用されない。**
+`apps/api/migrations` または `packages/database-manager/migrations` を変更したら、
+必ず再ビルドして再デプロイすること。
 
 ```bash
 scripts/build-library-api-preview-migrate-lambda.sh
+aws lambda update-function-code \
+  --function-name lambda-library-api-preview-migrate \
+  --zip-file "fileb://target/lambda/lambda-library-api-preview-migrate/bootstrap.zip"
 ```
+
+権限は `library_repo_oidc.tf` の `LibraryLambdaDeployPolicy` にある。
 
 ## 失敗の切り分け
 
