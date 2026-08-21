@@ -1883,6 +1883,18 @@ impl AuthApp for SdkAuthApp {
         let resp: RestCreateOperatorResp =
             Self::rest_post(&config, "/v1/auth/operators", &body).await?;
 
+        // Tachyon decides the owner; the request only asks. Whether the
+        // assignment matches the request is what decides if the creator
+        // can grant policies inside the tenant they just made, and the
+        // answer was being dropped here along with the rest of the
+        // response.
+        tracing::info!(
+            operator_id = %resp.operator.id,
+            requested_owner = %input.new_operator_owner_id,
+            assigned_owner = %resp.owner_id,
+            "created operator"
+        );
+
         operator_from_rest(&resp.operator)
     }
 
@@ -2089,12 +2101,25 @@ impl AuthApp for SdkAuthApp {
             "tenantId": input.tenant_id.to_string(),
         });
 
-        let _: serde_json::Value = Self::rest_post(
+        // Observed like `check_policy`: a refused grant is the failure
+        // that decides whether a new organization is usable, and the
+        // public error alone ("Upstream authorization rejected") says
+        // neither which status came back nor which upstream request to
+        // correlate against.
+        let _: serde_json::Value = Self::rest_post_observed(
             &config,
             "/v1/auth/user-policies/attach",
             &body,
         )
-        .await?;
+        .await
+        .map_err(|failure| {
+            observe_sdk_request_failure(
+                "attach_user_policy",
+                failure.error,
+                failure.correlation_id.as_deref(),
+            );
+            failure.error.into_public_error()
+        })?;
 
         Ok(())
     }
