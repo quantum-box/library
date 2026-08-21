@@ -15,12 +15,17 @@ use value_object::{FromStr, LongText, TenantId, Text, UserId};
 /// Grant the creator the Library policies for the organization they
 /// just created.
 ///
-/// The creator is the executor: `create_operator` makes them the owner
-/// of the new tenant and attaches `AdministratorAccess` there, so they
-/// are authorized to grant these policies inside it. A system executor
-/// would fall back to the service account, which belongs to the Library
-/// platform tenant and is therefore rejected in any per-organization
-/// scope.
+/// The creator is the executor: a system executor would fall back to
+/// the service account, which belongs to the Library platform tenant
+/// and is therefore rejected in any per-organization scope.
+///
+/// Being the executor is not sufficient on its own. tachyon authorizes
+/// this call against the caller, so the caller must hold
+/// `auth:AttachUserPolicy` — which reaches them through the
+/// `library:org-creator` companion policy attached at sign-in. Owning
+/// the new tenant does not stand in for it: production refused this
+/// call for the creator of the tenant `create_operator` had just made
+/// them the owner of, until the action was added to that policy.
 async fn attach_creator_policies(
     auth_app: &dyn AuthApp,
     executor: &dyn ExecutorAction,
