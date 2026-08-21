@@ -94,6 +94,12 @@ where
 }
 
 fn runtime_error(message: String) -> Error {
+    // The message otherwise reaches only the invoker's response payload,
+    // which the deploy hook reduces to "lambdaInvoke returned
+    // FunctionError: Unhandled" -- leaving CloudWatch with a START and an
+    // END and no reason. Put it in the log too, so the function's own
+    // logs explain a failed migration.
+    eprintln!("preview migration failed: {message}");
     io::Error::other(message).into()
 }
 
