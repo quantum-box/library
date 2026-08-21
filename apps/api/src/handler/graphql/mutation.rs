@@ -249,7 +249,13 @@ impl LibraryMutation {
         let platform_tenant = crate::domain::LIBRARY_TENANT.clone();
         let policy_id = library_user_policy_id();
         let repo_owner_policy_id = library_repo_owner_policy_id();
-        let system_executor = tachyon_sdk::auth::Executor::SystemUser;
+        // Grant as the caller, who `ensure_tenant_seed_admin` has just
+        // confirmed owns or manages this tenant and therefore holds
+        // `AdministratorAccess` in it. A system executor would fall back
+        // to the service account, which belongs to the Library platform
+        // tenant and is rejected in any per-organization scope -- every
+        // grant below would have been warned away and the seed would
+        // have reported success while attaching nothing.
         let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
             Some(platform_tenant),
             Some(tenant_id.clone()),
@@ -259,7 +265,7 @@ impl LibraryMutation {
             if let Err(err) = AuthAppTrait::attach_user_policy(
                 library_app.auth_app.as_ref(),
                 &tachyon_sdk::auth::AttachUserPolicyInput {
-                    executor: &system_executor,
+                    executor,
                     multi_tenancy: &tenant_scope,
                     user_id: tenant_user.id(),
                     policy_id: &policy_id,
@@ -280,7 +286,7 @@ impl LibraryMutation {
                 if let Err(err) = AuthAppTrait::attach_user_policy(
                     library_app.auth_app.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
-                        executor: &system_executor,
+                        executor,
                         multi_tenancy: &tenant_scope,
                         user_id: tenant_user.id(),
                         policy_id: &repo_owner_policy_id,
