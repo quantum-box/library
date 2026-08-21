@@ -1016,8 +1016,19 @@ impl SdkAuthApp {
             ..Default::default()
         };
 
-        let resp: BootstrapResponse =
-            Self::rest_get(&config, "/v1/me").await?;
+        // Observed like every other upstream call: this one decides
+        // whether a request is served with the caller's tenant list or
+        // without it, and its failures are otherwise indistinguishable
+        // — a refused connection and a 503 both surface as
+        // `ServiceUnavailable`.
+        let resp: BootstrapResponse = Self::rest_get_typed(
+            &config, "/v1/me",
+        )
+        .await
+        .map_err(|error| {
+            observe_sdk_request_failure("bootstrap_token", error, None);
+            error.into_public_error()
+        })?;
 
         user_from_bootstrap_response(&resp)
     }
