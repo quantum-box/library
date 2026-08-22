@@ -192,6 +192,41 @@ describe('recordsApi', () => {
     })
   })
 
+  it('normalizes SCREAMING_SNAKE_CASE Property types from the live API', async () => {
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    vi.stubEnv('VITE_LIBRARY_OPERATOR_ID', 'operator-1')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: {
+        repo: {
+          id: 'repo-1',
+          name: 'Docs',
+          dataList: { items: [] },
+          properties: [
+            { id: 'prop-id', name: 'id', typ: 'ID', meta: null },
+            { id: 'prop-content', name: 'content', typ: 'MARKDOWN', meta: null },
+            { id: 'prop-tags', name: 'tags', typ: 'MULTI_SELECT', meta: null },
+          ],
+        },
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })))
+
+    const payload = await fetchLibraryRepoTableData({
+      org: 'quantum-box',
+      repo: 'docs',
+      operatorId: 'operator-1',
+    })
+    expect(payload.properties.map((property) => property.typ)).toEqual([
+      'Id',
+      'Markdown',
+      'MultiSelect',
+    ])
+  })
+
   it('loads every GraphQL data-list page using the documented paginator', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {

@@ -309,11 +309,22 @@ function deleteData(value) {
   return data.id
 }
 
-function repositorySettingsProperties() {
+// The production Library API serializes PropertyType as SCREAMING_SNAKE_CASE
+// on every surface (GraphQL `typ` and REST `property_type`), so the fixture
+// must serve the same wire format to keep E2E coverage honest.
+function wirePropertyType(typ) {
+  return typ.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
+}
+
+function wireProperties() {
   return state.properties.map((property) => ({
     ...clone(property),
-    typ: property.typ.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase(),
+    typ: wirePropertyType(property.typ),
   }))
+}
+
+function repositorySettingsProperties() {
+  return wireProperties()
 }
 
 function propertyMetaFromInput(input) {
@@ -442,7 +453,7 @@ function graphqlResponse(query, variables) {
                 totalPages: 1,
               },
             },
-            properties: clone(state.properties),
+            properties: wireProperties(),
           }
         : null,
     }
@@ -450,7 +461,7 @@ function graphqlResponse(query, variables) {
 
   if (query.includes('LibraryClientProperties')) {
     return {
-      properties: repositoryExists(variables.org, variables.repo) ? clone(state.properties) : [],
+      properties: repositoryExists(variables.org, variables.repo) ? wireProperties() : [],
     }
   }
 
@@ -458,7 +469,7 @@ function graphqlResponse(query, variables) {
     const exists = repositoryExists(variables.org, variables.repo)
     return {
       data: exists ? clone(findData(variables.dataId) ?? null) : null,
-      properties: exists ? clone(state.properties) : [],
+      properties: exists ? wireProperties() : [],
     }
   }
 
@@ -628,7 +639,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, state.properties.map((property) => ({
           id: property.id,
           name: property.name,
-          property_type: property.typ,
+          property_type: wirePropertyType(property.typ),
         })))
         return
       }
