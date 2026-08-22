@@ -1834,9 +1834,20 @@ impl AuthApp for SdkAuthApp {
 
     async fn delete_operator<'a>(
         &self,
-        _input: &auth::DeleteOperatorInput<'a>,
+        input: &auth::DeleteOperatorInput<'a>,
     ) -> errors::Result<()> {
-        Err(sdk_internal_err("delete_operator not supported via SDK"))
+        // `DELETE /v1/auth/operators/{id}` authorizes the acting scope
+        // (`x-operator-id`), which must be the target operator itself or
+        // its parent platform. Scope the request to the target so a
+        // caller who owns the operator is authorized regardless of the
+        // tenant context the surrounding call ran under.
+        let scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(input.platform_id.clone()),
+            Some(input.operator_id.clone()),
+        );
+        let config = self.sdk_config_with_context(input.executor, &scope);
+        let path = format!("/v1/auth/operators/{}", input.operator_id);
+        Self::rest_delete(&config, &path).await
     }
 
     async fn get_operator_by_identifier<'a>(
@@ -2786,6 +2797,67 @@ mod tests {
             .await;
         server.await.unwrap();
         result
+    }
+
+    /// `delete_operator` must scope the request to the operator being
+    /// deleted, not the caller's ambient tenant: the endpoint authorizes
+    /// the acting scope, and only the target itself (owner path) or its
+    /// parent platform may delete.
+    #[tokio::test]
+    async fn delete_operator_scopes_the_request_to_the_target() {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = r#"{"success":true}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0_u8; 4096];
+            let n = socket.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..n]);
+            assert!(
+                request.contains(
+                    "DELETE /v1/auth/operators/tn_01j702qf86pc2j35s0kv0gv3gz "
+                ),
+                "request was:\n{request}"
+            );
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gz"
+                ),
+                "request was:\n{request}"
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let default_tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let operator: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gz".parse().unwrap();
+        let platform: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &default_tenant,
+            "caller-token",
+        );
+        let executor = tachyon_sdk::auth::Executor::SystemUser;
+        // Ambient context deliberately points at a different tenant to
+        // prove the implementation scopes to the input, not the context.
+        let ambient = tachyon_sdk::auth::MultiTenancy::new(
+            None,
+            Some(default_tenant.clone()),
+        );
+        sdk.delete_operator(&tachyon_sdk::auth::DeleteOperatorInput {
+            executor: &executor,
+            multi_tenancy: &ambient,
+            platform_id: &platform,
+            operator_id: &operator,
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
     }
 
     #[test]
