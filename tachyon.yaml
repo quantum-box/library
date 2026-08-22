@@ -119,6 +119,18 @@ spec:
           value: "library-api"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
           value: "http/protobuf"
+        # Sentry OTLP direct ingest. Without these two, telemetry's
+        # OtlpExporterConfig::from_env falls back to
+        # http://localhost:4318/v1/traces with no auth header and every
+        # span is dropped -- the Lambda carries no OTel collector.
+        # Derived from the library-api Sentry DSN: host + project id here,
+        # the DSN public key in the header below.
+        - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+          value: "https://o1213182.ingest.us.sentry.io/api/4508051861602304/integration/otlp/v1/traces"
+        - name: OTEL_EXPORTER_OTLP_HEADERS
+          type: credential
+          valueFrom:
+            secret: library-api/OTEL_EXPORTER_OTLP_HEADERS
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "deployment.environment=production,service.namespace=library"
         - name: OTEL_TRACES_SAMPLER_ARG
