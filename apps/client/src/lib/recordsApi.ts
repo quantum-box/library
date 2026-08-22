@@ -71,6 +71,34 @@ export interface LibraryProperty {
   } | null
 }
 
+/**
+ * The Library API serializes PropertyType as SCREAMING_SNAKE_CASE on both
+ * GraphQL (`MARKDOWN`, `MULTI_SELECT`, …) and REST (`property_type`).
+ * This client compares against PascalCase (`Markdown`, `MultiSelect`, …), so
+ * every Property ingestion path must normalize through this map.
+ */
+const libraryPropertyTypeByWireValue: Record<string, LibraryPropertyType> = {
+  STRING: 'String',
+  INTEGER: 'Integer',
+  HTML: 'Html',
+  MARKDOWN: 'Markdown',
+  RELATION: 'Relation',
+  SELECT: 'Select',
+  MULTI_SELECT: 'MultiSelect',
+  ID: 'Id',
+  LOCATION: 'Location',
+  DATE: 'Date',
+  IMAGE: 'Image',
+}
+
+export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
+  return libraryPropertyTypeByWireValue[typ.toUpperCase()] ?? typ
+}
+
+function normalizeLibraryProperty(property: LibraryProperty): LibraryProperty {
+  return { ...property, typ: normalizeLibraryPropertyType(property.typ) }
+}
+
 export interface LibraryPropertyDataValue {
   __typename?: string
   string?: string
@@ -1105,7 +1133,7 @@ async function fetchLibraryGraphqlRepoTableData(
       return { items: [], properties: [], repoName }
     }
     if (page === 1) {
-      properties = repoData.properties
+      properties = repoData.properties.map(normalizeLibraryProperty)
       repoName = target.repoName ?? repoData.name
     }
     items.push(...repoData.dataList.items)
@@ -1452,7 +1480,7 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
   return {
     id: property.id,
     name: property.name,
-    typ: property.property_type,
+    typ: normalizeLibraryPropertyType(property.property_type),
     meta: null,
   }
 }
@@ -1495,7 +1523,7 @@ export async function fetchLibraryRepoProperties(
         'invalid-response'
       )
     }
-    return payload.properties
+    return payload.properties.map(normalizeLibraryProperty)
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestProperties(target)
@@ -1707,7 +1735,10 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
         'invalid-response'
       )
     }
-    return { item: payload.data, properties: payload.properties }
+    return {
+      item: payload.data,
+      properties: payload.properties.map(normalizeLibraryProperty),
+    }
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestDataDetail(dataId, resolvedTarget)
