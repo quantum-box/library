@@ -7,7 +7,8 @@ use crate::domain::{
 };
 use tachyon_sdk::auth::{
     AttachUserPolicyInput, AuthApp, CheckPolicyInput, CreateOperatorInput,
-    ExecutorAction, MultiTenancy, NewOperatorOwnerMethod,
+    DeleteOperatorInput, ExecutorAction, MultiTenancy,
+    NewOperatorOwnerMethod,
 };
 use tracing::warn;
 use value_object::{FromStr, LongText, TenantId, Text, UserId};
@@ -117,13 +118,32 @@ impl CreateOrganizationInputPort for CreateOrganization {
         let tenant_id = TenantId::new(operator.id().as_ref())?;
         let user_id = input.executor.get_user_id()?;
 
-        // `create_operator` already created the tenant upstream and it
-        // cannot be rolled back from here (`delete_operator` is not
-        // supported through this SDK), so record the organization before
-        // granting policies. Inserting afterwards would leave a tenant
-        // Library never stored whenever the grant fails, and the creator
-        // could not even retry: the alias is already taken.
-        self.organization_repository.insert(&organization).await?;
+        // Record the organization before granting policies: inserting
+        // afterwards would leave a tenant Library never stored whenever
+        // the grant fails. If the insert itself fails, delete the tenant
+        // `create_operator` just made — otherwise the alias stays taken
+        // upstream and the creator cannot retry.
+        if let Err(insert_error) =
+            self.organization_repository.insert(&organization).await
+        {
+            if let Err(delete_error) = self
+                .auth_app
+                .delete_operator(&DeleteOperatorInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    platform_id: &LIBRARY_TENANT,
+                    operator_id: operator.id(),
+                })
+                .await
+            {
+                warn!(
+                    error = ?delete_error,
+                    operator_id = %tenant_id,
+                    "failed to roll back the operator after the organization insert failed; the tenant is orphaned and its alias stays taken"
+                );
+            }
+            return Err(insert_error);
+        }
 
         // A failed grant leaves an organization that exists and is
         // usable, only without its creator policies. Failing the whole
@@ -402,6 +422,148 @@ mod tests {
 
         assert_eq!(organization.id().to_string(), "tn_01testorganization");
         assert_eq!(calls.lock().unwrap().first().copied(), Some("insert"));
+    }
+
+    /// Repository whose insert always fails, for the rollback tests.
+    #[derive(Debug)]
+    struct FailingInsertRepository {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl OrganizationRepository for FailingInsertRepository {
+        async fn insert(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            self.calls.lock().unwrap().push("insert");
+            Err(errors::Error::internal_server_error("insert failed"))
+        }
+
+        async fn update(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_id(
+            &self,
+            _org_id: &TenantId,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_username(
+            &self,
+            _username: &Identifier,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_all(&self) -> errors::Result<Vec<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete(&self, _org_id: &TenantId) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    /// A failed insert leaves a tenant Library never stored, and its
+    /// alias stays taken upstream. The use case must delete the operator
+    /// it just created and surface the insert error.
+    #[tokio::test]
+    async fn rolls_back_the_operator_when_the_insert_fails() {
+        let deleted = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_delete_operator().times(1).returning({
+            let deleted = deleted.clone();
+            move |input| {
+                deleted.lock().unwrap().push((
+                    input.operator_id.to_string(),
+                    input.platform_id.to_string(),
+                ));
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(FailingInsertRepository {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        let error = usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .expect_err("a failed insert must fail creation");
+
+        assert!(error.to_string().contains("insert failed"));
+        assert_eq!(
+            deleted.lock().unwrap().as_slice(),
+            &[(
+                "tn_01testorganization".to_string(),
+                LIBRARY_TENANT.to_string(),
+            )]
+        );
+    }
+
+    /// The rollback is best-effort: when the delete itself fails the
+    /// caller still gets the insert error, not the delete error.
+    #[tokio::test]
+    async fn surfaces_the_insert_error_when_the_rollback_fails() {
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_delete_operator().times(1).returning(|_| {
+            Box::pin(async {
+                Err(errors::Error::forbidden("delete rejected"))
+            })
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(FailingInsertRepository {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        let error = usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .expect_err("a failed insert must fail creation");
+
+        assert!(error.to_string().contains("insert failed"));
     }
 
     /// The organization must be stored before the grant is attempted,
