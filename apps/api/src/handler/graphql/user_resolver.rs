@@ -1,6 +1,7 @@
 use super::model::{Operator, User};
 use crate::sdk_auth::SdkAuthApp;
 use async_graphql::{Context, Result};
+use futures_util::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -33,34 +34,44 @@ async fn load_operators_from_tenants(
     seen: &mut HashSet<String>,
     operators: &mut Vec<tachyon_sdk::auth::Operator>,
 ) {
-    for tenant_id in tenant_id_list {
-        if seen.insert(tenant_id.clone()) {
-            match sdk.get_operator(tenant_id).await {
-                Ok(Some(op)) => {
-                    match crate::sdk_auth::operator_from_resp(&op) {
-                        Ok(operator) => operators.push(operator),
-                        Err(err) => {
-                            tracing::warn!(
-                                tenant_id = %tenant_id,
-                                error = ?err,
-                                "Failed to parse operator"
-                            );
-                        }
+    // One upstream call per tenant, so issuing them one after another
+    // made this field as slow as the caller has tenants. They are
+    // independent lookups; awaiting them together keeps the result
+    // order that the sequential version produced.
+    let pending: Vec<_> = tenant_id_list
+        .iter()
+        .filter(|tenant_id| seen.insert((*tenant_id).clone()))
+        .map(|tenant_id| async move {
+            (tenant_id, sdk.get_operator(tenant_id).await)
+        })
+        .collect();
+
+    for (tenant_id, result) in join_all(pending).await {
+        match result {
+            Ok(Some(op)) => {
+                match crate::sdk_auth::operator_from_resp(&op) {
+                    Ok(operator) => operators.push(operator),
+                    Err(err) => {
+                        tracing::warn!(
+                            tenant_id = %tenant_id,
+                            error = ?err,
+                            "Failed to parse operator"
+                        );
                     }
                 }
-                Ok(None) => {
-                    tracing::warn!(
-                        tenant_id = %tenant_id,
-                        "Operator not found"
-                    );
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        tenant_id = %tenant_id,
-                        error = ?err,
-                        "Failed to load operator"
-                    );
-                }
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    tenant_id = %tenant_id,
+                    "Operator not found"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    tenant_id = %tenant_id,
+                    error = ?err,
+                    "Failed to load operator"
+                );
             }
         }
     }

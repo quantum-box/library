@@ -10,7 +10,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::ttl_cache::TtlCache;
 use tachyon_sdk::apis::configuration::Configuration;
 use tachyon_sdk::auth::{
     self, AuthApp, Identifier, Operator, Policy, PolicyId, PublicApiKey,
@@ -34,13 +40,191 @@ use tachyon_sdk::auth::UserQuery;
 /// every request, and `verify_token` then falls back to legacy verify,
 /// which reports no tenant memberships — so every caller silently
 /// becomes a member of nothing.
+///
+/// The per-attempt timeout therefore stays at 5s, well clear of that
+/// ceiling. What came down is how many times a failing call repeats:
+/// three attempts against a 12s budget turned an upstream that was
+/// merely unwell into 12-second requests, and production traces showed
+/// exactly that — a warm invocation spending 5.1s failing `/v1/me`
+/// three times before it even began the fallback. Two attempts inside
+/// a 7s budget still ride out a single hiccup without making the
+/// caller wait out a sustained one.
 const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
-    max_attempts: 3,
+    max_attempts: 2,
     per_attempt_timeout: Duration::from_millis(5_000),
-    total_budget: Duration::from_millis(12_000),
+    total_budget: Duration::from_millis(7_000),
     base_delay: Duration::from_millis(50),
     max_jitter: Duration::from_millis(25),
 };
+
+/// How long a client is kept for a given set of headers.
+const CLIENT_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// How many distinct header sets keep a client of their own.
+const CLIENT_CACHE_CAPACITY: usize = 64;
+
+/// How long an idle connection stays available for reuse.
+///
+/// Lambda freezes the execution environment between invocations, and a
+/// connection left idle across a freeze is often dead by the time it
+/// thaws. A short idle window keeps the reuse that matters — several
+/// upstream calls within one request, and requests arriving back to
+/// back — without offering up a connection the peer already dropped.
+const CLIENT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// User agent of the generated SDK, which builds it from the OpenAPI
+/// document version. Repeated here because these configurations are
+/// assembled field by field rather than from [`Configuration::default`],
+/// whose only other act is to build a `reqwest::Client` that is then
+/// thrown away.
+const SDK_USER_AGENT: &str = "OpenAPI-Generator/0.51.0/rust";
+
+/// How long a verified token is trusted without re-asking tachyon.
+const DEFAULT_VERIFY_CACHE_TTL_SECS: u64 = 60;
+
+/// How many verified tokens are held at once.
+const DEFAULT_VERIFY_CACHE_CAPACITY: usize = 1_024;
+
+/// Clock skew allowed when a token's own expiry bounds its entry.
+const VERIFY_CACHE_EXPIRY_SKEW: Duration = Duration::from_secs(5);
+
+/// Clients to tachyon-api, one per distinct header set.
+///
+/// A `reqwest::Client` owns its connection pool, so one built per call
+/// reconnects and repeats the TLS handshake every time, and rebuilds
+/// the rustls root store along with it. Keeping a client per header set
+/// lets the callers that repeat — the service credential, and each
+/// token in active use — hold their connections open instead.
+static HTTP_CLIENTS: Lazy<TtlCache<[u8; 32], reqwest::Client>> =
+    Lazy::new(|| TtlCache::new(CLIENT_CACHE_TTL, CLIENT_CACHE_CAPACITY));
+
+/// Users resolved from a bearer token by `/v1/me`.
+///
+/// Every authenticated request verifies its bearer, and that call is
+/// the slowest thing on the request path. Holding the result briefly
+/// takes it off all but the first request of each window.
+///
+/// A cached entry also carries the caller's tenant memberships through
+/// a short upstream outage, where the legacy fallback would report none
+/// and hide every repository the caller can actually see.
+static VERIFIED_USERS: Lazy<TtlCache<[u8; 32], User>> = Lazy::new(|| {
+    TtlCache::new(verify_cache_ttl(), verify_cache_capacity())
+});
+
+/// How long a verified token stays cached.
+///
+/// `AUTH_VERIFY_CACHE_TTL_SECS` overrides it, and `0` disables the
+/// cache outright — the switch to reach for when a token revoked
+/// upstream has to stop working immediately rather than at the end of
+/// its window.
+fn verify_cache_ttl() -> Duration {
+    let secs = std::env::var("AUTH_VERIFY_CACHE_TTL_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_VERIFY_CACHE_TTL_SECS);
+    Duration::from_secs(secs)
+}
+
+/// How many verified tokens are held, from
+/// `AUTH_VERIFY_CACHE_MAX_ENTRIES`.
+fn verify_cache_capacity() -> usize {
+    std::env::var("AUTH_VERIFY_CACHE_MAX_ENTRIES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_VERIFY_CACHE_CAPACITY)
+}
+
+/// A client carrying `headers`, reused when one already exists for
+/// exactly those headers.
+fn shared_client(headers: reqwest::header::HeaderMap) -> reqwest::Client {
+    let key = header_fingerprint(&headers);
+    if let Some(client) = HTTP_CLIENTS.get(&key) {
+        return client;
+    }
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .pool_idle_timeout(CLIENT_POOL_IDLE_TIMEOUT)
+        .build()
+        .unwrap_or_default();
+    HTTP_CLIENTS.insert(key, client.clone());
+    client
+}
+
+/// A fingerprint of a header set.
+///
+/// `HeaderMap` defines no iteration order, so the pairs are sorted
+/// before hashing — otherwise one header set could fingerprint two ways
+/// and defeat the reuse this exists for. The digest is a cryptographic
+/// one because a collision here would hand a request someone else's
+/// `Authorization` header.
+fn header_fingerprint(headers: &reqwest::header::HeaderMap) -> [u8; 32] {
+    let mut sorted: BTreeMap<&str, Vec<&[u8]>> = BTreeMap::new();
+    for (name, value) in headers.iter() {
+        sorted
+            .entry(name.as_str())
+            .or_default()
+            .push(value.as_bytes());
+    }
+
+    let mut hasher = Sha256::new();
+    for (name, values) in sorted {
+        hasher.update(name.as_bytes());
+        hasher.update([0]);
+        for value in values {
+            hasher.update(value);
+            hasher.update([0]);
+        }
+        hasher.update([1]);
+    }
+    hasher.finalize().into()
+}
+
+/// A fingerprint of a bearer token, so the cache is keyed by the
+/// credential without holding it.
+fn token_fingerprint(token: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hasher.finalize().into()
+}
+
+/// How long a verification of `token` may be reused.
+///
+/// A cached user must never outlive the credential it was read from, so
+/// a JWT's own `exp` caps the entry. A token that carries no readable
+/// expiry — an opaque credential, or one this cannot parse — falls back
+/// to the configured TTL, which bounds every entry anyway.
+fn token_cache_ttl(token: &str) -> Duration {
+    let Some(expires_at) = jwt_expiry_secs(token) else {
+        return verify_cache_ttl();
+    };
+
+    let now = chrono::Utc::now().timestamp();
+    let remaining = expires_at.saturating_sub(now);
+    if remaining <= 0 {
+        return Duration::ZERO;
+    }
+
+    Duration::from_secs(remaining.unsigned_abs())
+        .saturating_sub(VERIFY_CACHE_EXPIRY_SKEW)
+}
+
+/// The `exp` claim of a JWT, in seconds since the epoch.
+///
+/// The signature is not checked: tachyon-api is what decides whether a
+/// token is valid, and this only reads how long its own answer may be
+/// reused. A forged `exp` can shorten that window, never extend it past
+/// the configured TTL.
+fn jwt_expiry_secs(token: &str) -> Option<i64> {
+    let mut parts = token.split('.');
+    let (_header, payload) = (parts.next()?, parts.next()?);
+    parts.next()?;
+
+    let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: serde_json::Value =
+        serde_json::from_slice(&decoded).ok()?;
+    claims.get("exp")?.as_i64()
+}
 
 #[derive(Clone, Copy)]
 struct SdkGetRetryPolicy {
@@ -327,6 +511,24 @@ impl SdkAuthApp {
 
     // ---- SDK Configuration builders ----
 
+    /// Build an SDK Configuration that sends `headers` on every
+    /// request, over a client shared with anything else sending
+    /// exactly those headers.
+    fn configuration(
+        &self,
+        headers: reqwest::header::HeaderMap,
+    ) -> Configuration {
+        Configuration {
+            base_path: self.base_url.clone(),
+            user_agent: Some(SDK_USER_AGENT.to_string()),
+            client: shared_client(headers),
+            basic_auth: None,
+            oauth_access_token: None,
+            bearer_access_token: None,
+            api_key: None,
+        }
+    }
+
     /// Build an SDK Configuration for public endpoints that
     /// do not require authentication (e.g. verify, oauth-config).
     fn sdk_config_public(&self) -> Configuration {
@@ -336,16 +538,7 @@ impl SdkAuthApp {
             self.default_operator_id.parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration for public endpoints
@@ -358,16 +551,7 @@ impl SdkAuthApp {
         headers
             .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration authenticated as the current
@@ -391,16 +575,7 @@ impl SdkAuthApp {
             self.default_operator_id.parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration with the default operator
@@ -417,16 +592,7 @@ impl SdkAuthApp {
             self.default_operator_id.parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration with auth headers derived
@@ -486,16 +652,7 @@ impl SdkAuthApp {
             }
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration for a specific tenant.
@@ -511,16 +668,7 @@ impl SdkAuthApp {
             tenant_id.to_string().parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     // ---- Raw REST helpers ----
@@ -1011,6 +1159,15 @@ impl SdkAuthApp {
         &self,
         token: &str,
     ) -> errors::Result<User> {
+        // Verifying the same bearer again within the cache window
+        // costs a round trip to the slowest endpoint on the request
+        // path, and a GraphQL query resolving several fields used to
+        // pay it once per field.
+        let cache_key = token_fingerprint(token);
+        if let Some(user) = VERIFIED_USERS.get(&cache_key) {
+            return Ok(user);
+        }
+
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             "Authorization",
@@ -1019,15 +1176,7 @@ impl SdkAuthApp {
                 .map_err(sdk_internal_err)?,
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .map_err(sdk_internal_err)?;
-        let config = Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        };
+        let config = self.configuration(headers);
 
         // Observed like every other upstream call: this one decides
         // whether a request is served with the caller's tenant list or
@@ -1043,7 +1192,16 @@ impl SdkAuthApp {
             error.into_public_error()
         })?;
 
-        user_from_bootstrap_response(&resp)
+        let user = user_from_bootstrap_response(&resp)?;
+        // Only a verification that succeeded is reused. Caching a
+        // failure would hold an upstream hiccup against the caller for
+        // the rest of the window.
+        VERIFIED_USERS.insert_until(
+            cache_key,
+            user.clone(),
+            token_cache_ttl(token),
+        );
+        Ok(user)
     }
 
     /// Call `/v1/me` using the current `auth_token` and return
@@ -3381,6 +3539,182 @@ mod tests {
         server.await?;
 
         Ok(())
+    }
+
+    /// Serves a `/v1/me` that counts what reaches it, and returns the
+    /// number of requests each of `tokens` produced.
+    async fn bootstrap_upstream_hits(tokens: &[&str]) -> usize {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/me",
+            axum::routing::get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    axum::Json(serde_json::json!({
+                        "user": { "id": "us_01testcaller" },
+                        "tenants": [{ "id": "tn_01memberofthis" }],
+                    }))
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        for token in tokens {
+            let user = sdk.bootstrap_token(token).await.unwrap();
+            assert_eq!(user.id.to_string(), "us_01testcaller");
+            assert_eq!(
+                user.tenants
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                vec!["tn_01memberofthis".to_string()],
+            );
+        }
+
+        hits.load(Ordering::SeqCst)
+    }
+
+    /// Verifying a bearer is the slowest call on the request path, and
+    /// a single GraphQL query used to repeat it once per resolver.
+    #[tokio::test]
+    async fn a_token_is_verified_once_within_the_cache_window() {
+        let hits = bootstrap_upstream_hits(&[
+            "cache-window-token",
+            "cache-window-token",
+            "cache-window-token",
+        ])
+        .await;
+
+        assert_eq!(hits, 1, "the repeat calls came from the cache");
+    }
+
+    /// The cache is keyed by credential, so one caller's verification
+    /// can never answer for another's.
+    #[tokio::test]
+    async fn each_token_is_verified_on_its_own() {
+        let hits = bootstrap_upstream_hits(&[
+            "distinct-token-a",
+            "distinct-token-b",
+        ])
+        .await;
+
+        assert_eq!(hits, 2);
+    }
+
+    /// A JWT that expires sooner than the cache window bounds its own
+    /// entry: a cached user must never outlive the credential it was
+    /// read from.
+    #[test]
+    fn a_token_expiry_shortens_its_cache_entry() {
+        let expires_at = chrono::Utc::now().timestamp() + 10;
+        let token = jwt_expiring_at(expires_at);
+
+        let ttl = token_cache_ttl(&token);
+
+        assert!(
+            ttl <= Duration::from_secs(10),
+            "an entry must not outlive the token: {ttl:?}"
+        );
+        assert!(!ttl.is_zero(), "a live token is still cacheable");
+    }
+
+    /// An already-expired token is not worth caching at all.
+    #[test]
+    fn an_expired_token_is_not_cached() {
+        let expires_at = chrono::Utc::now().timestamp() - 1;
+
+        assert_eq!(
+            token_cache_ttl(&jwt_expiring_at(expires_at)),
+            Duration::ZERO
+        );
+    }
+
+    /// An opaque credential carries no expiry to read, and falls back
+    /// to the window every entry is bounded by anyway.
+    #[test]
+    fn a_token_without_a_readable_expiry_uses_the_configured_window() {
+        assert_eq!(token_cache_ttl("not-a-jwt"), verify_cache_ttl());
+    }
+
+    fn jwt_expiring_at(expires_at: i64) -> String {
+        let claims = serde_json::json!({ "exp": expires_at }).to_string();
+        format!(
+            "{}.{}.{}",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(claims),
+            URL_SAFE_NO_PAD.encode("signature"),
+        )
+    }
+
+    fn headers_from(pairs: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                reqwest::header::HeaderName::from_bytes(name.as_bytes())
+                    .unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    /// `HeaderMap` defines no iteration order, so a fingerprint that
+    /// depended on it would hand the same caller a fresh connection
+    /// pool at random.
+    #[test]
+    fn the_same_headers_fingerprint_the_same_either_way_round() {
+        let one = headers_from(&[
+            ("authorization", "Bearer token"),
+            ("x-operator-id", "tn_01operator"),
+        ]);
+        let other = headers_from(&[
+            ("x-operator-id", "tn_01operator"),
+            ("authorization", "Bearer token"),
+        ]);
+
+        assert_eq!(header_fingerprint(&one), header_fingerprint(&other));
+    }
+
+    /// A collision here would send a request with someone else's
+    /// credential.
+    #[test]
+    fn a_different_credential_fingerprints_differently() {
+        let one = headers_from(&[("authorization", "Bearer one")]);
+        let other = headers_from(&[("authorization", "Bearer other")]);
+
+        assert_ne!(header_fingerprint(&one), header_fingerprint(&other));
+    }
+
+    /// The point of the fingerprint: a second call with the same
+    /// headers reuses the client, and with it the open connection.
+    #[test]
+    fn a_client_is_reused_for_the_same_headers() {
+        let headers =
+            headers_from(&[("x-operator-id", "tn_01reusedclient")]);
+        let key = header_fingerprint(&headers);
+        HTTP_CLIENTS.invalidate(&key);
+
+        let _ = shared_client(headers.clone());
+
+        assert!(
+            HTTP_CLIENTS.get(&key).is_some(),
+            "the built client is kept for the next caller"
+        );
     }
 }
 

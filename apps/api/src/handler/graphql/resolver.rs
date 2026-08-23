@@ -13,6 +13,7 @@ use crate::usecase::{
 use async_graphql::{
     ComplexObject, Context, ErrorExtensions, Object, Result,
 };
+use futures_util::future::join_all;
 use inbound_sync::providers::linear::LinearClient;
 use tachyon_sdk::auth::MultiTenancyAction;
 use tachyon_sdk::auth::{DefaultRole, ExecutorAction};
@@ -77,58 +78,71 @@ impl LibraryQuery {
         // with the Library operator, causing the wizard to never show.
         let user = sdk.get_caller_user().await.map_err(|e| e.extend())?;
 
+        // Each tenant costs a database lookup and three upstream
+        // calls. Walking the tenants one at a time made the resolver
+        // as slow as the caller has memberships, so they are resolved
+        // side by side; the results are sorted below either way.
+        let user_id = user.id().as_ref();
+        let resolved: Vec<Result<Option<TenantSeedCandidate>>> =
+            join_all(user.tenants().iter().map(|tenant| async move {
+                if app
+                    .organization_repo
+                    .get_by_id(tenant)
+                    .await
+                    .map_err(|e| e.extend())?
+                    .is_some()
+                {
+                    return Ok(None);
+                }
+
+                let Some(operator) = sdk
+                    .get_operator(tenant.as_ref())
+                    .await
+                    .map_err(|e| e.extend())?
+                else {
+                    return Ok(None);
+                };
+
+                let tenant_id = TenantId::new(tenant.as_ref())
+                    .map_err(|e| e.extend())?;
+                let Some(tenant_user) = sdk
+                    .get_user_by_id_full(&tenant_id, user_id)
+                    .await
+                    .map_err(|e| e.extend())?
+                else {
+                    return Ok(None);
+                };
+                if !can_import_library_tenant(tenant_user.role()) {
+                    return Ok(None);
+                }
+                let staff_count =
+                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
+                        app.auth_app.as_ref(),
+                        &tachyon_sdk::auth::FindUsersByTenantInput {
+                            executor,
+                            multi_tenancy,
+                            tenant_id: &tenant_id,
+                        },
+                    )
+                    .await
+                    .map(|users| users.len() as i32)
+                    .unwrap_or(0);
+
+                Ok(Some(TenantSeedCandidate {
+                    tenant_id: operator.id,
+                    name: operator.name,
+                    username: operator.operator_name,
+                    staff_count,
+                    can_import_to_library: true,
+                }))
+            }))
+            .await;
+
         let mut candidates = Vec::new();
-        for tenant in user.tenants() {
-            if app
-                .organization_repo
-                .get_by_id(tenant)
-                .await
-                .map_err(|e| e.extend())?
-                .is_some()
-            {
-                continue;
+        for candidate in resolved {
+            if let Some(candidate) = candidate? {
+                candidates.push(candidate);
             }
-
-            let Some(operator) = sdk
-                .get_operator(tenant.as_ref())
-                .await
-                .map_err(|e| e.extend())?
-            else {
-                continue;
-            };
-
-            let tenant_id =
-                TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
-            let Some(tenant_user) = sdk
-                .get_user_by_id_full(&tenant_id, user.id().as_ref())
-                .await
-                .map_err(|e| e.extend())?
-            else {
-                continue;
-            };
-            if !can_import_library_tenant(tenant_user.role()) {
-                continue;
-            }
-            let staff_count =
-                tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                    app.auth_app.as_ref(),
-                    &tachyon_sdk::auth::FindUsersByTenantInput {
-                        executor,
-                        multi_tenancy,
-                        tenant_id: &tenant_id,
-                    },
-                )
-                .await
-                .map(|users| users.len() as i32)
-                .unwrap_or(0);
-
-            candidates.push(TenantSeedCandidate {
-                tenant_id: operator.id,
-                name: operator.name,
-                username: operator.operator_name,
-                staff_count,
-                can_import_to_library: true,
-            });
         }
 
         candidates.sort_by(|a, b| {
@@ -158,56 +172,68 @@ impl LibraryQuery {
 
         let user = sdk.get_caller_user().await.map_err(|e| e.extend())?;
 
+        // Resolved side by side for the same reason as the seed
+        // candidates above: the per-tenant work is independent, and
+        // the output is sorted before it is returned.
+        let user_id = user.id().as_ref();
+        let resolved: Vec<Result<Option<AccessibleTenant>>> =
+            join_all(user.tenants().iter().map(|tenant| async move {
+                let has_library_org = app
+                    .organization_repo
+                    .get_by_id(tenant)
+                    .await
+                    .map_err(|e| e.extend())?
+                    .is_some();
+
+                let Some(operator) = sdk
+                    .get_operator(tenant.as_ref())
+                    .await
+                    .map_err(|e| e.extend())?
+                else {
+                    return Ok(None);
+                };
+
+                let tenant_id = TenantId::new(tenant.as_ref())
+                    .map_err(|e| e.extend())?;
+                let can_import_to_library = match sdk
+                    .get_user_by_id_full(&tenant_id, user_id)
+                    .await
+                    .map_err(|e| e.extend())?
+                {
+                    Some(tenant_user) => {
+                        can_import_library_tenant(tenant_user.role())
+                    }
+                    None => false,
+                };
+                let staff_count =
+                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
+                        app.auth_app.as_ref(),
+                        &tachyon_sdk::auth::FindUsersByTenantInput {
+                            executor,
+                            multi_tenancy,
+                            tenant_id: &tenant_id,
+                        },
+                    )
+                    .await
+                    .map(|users| users.len() as i32)
+                    .unwrap_or(0);
+
+                Ok(Some(AccessibleTenant {
+                    tenant_id: operator.id,
+                    name: operator.name,
+                    username: operator.operator_name,
+                    staff_count,
+                    has_library_org,
+                    can_import_to_library,
+                }))
+            }))
+            .await;
+
         let mut tenants = Vec::new();
-        for tenant in user.tenants() {
-            let has_library_org = app
-                .organization_repo
-                .get_by_id(tenant)
-                .await
-                .map_err(|e| e.extend())?
-                .is_some();
-
-            let Some(operator) = sdk
-                .get_operator(tenant.as_ref())
-                .await
-                .map_err(|e| e.extend())?
-            else {
-                continue;
-            };
-
-            let tenant_id =
-                TenantId::new(tenant.as_ref()).map_err(|e| e.extend())?;
-            let can_import_to_library = match sdk
-                .get_user_by_id_full(&tenant_id, user.id().as_ref())
-                .await
-                .map_err(|e| e.extend())?
-            {
-                Some(tenant_user) => {
-                    can_import_library_tenant(tenant_user.role())
-                }
-                None => false,
-            };
-            let staff_count =
-                tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                    app.auth_app.as_ref(),
-                    &tachyon_sdk::auth::FindUsersByTenantInput {
-                        executor,
-                        multi_tenancy,
-                        tenant_id: &tenant_id,
-                    },
-                )
-                .await
-                .map(|users| users.len() as i32)
-                .unwrap_or(0);
-
-            tenants.push(AccessibleTenant {
-                tenant_id: operator.id,
-                name: operator.name,
-                username: operator.operator_name,
-                staff_count,
-                has_library_org,
-                can_import_to_library,
-            });
+        for tenant in resolved {
+            if let Some(tenant) = tenant? {
+                tenants.push(tenant);
+            }
         }
 
         tenants.sort_by(|a, b| {
