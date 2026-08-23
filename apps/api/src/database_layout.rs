@@ -69,13 +69,40 @@ impl DatabaseLayout {
         })
     }
 
-    pub fn library(&self) -> &DatabaseUrl {
-        &self.library
-    }
+    /// Open one connection pool per *physical* database.
+    ///
+    /// The roles are two databases in production and one in an
+    /// ADR-0049 preview, so a preview that built a pool per role held
+    /// two pools to the same server for no reason. Callers pass these
+    /// handles down instead of opening their own: every component that
+    /// resolved a role to a DSN and called `Db::new` used to add
+    /// another pool, and the API server ended up with four for two
+    /// databases.
+    pub fn open_pools(&self) -> DatabasePools {
+        let library = persistence::Db::new_lazy(&self.library);
+        let database_manager = if self.library.to_string()
+            == self.database_manager.to_string()
+        {
+            library.clone()
+        } else {
+            persistence::Db::new_lazy(&self.database_manager)
+        };
 
-    pub fn database_manager(&self) -> &DatabaseUrl {
-        &self.database_manager
+        DatabasePools {
+            library,
+            database_manager,
+        }
     }
+}
+
+/// The pools backing library-api's logical database roles.
+///
+/// Two roles, but not necessarily two pools: a preview resolves both
+/// to the same database and both fields then hold the same handle.
+#[derive(Clone)]
+pub struct DatabasePools {
+    pub library: std::sync::Arc<persistence::Db>,
+    pub database_manager: std::sync::Arc<persistence::Db>,
 }
 
 #[cfg(test)]
@@ -97,14 +124,14 @@ mod tests {
             DatabaseLayout::resolve(&database_url, Some("production"))
                 .unwrap();
 
-        assert_eq!(database_name(layout.library()), "library");
+        assert_eq!(database_name(&layout.library), "library");
         assert_eq!(
-            database_name(layout.database_manager()),
+            database_name(&layout.database_manager),
             "tachyon_apps_database_manager"
         );
         assert_ne!(
-            database_name(layout.library()),
-            database_name(layout.database_manager())
+            database_name(&layout.library),
+            database_name(&layout.database_manager)
         );
     }
 
@@ -119,9 +146,9 @@ mod tests {
             DatabaseLayout::resolve(&database_url, Some("preview"))
                 .unwrap();
 
-        assert_eq!(database_name(layout.library()), "pr_3328_library");
+        assert_eq!(database_name(&layout.library), "pr_3328_library");
         assert_eq!(
-            database_name(layout.database_manager()),
+            database_name(&layout.database_manager),
             "pr_3328_library"
         );
     }
@@ -137,11 +164,50 @@ mod tests {
             DatabaseLayout::resolve(&database_url, Some("preview"))
                 .unwrap();
 
-        assert_eq!(database_name(layout.library()), "library");
+        assert_eq!(database_name(&layout.library), "library");
         assert_eq!(
-            database_name(layout.database_manager()),
+            database_name(&layout.database_manager),
             "tachyon_apps_database_manager"
         );
+    }
+
+    /// A preview resolves both roles to one database, so opening a
+    /// pool per role would hold two to the same server.
+    #[tokio::test]
+    async fn a_preview_shares_one_pool_between_both_roles() {
+        let database_url: DatabaseUrl =
+            "mysql://app:password@tidb.example:4000/pr_3328_library"
+                .parse()
+                .unwrap();
+        let layout =
+            DatabaseLayout::resolve(&database_url, Some("preview"))
+                .unwrap();
+
+        let pools = layout.open_pools();
+
+        assert!(
+            std::sync::Arc::ptr_eq(&pools.library, &pools.database_manager),
+            "both roles resolve to the same database, so one pool serves"
+        );
+    }
+
+    /// Production keeps two databases, and each needs its own pool.
+    #[tokio::test]
+    async fn production_opens_a_pool_for_each_database() {
+        let database_url: DatabaseUrl =
+            "mysql://app:password@tidb.example:4000/library"
+                .parse()
+                .unwrap();
+        let layout =
+            DatabaseLayout::resolve(&database_url, Some("production"))
+                .unwrap();
+
+        let pools = layout.open_pools();
+
+        assert!(!std::sync::Arc::ptr_eq(
+            &pools.library,
+            &pools.database_manager
+        ));
     }
 
     #[test]

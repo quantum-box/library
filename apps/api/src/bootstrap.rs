@@ -34,14 +34,13 @@ pub async fn run_api(
         mode = ?property_definition_mode,
         "configured PropertyDefinition storage rollout mode"
     );
-    let database_app = Arc::new(
-        database_manager::factory_client_with_storage_modes(
-            database_layout.database_manager(),
-            property_value_mode,
-            property_definition_mode,
-        )
-        .await?,
-    );
+    // One pool per physical database, shared by everything below.
+    let pools = database_layout.open_pools();
+    let database_app = Arc::new(database_manager::factory_client_with_db(
+        pools.database_manager.clone(),
+        property_value_mode,
+        property_definition_mode,
+    )?);
 
     let sdk = Arc::new(sdk_auth::SdkAuthApp::new(
         &config.tachyon_api_url,
@@ -61,7 +60,7 @@ pub async fn run_api(
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let app = router::router(
-        database_layout,
+        pools,
         sdk,
         database_app,
         github,

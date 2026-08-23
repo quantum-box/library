@@ -171,13 +171,15 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
     let addr = listener.local_addr().unwrap();
     let server_url = format!("http://{}", addr);
 
-    let _library_db =
-        persistence::Db::new(&dsn.use_database("library")).await;
+    let database_layout =
+        library_api::DatabaseLayout::resolve(&dsn, Some("test")).unwrap();
+    let pools = database_layout.open_pools();
+
     let mock_sync_data: Arc<dyn outbound_sync::SyncDataInputPort> =
         Arc::new(MockSyncData);
     let library_app = Arc::new(
         library_api::LibraryApp::new(
-            &dsn.use_database("library"),
+            pools.library.clone(),
             database_app.clone(),
             sdk.clone(),
             mock_sync_data,
@@ -197,11 +199,9 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
     > = Arc::new(InMemoryOAuthTokenRepository::default());
     let provider_secrets =
         Arc::new(inbound_sync::WebhookSecretStore::new());
-    let database_layout =
-        library_api::DatabaseLayout::resolve(&dsn, Some("test")).unwrap();
 
     let app = library_api::router(
-        database_layout,
+        pools,
         sdk,
         database_app.clone(),
         github,

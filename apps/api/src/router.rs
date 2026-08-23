@@ -2,7 +2,7 @@ use crate::app::LibraryApp;
 use crate::collaboration::handler::CollaborationState;
 use crate::collaboration::manager::DocumentManager;
 use crate::collaboration::persistence::SqlxDocumentPersistence;
-use crate::database_layout::DatabaseLayout;
+use crate::database_layout::DatabasePools;
 use crate::handler;
 use crate::handler::graphql;
 use crate::interface_adapter::gateway::LibraryDataRepositoryImpl;
@@ -68,7 +68,7 @@ fn env_flag_enabled(value: &str) -> bool {
 }
 
 pub async fn router(
-    database_layout: DatabaseLayout,
+    pools: DatabasePools,
     sdk: Arc<SdkAuthApp>,
     database_app: Arc<database_manager::App>,
     github: Arc<github_provider::GitHub>,
@@ -79,9 +79,10 @@ pub async fn router(
     // Each repository executes unqualified SQL on the pool for its logical
     // role. Production resolves these roles to two physical databases, while
     // ADR-0049 previews intentionally resolve both to the injected PR DB.
-    let library_db = persistence::Db::new(database_layout.library()).await;
-    let database_manager_db =
-        persistence::Db::new(database_layout.database_manager()).await;
+    let DatabasePools {
+        library: library_db,
+        database_manager: database_manager_db,
+    } = pools;
     let _db_pool_metric_tasks =
         crate::db_pool_metrics::start_default_pool_acquire_metrics([
             ("library", library_db.pool()),
@@ -444,7 +445,7 @@ pub async fn router(
 
     let library_app: Arc<LibraryApp> = Arc::new(
         LibraryApp::new(
-            database_layout.library(),
+            library_db.clone(),
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),

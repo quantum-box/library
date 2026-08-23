@@ -8,7 +8,6 @@ use crate::sdk_auth::{
 use crate::usecase;
 use std::sync::Arc;
 use tachyon_sdk::auth::AuthApp;
-use value_object::DatabaseUrl;
 
 #[derive(Clone)]
 pub struct LibraryApp {
@@ -84,14 +83,18 @@ impl std::fmt::Debug for LibraryApp {
 }
 
 impl LibraryApp {
+    /// Wire the app onto the caller's `library` pool.
+    ///
+    /// Takes the pool rather than a DSN so it shares the one the router
+    /// already holds: opening a second one here meant two pools to the
+    /// same database, and a second connection to establish before the
+    /// process could serve anything.
     pub async fn new(
-        dsn: &DatabaseUrl,
+        library_db: Arc<persistence::Db>,
         database_app: Arc<database_manager::App>,
         sdk: Arc<SdkAuthApp>,
         sync_data: Arc<dyn outbound_sync::SyncDataInputPort>,
     ) -> Self {
-        let library_db = persistence::Db::new(&dsn).await;
-
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
 
