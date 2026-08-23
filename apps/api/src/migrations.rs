@@ -32,6 +32,69 @@ pub fn resolve_prod_database_url() -> errors::Result<DatabaseUrl> {
     })
 }
 
+/// Validates and applies migrations for the deployment being promoted.
+///
+/// Tachyon invokes the candidate alias with this before stable traffic moves,
+/// so a failure discards the candidate and leaves the serving Lambda running.
+/// HTTP serving initialization must never call it: a poisoned history has to
+/// stop a deployment, not take the live API down.
+///
+/// The two environments do not share a database layout. Production keeps
+/// `library` and `tachyon_apps_database_manager` separate, with a SQLx history
+/// each; an ADR-0049 preview gets one per-PR database and therefore one
+/// combined history.
+pub async fn run_migration_gate(
+    raw_database_url: &str,
+) -> errors::Result<()> {
+    let database_url =
+        raw_database_url.parse::<DatabaseUrl>().map_err(|_| {
+            errors::Error::bad_request(
+                "DATABASE_URL must be a valid MySQL URL to run migrations",
+            )
+        })?;
+    let environment = std::env::var("TACHYON_ENV").ok();
+    // Refuse combinations the runtime itself would refuse -- production
+    // pointed at a per-PR database, above all -- before any DDL runs.
+    crate::DatabaseLayout::resolve(&database_url, environment.as_deref())?;
+
+    let result = if is_preview_environment(environment.as_deref()) {
+        // The preview migrator owns the rest of the check: it accepts only a
+        // database the platform provisioned for this PR, because it rewrites
+        // schema and must never reach a shared one.
+        library_api_preview_migrate::run_preview_migrations(
+            environment.as_deref(),
+            raw_database_url,
+            "DATABASE_URL",
+        )
+        .await
+        .map_err(errors::Error::internal_server_error)
+    } else {
+        run_library_migrations(&database_url).await
+    };
+
+    if let Err(error) = &result {
+        // The deploy hook reduces a failure to `FunctionError: Unhandled`,
+        // and the Lambda runtime logs the returned error under a target this
+        // binary's subscriber filters out. Without this line a rejected
+        // deployment leaves CloudWatch with a START, an END, and no reason.
+        tracing::error!(
+            error = %error,
+            "migration gate rejected this deployment"
+        );
+    }
+    result
+}
+
+/// Matches the environment name `DatabaseLayout` uses to pick the unified
+/// preview topology, so the gate migrates the layout the runtime will read.
+fn is_preview_environment(tachyon_environment: Option<&str>) -> bool {
+    tachyon_environment
+        .map(str::trim)
+        .is_some_and(|environment| {
+            environment.eq_ignore_ascii_case("preview")
+        })
+}
+
 /// Ensures schemas required by library-api exist and applies pending migrations.
 ///
 /// PLT-3328: this production-only path deliberately keeps two physical
@@ -174,6 +237,14 @@ fn build_admin_dsn(database_url: &DatabaseUrl) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_preview_runtime_selects_the_combined_history() {
+        assert!(is_preview_environment(Some("preview")));
+        assert!(is_preview_environment(Some(" Preview ")));
+        assert!(!is_preview_environment(Some("production")));
+        assert!(!is_preview_environment(None));
+    }
 
     /// The pin only works while it names the file sqlx actually embeds.
     #[test]

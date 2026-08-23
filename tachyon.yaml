@@ -34,38 +34,46 @@ spec:
           if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
+      # Both environments migrate through the app's own Lambda, invoked on
+      # Tachyon's isolated candidate alias after the provider created it and
+      # before stable traffic is promoted. A FunctionError discards the
+      # candidate and leaves the currently serving Lambda untouched.
+      #
+      # This replaces the two out-of-band functions
+      # (lambda-library-api-migrate, lambda-library-api-preview-migrate).
+      # They carried migration SQL embedded at their own build time, so every
+      # schema change needed a manual redeploy that was easy to forget; the
+      # candidate always carries exactly the SQL it was built from. It also
+      # keeps PLT-3561 satisfied: the per-PR TiDB is PrivateLink-only, and the
+      # candidate already runs inside the enterprise-library network, unlike
+      # the deploy-hook runner.
+      hooks:
+        postDeploy:
+          - name: migration-gate-before-activation
+            lambdaInvoke:
+              appName: library-api
+              payload:
+                version: "2.0"
+                routeKey: LIBRARY_MIGRATION_GATE
+                rawQueryString: ""
+                rawPath: /
+                headers:
+                  host: library-api-migration-gate.internal
+                requestContext:
+                  domainName: library-api-migration-gate.internal
+                  http:
+                    method: GET
+                    path: /
+            timeoutSeconds: 900
       environments:
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
-          # Production keeps its existing databaseRef and migration hook below.
+          # Production keeps its existing databaseRef below. The migration
+          # gate above applies the combined history to this one.
           provisionedDatabase:
             provider: tidb
             engine: mysql
             envVar: DATABASE_URL
-            migration:
-              # PLT-3561: the per-PR TiDB is PrivateLink-only, so the
-              # deploy-hook runner has no route to it and a `command`
-              # migration can only time out. Run the migration as a Lambda
-              # inside the enterprise-library network instead; the platform
-              # injects the resolved per-PR connection URL into the invoke
-              # payload (databaseUrl / databaseUrlEnv).
-              #
-              # The function is declared in tachyon-apps Terraform and its
-              # code is deployed out-of-band; it cannot be a Cloud App,
-              # because Lambda Cloud App deploys require a Function URL and
-              # HTTP-probe it, and this function answers invoke payloads.
-              lambdaInvoke:
-                functionName: lambda-library-api-preview-migrate
-              timeoutSeconds: 900
-        production:
-          hooks:
-            preDeploy:
-              - name: migrate
-                lambdaInvoke:
-                  functionName: lambda-library-api-migrate
-                  payload:
-                    task: migrate
-                timeoutSeconds: 900
       envVars:
         - name: DATABASE_URL
           type: credential

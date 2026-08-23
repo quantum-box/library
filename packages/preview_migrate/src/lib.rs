@@ -150,7 +150,11 @@ fn require_pr_scoped_database(database_url: &Url) -> Result<&str, String> {
 /// Open PRs keep whichever name they were provisioned with, so both must
 /// pass. Everything else -- above all the shared `library` database -- is
 /// still refused, because this migrator drops and rewrites schema.
-fn is_pr_scoped_database_name(name: &str) -> bool {
+///
+/// `library_api::DatabaseLayout` resolves the same question when it decides
+/// whether the runtime sees one unified preview database or the two
+/// production ones. Both must agree, so both call this.
+pub fn is_pr_scoped_database_name(name: &str) -> bool {
     static PR_SCOPED: OnceLock<[Regex; 2]> = OnceLock::new();
     let patterns = PR_SCOPED.get_or_init(|| {
         [
