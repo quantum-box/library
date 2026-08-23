@@ -62,6 +62,10 @@ path = "bin/migrate.rs"
 name = "database_manager_property_value_backfill"
 path = "bin/property_value_backfill.rs"
 
+[[bin]]
+name = "database_manager_rich_text_migrate"
+path = "bin/rich_text_migrate.rs"
+
 [features]
 default = ["graphql", "grpc"]
 integration_tests = []

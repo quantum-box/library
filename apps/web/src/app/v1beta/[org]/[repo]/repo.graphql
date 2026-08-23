@@ -138,6 +138,10 @@ fragment DataFieldOnRepoPage on Data {
       ... on MarkdownValue {
         markdown
       }
+      ... on RichTextValue {
+        richText
+        markdown
+      }
     }
   }
 }

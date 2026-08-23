@@ -50,6 +50,7 @@
     "type-check": "tsc -b --noEmit",
     "type-check:worker": "tsc -p tsconfig.worker.json",
     "test": "vitest run",
+    "fixtures:blocknote": "UPDATE_FIXTURES=1 vitest run src/test/blocknoteFixtures.test.ts",
     "test-storybook": "vitest --config vitest.storybook.config.ts --project=storybook",
     "test:e2e": "playwright test",
     "test:e2e:mobile": "playwright test --project=mobile-chrome",

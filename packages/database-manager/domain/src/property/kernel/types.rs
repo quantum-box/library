@@ -186,10 +186,17 @@ pub enum PropertyKind {
     Location,
     Date,
     Image,
+    /// A block document stored as JSON.
+    ///
+    /// The block shape happens to be BlockNote's today. That is
+    /// deliberately not part of the type contract: the value encoding is
+    /// versioned separately from the type, so a different representation
+    /// becomes encoding v2 rather than a new property type.
+    RichText,
 }
 
 impl PropertyKind {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::String,
         Self::Integer,
         Self::Html,
@@ -201,6 +208,7 @@ impl PropertyKind {
         Self::Location,
         Self::Date,
         Self::Image,
+        Self::RichText,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -216,6 +224,7 @@ impl PropertyKind {
             Self::Location => "location",
             Self::Date => "date",
             Self::Image => "image",
+            Self::RichText => "rich_text",
         }
     }
 
@@ -244,6 +253,7 @@ pub enum PropertyConfig {
     Location(TypeLocation),
     Date,
     Image,
+    RichText,
 }
 
 impl PropertyConfig {
@@ -260,6 +270,7 @@ impl PropertyConfig {
             Self::Location(_) => PropertyKind::Location,
             Self::Date => PropertyKind::Date,
             Self::Image => PropertyKind::Image,
+            Self::RichText => PropertyKind::RichText,
         }
     }
 

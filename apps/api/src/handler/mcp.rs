@@ -1213,6 +1213,9 @@ fn property_data_value(
         "markdown" => {
             Ok(PropertyDataValueInputData::Markdown(as_string(value)?))
         }
+        "rich_text" => {
+            Ok(PropertyDataValueInputData::RichText(as_string(value)?))
+        }
         "relation" => {
             let values = serde_json::from_value::<Vec<String>>(value)
                 .map_err(invalid_tool_arg)?;
@@ -1548,7 +1551,8 @@ fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
                                 "select",
                                 "multi_select",
                                 "date",
-                                "image"
+                                "image",
+                                "rich_text"
                             ]
                         }
                     },
@@ -1582,7 +1586,8 @@ fn property_write_schema<const N: usize>(required: [&str; N]) -> Value {
                     "id",
                     "location",
                     "date",
-                    "image"
+                    "image",
+                    "rich_text"
                 ]
             },
             "meta": {}

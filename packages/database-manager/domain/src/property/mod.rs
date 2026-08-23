@@ -16,6 +16,13 @@ pub use schema_mutation::*;
 mod kernel;
 pub use kernel::*;
 
+/// Rich text lives in the standalone `blocknote` crate (kept
+/// dependency-light so it can be extracted as open source); this re-export
+/// preserves the `domain::rich_text::` paths.
+pub mod rich_text {
+    pub use blocknote::{from_markdown, plain_text, to_html, to_markdown};
+}
+
 pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
 pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
     "Relation target database is immutable after property creation";

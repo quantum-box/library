@@ -70,6 +70,8 @@ pub enum PropertyDataValue {
     Location(Location),
     Date(String),
     Image(String),
+    /// A block document, carried as JSON text.
+    RichText(String),
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -249,7 +251,16 @@ pub fn convert_property_value(
             }
         }
         serde_json::Value::Object(obj) => {
-            if let Some(markdown) =
+            // Checked before the `html` fallback below, which stringifies
+            // any unrecognized object and would otherwise silently swallow
+            // every rich text write.
+            if let Some(rich_text) = obj
+                .get("richText")
+                .or_else(|| obj.get("rich_text"))
+                .and_then(|value| value.as_str())
+            {
+                PropertyDataValueInputData::RichText(rich_text.to_string())
+            } else if let Some(markdown) =
                 obj.get("markdown").and_then(|value| value.as_str())
             {
                 PropertyDataValueInputData::Markdown(markdown.to_string())
@@ -311,6 +322,9 @@ impl From<database_manager::domain::PropertyDataValue>
             database_manager::domain::PropertyDataValue::Image(url) => {
                 PropertyDataValue::Image(url)
             }
+            database_manager::domain::PropertyDataValue::RichText(
+                document,
+            ) => PropertyDataValue::RichText(document.to_string()),
         }
     }
 }

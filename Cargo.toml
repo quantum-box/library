@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/api",
+    "packages/blocknote",
     "packages/database-manager",
     "packages/database-manager/domain",
     "packages/errors",
@@ -86,6 +87,11 @@ serde_json = "1.0.95"
 sha2 = "0.10"
 derive-getters = "0.5.0"
 derive-new = "0.7.0"
+
+# ---- Markdown ----
+# Shared so the GitHub import path and the rich text conversion path cannot
+# drift onto different parsers.
+pulldown-cmark = "0.12"
 
 # ---- Async / Runtime ----
 tokio = { version = "1", features = [

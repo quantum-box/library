@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useRef } from 'react'
+import type { PartialBlock } from '@blocknote/core'
 import { useCreateBlockNote, useEditorChange } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 
+export type RecordBodyFormat = 'markdown' | 'richText'
+
 interface RecordBodyEditorProps {
   value: string
+  /**
+   * How `value` is encoded and what onCommit receives.
+   *
+   * - `markdown`: the historical mode. Lossy — Markdown cannot represent an
+   *   empty paragraph, so blank lines do not survive a round trip.
+   * - `richText`: `value` is the block document as JSON and the editor's own
+   *   document is committed back. Lossless; this is the reason the RichText
+   *   property type exists.
+   */
+  format?: RecordBodyFormat
   onCommit: (value: string) => void
   editable?: boolean
   surface?: 'panel' | 'page'
@@ -13,6 +26,7 @@ interface RecordBodyEditorProps {
 
 export function RecordBodyEditor({
   value,
+  format = 'markdown',
   onCommit,
   editable = true,
   surface = 'panel',
@@ -59,17 +73,19 @@ export function RecordBodyEditor({
 
     loading.current = true
     seeded.current = true
-    editor.replaceBlocks(editor.document, editor.tryParseMarkdownToBlocks(value || ''))
+    editor.replaceBlocks(editor.document, seedBlocks(editor, value, format))
     lastCommitted.current = value
     queueMicrotask(() => {
       loading.current = false
     })
-  }, [editable, editor, value])
+  }, [editable, editor, format, value])
 
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return
 
-    pendingValue.current = changedEditor.blocksToMarkdownLossy(changedEditor.document)
+    pendingValue.current = format === 'richText'
+      ? JSON.stringify(changedEditor.document)
+      : changedEditor.blocksToMarkdownLossy(changedEditor.document)
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
     commitTimer.current = window.setTimeout(commitPendingValue, 500)
   }, editor)
@@ -88,4 +104,31 @@ export function RecordBodyEditor({
       />
     </div>
   )
+}
+
+function seedBlocks(
+  editor: ReturnType<typeof useCreateBlockNote>,
+  value: string,
+  format: RecordBodyFormat,
+): PartialBlock[] {
+  if (format === 'richText' && value) {
+    const parsed = parseDocument(value)
+    if (parsed) return parsed
+    // A value that predates the property's conversion — most likely plain
+    // Markdown text still sitting in it. Opening it as content beats
+    // opening a blank page over someone's body text.
+  }
+  return editor.tryParseMarkdownToBlocks(value || '')
+}
+
+function parseDocument(raw: string): PartialBlock[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed as PartialBlock[]
+    const blocks = (parsed as { blocks?: unknown })?.blocks
+    if (Array.isArray(blocks)) return blocks as PartialBlock[]
+  } catch {
+    // fall through
+  }
+  return null
 }

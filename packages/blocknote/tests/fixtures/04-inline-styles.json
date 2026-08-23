@@ -1,0 +1,126 @@
+[
+  {
+    "id": "block-1",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "plain ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "bold",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "italic",
+        "styles": {
+          "italic": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "struck",
+        "styles": {
+          "strike": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "code",
+        "styles": {
+          "code": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "underlined",
+        "styles": {
+          "underline": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "coloured",
+        "styles": {
+          "textColor": "red"
+        }
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "link",
+        "href": "https://example.com",
+        "content": [
+          {
+            "type": "text",
+            "text": "a link",
+            "styles": {}
+          }
+        ]
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-3",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "escape * these _ chars [ok]",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]
