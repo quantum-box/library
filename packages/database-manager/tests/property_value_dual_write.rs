@@ -512,11 +512,9 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
         let value = value_for(&record_read, &body);
         assert_eq!(
             value.value(),
-            &Some(
-                database_manager::domain::PropertyDataValue::RichText(
-                    document.clone()
-                )
-            ),
+            &Some(database_manager::domain::PropertyDataValue::RichText(
+                document.clone()
+            )),
             "every storage mode must return the identical document"
         );
     }
