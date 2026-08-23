@@ -4,7 +4,8 @@ import { RecordBodyEditor } from './RecordBodyEditor'
 
 const mocks = vi.hoisted(() => {
   const editor = {
-    document: [{ id: 'body' }],
+    // Loosely typed: rich text tests replace this with realistic blocks.
+    document: [{ id: 'body' }] as unknown[],
     tryParseMarkdownToBlocks: vi.fn((value: string) => [{ id: value || 'empty' }]),
     replaceBlocks: vi.fn(),
     blocksToMarkdownLossy: vi.fn(() => ''),
@@ -118,7 +119,7 @@ describe('RecordBodyEditor', () => {
 
     mocks.editor.document = [
       { id: 'b1', type: 'paragraph', content: [] },
-    ] as typeof mocks.editor.document
+    ]
     act(() => mocks.onEditorChange?.(mocks.editor))
     unmount()
 
