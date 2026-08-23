@@ -13,7 +13,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use blocknote::{from_markdown, to_markdown};
+use blocknote::{from_markdown, to_html, to_markdown};
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -64,30 +64,48 @@ fn every_fixture_renders_to_its_expected_markdown() {
         )
         .expect("fixture is valid JSON");
 
-        let rendered = to_markdown(&document);
-        let expected_path = case.with_extension("md");
+        for (rendered, extension) in
+            [(to_markdown(&document), "md"), (to_html(&document), "html")]
+        {
+            let expected_path = case.with_extension(extension);
 
-        if update {
-            fs::write(&expected_path, format!("{rendered}\n"))
-                .expect("writable fixture");
-            continue;
+            if update {
+                fs::write(&expected_path, format!("{rendered}\n"))
+                    .expect("writable fixture");
+                continue;
+            }
+
+            let expected = fs::read_to_string(&expected_path)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} is missing; run with \
+                         UPDATE_RICH_TEXT_FIXTURES=1",
+                        expected_path.display()
+                    )
+                });
+            assert_eq!(
+                rendered,
+                expected.trim_end_matches('\n'),
+                "{} rendered unexpectedly",
+                case.display()
+            );
         }
-
-        let expected =
-            fs::read_to_string(&expected_path).unwrap_or_else(|_| {
-                panic!(
-                    "{} is missing; run with \
-                     UPDATE_RICH_TEXT_FIXTURES=1",
-                    expected_path.display()
-                )
-            });
-        assert_eq!(
-            rendered,
-            expected.trim_end_matches('\n'),
-            "{} rendered unexpectedly",
-            case.display()
-        );
     }
+}
+
+#[test]
+fn html_keeps_the_empty_paragraph_that_markdown_cannot() {
+    let document = serde_json::json!([
+        { "type": "paragraph",
+          "content": [{ "type": "text", "text": "line1", "styles": {} }] },
+        { "type": "paragraph", "content": [] },
+        { "type": "paragraph",
+          "content": [{ "type": "text", "text": "line2", "styles": {} }] },
+    ]);
+    assert_eq!(to_html(&document), "<p>line1</p><p><br></p><p>line2</p>");
+    // The same document through markdown loses the blank line -- that
+    // contrast is why the html view exists.
+    assert_eq!(to_markdown(&document), "line1\n\nline2");
 }
 
 #[test]

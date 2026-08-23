@@ -451,6 +451,12 @@ pub struct RichTextValue {
     /// Writing back this string would discard whatever it could not
     /// represent, so clients that edit must round-trip `richText`.
     pub markdown: String,
+    /// An HTML rendering, walked directly from the block tree.
+    ///
+    /// Read-only. Unlike `markdown` it keeps the empty paragraph
+    /// (`<p><br></p>`) and underline, which makes it the view to embed
+    /// in a CMS page.
+    pub html: String,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -600,13 +606,17 @@ impl From<database_manager::domain::PropertyDataValue>
             database_manager::domain::PropertyDataValue::RichText(
                 document,
             ) => {
-                // The Markdown is rendered here so that every existing
-                // consumer keeps working without learning the block format.
+                // The renderings are produced here so that every
+                // existing consumer keeps working without learning the
+                // block format.
                 PropertyDataValue::RichText(RichTextValue {
                     markdown:
                         database_manager::domain::rich_text::to_markdown(
                             &document,
                         ),
+                    html: database_manager::domain::rich_text::to_html(
+                        &document,
+                    ),
                     rich_text: document.to_string(),
                 })
             }

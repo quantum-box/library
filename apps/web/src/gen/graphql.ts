@@ -1801,6 +1801,14 @@ export type RepoPolicy = {
 export type RichTextValue = {
   __typename?: 'RichTextValue';
   /**
+   * An HTML rendering, walked directly from the block tree.
+   *
+   * Read-only. Unlike `markdown` it keeps the empty paragraph
+   * (`<p><br></p>`) and underline, which makes it the view to embed
+   * in a CMS page.
+   */
+  html: Scalars['String']['output'];
+  /**
    * A rendering for consumers that cannot interpret the block document.
    *
    * Read-only and lossy -- an empty paragraph has no Markdown form.

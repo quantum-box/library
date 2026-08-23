@@ -10,6 +10,9 @@
 //!   because rendering runs on read paths where an error is an outage.
 //! - [`from_markdown`] covers the common subset (paragraphs, headings,
 //!   lists, code, quotes, images) and is lossy by nature.
+//! - [`to_html`] walks the tree directly rather than round-tripping
+//!   through Markdown, so it keeps what Markdown cannot hold: the empty
+//!   paragraph (`<p><br></p>`) and underline.
 //! - [`plain_text`] extracts the document's text with no Markdown syntax,
 //!   for search indexing and previews.
 //!
@@ -21,10 +24,12 @@ use serde_json::Value;
 
 mod from_markdown;
 mod inline;
+mod to_html;
 mod to_markdown;
 
 pub use from_markdown::from_markdown;
 pub use inline::plain_text;
+pub use to_html::to_html;
 pub use to_markdown::to_markdown;
 
 /// The block array of a document.

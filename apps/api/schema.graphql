@@ -1981,6 +1981,14 @@ type RichTextValue {
 	represent, so clients that edit must round-trip `richText`.
 	"""
 	markdown: String!
+	"""
+	An HTML rendering, walked directly from the block tree.
+	
+	Read-only. Unlike `markdown` it keeps the empty paragraph
+	(`<p><br></p>`) and underline, which makes it the view to embed
+	in a CMS page.
+	"""
+	html: String!
 }
 
 type SeedLibraryTenantPayload {
