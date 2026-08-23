@@ -98,10 +98,8 @@ describe('CommandPalette', () => {
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: '/databases/$recordId',
       params: { recordId: 'data-42-uuid' },
-      search: {
-        database: undefined,
-        view: expect.any(String),
-      },
+      search: { database: undefined },
+      replace: undefined,
     })
     expect(onClose).toHaveBeenCalledTimes(1)
   })

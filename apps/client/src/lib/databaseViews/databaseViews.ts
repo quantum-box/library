@@ -279,6 +279,39 @@ export function sortRecordsForDatabaseView(
   })
 }
 
+const DATABASE_VIEW_TYPES: DatabaseViewType[] = ['table', 'board', 'workflow']
+
+export function isDatabaseViewType(value: string | undefined): value is DatabaseViewType {
+  return value === 'table' || value === 'board' || value === 'workflow'
+}
+
+export function resolveDatabaseViewFromParam(
+  views: DatabaseViewDefinition[],
+  scopeId: string,
+  param: string | undefined
+): DatabaseViewDefinition | undefined {
+  if (!param) {
+    return views.find((view) => view.id === getDefaultDatabaseViewId(scopeId, 'table'))
+  }
+  if (isDatabaseViewType(param)) {
+    return views.find((view) => view.id === getDefaultDatabaseViewId(scopeId, param))
+  }
+  return (
+    views.find((view) => view.id === param) ??
+    views.find((view) => view.id.endsWith(`:${param}`))
+  )
+}
+
+export function databaseViewUrlParam(view: DatabaseViewDefinition): string | undefined {
+  for (const type of DATABASE_VIEW_TYPES) {
+    if (view.id === getDefaultDatabaseViewId(view.databaseId, type)) {
+      return type === 'table' ? undefined : type
+    }
+  }
+  const suffix = view.id.split(':').at(-1)
+  return suffix || view.id
+}
+
 export function createDatabaseViewId(databaseId: string, type: DatabaseViewType): string {
   const suffix =
     globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`

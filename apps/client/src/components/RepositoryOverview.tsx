@@ -21,11 +21,9 @@ import { useMemo, type ReactNode } from 'react'
 import { useWorkspaceDatabases, type WorkspaceDatabase } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { priorityConfig, statusConfig, type DatabaseRecord, type Status } from '../data/mock'
-import {
-  getDatabaseViewScopeId,
-  getDefaultDatabaseViewId,
-} from '../lib/databaseViews/databaseViews'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
+import { DataLink } from './DataLink'
+import { DocLink } from './DocLink'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
@@ -60,11 +58,8 @@ function recordBelongsToRepository(record: DatabaseRecord, database: WorkspaceDa
   return record.project === database.label
 }
 
-function databaseViewSearch(databaseId: string, type: DatabaseViewType) {
-  return {
-    database: databaseId,
-    view: getDefaultDatabaseViewId(getDatabaseViewScopeId(databaseId), type),
-  }
+function databaseViewParam(type: DatabaseViewType) {
+  return type === 'table' ? undefined : type
 }
 
 function RepositoryState({
@@ -187,7 +182,7 @@ export function RepositoryOverview({
     )
   }
 
-  const tableSearch = databaseViewSearch(database.id, 'table')
+  const databaseId = database.id
 
   return (
     <main
@@ -218,14 +213,10 @@ export function RepositoryOverview({
           </Link>
         </Button>
         <Button variant="primary" size="sm" asChild>
-          <Link
-            data-testid="repository-open-data"
-            to="/databases"
-            search={tableSearch}
-          >
+          <DataLink data-testid="repository-open-data" databaseId={databaseId}>
             <Database aria-hidden="true" />
             Open data
-          </Link>
+          </DataLink>
         </Button>
       </header>
 
@@ -242,24 +233,23 @@ export function RepositoryOverview({
           ['board', 'Board', Columns3],
           ['workflow', 'Workflow', Workflow],
         ] as const).map(([type, label, Icon]) => (
-          <Link
+          <DataLink
             key={type}
-            to="/databases"
-            search={databaseViewSearch(database.id, type)}
+            databaseId={databaseId}
+            view={databaseViewParam(type)}
             className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <Icon className="size-3.5" aria-hidden="true" />
             {label}
-          </Link>
+          </DataLink>
         ))}
-        <Link
-          to="/docs"
-          search={{ database: database.id }}
+        <DocLink
+          databaseId={databaseId}
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <FileText className="size-3.5" aria-hidden="true" />
           Documents
-        </Link>
+        </DocLink>
         <a
           href="#activity"
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -315,10 +305,10 @@ export function RepositoryOverview({
                       ['board', 'Board', 'Group work by status.', Columns3],
                       ['workflow', 'Workflow', 'Connect records visually.', Workflow],
                     ] as const).map(([type, label, detail, Icon]) => (
-                      <Link
+                      <DataLink
                         key={type}
-                        to="/databases"
-                        search={databaseViewSearch(database.id, type)}
+                        databaseId={databaseId}
+                        view={databaseViewParam(type)}
                         className="group min-h-20 border-t border-border bg-background px-3 py-3 no-underline transition-colors duration-fast first:border-t-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:border-t-0"
                       >
                         <span className="flex items-center gap-2 text-sm font-medium">
@@ -327,11 +317,10 @@ export function RepositoryOverview({
                           <ArrowRight className="ml-auto size-3.5 text-subtle-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100" aria-hidden="true" />
                         </span>
                         <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">{detail}</span>
-                      </Link>
+                      </DataLink>
                     ))}
-                    <Link
-                      to="/docs"
-                      search={{ database: database.id }}
+                    <DocLink
+                      databaseId={databaseId}
                       className="group min-h-20 border-t border-border bg-background px-3 py-3 no-underline transition-colors duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:border-t-0"
                     >
                       <span className="flex items-center gap-2 text-sm font-medium">
@@ -342,7 +331,7 @@ export function RepositoryOverview({
                       <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
                         Write with this repository&apos;s data context.
                       </span>
-                    </Link>
+                    </DocLink>
                   </div>
                 </div>
               </section>
@@ -353,10 +342,10 @@ export function RepositoryOverview({
                   <h2 id="recent-data-heading" className="text-sm font-semibold">Recently updated</h2>
                   <Badge variant="neutral">{recentRecords.length}</Badge>
                   <Button className="ml-auto" variant="ghost" size="sm" asChild>
-                    <Link to="/databases" search={tableSearch}>
+                    <DataLink databaseId={databaseId}>
                       View all
                       <ChevronRight aria-hidden="true" />
-                    </Link>
+                    </DataLink>
                   </Button>
                 </div>
 
@@ -365,11 +354,10 @@ export function RepositoryOverview({
                     const status = statusConfig[record.status]
                     const priority = priorityConfig[record.priority]
                     return (
-                      <Link
+                      <DataLink
                         key={record.id}
-                        to="/databases/$recordId"
-                        params={{ recordId: record.id }}
-                        search={tableSearch}
+                        databaseId={databaseId}
+                        recordId={record.id}
                         className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2 text-left no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:grid-cols-[minmax(0,1fr)_110px_78px] md:px-5"
                       >
                         <span className="flex min-w-0 items-center gap-3">
@@ -384,7 +372,7 @@ export function RepositoryOverview({
                           {priority.label}
                         </span>
                         <span className="text-right text-2xs text-subtle-foreground">{relativeDate(record.updatedAt)}</span>
-                      </Link>
+                      </DataLink>
                     )
                   })
                 ) : (
@@ -393,10 +381,10 @@ export function RepositoryOverview({
                     <p className="mt-3 text-sm font-medium">No data in this repository yet</p>
                     <p className="mt-1 text-xs text-muted-foreground">Open the data view to create the first entry.</p>
                     <Button className="mt-4" size="sm" variant="primary" asChild>
-                      <Link to="/databases" search={tableSearch}>
+                      <DataLink databaseId={databaseId}>
                         <Database aria-hidden="true" />
                         Open data
-                      </Link>
+                      </DataLink>
                     </Button>
                   </div>
                 )}
