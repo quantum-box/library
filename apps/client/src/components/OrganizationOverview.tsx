@@ -20,11 +20,8 @@ import {
 } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { statusConfig, type DatabaseRecord, type Status } from '../data/mock'
-import {
-  getDatabaseViewScopeId,
-  getDefaultDatabaseViewId,
-} from '../lib/databaseViews/databaseViews'
 import { openCreateRepository } from '../lib/ui/workspaceEvents'
+import { DataLink } from './DataLink'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
@@ -212,9 +209,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
 
   const slug = organizationSlug(organization, databases)
   const openCount = repositoryStats.reduce((total, entry) => total + entry.open, 0)
-  const allDataSearch = {
-    view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-  }
+  const allDataSearch = {}
 
   return (
     <main
@@ -335,13 +330,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                     key={repository.id}
                     data-testid={`organization-repository-${repository.id}`}
                     to="/databases"
-                    search={{
-                      database: repository.id,
-                      view: getDefaultDatabaseViewId(
-                        getDatabaseViewScopeId(repository.id),
-                        'table',
-                      ),
-                    }}
+                    search={{ database: repository.id }}
                     className="grid min-h-14 grid-cols-[minmax(0,1fr)_70px_70px_24px] items-center gap-3 border-t border-border px-4 py-2 no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 md:px-5"
                   >
                     {rowContent}
@@ -386,17 +375,10 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                   ? `${repository.orgUsername}/${repository.repoUsername}`
                   : record.project
                 return (
-                  <Link
+                  <DataLink
                     key={record.id}
-                    to="/databases/$recordId"
-                    params={{ recordId: record.id }}
-                    search={{
-                      database: databaseId,
-                      view: getDefaultDatabaseViewId(
-                        getDatabaseViewScopeId(databaseId),
-                        'table',
-                      ),
-                    }}
+                    databaseId={databaseId}
+                    recordId={record.id}
                     className="grid min-h-14 grid-cols-[minmax(0,1fr)_90px_70px] items-center gap-3 border-t border-border px-4 py-2 no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 md:px-5"
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -412,7 +394,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                     </span>
                     <span className="text-xs text-muted-foreground">{statusConfig[record.status].label}</span>
                     <span className="text-right text-2xs text-subtle-foreground">{relativeDate(record.updatedAt)}</span>
-                  </Link>
+                  </DataLink>
                 )
               }) : (
                 <div className="border-t border-border px-5 py-9 text-center">

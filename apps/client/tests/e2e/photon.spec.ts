@@ -188,8 +188,8 @@ test.describe('Library shell', () => {
     await page.getByTestId('workflow-template-kpi-tree').click()
     await page.getByTestId('workflow-add-record').nth(1).click()
 
-    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
-    await expect(page).toHaveURL(/view=.*workflow/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
+    await expect(page).toHaveURL(/view=workflow/)
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.getByText('KPI tree item')).toBeVisible()
@@ -320,27 +320,25 @@ test.describe('Library shell', () => {
 
     await page.getByTestId('repository-open-data').click()
 
-    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
-    await expect(page).toHaveURL(/view=.*table/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data$/)
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
     await page.getByTestId('view-kanban').click()
 
-    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
-    await expect(page).toHaveURL(/view=.*board/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
+    await expect(page).toHaveURL(/view=board/)
     await expect(page.getByText('drag to move')).toBeVisible()
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
     await page.getByTestId('view-table').click()
 
-    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
-    await expect(page).toHaveURL(/view=.*table/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data$/)
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
     await page.getByTestId('view-workflow').click()
 
-    await expect(page).toHaveURL(/database=quantum-box%2Fphoton-core/)
-    await expect(page).toHaveURL(/view=.*workflow/)
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
+    await expect(page).toHaveURL(/view=workflow/)
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
   })
@@ -397,7 +395,7 @@ test.describe('Library shell', () => {
 
     await page.getByTestId('view-options').click()
     await page.getByTestId('new-board-view').click()
-    await expect(page).toHaveURL(/view=.*board/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('button', { name: /New Board/ })).toBeVisible()
     const savedBoardViewId = new URL(page.url()).searchParams.get('view')
     expect(savedBoardViewId).toBeTruthy()
@@ -558,7 +556,7 @@ test.describe('Library shell', () => {
     await expect(page.getByText(filename)).toBeVisible({ timeout: 15_000 })
 
     await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
-    await expect(page).toHaveURL(/\/databases/)
+    await expect(page).toHaveURL(/\/repositories/)
     await page.getByTestId('view-chat').click()
 
     await expect(page.getByTestId('chat-workspace-attachments').getByText(filename)).toBeVisible({
@@ -616,7 +614,7 @@ test.describe('Library shell', () => {
       markdown: 'Seed data for deterministic E2E coverage.',
     })
 
-    await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
+    await page.getByTestId('view-data').click()
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title)).toBeVisible()
 
@@ -656,7 +654,7 @@ test.describe('Library shell', () => {
       timeout: 15_000,
     })
 
-    await page.getByTestId('side-nav').getByRole('button', { name: /All repositories/ }).click()
+    await page.getByTestId('view-data').click()
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
