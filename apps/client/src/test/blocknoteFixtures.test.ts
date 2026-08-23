@@ -17,7 +17,7 @@ import { BLOCKNOTE_FIXTURE_CASES } from './blocknoteFixtureCases'
  */
 const FIXTURE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../packages/database-manager/domain/tests/blocknote',
+  '../../../../packages/blocknote/tests/fixtures',
 )
 
 /**

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/api",
+    "packages/blocknote",
     "packages/database-manager",
     "packages/database-manager/domain",
     "packages/errors",
