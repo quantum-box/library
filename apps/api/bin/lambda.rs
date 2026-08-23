@@ -1,5 +1,4 @@
 use clap::Parser;
-use github_provider::OAuthConfig;
 use lambda_http::{run, Error};
 use library_api::LIBRARY_TENANT;
 use std::env::set_var;
@@ -65,68 +64,41 @@ async fn main() -> Result<(), Error> {
         &config.service_auth_token,
     ));
 
-    // Fetch OAuth config from tachyon-api (replaces
-    // auth::App + iac::App initialization)
+    // OAuth credentials come from Tachyon's IaC configuration, which
+    // means a round trip to tachyon-api. Resolving them on first use
+    // keeps that round trip off the startup path.
     use inbound_sync::interface_adapter::gateway::HttpOAuthService;
     use inbound_sync_domain::{
-        OAuthClientCredentials, OAuthProvider, OAuthService,
-        OAuthTokenRepository,
+        OAuthCredentialsSource, OAuthTokenRepository,
     };
+    use library_api::oauth_bootstrap::OAuthBootstrap;
 
     let oauth_token_repo: Arc<dyn OAuthTokenRepository> =
         Arc::new(SdkOAuthTokenRepository::new(sdk.clone()));
 
-    let mut oauth_service = HttpOAuthService::new(oauth_token_repo.clone());
+    let oauth_bootstrap =
+        Arc::new(OAuthBootstrap::new(sdk.clone(), LIBRARY_TENANT.clone()));
+    // Warm the configuration in the background so the first OAuth
+    // flow does not pay for it. Nothing waits on this, and nothing
+    // depends on it finishing: a request that arrives first resolves
+    // the configuration itself. On Lambda the task may also be frozen
+    // mid-flight between invocations, which is equally harmless.
+    let warm_oauth = oauth_bootstrap.clone();
+    tokio::spawn(async move {
+        warm_oauth.get().await;
+    });
 
-    // Fetch OAuth config via REST endpoint
-    match sdk.fetch_oauth_config(&LIBRARY_TENANT).await {
-        Ok(bootstrap) => {
-            if let Some(creds) = &bootstrap.github_credentials {
-                // Allow env var override for redirect URI in Lambda
-                let redirect_uri = std::env::var("GITHUB_REDIRECT_URI")
-                    .unwrap_or_else(|_| creds.redirect_uri.clone());
-                oauth_service = oauth_service.with_credentials(
-                    OAuthProvider::Github,
-                    OAuthClientCredentials {
-                        client_id: creds.client_id.clone(),
-                        client_secret: creds.client_secret.clone(),
-                        redirect_uri,
-                    },
-                );
-            }
-            if let Some(creds) = &bootstrap.linear_credentials {
-                oauth_service = oauth_service.with_credentials(
-                    OAuthProvider::Linear,
-                    OAuthClientCredentials {
-                        client_id: creds.client_id.clone(),
-                        client_secret: creds.client_secret.clone(),
-                        redirect_uri: creds.redirect_uri.clone(),
-                    },
-                );
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Failed to fetch OAuth config: {:?}", e);
-        }
-    }
+    let oauth_service = Arc::new(
+        HttpOAuthService::new(oauth_token_repo.clone())
+            .with_credential_source(
+                oauth_bootstrap.clone() as Arc<dyn OAuthCredentialsSource>
+            ),
+    );
 
-    let oauth_service = Arc::new(oauth_service);
-
-    // Legacy GitHub provider for backward compatibility
-    let github_oauth_config = oauth_service
-        .get_credentials(OAuthProvider::Github)
-        .map(|credentials| {
-            let redirect_uri = std::env::var("GITHUB_REDIRECT_URI")
-                .unwrap_or_else(|_| credentials.redirect_uri.clone());
-            OAuthConfig {
-                client_id: credentials.client_id.clone(),
-                client_secret: credentials.client_secret.clone(),
-                redirect_uri,
-            }
-        });
-
-    let github =
-        Arc::new(github_provider::GitHub::new(github_oauth_config));
+    let github = Arc::new(github_provider::GitHub::new(Some(
+        oauth_bootstrap.clone()
+            as Arc<dyn github_provider::OAuthConfigSource>,
+    )));
     let provider_secrets =
         Arc::new(inbound_sync::WebhookSecretStore::new());
 
@@ -138,6 +110,7 @@ async fn main() -> Result<(), Error> {
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        oauth_bootstrap,
     )
     .await
     .expect("library api router error");

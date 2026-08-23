@@ -746,12 +746,16 @@ async fn setup_test_server(
 
     let app = library_api::router(
         database_layout.open_pools(),
-        sdk,
+        sdk.clone(),
         database_app,
         github,
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        Arc::new(library_api::oauth_bootstrap::OAuthBootstrap::new(
+            sdk.clone(),
+            library_tenant.clone(),
+        )),
     )
     .await
     .map_err(|error| anyhow::anyhow!("{error}"))?;
@@ -977,13 +981,6 @@ impl inbound_sync_domain::OAuthService for MockOAuthService {
         _provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<()> {
         Ok(())
-    }
-
-    fn get_credentials(
-        &self,
-        _provider: inbound_sync_domain::OAuthProvider,
-    ) -> Option<&inbound_sync_domain::OAuthClientCredentials> {
-        None
     }
 }
 

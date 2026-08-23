@@ -26,7 +26,7 @@ pub trait OAuthProvider: Debug + Send + Sync {
     /// Provider name (e.g., "github").
     fn provider_name(&self) -> &'static str;
     /// Build the authorization URL.
-    fn authorization_url(
+    async fn authorization_url(
         &self,
         scope: &[&str],
         state: &str,
@@ -144,12 +144,12 @@ impl OAuthProvider for GitHub {
     }
 
     #[tracing::instrument(skip(state))]
-    fn authorization_url(
+    async fn authorization_url(
         &self,
         scope: &[&str],
         state: &str,
     ) -> errors::Result<String> {
-        let oauth = self.oauth.as_ref().ok_or_else(|| {
+        let oauth = self.oauth_config().await.ok_or_else(|| {
             errors::Error::provider_error(
                 "github",
                 "OAuth is not configured",
@@ -179,7 +179,7 @@ impl OAuthProvider for GitHub {
         &self,
         code: &str,
     ) -> errors::Result<OAuthToken> {
-        let oauth = self.oauth.as_ref().ok_or_else(|| {
+        let oauth = self.oauth_config().await.ok_or_else(|| {
             errors::Error::provider_error(
                 "github",
                 "OAuth is not configured",
@@ -273,7 +273,7 @@ impl OAuthProvider for GitHub {
         &self,
         refresh_token: &str,
     ) -> errors::Result<OAuthToken> {
-        let oauth = self.oauth.as_ref().ok_or_else(|| {
+        let oauth = self.oauth_config().await.ok_or_else(|| {
             errors::Error::provider_error(
                 "github",
                 "OAuth is not configured",
