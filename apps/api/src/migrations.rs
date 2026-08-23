@@ -7,6 +7,14 @@ use crate::database_layout::{
     DATABASE_MANAGER_DATABASE_NAME, LIBRARY_DATABASE_NAME,
 };
 
+/// SHA-384 of the current `20250305080000_update_unique_constraints.up.sql`.
+///
+/// Production applied an earlier revision of that file, so its recorded
+/// checksum is realigned to this value before sqlx verifies the history.
+/// `pinned_checksum_matches_the_migration_file` fails if the file is edited
+/// again without refreshing this constant.
+const UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM: &str = "ad8c3fffc2061424884916a14a1e11b5b8191af96291eab12ef0bfda077692cbb641b3224fc47bf167c744fbd7f65ae1";
+
 /// Resolves the production admin database URL from the runtime environment.
 ///
 /// `PROD_DATABASE_URL` is used by the CLI migrate binary. Lambda and txcloud
@@ -87,6 +95,20 @@ async fn run_app_migrations(
     .execute(db.pool().as_ref())
     .await
     .ok();
+    // 20250305080000 dropped a UNIQUE key with `DROP CONSTRAINT`, which TiDB
+    // resolves to CHECK constraints only and rejects with ERROR 3940 once
+    // tidb_enable_check_constraint is ON. The statement is now `DROP INDEX`,
+    // which has the same effect on the schema production already carries, so
+    // realign the recorded checksum rather than re-run the DDL.
+    sqlx::query(
+        "UPDATE _sqlx_migrations \
+         SET checksum = UNHEX(?) \
+         WHERE version = 20250305080000 AND success = TRUE",
+    )
+    .bind(UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM)
+    .execute(db.pool().as_ref())
+    .await
+    .ok();
     sqlx::migrate!("./migrations")
         .run(db.pool().as_ref())
         .await
@@ -147,4 +169,35 @@ fn build_admin_dsn(database_url: &DatabaseUrl) -> String {
         database_url.host(),
         database_url.port()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pin only works while it names the file sqlx actually embeds.
+    #[test]
+    fn pinned_checksum_matches_the_migration_file() {
+        let migrator = sqlx::migrate!("./migrations");
+        let migration = migrator
+            .iter()
+            .find(|migration| {
+                migration.version == 20250305080000
+                    && migration.migration_type.is_up_migration()
+            })
+            .expect("20250305080000 must stay in the library migrations");
+
+        let checksum = migration
+            .checksum
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+
+        assert_eq!(
+            checksum, UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM,
+            "20250305080000 changed; refresh \
+             UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM so production keeps \
+             accepting its already-applied history"
+        );
+    }
 }

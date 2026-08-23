@@ -71,6 +71,7 @@ pub async fn run_preview_migrations(
     migration_preflight::ensure_check_constraints_enforced(&pool)
         .await
         .map_err(|error| error.to_string())?;
+    clear_failed_sqlx_migrations(&pool).await;
     migrator.run(&pool).await.map_err(|error| {
         format!(
             "failed to apply {} to preview database `{database_name}`: \
@@ -86,6 +87,22 @@ pub async fn run_preview_migrations(
         database_name
     );
     Ok(())
+}
+
+/// Drop half-applied rows so a retried deploy starts from a clean history.
+///
+/// A migration that fails mid-DDL leaves `success = FALSE` in
+/// `_sqlx_migrations`, and sqlx refuses every later run with "partially
+/// applied" until that row is gone. The per-PR database is not recreated
+/// between deploys, so without this the first failure would strand the PR
+/// until it is closed and reopened. Mirrors the production migrator
+/// (`library_api::migrations::clear_failed_sqlx_migrations`). The table may
+/// not exist yet on a fresh database, which is why the error is dropped.
+async fn clear_failed_sqlx_migrations(pool: &MySqlPool) {
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE success = FALSE")
+        .execute(pool)
+        .await
+        .ok();
 }
 
 fn require_preview_runtime(
@@ -117,13 +134,34 @@ fn require_pr_scoped_database(database_url: &Url) -> Result<&str, String> {
     let database_name = database_name(database_url).ok_or_else(|| {
         "preview DATABASE_URL must select a database".to_string()
     })?;
-    if !database_name.starts_with("pr_") {
+    if !is_pr_scoped_database_name(database_name) {
         return Err(
             "preview DATABASE_URL must select a PR-scoped database"
                 .to_string(),
         );
     }
     Ok(database_name)
+}
+
+/// Recognize the platform's per-PR database names, both shapes.
+///
+/// tachyon-apps `preview_database_name` produced `pr_{pr}_{app id tail}`
+/// until PLT-3851 put the app slug in front: `{slug}_pr{pr}_{app id tail}`.
+/// Open PRs keep whichever name they were provisioned with, so both must
+/// pass. Everything else -- above all the shared `library` database -- is
+/// still refused, because this migrator drops and rewrites schema.
+fn is_pr_scoped_database_name(name: &str) -> bool {
+    static PR_SCOPED: OnceLock<[Regex; 2]> = OnceLock::new();
+    let patterns = PR_SCOPED.get_or_init(|| {
+        [
+            Regex::new(r"^pr_[0-9]+_[a-z0-9]+$")
+                .expect("legacy preview database regex must compile"),
+            Regex::new(r"^[a-z0-9][a-z0-9_]*_pr[0-9]+_[a-z0-9]+$")
+                .expect("preview database regex must compile"),
+        ]
+    });
+
+    patterns.iter().any(|pattern| pattern.is_match(name))
 }
 
 async fn connect(
@@ -435,6 +473,26 @@ mod tests {
         assert!(require_pr_scoped_database(&shared).is_err());
     }
 
+    #[test]
+    fn accepts_both_platform_preview_database_names() {
+        // Legacy shape, still carried by PRs provisioned before PLT-3851.
+        assert!(is_pr_scoped_database_name("pr_221_k6cypbws3q3j"));
+        // Current shape: the app slug precedes the PR scope.
+        assert!(is_pr_scoped_database_name(
+            "library_api_pr224_k6cypbws3q3j"
+        ));
+
+        // The shared production databases must never be migrated here,
+        // and neither may a name that only mentions a PR in passing.
+        assert!(!is_pr_scoped_database_name("library"));
+        assert!(!is_pr_scoped_database_name(
+            "tachyon_apps_database_manager"
+        ));
+        assert!(!is_pr_scoped_database_name("library_api_preview"));
+        assert!(!is_pr_scoped_database_name("pr_221"));
+        assert!(!is_pr_scoped_database_name("_pr224_k6cypbws3q3j"));
+    }
+
     #[tokio::test]
     async fn refused_socket_is_not_reported_as_a_pool_timeout() {
         // Port 1 on the loopback interface has no listener, so the
@@ -561,8 +619,10 @@ mod tests {
                 .expect("DEV_DATABASE_URL must be set"),
         )
         .expect("DEV_DATABASE_URL must be valid");
+        // Shaped like a real per-PR database so the replay also proves the
+        // name the platform hands us now clears `require_pr_scoped_database`.
         let database_name = format!(
-            "pr_plt3328_replay_{}_{}",
+            "library_api_pr{}_replay{}",
             std::process::id(),
             DATABASE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );

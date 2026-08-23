@@ -62,7 +62,34 @@ sqlx が `PoolTimedOut` に丸めてしまう前に原因を分けて報告す�
 | `preview database ...:4000 is unreachable: TCP connect got no response` | 経路がない。migration が VPC 外 (deploy hook runner 等) で走っている |
 | `preview database ...:4000 rejected the connection` | 経路はある。listener がないか SG で reject されている |
 | `failed to connect to preview database ...: <sqlx のエラー>` | TCP は通った。認証・TLS・データベース不在などの本来のエラー |
-| `preview DATABASE_URL must select a PR-scoped database` | 接続先が `pr_` で始まらない。preview 用の解決が誤っている |
+| `preview DATABASE_URL must select a PR-scoped database` | 接続先が per-PR データベース名の形をしていない。preview 用の解決が誤っている |
 
-preview データベース名は platform が `pr_{pr_number}_{app_id の末尾 12 文字}` で
-決める (`preview_database_name`)。library-api では `pr_<PR番号>_k6cypbws3q3j`。
+preview データベース名は platform の `preview_database_name` が決める。
+tachyon-apps PLT-3851 (#8818, 2026-08-23) で app slug が前に付き、現在は
+`{app_slug}_pr{pr_number}_{app_id の末尾 12 文字}` = library-api では
+`library_api_pr<PR番号>_k6cypbws3q3j`。それ以前に払い出された open PR は旧形式の
+`pr_<PR番号>_k6cypbws3q3j` を持ち続けるため、`require_pr_scoped_database` は
+両方を受け入れる。
+
+## migration SQL の TiDB 互換
+
+preview データベースは TiDB 上にあり、`tidb_enable_check_constraint` は
+`migration_preflight` により ON である。TiDB はこの状態で
+`ALTER TABLE ... DROP CONSTRAINT` を CHECK 制約としてのみ解決するため、UNIQUE
+キーを落とそうとすると `ERROR 3940 (HY000): Constraint '...' does not exist` に
+なる。UNIQUE キーは MySQL でも TiDB でも `DROP INDEX` で落とせるので、migration
+では `DROP INDEX` を使うこと (PLT-3861 で `20250305080000_update_unique_constraints`
+を修正済み)。
+
+本番が既に適用した migration ファイルを書き換えると sqlx の checksum 検証に
+かかるため、`apps/api/src/migrations.rs` の `UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM`
+で記録側の checksum を現ファイルに揃えている。ファイルを再度変更したら
+`pinned_checksum_matches_the_migration_file` が落ちるので、その定数も更新する。
+
+## 失敗した preview データベースの復旧
+
+migration が途中で落ちると `_sqlx_migrations` に `success = FALSE` の行が残り、
+以降の実行は `partially applied` で止まる。per-PR データベースは deploy ごとに
+作り直されないため、preview migrator は本番と同じく実行前にその行を削除する
+(`clear_failed_sqlx_migrations`)。それでも直らない場合だけ、PR を close → reopen
+してデータベースごと作り直す。
