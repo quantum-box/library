@@ -20,6 +20,7 @@ pub enum PropertyValueCommand {
     Location(Location),
     Date(String),
     Image(String),
+    RichText(serde_json::Value),
 }
 
 impl PropertyValueCommand {
@@ -65,6 +66,7 @@ impl PropertyValueCommand {
             PropertyDataValue::Location(value) => Self::Location(value),
             PropertyDataValue::Date(value) => Self::Date(value),
             PropertyDataValue::Image(value) => Self::Image(value),
+            PropertyDataValue::RichText(value) => Self::RichText(value),
         }
     }
 
@@ -110,6 +112,9 @@ impl PropertyValueCommand {
             (PropertyType::Image, Self::Image(value)) => {
                 PropertyDataValue::Image(value)
             }
+            (PropertyType::RichText, Self::RichText(value)) => {
+                PropertyDataValue::RichText(value)
+            }
             _ => {
                 return Err(errors::Error::invalid(format!(
                     "property value command does not match Property {}",
@@ -123,7 +128,15 @@ impl PropertyValueCommand {
         // representation so legacy-read and canonical-read cannot disagree.
         // An empty Relation remains set because its legacy representation
         // contains the configured target DatabaseId.
-        if value.string_value().is_empty() {
+        // Rich text decides emptiness structurally. Its string_value() is
+        // the document's *text*, and a document holding only an image or a
+        // single empty paragraph has none -- normalizing those to Clear
+        // would delete exactly the content this type exists to preserve.
+        if let PropertyDataValue::RichText(document) = &value {
+            if document.as_array().is_some_and(|blocks| blocks.is_empty()) {
+                return Ok(None);
+            }
+        } else if value.string_value().is_empty() {
             return Ok(None);
         }
 

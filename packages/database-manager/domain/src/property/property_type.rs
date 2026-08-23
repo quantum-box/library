@@ -25,6 +25,7 @@ pub enum PropertyType {
     Location(TypeLocation),
     Date,
     Image,
+    RichText,
 }
 
 impl PropertyType {
@@ -67,6 +68,7 @@ impl From<&PropertyType> for PropertyConfig {
             PropertyType::Location(value) => Self::Location(value.clone()),
             PropertyType::Date => Self::Date,
             PropertyType::Image => Self::Image,
+            PropertyType::RichText => Self::RichText,
         }
     }
 }
@@ -91,6 +93,7 @@ impl From<&PropertyConfig> for PropertyType {
             }
             PropertyConfig::Date => Self::Date,
             PropertyConfig::Image => Self::Image,
+            PropertyConfig::RichText => Self::RichText,
         }
     }
 }
@@ -159,6 +162,7 @@ mod tests {
     #[case(PropertyType::Location(TypeLocation::default()), "LOCATION")]
     #[case(PropertyType::Date, "DATE")]
     #[case(PropertyType::Image, "IMAGE")]
+    #[case(PropertyType::RichText, "RICH_TEXT")]
     fn test_property_type_to_string(
         #[case] property_type: PropertyType,
         #[case] expected: &str,

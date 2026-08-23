@@ -108,7 +108,7 @@ impl CreateRepoInputPort for CreateRepo {
                 tenant_id: org.id(),
                 database_id: database.id(),
                 name: "content",
-                property_type: PropertyType::Markdown,
+                property_type: PropertyType::RichText,
             })
             .await?;
 
@@ -124,8 +124,10 @@ impl CreateRepoInputPort for CreateRepo {
                     name: "data1",
                     property_data: vec![PropertyDataInputData {
                         property_id: content_property.id().clone(),
-                        value: PropertyValueCommand::Markdown(
-                            "# data1\n\nwrite here\n".to_string(),
+                        value: PropertyValueCommand::RichText(
+                            database_manager::domain::rich_text::from_markdown(
+                                "# data1\n\nwrite here\n",
+                            ),
                         ),
                     }],
                 })
@@ -140,8 +142,10 @@ impl CreateRepoInputPort for CreateRepo {
                     name: "data2",
                     property_data: vec![PropertyDataInputData {
                         property_id: content_property.id().clone(),
-                        value: PropertyValueCommand::Markdown(
-                            "# data2\n\nwrite here\n".to_string(),
+                        value: PropertyValueCommand::RichText(
+                            database_manager::domain::rich_text::from_markdown(
+                                "# data2\n\nwrite here\n",
+                            ),
                         ),
                     }],
                 })

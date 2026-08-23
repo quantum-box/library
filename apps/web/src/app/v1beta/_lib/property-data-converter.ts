@@ -24,6 +24,11 @@ type HtmlValueFragment = Extract<
 	{ __typename?: 'HtmlValue' }
 >
 
+type RichTextValueFragment = Extract<
+	PropertyDataForEditorFragment['value'],
+	{ __typename?: 'RichTextValue' }
+>
+
 // propertiesをみて、propertyDataの型を変える
 export const convertPropertyData = (
 	properties: PropertyForEditorFragment[],
@@ -58,6 +63,25 @@ export const convertPropertyData = (
 						propertyId: x.propertyId,
 						value: {
 							markdown: markdownValue?.markdown ?? '',
+						},
+					} satisfies PropertyDataInputData
+				}
+				case PropertyType.RichText: {
+					// Pass the document through untouched. This client renders the
+					// markdown view but must never write it back -- markdown cannot
+					// hold an empty paragraph, so writing the rendering would
+					// destroy exactly what the type preserves.
+					const richTextValue = x.value as RichTextValueFragment | undefined
+					const richText = richTextValue?.richText ?? ''
+					// Skip when the fragment did not deliver a document, rather than
+					// overwriting the record's body with an empty one.
+					if (!richText) {
+						return null
+					}
+					return {
+						propertyId: x.propertyId,
+						value: {
+							richText,
 						},
 					} satisfies PropertyDataInputData
 				}

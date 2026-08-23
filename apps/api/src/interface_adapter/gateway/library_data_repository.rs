@@ -128,7 +128,10 @@ impl LibraryDataRepositoryImpl {
 
     fn property_type_for(name: &str) -> PropertyType {
         match name {
-            "content" => PropertyType::Markdown,
+            // New content properties hold the lossless document type. The
+            // GitHub import still delivers Markdown text here; the legacy
+            // text boundary converts it (see parse_rich_text).
+            "content" => PropertyType::RichText,
             "id" => PropertyType::Id(TypeId::new(true)),
             _ => PropertyType::String,
         }

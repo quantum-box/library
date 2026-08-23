@@ -40,6 +40,7 @@ export function propertyValueText(
   if (typeof value.number === 'string') return value.number
   if (typeof value.html === 'string') return value.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
   if (typeof value.markdown === 'string') return value.markdown
+  if (typeof value.richText === 'string') return richTextPlainText(value.richText)
   if (typeof value.date === 'string') return value.date
   if (typeof value.url === 'string') return value.url
   if (typeof value.id === 'string') return value.id
@@ -63,8 +64,61 @@ export function propertyValueEditText(
   property: LibraryProperty,
   value: LibraryPropertyDataValue
 ): string | undefined {
+  // The raw document JSON: lossless, and what an editor must round-trip.
+  if (typeof value.richText === 'string') return value.richText
   if (typeof value.html === 'string') return value.html
   return propertyValueText(property, value)
+}
+
+interface RichTextInline {
+  text?: unknown
+  content?: unknown
+}
+
+interface RichTextBlock {
+  content?: unknown
+  children?: unknown
+}
+
+function collectRichTextInline(content: unknown, out: string[]) {
+  if (typeof content === 'string') {
+    out.push(content)
+    return
+  }
+  if (!Array.isArray(content)) return
+  for (const item of content as RichTextInline[]) {
+    if (typeof item?.text === 'string') out.push(item.text)
+    collectRichTextInline(item?.content, out)
+  }
+}
+
+/**
+ * The document's text, for table cells and search. Raw JSON keys such as
+ * "paragraph" must never leak into either.
+ */
+export function richTextPlainText(raw: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // A value that predates the type change (plain markdown text, say):
+    // show it rather than nothing.
+    return raw
+  }
+  const blocks = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { blocks?: unknown })?.blocks)
+      ? ((parsed as { blocks: unknown[] }).blocks)
+      : []
+  const out: string[] = []
+  const walk = (items: unknown[]) => {
+    for (const block of items as RichTextBlock[]) {
+      collectRichTextInline(block?.content, out)
+      if (Array.isArray(block?.children)) walk(block.children)
+    }
+  }
+  walk(blocks)
+  return out.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 export { propertyValueList }

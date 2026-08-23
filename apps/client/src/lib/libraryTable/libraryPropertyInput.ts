@@ -38,6 +38,8 @@ export function libraryPropertyValueToGraphqlInput(
       return value.html != null ? { html: value.html } : null
     case 'Markdown':
       return value.markdown != null ? { markdown: value.markdown } : null
+    case 'RichText':
+      return value.richText != null ? { richText: value.richText } : null
     case 'Select':
       return value.optionId ? { select: value.optionId } : null
     case 'MultiSelect':
@@ -67,6 +69,7 @@ function propertyValueTextFallback(value: LibraryPropertyDataValue): string | un
   if (typeof value.number === 'string') return value.number
   if (typeof value.html === 'string') return value.html
   if (typeof value.markdown === 'string') return value.markdown
+  if (typeof value.richText === 'string') return value.richText
   if (typeof value.date === 'string') return value.date
   if (typeof value.url === 'string') return value.url
   if (typeof value.id === 'string') return value.id
@@ -96,6 +99,10 @@ export function libraryPropertyValueToRestValue(
     case 'Markdown':
     case 'Id':
       return value.string ?? value.html ?? value.markdown ?? value.id ?? ''
+    case 'RichText':
+      // The tagged object is load-bearing: a bare string reaches the API's
+      // String arm and is rejected against a RichText property.
+      return { richText: value.richText ?? '' }
     case 'Integer':
       return value.number ?? ''
     case 'Select':
@@ -130,6 +137,11 @@ export function parseEditablePropertyValue(
       return { html: raw }
     case 'Markdown':
       return { markdown: raw }
+    case 'RichText':
+      // Not inline editable (see isInlineEditableProperty); this exists so
+      // a stray call cannot fall into the String default and write display
+      // text over a document. Empty clears, like every other type.
+      return trimmed ? { richText: raw } : null
     case 'Integer':
       return { number: trimmed }
     case 'Date':

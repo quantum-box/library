@@ -54,6 +54,7 @@ type LibraryPropertyType =
   | 'Location'
   | 'Date'
   | 'Image'
+  | 'RichText'
   | string
 
 export interface LibrarySelectOption {
@@ -89,6 +90,7 @@ const libraryPropertyTypeByWireValue: Record<string, LibraryPropertyType> = {
   LOCATION: 'Location',
   DATE: 'Date',
   IMAGE: 'Image',
+  RICH_TEXT: 'RichText',
 }
 
 export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
@@ -105,6 +107,8 @@ export interface LibraryPropertyDataValue {
   number?: string
   html?: string
   markdown?: string
+  /** The block document as JSON text. Authoritative for RichText. */
+  richText?: string
   date?: string
   url?: string
   id?: string
@@ -378,6 +382,7 @@ const libraryRepoDataQuery = `
               ... on IntegerValue { number }
               ... on HtmlValue { html }
               ... on MarkdownValue { markdown }
+              ... on RichTextValue { richText }
               ... on DateValue { date }
               ... on ImageValue { url }
               ... on IdValue { id }
@@ -508,6 +513,7 @@ const libraryDataDetailQuery = `
           ... on IntegerValue { number }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
+          ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
           ... on IdValue { id }
@@ -548,6 +554,7 @@ const libraryAddDataMutation = `
           ... on IntegerValue { number }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
+          ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
           ... on IdValue { id }
@@ -575,6 +582,7 @@ const libraryUpdateDataMutation = `
           ... on IntegerValue { number }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
+          ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
           ... on IdValue { id }
@@ -1018,6 +1026,10 @@ function restPropertyValue(property: LibraryProperty, value: LibraryPropertyData
       return { html: value.html ?? '' }
     case 'Markdown':
       return { markdown: value.markdown ?? '' }
+    case 'RichText':
+      // The tagged object is load-bearing: a bare string would reach the
+      // API's String input arm and be rejected against a RichText property.
+      return { richText: value.richText ?? '' }
     case 'MultiSelect':
       return value.optionIds ?? []
     default:
@@ -1420,6 +1432,8 @@ function restValueToLibraryPropertyDataValue(
     }
     if (typeof record.html === 'string') return { html: record.html }
     if (typeof record.markdown === 'string') return { markdown: record.markdown }
+    if (typeof record.richText === 'string') return { richText: record.richText }
+    if (typeof record.rich_text === 'string') return { richText: record.rich_text }
     if (typeof record.date === 'string') return { date: record.date }
     if (typeof record.image === 'string') return { url: record.image }
     if (typeof record.url === 'string') return { url: record.url }

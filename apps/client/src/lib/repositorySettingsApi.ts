@@ -13,6 +13,7 @@ export const repositoryPropertyTypes = [
   'DATE',
   'ID',
   'HTML',
+  'RICH_TEXT',
 ] as const
 
 export type RepositoryPropertyType = (typeof repositoryPropertyTypes)[number]

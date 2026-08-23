@@ -1,0 +1,141 @@
+[
+  {
+    "id": "block-1",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "outer",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "block-2",
+        "type": "bulletListItem",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "inner",
+            "styles": {}
+          }
+        ],
+        "children": []
+      },
+      {
+        "id": "block-3",
+        "type": "bulletListItem",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "inner two",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "id": "block-4",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "outer two",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-5",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "first",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-6",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "second",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-7",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": true
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "done",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-8",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "todo",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

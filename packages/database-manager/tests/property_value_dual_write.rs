@@ -447,6 +447,92 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
         ("future_string".to_string(), "{\"future\":true}".to_string())
     );
 
+    // A rich text document -- including the empty paragraph the type
+    // exists to preserve -- must come back byte-identical from the legacy
+    // reader (JSON text in a LONGTEXT cell) and the canonical reader (a
+    // real JSON array in property_values).
+    let body = app
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            name: "body",
+            property_type: PropertyType::RichText,
+        })
+        .await?;
+    let document = serde_json::json!([
+        {
+            "id": "block-1",
+            "type": "paragraph",
+            "props": {},
+            "content": [
+                { "type": "text", "text": "line1", "styles": {} }
+            ],
+            "children": [],
+        },
+        { "id": "block-2", "type": "paragraph", "props": {},
+          "content": [], "children": [] },
+        {
+            "id": "block-3",
+            "type": "paragraph",
+            "props": {},
+            "content": [
+                { "type": "text", "text": "line2", "styles": {} }
+            ],
+            "children": [],
+        },
+    ]);
+    app.update_data_usecase()
+        .execute(UpdateDataInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            data_id: record.id(),
+            name: "record-rich-text",
+            data: vec![PropertyDataInputData {
+                property_id: body.id().clone(),
+                value: PropertyValueCommand::RichText(document.clone()),
+            }],
+        })
+        .await?;
+    for reader in [&legacy_app, &app, &canonical_app] {
+        let record_read = reader
+            .get_data_usecase()
+            .execute(&GetDataInputData {
+                executor,
+                multi_tenancy,
+                tenant_id: &tenant_id,
+                database_id: database.id(),
+                data_id: record.id(),
+            })
+            .await?;
+        let value = value_for(&record_read, &body);
+        assert_eq!(
+            value.value(),
+            &Some(
+                database_manager::domain::PropertyDataValue::RichText(
+                    document.clone()
+                )
+            ),
+            "every storage mode must return the identical document"
+        );
+    }
+    let canonical_rich_text: (String, String) = sqlx::query_as(
+        "SELECT type_key, value FROM property_values          WHERE data_id = ? AND property_id = ?",
+    )
+    .bind(record.id().to_string())
+    .bind(body.id().to_string())
+    .fetch_one(pool.as_ref())
+    .await?;
+    assert_eq!(canonical_rich_text.0, "rich_text");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&canonical_rich_text.1)?,
+        document
+    );
+
     let tenant = tenant_id.to_string();
     let database_id = database.id().to_string();
     let property_id = primary.id().to_string();

@@ -1572,6 +1572,7 @@ impl LibraryMutation {
                     PropertyType::Markdown => "MARKDOWN".to_string(),
                     PropertyType::Select => "SELECT".to_string(),
                     PropertyType::MultiSelect => "MULTI_SELECT".to_string(),
+                    PropertyType::RichText => "RICH_TEXT".to_string(),
                     _ => "STRING".to_string(),
                 },
                 select_options: m.select_options,
@@ -2098,6 +2099,13 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
                 property_type: PropertyType::Image,
                 ..
             } => Ok(db::PropertyType::Image),
+            // The catch-all below means a missing arm is not a compile
+            // error: addProperty would simply reject the type with a 400,
+            // leaving the settings picker entry dead on arrival.
+            PropertyInput {
+                property_type: PropertyType::RichText,
+                ..
+            } => Ok(db::PropertyType::RichText),
             _ => Err(errors::Error::invalid("invalid property type")),
         }
     }

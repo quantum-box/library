@@ -211,13 +211,49 @@ fn fixtures() -> Vec<ContractFixture> {
                 "https://example.com/image.png".to_string(),
             ),
         },
+        ContractFixture {
+            expected_key: "rich_text",
+            expected_legacy_key: "RICH_TEXT",
+            expected_storage: StorageClass::Text,
+            // Nothing is indexable: see the handler for why a full-text
+            // index over the stored document is worse than none.
+            expected_indexes: IndexCapabilities {
+                exact: false,
+                range: false,
+                full_text: false,
+                sortable: false,
+                unique: false,
+                multi_value: false,
+            },
+            expected_references: vec![],
+            config: PropertyConfig::RichText,
+            value: PropertyDataValue::RichText(json!([
+                {
+                    "id": "block-1",
+                    "type": "paragraph",
+                    "props": {},
+                    "content": [
+                        { "type": "text", "text": "Hello", "styles": {} }
+                    ],
+                    "children": [],
+                },
+                // The empty paragraph this property type exists for.
+                {
+                    "id": "block-2",
+                    "type": "paragraph",
+                    "props": {},
+                    "content": [],
+                    "children": [],
+                },
+            ])),
+        },
     ]
 }
 
 #[test]
 fn all_builtin_v1_types_satisfy_the_same_contract() {
     let fixtures = fixtures();
-    assert_eq!(fixtures.len(), 11);
+    assert_eq!(fixtures.len(), 12);
 
     for fixture in fixtures {
         let handler = fixture.config.handler();

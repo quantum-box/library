@@ -1778,6 +1778,7 @@ dependencies = [
  "derive-getters 0.5.0",
  "derive-new 0.7.0",
  "errors",
+ "pulldown-cmark",
  "rstest",
  "scraper",
  "serde",

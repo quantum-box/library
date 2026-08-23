@@ -148,6 +148,10 @@ export function PropertiesSection({
 				property =>
 					property.typ !== PropertyType.Html &&
 					property.typ !== PropertyType.Markdown &&
+					// RichText is a body type; rendering it in the default <Input>
+					// would bind raw JSON to a text field, where one keystroke
+					// corrupts the document.
+					property.typ !== PropertyType.RichText &&
 					// Hide ext_github_repos from the data editor (it's for property config)
 					!isExtGithubReposProperty(property) &&
 					// Hide ext_linear from the data editor (shown in Linear Sync section)

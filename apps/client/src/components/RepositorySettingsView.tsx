@@ -69,7 +69,8 @@ const propertyTypeChoices: Array<{
   detail: string
 }> = [
   { value: 'STRING', label: 'Text', detail: 'Short plain text' },
-  { value: 'MARKDOWN', label: 'Markdown', detail: 'Rich document content' },
+  { value: 'RICH_TEXT', label: 'Rich text', detail: 'Block document, keeps blank lines' },
+  { value: 'MARKDOWN', label: 'Markdown', detail: 'Markdown source' },
   { value: 'INTEGER', label: 'Integer', detail: 'Whole numbers' },
   { value: 'DATE', label: 'Date', detail: 'Calendar date and time' },
   { value: 'SELECT', label: 'Select', detail: 'One option' },

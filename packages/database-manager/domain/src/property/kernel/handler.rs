@@ -45,7 +45,8 @@ impl BuiltinPropertyTypeHandler {
             | PropertyKind::Html
             | PropertyKind::Markdown
             | PropertyKind::Id
-            | PropertyKind::Image => StorageClass::Text,
+            | PropertyKind::Image
+            | PropertyKind::RichText => StorageClass::Text,
             PropertyKind::Integer => StorageClass::Integer,
             PropertyKind::Relation | PropertyKind::MultiSelect => {
                 StorageClass::MultiReference
@@ -101,6 +102,19 @@ impl BuiltinPropertyTypeHandler {
             },
             PropertyKind::Image => IndexCapabilities {
                 exact: true,
+                range: false,
+                full_text: false,
+                sortable: false,
+                unique: false,
+                multi_value: false,
+            },
+            // Nothing, deliberately. A full-text index over the stored
+            // document would match structural keys such as "paragraph" and
+            // "backgroundColor", which is worse than no index. Indexing the
+            // rendered text is a separate feature. IndexPolicy::None stays
+            // legal, so the property is still declarable.
+            PropertyKind::RichText => IndexCapabilities {
+                exact: false,
                 range: false,
                 full_text: false,
                 sortable: false,
@@ -188,6 +202,10 @@ impl BuiltinPropertyTypeHandler {
                 Ok(())
             }
             (
+                PropertyConfig::RichText,
+                PropertyDataValue::RichText(document),
+            ) => validate_rich_text_document(document),
+            (
                 PropertyConfig::Location(_),
                 PropertyDataValue::Location(location),
             ) => {
@@ -212,7 +230,8 @@ impl BuiltinPropertyTypeHandler {
             | PropertyConfig::Html
             | PropertyConfig::Markdown
             | PropertyConfig::Date
-            | PropertyConfig::Image => Ok(Value::Null),
+            | PropertyConfig::Image
+            | PropertyConfig::RichText => Ok(Value::Null),
             PropertyConfig::Relation(value) => to_json(value),
             PropertyConfig::Select(value) => to_json(value),
             PropertyConfig::MultiSelect(value) => to_json(value),
@@ -261,6 +280,10 @@ impl BuiltinPropertyTypeHandler {
                 require_empty_config(&raw)?;
                 PropertyConfig::Image
             }
+            PropertyKind::RichText => {
+                require_empty_config(&raw)?;
+                PropertyConfig::RichText
+            }
         };
         self.validate_config(&config)?;
         Ok(config)
@@ -289,6 +312,9 @@ impl BuiltinPropertyTypeHandler {
             PropertyDataValue::Select(value) => to_json(value),
             PropertyDataValue::MultiSelect(value) => to_json(value),
             PropertyDataValue::Location(value) => to_json(value),
+            // Stored as the document itself, not as a JSON string, so the
+            // canonical column holds a real array.
+            PropertyDataValue::RichText(document) => Ok(document.clone()),
         }
     }
 
@@ -330,6 +356,7 @@ impl BuiltinPropertyTypeHandler {
             PropertyKind::Image => {
                 PropertyDataValue::Image(from_json(raw)?)
             }
+            PropertyKind::RichText => PropertyDataValue::RichText(raw),
         };
         self.validate_value(config, &value)?;
         Ok(value)
@@ -390,6 +417,15 @@ impl BuiltinPropertyTypeHandler {
             ) => left.latitude().total_cmp(&right.latitude()).then_with(
                 || left.longitude().total_cmp(&right.longitude()),
             ),
+            // Ordering a document is not meaningful, but `compare` has no
+            // failure path and the tail arm below is unreachable!(). The
+            // canonical serialization is total, deterministic and reflexive,
+            // which is all the contract requires; the order itself is stable
+            // but arbitrary.
+            (
+                PropertyDataValue::RichText(left),
+                PropertyDataValue::RichText(right),
+            ) => left.to_string().cmp(&right.to_string()),
             _ => unreachable!("validated values match the same handler"),
         };
         Ok(ordering)
@@ -439,7 +475,24 @@ impl BuiltinPropertyTypeHandler {
         if target_kind == self.kind {
             return ConversionPolicy::Identity;
         }
+        // NOTE: declarative only -- nothing enforces this at runtime yet.
+        // It is the spec a future conversion tool implements.
         match (self.kind, target_kind) {
+            // Rendered through rich_text::to_markdown. An empty paragraph
+            // and the editor-only props have no Markdown form.
+            (PropertyKind::RichText, PropertyKind::Markdown) => {
+                ConversionPolicy::ExplicitLossy
+            }
+            // Parsed through rich_text::from_markdown, a common subset.
+            (PropertyKind::Markdown, PropertyKind::RichText) => {
+                ConversionPolicy::ExplicitLossy
+            }
+            // Must precede the blanket arms below: a document is not
+            // interchangeable with a scalar in either direction, and
+            // otherwise RichText -> String would claim to be lossless.
+            (PropertyKind::RichText, _) | (_, PropertyKind::RichText) => {
+                ConversionPolicy::Forbidden
+            }
             (_, PropertyKind::String) => ConversionPolicy::ExplicitLossless,
             (PropertyKind::String, _) => {
                 ConversionPolicy::ExplicitValidated
@@ -465,6 +518,34 @@ struct RelationValue {
 
 fn validate_select_items(config: &TypeSelect) -> errors::Result<()> {
     validate_option_uniqueness(config.items())
+}
+
+/// The document envelope, checked shallowly on purpose.
+///
+/// Only "an array of objects that each name a type" is enforced. A deep
+/// schema check would reject documents produced by a newer editor and turn
+/// every editor upgrade into a write outage.
+fn validate_rich_text_document(document: &Value) -> errors::Result<()> {
+    const MAX_RICH_TEXT_BYTES: usize = 1_048_576;
+
+    let blocks = document.as_array().ok_or_else(|| {
+        errors::Error::invalid("rich text must be a JSON array of blocks")
+    })?;
+    for block in blocks {
+        let is_block = block.as_object().is_some_and(|block| {
+            block.get("type").is_some_and(Value::is_string)
+        });
+        if !is_block {
+            return Err(errors::Error::invalid(
+                "every rich text block must be an object with a type",
+            ));
+        }
+    }
+    validate_max_bytes(
+        &document.to_string(),
+        MAX_RICH_TEXT_BYTES,
+        "Rich text",
+    )
 }
 
 fn validate_max_bytes(

@@ -87,6 +87,11 @@ sha2 = "0.10"
 derive-getters = "0.5.0"
 derive-new = "0.7.0"
 
+# ---- Markdown ----
+# Shared so the GitHub import path and the rich text conversion path cannot
+# drift onto different parsers.
+pulldown-cmark = "0.12"
+
 # ---- Async / Runtime ----
 tokio = { version = "1", features = [
     "macros",
