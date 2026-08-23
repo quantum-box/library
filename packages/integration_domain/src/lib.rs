@@ -12,8 +12,9 @@ pub use marketplace::*;
 // Re-export OAuth types for convenience
 pub use oauth::{
     ExchangeOAuthCodeInput, InitOAuthInput, InitOAuthOutput,
-    OAuthClientCredentials, OAuthProvider, OAuthService,
-    OAuthTokenResponse, StoredOAuthToken, StoredOAuthTokenRepository,
+    OAuthClientCredentials, OAuthCredentialsSource, OAuthProvider,
+    OAuthService, OAuthTokenResponse, StoredOAuthToken,
+    StoredOAuthTokenRepository,
 };
 
 // Re-export StoredOAuthTokenRepository as OAuthTokenRepository

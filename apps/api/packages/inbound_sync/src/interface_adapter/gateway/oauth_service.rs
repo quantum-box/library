@@ -6,8 +6,9 @@ use std::collections::HashMap;
 
 use inbound_sync_domain::{
     ExchangeOAuthCodeInput, InitOAuthInput, InitOAuthOutput,
-    OAuthClientCredentials, OAuthProvider, OAuthService,
-    OAuthTokenRepository, OAuthTokenResponse, StoredOAuthToken,
+    OAuthClientCredentials, OAuthCredentialsSource, OAuthProvider,
+    OAuthService, OAuthTokenRepository, OAuthTokenResponse,
+    StoredOAuthToken,
 };
 use reqwest::Url;
 use ulid::Ulid;
@@ -16,8 +17,14 @@ use value_object::TenantId;
 /// HTTP-based OAuth service implementation.
 #[derive(Debug)]
 pub struct HttpOAuthService {
-    /// OAuth client credentials by provider
+    /// OAuth client credentials configured up front, by provider.
     credentials: HashMap<OAuthProvider, OAuthClientCredentials>,
+    /// Resolves any credentials not configured up front.
+    ///
+    /// The real ones come from Tachyon's IaC configuration over the
+    /// network, and asking for them here rather than at construction
+    /// keeps that fetch off the startup path.
+    credential_source: Option<std::sync::Arc<dyn OAuthCredentialsSource>>,
     /// Token repository for storing tokens
     token_repository: std::sync::Arc<dyn OAuthTokenRepository>,
     /// HTTP client for making token requests
@@ -31,6 +38,7 @@ impl HttpOAuthService {
     ) -> Self {
         Self {
             credentials: HashMap::new(),
+            credential_source: None,
             token_repository,
             http_client: reqwest::Client::new(),
         }
@@ -44,6 +52,28 @@ impl HttpOAuthService {
     ) -> Self {
         self.credentials.insert(provider, credentials);
         self
+    }
+
+    /// Resolve any credentials this was not given up front.
+    pub fn with_credential_source(
+        mut self,
+        source: std::sync::Arc<dyn OAuthCredentialsSource>,
+    ) -> Self {
+        self.credential_source = Some(source);
+        self
+    }
+
+    /// Credentials for `provider`, from what was configured up front or
+    /// else from the source.
+    async fn credentials_for(
+        &self,
+        provider: OAuthProvider,
+    ) -> Option<OAuthClientCredentials> {
+        if let Some(credentials) = self.credentials.get(&provider) {
+            return Some(credentials.clone());
+        }
+
+        self.credential_source.as_ref()?.credentials(provider).await
     }
 
     /// Get authorization URL for a provider.
@@ -144,8 +174,10 @@ impl OAuthService for HttpOAuthService {
         &self,
         input: InitOAuthInput,
     ) -> errors::Result<InitOAuthOutput> {
-        let credentials =
-            self.credentials.get(&input.provider).ok_or_else(|| {
+        let credentials = self
+            .credentials_for(input.provider)
+            .await
+            .ok_or_else(|| {
                 errors::Error::bad_request(format!(
                     "No OAuth credentials configured for {:?}",
                     input.provider
@@ -213,8 +245,10 @@ impl OAuthService for HttpOAuthService {
         &self,
         input: ExchangeOAuthCodeInput,
     ) -> errors::Result<StoredOAuthToken> {
-        let credentials =
-            self.credentials.get(&input.provider).ok_or_else(|| {
+        let credentials = self
+            .credentials_for(input.provider)
+            .await
+            .ok_or_else(|| {
                 errors::Error::bad_request(format!(
                     "No OAuth credentials configured for {:?}",
                     input.provider
@@ -292,7 +326,7 @@ impl OAuthService for HttpOAuthService {
         provider: OAuthProvider,
     ) -> errors::Result<StoredOAuthToken> {
         let credentials =
-            self.credentials.get(&provider).ok_or_else(|| {
+            self.credentials_for(provider).await.ok_or_else(|| {
                 errors::Error::bad_request(format!(
                     "No OAuth credentials configured for {provider:?}"
                 ))
@@ -377,13 +411,6 @@ impl OAuthService for HttpOAuthService {
         // Delete the stored token
         self.token_repository.delete(tenant_id, provider).await?;
         Ok(())
-    }
-
-    fn get_credentials(
-        &self,
-        provider: OAuthProvider,
-    ) -> Option<&OAuthClientCredentials> {
-        self.credentials.get(&provider)
     }
 }
 

@@ -47,13 +47,6 @@ impl inbound_sync_domain::OAuthService for MockOAuthService {
     ) -> errors::Result<()> {
         Ok(())
     }
-
-    fn get_credentials(
-        &self,
-        _provider: inbound_sync_domain::OAuthProvider,
-    ) -> Option<&inbound_sync_domain::OAuthClientCredentials> {
-        None
-    }
 }
 
 /// Mock implementation of SyncDataInputPort for testing
@@ -202,12 +195,16 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
 
     let app = library_api::router(
         pools,
-        sdk,
+        sdk.clone(),
         database_app.clone(),
         github,
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        Arc::new(library_api::oauth_bootstrap::OAuthBootstrap::new(
+            sdk.clone(),
+            root_id.clone(),
+        )),
     )
     .await
     .unwrap();

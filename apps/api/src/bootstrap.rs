@@ -1,9 +1,7 @@
+use crate::oauth_bootstrap::OAuthBootstrap;
 use crate::{config, domain::LIBRARY_TENANT, router, sdk_auth};
-use github_provider::OAuthConfig;
 use inbound_sync::interface_adapter::gateway::HttpOAuthService;
-use inbound_sync_domain::{
-    OAuthClientCredentials, OAuthProvider, OAuthTokenRepository,
-};
+use inbound_sync_domain::OAuthTokenRepository;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -52,8 +50,13 @@ pub async fn run_api(
         config.tachyon_api_url
     );
 
-    let (oauth_service, github, oauth_token_repo, provider_secrets) =
-        build_oauth_runtime(&sdk).await;
+    let (
+        oauth_service,
+        github,
+        oauth_token_repo,
+        provider_secrets,
+        oauth_bootstrap,
+    ) = build_oauth_runtime(&sdk).await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("listening on http://{}", addr);
@@ -67,6 +70,7 @@ pub async fn run_api(
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        oauth_bootstrap,
     )
     .await?;
     axum::serve(
@@ -101,72 +105,53 @@ async fn build_oauth_runtime(
     Arc<github_provider::GitHub>,
     Arc<dyn OAuthTokenRepository>,
     Arc<inbound_sync::WebhookSecretStore>,
+    Arc<OAuthBootstrap>,
 ) {
     let oauth_token_repo: Arc<dyn OAuthTokenRepository> =
         Arc::new(sdk_auth::SdkOAuthTokenRepository::new(sdk.clone()));
 
-    let mut oauth_service = HttpOAuthService::new(oauth_token_repo.clone());
+    let oauth_bootstrap =
+        Arc::new(OAuthBootstrap::new(sdk.clone(), LIBRARY_TENANT.clone()));
+
+    // The client credentials resolve on first use, but the Linear
+    // webhook secret has to be in the store before a webhook can be
+    // verified against it, so this server resolves the configuration
+    // now. It shares the cell with everything else, so nothing fetches
+    // it a second time.
     let mut provider_secrets = inbound_sync::WebhookSecretStore::new();
-    let mut github_oauth_config: Option<OAuthConfig> = None;
-
-    // Fetch OAuth config via REST endpoint (non-fatal on failure).
-    match sdk.fetch_oauth_config(&LIBRARY_TENANT).await {
-        Ok(bootstrap) => {
-            if let Some(creds) = &bootstrap.github_credentials {
-                let redirect_uri = std::env::var("GITHUB_REDIRECT_URI")
-                    .unwrap_or_else(|_| creds.redirect_uri.clone());
-                oauth_service = oauth_service.with_credentials(
-                    OAuthProvider::Github,
-                    OAuthClientCredentials {
-                        client_id: creds.client_id.clone(),
-                        client_secret: creds.client_secret.clone(),
-                        redirect_uri: redirect_uri.clone(),
-                    },
-                );
-                tracing::info!(
-                    %redirect_uri,
-                    "GitHub OAuth credentials configured via REST \
-                     (redirect_uri must be registered in the GitHub \
-                     App callback URLs)"
-                );
-                github_oauth_config = Some(OAuthConfig {
-                    client_id: creds.client_id.clone(),
-                    client_secret: creds.client_secret.clone(),
-                    redirect_uri,
-                });
-            }
-
-            if let Some(creds) = &bootstrap.linear_credentials {
-                oauth_service = oauth_service.with_credentials(
-                    OAuthProvider::Linear,
-                    OAuthClientCredentials {
-                        client_id: creds.client_id.clone(),
-                        client_secret: creds.client_secret.clone(),
-                        redirect_uri: creds.redirect_uri.clone(),
-                    },
-                );
-                if let Some(secret) = &bootstrap.linear_webhook_secret {
-                    if !secret.trim().is_empty() {
-                        provider_secrets.insert(
-                            inbound_sync_domain::Provider::Linear,
-                            secret.clone(),
-                        );
-                    }
-                }
-                tracing::info!(
-                    "Linear OAuth credentials configured via REST"
-                );
-            }
+    if let Some(bootstrap) = oauth_bootstrap.get().await {
+        if bootstrap.github_credentials.is_some() {
+            tracing::info!(
+                "GitHub OAuth credentials configured via REST \
+                 (redirect_uri must be registered in the GitHub \
+                 App callback URLs)"
+            );
         }
-        Err(error) => {
-            tracing::warn!("Failed to fetch OAuth config: {:?}", error);
+        if bootstrap.linear_credentials.is_some() {
+            tracing::info!("Linear OAuth credentials configured via REST");
+        }
+        if let Some(secret) = &bootstrap.linear_webhook_secret {
+            if !secret.trim().is_empty() {
+                provider_secrets.insert(
+                    inbound_sync_domain::Provider::Linear,
+                    secret.clone(),
+                );
+            }
         }
     }
 
+    let oauth_service = HttpOAuthService::new(oauth_token_repo.clone())
+        .with_credential_source(oauth_bootstrap.clone()
+            as Arc<dyn inbound_sync_domain::OAuthCredentialsSource>);
+
     (
         Arc::new(oauth_service),
-        Arc::new(github_provider::GitHub::new(github_oauth_config)),
+        Arc::new(github_provider::GitHub::new(Some(
+            oauth_bootstrap.clone()
+                as Arc<dyn github_provider::OAuthConfigSource>,
+        ))),
         oauth_token_repo,
         Arc::new(provider_secrets),
+        oauth_bootstrap,
     )
 }

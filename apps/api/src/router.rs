@@ -67,6 +67,11 @@ fn env_flag_enabled(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("true")
 }
 
+// Every argument is a distinct runtime dependency the router wires
+// into handlers. Grouping the OAuth-related ones behind a struct would
+// read better and is worth doing, but not as a side effect of a
+// latency fix.
+#[allow(clippy::too_many_arguments)]
 pub async fn router(
     pools: DatabasePools,
     sdk: Arc<SdkAuthApp>,
@@ -75,6 +80,7 @@ pub async fn router(
     oauth_service: Arc<dyn inbound_sync_domain::OAuthService>,
     oauth_token_repo: Arc<dyn inbound_sync_domain::OAuthTokenRepository>,
     provider_secrets: Arc<WebhookSecretStore>,
+    oauth_bootstrap: Arc<crate::oauth_bootstrap::OAuthBootstrap>,
 ) -> Result<axum::Router, Box<dyn std::error::Error>> {
     // Each repository executes unqualified SQL on the pool for its logical
     // role. Production resolves these roles to two physical databases, while
@@ -461,6 +467,7 @@ pub async fn router(
         EmptySubscription,
     )
     .data(sdk.clone())
+    .data(oauth_bootstrap.clone())
     .data(auth_app_trait.clone())
     .data(library_app.clone())
     .data(integration_query_state)

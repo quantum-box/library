@@ -38,49 +38,35 @@ pub struct OAuthConfig {
     pub redirect_uri: String,
 }
 
+/// Supplies the GitHub OAuth configuration when a flow needs it.
+///
+/// The configuration lives in Tachyon's IaC configuration, which costs
+/// a round trip to fetch. Reading it through this trait lets that
+/// happen on the OAuth endpoints that need it, instead of in front of
+/// every cold start.
+#[async_trait::async_trait]
+pub trait OAuthConfigSource: std::fmt::Debug + Send + Sync {
+    async fn github_oauth_config(&self) -> Option<OAuthConfig>;
+}
+
 /// GitHub provider client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GitHub {
-    oauth: Option<OAuthConfig>,
+    oauth: Option<std::sync::Arc<dyn OAuthConfigSource>>,
 }
 
 impl GitHub {
-    /// Create a new GitHub client with OAuth configuration.
-    pub fn new(oauth: Option<OAuthConfig>) -> Self {
-        Self { oauth }
+    /// Create a client that resolves its OAuth configuration from
+    /// `source`.
+    pub fn new(
+        source: Option<std::sync::Arc<dyn OAuthConfigSource>>,
+    ) -> Self {
+        Self { oauth: source }
     }
 
-    /// Create a new GitHub client from environment variables.
-    ///
-    /// Reads `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `GITHUB_REDIRECT_URI`.
-    pub fn from_env() -> Self {
-        let oauth =
-            if let (Ok(client_id), Ok(client_secret), Ok(redirect_uri)) = (
-                std::env::var("GITHUB_CLIENT_ID"),
-                std::env::var("GITHUB_CLIENT_SECRET"),
-                std::env::var("GITHUB_REDIRECT_URI"),
-            ) {
-                Some(OAuthConfig {
-                    client_id,
-                    client_secret,
-                    redirect_uri,
-                })
-            } else {
-                None
-            };
-
-        Self { oauth }
-    }
-
-    /// Check if OAuth is configured.
-    pub fn is_oauth_configured(&self) -> bool {
-        self.oauth.is_some()
-    }
-
-    /// Get the OAuth client secret (for CSRF state signing).
-    ///
-    /// Returns None if OAuth is not configured.
-    pub fn client_secret(&self) -> Option<&str> {
-        self.oauth.as_ref().map(|o| o.client_secret.as_str())
+    /// The OAuth configuration, or `None` when GitHub OAuth is not
+    /// configured for this deployment.
+    pub(crate) async fn oauth_config(&self) -> Option<OAuthConfig> {
+        self.oauth.as_ref()?.github_oauth_config().await
     }
 }

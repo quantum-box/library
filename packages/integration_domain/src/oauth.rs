@@ -346,12 +346,22 @@ pub trait OAuthService: Send + Sync + Debug {
         tenant_id: &TenantId,
         provider: OAuthProvider,
     ) -> errors::Result<()>;
+}
 
-    /// Get OAuth client credentials for a provider.
-    fn get_credentials(
+/// Supplies OAuth client credentials on demand.
+///
+/// The credentials live in Tachyon's IaC configuration, which has to be
+/// fetched over the network. Reading them through this trait lets that
+/// fetch happen when a caller actually needs them, rather than before
+/// the process can serve its first request.
+#[async_trait::async_trait]
+pub trait OAuthCredentialsSource: Send + Sync + Debug {
+    /// Credentials for `provider`, or `None` when the provider is not
+    /// configured or they cannot be resolved right now.
+    async fn credentials(
         &self,
         provider: OAuthProvider,
-    ) -> Option<&OAuthClientCredentials>;
+    ) -> Option<OAuthClientCredentials>;
 }
 
 // =============================================================================
