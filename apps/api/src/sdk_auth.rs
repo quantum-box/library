@@ -10,8 +10,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -3707,7 +3707,6 @@ mod tests {
         let headers =
             headers_from(&[("x-operator-id", "tn_01reusedclient")]);
         let key = header_fingerprint(&headers);
-        HTTP_CLIENTS.invalidate(&key);
 
         let _ = shared_client(headers.clone());
 
