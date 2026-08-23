@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isMultilineEditableProperty,
   libraryDataItemToGraphqlPropertyData,
   mergeLibraryDataProperty,
   parseEditablePropertyValue,
@@ -71,5 +72,13 @@ describe('libraryPropertyInput', () => {
       { propertyId: markdownProperty.id, value: { markdown: '# Hello' } },
       { propertyId: htmlProperty.id, value: { html: '<p>Hello</p>' } },
     ])
+  })
+
+  it('edits multi-line values multi-line so a single-line input cannot strip the newlines', () => {
+    const markdownProperty: LibraryProperty = { id: 'prop-body', name: 'Body', typ: 'Markdown' }
+
+    expect(isMultilineEditableProperty(stringProperty, 'one line')).toBe(false)
+    expect(isMultilineEditableProperty(stringProperty, 'first\nsecond')).toBe(true)
+    expect(isMultilineEditableProperty(markdownProperty, '')).toBe(true)
   })
 })

@@ -46,4 +46,44 @@ describe('RecordBodyEditor', () => {
     expect(onCommit).toHaveBeenCalledTimes(1)
     expect(onCommit).toHaveBeenCalledWith('Updated body')
   })
+
+  it('does not reseed the document when a save echoes a new value back', async () => {
+    const onCommit = vi.fn()
+    const { rerender } = render(<RecordBodyEditor value="Original" onCommit={onCommit} />)
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1))
+    await act(async () => Promise.resolve())
+
+    rerender(<RecordBodyEditor value={'first\n\nsecond'} onCommit={onCommit} />)
+
+    expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1)
+  })
+
+  it('commits trailing newlines instead of trimming them away', async () => {
+    const onCommit = vi.fn()
+    const { unmount } = render(<RecordBodyEditor value="Original" onCommit={onCommit} />)
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Original\n\n')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    unmount()
+
+    expect(onCommit).toHaveBeenCalledWith('Original\n\n')
+  })
+
+  it('follows the incoming value while read only', async () => {
+    const onCommit = vi.fn()
+    const { rerender } = render(
+      <RecordBodyEditor value="Original" onCommit={onCommit} editable={false} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1))
+    await act(async () => Promise.resolve())
+
+    rerender(<RecordBodyEditor value="Refreshed" onCommit={onCommit} editable={false} />)
+
+    expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(2)
+  })
 })

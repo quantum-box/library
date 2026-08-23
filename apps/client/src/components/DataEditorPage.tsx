@@ -25,7 +25,7 @@ import {
   updateLibraryData,
   type LibraryRepoTarget,
 } from '../lib/libraryTable/libraryDataCrud'
-import { getLibraryDataPropertyValue, propertyValueText } from '../lib/libraryTable/libraryPropertyFormat'
+import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libraryTable/libraryPropertyFormat'
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { listRecordDocLinks } from '../lib/docs/docsDb'
@@ -88,11 +88,9 @@ function formatEditorDate(value: string | undefined) {
 
 function PageTitle({
   value,
-  disabled,
   onCommit,
 }: {
   value: string
-  disabled: boolean
   onCommit: (value: string) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -135,14 +133,12 @@ function PageTitle({
   return (
     <h1
       data-testid="data-editor-title"
-      className={`-mx-1 rounded px-1 text-3xl font-semibold tracking-tight md:text-4xl ${disabled ? '' : 'cursor-text hover:bg-muted/60'}`}
+      className="-mx-1 cursor-text rounded px-1 text-3xl font-semibold tracking-tight hover:bg-muted/60 md:text-4xl"
       onClick={() => {
-        if (!disabled) {
-          setDraft(value)
-          setEditing(true)
-        }
+        setDraft(value)
+        setEditing(true)
       }}
-      title={disabled ? undefined : 'Click to rename'}
+      title="Click to rename"
     >
       {value}
     </h1>
@@ -309,7 +305,7 @@ export function DataEditorPage({
 
   const bodyProperty = getBodyProperty(properties)
   const bodyValue = bodyProperty
-    ? propertyValueText(bodyProperty, getLibraryDataPropertyValue(item, bodyProperty.id) ?? {}) ?? ''
+    ? propertyValueEditText(bodyProperty, getLibraryDataPropertyValue(item, bodyProperty.id) ?? {}) ?? ''
     : ''
   const pageProperties = properties.filter((property) => property.id !== bodyProperty?.id)
   const attachments = attachmentsForSurface({ surfaceType: 'record', surfaceId: item.id }).map(toFileAttachment)
@@ -392,7 +388,6 @@ export function DataEditorPage({
             </div>
             <PageTitle
               value={item.name}
-              disabled={saveState === 'saving'}
               onCommit={(name) => persistItem({ ...itemRef.current!, name })}
             />
 
@@ -410,7 +405,6 @@ export function DataEditorPage({
                     <LibraryPropertyEditableCell
                       item={item}
                       property={property}
-                      disabled={saveState === 'saving'}
                       onCommit={persistItem}
                     />
                   </div>
