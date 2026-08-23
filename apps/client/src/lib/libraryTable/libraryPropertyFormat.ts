@@ -54,4 +54,17 @@ export function propertyValueText(
   return undefined
 }
 
+/**
+ * The text an editor should be seeded with. `propertyValueText` flattens Html
+ * for display, which collapses every newline into a space — seeding an editor
+ * with that and committing it back would persist the flattened value.
+ */
+export function propertyValueEditText(
+  property: LibraryProperty,
+  value: LibraryPropertyDataValue
+): string | undefined {
+  if (typeof value.html === 'string') return value.html
+  return propertyValueText(property, value)
+}
+
 export { propertyValueList }

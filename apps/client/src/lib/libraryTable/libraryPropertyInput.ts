@@ -172,3 +172,16 @@ export function isInlineEditableProperty(property: LibraryProperty): boolean {
     property.typ
   )
 }
+
+/**
+ * Whether the value needs a textarea. A single-line `<input>` silently drops
+ * every newline from the value it is given, so any property that already holds
+ * one — or is a markup type that will grow one — has to be edited multi-line.
+ */
+export function isMultilineEditableProperty(
+  property: LibraryProperty,
+  currentText: string
+): boolean {
+  if (property.typ === 'Html' || property.typ === 'Markdown') return true
+  return property.typ === 'String' && currentText.includes('\n')
+}

@@ -19,6 +19,7 @@ export function RecordBodyEditor({
 }: RecordBodyEditorProps) {
   const lastCommitted = useRef(value)
   const loading = useRef(true)
+  const seeded = useRef(false)
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
@@ -36,7 +37,7 @@ export function RecordBodyEditor({
 
     const next = pendingValue.current
     pendingValue.current = null
-    if (next === null || next.trim() === lastCommitted.current.trim()) return
+    if (next === null || next === lastCommitted.current) return
 
     lastCommitted.current = next
     onCommitRef.current(next)
@@ -47,28 +48,28 @@ export function RecordBodyEditor({
   }, [commitPendingValue])
 
   useEffect(() => {
-    let cancelled = false
+    // Local first: once seeded, the editor document is the source of truth.
+    // Re-seeding on every `value` change would replace the document under the
+    // caret each time a save echoes back, dropping the newlines typed while the
+    // round trip was in flight. Callers key this component by record id, so a
+    // different record mounts a fresh editor. Read-only views still follow the
+    // incoming value because nothing can be typed into them.
+    if (seeded.current && editable) return
+    if (seeded.current && value === lastCommitted.current) return
+
     loading.current = true
-
-    const blocks = editor.tryParseMarkdownToBlocks(value || '')
-    if (!cancelled) {
-      editor.replaceBlocks(editor.document, blocks)
-      lastCommitted.current = value
-      queueMicrotask(() => {
-        loading.current = false
-      })
-    }
-
-    return () => {
-      cancelled = true
-    }
-  }, [editor, value])
+    seeded.current = true
+    editor.replaceBlocks(editor.document, editor.tryParseMarkdownToBlocks(value || ''))
+    lastCommitted.current = value
+    queueMicrotask(() => {
+      loading.current = false
+    })
+  }, [editable, editor, value])
 
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return
 
-    const markdown = changedEditor.blocksToMarkdownLossy(changedEditor.document)
-    pendingValue.current = markdown.trim()
+    pendingValue.current = changedEditor.blocksToMarkdownLossy(changedEditor.document)
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
     commitTimer.current = window.setTimeout(commitPendingValue, 500)
   }, editor)
