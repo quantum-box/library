@@ -45,16 +45,16 @@ async fn main() -> Result<(), Error> {
         config.database_url.parse::<value_object::DatabaseUrl>()?;
     let database_layout =
         library_api::DatabaseLayout::from_runtime(database_url)?;
-    tracing::debug!("start connect database...");
+    // One pool per physical database, opened here and shared by
+    // everything below. The pools connect on first query, so a cold
+    // start no longer waits on the database before it can serve.
+    let pools = database_layout.open_pools();
 
-    let database_app = Arc::new(
-        database_manager::factory_client_with_storage_modes(
-            database_layout.database_manager(),
-            property_value_mode,
-            property_definition_mode,
-        )
-        .await?,
-    );
+    let database_app = Arc::new(database_manager::factory_client_with_db(
+        pools.database_manager.clone(),
+        property_value_mode,
+        property_definition_mode,
+    )?);
 
     set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");
 
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Error> {
         Arc::new(inbound_sync::WebhookSecretStore::new());
 
     let app = library_api::router(
-        database_layout,
+        pools,
         sdk,
         database_app,
         github,

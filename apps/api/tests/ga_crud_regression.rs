@@ -745,7 +745,7 @@ async fn setup_test_server(
         library_api::DatabaseLayout::resolve(&dsn, Some("test"))?;
 
     let app = library_api::router(
-        database_layout,
+        database_layout.open_pools(),
         sdk,
         database_app,
         github,

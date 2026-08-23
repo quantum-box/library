@@ -89,7 +89,7 @@ async fn test_import_and_create_database() -> anyhow::Result<()> {
     let mock_sync_data: Arc<dyn outbound_sync::SyncDataInputPort> =
         Arc::new(MockSyncData);
     let app = library_api::LibraryApp::new(
-        &dsn.clone().use_database("library"),
+        persistence::Db::new_lazy(dsn.clone().use_database("library")),
         db_manager.clone(),
         sdk,
         mock_sync_data,

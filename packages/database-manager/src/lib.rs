@@ -158,6 +158,23 @@ pub async fn factory_client_with_storage_modes(
     let dsn = dsn.to_string();
     let db = persistence::Db::new(&dsn).await;
 
+    factory_client_with_db(
+        db,
+        property_value_mode,
+        property_definition_mode,
+    )
+}
+
+/// Build the app on a pool the caller already holds.
+///
+/// A caller that opens its own pool for this database — the API server
+/// does, for the repositories it wires up itself — would otherwise end
+/// up with two pools to the same server.
+pub fn factory_client_with_db(
+    db: Arc<persistence::Db>,
+    property_value_mode: property_value_rollout::PropertyValueStorageMode,
+    property_definition_mode: property_definition_rollout::PropertyDefinitionStorageMode,
+) -> anyhow::Result<App> {
     // sqlx::migrate!("./migrations")
     //     .run(db.pool().as_ref())
     //     .await?;

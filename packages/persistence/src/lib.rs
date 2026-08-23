@@ -170,6 +170,48 @@ impl Db {
         Arc::new(Self(Arc::new(pool)))
     }
 
+    /// Build a pool that opens its first connection when a query needs
+    /// one.
+    ///
+    /// [`Self::new`] connects before it returns. On Lambda that puts a
+    /// TLS handshake to the database in front of every cold start, for
+    /// each pool the process builds — and the request that follows may
+    /// not touch that database at all. Connecting lazily moves the cost
+    /// to the query that actually needs the connection.
+    ///
+    /// A DSN this cannot even parse is still a configuration error
+    /// worth failing on immediately; that check costs no I/O. What
+    /// moves is only the reachability of the server, which now surfaces
+    /// as a failed query rather than a process that refuses to start.
+    ///
+    /// Must be called from inside a Tokio runtime: the pool starts its
+    /// own maintenance task even when it holds no connection yet.
+    pub fn new_lazy(dsn: impl ToString) -> Arc<Self> {
+        Self::new_lazy_with_pool_config(dsn, DbPoolConfig::from_env())
+    }
+
+    pub fn new_lazy_with_pool_config(
+        dsn: impl ToString,
+        pool_config: DbPoolConfig,
+    ) -> Arc<Self> {
+        tracing::info!(
+            max_connections = pool_config.max_connections(),
+            acquire_timeout_secs = pool_config.acquire_timeout().as_secs(),
+            "creating MySQL connection pool (lazy)"
+        );
+        let dsn = dsn.to_string();
+        let pool = MySqlPoolOptions::new()
+            .max_connections(pool_config.max_connections())
+            .acquire_timeout(pool_config.acquire_timeout())
+            .connect_lazy(&dsn)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot use the database URL. Please check your configuration: {e:?}"
+                )
+            });
+        Arc::new(Self(Arc::new(pool)))
+    }
+
     pub fn pool(&self) -> Arc<Pool<MySql>> {
         self.0.clone()
     }

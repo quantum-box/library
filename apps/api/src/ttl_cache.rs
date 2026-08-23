@@ -129,14 +129,6 @@ where
         }
     }
 
-    /// Drop the entry for `key`, if any.
-    pub fn invalidate(&self, key: &K) {
-        if !self.is_enabled() {
-            return;
-        }
-        self.lock().remove(key);
-    }
-
     /// Number of entries currently held, expired ones included.
     #[cfg(test)]
     fn len(&self) -> usize {
@@ -245,16 +237,5 @@ mod tests {
         assert!(!cache.is_enabled());
         assert_eq!(cache.get_at(&"a".into(), now), None);
         assert_eq!(cache.len(), 0);
-    }
-
-    #[test]
-    fn invalidate_drops_the_entry() {
-        let cache = cache();
-        let now = Instant::now();
-
-        cache.insert_at("a".into(), 1, Duration::from_secs(30), now);
-        cache.invalidate(&"a".into());
-
-        assert_eq!(cache.get_at(&"a".into(), now), None);
     }
 }
