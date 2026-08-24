@@ -16,6 +16,10 @@ use serde_json::{json, Value};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if env::var("AWS_LAMBDA_RUNTIME_API").is_ok() {
+        // Initialize tracing once per execution environment. Doing this
+        // inside the handler panics on warm invocations because the global
+        // default subscriber can only be set once per process.
+        telemetry::init_debug_tracing();
         lambda_runtime::run(service_fn(lambda_handler)).await?;
         return Ok(());
     }
@@ -27,7 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 async fn lambda_handler(
     _event: LambdaEvent<Value>,
 ) -> Result<Value, LambdaError> {
-    telemetry::init_debug_tracing();
     tracing::info!("Starting library-api production migration");
 
     let database_url = library_api::migrations::resolve_prod_database_url()

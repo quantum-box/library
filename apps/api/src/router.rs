@@ -2,6 +2,7 @@ use crate::app::LibraryApp;
 use crate::collaboration::handler::CollaborationState;
 use crate::collaboration::manager::DocumentManager;
 use crate::collaboration::persistence::SqlxDocumentPersistence;
+use crate::database_layout::DatabasePools;
 use crate::handler;
 use crate::handler::graphql;
 use crate::interface_adapter::gateway::LibraryDataRepositoryImpl;
@@ -14,6 +15,7 @@ use axum::routing::get;
 use axum::routing::post;
 use axum::Extension;
 use axum::Json;
+use persistence::{MinioConfiguration, MinioDriver, S3Driver, Storage};
 use serde::Serialize;
 use std::sync::Arc;
 use telemetry::http::{
@@ -21,9 +23,6 @@ use telemetry::http::{
     create_trace_layer,
 };
 use tower_http::cors::{Any, CorsLayer};
-use value_object::DatabaseUrl;
-
-use persistence::{MinioConfiguration, MinioDriver, S3Driver, Storage};
 
 use crate::handler::data::ParquetStorage;
 
@@ -68,24 +67,28 @@ fn env_flag_enabled(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("true")
 }
 
+// Every argument is a distinct runtime dependency the router wires
+// into handlers. Grouping the OAuth-related ones behind a struct would
+// read better and is worth doing, but not as a side effect of a
+// latency fix.
+#[allow(clippy::too_many_arguments)]
 pub async fn router(
-    dsn: impl ToString,
+    pools: DatabasePools,
     sdk: Arc<SdkAuthApp>,
     database_app: Arc<database_manager::App>,
     github: Arc<github_provider::GitHub>,
     oauth_service: Arc<dyn inbound_sync_domain::OAuthService>,
     oauth_token_repo: Arc<dyn inbound_sync_domain::OAuthTokenRepository>,
     provider_secrets: Arc<WebhookSecretStore>,
+    oauth_bootstrap: Arc<crate::oauth_bootstrap::OAuthBootstrap>,
 ) -> Result<axum::Router, Box<dyn std::error::Error>> {
-    let dsn = dsn.to_string().parse::<DatabaseUrl>()?;
-
-    // Database connection for library
-    let library_db =
-        persistence::Db::new(&dsn.use_database("library")).await;
-    let database_manager_db = persistence::Db::new(
-        &dsn.use_database("tachyon_apps_database_manager"),
-    )
-    .await;
+    // Each repository executes unqualified SQL on the pool for its logical
+    // role. Production resolves these roles to two physical databases, while
+    // ADR-0049 previews intentionally resolve both to the injected PR DB.
+    let DatabasePools {
+        library: library_db,
+        database_manager: database_manager_db,
+    } = pools;
     let _db_pool_metric_tasks =
         crate::db_pool_metrics::start_default_pool_acquire_metrics([
             ("library", library_db.pool()),
@@ -448,7 +451,7 @@ pub async fn router(
 
     let library_app: Arc<LibraryApp> = Arc::new(
         LibraryApp::new(
-            &dsn,
+            library_db.clone(),
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),
@@ -464,6 +467,7 @@ pub async fn router(
         EmptySubscription,
     )
     .data(sdk.clone())
+    .data(oauth_bootstrap.clone())
     .data(auth_app_trait.clone())
     .data(library_app.clone())
     .data(integration_query_state)
@@ -599,6 +603,11 @@ pub async fn router(
         .layer(create_trace_layer())
         .layer(middleware::from_fn(
             crate::sentry_context::sentry_request_context_middleware,
+        ))
+        // Must wrap the handlers (and their extractors) so organization
+        // resolution can authenticate against tachyon-api as the caller.
+        .layer(middleware::from_fn(
+            crate::sdk_auth::caller_token_middleware,
         ))
         .layer(create_request_id_layer())
         .layer(Extension(sdk))

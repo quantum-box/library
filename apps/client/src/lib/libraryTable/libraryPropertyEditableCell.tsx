@@ -1,35 +1,70 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LibraryDataItem, LibraryProperty } from '../recordsApi'
-import { getLibraryDataPropertyValue, propertyValueText } from './libraryPropertyFormat'
-import { isInlineEditableProperty, parseEditablePropertyValue } from './libraryPropertyInput'
+import { getLibraryDataPropertyValue, propertyValueEditText } from './libraryPropertyFormat'
+import {
+  isInlineEditableProperty,
+  isMultilineEditableProperty,
+  parseEditablePropertyValue,
+} from './libraryPropertyInput'
 import { LibraryPropertyCell } from './libraryPropertyCells'
+
+const editableFieldClassName =
+  'w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none'
 
 function EditableTextInput({
   value,
   inputType = 'text',
+  multiline = false,
   onCommit,
   onCancel,
 }: {
   value: string
   inputType?: 'text' | 'date'
+  multiline?: boolean
   onCommit: (next: string) => void
   onCancel: () => void
 }) {
   const [editValue, setEditValue] = useState(value)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
-    inputRef.current?.focus()
-    inputRef.current?.select()
+    fieldRef.current?.focus()
+    fieldRef.current?.select()
   }, [])
 
   const commit = useCallback(() => {
     onCommit(editValue)
   }, [editValue, onCommit])
 
+  if (multiline) {
+    return (
+      <textarea
+        ref={(element) => {
+          fieldRef.current = element
+        }}
+        value={editValue}
+        rows={Math.min(12, Math.max(2, editValue.split('\n').length))}
+        onChange={(event) => setEditValue(event.target.value)}
+        onBlur={commit}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          // Enter has to insert a newline here, so committing needs a modifier.
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault()
+            commit()
+          }
+          if (event.key === 'Escape') onCancel()
+        }}
+        className={`${editableFieldClassName} resize-y`}
+      />
+    )
+  }
+
   return (
     <input
-      ref={inputRef}
+      ref={(element) => {
+        fieldRef.current = element
+      }}
       type={inputType}
       value={editValue}
       onChange={(event) => setEditValue(event.target.value)}
@@ -39,7 +74,7 @@ function EditableTextInput({
         if (event.key === 'Enter') commit()
         if (event.key === 'Escape') onCancel()
       }}
-      className="w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none"
+      className={editableFieldClassName}
     />
   )
 }
@@ -100,7 +135,7 @@ export function LibraryPropertyEditableCell({
     return <LibraryPropertyCell item={item} property={property} />
   }
 
-  const displayText = currentValue ? propertyValueText(property, currentValue) ?? '' : ''
+  const editText = currentValue ? propertyValueEditText(property, currentValue) ?? '' : ''
 
   const handleCommitRaw = (raw: string) => {
     setEditing(false)
@@ -149,8 +184,9 @@ export function LibraryPropertyEditableCell({
 
     return (
       <EditableTextInput
-        value={displayText}
+        value={editText}
         inputType={property.typ === 'Date' ? 'date' : 'text'}
+        multiline={isMultilineEditableProperty(property, editText)}
         onCommit={handleCommitRaw}
         onCancel={() => setEditing(false)}
       />

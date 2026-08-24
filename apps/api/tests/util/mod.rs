@@ -47,13 +47,6 @@ impl inbound_sync_domain::OAuthService for MockOAuthService {
     ) -> errors::Result<()> {
         Ok(())
     }
-
-    fn get_credentials(
-        &self,
-        _provider: inbound_sync_domain::OAuthProvider,
-    ) -> Option<&inbound_sync_domain::OAuthClientCredentials> {
-        None
-    }
 }
 
 /// Mock implementation of SyncDataInputPort for testing
@@ -171,13 +164,15 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
     let addr = listener.local_addr().unwrap();
     let server_url = format!("http://{}", addr);
 
-    let _library_db =
-        persistence::Db::new(&dsn.use_database("library")).await;
+    let database_layout =
+        library_api::DatabaseLayout::resolve(&dsn, Some("test")).unwrap();
+    let pools = database_layout.open_pools();
+
     let mock_sync_data: Arc<dyn outbound_sync::SyncDataInputPort> =
         Arc::new(MockSyncData);
     let library_app = Arc::new(
         library_api::LibraryApp::new(
-            &dsn.use_database("library"),
+            pools.library.clone(),
             database_app.clone(),
             sdk.clone(),
             mock_sync_data,
@@ -199,13 +194,17 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
         Arc::new(inbound_sync::WebhookSecretStore::new());
 
     let app = library_api::router(
-        dsn.to_string(),
-        sdk,
+        pools,
+        sdk.clone(),
         database_app.clone(),
         github,
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        Arc::new(library_api::oauth_bootstrap::OAuthBootstrap::new(
+            sdk.clone(),
+            root_id.clone(),
+        )),
     )
     .await
     .unwrap();

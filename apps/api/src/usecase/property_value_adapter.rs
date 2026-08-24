@@ -39,6 +39,25 @@ pub(crate) fn property_value_command(
             PropertyType::Markdown,
             PropertyDataValueInputData::Markdown(value),
         ) => string_or_clear(value, PropertyValueCommand::Markdown),
+        // The tail of this match is a catch-all, so a missing arm here is
+        // not a compile error -- it surfaces as "input does not match
+        // Property" at runtime. Keep every type represented.
+        (
+            PropertyType::RichText,
+            PropertyDataValueInputData::RichText(value),
+        ) => {
+            if value.is_empty() {
+                PropertyValueCommand::Clear
+            } else {
+                PropertyValueCommand::RichText(
+                    serde_json::from_str(value).map_err(|error| {
+                        errors::Error::invalid(format!(
+                            "Rich text must be valid JSON: {error}"
+                        ))
+                    })?,
+                )
+            }
+        }
         (
             PropertyType::Relation(_),
             PropertyDataValueInputData::Relation(values),
@@ -144,6 +163,47 @@ mod tests {
             .expect("command"),
             PropertyValueCommand::Clear
         );
+    }
+
+    // This match has a catch-all tail, so these are the only thing standing
+    // between a forgotten arm and a runtime-only failure.
+    #[test]
+    fn rich_text_is_parsed_into_a_document_command() {
+        let command = property_value_command(
+            &property(PropertyType::RichText),
+            &PropertyDataValueInputData::RichText(
+                r#"[{"type":"paragraph","content":[]}]"#.to_string(),
+            ),
+        )
+        .expect("command");
+
+        assert_eq!(
+            command,
+            PropertyValueCommand::RichText(serde_json::json!([
+                { "type": "paragraph", "content": [] }
+            ]))
+        );
+    }
+
+    #[test]
+    fn empty_rich_text_means_clear() {
+        assert_eq!(
+            property_value_command(
+                &property(PropertyType::RichText),
+                &PropertyDataValueInputData::RichText(String::new()),
+            )
+            .expect("command"),
+            PropertyValueCommand::Clear
+        );
+    }
+
+    #[test]
+    fn malformed_rich_text_is_rejected_rather_than_stored() {
+        assert!(property_value_command(
+            &property(PropertyType::RichText),
+            &PropertyDataValueInputData::RichText("not json".to_string()),
+        )
+        .is_err());
     }
 
     #[test]

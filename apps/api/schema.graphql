@@ -1647,7 +1647,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue | RichTextValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -1660,6 +1660,10 @@ input PropertyDataValueInputData @oneOf {
 	location: Location
 	date: String
 	image: String
+	"""
+	A block document, carried as JSON text.
+	"""
+	richText: String
 }
 
 input PropertyInput {
@@ -1727,6 +1731,7 @@ enum PropertyType {
 	LOCATION
 	DATE
 	IMAGE
+	RICH_TEXT
 }
 
 union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | JsonType
@@ -1961,6 +1966,29 @@ type RepoPolicy {
 	Source of this permission (Repo or Org level)
 	"""
 	permissionSource: PermissionSource!
+}
+
+type RichTextValue {
+	"""
+	The block document as JSON. Authoritative.
+	"""
+	richText: String!
+	"""
+	A rendering for consumers that cannot interpret the block document.
+	
+	Read-only and lossy -- an empty paragraph has no Markdown form.
+	Writing back this string would discard whatever it could not
+	represent, so clients that edit must round-trip `richText`.
+	"""
+	markdown: String!
+	"""
+	An HTML rendering, walked directly from the block tree.
+	
+	Read-only. Unlike `markdown` it keeps the empty paragraph
+	(`<p><br></p>`) and underline, which makes it the view to embed
+	in a CMS page.
+	"""
+	html: String!
 }
 
 type SeedLibraryTenantPayload {

@@ -30,8 +30,9 @@ pub use webhook_event::*;
 // Re-export OAuth types from integration_domain
 pub use integration_domain::{
     ExchangeOAuthCodeInput, InitOAuthInput, InitOAuthOutput,
-    OAuthClientCredentials, OAuthProvider, OAuthService,
-    OAuthTokenRepository, OAuthTokenResponse, StoredOAuthToken,
+    OAuthClientCredentials, OAuthCredentialsSource, OAuthProvider,
+    OAuthService, OAuthTokenRepository, OAuthTokenResponse,
+    StoredOAuthToken,
 };
 
 // Re-export marketplace types from integration_domain

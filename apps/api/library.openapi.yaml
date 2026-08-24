@@ -346,6 +346,14 @@ components:
         required:
         - image
         type: object
+      - description: A block document, carried as JSON text.
+        properties:
+          richText:
+            description: A block document, carried as JSON text.
+            type: string
+        required:
+        - richText
+        type: object
     PropertyResponse:
       properties:
         auto_generate:
@@ -572,7 +580,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.1
+  version: 1.11.2
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:

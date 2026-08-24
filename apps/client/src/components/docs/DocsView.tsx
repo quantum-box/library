@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, Navigate, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useCreateBlockNote, useEditorSelectionChange } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
 import { Plus, Trash2 } from 'lucide-react'
@@ -24,6 +24,8 @@ import {
   listDocRecordLinks,
 } from '../../lib/docs/docsDb'
 import { toFileAttachment } from '../../lib/attachments/presentation'
+import { navigateToDocs } from '../../lib/ui/dataLocation'
+import { DocLink, DocRedirect } from '../DocLink'
 import { useWorkspaceAttachments } from '../../lib/attachments/useWorkspaceAttachments'
 import { FileChip } from '../files/FileChip'
 import { FilePreviewModal } from '../files/FilePreviewModal'
@@ -95,11 +97,10 @@ export function DocsList({
 
       <div className="flex gap-1 overflow-x-auto p-2 md:min-h-0 md:flex-1 md:flex-col md:overflow-y-auto">
         {docs.map((doc) => (
-          <Link
+          <DocLink
             key={doc.id}
-            to="/documents/$documentId"
-            params={{ documentId: doc.id }}
-            search={initialDatabaseId ? { database: initialDatabaseId } : {}}
+            databaseId={initialDatabaseId}
+            documentId={doc.id}
             className={`block min-w-56 rounded px-3 py-2 no-underline transition-colors md:min-w-0 ${
               selectedDocId === doc.id
                 ? 'bg-surface-hover text-foreground'
@@ -108,7 +109,7 @@ export function DocsList({
           >
             <div className="truncate text-sm font-medium">{doc.title}</div>
             <div className="mt-1 text-xs text-subtle">{formatDate(doc.updatedAt)}</div>
-          </Link>
+          </DocLink>
         ))}
         {docs.length === 0 && (
           <div className="px-3 py-8 text-sm text-subtle">
@@ -678,10 +679,8 @@ export function DocsView({
 
   useEffect(() => {
     if (!ready || createOnOpen || selectedDocId || docs.length === 0) return
-    void navigate({
-      to: '/documents/$documentId',
-      params: { documentId: docs[0].id },
-      search: initialDatabaseId ? { database: initialDatabaseId } : {},
+    void navigateToDocs(navigate, initialDatabaseId, {
+      documentId: docs[0].id,
       replace: true,
     })
   }, [createOnOpen, docs, initialDatabaseId, navigate, ready, selectedDocId])
@@ -696,10 +695,8 @@ export function DocsView({
       try {
         const doc = await createDocument()
         if (cancelled) return
-        await navigate({
-          to: '/documents/$documentId',
-          params: { documentId: doc.id },
-          search: initialDatabaseId ? { database: initialDatabaseId } : {},
+        await navigateToDocs(navigate, initialDatabaseId, {
+          documentId: doc.id,
           replace: true,
         })
       } catch (error: unknown) {
@@ -754,11 +751,7 @@ export function DocsView({
 
   const handleCreate = async () => {
     const doc = await createDocument()
-    void navigate({
-      to: '/documents/$documentId',
-      params: { documentId: doc.id },
-      search: initialDatabaseId ? { database: initialDatabaseId } : {},
-    })
+    void navigateToDocs(navigate, initialDatabaseId, { documentId: doc.id })
   }
 
   const handleRecordLinked = useCallback(async (record: DatabaseRecord, selectedText: string) => {
@@ -857,21 +850,10 @@ export function DocsView({
     selectedDocId && documentLookup?.docId === selectedDocId ? documentLookup : null
 
   if (deleteRedirect) {
-    if (deleteRedirect.documentId) {
-      return (
-        <Navigate
-          to="/documents/$documentId"
-          params={{ documentId: deleteRedirect.documentId }}
-          search={initialDatabaseId ? { database: initialDatabaseId } : {}}
-          replace
-        />
-      )
-    }
     return (
-      <Navigate
-        to="/docs"
-        search={initialDatabaseId ? { database: initialDatabaseId } : {}}
-        replace
+      <DocRedirect
+        databaseId={initialDatabaseId}
+        documentId={deleteRedirect.documentId ?? undefined}
       />
     )
   }

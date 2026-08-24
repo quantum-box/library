@@ -11,7 +11,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
-import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RefreshCw, RotateCcw, X } from 'lucide-react'
 import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
@@ -51,13 +51,23 @@ import { statusConfig, type Status, type DatabaseRecord } from './data/mock'
 import type { SortingState } from '@tanstack/react-table'
 import {
   createViewFromLegacySearch,
+  databaseViewUrlParam,
   filterRecordsForDatabaseView,
   getDatabaseViewScopeId,
   getDefaultDatabaseViews,
-  getDefaultDatabaseViewId,
   isRecordPropertyKey,
+  resolveDatabaseViewFromParam,
   sortRecordsForDatabaseView,
 } from './lib/databaseViews/databaseViews'
+import {
+  databaseIdFromLocation,
+  isDataListPath,
+  navigateToData,
+  splitRepoDatabaseId,
+  type DataViewSearch,
+} from './lib/ui/dataLocation'
+import { RepositoriesPage } from './components/RepositoriesPage'
+import { DocRedirect } from './components/DocLink'
 import {
   clearDatabaseViewDraft,
   loadDatabaseViewDraft,
@@ -159,6 +169,17 @@ function renderShortcutSequence(keys: string[]) {
 function validateRecordSearch(search: Record<string, unknown>): RecordSearchParams {
   return {
     database: typeof search.database === 'string' ? search.database : undefined,
+    view: typeof search.view === 'string' ? search.view : undefined,
+    status: parseRecordStatus(search.status),
+    sort: typeof search.sort === 'string' ? search.sort : undefined,
+    desc: search.desc === true || search.desc === 'true' ? true : undefined,
+  }
+}
+
+function validateRepoDataSearch(
+  search: Record<string, unknown>
+): Omit<RecordSearchParams, 'database'> {
+  return {
     view: typeof search.view === 'string' ? search.view : undefined,
     status: parseRecordStatus(search.status),
     sort: typeof search.sort === 'string' ? search.sort : undefined,
@@ -447,16 +468,12 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
   const navigateToDatabaseView = useCallback(
     (type: DatabaseViewType) => {
-      const database = search.database
-      return navigate({
-        to: '/databases',
-        search: {
-          database,
-          view: getDefaultDatabaseViewId(getDatabaseViewScopeId(database), type),
-        },
+      const database = databaseIdFromLocation(location.pathname, search.database)
+      return navigateToData(navigate, database, {
+        view: type === 'table' ? undefined : type,
       })
     },
-    [navigate, search.database]
+    [location.pathname, navigate, search.database]
   )
 
   const runShortcutAction = useCallback(
@@ -475,8 +492,9 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   )
 
   const focusRecordSearch = useCallback(() => {
-    const isDatabaseRoute = location.pathname === '/databases' || location.pathname === '/databases/'
-    const isDefaultTable = search.view?.includes(':table') ?? false
+    const isDatabaseRoute = isDataListPath(location.pathname)
+    const isDefaultTable =
+      !search.view || search.view === 'table' || search.view.includes(':table')
     if (isDatabaseRoute && isDefaultTable) {
       if (!focusRecordSearchInput()) void focusRecordSearchInputWhenReady()
       return
@@ -487,19 +505,13 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   }, [location.pathname, navigateToDatabaseView, search.view])
 
   const openCreateDataAtDatabaseIndex = useCallback(() => {
-    if (location.pathname === '/databases' || location.pathname === '/databases/') {
+    if (isDataListPath(location.pathname)) {
       setCreateModalOpen(true)
       return
     }
 
-    const database = search.database
-    void navigate({
-      to: '/databases',
-      search: {
-        database,
-        view: getDefaultDatabaseViewId(getDatabaseViewScopeId(database), 'table'),
-      },
-    }).then(() => setCreateModalOpen(true))
+    const database = databaseIdFromLocation(location.pathname, search.database)
+    void navigateToData(navigate, database, {}).then(() => setCreateModalOpen(true))
   }, [location.pathname, navigate, search.database, setCreateModalOpen])
 
   useEffect(() => {
@@ -580,7 +592,10 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
       if (key === 'b') {
         event.preventDefault()
-        const currentView = typeof search.view === 'string' && search.view.includes(':board') ? 'board' : 'table'
+        const currentView =
+          search.view === 'board' || (typeof search.view === 'string' && search.view.includes(':board'))
+            ? 'board'
+            : 'table'
         void navigateToDatabaseView(currentView === 'board' ? 'table' : 'board')
       }
     }
@@ -861,7 +876,57 @@ const databasesRoute = createRoute({
 })
 
 function DatabasesLayout() {
-  const { database, view: viewId, status, sort, desc } = databasesRoute.useSearch()
+  const search = databasesRoute.useSearch()
+  const navigate = useNavigate()
+  const detailMatch = useMatch({
+    from: recordDetailRoute.id,
+    shouldThrow: false,
+  })
+  const recordId = (detailMatch?.params as { recordId?: string })?.recordId
+  const legacyRepo = splitRepoDatabaseId(search.database)
+
+  // Legacy URLs selected a repository via ?database=org/repo — forward them
+  // to the path-based /$org/$repo/data form.
+  useEffect(() => {
+    if (!legacyRepo) return
+    void navigateToData(
+      navigate,
+      search.database,
+      { view: search.view, status: search.status, sort: search.sort, desc: search.desc },
+      { replace: true, recordId }
+    )
+  }, [legacyRepo, navigate, recordId, search.database, search.desc, search.sort, search.status, search.view])
+
+  if (legacyRepo) return null
+
+  return (
+    <DataWorkspace
+      database={search.database}
+      viewParam={search.view}
+      status={search.status}
+      sort={search.sort}
+      desc={search.desc}
+      recordId={recordId}
+    />
+  )
+}
+
+function DataWorkspace({
+  database,
+  viewParam,
+  status,
+  sort,
+  desc,
+  recordId,
+}: {
+  database?: string
+  viewParam?: string
+  status?: Status
+  sort?: string
+  desc?: boolean
+  recordId?: string
+}) {
+  const viewId = viewParam
   const {
     records,
     handleMoveRecord,
@@ -902,43 +967,31 @@ function DatabasesLayout() {
   )
   const savedSelectedView = useMemo(
     () =>
-      scopedViews.find((candidate) => candidate.id === viewId) ??
+      resolveDatabaseViewFromParam(scopedViews, databaseScopeId, viewId) ??
       scopedViews[0] ??
       getDefaultDatabaseViews(databaseScopeId)[0],
     [databaseScopeId, scopedViews, viewId]
   )
+  const canonicalViewParam = savedSelectedView
+    ? databaseViewUrlParam(savedSelectedView)
+    : undefined
 
-  // Get selected record ID from child detail route
-  const detailMatch = useMatch({
-    from: recordDetailRoute.id,
-    shouldThrow: false,
-  })
-  const selectedIdentifier = (detailMatch?.params as { recordId?: string })?.recordId ?? null
+  const selectedIdentifier = recordId ?? null
 
   const navigateWithinDatabase = useCallback(
-    (search: RecordSearchParams, replace = false) => {
-      if (selectedIdentifier) {
-        void navigate({
-          to: '/databases/$recordId',
-          params: { recordId: selectedIdentifier },
-          search,
-          replace,
-        })
-        return
-      }
-
-      void navigate({ to: '/databases', search, replace })
+    (search: DataViewSearch, replace = false) => {
+      void navigateToData(navigate, database, search, {
+        replace,
+        recordId: selectedIdentifier ?? undefined,
+      })
     },
-    [navigate, selectedIdentifier]
+    [database, navigate, selectedIdentifier]
   )
 
   useEffect(() => {
-    if (!databaseViewsReady || !savedSelectedView || viewId === savedSelectedView.id) return
-    navigateWithinDatabase(
-      { database, view: savedSelectedView.id, status, sort, desc },
-      true
-    )
-  }, [database, databaseViewsReady, desc, navigateWithinDatabase, savedSelectedView, sort, status, viewId])
+    if (!databaseViewsReady || !savedSelectedView || viewId === canonicalViewParam) return
+    navigateWithinDatabase({ view: canonicalViewParam, status, sort, desc }, true)
+  }, [canonicalViewParam, databaseViewsReady, desc, navigateWithinDatabase, savedSelectedView, sort, status, viewId])
 
   useEffect(() => {
     if (!savedSelectedView) return
@@ -1046,19 +1099,17 @@ function DatabasesLayout() {
   const handleSelectRecord = useCallback(
     (record: DatabaseRecord) => {
       if (selectedRecord?.id === record.id) {
-        void navigate({
-          to: '/databases',
-          search: { database, view: savedSelectedView.id },
-        })
+        void navigateToData(navigate, database, { view: canonicalViewParam })
       } else {
-        void navigate({
-          to: '/databases/$recordId',
-          params: { recordId: record.id },
-          search: { database, view: savedSelectedView.id },
-        })
+        void navigateToData(
+          navigate,
+          database,
+          { view: canonicalViewParam },
+          { recordId: record.id }
+        )
       }
     },
-    [database, navigate, savedSelectedView.id, selectedRecord]
+    [canonicalViewParam, database, navigate, selectedRecord]
   )
 
   const handleCreateRecordInDatabase = useCallback(
@@ -1078,9 +1129,9 @@ function DatabasesLayout() {
     updateDatabaseView(effectiveView)
     clearDatabaseViewDraft(savedSelectedView)
     setDraftView(null)
-    navigateWithinDatabase({ database, view: savedSelectedView.id }, true)
+    navigateWithinDatabase({ view: canonicalViewParam }, true)
   }, [
-    database,
+    canonicalViewParam,
     effectiveView,
     navigateWithinDatabase,
     savedSelectedView,
@@ -1090,15 +1141,12 @@ function DatabasesLayout() {
   const handleDiscardChanges = useCallback(() => {
     clearDatabaseViewDraft(savedSelectedView)
     setDraftView(null)
-    navigateWithinDatabase({ database, view: savedSelectedView.id }, true)
-  }, [database, navigateWithinDatabase, savedSelectedView])
+    navigateWithinDatabase({ view: canonicalViewParam }, true)
+  }, [canonicalViewParam, navigateWithinDatabase, savedSelectedView])
 
   const handleSelectView = useCallback(
     (nextView: DatabaseViewDefinition) => {
-      void navigate({
-        to: '/databases',
-        search: { database, view: nextView.id },
-      })
+      void navigateToData(navigate, database, { view: databaseViewUrlParam(nextView) })
     },
     [database, navigate]
   )
@@ -1106,10 +1154,7 @@ function DatabasesLayout() {
   const handleCreateView = useCallback(
     (type: DatabaseViewType) => {
       const nextView = createDatabaseView(database, type)
-      void navigate({
-        to: '/databases',
-        search: { database, view: nextView.id },
-      })
+      void navigateToData(navigate, database, { view: databaseViewUrlParam(nextView) })
     },
     [createDatabaseView, database, navigate]
   )
@@ -1132,10 +1177,7 @@ function DatabasesLayout() {
   const handleDuplicateView = useCallback(
     (view: DatabaseViewDefinition) => {
       const nextView = duplicateDatabaseView(view)
-      void navigate({
-        to: '/databases',
-        search: { database, view: nextView.id },
-      })
+      void navigateToData(navigate, database, { view: databaseViewUrlParam(nextView) })
     },
     [database, duplicateDatabaseView, navigate]
   )
@@ -1152,10 +1194,7 @@ function DatabasesLayout() {
       if (!deleteViewTarget) return
       const nextView = scopedViews.find((candidate) => candidate.id !== deleteViewTarget.id)
       if (nextView) {
-        await navigate({
-          to: '/databases',
-          search: { database, view: nextView.id },
-        })
+        await navigateToData(navigate, database, { view: databaseViewUrlParam(nextView) })
       }
       deleteDatabaseView(deleteViewTarget)
     },
@@ -1169,6 +1208,23 @@ function DatabasesLayout() {
     selectedIdentifier && effectiveView.type !== 'workflow' && (!database || selectedDatabase)
   )
 
+  // While repositories are still loading, a repo-scoped URL cannot resolve
+  // its repository yet. Without this branch the render falls through to the
+  // signed-in dashboard ("No repository data yet"), which flashes on every
+  // reload of a data editor URL before the fetch returns.
+  if (database && !selectedDatabase && repositoriesLoading) {
+    return (
+      <main
+        className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background"
+        data-testid="repository-resolving"
+      >
+        <RefreshCw
+          className="size-5 animate-spin text-primary"
+          aria-hidden="true"
+        />
+      </main>
+    )
+  }
   if (database && !selectedDatabase && !repositoriesLoading && !repositoriesError) {
     return (
       <RouteState
@@ -1176,12 +1232,7 @@ function DatabasesLayout() {
         description="This repository is not available in the current Library workspace. It may have been removed or you may need access."
         action={(
           <Button variant="secondary" asChild>
-            <Link
-              to="/databases"
-              search={{
-                view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-              }}
-            >
+            <Link to="/databases">
               <Database aria-hidden="true" />
               Open all data
             </Link>
@@ -1250,17 +1301,15 @@ function DatabasesLayout() {
               selectedDataId={selectedRecord?.id ?? null}
               onSelectData={(item) => {
                 if (selectedRecord?.id === item.id) {
-                  void navigate({
-                    to: '/databases',
-                    search: { database, view: savedSelectedView.id },
-                  })
+                  void navigateToData(navigate, database, { view: canonicalViewParam })
                   return
                 }
-                void navigate({
-                  to: '/databases/$recordId',
-                  params: { recordId: item.id },
-                  search: { database, view: savedSelectedView.id },
-                })
+                void navigateToData(
+                  navigate,
+                  database,
+                  { view: canonicalViewParam },
+                  { recordId: item.id }
+                )
               }}
               globalFilter={effectiveView.filters.search}
               onGlobalFilterChange={(searchValue) =>
@@ -1271,10 +1320,7 @@ function DatabasesLayout() {
               }
               onDataDeleted={(dataId) => {
                 if (selectedIdentifier === dataId || selectedRecord?.id === dataId) {
-                  void navigate({
-                    to: '/databases',
-                    search: { database, view: savedSelectedView.id },
-                  })
+                  void navigateToData(navigate, database, { view: canonicalViewParam })
                 }
               }}
             />
@@ -1373,12 +1419,25 @@ const recordsIndexRoute = createRoute({
 const recordDetailRoute = createRoute({
   getParentRoute: () => databasesRoute,
   path: '$recordId',
-  component: RecordDetailPanel,
+  component: RecordDetailFromSearch,
 })
 
-function RecordDetailPanel() {
+function RecordDetailFromSearch() {
   const { recordId } = recordDetailRoute.useParams()
   const { database, view } = databasesRoute.useSearch()
+  return <RecordDetailPanel database={database} recordId={recordId} viewParam={view} />
+}
+
+function RecordDetailPanel({
+  database,
+  recordId,
+  viewParam,
+}: {
+  database?: string
+  recordId: string
+  viewParam?: string
+}) {
+  const view = viewParam
   const {
     records,
     handleUpdateRecord,
@@ -1391,7 +1450,12 @@ function RecordDetailPanel() {
   const navigate = useNavigate()
   const selectedDatabase = getDatabaseProject(databases, database)
   const selectedView = useMemo(
-    () => getViewsForDatabase(database).find((candidate) => candidate.id === view),
+    () =>
+      resolveDatabaseViewFromParam(
+        getViewsForDatabase(database),
+        getDatabaseViewScopeId(database),
+        view,
+      ),
     [database, getViewsForDatabase, view],
   )
   const useLibraryEditor = Boolean(
@@ -1460,7 +1524,7 @@ function RecordDetailPanel() {
   }, [beginRecordsSnapshot, record, recordId, syncRecords, useLibraryEditor])
 
   const closeEditor = () =>
-    void navigate({ to: '/databases', search: { database, view } })
+    void navigateToData(navigate, database, { view })
 
   if (
     useLibraryEditor &&
@@ -1497,6 +1561,67 @@ function RecordDetailPanel() {
   )
 }
 
+// ── Repository Data Routes (/$org/$repo/data) ─────────────────
+
+const repoDataRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/data',
+  validateSearch: validateRepoDataSearch,
+  component: RepoDataLayout,
+})
+
+function RepoDataLayout() {
+  const { organization, repository } = repoDataRoute.useParams()
+  const search = repoDataRoute.useSearch()
+  const detailMatch = useMatch({
+    from: repoDataRecordRoute.id,
+    shouldThrow: false,
+  })
+  const recordId = (detailMatch?.params as { recordId?: string })?.recordId
+  return (
+    <DataWorkspace
+      database={`${organization}/${repository}`}
+      viewParam={search.view}
+      status={search.status}
+      sort={search.sort}
+      desc={search.desc}
+      recordId={recordId}
+    />
+  )
+}
+
+const repoDataIndexRoute = createRoute({
+  getParentRoute: () => repoDataRoute,
+  path: '/',
+  component: () => null,
+})
+
+const repoDataRecordRoute = createRoute({
+  getParentRoute: () => repoDataRoute,
+  path: '$recordId',
+  component: RepoDataRecordDetail,
+})
+
+function RepoDataRecordDetail() {
+  const { organization, repository, recordId } = repoDataRecordRoute.useParams()
+  const { view } = repoDataRoute.useSearch()
+  return (
+    <RecordDetailPanel
+      database={`${organization}/${repository}`}
+      recordId={recordId}
+      viewParam={view}
+    />
+  )
+}
+
+// ── Repositories Route (/repositories) ────────────────────────
+
+const repositoriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'repositories',
+  component: RepositoriesPage,
+})
+
 // ── Board Route (/databases/board) ────────────────────────────
 
 const kanbanRoute = createRoute({
@@ -1507,12 +1632,11 @@ const kanbanRoute = createRoute({
     status: parseRecordStatus(search.status),
   }),
   beforeLoad: ({ search }) => {
-    const databaseId = getDatabaseViewScopeId(search.database)
     throw redirect({
       to: '/databases',
       search: {
         database: search.database,
-        view: getDefaultDatabaseViewId(databaseId, 'board'),
+        view: 'board',
         ...(search.status ? { status: search.status } : {}),
       },
     })
@@ -1528,12 +1652,11 @@ const workflowRoute = createRoute({
     database: typeof search.database === 'string' ? search.database : undefined,
   }),
   beforeLoad: ({ search }) => {
-    const databaseId = getDatabaseViewScopeId(search.database)
     throw redirect({
       to: '/databases',
       search: {
         database: search.database,
-        view: getDefaultDatabaseViewId(databaseId, 'workflow'),
+        view: 'workflow',
       },
     })
   },
@@ -1597,6 +1720,46 @@ const documentDetailRoute = createRoute({
   component: DocsPage,
 })
 
+// ── Repository Docs Routes (/$org/$repo/docs) ─────────────────
+
+const repoDocsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/docs',
+  validateSearch: (search: Record<string, unknown>): { create?: boolean } => ({
+    create: search.create === true || search.create === 'true' ? true : undefined,
+  }),
+  component: RepoDocsListPage,
+})
+
+function RepoDocsListPage() {
+  const { organization, repository } = repoDocsRoute.useParams()
+  const { create } = repoDocsRoute.useSearch()
+  return (
+    <DocsView
+      selectedDocId={null}
+      createOnOpen={create === true}
+      initialDatabaseId={`${organization}/${repository}`}
+    />
+  )
+}
+
+const repoDocumentDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/docs/$documentId',
+  component: RepoDocumentDetailPage,
+})
+
+function RepoDocumentDetailPage() {
+  const { organization, repository, documentId } = repoDocumentDetailRoute.useParams()
+  return (
+    <DocsView
+      selectedDocId={documentId}
+      createOnOpen={false}
+      initialDatabaseId={`${organization}/${repository}`}
+    />
+  )
+}
+
 // ── Legacy Route Redirects ────────────────────────────────────
 
 const legacyKanbanRoute = createRoute({
@@ -1607,12 +1770,11 @@ const legacyKanbanRoute = createRoute({
     status: parseRecordStatus(search.status),
   }),
   beforeLoad: ({ search }) => {
-    const databaseId = getDatabaseViewScopeId(search.database)
     throw redirect({
       to: '/databases',
       search: {
         database: search.database,
-        view: getDefaultDatabaseViewId(databaseId, 'board'),
+        view: 'board',
         ...(search.status ? { status: search.status } : {}),
       },
     })
@@ -1631,6 +1793,12 @@ function DocsPage() {
     (location.search as { create?: boolean }).create === true
   )
   const initialDatabaseId = (location.search as { database?: string }).database
+
+  // Legacy URLs scoped docs via ?database=org/repo — forward them to the
+  // path-based /$org/$repo/docs form.
+  if (splitRepoDatabaseId(initialDatabaseId)) {
+    return <DocRedirect databaseId={initialDatabaseId} documentId={selectedDocId ?? undefined} />
+  }
 
   return (
     <DocsView
@@ -1651,6 +1819,8 @@ const routeTree = rootRoute.addChildren([
   repositorySettingsRoute,
   legacyRepositoryRoute,
   legacyRepositorySettingsRoute,
+  repoDataRoute.addChildren([repoDataIndexRoute, repoDataRecordRoute]),
+  repositoriesRoute,
   databasesRoute.addChildren([recordsIndexRoute, recordDetailRoute]),
   kanbanRoute,
   workflowRoute,
@@ -1659,6 +1829,8 @@ const routeTree = rootRoute.addChildren([
   syncRoute,
   docsRoute,
   documentDetailRoute,
+  repoDocsRoute,
+  repoDocumentDetailRoute,
 ])
 
 export const router = createRouter({ routeTree })

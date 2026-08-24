@@ -1,0 +1,13 @@
+[package]
+name = "blocknote"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+description = "Convert BlockNote block documents to and from Markdown"
+
+# Deliberately dependency-light: serde_json and pulldown-cmark only, no
+# workspace-internal crates. This is what keeps the crate extractable as
+# open source.
+[dependencies]
+serde_json = { workspace = true }
+pulldown-cmark = { workspace = true }

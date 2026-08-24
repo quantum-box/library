@@ -13,6 +13,7 @@ export const repositoryPropertyTypes = [
   'DATE',
   'ID',
   'HTML',
+  'RICH_TEXT',
 ] as const
 
 export type RepositoryPropertyType = (typeof repositoryPropertyTypes)[number]
@@ -105,6 +106,8 @@ export class RepositorySettingsApiError extends Error {
 
 interface GraphqlError {
   message?: string
+  /** Which field failed, e.g. ['repo', 'policies']. */
+  path?: (string | number)[]
   extensions?: {
     code?: string
     status?: number
@@ -313,7 +316,14 @@ async function requestRepositoryGraphQL<TData>(
     )
   }
 
-  if (payload.errors?.length) {
+  // GraphQL reports per-field failures alongside the data that did resolve.
+  // Throwing whenever `errors` is non-empty threw that data away: a denied
+  // `repo.policies` — a field a repo Owner cannot read, and one this client
+  // already treats as optional — replaced the whole settings page with
+  // "Permission required", taking Property management down with it.
+  //
+  // Only fail when nothing usable came back.
+  if (payload.errors?.length && payload.data == null) {
     const firstError = payload.errors[0]
     const kind = graphqlErrorKind(firstError)
     throw new RepositorySettingsApiError(
@@ -322,6 +332,16 @@ async function requestRepositoryGraphQL<TData>(
         : firstError.message ?? 'Repository settings request failed.',
       firstError.extensions?.status ?? 400,
       kind,
+    )
+  }
+
+  if (payload.errors?.length) {
+    console.warn(
+      'Repository settings resolved with partial errors',
+      payload.errors.map((error) => ({
+        path: error.path,
+        message: error.message,
+      })),
     )
   }
 

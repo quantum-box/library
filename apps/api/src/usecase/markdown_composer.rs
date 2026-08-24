@@ -11,12 +11,17 @@ fn is_content_property_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("content")
 }
 
-/// Check if property type is a body type (Markdown or Html)
+/// Check if property type is a body type (RichText, Markdown or Html)
 fn is_body_property_type(
     typ: &database_manager::domain::PropertyType,
 ) -> bool {
     use database_manager::domain::PropertyType;
-    matches!(typ, PropertyType::Markdown | PropertyType::Html)
+    matches!(
+        typ,
+        PropertyType::RichText
+            | PropertyType::Markdown
+            | PropertyType::Html
+    )
 }
 
 /// Check if property name starts with ext_ prefix (extension fields)
@@ -37,6 +42,12 @@ fn property_value_to_yaml(
         Some(V::Html(s)) | Some(V::Markdown(s)) => {
             YamlValue::String(s.clone())
         }
+        // Unreachable while rich text is a body type, but rendered rather
+        // than dumped so that a future caller cannot put a block tree into
+        // YAML frontmatter.
+        Some(V::RichText(document)) => YamlValue::String(
+            database_manager::domain::rich_text::to_markdown(document),
+        ),
         Some(V::Relation(db, ids)) => {
             let mut map = Mapping::new();
             map.insert(
@@ -115,6 +126,11 @@ fn pick_body(
         if let Some(value) = property_data.value() {
             use database_manager::domain::PropertyDataValue as V;
             return match value {
+                V::RichText(document) => {
+                    database_manager::domain::rich_text::to_markdown(
+                        document,
+                    )
+                }
                 V::Markdown(s) => s.clone(),
                 V::Html(s) => s.clone(),
                 V::String(s) => s.clone(),
@@ -123,7 +139,25 @@ fn pick_body(
         }
     }
 
-    // 2) Type priority (Markdown > Html)
+    // 2) Type priority (RichText > Markdown > Html)
+    for property_data in data.property_data() {
+        let Some(property) = property_map.get(property_data.property_id())
+        else {
+            continue;
+        };
+        if property.property_type().to_string() == "RICH_TEXT" {
+            if let Some(
+                database_manager::domain::PropertyDataValue::RichText(
+                    document,
+                ),
+            ) = property_data.value()
+            {
+                return database_manager::domain::rich_text::to_markdown(
+                    document,
+                );
+            }
+        }
+    }
     for property_data in data.property_data() {
         let Some(property) = property_map.get(property_data.property_id())
         else {
@@ -320,6 +354,41 @@ mod tests {
 
         assert!(markdown.starts_with("---\n"));
         assert!(markdown.contains("title: Release note\n"));
+        assert!(markdown.contains("slug: v1-shipped\n"));
+        assert!(!markdown.contains("content:"));
+        assert!(markdown.ends_with("# Body\n\nHello Library\n"));
+    }
+
+    #[test]
+    fn compose_markdown_renders_a_rich_text_body_and_keeps_it_out_of_frontmatter(
+    ) {
+        let mut fixture = Fixture::new();
+        let slug = fixture.property("slug", PropertyType::String);
+        let content = fixture.property("content", PropertyType::RichText);
+        let document = serde_json::json!([
+            { "type": "heading", "props": { "level": 1 },
+              "content": [
+                  { "type": "text", "text": "Body", "styles": {} }
+              ] },
+            // The empty paragraph has no Markdown form and is dropped from
+            // this view; the stored document still holds it.
+            { "type": "paragraph", "content": [] },
+            { "type": "paragraph",
+              "content": [
+                  { "type": "text", "text": "Hello Library",
+                    "styles": {} }
+              ] },
+        ]);
+        let data = fixture.data(
+            "Release note",
+            vec![
+                PropertyData::new(&slug, "v1-shipped".to_string()).unwrap(),
+                PropertyData::new(&content, document.to_string()).unwrap(),
+            ],
+        );
+
+        let markdown = compose_markdown(&data, &fixture.properties);
+
         assert!(markdown.contains("slug: v1-shipped\n"));
         assert!(!markdown.contains("content:"));
         assert!(markdown.ends_with("# Body\n\nHello Library\n"));

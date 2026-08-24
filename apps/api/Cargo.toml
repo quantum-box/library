@@ -1,12 +1,15 @@
 [package]
 name = "library-api"
-version = "1.11.1"
+version = "1.11.2"
 edition = "2021"
 license.workspace = true
 
 
 [dependencies]
 database-manager = { path = "../../packages/database-manager" }
+# The migration gate applies the ADR-0049 combined history to preview
+# databases, and both crates must agree on what a per-PR database is named.
+library-api-preview-migrate = { path = "../../packages/preview_migrate" }
 outbound_sync = { path = "./packages/outbound_sync" }
 inbound_sync = { path = "./packages/inbound_sync" }
 inbound_sync_domain = { path = "./packages/inbound_sync/domain" }
@@ -78,7 +81,7 @@ sqlx = { workspace = true, features = [
 yrs = "0.21"
 futures-util = "0.3"
 once_cell.workspace = true
-pulldown-cmark = "0.12"
+pulldown-cmark = { workspace = true }
 
 schemars = { version = "0.8.15", features = ["uuid1", "chrono"] }
 uuid = { version = "1.5.0", features = ["v4", "serde"] }
@@ -99,7 +102,6 @@ hex = "0.4"
 # test
 mockall = "0.13"
 rstest = { workspace = true }
-regex = "1.10.3"
 
 [build-dependencies]
 tonic-build = { workspace = true }

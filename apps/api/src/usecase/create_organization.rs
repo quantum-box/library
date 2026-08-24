@@ -1,14 +1,54 @@
 use std::sync::Arc;
 
 use super::{CreateOrganizationInputData, CreateOrganizationInputPort};
-use crate::domain::{Organization, OrganizationRepository, LIBRARY_TENANT};
-use tachyon_sdk::auth::PolicyId;
+use crate::domain::{
+    library_repo_owner_policy_id, library_user_policy_id, Organization,
+    OrganizationRepository, LIBRARY_TENANT,
+};
 use tachyon_sdk::auth::{
     AttachUserPolicyInput, AuthApp, CheckPolicyInput, CreateOperatorInput,
+    DeleteOperatorInput, ExecutorAction, MultiTenancy,
     NewOperatorOwnerMethod,
 };
 use tracing::warn;
-use value_object::{FromStr, LongText, TenantId, Text};
+use value_object::{FromStr, LongText, TenantId, Text, UserId};
+
+/// Grant the creator the Library policies for the organization they
+/// just created.
+///
+/// The creator is the executor: `create_operator` makes them the owner
+/// of the new tenant and attaches `AdministratorAccess` there, so they
+/// are authorized to grant these policies inside it. A system executor
+/// would fall back to the service account, which belongs to the Library
+/// platform tenant and is therefore rejected in any per-organization
+/// scope.
+async fn attach_creator_policies(
+    auth_app: &dyn AuthApp,
+    executor: &dyn ExecutorAction,
+    user_id: &UserId,
+    tenant_id: &TenantId,
+) -> errors::Result<()> {
+    let scope = MultiTenancy::new(
+        Some(LIBRARY_TENANT.clone()),
+        Some(tenant_id.clone()),
+    );
+
+    for policy_id in
+        [library_user_policy_id(), library_repo_owner_policy_id()]
+    {
+        auth_app
+            .attach_user_policy(&AttachUserPolicyInput {
+                executor,
+                multi_tenancy: &scope,
+                user_id,
+                policy_id: &policy_id,
+                tenant_id,
+            })
+            .await?;
+    }
+
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 pub struct CreateOrganization {
@@ -75,34 +115,502 @@ impl CreateOrganizationInputPort for CreateOrganization {
                 .as_ref(),
         );
 
-        self.organization_repository.insert(&organization).await?;
+        let tenant_id = TenantId::new(operator.id().as_ref())?;
+        let user_id = input.executor.get_user_id()?;
 
-        // TODO: add English comment
-        const LIBRARY_POLICY_ID: &str = "pol_01libraryuserpolicy";
-        let policy_id = PolicyId::new(LIBRARY_POLICY_ID);
-        if let (Ok(tenant_id), Ok(user_id)) = (
-            TenantId::new(operator.id().as_ref()),
-            input.executor.get_user_id(),
-        ) {
-            if let Err(err) = self
+        // Record the organization before granting policies: inserting
+        // afterwards would leave a tenant Library never stored whenever
+        // the grant fails. If the insert itself fails, delete the tenant
+        // `create_operator` just made — otherwise the alias stays taken
+        // upstream and the creator cannot retry.
+        if let Err(insert_error) =
+            self.organization_repository.insert(&organization).await
+        {
+            if let Err(delete_error) = self
                 .auth_app
-                .attach_user_policy(&AttachUserPolicyInput {
-                    executor: &tachyon_sdk::auth::Executor::SystemUser,
-                    multi_tenancy:
-                        &tachyon_sdk::auth::MultiTenancy::default(),
-                    user_id: &user_id,
-                    policy_id: &policy_id,
-                    tenant_id: &tenant_id,
+                .delete_operator(&DeleteOperatorInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    platform_id: &LIBRARY_TENANT,
+                    operator_id: operator.id(),
                 })
                 .await
             {
                 warn!(
-                    error = ?err,
-                    "failed to attach default library policy; continuing organization creation"
+                    error = ?delete_error,
+                    operator_id = %tenant_id,
+                    "failed to roll back the operator after the organization insert failed; the tenant is orphaned and its alias stays taken"
                 );
             }
+            return Err(insert_error);
+        }
+
+        // A failed grant leaves an organization that exists and is
+        // usable, only without its creator policies. Failing the whole
+        // mutation would strand that tenant, so report the failure as a
+        // warning and let the caller keep the organization.
+        if let Err(error) = attach_creator_policies(
+            self.auth_app.as_ref(),
+            input.executor,
+            &user_id,
+            &tenant_id,
+        )
+        .await
+        {
+            warn!(
+                error = ?error,
+                organization_id = %tenant_id,
+                creator_id = %user_id,
+                "failed to grant the creator policies for the new organization"
+            );
         }
 
         Ok(organization)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::attach_creator_policies;
+    use super::{
+        CreateOrganization, CreateOrganizationInputData,
+        CreateOrganizationInputPort,
+    };
+    use crate::domain::{
+        Organization, OrganizationRepository, LIBRARY_REPO_OWNER_POLICY_ID,
+        LIBRARY_TENANT, LIBRARY_USER_POLICY_ID,
+    };
+    use std::sync::{Arc, Mutex};
+    use tachyon_sdk::auth::{
+        ExecutorAction, MockAuthApp, MultiTenancy, Operator,
+    };
+    use value_object::{Identifier, TenantId, UserId};
+
+    /// Stand-in for the signed-in caller. Only `is_user` matters: it is
+    /// what makes the SDK layer carry the caller's own credential
+    /// instead of the service account's.
+    #[derive(Debug)]
+    struct CallerExecutor(&'static str);
+
+    impl ExecutorAction for CallerExecutor {
+        fn get_id(&self) -> &str {
+            self.0
+        }
+        fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+            true
+        }
+        fn is_system_user(&self) -> bool {
+            false
+        }
+        fn is_user(&self) -> bool {
+            true
+        }
+        fn is_service_account(&self) -> bool {
+            false
+        }
+        fn is_none(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn attaches_creator_policies_in_the_new_org_scope() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_attach_user_policy().times(2).returning({
+            let calls = calls.clone();
+            move |input| {
+                calls.lock().unwrap().push((
+                    input.policy_id.to_string(),
+                    input.tenant_id.to_string(),
+                    input
+                        .multi_tenancy
+                        .platform_id()
+                        .map(|id| id.to_string()),
+                    input
+                        .multi_tenancy
+                        .operator_id()
+                        .map(|id| id.to_string()),
+                ));
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let executor = CallerExecutor("us_01testcreator");
+        let user_id = UserId::new("us_01testcreator").unwrap();
+        let tenant_id = TenantId::new("tn_01testorganization").unwrap();
+
+        attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[
+                (
+                    LIBRARY_USER_POLICY_ID.to_string(),
+                    tenant_id.to_string(),
+                    Some(LIBRARY_TENANT.to_string()),
+                    Some(tenant_id.to_string()),
+                ),
+                (
+                    LIBRARY_REPO_OWNER_POLICY_ID.to_string(),
+                    tenant_id.to_string(),
+                    Some(LIBRARY_TENANT.to_string()),
+                    Some(tenant_id.to_string()),
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_policy_attachment_failures() {
+        let mut auth = MockAuthApp::new();
+        auth.expect_attach_user_policy().times(1).returning(|_| {
+            Box::pin(async {
+                Err(errors::Error::forbidden("attach failed"))
+            })
+        });
+
+        let executor = CallerExecutor("us_01testcreator");
+        let user_id = UserId::new("us_01testcreator").unwrap();
+        let tenant_id = TenantId::new("tn_01testorganization").unwrap();
+
+        let error =
+            attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
+                .await
+                .unwrap_err();
+
+        assert!(error.to_string().contains("attach failed"));
+    }
+
+    #[tokio::test]
+    async fn forwards_the_caller_as_the_attaching_executor() {
+        let is_user_flags = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_attach_user_policy().times(2).returning({
+            let is_user_flags = is_user_flags.clone();
+            move |input| {
+                is_user_flags
+                    .lock()
+                    .unwrap()
+                    .push(input.executor.is_user());
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let executor = CallerExecutor("us_01testcreator");
+        let user_id = UserId::new("us_01testcreator").unwrap();
+        let tenant_id = TenantId::new("tn_01testorganization").unwrap();
+
+        attach_creator_policies(&auth, &executor, &user_id, &tenant_id)
+            .await
+            .unwrap();
+
+        // A system executor here would resolve to the service account,
+        // which is scoped to the Library platform tenant and therefore
+        // rejected inside the new organization's tenant.
+        assert_eq!(is_user_flags.lock().unwrap().as_slice(), &[true, true]);
+    }
+
+    /// Records which collaborator the use case touches, and when, so a
+    /// regression that stores the organization only after the policy
+    /// grant succeeds is visible.
+    #[derive(Debug)]
+    struct RecordingRepository {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl OrganizationRepository for RecordingRepository {
+        async fn insert(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            self.calls.lock().unwrap().push("insert");
+            Ok(())
+        }
+
+        async fn update(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_id(
+            &self,
+            _org_id: &TenantId,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_username(
+            &self,
+            _username: &Identifier,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_all(&self) -> errors::Result<Vec<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete(&self, _org_id: &TenantId) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    fn created_operator() -> Operator {
+        Operator {
+            id: TenantId::new("tn_01testorganization").unwrap(),
+            name: "Test Organization".to_string(),
+            operator_name: "test-organization".parse().unwrap(),
+            platform_id: LIBRARY_TENANT.clone(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    /// `create_operator` has already created the tenant upstream by the
+    /// time the policies are granted, and nothing here can delete it. A
+    /// rejected grant must therefore not fail the mutation: doing so
+    /// strands a tenant the creator cannot even recreate, because its
+    /// alias is taken.
+    #[tokio::test]
+    async fn keeps_the_organization_when_the_policy_grant_is_rejected() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_attach_user_policy().returning({
+            let calls = calls.clone();
+            move |_| {
+                calls.lock().unwrap().push("attach");
+                Box::pin(async {
+                    Err(errors::Error::forbidden(
+                        "Upstream authorization rejected",
+                    ))
+                })
+            }
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(RecordingRepository {
+                calls: calls.clone(),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        let organization = usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .expect("a rejected policy grant must not fail creation");
+
+        assert_eq!(organization.id().to_string(), "tn_01testorganization");
+        assert_eq!(calls.lock().unwrap().first().copied(), Some("insert"));
+    }
+
+    /// Repository whose insert always fails, for the rollback tests.
+    #[derive(Debug)]
+    struct FailingInsertRepository {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl OrganizationRepository for FailingInsertRepository {
+        async fn insert(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            self.calls.lock().unwrap().push("insert");
+            Err(errors::Error::internal_server_error("insert failed"))
+        }
+
+        async fn update(
+            &self,
+            _organization: &Organization,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_id(
+            &self,
+            _org_id: &TenantId,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn get_by_username(
+            &self,
+            _username: &Identifier,
+        ) -> errors::Result<Option<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_all(&self) -> errors::Result<Vec<Organization>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete(&self, _org_id: &TenantId) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    /// A failed insert leaves a tenant Library never stored, and its
+    /// alias stays taken upstream. The use case must delete the operator
+    /// it just created and surface the insert error.
+    #[tokio::test]
+    async fn rolls_back_the_operator_when_the_insert_fails() {
+        let deleted = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_delete_operator().times(1).returning({
+            let deleted = deleted.clone();
+            move |input| {
+                deleted.lock().unwrap().push((
+                    input.operator_id.to_string(),
+                    input.platform_id.to_string(),
+                ));
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(FailingInsertRepository {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        let error = usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .expect_err("a failed insert must fail creation");
+
+        assert!(error.to_string().contains("insert failed"));
+        assert_eq!(
+            deleted.lock().unwrap().as_slice(),
+            &[(
+                "tn_01testorganization".to_string(),
+                LIBRARY_TENANT.to_string(),
+            )]
+        );
+    }
+
+    /// The rollback is best-effort: when the delete itself fails the
+    /// caller still gets the insert error, not the delete error.
+    #[tokio::test]
+    async fn surfaces_the_insert_error_when_the_rollback_fails() {
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_delete_operator().times(1).returning(|_| {
+            Box::pin(async {
+                Err(errors::Error::forbidden("delete rejected"))
+            })
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(FailingInsertRepository {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        let error = usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .expect_err("a failed insert must fail creation");
+
+        assert!(error.to_string().contains("insert failed"));
+    }
+
+    /// The organization must be stored before the grant is attempted,
+    /// so a rejected grant still leaves Library aware of the tenant that
+    /// now exists upstream.
+    #[tokio::test]
+    async fn stores_the_organization_before_granting_policies() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_create_operator()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(created_operator()) }));
+        auth.expect_attach_user_policy().times(2).returning({
+            let calls = calls.clone();
+            move |_| {
+                calls.lock().unwrap().push("attach");
+                Box::pin(async { Ok(()) })
+            }
+        });
+
+        let usecase = CreateOrganization::new(
+            Arc::new(RecordingRepository {
+                calls: calls.clone(),
+            }),
+            Arc::new(auth),
+        );
+
+        let executor = CallerExecutor("us_01testcreator");
+        let multi_tenancy = MultiTenancy::default();
+        usecase
+            .execute(&CreateOrganizationInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                name: "Test Organization".to_string(),
+                username: "test-organization".to_string(),
+                description: None,
+                website: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &["insert", "attach", "attach"]
+        );
     }
 }

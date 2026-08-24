@@ -17,10 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspaceDatabases } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import type { DatabaseRecord } from '../data/mock'
-import {
-  getDatabaseViewScopeId,
-  getDefaultDatabaseViewId,
-} from '../lib/databaseViews/databaseViews'
+import { navigateToData } from '../lib/ui/dataLocation'
 import { useDialogFocus } from './useDialogFocus'
 
 interface CommandPaletteProps {
@@ -65,9 +62,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const databaseView = (type: 'table' | 'board' | 'workflow') => () => {
       void navigate({
         to: '/databases',
-        search: {
-          view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), type),
-        },
+        search: type === 'table' ? {} : { view: type },
       })
     }
 
@@ -149,10 +144,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         }
         void navigate({
           to: '/databases',
-          search: {
-            database: database.id,
-            view: getDefaultDatabaseViewId(getDatabaseViewScopeId(database.id), 'table'),
-          },
+          search: { database: database.id },
         })
       },
     }))
@@ -165,14 +157,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         detail: `${record.identifier} · ${record.project}`,
         icon: Database,
         keywords: `${record.identifier} ${record.project} ${record.description} ${record.labels.join(' ')}`,
-        run: () => void navigate({
-          to: '/databases/$recordId',
-          params: { recordId: record.id },
-          search: {
-            database: databaseId,
-            view: getDefaultDatabaseViewId(getDatabaseViewScopeId(databaseId), 'table'),
-          },
-        }),
+        run: () => void navigateToData(navigate, databaseId, {}, { recordId: record.id }),
       }
     })
 

@@ -15,6 +15,8 @@ pub enum PropertyDataValue {
     MultiSelect(Vec<SelectItemId>),
     Date(String),  // ISO 8601 format: YYYY-MM-DD
     Image(String), // Image URL
+    /// A block document, stored as the editor's own JSON.
+    RichText(serde_json::Value),
 }
 
 impl PropertyDataValue {
@@ -81,6 +83,7 @@ impl PropertyDataValue {
             }
             PropertyDataValue::Date(_) => PropertyType::Date,
             PropertyDataValue::Image(_) => PropertyType::Image,
+            PropertyDataValue::RichText(_) => PropertyType::RichText,
         }
     }
 
@@ -118,6 +121,15 @@ impl PropertyDataValue {
                 .join(","),
             PropertyDataValue::Date(date) => date.clone(),
             PropertyDataValue::Image(url) => url.clone(),
+            // The document's text, not its JSON. This feeds search and
+            // index paths, where raw structural keys would be noise.
+            //
+            // Note this is NOT an emptiness signal for rich text: a
+            // document holding only an image has no text but is not empty.
+            // PropertyValueCommand::into_value handles that explicitly.
+            PropertyDataValue::RichText(document) => {
+                crate::rich_text::plain_text(document)
+            }
         }
     }
 
@@ -139,6 +151,7 @@ impl PropertyDataValue {
             PropertyType::MultiSelect(_) => Self::parse_multi_select(text),
             PropertyType::Date => Self::parse_date(text),
             PropertyType::Image => Self::parse_image(text),
+            PropertyType::RichText => Self::parse_rich_text(text),
         }
     }
 
@@ -185,6 +198,31 @@ impl PropertyDataValue {
             ));
         }
         Ok(PropertyDataValue::Markdown(input.to_string()))
+    }
+
+    /// Parse the JSON text a rich text document round-trips as through
+    /// the legacy LONGTEXT column.
+    ///
+    /// Non-JSON input is treated as Markdown and converted. This is the
+    /// legacy/compat text boundary, and two callers legitimately deliver
+    /// Markdown here: the GitHub import writes a file body into the content
+    /// property whatever its type, and a property converted in place from
+    /// Markdown still has its old text in the legacy column until the next
+    /// write persists JSON. The strict boundary is the API input adapter,
+    /// which rejects non-JSON rather than converting.
+    fn parse_rich_text(input: &str) -> errors::Result<PropertyDataValue> {
+        if let Ok(document) =
+            serde_json::from_str::<serde_json::Value>(input)
+        {
+            // Only a block document counts; a bare JSON scalar such as
+            // "42" is somebody's Markdown, not a document.
+            if document.is_array() || document.get("blocks").is_some() {
+                return Ok(PropertyDataValue::RichText(document));
+            }
+        }
+        Ok(PropertyDataValue::RichText(
+            crate::rich_text::from_markdown(input),
+        ))
     }
 
     fn parse_relation_command(

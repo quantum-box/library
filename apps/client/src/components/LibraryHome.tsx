@@ -20,10 +20,7 @@ import {
 } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
-import {
-  getDatabaseViewScopeId,
-  getDefaultDatabaseViewId,
-} from '../lib/databaseViews/databaseViews'
+import { navigateToData } from '../lib/ui/dataLocation'
 
 function relativeDate(value: string) {
   const date = new Date(value)
@@ -117,15 +114,7 @@ export function LibraryHome() {
 
   const openRecord = (record: DatabaseRecord) => {
     const database = findDatabaseForRecord(databases, record)
-    const databaseId = database?.id
-    void navigate({
-      to: '/databases/$recordId',
-      params: { recordId: record.id },
-      search: {
-        database: databaseId,
-        view: getDefaultDatabaseViewId(getDatabaseViewScopeId(databaseId), 'table'),
-      },
-    })
+    void navigateToData(navigate, database?.id, {}, { recordId: record.id })
   }
 
   return (
@@ -247,12 +236,7 @@ export function LibraryHome() {
                 <h2 id="activity-heading" className="text-sm font-semibold">Recent activity</h2>
                 <Badge variant="neutral">{recentRecords.length}</Badge>
                 <Button className="ml-auto" variant="ghost" size="sm" asChild>
-                  <Link
-                    to="/databases"
-                    search={{
-                      view: getDefaultDatabaseViewId(getDatabaseViewScopeId(undefined), 'table'),
-                    }}
-                  >
+                  <Link to="/databases">
                     View all
                     <ChevronRight aria-hidden="true" />
                   </Link>
@@ -338,8 +322,13 @@ export function LibraryHome() {
                 <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
                   <h2 id="repositories-heading" className="text-sm font-semibold">Repositories</h2>
                   <Badge variant="neutral">{databases.length}</Badge>
+                  <Button className="ml-auto" variant="ghost" size="sm" asChild>
+                    <Link to="/repositories">
+                      View all
+                      <ChevronRight aria-hidden="true" />
+                    </Link>
+                  </Button>
                   <Button
-                    className="ml-auto"
                     variant="ghost"
                     size="icon"
                     aria-label="Refresh repositories"
@@ -385,10 +374,7 @@ export function LibraryHome() {
                       <Link
                         key={database.id}
                         to="/databases"
-                        search={{
-                          database: database.id,
-                          view: getDefaultDatabaseViewId(getDatabaseViewScopeId(database.id), 'table'),
-                        }}
+                        search={{ database: database.id }}
                         className="flex min-h-11 items-center gap-2.5 border-t border-border px-3.5 py-2 text-sm no-underline first:border-t-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
                       >
                         {repositoryContent}

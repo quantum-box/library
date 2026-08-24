@@ -88,7 +88,7 @@ pub(super) fn forge_known_property_value_for_test(
     }
 }
 
-static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 11] = [
+static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 12] = [
     BuiltinPropertyTypeHandler::new(PropertyKind::String),
     BuiltinPropertyTypeHandler::new(PropertyKind::Integer),
     BuiltinPropertyTypeHandler::new(PropertyKind::Html),
@@ -100,6 +100,7 @@ static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 11] = [
     BuiltinPropertyTypeHandler::new(PropertyKind::Location),
     BuiltinPropertyTypeHandler::new(PropertyKind::Date),
     BuiltinPropertyTypeHandler::new(PropertyKind::Image),
+    BuiltinPropertyTypeHandler::new(PropertyKind::RichText),
 ];
 
 /// The single compile-time registry for built-in Property Type handlers.

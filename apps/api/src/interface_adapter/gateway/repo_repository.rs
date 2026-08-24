@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     domain::{Repo, RepoId, RepoRepository},
-    interface_adapter::gateway::row_parse::parse_stored,
+    interface_adapter::gateway::row_parse::{
+        is_missing_table, parse_stored,
+    },
 };
 use derive_new::new;
 use value_object::TenantId;
@@ -74,7 +76,7 @@ impl RepoRepository for RepoRepositoryImpl {
             .map_err(errors::Error::internal_server_error)?;
 
         sqlx::query!(
-            "INSERT INTO library.repos (id, org_id, org_username, username, name, description, is_public, platform_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE org_id = VALUES(org_id), org_username = VALUES(org_username), username = VALUES(username), name = VALUES(name), description = VALUES(description), is_public = VALUES(is_public), platform_id = VALUES(platform_id)",
+            "INSERT INTO repos (id, org_id, org_username, username, name, description, is_public, platform_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE org_id = VALUES(org_id), org_username = VALUES(org_username), username = VALUES(username), name = VALUES(name), description = VALUES(description), is_public = VALUES(is_public), platform_id = VALUES(platform_id)",
             entity.id().to_string(),
             entity.organization_id().to_string(),
             entity.org_username().to_string(),
@@ -89,7 +91,7 @@ impl RepoRepository for RepoRepositoryImpl {
         .map_err(errors::Error::internal_server_error)?;
 
         sqlx::query!(
-            "DELETE FROM library.databases WHERE repo_id = ?",
+            "DELETE FROM `databases` WHERE repo_id = ?",
             entity.id().to_string()
         )
         .execute(&mut *tx)
@@ -98,7 +100,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         for database in entity.databases() {
             sqlx::query!(
-                "INSERT INTO library.databases (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
+                "INSERT INTO `databases` (database_id, repo_id, platform_id) VALUES (?, ?, ?)",
                 database.to_string(),
                 entity.id().to_string(),
                 crate::domain::LIBRARY_TENANT.to_string()
@@ -110,7 +112,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         // Delete existing tags if the table exists
         let delete_tags_result = sqlx::query!(
-            "DELETE FROM library.tags WHERE repo_id = ?",
+            "DELETE FROM tags WHERE repo_id = ?",
             entity.id().to_string()
         )
         .execute(&mut *tx)
@@ -118,15 +120,14 @@ impl RepoRepository for RepoRepositoryImpl {
 
         // TODO: add English comment
         if let Err(e) = delete_tags_result {
-            if !e.to_string().contains("Table 'library.tags' doesn't exist")
-            {
+            if !is_missing_table(&e) {
                 return Err(errors::Error::internal_server_error(e));
             }
         }
 
         // Delete existing sources if the table exists
         let delete_sources_result = sqlx::query!(
-            "DELETE FROM library.sources WHERE repo_id = ?",
+            "DELETE FROM sources WHERE repo_id = ?",
             entity.id().to_string()
         )
         .execute(&mut *tx)
@@ -134,10 +135,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         // TODO: add English comment
         if let Err(e) = delete_sources_result {
-            if !e
-                .to_string()
-                .contains("Table 'library.sources' doesn't exist")
-            {
+            if !is_missing_table(&e) {
                 return Err(errors::Error::internal_server_error(e));
             }
         }
@@ -145,7 +143,7 @@ impl RepoRepository for RepoRepositoryImpl {
         // Insert tags if the table exists
         for tag in entity.tags() {
             let insert_tag_result = sqlx::query!(
-                "INSERT INTO library.tags (id, repo_id, tag, platform_id) VALUES (?, ?, ?, ?)",
+                "INSERT INTO tags (id, repo_id, tag, platform_id) VALUES (?, ?, ?, ?)",
                 value_object::Ulid::new().to_string(),
                 entity.id().to_string(),
                 tag.to_string(),
@@ -156,10 +154,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
             // TODO: add English comment
             if let Err(e) = insert_tag_result {
-                if !e
-                    .to_string()
-                    .contains("Table 'library.tags' doesn't exist")
-                {
+                if !is_missing_table(&e) {
                     return Err(errors::Error::internal_server_error(e));
                 }
             }
@@ -181,7 +176,7 @@ impl RepoRepository for RepoRepositoryImpl {
     ) -> errors::Result<Option<Repo>> {
         let row = sqlx::query_as!(
             RepoRow,
-            "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ? AND id = ?",
+            "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )
@@ -190,7 +185,7 @@ impl RepoRepository for RepoRepositoryImpl {
         .map_err(errors::Error::internal_server_error)?;
 
         let databases = sqlx::query!(
-            "SELECT id, database_id FROM library.databases WHERE platform_id = ? AND repo_id = ?",
+            "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )
@@ -200,7 +195,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         // Fetch tags if the table exists
         let tags_result = sqlx::query!(
-            "SELECT tag FROM library.tags WHERE platform_id = ? AND repo_id = ?",
+            "SELECT tag FROM tags WHERE platform_id = ? AND repo_id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )
@@ -210,9 +205,7 @@ impl RepoRepository for RepoRepositoryImpl {
         let tags = match tags_result {
             Ok(tags) => tags,
             Err(e) => {
-                if e.to_string()
-                    .contains("Table 'library.tags' doesn't exist")
-                {
+                if is_missing_table(&e) {
                     vec![]
                 } else {
                     return Err(errors::Error::internal_server_error(e));
@@ -222,7 +215,7 @@ impl RepoRepository for RepoRepositoryImpl {
 
         // Fetch sources if the table exists
         let sources_result = sqlx::query!(
-            "SELECT name, url FROM library.sources WHERE repo_id = ?",
+            "SELECT name, url FROM sources WHERE repo_id = ?",
             id.to_string()
         )
         .fetch_all(self.db.pool().as_ref())
@@ -231,9 +224,7 @@ impl RepoRepository for RepoRepositoryImpl {
         let _sources = match sources_result {
             Ok(sources) => sources,
             Err(e) => {
-                if e.to_string()
-                    .contains("Table 'library.sources' doesn't exist")
-                {
+                if is_missing_table(&e) {
                     vec![]
                 } else {
                     return Err(errors::Error::internal_server_error(e));
@@ -258,7 +249,7 @@ impl RepoRepository for RepoRepositoryImpl {
     ) -> errors::Result<Vec<Repo>> {
         let rows = sqlx::query_as!(
             RepoRow,
-                "SELECT id, org_id, org_username, name, username, description, is_public FROM library.repos WHERE platform_id = ? AND org_id = ?",
+                "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND org_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 org_id.to_string()
         )
@@ -269,7 +260,7 @@ impl RepoRepository for RepoRepositoryImpl {
         let mut repos = vec![];
         for row in rows.iter() {
             let database_rows = sqlx::query!(
-                "SELECT id, database_id, repo_id FROM library.databases WHERE platform_id = ? AND repo_id = ?",
+                "SELECT id, database_id, repo_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
                 crate::domain::LIBRARY_TENANT.to_string(),
                 row.id.to_string()
             )
@@ -292,7 +283,7 @@ impl RepoRepository for RepoRepositoryImpl {
         id: &RepoId,
     ) -> errors::Result<()> {
         sqlx::query!(
-            "DELETE FROM library.repos WHERE platform_id = ? AND id = ?",
+            "DELETE FROM repos WHERE platform_id = ? AND id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )

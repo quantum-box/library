@@ -4,9 +4,11 @@ import {
   ALL_DATABASES_ID,
   createNewDatabaseView,
   createViewFromLegacySearch,
+  databaseViewUrlParam,
   filterRecordsForDatabaseView,
   getDefaultDatabaseViewId,
   getDefaultDatabaseViews,
+  resolveDatabaseViewFromParam,
   sortRecordsForDatabaseView,
   writeDatabaseViewToYMap,
   ymapToDatabaseView,
@@ -101,6 +103,33 @@ describe('database view definitions', () => {
 
     expect(view.filters.status).toBe('done')
     expect(view.sorting).toEqual({ id: 'updatedAt', desc: true })
+  })
+})
+
+describe('database view URL params', () => {
+  it('resolves short type names, legacy full ids, and custom suffixes', () => {
+    const views = getDefaultDatabaseViews('org/repo')
+    const custom = createNewDatabaseView('org/repo', 'board', views.length, 'Sprint')
+    const all = [...views, custom]
+
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', undefined)?.id).toBe('org/repo:table')
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', 'board')?.id).toBe('org/repo:board')
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', 'org/repo:workflow')?.id).toBe(
+      'org/repo:workflow',
+    )
+    const suffix = custom.id.split(':').at(-1) as string
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', suffix)?.id).toBe(custom.id)
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', 'missing')).toBeUndefined()
+  })
+
+  it('serializes default views to short params and custom views to suffixes', () => {
+    const [table, board, workflow] = getDefaultDatabaseViews(ALL_DATABASES_ID)
+    expect(databaseViewUrlParam(table)).toBeUndefined()
+    expect(databaseViewUrlParam(board)).toBe('board')
+    expect(databaseViewUrlParam(workflow)).toBe('workflow')
+
+    const custom = createNewDatabaseView(ALL_DATABASES_ID, 'table', 3, 'Mine')
+    expect(databaseViewUrlParam(custom)).toBe(custom.id.split(':').at(-1))
   })
 })
 

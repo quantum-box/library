@@ -6,6 +6,7 @@ fragment PropertyDataForEditor on PropertyData {
     ...IdValueForEditor
     ...HtmlValueForEditor
     ...MarkdownValueForEditor
+    ...RichTextValueForEditor
     ...RelationValueForEditor
     ...SelectValueForEditor
     ...MultiSelectValueForEditor
@@ -32,6 +33,15 @@ fragment HtmlValueForEditor on HtmlValue {
 }
 
 fragment MarkdownValueForEditor on MarkdownValue {
+  markdown
+}
+
+# richText is the authoritative document. Selecting it here is what lets
+# convertPropertyData round-trip it on save -- without this selection the
+# converter would read undefined, omit the property from the mutation, and
+# the body would be silently blanked.
+fragment RichTextValueForEditor on RichTextValue {
+  richText
   markdown
 }
 

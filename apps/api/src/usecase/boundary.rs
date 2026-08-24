@@ -411,6 +411,8 @@ pub enum PropertyDataValueInputData {
     Location(Location),
     Date(String),
     Image(String),
+    /// A block document, carried as JSON text.
+    RichText(String),
 }
 
 /// TODO: add English documentation

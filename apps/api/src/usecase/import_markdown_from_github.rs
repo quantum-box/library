@@ -190,9 +190,14 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
         let content_prop = existing_properties
             .iter()
             .find(|p| p.name() == &input.content_property_name);
-        let content_prop_id = if let Some(prop) = content_prop {
+        let (content_prop_id, content_is_rich_text) = if let Some(prop) =
+            content_prop
+        {
             validate_import_target(prop)?;
-            prop.id().to_string()
+            (
+                prop.id().to_string(),
+                matches!(prop.property_type(), db::PropertyType::RichText),
+            )
         } else {
             let prop = self
                 .add_property
@@ -202,10 +207,10 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     org_username: input.org_username.clone(),
                     repo_username: input.repo_username.clone(),
                     property_name: input.content_property_name.clone(),
-                    property_type: db::PropertyType::Markdown,
+                    property_type: db::PropertyType::RichText,
                 })
                 .await?;
-            prop.id().to_string()
+            (prop.id().to_string(), true)
         };
         property_map.insert(
             input.content_property_name.clone(),
@@ -375,6 +380,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     &input.property_mappings,
                     &property_map,
                     &content_prop_id,
+                    content_is_rich_text,
                     &ext_github_prop_id,
                     &input.github_repo,
                 )
@@ -426,6 +432,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     &input.property_mappings,
                     &property_map,
                     &content_prop_id,
+                    content_is_rich_text,
                     &ext_github_prop_id,
                     &input.github_repo,
                 )
@@ -585,6 +592,7 @@ async fn import_single_file(
     property_mappings: &[crate::usecase::PropertyMapping],
     property_map: &HashMap<String, String>,
     content_prop_id: &str,
+    content_is_rich_text: bool,
     ext_github_prop_id: &str,
     github_repo: &str,
 ) -> Result<(String, Vec<crate::usecase::PropertyDataInputData>), String> {
@@ -607,10 +615,18 @@ async fn import_single_file(
 
     let mut property_data = Vec::new();
 
-    // Add content property
+    // Add content property. The input variant must match the property's
+    // type -- the value adapter rejects a Markdown input against a RichText
+    // property rather than guessing.
     property_data.push(crate::usecase::PropertyDataInputData {
         property_id: content_prop_id.to_string(),
-        value: crate::usecase::PropertyDataValueInputData::Markdown(body),
+        value: if content_is_rich_text {
+            crate::usecase::PropertyDataValueInputData::RichText(
+                db::rich_text::from_markdown(&body).to_string(),
+            )
+        } else {
+            crate::usecase::PropertyDataValueInputData::Markdown(body)
+        },
     });
 
     // Add ext_github property with metadata

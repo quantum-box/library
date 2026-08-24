@@ -53,6 +53,7 @@ const libraryAddDataMutation = `
           ... on IntegerValue { number }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
+          ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
           ... on IdValue { id }
@@ -80,6 +81,7 @@ const libraryUpdateDataMutation = `
           ... on IntegerValue { number }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
+          ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
           ... on IdValue { id }
@@ -319,6 +321,10 @@ function restPropertyValue(property: LibraryProperty, value: LibraryPropertyData
       return { html: value.html ?? '' }
     case 'Markdown':
       return { markdown: value.markdown ?? '' }
+    case 'RichText':
+      // The tagged object is load-bearing: a bare string would reach the
+      // API's String input arm and be rejected against a RichText property.
+      return { richText: value.richText ?? '' }
     case 'MultiSelect':
       return value.optionIds ?? []
     default:

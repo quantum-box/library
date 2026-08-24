@@ -741,15 +741,21 @@ async fn setup_test_server(
     > = Arc::new(InMemoryOAuthTokenRepository::default());
     let provider_secrets =
         Arc::new(inbound_sync::WebhookSecretStore::new());
+    let database_layout =
+        library_api::DatabaseLayout::resolve(&dsn, Some("test"))?;
 
     let app = library_api::router(
-        dsn.to_string(),
-        sdk,
+        database_layout.open_pools(),
+        sdk.clone(),
         database_app,
         github,
         oauth_service,
         oauth_token_repo,
         provider_secrets,
+        Arc::new(library_api::oauth_bootstrap::OAuthBootstrap::new(
+            sdk.clone(),
+            library_tenant.clone(),
+        )),
     )
     .await
     .map_err(|error| anyhow::anyhow!("{error}"))?;
@@ -975,13 +981,6 @@ impl inbound_sync_domain::OAuthService for MockOAuthService {
         _provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<()> {
         Ok(())
-    }
-
-    fn get_credentials(
-        &self,
-        _provider: inbound_sync_domain::OAuthProvider,
-    ) -> Option<&inbound_sync_domain::OAuthClientCredentials> {
-        None
     }
 }
 

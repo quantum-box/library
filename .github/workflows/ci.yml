@@ -16,6 +16,7 @@ concurrency:
 jobs:
   rust-fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -25,6 +26,7 @@ jobs:
 
   rust-clippy:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -32,21 +34,25 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
-      - run: cargo clippy --workspace -- -D warnings
+        run: scripts/ci/apt-install.sh protobuf-compiler
+      # PLT-3335 tracks the pre-existing warnings exposed by nightly drift.
+      # Only these two lints are temporarily allowed; all others stay denied.
+      - run: cargo clippy --workspace -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names
 
   rust-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+        run: scripts/ci/apt-install.sh protobuf-compiler
       - run: cargo check --workspace
 
   rust-workspace-cycles:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -57,6 +63,7 @@ jobs:
 
   rust-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       mysql:
         image: mysql:8.0
@@ -76,7 +83,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
       - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler default-mysql-client
+        run: scripts/ci/apt-install.sh protobuf-compiler default-mysql-client
       - run: cargo nextest run --workspace
       - name: Run Library GA database regressions
         env:
@@ -120,10 +127,12 @@ jobs:
           cargo test -p database-manager --test index_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_contract -- --ignored --test-threads=1
           cargo run -p library-api --bin library_api_migrate dev
+          cargo test -p library-api-preview-migrate --lib preview_migrations_replay_on_empty_mysql -- --ignored --test-threads=1
           cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
 
   node:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -166,7 +175,10 @@ jobs:
           VITE_BACKEND_API_URL: ${{ steps.vite_backend.outputs.url }}
         run: yarn build
       - name: Install Playwright browsers
-        run: yarn workspace library-web exec playwright install --with-deps chromium
+        run: |
+          scripts/ci/apt-harden.sh
+          scripts/ci/with-retry.sh --attempts 3 --timeout 300 --cleanup scripts/ci/apt-unlock.sh -- \
+            yarn workspace library-web exec playwright install --with-deps chromium
       - name: E2E tests
         run: yarn test:e2e
       - name: Upload Playwright report
@@ -180,6 +192,7 @@ jobs:
 
   client:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: apps/client
@@ -215,7 +228,11 @@ jobs:
       - name: Test Photon server
         run: cargo test --locked --manifest-path packages/server/Cargo.toml
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          "${{ github.workspace }}/scripts/ci/apt-harden.sh"
+          "${{ github.workspace }}/scripts/ci/with-retry.sh" --attempts 3 --timeout 300 \
+            --cleanup "${{ github.workspace }}/scripts/ci/apt-unlock.sh" -- \
+            npx playwright install --with-deps chromium
       - name: Run client E2E
         id: client_e2e
         timeout-minutes: 20

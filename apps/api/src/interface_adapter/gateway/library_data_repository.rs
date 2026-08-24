@@ -56,7 +56,7 @@ impl LibraryDataRepositoryImpl {
     /// from the webhook endpoint's linked repository.
     ///
     /// The returned `TenantId` is the **organization's** tenant ID
-    /// (stored in `library.repos.org_id`), which must be used for all
+    /// (stored in `repos.org_id`), which must be used for all
     /// `database_manager` operations because `database_manager.objects`
     /// stores data under the org's tenant, not the operator's.
     async fn resolve_repo_context(
@@ -128,7 +128,10 @@ impl LibraryDataRepositoryImpl {
 
     fn property_type_for(name: &str) -> PropertyType {
         match name {
-            "content" => PropertyType::Markdown,
+            // New content properties hold the lossless document type. The
+            // GitHub import still delivers Markdown text here; the legacy
+            // text boundary converts it (see parse_rich_text).
+            "content" => PropertyType::RichText,
             "id" => PropertyType::Id(TypeId::new(true)),
             _ => PropertyType::String,
         }
@@ -174,7 +177,7 @@ impl LibraryDataRepositoryImpl {
         }
         let column = format!("value{field_num}");
         let query = format!(
-            "SELECT id FROM tachyon_apps_database_manager.data \
+            "SELECT id FROM data \
             WHERE tenant_id = ? AND object_id = ? \
             AND JSON_UNQUOTE(JSON_EXTRACT(CAST(`{column}` AS JSON), '$.issue_id')) = ? \
             ORDER BY updated_at DESC \

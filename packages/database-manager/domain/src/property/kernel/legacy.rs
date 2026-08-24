@@ -33,6 +33,7 @@ impl LegacyPropertyTypeReader {
             "LOCATION" => PropertyKind::Location,
             "DATE" => PropertyKind::Date,
             "IMAGE" => PropertyKind::Image,
+            "RICH_TEXT" => PropertyKind::RichText,
             _ => {
                 return Err(errors::Error::invalid(format!(
                     "unknown legacy property type {legacy_type}"
@@ -71,6 +72,7 @@ impl LegacyPropertyTypeReader {
             )),
             PropertyKind::Date => Ok(PropertyType::Date),
             PropertyKind::Image => Ok(PropertyType::Image),
+            PropertyKind::RichText => Ok(PropertyType::RichText),
         }
     }
 
@@ -157,6 +159,13 @@ impl LegacyPropertyValueCodec {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
+            // The legacy column is LONGTEXT, so the document rides in it as
+            // JSON text. Object keys serialize in a stable order, so an
+            // unchanged document never produces a spurious row diff.
+            PropertyDataValue::RichText(document) => {
+                serde_json::to_string(document)
+                    .map_err(errors::Error::invalid)?
+            }
         })
     }
 }

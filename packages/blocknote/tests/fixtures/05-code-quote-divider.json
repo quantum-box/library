@@ -1,0 +1,56 @@
+[
+  {
+    "id": "block-1",
+    "type": "codeBlock",
+    "props": {
+      "language": "rust"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "fn main() {}",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "quote",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "quoted line",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-3",
+    "type": "divider",
+    "props": {},
+    "children": []
+  },
+  {
+    "id": "block-4",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "after divider",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

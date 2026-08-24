@@ -2,7 +2,9 @@ pub extern crate database_domain as domain;
 
 pub mod database_app;
 pub mod interface_adapter;
-pub mod migration_preflight;
+// The preflight lives in its own tiny crate so the preview-migrate deploy
+// hook can build it without database-manager's gRPC/web dependency tree.
+pub use migration_preflight;
 pub mod property_definition_rollout;
 pub mod property_value_rollout;
 mod relation_edge_rollout;
@@ -156,6 +158,23 @@ pub async fn factory_client_with_storage_modes(
     let dsn = dsn.to_string();
     let db = persistence::Db::new(&dsn).await;
 
+    factory_client_with_db(
+        db,
+        property_value_mode,
+        property_definition_mode,
+    )
+}
+
+/// Build the app on a pool the caller already holds.
+///
+/// A caller that opens its own pool for this database — the API server
+/// does, for the repositories it wires up itself — would otherwise end
+/// up with two pools to the same server.
+pub fn factory_client_with_db(
+    db: Arc<persistence::Db>,
+    property_value_mode: property_value_rollout::PropertyValueStorageMode,
+    property_definition_mode: property_definition_rollout::PropertyDefinitionStorageMode,
+) -> anyhow::Result<App> {
     // sqlx::migrate!("./migrations")
     //     .run(db.pool().as_ref())
     //     .await?;

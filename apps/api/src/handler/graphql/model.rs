@@ -222,6 +222,7 @@ pub enum PropertyType {
     Location,
     Date,
     Image,
+    RichText,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -283,6 +284,7 @@ impl From<database_manager::domain::Property> for Property {
                 database_manager::domain::PropertyType::Location(_) => None,
                 database_manager::domain::PropertyType::Date => None,
                 database_manager::domain::PropertyType::Image => None,
+                database_manager::domain::PropertyType::RichText => None,
             }
         };
 
@@ -325,6 +327,9 @@ impl From<database_manager::domain::PropertyType> for PropertyType {
             }
             database_manager::domain::PropertyType::Date => Self::Date,
             database_manager::domain::PropertyType::Image => Self::Image,
+            database_manager::domain::PropertyType::RichText => {
+                Self::RichText
+            }
         }
     }
 }
@@ -413,6 +418,7 @@ pub enum PropertyDataValue {
     Location(LocationValue),
     Date(DateValue),
     Image(ImageValue),
+    RichText(RichTextValue),
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -433,6 +439,24 @@ pub struct HtmlValue {
 #[derive(SimpleObject, Debug, Clone)]
 pub struct MarkdownValue {
     pub markdown: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct RichTextValue {
+    /// The block document as JSON. Authoritative.
+    pub rich_text: String,
+    /// A rendering for consumers that cannot interpret the block document.
+    ///
+    /// Read-only and lossy -- an empty paragraph has no Markdown form.
+    /// Writing back this string would discard whatever it could not
+    /// represent, so clients that edit must round-trip `richText`.
+    pub markdown: String,
+    /// An HTML rendering, walked directly from the block tree.
+    ///
+    /// Read-only. Unlike `markdown` it keeps the empty paragraph
+    /// (`<p><br></p>`) and underline, which makes it the view to embed
+    /// in a CMS page.
+    pub html: String,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -577,6 +601,23 @@ impl From<database_manager::domain::PropertyDataValue>
             database_manager::domain::PropertyDataValue::Image(url) => {
                 PropertyDataValue::Image(ImageValue {
                     url: url.to_string(),
+                })
+            }
+            database_manager::domain::PropertyDataValue::RichText(
+                document,
+            ) => {
+                // The renderings are produced here so that every
+                // existing consumer keeps working without learning the
+                // block format.
+                PropertyDataValue::RichText(RichTextValue {
+                    markdown:
+                        database_manager::domain::rich_text::to_markdown(
+                            &document,
+                        ),
+                    html: database_manager::domain::rich_text::to_html(
+                        &document,
+                    ),
+                    rich_text: document.to_string(),
                 })
             }
         }

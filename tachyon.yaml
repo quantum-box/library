@@ -34,8 +34,24 @@ spec:
           if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
+      # Both environments migrate through the app's own Lambda, invoked on
+      # Tachyon's isolated candidate alias after the provider created it and
+      # before stable traffic is promoted. A FunctionError discards the
+      # candidate and leaves the currently serving Lambda untouched.
+      #
+      # This replaces the two out-of-band functions
+      # (lambda-library-api-migrate, lambda-library-api-preview-migrate).
+      # They carried migration SQL embedded at their own build time, so every
+      # schema change needed a manual redeploy that was easy to forget; the
+      # candidate always carries exactly the SQL it was built from. It also
+      # keeps PLT-3561 satisfied: the per-PR TiDB is PrivateLink-only, and the
+      # candidate already runs inside the enterprise-library network, unlike
+      # the deploy-hook runner.
       hooks:
         preDeploy:
+          # PLT-2993: kept as a base hook only. The production-specific copy is
+          # gone because production no longer overrides hooks, and an
+          # environment block would otherwise replace this one wholesale.
           - name: plt-2993-deploy-warning
             command:
               run: |-
@@ -44,25 +60,32 @@ spec:
                   'Tracking: PLT-2993.' \
                   'Action: DO NOT DEPLOY library-api until the Security Group mismatch is fixed.'
                 exit 0
+        postDeploy:
+          - name: migration-gate-before-activation
+            lambdaInvoke:
+              appName: library-api
+              payload:
+                version: "2.0"
+                routeKey: LIBRARY_MIGRATION_GATE
+                rawQueryString: ""
+                rawPath: /
+                headers:
+                  host: library-api-migration-gate.internal
+                requestContext:
+                  domainName: library-api-migration-gate.internal
+                  http:
+                    method: GET
+                    path: /
+            timeoutSeconds: 900
       environments:
-        production:
-          hooks:
-            preDeploy:
-              # Environment hooks replace base hooks; repeat the warning before migrate.
-              - name: plt-2993-deploy-warning
-                command:
-                  run: |-
-                    printf '%s\n' \
-                      'WARNING [PLT-2993]: library-api deploy currently fails because DB traffic is blocked by a Security Group mismatch.' \
-                      'Tracking: PLT-2993.' \
-                      'Action: DO NOT DEPLOY library-api until the Security Group mismatch is fixed.'
-                    exit 0
-              - name: migrate
-                lambdaInvoke:
-                  functionName: lambda-library-api-migrate
-                  payload:
-                    task: migrate
-                timeoutSeconds: 900
+        preview:
+          # ADR-0049 provisions one isolated database and scoped user per PR.
+          # Production keeps its existing databaseRef below. The migration
+          # gate above applies the combined history to this one.
+          provisionedDatabase:
+            provider: tidb
+            engine: mysql
+            envVar: DATABASE_URL
       envVars:
         - name: DATABASE_URL
           type: credential
@@ -82,6 +105,14 @@ spec:
           value: "https://api.n1.tachy.one"
         - name: LIBRARY_API_BASE_URL
           value: "https://library-api.txcloud.app"
+        - name: LIBRARY_TENANT_ID
+          value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
+        # Applied id of the library:org-creator custom policy
+        # (.tachyon/manifests/library-api-runtime.yml). Attached to
+        # users at sign-in so organization creation, which tachyon-api
+        # authorizes as the caller, can pass auth:CreateOperator.
+        - name: LIBRARY_ORG_CREATOR_POLICY_ID
+          value: "pol_01m0cdez8p62f0a8dz3tzsqzey"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
@@ -108,6 +139,18 @@ spec:
           value: "library-api"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
           value: "http/protobuf"
+        # Sentry OTLP direct ingest. Without these two, telemetry's
+        # OtlpExporterConfig::from_env falls back to
+        # http://localhost:4318/v1/traces with no auth header and every
+        # span is dropped -- the Lambda carries no OTel collector.
+        # Derived from the library-api Sentry DSN: host + project id here,
+        # the DSN public key in the header below.
+        - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+          value: "https://o1213182.ingest.us.sentry.io/api/4508051861602304/integration/otlp/v1/traces"
+        - name: OTEL_EXPORTER_OTLP_HEADERS
+          type: credential
+          valueFrom:
+            secret: library-api/OTEL_EXPORTER_OTLP_HEADERS
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "deployment.environment=production,service.namespace=library"
         - name: OTEL_TRACES_SAMPLER_ARG

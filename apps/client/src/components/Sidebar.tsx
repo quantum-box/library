@@ -69,12 +69,10 @@ import {
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext'
 import type { Status } from '../data/mock'
-import {
-  getDatabaseViewScopeId,
-  getDefaultDatabaseViewId,
-} from '../lib/databaseViews/databaseViews'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
+import { navigateToData } from '../lib/ui/dataLocation'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
+import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
@@ -266,11 +264,12 @@ export function Sidebar() {
       )
     : undefined
   const selectedDatabaseId = search.database ?? pathDatabase?.id
-  const currentDatabaseViewType: DatabaseViewType = search.view?.includes(':workflow')
-    ? 'workflow'
-    : search.view?.includes(':board')
-      ? 'board'
-      : 'table'
+  const currentDatabaseViewType: DatabaseViewType =
+    search.view === 'workflow' || search.view?.includes(':workflow')
+      ? 'workflow'
+      : search.view === 'board' || search.view?.includes(':board')
+        ? 'board'
+        : 'table'
   const currentSection = pathname.startsWith('/home')
     ? 'home'
     : pathname.startsWith('/organizations')
@@ -322,16 +321,8 @@ export function Sidebar() {
   }, [selectedOrganizationId])
 
   const handleDatabaseSelect = (databaseId: string | null) => {
-    const nextDatabaseId = databaseId ?? undefined
-    void navigate({
-      to: '/databases',
-      search: {
-        database: nextDatabaseId,
-        view: getDefaultDatabaseViewId(
-          getDatabaseViewScopeId(nextDatabaseId),
-          currentDatabaseViewType,
-        ),
-      },
+    void navigateToData(navigate, databaseId ?? undefined, {
+      view: currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType,
     })
   }
 
@@ -356,10 +347,7 @@ export function Sidebar() {
       void navigate({
         to: '/databases',
         search: {
-          view: getDefaultDatabaseViewId(
-            getDatabaseViewScopeId(undefined),
-            currentDatabaseViewType,
-          ),
+          view: currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType,
         },
       })
       return
@@ -426,10 +414,9 @@ export function Sidebar() {
 
     const url = new URL('/databases', window.location.origin)
     const normalizedId = databaseId ?? undefined
-    url.searchParams.set(
-      'view',
-      getDefaultDatabaseViewId(getDatabaseViewScopeId(normalizedId), currentDatabaseViewType),
-    )
+    if (currentDatabaseViewType !== 'table') {
+      url.searchParams.set('view', currentDatabaseViewType)
+    }
     if (normalizedId) url.searchParams.set('database', normalizedId)
     await navigator.clipboard.writeText(url.toString())
   }
@@ -466,20 +453,14 @@ export function Sidebar() {
 
     const item = link.id === 'data' ? (
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
-        <Link
+        <DataLink
           data-testid={`view-${link.id}${suffix}`}
           aria-label={link.label}
-          to="/databases"
-          search={{
-            database: selectedDatabaseId,
-            view: getDefaultDatabaseViewId(
-              getDatabaseViewScopeId(selectedDatabaseId),
-              currentDatabaseViewType,
-            ),
-          }}
+          databaseId={selectedDatabaseId}
+          view={currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType}
         >
           {linkContent}
-        </Link>
+        </DataLink>
       </SidebarItem>
     ) : (
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
@@ -576,11 +557,9 @@ export function Sidebar() {
             variant="ghost"
             size="sm"
             className={
-              pathname.startsWith('/databases') && !selectedDatabaseId
-                ? 'bg-selected text-foreground'
-                : undefined
+              pathname === '/repositories' ? 'bg-selected text-foreground' : undefined
             }
-            onClick={() => handleDatabaseSelect(null)}
+            onClick={() => void navigate({ to: '/repositories' })}
           >
             All repositories
           </Button>
@@ -738,14 +717,14 @@ export function Sidebar() {
           <Tooltip>
             <TooltipTrigger asChild>
               <SidebarItem
-                active={pathname.startsWith('/databases') && !selectedDatabaseId}
+                active={pathname === '/repositories'}
                 aria-label="All repositories"
                 className={denseSidebarItemClass}
-                onClick={() => handleDatabaseSelect(null)}
+                onClick={() => void navigate({ to: '/repositories' })}
               >
                 <FolderGit2 aria-hidden="true" />
                 <SidebarItemLabel>All repositories</SidebarItemLabel>
-                <Badge variant="neutral">{records.length}</Badge>
+                <Badge variant="neutral">{databases.length}</Badge>
               </SidebarItem>
             </TooltipTrigger>
             {!expanded && <TooltipContent side="right">All repositories</TooltipContent>}

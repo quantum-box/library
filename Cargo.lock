@@ -1189,6 +1189,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocknote"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "serde_json",
+]
+
+[[package]]
 name = "borsh"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1746,6 +1754,7 @@ dependencies = [
  "derive-new 0.7.0",
  "dotenvy",
  "errors",
+ "migration-preflight",
  "mockall 0.12.1",
  "persistence",
  "prost",
@@ -1773,6 +1782,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blocknote",
  "chrono",
  "derive-getters 0.5.0",
  "derive-new 0.7.0",
@@ -3472,7 +3482,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "library-api"
-version = "1.11.1"
+version = "1.11.2"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3502,6 +3512,7 @@ dependencies = [
  "inbound_sync_domain",
  "lambda_http",
  "lambda_runtime",
+ "library-api-preview-migrate",
  "mime",
  "mockall 0.13.1",
  "once_cell",
@@ -3512,7 +3523,6 @@ dependencies = [
  "pretty_assertions",
  "pulldown-cmark",
  "rand 0.8.5",
- "regex",
  "reqwest 0.12.28",
  "rstest",
  "schemars 0.8.22",
@@ -3544,6 +3554,17 @@ dependencies = [
  "validator",
  "value_object",
  "yrs",
+]
+
+[[package]]
+name = "library-api-preview-migrate"
+version = "0.1.0"
+dependencies = [
+ "migration-preflight",
+ "regex",
+ "sqlx",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -3698,6 +3719,14 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+
+[[package]]
+name = "migration-preflight"
+version = "0.1.0"
+dependencies = [
+ "errors",
+ "sqlx",
+]
 
 [[package]]
 name = "mime"

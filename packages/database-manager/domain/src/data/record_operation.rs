@@ -472,6 +472,9 @@ fn command_value(value: &PropertyValueCommand) -> serde_json::Value {
         PropertyValueCommand::Image(value) => {
             serde_json::json!({"kind": "image", "value": value})
         }
+        PropertyValueCommand::RichText(value) => {
+            serde_json::json!({"kind": "rich_text", "value": value})
+        }
     }
 }
 

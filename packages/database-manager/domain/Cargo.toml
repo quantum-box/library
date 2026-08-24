@@ -19,6 +19,7 @@ chrono = { workspace = true }
 sha2 = { workspace = true }
 
 scraper = "0.20.0"
+blocknote = { path = "../../blocknote" }
 
 anyhow = { workspace = true }
 

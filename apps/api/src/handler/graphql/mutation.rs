@@ -81,13 +81,17 @@ fn verify_oauth_state(
     Ok(state.to_string())
 }
 
-/// Get OAuth state secret from GitHub client or environment variable.
-fn get_oauth_state_secret(
-    github: &github_provider::GitHub,
+/// Get OAuth state secret from the IaC configuration or an environment
+/// variable.
+///
+/// Resolving the IaC value here rather than at startup is what keeps
+/// the tachyon-api round trip off the cold-start path; this is one of
+/// the few places that needs it.
+async fn get_oauth_state_secret(
+    oauth_bootstrap: &crate::oauth_bootstrap::OAuthBootstrap,
 ) -> errors::Result<String> {
-    // First try to get from GitHub client (IAC config)
-    if let Some(secret) = github.client_secret() {
-        return Ok(secret.to_string());
+    if let Some(secret) = oauth_bootstrap.github_client_secret().await {
+        return Ok(secret);
     }
 
     // Fall back to environment variables
@@ -123,7 +127,7 @@ impl LibraryMutation {
     }
 
     /// [AUTH] Verify the token and return the user
-    #[tracing::instrument(skip(self, ctx))]
+    #[tracing::instrument(skip(self, ctx, token))]
     async fn verify(
         &self,
         ctx: &async_graphql::Context<'_>,
@@ -140,7 +144,7 @@ impl LibraryMutation {
     }
 
     /// [AUTH] Sign in or sign up via platform access token (library)
-    #[tracing::instrument(skip(self, ctx))]
+    #[tracing::instrument(skip(self, ctx, access_token))]
     #[graphql(name = "signInWithPlatform")]
     async fn sign_in(
         &self,
@@ -249,7 +253,13 @@ impl LibraryMutation {
         let platform_tenant = crate::domain::LIBRARY_TENANT.clone();
         let policy_id = library_user_policy_id();
         let repo_owner_policy_id = library_repo_owner_policy_id();
-        let system_executor = tachyon_sdk::auth::Executor::SystemUser;
+        // Grant as the caller, who `ensure_tenant_seed_admin` has just
+        // confirmed owns or manages this tenant and therefore holds
+        // `AdministratorAccess` in it. A system executor would fall back
+        // to the service account, which belongs to the Library platform
+        // tenant and is rejected in any per-organization scope -- every
+        // grant below would have been warned away and the seed would
+        // have reported success while attaching nothing.
         let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
             Some(platform_tenant),
             Some(tenant_id.clone()),
@@ -259,7 +269,7 @@ impl LibraryMutation {
             if let Err(err) = AuthAppTrait::attach_user_policy(
                 library_app.auth_app.as_ref(),
                 &tachyon_sdk::auth::AttachUserPolicyInput {
-                    executor: &system_executor,
+                    executor,
                     multi_tenancy: &tenant_scope,
                     user_id: tenant_user.id(),
                     policy_id: &policy_id,
@@ -280,7 +290,7 @@ impl LibraryMutation {
                 if let Err(err) = AuthAppTrait::attach_user_policy(
                     library_app.auth_app.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
-                        executor: &system_executor,
+                        executor,
                         multi_tenancy: &tenant_scope,
                         user_id: tenant_user.id(),
                         policy_id: &repo_owner_policy_id,
@@ -1140,12 +1150,17 @@ impl LibraryMutation {
         state: String,
     ) -> Result<GitHubAuthUrl> {
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
+        let oauth_bootstrap =
+            ctx.data::<Arc<crate::oauth_bootstrap::OAuthBootstrap>>()?;
 
-        // Get secret from GitHub client (IAC) or environment
-        let secret = get_oauth_state_secret(github).map_err(|e| {
-            tracing::error!("Failed to get OAuth state secret: {:?}", e);
-            e.extend()
-        })?;
+        let secret =
+            get_oauth_state_secret(oauth_bootstrap).await.map_err(|e| {
+                tracing::error!(
+                    "Failed to get OAuth state secret: {:?}",
+                    e
+                );
+                e.extend()
+            })?;
 
         // Sign the state for CSRF protection
         let signed_state =
@@ -1159,6 +1174,7 @@ impl LibraryMutation {
                 &github_provider::DEFAULT_SCOPES,
                 &signed_state,
             )
+            .await
             .map_err(|e| {
                 tracing::error!(
                     "Failed to generate GitHub auth URL: {:?}",
@@ -1193,12 +1209,17 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
+        let oauth_bootstrap =
+            ctx.data::<Arc<crate::oauth_bootstrap::OAuthBootstrap>>()?;
 
-        // Get secret from GitHub client (IAC) or environment
-        let secret = get_oauth_state_secret(github).map_err(|e| {
-            tracing::error!("Failed to get OAuth state secret: {:?}", e);
-            e.extend()
-        })?;
+        let secret =
+            get_oauth_state_secret(oauth_bootstrap).await.map_err(|e| {
+                tracing::error!(
+                    "Failed to get OAuth state secret: {:?}",
+                    e
+                );
+                e.extend()
+            })?;
 
         // Verify OAuth state signature for CSRF protection
         let _original_state =
@@ -1551,6 +1572,7 @@ impl LibraryMutation {
                     PropertyType::Markdown => "MARKDOWN".to_string(),
                     PropertyType::Select => "SELECT".to_string(),
                     PropertyType::MultiSelect => "MULTI_SELECT".to_string(),
+                    PropertyType::RichText => "RICH_TEXT".to_string(),
                     _ => "STRING".to_string(),
                 },
                 select_options: m.select_options,
@@ -2077,6 +2099,13 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
                 property_type: PropertyType::Image,
                 ..
             } => Ok(db::PropertyType::Image),
+            // The catch-all below means a missing arm is not a compile
+            // error: addProperty would simply reject the type with a 400,
+            // leaving the settings picker entry dead on arrival.
+            PropertyInput {
+                property_type: PropertyType::RichText,
+                ..
+            } => Ok(db::PropertyType::RichText),
             _ => Err(errors::Error::invalid("invalid property type")),
         }
     }

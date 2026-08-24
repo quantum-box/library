@@ -10,7 +10,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::ttl_cache::TtlCache;
 use tachyon_sdk::apis::configuration::Configuration;
 use tachyon_sdk::auth::{
     self, AuthApp, Identifier, Operator, Policy, PolicyId, PublicApiKey,
@@ -21,13 +27,204 @@ use tachyon_sdk::auth::{
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
 
+/// Budgets for GET requests to tachyon-api.
+///
+/// Sized from what the slowest GET actually costs. `/v1/me` answers an
+/// authenticated request in 2.0-2.5s measured end to end, nearly all of
+/// it server-side: connect and TLS together account for under 0.35s,
+/// and the time to first byte is the rest. An unauthenticated probe
+/// returns in 0.25s, which is why a smaller budget looked sufficient
+/// until it was measured against a real token.
+///
+/// Anything at or below that 2.5s ceiling makes `/v1/me` time out on
+/// every request, and `verify_token` then falls back to legacy verify,
+/// which reports no tenant memberships — so every caller silently
+/// becomes a member of nothing.
+///
+/// The per-attempt timeout therefore stays at 5s, well clear of that
+/// ceiling. What came down is how many times a failing call repeats:
+/// three attempts against a 12s budget turned an upstream that was
+/// merely unwell into 12-second requests, and production traces showed
+/// exactly that — a warm invocation spending 5.1s failing `/v1/me`
+/// three times before it even began the fallback. Two attempts inside
+/// a 7s budget still ride out a single hiccup without making the
+/// caller wait out a sustained one.
 const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
-    max_attempts: 3,
-    per_attempt_timeout: Duration::from_millis(500),
-    total_budget: Duration::from_millis(1_500),
+    max_attempts: 2,
+    per_attempt_timeout: Duration::from_millis(5_000),
+    total_budget: Duration::from_millis(7_000),
     base_delay: Duration::from_millis(50),
     max_jitter: Duration::from_millis(25),
 };
+
+/// How long a client is kept for a given set of headers.
+const CLIENT_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// How many distinct header sets keep a client of their own.
+const CLIENT_CACHE_CAPACITY: usize = 64;
+
+/// How long an idle connection stays available for reuse.
+///
+/// Lambda freezes the execution environment between invocations, and a
+/// connection left idle across a freeze is often dead by the time it
+/// thaws. A short idle window keeps the reuse that matters — several
+/// upstream calls within one request, and requests arriving back to
+/// back — without offering up a connection the peer already dropped.
+const CLIENT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// User agent of the generated SDK, which builds it from the OpenAPI
+/// document version. Repeated here because these configurations are
+/// assembled field by field rather than from [`Configuration::default`],
+/// whose only other act is to build a `reqwest::Client` that is then
+/// thrown away.
+const SDK_USER_AGENT: &str = "OpenAPI-Generator/0.51.0/rust";
+
+/// How long a verified token is trusted without re-asking tachyon.
+const DEFAULT_VERIFY_CACHE_TTL_SECS: u64 = 60;
+
+/// How many verified tokens are held at once.
+const DEFAULT_VERIFY_CACHE_CAPACITY: usize = 1_024;
+
+/// Clock skew allowed when a token's own expiry bounds its entry.
+const VERIFY_CACHE_EXPIRY_SKEW: Duration = Duration::from_secs(5);
+
+/// Clients to tachyon-api, one per distinct header set.
+///
+/// A `reqwest::Client` owns its connection pool, so one built per call
+/// reconnects and repeats the TLS handshake every time, and rebuilds
+/// the rustls root store along with it. Keeping a client per header set
+/// lets the callers that repeat — the service credential, and each
+/// token in active use — hold their connections open instead.
+static HTTP_CLIENTS: Lazy<TtlCache<[u8; 32], reqwest::Client>> =
+    Lazy::new(|| TtlCache::new(CLIENT_CACHE_TTL, CLIENT_CACHE_CAPACITY));
+
+/// Users resolved from a bearer token by `/v1/me`.
+///
+/// Every authenticated request verifies its bearer, and that call is
+/// the slowest thing on the request path. Holding the result briefly
+/// takes it off all but the first request of each window.
+///
+/// A cached entry also carries the caller's tenant memberships through
+/// a short upstream outage, where the legacy fallback would report none
+/// and hide every repository the caller can actually see.
+static VERIFIED_USERS: Lazy<TtlCache<[u8; 32], User>> = Lazy::new(|| {
+    TtlCache::new(verify_cache_ttl(), verify_cache_capacity())
+});
+
+/// How long a verified token stays cached.
+///
+/// `AUTH_VERIFY_CACHE_TTL_SECS` overrides it, and `0` disables the
+/// cache outright — the switch to reach for when a token revoked
+/// upstream has to stop working immediately rather than at the end of
+/// its window.
+fn verify_cache_ttl() -> Duration {
+    let secs = std::env::var("AUTH_VERIFY_CACHE_TTL_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_VERIFY_CACHE_TTL_SECS);
+    Duration::from_secs(secs)
+}
+
+/// How many verified tokens are held, from
+/// `AUTH_VERIFY_CACHE_MAX_ENTRIES`.
+fn verify_cache_capacity() -> usize {
+    std::env::var("AUTH_VERIFY_CACHE_MAX_ENTRIES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_VERIFY_CACHE_CAPACITY)
+}
+
+/// A client carrying `headers`, reused when one already exists for
+/// exactly those headers.
+fn shared_client(headers: reqwest::header::HeaderMap) -> reqwest::Client {
+    let key = header_fingerprint(&headers);
+    if let Some(client) = HTTP_CLIENTS.get(&key) {
+        return client;
+    }
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .pool_idle_timeout(CLIENT_POOL_IDLE_TIMEOUT)
+        .build()
+        .unwrap_or_default();
+    HTTP_CLIENTS.insert(key, client.clone());
+    client
+}
+
+/// A fingerprint of a header set.
+///
+/// `HeaderMap` defines no iteration order, so the pairs are sorted
+/// before hashing — otherwise one header set could fingerprint two ways
+/// and defeat the reuse this exists for. The digest is a cryptographic
+/// one because a collision here would hand a request someone else's
+/// `Authorization` header.
+fn header_fingerprint(headers: &reqwest::header::HeaderMap) -> [u8; 32] {
+    let mut sorted: BTreeMap<&str, Vec<&[u8]>> = BTreeMap::new();
+    for (name, value) in headers.iter() {
+        sorted
+            .entry(name.as_str())
+            .or_default()
+            .push(value.as_bytes());
+    }
+
+    let mut hasher = Sha256::new();
+    for (name, values) in sorted {
+        hasher.update(name.as_bytes());
+        hasher.update([0]);
+        for value in values {
+            hasher.update(value);
+            hasher.update([0]);
+        }
+        hasher.update([1]);
+    }
+    hasher.finalize().into()
+}
+
+/// A fingerprint of a bearer token, so the cache is keyed by the
+/// credential without holding it.
+fn token_fingerprint(token: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hasher.finalize().into()
+}
+
+/// How long a verification of `token` may be reused.
+///
+/// A cached user must never outlive the credential it was read from, so
+/// a JWT's own `exp` caps the entry. A token that carries no readable
+/// expiry — an opaque credential, or one this cannot parse — falls back
+/// to the configured TTL, which bounds every entry anyway.
+fn token_cache_ttl(token: &str) -> Duration {
+    let Some(expires_at) = jwt_expiry_secs(token) else {
+        return verify_cache_ttl();
+    };
+
+    let now = chrono::Utc::now().timestamp();
+    let remaining = expires_at.saturating_sub(now);
+    if remaining <= 0 {
+        return Duration::ZERO;
+    }
+
+    Duration::from_secs(remaining.unsigned_abs())
+        .saturating_sub(VERIFY_CACHE_EXPIRY_SKEW)
+}
+
+/// The `exp` claim of a JWT, in seconds since the epoch.
+///
+/// The signature is not checked: tachyon-api is what decides whether a
+/// token is valid, and this only reads how long its own answer may be
+/// reused. A forged `exp` can shorten that window, never extend it past
+/// the configured TTL.
+fn jwt_expiry_secs(token: &str) -> Option<i64> {
+    let mut parts = token.split('.');
+    let (_header, payload) = (parts.next()?, parts.next()?);
+    parts.next()?;
+
+    let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: serde_json::Value =
+        serde_json::from_slice(&decoded).ok()?;
+    claims.get("exp")?.as_i64()
+}
 
 #[derive(Clone, Copy)]
 struct SdkGetRetryPolicy {
@@ -212,6 +409,73 @@ pub struct SdkAuthApp {
     auth_token: String,
 }
 
+tokio::task_local! {
+    /// Bearer token of the request currently being handled.
+    ///
+    /// tachyon-api authenticates every operator lookup, but the
+    /// organization-resolution path runs deep inside use cases that
+    /// have no request context of their own. Carrying the credential
+    /// in task-local storage lets those calls authenticate as the
+    /// requester without threading a parameter through every use case.
+    ///
+    /// Set by [`caller_token_scope`] at the HTTP boundary.
+    static REQUEST_CALLER_TOKEN: Option<String>;
+}
+
+/// Run `future` with `token` recorded as the request's caller credential.
+pub async fn caller_token_scope<F>(
+    token: Option<String>,
+    future: F,
+) -> F::Output
+where
+    F: std::future::Future,
+{
+    REQUEST_CALLER_TOKEN.scope(token, future).await
+}
+
+/// Extract the bearer credential from an `Authorization` header.
+///
+/// The scheme is matched case-insensitively, as required by RFC 9110 and
+/// as the `Authorization<Bearer>` extractor already does. Matching it
+/// exactly here would drop the credential for a request the extractor
+/// authenticates, silently downgrading the lookup to the process-level
+/// token.
+fn bearer_token_from_headers(
+    headers: &axum::http::HeaderMap,
+) -> Option<String> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = value.split_once(char::is_whitespace)?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+/// Record the request's `Authorization` bearer credential for the
+/// duration of the request so downstream SDK calls can authenticate as
+/// the caller.
+pub async fn caller_token_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let token = bearer_token_from_headers(request.headers());
+
+    caller_token_scope(token, next.run(request)).await
+}
+
+/// The caller credential of the request currently being handled, if any.
+fn request_caller_token() -> Option<String> {
+    REQUEST_CALLER_TOKEN
+        .try_with(|token| token.clone())
+        .ok()
+        .flatten()
+}
+
 impl Debug for SdkAuthApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SdkAuthApp")
@@ -247,6 +511,24 @@ impl SdkAuthApp {
 
     // ---- SDK Configuration builders ----
 
+    /// Build an SDK Configuration that sends `headers` on every
+    /// request, over a client shared with anything else sending
+    /// exactly those headers.
+    fn configuration(
+        &self,
+        headers: reqwest::header::HeaderMap,
+    ) -> Configuration {
+        Configuration {
+            base_path: self.base_url.clone(),
+            user_agent: Some(SDK_USER_AGENT.to_string()),
+            client: shared_client(headers),
+            basic_auth: None,
+            oauth_access_token: None,
+            bearer_access_token: None,
+            api_key: None,
+        }
+    }
+
     /// Build an SDK Configuration for public endpoints that
     /// do not require authentication (e.g. verify, oauth-config).
     fn sdk_config_public(&self) -> Configuration {
@@ -256,16 +538,7 @@ impl SdkAuthApp {
             self.default_operator_id.parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration for public endpoints
@@ -278,16 +551,31 @@ impl SdkAuthApp {
         headers
             .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
+        self.configuration(headers)
+    }
 
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
+    /// Build an SDK Configuration authenticated as the current
+    /// request's caller when one is known, falling back to the
+    /// process-level credential otherwise.
+    fn sdk_config_as_caller(&self) -> Configuration {
+        match request_caller_token() {
+            Some(token) => self.sdk_config_with_token(&token),
+            None => self.sdk_config(),
         }
+    }
+
+    /// Build an SDK Configuration using an explicit bearer token.
+    fn sdk_config_with_token(&self, token: &str) -> Configuration {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(value) = format!("Bearer {token}").parse() {
+            headers.insert("Authorization", value);
+        }
+        headers.insert(
+            "x-operator-id",
+            self.default_operator_id.parse().unwrap(),
+        );
+
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration with the default operator
@@ -304,29 +592,40 @@ impl SdkAuthApp {
             self.default_operator_id.parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration with auth headers derived
     /// from executor and multi-tenancy context.
+    ///
+    /// The bearer follows the executor. A user executor means the call
+    /// is a decision about what *that user* may do, so it carries the
+    /// caller's own credential and tachyon-api evaluates the user's
+    /// policies. A system executor means internal provisioning, which
+    /// keeps the process-level credential.
+    ///
+    /// The `x-user-id` header below cannot stand in for the caller:
+    /// tachyon-api only honours it in debug builds running with
+    /// `ENVIRONMENT=development|test`, so in production every context
+    /// call used to resolve to this service account no matter which
+    /// user was acting.
     fn sdk_config_with_context(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
+        // `get_user_id` is not the test here: it succeeds for a system
+        // executor too, whose id is the literal "system".
+        let bearer = if executor.is_user() {
+            request_caller_token()
+                .unwrap_or_else(|| self.auth_token.clone())
+        } else {
+            self.auth_token.clone()
+        };
         headers.insert(
             "Authorization",
-            format!("Bearer {}", self.auth_token).parse().unwrap(),
+            format!("Bearer {bearer}").parse().unwrap(),
         );
 
         let resolved_op = multi_tenancy.get_operator_id().ok();
@@ -353,16 +652,7 @@ impl SdkAuthApp {
             }
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     /// Build an SDK Configuration for a specific tenant.
@@ -378,16 +668,7 @@ impl SdkAuthApp {
             tenant_id.to_string().parse().unwrap(),
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_default();
-
-        Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        }
+        self.configuration(headers)
     }
 
     // ---- Raw REST helpers ----
@@ -752,17 +1033,16 @@ impl SdkAuthApp {
 
     /// Get an operator by alias within a platform.
     ///
-    /// Uses the public SDK configuration (no Authorization
-    /// header) because tachyon-api's handler ignores the
-    /// caller's executor and always uses SystemUser
-    /// internally. This allows anonymous library visitors to
-    /// resolve organizations without a valid token.
+    /// tachyon-api requires authentication on this endpoint, so the
+    /// request's caller credential is forwarded when one is available
+    /// (see [`caller_token_scope`]). Anonymous requests fall back to
+    /// the process-level credential.
     pub async fn get_operator_by_alias(
         &self,
         platform_id: &TenantId,
         alias: &str,
     ) -> errors::Result<OperatorResp> {
-        let config = self.sdk_config_public();
+        let config = self.sdk_config_as_caller();
         let resp: SdkOperatorResp = Self::rest_get_query_typed(
             &config,
             "/v1/auth/operators/by-alias",
@@ -797,7 +1077,10 @@ impl SdkAuthApp {
         match self.bootstrap_token(token).await {
             Ok(user) => return Ok(user),
             Err(err) => {
-                tracing::debug!(
+                // Warn, not debug: this fallback drops the tenant list
+                // tachyon only reports through `/v1/me`, so a request
+                // served this way is authenticated but less informed.
+                tracing::warn!(
                     error = %err,
                     "bootstrap token verification failed; falling back to legacy verify"
                 );
@@ -813,7 +1096,58 @@ impl SdkAuthApp {
             .await
             .map_err(sdk_api_err)?;
 
-        user_from_sdk_model(&resp.user)
+        let mut user = user_from_sdk_model(&resp.user)?;
+
+        // Legacy verify reports no memberships, and the executor built
+        // from this user answers `has_tenant_id` straight from them. An
+        // empty list therefore reads as "belongs to nothing" and hides
+        // every repository and dataset the caller can actually see, so
+        // a tachyon outage would look like a permission change. Resolve
+        // the memberships separately instead.
+        if user.tenants.is_empty() {
+            user.tenants = self.memberships_for(&user).await;
+        }
+
+        Ok(user)
+    }
+
+    /// Tenant memberships for `user`, or an empty list when they cannot
+    /// be resolved. Only used to repair a legacy-verify result, which
+    /// carries none of its own.
+    async fn memberships_for(&self, user: &User) -> Vec<TenantId> {
+        let operator_id = match TenantId::new(&self.default_operator_id) {
+            Ok(operator_id) => operator_id,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "cannot resolve tenant memberships: \
+                     the default operator id is not a tenant id"
+                );
+                return Vec::new();
+            }
+        };
+
+        match self
+            .get_user_by_id_full(&operator_id, user.id.as_ref())
+            .await
+        {
+            Ok(Some(full)) => full.tenants,
+            Ok(None) => {
+                tracing::warn!(
+                    user_id = %user.id,
+                    "cannot resolve tenant memberships: unknown user"
+                );
+                Vec::new()
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    user_id = %user.id,
+                    "cannot resolve tenant memberships"
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Verify a bearer token with Tachyon's bootstrap endpoint.
@@ -825,6 +1159,15 @@ impl SdkAuthApp {
         &self,
         token: &str,
     ) -> errors::Result<User> {
+        // Verifying the same bearer again within the cache window
+        // costs a round trip to the slowest endpoint on the request
+        // path, and a GraphQL query resolving several fields used to
+        // pay it once per field.
+        let cache_key = token_fingerprint(token);
+        if let Some(user) = VERIFIED_USERS.get(&cache_key) {
+            return Ok(user);
+        }
+
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             "Authorization",
@@ -833,20 +1176,32 @@ impl SdkAuthApp {
                 .map_err(sdk_internal_err)?,
         );
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .map_err(sdk_internal_err)?;
-        let config = Configuration {
-            base_path: self.base_url.clone(),
-            client,
-            ..Default::default()
-        };
+        let config = self.configuration(headers);
 
-        let resp: BootstrapResponse =
-            Self::rest_get(&config, "/v1/me").await?;
+        // Observed like every other upstream call: this one decides
+        // whether a request is served with the caller's tenant list or
+        // without it, and its failures are otherwise indistinguishable
+        // — a refused connection and a 503 both surface as
+        // `ServiceUnavailable`.
+        let resp: BootstrapResponse = Self::rest_get_typed(
+            &config, "/v1/me",
+        )
+        .await
+        .map_err(|error| {
+            observe_sdk_request_failure("bootstrap_token", error, None);
+            error.into_public_error()
+        })?;
 
-        user_from_bootstrap_response(&resp)
+        let user = user_from_bootstrap_response(&resp)?;
+        // Only a verification that succeeded is reused. Caching a
+        // failure would hold an upstream hiccup against the caller for
+        // the rest of the window.
+        VERIFIED_USERS.insert_until(
+            cache_key,
+            user.clone(),
+            token_cache_ttl(token),
+        );
+        Ok(user)
     }
 
     /// Call `/v1/me` using the current `auth_token` and return
@@ -1374,6 +1729,20 @@ fn user_from_sdk_model(
         .parse()
         .unwrap_or(tachyon_sdk::auth::DefaultRole::General);
 
+    // `models::User` carries memberships when tachyon reports them.
+    // Keep whatever arrives; the caller repairs an empty list.
+    let tenants: Vec<TenantId> = user
+        .tenants
+        .as_ref()
+        .map(|tenants| {
+            tenants
+                .iter()
+                .map(|tenant| TenantId::new(tenant))
+                .collect::<errors::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+
     Ok(User {
         id,
         username,
@@ -1382,7 +1751,7 @@ fn user_from_sdk_model(
         email_verified: None,
         image: None,
         role,
-        tenants: vec![],
+        tenants,
         metadata: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
@@ -1623,9 +1992,20 @@ impl AuthApp for SdkAuthApp {
 
     async fn delete_operator<'a>(
         &self,
-        _input: &auth::DeleteOperatorInput<'a>,
+        input: &auth::DeleteOperatorInput<'a>,
     ) -> errors::Result<()> {
-        Err(sdk_internal_err("delete_operator not supported via SDK"))
+        // `DELETE /v1/auth/operators/{id}` authorizes the acting scope
+        // (`x-operator-id`), which must be the target operator itself or
+        // its parent platform. Scope the request to the target so a
+        // caller who owns the operator is authorized regardless of the
+        // tenant context the surrounding call ran under.
+        let scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(input.platform_id.clone()),
+            Some(input.operator_id.clone()),
+        );
+        let config = self.sdk_config_with_context(input.executor, &scope);
+        let path = format!("/v1/auth/operators/{}", input.operator_id);
+        Self::rest_delete(&config, &path).await
     }
 
     async fn get_operator_by_identifier<'a>(
@@ -1671,6 +2051,18 @@ impl AuthApp for SdkAuthApp {
 
         let resp: RestCreateOperatorResp =
             Self::rest_post(&config, "/v1/auth/operators", &body).await?;
+
+        // Tachyon decides the owner; the request only asks. Whether the
+        // assignment matches the request is what decides if the creator
+        // can grant policies inside the tenant they just made, and the
+        // answer was being dropped here along with the rest of the
+        // response.
+        tracing::info!(
+            operator_id = %resp.operator.id,
+            requested_owner = %input.new_operator_owner_id,
+            assigned_owner = %resp.owner_id,
+            "created operator"
+        );
 
         operator_from_rest(&resp.operator)
     }
@@ -1878,12 +2270,25 @@ impl AuthApp for SdkAuthApp {
             "tenantId": input.tenant_id.to_string(),
         });
 
-        let _: serde_json::Value = Self::rest_post(
+        // Observed like `check_policy`: a refused grant is the failure
+        // that decides whether a new organization is usable, and the
+        // public error alone ("Upstream authorization rejected") says
+        // neither which status came back nor which upstream request to
+        // correlate against.
+        let _: serde_json::Value = Self::rest_post_observed(
             &config,
             "/v1/auth/user-policies/attach",
             &body,
         )
-        .await?;
+        .await
+        .map_err(|failure| {
+            observe_sdk_request_failure(
+                "attach_user_policy",
+                failure.error,
+                failure.correlation_id.as_deref(),
+            );
+            failure.error.into_public_error()
+        })?;
 
         Ok(())
     }
@@ -2552,6 +2957,67 @@ mod tests {
         result
     }
 
+    /// `delete_operator` must scope the request to the operator being
+    /// deleted, not the caller's ambient tenant: the endpoint authorizes
+    /// the acting scope, and only the target itself (owner path) or its
+    /// parent platform may delete.
+    #[tokio::test]
+    async fn delete_operator_scopes_the_request_to_the_target() {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = r#"{"success":true}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0_u8; 4096];
+            let n = socket.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..n]);
+            assert!(
+                request.contains(
+                    "DELETE /v1/auth/operators/tn_01j702qf86pc2j35s0kv0gv3gz "
+                ),
+                "request was:\n{request}"
+            );
+            assert!(
+                request.contains(
+                    "x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gz"
+                ),
+                "request was:\n{request}"
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let default_tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let operator: TenantId =
+            "tn_01j702qf86pc2j35s0kv0gv3gz".parse().unwrap();
+        let platform: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &default_tenant,
+            "caller-token",
+        );
+        let executor = tachyon_sdk::auth::Executor::SystemUser;
+        // Ambient context deliberately points at a different tenant to
+        // prove the implementation scopes to the input, not the context.
+        let ambient = tachyon_sdk::auth::MultiTenancy::new(
+            None,
+            Some(default_tenant.clone()),
+        );
+        sdk.delete_operator(&tachyon_sdk::auth::DeleteOperatorInput {
+            executor: &executor,
+            multi_tenancy: &ambient,
+            platform_id: &platform,
+            operator_id: &operator,
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
+    }
+
     #[test]
     fn sdk_request_error_mapping_separates_auth_and_dependency_failures() {
         let cases = [
@@ -3073,5 +3539,507 @@ mod tests {
         server.await?;
 
         Ok(())
+    }
+
+    /// Serves a `/v1/me` that counts what reaches it, and returns the
+    /// number of requests each of `tokens` produced.
+    async fn bootstrap_upstream_hits(tokens: &[&str]) -> usize {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/me",
+            axum::routing::get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    axum::Json(serde_json::json!({
+                        "user": { "id": "us_01testcaller" },
+                        "tenants": [{ "id": "tn_01memberofthis" }],
+                    }))
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        for token in tokens {
+            let user = sdk.bootstrap_token(token).await.unwrap();
+            assert_eq!(user.id.to_string(), "us_01testcaller");
+            assert_eq!(
+                user.tenants
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                vec!["tn_01memberofthis".to_string()],
+            );
+        }
+
+        hits.load(Ordering::SeqCst)
+    }
+
+    /// Verifying a bearer is the slowest call on the request path, and
+    /// a single GraphQL query used to repeat it once per resolver.
+    #[tokio::test]
+    async fn a_token_is_verified_once_within_the_cache_window() {
+        let hits = bootstrap_upstream_hits(&[
+            "cache-window-token",
+            "cache-window-token",
+            "cache-window-token",
+        ])
+        .await;
+
+        assert_eq!(hits, 1, "the repeat calls came from the cache");
+    }
+
+    /// The cache is keyed by credential, so one caller's verification
+    /// can never answer for another's.
+    #[tokio::test]
+    async fn each_token_is_verified_on_its_own() {
+        let hits = bootstrap_upstream_hits(&[
+            "distinct-token-a",
+            "distinct-token-b",
+        ])
+        .await;
+
+        assert_eq!(hits, 2);
+    }
+
+    /// A JWT that expires sooner than the cache window bounds its own
+    /// entry: a cached user must never outlive the credential it was
+    /// read from.
+    #[test]
+    fn a_token_expiry_shortens_its_cache_entry() {
+        let expires_at = chrono::Utc::now().timestamp() + 10;
+        let token = jwt_expiring_at(expires_at);
+
+        let ttl = token_cache_ttl(&token);
+
+        assert!(
+            ttl <= Duration::from_secs(10),
+            "an entry must not outlive the token: {ttl:?}"
+        );
+        assert!(!ttl.is_zero(), "a live token is still cacheable");
+    }
+
+    /// An already-expired token is not worth caching at all.
+    #[test]
+    fn an_expired_token_is_not_cached() {
+        let expires_at = chrono::Utc::now().timestamp() - 1;
+
+        assert_eq!(
+            token_cache_ttl(&jwt_expiring_at(expires_at)),
+            Duration::ZERO
+        );
+    }
+
+    /// An opaque credential carries no expiry to read, and falls back
+    /// to the window every entry is bounded by anyway.
+    #[test]
+    fn a_token_without_a_readable_expiry_uses_the_configured_window() {
+        assert_eq!(token_cache_ttl("not-a-jwt"), verify_cache_ttl());
+    }
+
+    fn jwt_expiring_at(expires_at: i64) -> String {
+        let claims = serde_json::json!({ "exp": expires_at }).to_string();
+        format!(
+            "{}.{}.{}",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(claims),
+            URL_SAFE_NO_PAD.encode("signature"),
+        )
+    }
+
+    fn headers_from(pairs: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                reqwest::header::HeaderName::from_bytes(name.as_bytes())
+                    .unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    /// `HeaderMap` defines no iteration order, so a fingerprint that
+    /// depended on it would hand the same caller a fresh connection
+    /// pool at random.
+    #[test]
+    fn the_same_headers_fingerprint_the_same_either_way_round() {
+        let one = headers_from(&[
+            ("authorization", "Bearer token"),
+            ("x-operator-id", "tn_01operator"),
+        ]);
+        let other = headers_from(&[
+            ("x-operator-id", "tn_01operator"),
+            ("authorization", "Bearer token"),
+        ]);
+
+        assert_eq!(header_fingerprint(&one), header_fingerprint(&other));
+    }
+
+    /// A collision here would send a request with someone else's
+    /// credential.
+    #[test]
+    fn a_different_credential_fingerprints_differently() {
+        let one = headers_from(&[("authorization", "Bearer one")]);
+        let other = headers_from(&[("authorization", "Bearer other")]);
+
+        assert_ne!(header_fingerprint(&one), header_fingerprint(&other));
+    }
+
+    /// The point of the fingerprint: a second call with the same
+    /// headers reuses the client, and with it the open connection.
+    #[test]
+    fn a_client_is_reused_for_the_same_headers() {
+        let headers =
+            headers_from(&[("x-operator-id", "tn_01reusedclient")]);
+        let key = header_fingerprint(&headers);
+
+        let _ = shared_client(headers.clone());
+
+        assert!(
+            HTTP_CLIENTS.get(&key).is_some(),
+            "the built client is kept for the next caller"
+        );
+    }
+}
+
+#[cfg(test)]
+mod caller_token_scope_tests {
+    use super::*;
+    use tachyon_sdk::auth::test_helper::TEST_TENANT_ID;
+
+    #[tokio::test]
+    async fn forwards_the_request_caller_token() {
+        let observed =
+            caller_token_scope(Some("caller-jwt".to_string()), async {
+                request_caller_token()
+            })
+            .await;
+
+        assert_eq!(observed.as_deref(), Some("caller-jwt"));
+    }
+
+    #[tokio::test]
+    async fn reports_no_token_for_anonymous_requests() {
+        let observed =
+            caller_token_scope(None, async { request_caller_token() })
+                .await;
+
+        assert_eq!(observed, None);
+    }
+
+    #[tokio::test]
+    async fn reports_no_token_outside_a_request() {
+        assert_eq!(request_caller_token(), None);
+    }
+
+    fn headers_with_authorization(value: &str) -> axum::http::HeaderMap {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            value.parse().unwrap(),
+        );
+        headers
+    }
+
+    #[test]
+    fn accepts_the_bearer_scheme_in_any_case() {
+        for scheme in ["Bearer", "bearer", "BEARER", "BeArEr"] {
+            let headers = headers_with_authorization(&format!(
+                "{scheme} token-value"
+            ));
+
+            assert_eq!(
+                bearer_token_from_headers(&headers).as_deref(),
+                Some("token-value"),
+                "scheme {scheme} must be accepted",
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_non_bearer_and_empty_credentials() {
+        for value in ["Basic dXNlcjpwYXNz", "Bearer", "Bearer   ", "token"]
+        {
+            let headers = headers_with_authorization(value);
+
+            assert_eq!(
+                bearer_token_from_headers(&headers),
+                None,
+                "value {value:?} must not yield a token",
+            );
+        }
+    }
+
+    #[test]
+    fn reports_no_token_without_an_authorization_header() {
+        assert_eq!(
+            bearer_token_from_headers(&axum::http::HeaderMap::new()),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn operator_lookup_sends_the_caller_token() {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/auth/operators/by-alias",
+            axum::routing::get(move |headers: axum::http::HeaderMap| {
+                let captured = captured.clone();
+                async move {
+                    let auth = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    captured.lock().unwrap().push(auth);
+                    axum::http::StatusCode::NOT_FOUND
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        let _ = caller_token_scope(Some("caller-jwt".to_string()), async {
+            sdk.get_operator_by_alias(&tenant_id, "some-org").await
+        })
+        .await;
+
+        let seen = requests.lock().unwrap().clone();
+        assert_eq!(seen, vec![Some("Bearer caller-jwt".to_string())]);
+    }
+
+    /// Runs one `check_policy` call against a stub tachyon-api and
+    /// returns the Authorization header it received.
+    async fn authorization_for_check_policy(
+        executor: &dyn auth::ExecutorAction,
+    ) -> Option<String> {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/auth/policies/check",
+            axum::routing::post(move |headers: axum::http::HeaderMap| {
+                let captured = captured.clone();
+                async move {
+                    let auth = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    captured.lock().unwrap().push(auth);
+                    axum::Json(serde_json::json!({ "results": [] }))
+                }
+            }),
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+        let multi_tenancy = auth::MultiTenancy::new(
+            Some(tenant_id.clone()),
+            Some(tenant_id.clone()),
+        );
+
+        let _ = caller_token_scope(Some("caller-jwt".to_string()), async {
+            AuthApp::check_policy(
+                &sdk,
+                &auth::CheckPolicyInput {
+                    executor,
+                    multi_tenancy: &multi_tenancy,
+                    action: "library:CreateOrganization",
+                },
+            )
+            .await
+        })
+        .await;
+
+        let seen = requests.lock().unwrap().clone();
+        seen.into_iter().next().flatten()
+    }
+
+    #[derive(Debug)]
+    struct UserExecutor;
+
+    impl auth::ExecutorAction for UserExecutor {
+        fn get_id(&self) -> &str {
+            "us_01testcaller"
+        }
+        fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+            true
+        }
+        fn is_system_user(&self) -> bool {
+            false
+        }
+        fn is_user(&self) -> bool {
+            true
+        }
+        fn is_service_account(&self) -> bool {
+            false
+        }
+        fn is_none(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_a_user_send_the_caller_token() {
+        // Otherwise tachyon-api resolves the executor from this
+        // service account's key and evaluates its policies instead of
+        // the signed-in user's. `x-user-id` cannot substitute: it is
+        // honoured only in debug builds.
+        assert_eq!(
+            authorization_for_check_policy(&UserExecutor).await,
+            Some("Bearer caller-jwt".to_string()),
+        );
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_the_system_keep_the_process_credential() {
+        // Provisioning done on nobody's behalf — sign-in policy
+        // seeding, for one — has no caller to borrow.
+        assert_eq!(
+            authorization_for_check_policy(&auth::Executor::SystemUser)
+                .await,
+            Some("Bearer process-level-token".to_string()),
+        );
+    }
+
+    /// Serves a tachyon whose `/v1/me` is down, so `verify_token` has to
+    /// fall back to legacy verify. `verify_tenants` is what that
+    /// fallback reports, and `user_tenants` is what a follow-up user
+    /// lookup would report.
+    async fn verify_token_falling_back(
+        verify_tenants: Option<&[&str]>,
+        user_tenants: &[&str],
+    ) -> User {
+        let verify_body = match verify_tenants {
+            Some(tenants) => serde_json::json!({
+                "user": {
+                    "id": "us_01testcaller",
+                    "role": "general",
+                    "tenants": tenants,
+                }
+            }),
+            None => serde_json::json!({
+                "user": { "id": "us_01testcaller", "role": "general" }
+            }),
+        };
+        let user_body = serde_json::json!({
+            "id": "us_01testcaller",
+            "role": "general",
+            "tenants": user_tenants,
+        });
+
+        let app = axum::Router::new()
+            .route(
+                "/v1/me",
+                axum::routing::get(|| async {
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                }),
+            )
+            .route(
+                "/auth/v1beta/verify",
+                axum::routing::post(move || {
+                    let body = verify_body.clone();
+                    async move { axum::Json(body) }
+                }),
+            )
+            .route(
+                "/v1/auth/users/:id",
+                axum::routing::get(move || {
+                    let body = user_body.clone();
+                    async move { axum::Json(body) }
+                }),
+            );
+
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+
+        sdk.verify_token("caller-jwt").await.unwrap()
+    }
+
+    /// The executor built from this user answers `has_tenant_id` from
+    /// its tenant list, so dropping the list during a `/v1/me` outage
+    /// would read as "member of nothing" and hide everything the caller
+    /// can see.
+    #[tokio::test]
+    async fn the_legacy_fallback_resolves_the_missing_memberships() {
+        let user =
+            verify_token_falling_back(None, &["tn_01memberofthis"]).await;
+
+        assert_eq!(
+            user.tenants
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["tn_01memberofthis".to_string()],
+        );
+    }
+
+    /// When legacy verify does report memberships, they are the answer:
+    /// no second lookup gets to overwrite them.
+    #[tokio::test]
+    async fn the_legacy_fallback_keeps_the_memberships_it_is_given() {
+        let user = verify_token_falling_back(
+            Some(&["tn_01reportedbyverify"]),
+            &["tn_01fetchedseparately"],
+        )
+        .await;
+
+        assert_eq!(
+            user.tenants
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["tn_01reportedbyverify".to_string()],
+        );
     }
 }

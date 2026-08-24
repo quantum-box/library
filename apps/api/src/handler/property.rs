@@ -48,6 +48,7 @@ fn property_type_from_request(
         ))),
         "location" => Ok(PropertyType::Location(Default::default())),
         "image" => Ok(PropertyType::Image),
+        "rich_text" => Ok(PropertyType::RichText),
         _ => Err(errors::Error::invalid("Invalid property type")),
     }
 }
