@@ -5,7 +5,7 @@ import { BlockNoteView } from '@blocknote/shadcn'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 
-export type RecordBodyFormat = 'markdown' | 'richText'
+export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
 
 interface RecordBodyEditorProps {
   value: string
@@ -17,6 +17,10 @@ interface RecordBodyEditorProps {
    * - `richText`: `value` is the block document as JSON and the editor's own
    *   document is committed back. Lossless; this is the reason the RichText
    *   property type exists.
+   * - `html`: `value` is markup. Legacy, but it has to be its own mode: an
+   *   Html Property is read as real HTML everywhere else (apps/web parses it
+   *   with `tryParseHTMLToBlocks`), so committing Markdown into one leaves a
+   *   value whose dialect contradicts its type.
    */
   format?: RecordBodyFormat
   onCommit: (value: string) => void
@@ -83,9 +87,7 @@ export function RecordBodyEditor({
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return
 
-    pendingValue.current = format === 'richText'
-      ? JSON.stringify(changedEditor.document)
-      : changedEditor.blocksToMarkdownLossy(changedEditor.document)
+    pendingValue.current = serializeDocument(changedEditor, format)
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
     commitTimer.current = window.setTimeout(commitPendingValue, 500)
   }, editor)
@@ -106,6 +108,15 @@ export function RecordBodyEditor({
   )
 }
 
+function serializeDocument(
+  editor: ReturnType<typeof useCreateBlockNote>,
+  format: RecordBodyFormat,
+): string {
+  if (format === 'richText') return JSON.stringify(editor.document)
+  if (format === 'html') return editor.blocksToHTMLLossy(editor.document)
+  return editor.blocksToMarkdownLossy(editor.document)
+}
+
 function seedBlocks(
   editor: ReturnType<typeof useCreateBlockNote>,
   value: string,
@@ -118,7 +129,24 @@ function seedBlocks(
     // Markdown text still sitting in it. Opening it as content beats
     // opening a blank page over someone's body text.
   }
+  if (format === 'html' && looksLikeHtml(value)) {
+    return editor.tryParseHTMLToBlocks(value)
+  }
   return editor.tryParseMarkdownToBlocks(value || '')
+}
+
+/**
+ * Whether an Html Property's value is really markup.
+ *
+ * Until this editor learned the type it committed Markdown into Html
+ * Properties, so a repository can hold either dialect under the same type.
+ * Running "## Heading" through the HTML parser would render the source text
+ * instead of a heading, so sniff the value rather than trusting the type.
+ * Every value that is actually HTML — including what apps/web writes with
+ * `blocksToFullHTML` — opens with a tag.
+ */
+function looksLikeHtml(value: string): boolean {
+  return /^\s*</.test(value)
 }
 
 function parseDocument(raw: string): PartialBlock[] | null {

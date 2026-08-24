@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => {
     // Loosely typed: rich text tests replace this with realistic blocks.
     document: [{ id: 'body' }] as unknown[],
     tryParseMarkdownToBlocks: vi.fn((value: string) => [{ id: value || 'empty' }]),
+    tryParseHTMLToBlocks: vi.fn((value: string) => [{ id: `html:${value}` }]),
     replaceBlocks: vi.fn(),
     blocksToMarkdownLossy: vi.fn(() => ''),
+    blocksToHTMLLossy: vi.fn(() => ''),
   }
   return {
     editor,
@@ -125,6 +127,47 @@ describe('RecordBodyEditor', () => {
 
     expect(onCommit).toHaveBeenCalledTimes(1)
     expect(JSON.parse(onCommit.mock.calls[0][0] as string)).toEqual(mocks.editor.document)
+    expect(mocks.editor.blocksToMarkdownLossy).not.toHaveBeenCalled()
+  })
+
+  it('seeds html from the html parser, not the markdown parser', async () => {
+    const onCommit = vi.fn()
+    render(
+      <RecordBodyEditor value="<h2>Heading</h2>" format="html" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1))
+
+    expect(mocks.editor.tryParseHTMLToBlocks).toHaveBeenCalledWith('<h2>Heading</h2>')
+    expect(mocks.editor.tryParseMarkdownToBlocks).not.toHaveBeenCalled()
+  })
+
+  it('reads an html property that still holds markdown as markdown', async () => {
+    const onCommit = vi.fn()
+    render(
+      <RecordBodyEditor value={'## Heading\n\nbody'} format="html" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1))
+
+    expect(mocks.editor.tryParseMarkdownToBlocks).toHaveBeenCalledWith('## Heading\n\nbody')
+    expect(mocks.editor.tryParseHTMLToBlocks).not.toHaveBeenCalled()
+  })
+
+  it('commits html in html mode so the value matches the property type', async () => {
+    const onCommit = vi.fn()
+    const { unmount } = render(
+      <RecordBodyEditor value="<p>before</p>" format="html" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+
+    mocks.editor.blocksToHTMLLossy.mockReturnValue('<h2>Heading</h2>')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    unmount()
+
+    expect(onCommit).toHaveBeenCalledWith('<h2>Heading</h2>')
     expect(mocks.editor.blocksToMarkdownLossy).not.toHaveBeenCalled()
   })
 
