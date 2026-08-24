@@ -16,6 +16,7 @@ vi.mock('../lib/repositorySettingsApi', async (importOriginal) => ({
 
 import { RepositorySettingsApiError } from '../lib/repositorySettingsApi'
 import { RepositorySettingsView } from './RepositorySettingsView'
+import { availablePropertyTypeChoices } from '../lib/repositoryPropertyTypes'
 
 const settings = {
   repository: {
@@ -266,6 +267,37 @@ describe('RepositorySettingsView', () => {
       'Existing option identifier "todo" cannot be removed or changed',
     )
     expect(apiMocks.updateRepositoryProperty).not.toHaveBeenCalled()
+  })
+
+  it('offers Rich text but not Markdown when creating a Property', () => {
+    // Markdown loses a blank line on every save, so a new Property should
+    // not be able to choose it.
+    const values = availablePropertyTypeChoices(undefined).map((choice) => choice.value)
+
+    expect(values).toContain('RICH_TEXT')
+    expect(values).not.toContain('MARKDOWN')
+  })
+
+  it('keeps Markdown selectable on a Property that already uses it', () => {
+    // Hiding it outright would strand existing Markdown Properties: the
+    // type dropdown is the only way to move one to Rich text.
+    const values = availablePropertyTypeChoices('MARKDOWN').map((choice) => choice.value)
+
+    expect(values).toContain('MARKDOWN')
+    expect(values).toContain('RICH_TEXT')
+  })
+
+  it('flags a legacy Markdown Property for migration in the list', async () => {
+    apiMocks.fetchRepositorySettings.mockResolvedValueOnce({
+      ...settings,
+      properties: [
+        { id: 'property-body', name: 'content', typ: 'MARKDOWN' as const, meta: null },
+      ],
+    })
+    renderView()
+    await screen.findByTestId('repository-settings-page')
+
+    expect(screen.getByText('Legacy · switch to Rich text')).toBeInTheDocument()
   })
 
   it('invites creation when the repository has no Property definitions', async () => {
