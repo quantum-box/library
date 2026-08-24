@@ -44,11 +44,22 @@ impl GetRepoPoliciesInputPort for GetRepoPolicies {
     ) -> errors::Result<Vec<RepoPolicyInfo>> {
         use std::collections::HashSet;
 
-        // Get user policies scoped to this resource
+        // Get user policies scoped to this resource.
+        //
+        // Best effort like the enrichment lookups below: this is served by
+        // the auth service, which rejects a caller that cannot read policy
+        // mappings. A repo Owner is such a caller, and letting that denial
+        // escape made `policies` fail for the very people who own the repo.
         let user_policies = self
             .user_policy_mapping_repo
             .find_by_resource_scope(input.tenant_id, input.resource_trn)
-            .await?;
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    "[GetRepoPolicies] Could not read policy mappings,                      returning no repo-level policies: {error:?}"
+                );
+                Vec::new()
+            });
 
         tracing::info!(
             "[GetRepoPolicies] Found {} user policies for resource: {}",
