@@ -74,7 +74,7 @@
 | PUT | `/v1beta/repos/{org}/{repo}` | 必要 | `UpdateRepoRequest` | `RepoResponse` | 更新 |
 | DELETE | `/v1beta/repos/{org}/{repo}` | 必要 | Path: `org`,`repo` | 空 | 204 |
 | PUT | `/v1beta/repos/{org}/{repo}/change-username` | 必要 | `ChangeRepoUsernameRequest` | `RepoResponse` | username 変更 |
-| GET | `/v1beta/repos` | 必要 | `name?`,`limit?` | `Vec<RepoResponse>` | `x-operator-id` で指定した所属 organization 内の一覧。未認証・非所属の場合は空配列 |
+| GET | `/v1beta/repos` | 必要 | `org?`,`name?`,`limit?` | `Vec<RepoResponse>` | 所属 organization 内の一覧。対象 org は `org` (username)、省略時は `x-operator-id` で指定。未認証・非所属の場合は空配列 |
 参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/organization.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/organization.rs), [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/repository.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/repository.rs)
 
 ### 4.4 Data

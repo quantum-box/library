@@ -271,6 +271,7 @@ pub async fn change_repo_username(
     get,
     path = "/v1beta/repos",
     params(
+        ("org" = Option<String>, Query, description = "Organization username to search in. Defaults to the x-operator-id organization"),
         ("name" = Option<String>, Query, description = "Repository name to search for"),
         ("limit" = Option<i64>, Query, description = "Maximum number of results to return")
     ),
@@ -288,7 +289,7 @@ pub async fn search_repo(
     let input = SearchRepoInputData {
         executor: &executor,
         multi_tenancy: &multi_tenancy.0,
-        org_username: None,
+        org_username: query.org,
         name: query.name,
         limit: query.limit,
     };

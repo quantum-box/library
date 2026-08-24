@@ -148,9 +148,18 @@ json_path "$openapi_body" '.openapi and .paths["/v1beta/repos/{org}/{repo}"]' 'o
 
 log_step 'authenticated repository list'
 repos_body="$TMP_DIR/repos.json"
-status="$(request GET /v1beta/repos '' "$TOKEN" "$repos_body")"
+status="$(request GET "/v1beta/repos?org=$ORG" '' "$TOKEN" "$repos_body")"
 expect_status "$status" 200 'GET /v1beta/repos'
-json_path "$repos_body" 'type == "array"' 'repos list'
+json_path "$repos_body" 'type == "array" and length > 0' 'repos list'
+jq -e --arg org "$ORG" 'all(.[]; .org_username == $org)' "$repos_body" >/dev/null \
+	|| fail 'repos list contains repositories outside the requested org'
+
+log_step 'anonymous repository list is empty'
+anon_repos_body="$TMP_DIR/repos-anonymous.json"
+status="$(anonymous_request GET "/v1beta/repos?org=$ORG" "$anon_repos_body")"
+expect_status "$status" 200 'GET /v1beta/repos (anonymous)'
+json_path "$anon_repos_body" 'type == "array" and length == 0' \
+	'anonymous repos list'
 
 log_step 'authenticated repository detail'
 repo_body="$TMP_DIR/repo.json"

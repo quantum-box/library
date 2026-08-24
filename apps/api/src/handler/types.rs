@@ -177,6 +177,9 @@ pub struct UpdateSourceRequest {
 // TODO: add English comment
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct SearchRepoQuery {
+    /// Organization username to search in. Defaults to the organization named
+    /// by the `x-operator-id` header.
+    pub org: Option<String>,
     pub name: Option<String>,
     pub limit: Option<i64>,
 }
