@@ -18,8 +18,12 @@ import {
   libraryDataToRecord,
   type LibraryDataItem,
   type LibraryProperty,
-  type LibraryPropertyDataValue,
 } from '../lib/recordsApi'
+import {
+  bodyPropertyFormat,
+  bodyPropertyValue,
+  getBodyProperty,
+} from '../lib/libraryTable/bodyProperty'
 import {
   deleteLibraryData,
   updateLibraryData,
@@ -47,36 +51,6 @@ interface DataEditorPageProps {
   operatorId?: string
   repoLabel?: string
   onBack: () => void
-}
-
-function normalizedPropertyName(value: string) {
-  return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
-}
-
-function bodyPropertyScore(property: LibraryProperty) {
-  // RichText outranks a name match: it is the only lossless body type, so a
-  // repo that has one wants it as the page body even when some other
-  // property happens to be called "content".
-  if (property.typ === 'RichText') return 4
-  const name = normalizedPropertyName(property.name)
-  if (['body', 'content', 'description', 'markdown', 'document'].includes(name)) return 3
-  if (property.typ === 'Markdown') return 2
-  if (property.typ === 'Html') return 1
-  return 0
-}
-
-function getBodyProperty(properties: LibraryProperty[]) {
-  return [...properties]
-    .map((property) => ({ property, score: bodyPropertyScore(property) }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score)[0]?.property ?? null
-}
-
-function bodyPropertyValue(property: LibraryProperty, value: string): LibraryPropertyDataValue {
-  if (property.typ === 'RichText') return { richText: value }
-  if (property.typ === 'Markdown') return { markdown: value }
-  if (property.typ === 'Html') return { html: value }
-  return { string: value }
 }
 
 function formatEditorDate(value: string | undefined) {
@@ -489,7 +463,7 @@ export function DataEditorPage({
                 <RecordBodyEditor
                   key={`${item.id}:${bodyProperty.id}`}
                   value={bodyValue}
-                  format={bodyProperty.typ === 'RichText' ? 'richText' : 'markdown'}
+                  format={bodyPropertyFormat(bodyProperty)}
                   surface="page"
                   onCommit={(value) => {
                     const current = itemRef.current
