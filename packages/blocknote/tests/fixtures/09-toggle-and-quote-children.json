@@ -1,0 +1,71 @@
+[
+  {
+    "id": "block-1",
+    "type": "toggleListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "summary",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "block-2",
+        "type": "paragraph",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "hidden detail",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "id": "block-3",
+    "type": "quote",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "first quoted line",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "block-4",
+        "type": "paragraph",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "second quoted line",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  }
+]

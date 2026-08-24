@@ -35,6 +35,12 @@ fn escape_attribute(text: &str) -> String {
     escape_text(text).replace('"', "&quot;")
 }
 
+/// Escaped for a text node. A newline inside a run is a hard break, and
+/// HTML collapses a bare one to a space, so it becomes an explicit `<br>`.
+fn escape_inline(text: &str) -> String {
+    escape_text(text).replace('\n', "<br>")
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum ListKind {
     Bullet,
@@ -227,7 +233,7 @@ fn render_inline(content: Option<&Value>) -> String {
         return String::new();
     };
     if let Some(text) = content.as_str() {
-        return escape_text(text);
+        return escape_inline(text);
     }
     let Some(items) = content.as_array() else {
         return String::new();
@@ -264,7 +270,7 @@ fn styled(text: &str, styles: Option<&Value>) -> String {
             .unwrap_or(false)
     };
 
-    let mut out = escape_text(text);
+    let mut out = escape_inline(text);
     // Unlike Markdown, HTML can carry all of these. Colors are still
     // dropped: their values are editor theme keywords, not CSS.
     if flag("code") {
@@ -321,10 +327,13 @@ fn render_table(out: &mut String, content: Option<&Value>) {
         let tag = if index == 0 { "th" } else { "td" };
         out.push_str("<tr>");
         for cell in cells {
-            out.push_str(&format!(
-                "<{tag}>{}</{tag}>",
-                render_inline(Some(cell))
-            ));
+            // A cell is an object wrapping its inline content; older
+            // documents carry the inline array directly.
+            let content = match cell.get("content") {
+                Some(content) => render_inline(Some(content)),
+                None => render_inline(Some(cell)),
+            };
+            out.push_str(&format!("<{tag}>{content}</{tag}>"));
         }
         out.push_str("</tr>");
     }
