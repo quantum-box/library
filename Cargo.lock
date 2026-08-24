@@ -3512,6 +3512,7 @@ dependencies = [
  "inbound_sync_domain",
  "lambda_http",
  "lambda_runtime",
+ "library-api-preview-migrate",
  "mime",
  "mockall 0.13.1",
  "once_cell",
@@ -3559,11 +3560,8 @@ dependencies = [
 name = "library-api-preview-migrate"
 version = "0.1.0"
 dependencies = [
- "lambda_runtime",
  "migration-preflight",
  "regex",
- "serde",
- "serde_json",
  "sqlx",
  "tokio",
  "url",

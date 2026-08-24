@@ -38,8 +38,13 @@ impl DatabaseLayout {
             .unwrap_or_default()
             .to_ascii_lowercase();
         let selected_database = database_url.database().as_deref();
-        let selects_pr_database =
-            selected_database.is_some_and(|name| name.starts_with("pr_"));
+        // Shared with the preview migrator so the schema the migration gate
+        // writes and the layout the runtime reads can never disagree about
+        // which database is per-PR. The platform renamed those databases in
+        // PLT-3851, which a local `starts_with("pr_")` silently missed.
+        let selects_pr_database = selected_database.is_some_and(
+            library_api_preview_migrate::is_pr_scoped_database_name,
+        );
 
         if environment == "production" && selects_pr_database {
             return Err(errors::Error::bad_request(
