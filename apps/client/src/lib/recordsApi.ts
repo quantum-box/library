@@ -240,6 +240,32 @@ interface LibraryCreateOrganizationResponse {
   createOrganization: CreatedLibraryOrganization
 }
 
+/**
+ * A Tachyon tenant the signed-in user belongs to, annotated with whether it is
+ * already usable as a Library organization. Tenant membership alone does not
+ * grant Library access, so these are the candidates for `seedLibraryTenant`.
+ */
+export interface LibraryAccessibleTenant {
+  tenantId: string
+  name: string
+  username: string
+  staffCount: number
+  hasLibraryOrg: boolean
+  canImportToLibrary: boolean
+}
+
+interface LibraryAccessibleTenantsResponse {
+  accessibleTenants?: LibraryAccessibleTenant[] | null
+}
+
+interface LibrarySeedTenantResponse {
+  seedLibraryTenant: {
+    organization: CreatedLibraryOrganization
+    seeded: boolean
+    staffCount: number
+  }
+}
+
 export interface CreateLibraryRepositoryInput {
   orgUsername: string
   operatorId: string
@@ -482,6 +508,33 @@ const libraryCreateOrganizationMutation = `
       id
       name
       username
+    }
+  }
+`
+
+const libraryAccessibleTenantsQuery = `
+  query LibraryClientAccessibleTenants {
+    accessibleTenants {
+      tenantId
+      name
+      username
+      staffCount
+      hasLibraryOrg
+      canImportToLibrary
+    }
+  }
+`
+
+const librarySeedTenantMutation = `
+  mutation LibraryClientSeedLibraryTenant($tenantId: String!) {
+    seedLibraryTenant(tenantId: $tenantId) {
+      organization {
+        id
+        name
+        username
+      }
+      seeded
+      staffCount
     }
   }
 `
@@ -1311,6 +1364,29 @@ export async function createLibraryOrganization(
     }
   )
   return payload.createOrganization
+}
+
+export async function fetchLibraryAccessibleTenants(): Promise<LibraryAccessibleTenant[]> {
+  const payload = await requestLibraryGraphQL<LibraryAccessibleTenantsResponse>(
+    libraryAccessibleTenantsQuery,
+    {}
+  )
+  return payload.accessibleTenants ?? []
+}
+
+/**
+ * Registers an existing Tachyon tenant as a Library organization and grants the
+ * Library policies to everyone already in that tenant. Safe to call twice: the
+ * API returns the existing organization instead of failing.
+ */
+export async function importLibraryTenant(
+  tenantId: string
+): Promise<CreatedLibraryOrganization> {
+  const payload = await requestLibraryGraphQL<LibrarySeedTenantResponse>(
+    librarySeedTenantMutation,
+    { tenantId: tenantId.trim() }
+  )
+  return payload.seedLibraryTenant.organization
 }
 
 export async function createLibraryRepository(

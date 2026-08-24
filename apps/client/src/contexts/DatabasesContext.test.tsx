@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   fetchLibraryOrganizations: vi.fn(),
   createLibraryOrganization: vi.fn(),
   createLibraryRepository: vi.fn(),
+  importLibraryTenant: vi.fn(),
 }))
 
 vi.mock('../lib/recordsApi', () => ({
@@ -14,6 +15,7 @@ vi.mock('../lib/recordsApi', () => ({
   fetchLibraryOrganizations: mocks.fetchLibraryOrganizations,
   createLibraryOrganization: mocks.createLibraryOrganization,
   createLibraryRepository: mocks.createLibraryRepository,
+  importLibraryTenant: mocks.importLibraryTenant,
 }))
 
 function Probe() {
@@ -24,6 +26,7 @@ function Probe() {
     repositoriesError,
     refreshRepositories,
     createOrganization,
+    importOrganization,
     createRepository,
     selectedOrganizationId,
   } = useWorkspaceDatabases()
@@ -49,6 +52,13 @@ function Probe() {
         onClick={() => void createOrganization('New Org', 'new-org')}
       >
         Create organization
+      </button>
+      <button
+        type="button"
+        data-testid="import-organization"
+        onClick={() => void importOrganization('tn_imported')}
+      >
+        Import organization
       </button>
       <button
         type="button"
@@ -91,6 +101,11 @@ describe('DatabasesProvider', () => {
       id: 'org-2',
       name: 'New Org',
       username: 'new-org',
+    })
+    mocks.importLibraryTenant.mockResolvedValue({
+      id: 'org-3',
+      name: 'Imported Org',
+      username: 'imported-org',
     })
     mocks.createLibraryRepository.mockResolvedValue({
       id: 'repo-2',
@@ -193,6 +208,25 @@ describe('DatabasesProvider', () => {
       name: 'New Org',
       username: 'new-org',
     })
+  })
+
+  it('selects the organization imported from an existing Tachyon tenant', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
+
+    await act(async () => {
+      screen.getByTestId('import-organization').click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-count')).toHaveTextContent('2')
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-3')
+    })
+    expect(mocks.importLibraryTenant).toHaveBeenCalledWith('tn_imported')
   })
 
   it('reloads repositories when library-auth-change fires', async () => {

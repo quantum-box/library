@@ -71,6 +71,7 @@ import { useTheme, type ThemeMode } from '../contexts/ThemeContext'
 import type { Status } from '../data/mock'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { navigateToData } from '../lib/ui/dataLocation'
+import { fetchLibraryAccessibleTenants } from '../lib/recordsApi'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
@@ -236,6 +237,7 @@ export function Sidebar() {
     repositoriesError,
     refreshRepositories,
     createOrganization,
+    importOrganization,
     createRepository,
   } = useWorkspaceDatabases()
   const navigate = useNavigate()
@@ -375,6 +377,14 @@ export function Sidebar() {
     })
   }
 
+  const handleImportOrganization = async (tenantId: string) => {
+    const organization = await importOrganization(tenantId)
+    void navigate({
+      to: '/organizations/$organization',
+      params: { organization: organization.label },
+    })
+  }
+
   const handleCreateRepository = async (
     organizationId: string,
     name: string,
@@ -508,7 +518,7 @@ export function Sidebar() {
             type="button"
             variant="ghost"
             size="icon"
-            aria-label="Create organization"
+            aria-label="Add organization"
             onClick={() => setCreateOrganizationOpen(true)}
           >
             <Plus aria-hidden="true" />
@@ -682,13 +692,13 @@ export function Sidebar() {
                   variant="ghost"
                   size="icon"
                   className="shrink-0"
-                  aria-label="Create organization"
+                  aria-label="Add organization"
                   onClick={() => setCreateOrganizationOpen(true)}
                 >
                   <Plus aria-hidden="true" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">Create organization</TooltipContent>
+              <TooltipContent side="right">Add organization</TooltipContent>
             </Tooltip>
           </div>
         )}
@@ -824,6 +834,8 @@ export function Sidebar() {
         open={createOrganizationOpen}
         onClose={() => setCreateOrganizationOpen(false)}
         onCreate={handleCreateOrganization}
+        onImport={handleImportOrganization}
+        loadTenants={fetchLibraryAccessibleTenants}
       />
       <CreateRepositoryDialog
         open={createRepositoryOpen}
