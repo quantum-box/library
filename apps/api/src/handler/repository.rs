@@ -7,7 +7,9 @@ use axum::{
 };
 
 use crate::app::LibraryApp;
-use crate::handler::library_executor_extractor::LibraryExecutor;
+use crate::handler::library_executor_extractor::{
+    LibraryExecutor, LibraryMultiTenancy,
+};
 use crate::handler::types::{
     ChangeRepoUsernameRequest, CreateRepoRequest, RepoResponse,
     SearchRepoQuery, UpdateRepoRequest,
@@ -280,8 +282,12 @@ pub async fn change_repo_username(
 pub async fn search_repo(
     Query(query): Query<SearchRepoQuery>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
+    multi_tenancy: LibraryMultiTenancy,
 ) -> errors::Result<Json<Vec<RepoResponse>>> {
     let input = SearchRepoInputData {
+        executor: &executor,
+        multi_tenancy: &multi_tenancy.0,
         org_username: None,
         name: query.name,
         limit: query.limit,

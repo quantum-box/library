@@ -719,5 +719,29 @@ describe('recordsApi', () => {
         ],
       },
     ])
+    expect(fetch).toHaveBeenCalledWith(
+      'https://library.example.test/v1beta/repos',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+      }),
+    )
+  })
+
+  it('lists no organizations while signed out instead of every repository the API returns', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json([
+      {
+        id: 'repo-1',
+        username: 'docs',
+        name: 'Docs',
+        organization_id: 'someone-elses-org',
+        org_username: 'someone-else',
+      },
+    ])))
+
+    await expect(fetchLibraryOrganizations()).resolves.toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

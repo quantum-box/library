@@ -47,9 +47,9 @@ pub trait ViewRepoInputPort: Debug + Send + Sync {
 #[async_trait::async_trait]
 pub trait SearchRepoInputPort: Debug + Send + Sync {
     /// TODO: add English documentation
-    async fn execute(
+    async fn execute<'a>(
         &self,
-        input: &SearchRepoInputData,
+        input: &SearchRepoInputData<'a>,
     ) -> errors::Result<Vec<Repo>>;
 }
 
@@ -299,8 +299,13 @@ pub struct ViewRepoOutputData {
 ///
 /// TODO: add English documentation
 /// TODO: add English documentation
-#[derive(Debug, Clone, Default)]
-pub struct SearchRepoInputData {
+#[derive(Debug, Clone)]
+pub struct SearchRepoInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    /// Organization to search in. When omitted the caller's own organization,
+    /// taken from the multi-tenancy context, is used.
     pub org_username: Option<String>,
     pub name: Option<String>,
     pub limit: Option<i64>,

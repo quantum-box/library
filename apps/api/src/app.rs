@@ -174,7 +174,10 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             auth_app.clone(),
         );
-        let search_repo = usecase::SearchRepo::new(find_all_repo_query);
+        let search_repo = usecase::SearchRepo::new(
+            find_all_repo_query,
+            get_organization_by_username.clone(),
+        );
         let add_data = usecase::AddData::new(
             auth_app.clone(),
             get_repo_by_username.clone(),
