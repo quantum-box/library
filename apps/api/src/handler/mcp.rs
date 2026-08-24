@@ -436,7 +436,7 @@ async fn call_tool(
     match params.name.as_str() {
         "search_repos" => {
             let args: SearchReposArgs = parse_tool_args(params.arguments)?;
-            let output = search_repos(library_app, args).await?;
+            let output = search_repos(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         "get_repo" => {
@@ -580,9 +580,18 @@ async fn list_data(
 
 async fn search_repos(
     library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
     args: SearchReposArgs,
 ) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = args
+        .org
+        .clone()
+        .map(LibraryOrg::with_org)
+        .unwrap_or_default();
     let input = SearchRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
         org_username: args.org,
         name: args.query,
         limit: Some(args.limit.unwrap_or(20).clamp(1, 100)),
@@ -1309,14 +1318,15 @@ fn tools_list_result(is_authenticated: bool) -> Value {
     let mut tools = vec![
         json!({
             "name": "search_repos",
-            "description": "Search Library repositories, optionally within one organization.",
+            "description": "Search Library repositories within one organization you belong to.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "org": { "type": "string" },
                     "query": { "type": "string" },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
-                }
+                },
+                "required": ["org"]
             }
         }),
         json!({

@@ -42,6 +42,52 @@ describe('repositorySettingsApi', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps the settings usable when only repo.policies is denied', async () => {
+    // The API returns per-field errors alongside the data that resolved. A
+    // repo Owner cannot read policy mappings, so `policies` fails for the
+    // very people who own the repo -- that must not cost them the Property
+    // definitions sitting in the same response.
+    const fetchMock = vi.fn(async () => graphqlResponse({
+      data: {
+        repo: {
+          id: 'repo-1',
+          name: 'Smoke Repo',
+          username: 'smoke-repo',
+          description: null,
+          isPublic: false,
+        },
+        properties: [{ id: 'property-1', name: 'content', typ: 'MARKDOWN', meta: null }],
+      },
+      errors: [{
+        message: 'UnauthorizedError: Upstream authentication rejected',
+        path: ['repo', 'policies'],
+        extensions: { code: 'UNAUTHORIZED' },
+      }],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const settings = await fetchRepositorySettings(target)
+
+    expect(settings.properties).toEqual([
+      { id: 'property-1', name: 'content', typ: 'MARKDOWN', meta: null },
+    ])
+    expect(settings.policies).toEqual([])
+  })
+
+  it('still fails when a permission error leaves no data at all', async () => {
+    const fetchMock = vi.fn(async () => graphqlResponse({
+      errors: [{
+        message: 'Forbidden',
+        extensions: { code: 'FORBIDDEN' },
+      }],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchRepositorySettings(target)).rejects.toBeInstanceOf(
+      RepositorySettingsApiError,
+    )
+  })
+
   it('fetches repository metadata, visibility, policies, and Property definitions', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test/')
     vi.stubEnv('VITE_LIBRARY_ACCESS_TOKEN', 'access-token')

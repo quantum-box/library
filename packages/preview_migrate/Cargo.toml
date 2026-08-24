@@ -1,6 +1,6 @@
-# Kept deliberately small: this crate is built into a Lambda deployment
-# package (scripts/build-library-api-preview-migrate-lambda.sh) and must not
-# pull the web/AWS/gRPC stacks the larger workspace crates depend on.
+# Kept deliberately small. library-api depends on it for the migration gate,
+# and the CLI below replays preview migrations in CI, so it must not pull the
+# web/AWS/gRPC stacks the larger workspace crates depend on.
 [package]
 name = "library-api-preview-migrate"
 version = "0.1.0"
@@ -14,15 +14,9 @@ path = "src/lib.rs"
 name = "library_api_preview_migrate"
 path = "src/bin/cli.rs"
 
-[[bin]]
-name = "lambda-library-api-preview-migrate"
-path = "src/bin/lambda.rs"
-
 [dependencies]
-lambda_runtime = { workspace = true }
 migration-preflight = { path = "../migration_preflight" }
 regex = { workspace = true }
-serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [
     "macros",
@@ -32,6 +26,3 @@ tokio = { workspace = true, features = [
     "time",
 ], default-features = false }
 url = { workspace = true }
-
-[dev-dependencies]
-serde_json = { workspace = true }

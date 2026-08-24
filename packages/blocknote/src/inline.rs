@@ -8,6 +8,14 @@ const ESCAPED: [char; 6] = ['\\', '`', '*', '_', '[', ']'];
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for character in text.chars() {
+        // A newline inside a run is a hard break. Emitting it bare would
+        // re-parse as a space, so the line join survives one round trip and
+        // then collapses; the backslash form is what CommonMark reads back
+        // as a break.
+        if character == '\n' {
+            out.push_str("\\\n");
+            continue;
+        }
         if ESCAPED.contains(&character) {
             out.push('\\');
         }
@@ -119,6 +127,11 @@ fn collect_inline_text(content: Option<&Value>, out: &mut String) {
             }
             collect_inline_text(item.get("content"), out);
         }
+        return;
+    }
+    // A wrapper such as `tableCell`, which holds its runs under `content`.
+    if content.get("content").is_some() {
+        collect_inline_text(content.get("content"), out);
         return;
     }
     // `tableContent` and friends: walk whatever arrays it holds.

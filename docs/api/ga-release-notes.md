@@ -21,7 +21,7 @@ unless they are explicitly promoted in a later release note.
 
 | Method | Path | GA behavior |
 | --- | --- | --- |
-| `GET` | `/v1beta/repos` | List/search repositories visible to the caller. |
+| `GET` | `/v1beta/repos` | List/search repositories inside one organization the caller belongs to. |
 | `POST` | `/v1beta/repos/{org}` | Create a repository in an organization. |
 | `GET` | `/v1beta/repos/{org}/{repo}` | Read repository metadata and access-controlled state. |
 | `PUT` | `/v1beta/repos/{org}/{repo}` | Update repository metadata and settings. |

@@ -845,6 +845,13 @@ paths:
     get:
       operationId: search_repo
       parameters:
+      - description: Organization username to search in. Defaults to the x-operator-id
+          organization
+        in: query
+        name: org
+        required: false
+        schema:
+          type: string
       - description: Repository name to search for
         in: query
         name: name

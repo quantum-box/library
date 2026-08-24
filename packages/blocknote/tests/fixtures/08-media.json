@@ -1,0 +1,51 @@
+[
+  {
+    "id": "block-1",
+    "type": "image",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "",
+      "url": "https://example.com/a.png",
+      "caption": "a caption",
+      "showPreview": true
+    },
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "video",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "clip",
+      "url": "https://example.com/v.mp4",
+      "caption": "",
+      "showPreview": true
+    },
+    "children": []
+  },
+  {
+    "id": "block-3",
+    "type": "audio",
+    "props": {
+      "backgroundColor": "default",
+      "name": "sound",
+      "url": "https://example.com/a.mp3",
+      "caption": "",
+      "showPreview": true
+    },
+    "children": []
+  },
+  {
+    "id": "block-4",
+    "type": "file",
+    "props": {
+      "backgroundColor": "default",
+      "name": "paper.pdf",
+      "url": "https://example.com/f.pdf",
+      "caption": ""
+    },
+    "children": []
+  }
+]

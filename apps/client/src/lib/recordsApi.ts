@@ -1290,9 +1290,13 @@ export async function fetchLibraryRepositories(): Promise<LibraryRepository[]> {
 }
 
 export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]> {
-  const restRepos = await fetchLibraryRestRepositories()
+  // Repository discovery is scoped to the signed-in user's organizations. Without a
+  // token there is nothing of the caller's own to show, and listing whatever the API
+  // hands back would surface other people's repositories on the home screen.
   const token = await validLibraryAccessToken()
-  if (!token) return hydrateOrganizationsFromRestRepositories(restRepos)
+  if (!token) return []
+
+  const restRepos = await fetchLibraryRestRepositories(token)
 
   try {
     const payload = await requestLibraryGraphQL<LibraryMeOrganizationsResponse>(
@@ -1428,22 +1432,18 @@ async function fetchTachyonOperator(tenantId: string): Promise<TachyonOperatorRe
   }
 }
 
-async function fetchLibraryRestRepositories(): Promise<LibraryRestRepository[]> {
-  const publicRepos = await requestLibraryRestRepositories()
-  if (publicRepos.length > 0) return publicRepos
-
-  const headers: Record<string, string> = {
+async function fetchLibraryRestRepositories(
+  token: string
+): Promise<LibraryRestRepository[]> {
+  return requestLibraryRestRepositories({
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
-  }
-  const token = await validLibraryAccessToken()
-  if (token) headers.Authorization = `Bearer ${token}`
-
-  return requestLibraryRestRepositories(headers)
+    Authorization: `Bearer ${token}`,
+  })
 }
 
 async function requestLibraryRestRepositories(
-  headers?: Record<string, string>
+  headers: Record<string, string>
 ): Promise<LibraryRestRepository[]> {
   const baseUrls = [
     configuredLibraryApiBaseUrl(),
@@ -1452,9 +1452,7 @@ async function requestLibraryRestRepositories(
 
   for (const baseUrl of baseUrls) {
     try {
-      const response = await fetch(`${baseUrl}/v1beta/repos`, {
-        ...(headers ? { headers } : {}),
-      })
+      const response = await fetch(`${baseUrl}/v1beta/repos`, { headers })
       if (!response.ok) continue
       const payload = await response.json()
       if (Array.isArray(payload)) return payload as LibraryRestRepository[]

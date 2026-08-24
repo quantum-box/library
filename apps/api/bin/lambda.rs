@@ -1,10 +1,23 @@
 use clap::Parser;
-use lambda_http::{run, Error};
+use lambda_http::{
+    lambda_runtime, request::LambdaRequest, Adapter, Error, LambdaEvent,
+    Service,
+};
 use library_api::LIBRARY_TENANT;
 use std::env::set_var;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use library_api::sdk_auth::{SdkAuthApp, SdkOAuthTokenRepository};
+
+/// Marks the synthetic event Tachyon sends to the candidate alias before it
+/// promotes stable traffic. All three must match, so nothing that can reach
+/// the public Function URL is able to start a migration.
+const MIGRATION_GATE_ROUTE_KEY: &str = "LIBRARY_MIGRATION_GATE";
+const MIGRATION_GATE_PATH: &str = "/";
+const MIGRATION_GATE_DOMAIN: &str = "library-api-migration-gate.internal";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -40,6 +53,9 @@ async fn main() -> Result<(), Error> {
         .as_deref()
         .map(|dsn| telemetry::init_sentry(dsn, sentry::release_name!()));
 
+    // Kept as the raw string the operator configured: the migration gate
+    // reconnects with it, and `DatabaseUrl`'s Display masks the password.
+    let raw_database_url: Arc<str> = Arc::from(config.database_url.clone());
     let database_url =
         config.database_url.parse::<value_object::DatabaseUrl>()?;
     let database_layout =
@@ -116,5 +132,136 @@ async fn main() -> Result<(), Error> {
     .expect("library api router error");
 
     tracing::info!("start lambda...");
-    run(app).await
+    // Tachyon invokes the candidate alias with a synthetic API Gateway event
+    // before promoting it to stable traffic. Migrations run only for that
+    // event; an ordinary cold start just builds serving dependencies, so a
+    // poisoned history stops the deployment instead of the live API.
+    lambda_runtime::run(DeployMigrationGate::new(
+        Adapter::from(app),
+        raw_database_url,
+    ))
+    .await
+}
+
+struct DeployMigrationGate<S> {
+    inner: S,
+    database_url: Arc<str>,
+}
+
+impl<S> DeployMigrationGate<S> {
+    fn new(inner: S, database_url: Arc<str>) -> Self {
+        Self {
+            inner,
+            database_url,
+        }
+    }
+}
+
+impl<S> Service<LambdaEvent<LambdaRequest>> for DeployMigrationGate<S>
+where
+    S: Service<LambdaEvent<LambdaRequest>>,
+    S::Future: Send + 'static,
+    S::Response: 'static,
+    S::Error: Into<Error>,
+{
+    type Response = S::Response;
+    type Error = Error;
+    type Future = Pin<
+        Box<
+            dyn Future<Output = Result<Self::Response, Self::Error>> + Send,
+        >,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(context).map_err(Into::into)
+    }
+
+    fn call(&mut self, event: LambdaEvent<LambdaRequest>) -> Self::Future {
+        let is_migration_gate = is_migration_gate_event(&event.payload);
+        let database_url = Arc::clone(&self.database_url);
+        let response = self.inner.call(event);
+
+        Box::pin(async move {
+            if is_migration_gate {
+                library_api::migrations::run_migration_gate(&database_url)
+                    .await
+                    .map_err(|error| Error::from(error.to_string()))?;
+            }
+            response.await.map_err(Into::into)
+        })
+    }
+}
+
+fn is_migration_gate_event(event: &LambdaRequest) -> bool {
+    matches!(
+        event,
+        LambdaRequest::ApiGatewayV2(request)
+            if request.route_key.as_deref() == Some(MIGRATION_GATE_ROUTE_KEY)
+                && request.raw_path.as_deref() == Some(MIGRATION_GATE_PATH)
+                && request.request_context.domain_name.as_deref()
+                    == Some(MIGRATION_GATE_DOMAIN)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(payload: serde_json::Value) -> LambdaRequest {
+        serde_json::from_value(payload)
+            .expect("deserialize Lambda HTTP event")
+    }
+
+    fn gate_payload(route_key: &str, domain: &str) -> serde_json::Value {
+        serde_json::json!({
+            "version": "2.0",
+            "routeKey": route_key,
+            "rawPath": MIGRATION_GATE_PATH,
+            "rawQueryString": "",
+            "headers": { "host": domain },
+            "requestContext": {
+                "domainName": domain,
+                "http": { "method": "GET", "path": MIGRATION_GATE_PATH }
+            },
+            "isBase64Encoded": false
+        })
+    }
+
+    #[test]
+    fn only_the_internal_candidate_hook_selects_the_migration_gate() {
+        // The manifest is the other half of the contract: rename either side
+        // and deploys would stop migrating without ever failing.
+        let manifest = include_str!("../../../tachyon.yaml");
+        assert!(manifest.lines().any(|line| line.trim()
+            == format!("routeKey: {MIGRATION_GATE_ROUTE_KEY}")));
+        assert!(manifest
+            .lines()
+            .any(|line| line.trim()
+                == format!("rawPath: {MIGRATION_GATE_PATH}")));
+        assert!(manifest.lines().any(|line| line.trim()
+            == format!("domainName: {MIGRATION_GATE_DOMAIN}")));
+        assert!(
+            manifest.contains("name: migration-gate-before-activation"),
+            "the migration gate hook must stay wired"
+        );
+
+        assert!(is_migration_gate_event(&request(gate_payload(
+            MIGRATION_GATE_ROUTE_KEY,
+            MIGRATION_GATE_DOMAIN
+        ))));
+
+        // A public request that merely hits the same path must not migrate,
+        // and neither may one that spoofs the route key from outside.
+        assert!(!is_migration_gate_event(&request(gate_payload(
+            "$default",
+            "library-api.txcloud.app"
+        ))));
+        assert!(!is_migration_gate_event(&request(gate_payload(
+            MIGRATION_GATE_ROUTE_KEY,
+            "library-api.txcloud.app"
+        ))));
+    }
 }
