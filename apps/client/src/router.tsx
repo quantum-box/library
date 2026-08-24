@@ -11,7 +11,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
-import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RefreshCw, RotateCcw, X } from 'lucide-react'
 import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
@@ -1208,6 +1208,23 @@ function DataWorkspace({
     selectedIdentifier && effectiveView.type !== 'workflow' && (!database || selectedDatabase)
   )
 
+  // While repositories are still loading, a repo-scoped URL cannot resolve
+  // its repository yet. Without this branch the render falls through to the
+  // signed-in dashboard ("No repository data yet"), which flashes on every
+  // reload of a data editor URL before the fetch returns.
+  if (database && !selectedDatabase && repositoriesLoading) {
+    return (
+      <main
+        className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background"
+        data-testid="repository-resolving"
+      >
+        <RefreshCw
+          className="size-5 animate-spin text-primary"
+          aria-hidden="true"
+        />
+      </main>
+    )
+  }
   if (database && !selectedDatabase && !repositoriesLoading && !repositoriesError) {
     return (
       <RouteState
