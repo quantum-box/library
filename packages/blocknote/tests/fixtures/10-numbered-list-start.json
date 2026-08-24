@@ -1,0 +1,54 @@
+[
+  {
+    "id": "block-1",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "start": 5
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "five",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "six",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-3",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "seven",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

@@ -61,8 +61,11 @@ describe('blocknote fixtures', () => {
         existsSync(path),
         `${path} is missing. Run "npm run fixtures:blocknote".`,
       ).toBe(true)
+      // Compare the serialized forms. Some props come back as `undefined`,
+      // which JSON turns into `null` inside arrays and drops entirely from
+      // objects, so a live-vs-file comparison never matches for those.
       expect(
-        document,
+        JSON.parse(JSON.stringify(document)),
         `${name} drifted from the committed fixture. Run "npm run fixtures:blocknote" and review the diff.`,
       ).toEqual(JSON.parse(readFileSync(path, 'utf8')))
     },

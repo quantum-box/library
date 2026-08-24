@@ -1,0 +1,71 @@
+[
+  {
+    "id": "block-1",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "bold italic",
+        "styles": {
+          "bold": true,
+          "italic": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "all",
+        "styles": {
+          "bold": true,
+          "italic": true,
+          "strike": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " ",
+        "styles": {}
+      },
+      {
+        "type": "link",
+        "href": "https://example.com/x?a=1&b=2",
+        "content": [
+          {
+            "type": "text",
+            "text": "styled link",
+            "styles": {
+              "bold": true
+            }
+          }
+        ]
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "a `backtick` and a \\backslash",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]
