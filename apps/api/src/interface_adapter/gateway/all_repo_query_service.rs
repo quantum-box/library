@@ -1,9 +1,6 @@
 use crate::{
     domain::Repo,
-    usecase::{
-        AllRepoQuery, AllRepoQuerySearchDto,
-        AllRepoQuerySearchInOrgQueryData,
-    },
+    usecase::{AllRepoQuery, AllRepoQuerySearchInOrganizationQueryData},
 };
 use derive_new::new;
 use errors::{Error, Result};
@@ -85,69 +82,35 @@ impl AllRepoQueryServiceImpl {
 
 #[async_trait::async_trait]
 impl AllRepoQuery for AllRepoQueryServiceImpl {
-    async fn search(
+    async fn search_in_organization(
         &self,
-        query: &AllRepoQuerySearchDto,
-    ) -> errors::Result<Vec<Repo>> {
-        let repo_rows = if let Some(name) = &query.name {
-            sqlx::query_as!(
-                RepoRowOnQuery,
-                "SELECT id, name, username, org_id, org_username, description, is_public FROM repos
-                WHERE platform_id = ? AND name LIKE ? LIMIT ?",
-                crate::domain::LIBRARY_TENANT.to_string(),
-                format!("%{}%", name),
-                query.limit.unwrap_or(10),
-            )
-            .fetch_all(self.db.pool().as_ref())
-            .await
-        } else {
-            sqlx::query_as!(RepoRowOnQuery, "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ?", crate::domain::LIBRARY_TENANT.to_string())
-                .fetch_all(self.db.pool().as_ref())
-                .await
-        }
-        .map_err(|e| Error::application_logic_error(e.to_string()))?;
-
-        let databases = self.load_databases(&repo_rows).await?;
-
-        let mut repos = Vec::new();
-        for r in repo_rows {
-            let databases = databases
-                .iter()
-                .filter(|d| d.repo_id == r.id)
-                .cloned()
-                .collect::<Vec<DatabaseRow>>();
-            repos.push(self.to_entity(r, databases).await?);
-        }
-        Ok(repos)
-    }
-
-    async fn search_in_org(
-        &self,
-        query: &AllRepoQuerySearchInOrgQueryData,
+        query: &AllRepoQuerySearchInOrganizationQueryData,
     ) -> Result<Vec<Repo>> {
-        let repo_rows = if let Some(name) = &query.name {
-            sqlx::query_as::<_, RepoRowOnQuery>(
-                "SELECT id, name, username, org_id, org_username, description, is_public FROM repos
-                WHERE platform_id = ? AND org_username = ? AND name LIKE ? LIMIT ?",
-            )
-            .bind(crate::domain::LIBRARY_TENANT.to_string())
-            .bind(&query.org_username)
-            .bind(format!("%{}%", name))
-            .bind(query.limit.unwrap_or(10))
-            .fetch_all(self.db.pool().as_ref())
-            .await
-        } else {
-            sqlx::query_as::<_, RepoRowOnQuery>(
-                "SELECT id, org_id, org_username, name, username, description, is_public FROM repos
-                WHERE platform_id = ? AND org_username = ? LIMIT ?",
-            )
-            .bind(crate::domain::LIBRARY_TENANT.to_string())
-            .bind(&query.org_username)
-            .bind(query.limit.unwrap_or(10))
-            .fetch_all(self.db.pool().as_ref())
-            .await
+        let mut sql = String::from(
+            "SELECT id, name, username, org_id, org_username, description, is_public FROM repos
+            WHERE platform_id = ? AND org_id = ?",
+        );
+        if query.name.is_some() {
+            sql.push_str(" AND name LIKE ?");
         }
-        .map_err(|e| Error::application_logic_error(e.to_string()))?;
+        if query.limit.is_some() {
+            sql.push_str(" LIMIT ?");
+        }
+
+        let mut statement = sqlx::query_as::<_, RepoRowOnQuery>(&sql)
+            .bind(crate::domain::LIBRARY_TENANT.to_string())
+            .bind(&query.organization_id);
+        if let Some(name) = &query.name {
+            statement = statement.bind(format!("%{}%", name));
+        }
+        if let Some(limit) = query.limit {
+            statement = statement.bind(limit);
+        }
+
+        let repo_rows = statement
+            .fetch_all(self.db.pool().as_ref())
+            .await
+            .map_err(|e| Error::application_logic_error(e.to_string()))?;
 
         let databases = self.load_databases(&repo_rows).await?;
 
