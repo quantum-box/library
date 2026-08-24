@@ -51,6 +51,13 @@ import {
   type RepositorySettingsData,
   type RepositorySettingsTarget,
 } from '../lib/repositorySettingsApi'
+import {
+  availablePropertyTypeChoices,
+  isEditablePropertyType,
+  isLegacyPropertyType,
+  propertyTypeChoices,
+  propertyTypeLabel,
+} from '../lib/repositoryPropertyTypes'
 
 interface RepositorySettingsViewProps {
   organization: string
@@ -63,24 +70,6 @@ interface PropertyDialogState {
   property?: RepositoryPropertyDefinition
 }
 
-const propertyTypeChoices: Array<{
-  value: RepositoryPropertyType
-  label: string
-  detail: string
-}> = [
-  { value: 'STRING', label: 'Text', detail: 'Short plain text' },
-  { value: 'RICH_TEXT', label: 'Rich text', detail: 'Block document, keeps blank lines' },
-  { value: 'MARKDOWN', label: 'Markdown', detail: 'Markdown source' },
-  { value: 'INTEGER', label: 'Integer', detail: 'Whole numbers' },
-  { value: 'DATE', label: 'Date', detail: 'Calendar date and time' },
-  { value: 'SELECT', label: 'Select', detail: 'One option' },
-  { value: 'MULTI_SELECT', label: 'Multi-select', detail: 'Multiple options' },
-  { value: 'RELATION', label: 'Relation', detail: 'Data in another repository' },
-  { value: 'LOCATION', label: 'Location', detail: 'Latitude and longitude' },
-  { value: 'IMAGE', label: 'Image', detail: 'Image URL' },
-  { value: 'ID', label: 'ID', detail: 'Stable identifier' },
-]
-
 const protectedPropertyNames = new Set([
   'id',
   'name',
@@ -89,14 +78,7 @@ const protectedPropertyNames = new Set([
   'content',
 ])
 
-function propertyTypeLabel(type: string): string {
-  if (type === 'HTML') return 'HTML'
-  return propertyTypeChoices.find((choice) => choice.value === type)?.label ?? type
-}
 
-function isEditablePropertyType(type: string): type is RepositoryPropertyType {
-  return propertyTypeChoices.some((choice) => choice.value === type)
-}
 
 function propertyDetail(property: RepositoryPropertyDefinition): string {
   if (property.typ === 'SELECT' || property.typ === 'MULTI_SELECT') {
@@ -337,7 +319,7 @@ function PropertyEditorDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {propertyTypeChoices.map((choice) => (
+                {availablePropertyTypeChoices(property?.typ).map((choice) => (
                   <SelectItem key={choice.value} value={choice.value}>
                     {choice.label}
                   </SelectItem>
@@ -868,6 +850,11 @@ export function RepositorySettingsView({
                             </Badge>
                             {system ? <Badge variant="neutral">System</Badge> : null}
                             {property.typ === 'HTML' ? <Badge variant="warning">Beta · read-only</Badge> : null}
+                            {isLegacyPropertyType(property.typ) ? (
+                              <Badge variant="warning" title="Markdown cannot represent a blank line, so one is lost on every save. Edit this Property and switch it to Rich text; existing content converts on read.">
+                                Legacy · switch to Rich text
+                              </Badge>
+                            ) : null}
                             {property.typ !== 'HTML' && !isEditablePropertyType(property.typ) ? (
                               <Badge variant="warning">Unsupported · read-only</Badge>
                             ) : null}
