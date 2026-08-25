@@ -114,18 +114,13 @@ impl LibraryQuery {
                 {
                     return Ok(None);
                 }
-                let staff_count =
-                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                        app.auth_app.as_ref(),
-                        &tachyon_sdk::auth::FindUsersByTenantInput {
-                            executor,
-                            multi_tenancy,
-                            tenant_id: &tenant_id,
-                        },
-                    )
-                    .await
-                    .map(|users| users.len() as i32)
-                    .unwrap_or(0);
+                let staff_count = super::count_tenant_staff(
+                    app.auth_app.as_ref(),
+                    executor,
+                    multi_tenancy,
+                    &tenant_id,
+                )
+                .await;
 
                 Ok(Some(TenantSeedCandidate {
                     tenant_id: operator.id,
@@ -214,18 +209,13 @@ impl LibraryQuery {
                         false
                     }
                 };
-                let staff_count =
-                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                        app.auth_app.as_ref(),
-                        &tachyon_sdk::auth::FindUsersByTenantInput {
-                            executor,
-                            multi_tenancy,
-                            tenant_id: &tenant_id,
-                        },
-                    )
-                    .await
-                    .map(|users| users.len() as i32)
-                    .unwrap_or(0);
+                let staff_count = super::count_tenant_staff(
+                    app.auth_app.as_ref(),
+                    executor,
+                    multi_tenancy,
+                    &tenant_id,
+                )
+                .await;
 
                 Ok(Some(AccessibleTenant {
                     tenant_id: operator.id,

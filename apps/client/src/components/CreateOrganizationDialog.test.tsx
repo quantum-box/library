@@ -40,6 +40,14 @@ const tenants: LibraryAccessibleTenant[] = [
     hasLibraryOrg: false,
     canImportToLibrary: true,
   },
+  {
+    tenantId: 'tn_uncounted',
+    name: 'Uncounted Inc',
+    username: 'uncounted',
+    staffCount: null,
+    hasLibraryOrg: false,
+    canImportToLibrary: true,
+  },
 ]
 
 function renderDialog(overrides: Partial<DialogMocks> = {}) {
@@ -151,6 +159,21 @@ describe('CreateOrganizationDialog — import', () => {
     const readOnly = screen.getByRole('button', { name: /Read Only/ })
     expect(readOnly).toBeDisabled()
     expect(readOnly).toHaveTextContent('No permission to import')
+  })
+
+  it('shows the member count, and a dash when the members could not be counted', async () => {
+    const loadTenants = loadFn().mockResolvedValue(tenants)
+    renderDialog({ loadTenants })
+
+    const acme = await screen.findByRole('button', { name: /Acme Corp/ })
+    expect(acme).toHaveTextContent('4 members')
+
+    // Regression guard for PLT-3886: an uncountable tenant used to claim
+    // `0 members`, which reads as an empty tenant rather than a failure.
+    const uncounted = screen.getByRole('button', { name: /Uncounted Inc/ })
+    expect(uncounted).toHaveTextContent('— members')
+    expect(uncounted).not.toHaveTextContent('0 members')
+    expect(uncounted).toBeEnabled()
   })
 
   it('disables importing when no tenant is selectable', async () => {

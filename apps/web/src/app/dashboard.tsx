@@ -21,7 +21,12 @@ type TenantSeedCandidate = {
 	tenantId: string
 	name: string
 	username: string
-	staffCount: number
+	/**
+	 * Members of the tenant, or `null` when the API could not count them:
+	 * listing a tenant's users is itself permissioned. A missing count must
+	 * not be rendered as `0`, which reads as an empty tenant.
+	 */
+	staffCount: number | null
 	canImportToLibrary: boolean
 }
 
@@ -189,7 +194,11 @@ export function DashboardPage() {
 										</p>
 										<div className='flex items-center gap-2 text-sm text-muted-foreground'>
 											<Users className='h-4 w-4' />
-											<span>{candidate.staffCount} staff members</span>
+											<span>
+												{candidate.staffCount === null
+													? 'Staff count unavailable'
+													: `${candidate.staffCount} staff members`}
+											</span>
 										</div>
 									</div>
 									<Button

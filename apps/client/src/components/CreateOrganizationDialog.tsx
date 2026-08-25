@@ -194,11 +194,21 @@ export function CreateOrganizationDialog({
         {tenants.map((tenant) => {
           const selectable = !tenant.hasLibraryOrg && tenant.canImportToLibrary
           const selected = tenant.tenantId === selectedTenantId
+          // A tenant whose members could not be listed shows a dash rather
+          // than `0 members`, which read as "this tenant is empty".
+          const countUnknown = tenant.staffCount === null
+          const memberNote = countUnknown
+            ? '— members'
+            : `${tenant.staffCount} ${tenant.staffCount === 1 ? 'member' : 'members'}`
           const note = tenant.hasLibraryOrg
             ? 'Already in Library'
             : tenant.canImportToLibrary
-              ? `${tenant.staffCount} ${tenant.staffCount === 1 ? 'member' : 'members'}`
+              ? memberNote
               : 'No permission to import'
+          const noteTitle =
+            countUnknown && !tenant.hasLibraryOrg && tenant.canImportToLibrary
+              ? 'Member count unavailable'
+              : undefined
 
           return (
             <li key={tenant.tenantId}>
@@ -222,7 +232,9 @@ export function CreateOrganizationDialog({
                     @{tenant.username}
                   </span>
                 </span>
-                <span className="shrink-0 text-2xs text-muted-foreground">{note}</span>
+                <span className="shrink-0 text-2xs text-muted-foreground" title={noteTitle}>
+                  {note}
+                </span>
               </button>
             </li>
           )

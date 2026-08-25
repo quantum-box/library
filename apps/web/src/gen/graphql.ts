@@ -31,7 +31,13 @@ export type AccessibleTenant = {
   canImportToLibrary: Scalars['Boolean']['output'];
   hasLibraryOrg: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
-  staffCount: Scalars['Int']['output'];
+  /**
+   * Members of the tenant, or null when the caller could not count
+   * them: listing a tenant's users needs permission inside that
+   * tenant, which a caller who merely belongs to it does not always
+   * hold. Null means unknown, never empty, so do not render it as 0.
+   */
+  staffCount?: Maybe<Scalars['Int']['output']>;
   tenantId: Scalars['String']['output'];
   username: Scalars['String']['output'];
 };
@@ -1942,7 +1948,11 @@ export type TenantSeedCandidate = {
   __typename?: 'TenantSeedCandidate';
   canImportToLibrary: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
-  staffCount: Scalars['Int']['output'];
+  /**
+   * Members of the tenant, or null when the caller could not count
+   * them. See `AccessibleTenant.staffCount`.
+   */
+  staffCount?: Maybe<Scalars['Int']['output']>;
   tenantId: Scalars['String']['output'];
   username: Scalars['String']['output'];
 };

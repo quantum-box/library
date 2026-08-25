@@ -5,7 +5,13 @@ type AccessibleTenant {
 	tenantId: String!
 	name: String!
 	username: String!
-	staffCount: Int!
+	"""
+	Members of the tenant, or null when the caller could not count
+	them: listing a tenant's users needs permission inside that
+	tenant, which a caller who merely belongs to it does not always
+	hold. Null means unknown, never empty, so do not render it as 0.
+	"""
+	staffCount: Int
 	hasLibraryOrg: Boolean!
 	canImportToLibrary: Boolean!
 }
@@ -2159,7 +2165,11 @@ type TenantSeedCandidate {
 	tenantId: String!
 	name: String!
 	username: String!
-	staffCount: Int!
+	"""
+	Members of the tenant, or null when the caller could not count
+	them. See `AccessibleTenant.staffCount`.
+	"""
+	staffCount: Int
 	canImportToLibrary: Boolean!
 }
 
