@@ -103,6 +103,7 @@ export const v1betaTranslations = {
 			loadingTenants: 'Loading tenants...',
 			noTenants: 'No Tachyon tenants are available for this account.',
 			staffMembers: '{count} staff members',
+			staffMembersUnknown: 'Staff count unavailable',
 		},
 		repository: {
 			title: 'Repository',
@@ -930,6 +931,7 @@ export const v1betaTranslations = {
 			loadingTenants: 'テナントを読み込んでいます...',
 			noTenants: 'このアカウントで利用可能な Tachyon テナントはありません。',
 			staffMembers: '{count} 人のスタッフ',
+			staffMembersUnknown: 'スタッフ数を取得できませんでした',
 		},
 		repository: {
 			title: 'リポジトリ',

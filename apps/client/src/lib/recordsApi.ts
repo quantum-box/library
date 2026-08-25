@@ -249,7 +249,13 @@ export interface LibraryAccessibleTenant {
   tenantId: string
   name: string
   username: string
-  staffCount: number
+  /**
+   * Members of the tenant, or `null` when the API could not count them —
+   * listing a tenant's users needs permission inside that tenant, which
+   * belonging to it does not by itself grant. Never render a missing count
+   * as `0`; the two mean different things to someone sizing up an import.
+   */
+  staffCount: number | null
   hasLibraryOrg: boolean
   canImportToLibrary: boolean
 }
