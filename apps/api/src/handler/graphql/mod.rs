@@ -87,17 +87,26 @@ pub(crate) async fn caller_can_seed_tenant(
 /// that permission. Reporting the failure as `0` made "this tenant has
 /// no members" indistinguishable from "we were not allowed to look",
 /// which is why the failure is reported as an absent count instead.
+///
+/// The listing runs in the tenant's own operator scope, built here so
+/// no caller can pass the request's scope by accident: tachyon rejects
+/// a user listing whose operator scope differs from the tenant it asks
+/// about, and the request runs under whichever operator the client app
+/// happens to use.
 pub(crate) async fn count_tenant_staff(
     auth_app: &dyn tachyon_sdk::auth::AuthApp,
     executor: &dyn tachyon_sdk::auth::ExecutorAction,
-    multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
     tenant_id: &value_object::TenantId,
 ) -> Option<i32> {
+    let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+        Some(crate::domain::LIBRARY_TENANT.clone()),
+        Some(tenant_id.clone()),
+    );
     match tachyon_sdk::auth::AuthApp::find_users_by_tenant(
         auth_app,
         &tachyon_sdk::auth::FindUsersByTenantInput {
             executor,
-            multi_tenancy,
+            multi_tenancy: &tenant_scope,
             tenant_id,
         },
     )
@@ -187,25 +196,30 @@ pub async fn graphql_introspection(
 mod tests {
     use super::count_tenant_staff;
     use chrono::Utc;
-    use tachyon_sdk::auth::{DefaultRole, MockAuthApp, MultiTenancy, User};
+    use tachyon_sdk::auth::{
+        DefaultRole, MockAuthApp, MultiTenancyAction, User,
+    };
     use value_object::{TenantId, UserId};
 
+    /// The listing must run in the tenant's own operator scope: tachyon
+    /// rejects a user listing whose scope differs from the tenant it
+    /// asks about, and passing the request's scope through made every
+    /// count fail upstream with a 403.
     #[tokio::test]
     async fn staff_count_reports_the_members_it_can_list() {
         let mut auth_app = MockAuthApp::new();
-        auth_app.expect_find_users_by_tenant().returning(|_| {
-            let users = vec![member("alice"), member("bob")];
-            Box::pin(async move { Ok(users) })
-        });
+        auth_app
+            .expect_find_users_by_tenant()
+            .withf(|input| {
+                input.multi_tenancy.operator_id() == Some(tenant())
+            })
+            .returning(|_| {
+                let users = vec![member("alice"), member("bob")];
+                Box::pin(async move { Ok(users) })
+            });
 
         assert_eq!(
-            count_tenant_staff(
-                &auth_app,
-                &executor(),
-                &multi_tenancy(),
-                &tenant(),
-            )
-            .await,
+            count_tenant_staff(&auth_app, &executor(), &tenant()).await,
             Some(2)
         );
     }
@@ -220,13 +234,7 @@ mod tests {
             .returning(|_| Box::pin(async move { Ok(Vec::new()) }));
 
         assert_eq!(
-            count_tenant_staff(
-                &auth_app,
-                &executor(),
-                &multi_tenancy(),
-                &tenant(),
-            )
-            .await,
+            count_tenant_staff(&auth_app, &executor(), &tenant()).await,
             Some(0)
         );
     }
@@ -245,26 +253,13 @@ mod tests {
         });
 
         assert_eq!(
-            count_tenant_staff(
-                &auth_app,
-                &executor(),
-                &multi_tenancy(),
-                &tenant(),
-            )
-            .await,
+            count_tenant_staff(&auth_app, &executor(), &tenant()).await,
             None
         );
     }
 
     fn tenant() -> TenantId {
         TenantId::new("tn_01j702qf86pc2j35s0kv0gv3gy").unwrap()
-    }
-
-    fn multi_tenancy() -> MultiTenancy {
-        MultiTenancy::new(
-            Some(crate::domain::LIBRARY_TENANT.clone()),
-            Some(tenant()),
-        )
     }
 
     fn executor() -> tachyon_sdk::auth::Executor {

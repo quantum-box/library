@@ -66,8 +66,6 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<Vec<TenantSeedCandidate>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
@@ -117,7 +115,6 @@ impl LibraryQuery {
                 let staff_count = super::count_tenant_staff(
                     app.auth_app.as_ref(),
                     executor,
-                    multi_tenancy,
                     &tenant_id,
                 )
                 .await;
@@ -159,8 +156,6 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<Vec<AccessibleTenant>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
@@ -212,7 +207,6 @@ impl LibraryQuery {
                 let staff_count = super::count_tenant_staff(
                     app.auth_app.as_ref(),
                     executor,
-                    multi_tenancy,
                     &tenant_id,
                 )
                 .await;
@@ -1074,8 +1068,6 @@ impl Organization {
     #[tracing::instrument(skip(ctx))]
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         if executor.is_none() {
             return Ok(vec![]);
@@ -1084,11 +1076,19 @@ impl Organization {
         let tenant_id: value_object::TenantId =
             value_object::TenantId::new(&self.id)
                 .map_err(|e| e.extend())?;
+        // List the members in the organization's own operator scope:
+        // tachyon rejects a user listing whose scope differs from the
+        // tenant it asks about, and the request may run under another
+        // operator (for example the platform tenant).
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
         let users = tachyon_sdk::auth::AuthApp::find_users_by_tenant(
             auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &tenant_scope,
                 tenant_id: &tenant_id,
             },
         )
@@ -1372,6 +1372,38 @@ mod tenant_seed_candidate_tests {
         assert!(source.contains("can_import_to_library"));
         assert!(source.contains("get_caller_user"));
         assert!(source.contains("tenants.sort_by"));
+    }
+
+    /// Tachyon rejects a user listing whose operator scope differs from
+    /// the tenant it asks about, and the request's scope is whatever
+    /// operator the client app runs under. Listing with the request
+    /// scope failed the organization members field outright; the staff
+    /// counts go through `count_tenant_staff`, which builds the tenant
+    /// scope itself.
+    #[test]
+    fn user_listings_are_scoped_to_the_tenant_they_ask_about() {
+        let source = include_str!("resolver.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        let mut listings = 0;
+        for listing in impl_source.split("find_users_by_tenant(").skip(1) {
+            let call = listing.split(".await").next().unwrap_or(listing);
+            assert!(
+                call.contains("multi_tenancy: &tenant_scope"),
+                "every user listing must be scoped to the tenant it asks about"
+            );
+            listings += 1;
+        }
+        assert_eq!(
+            listings, 1,
+            "the organization members field is expected to list users; \
+             staff counts must go through count_tenant_staff instead"
+        );
+        assert_eq!(
+            impl_source.matches("count_tenant_staff(").count(),
+            2,
+            "both staff counts are expected to use the scoped helper"
+        );
     }
 
     /// Tachyon decides permissions by policy, and the `role` field on a
