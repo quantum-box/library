@@ -198,7 +198,7 @@ export function CreateOrganizationDialog({
             ? 'Already in Library'
             : tenant.canImportToLibrary
               ? `${tenant.staffCount} ${tenant.staffCount === 1 ? 'member' : 'members'}`
-              : 'Needs owner or manager role'
+              : 'No permission to import'
 
           return (
             <li key={tenant.tenantId}>

@@ -98,7 +98,7 @@ export const v1betaTranslations = {
 			alreadyInLibrary: 'Already in Library',
 			openInLibrary: 'Open in Library',
 			insufficientTenantRole:
-				'Only Tachyon tenant owners or managers can import this tenant.',
+				'You do not have permission to import this tenant. Ask a tenant administrator.',
 			orCreateManually: 'Or create a new organization manually',
 			loadingTenants: 'Loading tenants...',
 			noTenants: 'No Tachyon tenants are available for this account.',
@@ -925,7 +925,7 @@ export const v1betaTranslations = {
 			alreadyInLibrary: 'Library に登録済み',
 			openInLibrary: 'Library で開く',
 			insufficientTenantRole:
-				'Tachyon テナントの Owner または Manager のみ取り込めます。',
+				'このテナントを取り込む権限がありません。テナント管理者に依頼してください。',
 			orCreateManually: 'または新しい組織を手動で作成',
 			loadingTenants: 'テナントを読み込んでいます...',
 			noTenants: 'このアカウントで利用可能な Tachyon テナントはありません。',

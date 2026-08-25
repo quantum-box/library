@@ -15,8 +15,8 @@ use async_graphql::{
 };
 use futures_util::future::join_all;
 use inbound_sync::providers::linear::LinearClient;
+use tachyon_sdk::auth::ExecutorAction;
 use tachyon_sdk::auth::MultiTenancyAction;
-use tachyon_sdk::auth::{DefaultRole, ExecutorAction};
 use value_object::{self, TenantId};
 
 #[derive(Default)]
@@ -82,7 +82,6 @@ impl LibraryQuery {
         // calls. Walking the tenants one at a time made the resolver
         // as slow as the caller has memberships, so they are resolved
         // side by side; the results are sorted below either way.
-        let user_id = user.id().as_ref();
         let resolved: Vec<Result<Option<TenantSeedCandidate>>> =
             join_all(user.tenants().iter().map(|tenant| async move {
                 if app
@@ -105,14 +104,14 @@ impl LibraryQuery {
 
                 let tenant_id = TenantId::new(tenant.as_ref())
                     .map_err(|e| e.extend())?;
-                let Some(tenant_user) = sdk
-                    .get_user_by_id_full(&tenant_id, user_id)
-                    .await
-                    .map_err(|e| e.extend())?
-                else {
-                    return Ok(None);
-                };
-                if !can_import_library_tenant(tenant_user.role()) {
+                if !super::caller_can_seed_tenant(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await
+                .map_err(|e| e.extend())?
+                {
                     return Ok(None);
                 }
                 let staff_count =
@@ -175,7 +174,6 @@ impl LibraryQuery {
         // Resolved side by side for the same reason as the seed
         // candidates above: the per-tenant work is independent, and
         // the output is sorted before it is returned.
-        let user_id = user.id().as_ref();
         let resolved: Vec<Result<Option<AccessibleTenant>>> =
             join_all(user.tenants().iter().map(|tenant| async move {
                 let has_library_org = app
@@ -195,15 +193,26 @@ impl LibraryQuery {
 
                 let tenant_id = TenantId::new(tenant.as_ref())
                     .map_err(|e| e.extend())?;
-                let can_import_to_library = match sdk
-                    .get_user_by_id_full(&tenant_id, user_id)
-                    .await
-                    .map_err(|e| e.extend())?
+                // A failed evaluation is a transport problem rather than
+                // a denial, and it must not take the whole list down with
+                // it: the tenant is still listed, just not offered for
+                // import, and the mutation re-checks before it seeds.
+                let can_import_to_library = match super::caller_can_seed_tenant(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await
                 {
-                    Some(tenant_user) => {
-                        can_import_library_tenant(tenant_user.role())
+                    Ok(allowed) => allowed,
+                    Err(error) => {
+                        tracing::warn!(
+                            tenant = %tenant_id,
+                            error = ?error,
+                            "could not evaluate tenant import permission"
+                        );
+                        false
                     }
-                    None => false,
                 };
                 let staff_count =
                     tachyon_sdk::auth::AuthApp::find_users_by_tenant(
@@ -1348,14 +1357,8 @@ impl Repo {
     }
 }
 
-fn can_import_library_tenant(role: &DefaultRole) -> bool {
-    matches!(role, DefaultRole::Owner | DefaultRole::Manager)
-}
-
 #[cfg(test)]
 mod tenant_seed_candidate_tests {
-    use super::can_import_library_tenant;
-    use tachyon_sdk::auth::DefaultRole;
 
     /// Regression guard for PLT-1692: Field / other platform tenants must appear
     /// in the onboarding wizard when they lack a Library organization.
@@ -1381,11 +1384,21 @@ mod tenant_seed_candidate_tests {
         assert!(source.contains("tenants.sort_by"));
     }
 
+    /// Tachyon decides permissions by policy, and the `role` field on a
+    /// user record does not carry that decision. Importing must ask the
+    /// auth service for the action the seed performs.
     #[test]
-    fn importable_tenant_roles_are_owner_and_manager_only() {
-        assert!(can_import_library_tenant(&DefaultRole::Owner));
-        assert!(can_import_library_tenant(&DefaultRole::Manager));
-        assert!(!can_import_library_tenant(&DefaultRole::General));
-        assert!(!can_import_library_tenant(&DefaultRole::Store));
+    fn tenant_import_permission_is_evaluated_by_policy_not_by_role() {
+        let source = include_str!("resolver.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            impl_source.contains("caller_can_seed_tenant"),
+            "import permission must come from the policy evaluation helper"
+        );
+        assert!(
+            !impl_source.contains("DefaultRole::Owner"),
+            "import permission must not be decided by the user role field"
+        );
     }
 }

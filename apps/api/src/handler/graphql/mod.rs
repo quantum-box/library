@@ -41,6 +41,44 @@ pub(crate) fn log_graphql_operation_error(
     });
 }
 
+/// The tachyon action a Library tenant seed actually performs.
+///
+/// Seeding attaches Library policies to every member of the tenant, so
+/// this is exactly the permission the caller needs there.
+pub(crate) const TENANT_SEED_ACTION: &str = "auth:AttachUserPolicy";
+
+/// Whether the caller may import `tenant_id` into Library.
+///
+/// Tachyon authorizes by policy, not by the `role` field on a user
+/// record: that field is a label the API renders in upper case
+/// (`OWNER`), and even when it parses it says nothing about what the
+/// user is allowed to do in the tenant. Asking the auth service to
+/// evaluate the action the seed performs keeps this answer in step
+/// with whatever policies the tenant actually grants.
+pub(crate) async fn caller_can_seed_tenant(
+    auth_app: &dyn tachyon_sdk::auth::AuthApp,
+    executor: &dyn tachyon_sdk::auth::ExecutorAction,
+    tenant_id: &value_object::TenantId,
+) -> errors::Result<bool> {
+    let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+        Some(crate::domain::LIBRARY_TENANT.clone()),
+        Some(tenant_id.clone()),
+    );
+    let outcomes = auth_app
+        .evaluate_policies_batch(
+            &tachyon_sdk::auth::EvaluatePoliciesBatchInput {
+                executor,
+                multi_tenancy: &tenant_scope,
+                actions: &[TENANT_SEED_ACTION],
+            },
+        )
+        .await?;
+
+    Ok(outcomes.iter().any(|outcome| {
+        outcome.action == TENANT_SEED_ACTION && outcome.allowed
+    }))
+}
+
 #[derive(async_graphql::MergedObject, Default)]
 pub struct Query(resolver::LibraryQuery, LibrarySyncQuery);
 
