@@ -4,7 +4,6 @@ import type {
 	MeOnDashboardFragment,
 	RepoItemOnDashboardFragment,
 } from '@/gen/graphql'
-import { platformId } from '@/lib/apiClient'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { ArrowRight, BookOpen, Globe, Loader2, Lock, Users } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -88,9 +87,10 @@ export function DashboardPage() {
 				)
 				setSeedCandidates(seedResult.tenantSeedCandidates)
 
-				const orgs = result.me.organizations.filter(
-					(org) => org.platformTenantId === platformId,
-				)
+				// `me.organizations` is already only what Library treats as an
+				// organization. Narrowing it again by platform here dropped every
+				// tenant adopted from Tachyon, since those keep their own platform.
+				const orgs = result.me.organizations
 
 				const repoResults = await Promise.allSettled(
 					orgs.map((org) =>
@@ -159,9 +159,7 @@ export function DashboardPage() {
 
 	const t = dictionary
 	const meData = me ?? { name: '', tenantIdList: [], organizations: [] }
-	const orgs = meData.organizations.filter(
-		(org) => org.platformTenantId === platformId,
-	)
+	const orgs = meData.organizations
 	const allRepos = orgs.flatMap((org) => {
 		const repos = orgRepos.get(org.id) ?? []
 		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
