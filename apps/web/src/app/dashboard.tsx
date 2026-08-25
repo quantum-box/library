@@ -16,22 +16,28 @@ import { SpaHeader } from './v1beta/_components/header/spa-header'
 import { useEffect, useState } from 'react'
 import { platformAction } from './v1beta/_lib/platform-action'
 import { handleNotFound } from './v1beta/_lib/platform-error-handler'
+import { selectVisibleOrgs } from './dashboard-orgs'
 
-type TenantSeedCandidate = {
+type AccessibleTenant = {
 	tenantId: string
 	name: string
 	username: string
 	staffCount: number
+	hasLibraryOrg: boolean
 	canImportToLibrary: boolean
 }
 
-const TenantSeedCandidatesQuery = graphql(`
-	query TenantSeedCandidates {
-		tenantSeedCandidates {
+// `accessibleTenants` answers both questions this page has -- which tenants can
+// still be imported, and which ones already back a Library organization -- so it
+// replaces the narrower `tenantSeedCandidates` query.
+const AccessibleTenantsQuery = graphql(`
+	query DashboardAccessibleTenants {
+		accessibleTenants {
 			tenantId
 			name
 			username
 			staffCount
+			hasLibraryOrg
 			canImportToLibrary
 		}
 	}
@@ -53,8 +59,13 @@ export function DashboardPage() {
 	const locale = detectLocale()
 	const dictionary = getDictionary(locale)
 	const [me, setMe] = useState<MeOnDashboardFragment | null>(null)
-	const [orgRepos, setOrgRepos] = useState<Map<string, RepoItemOnDashboardFragment[]>>(new Map())
-	const [seedCandidates, setSeedCandidates] = useState<TenantSeedCandidate[]>([])
+	const [orgRepos, setOrgRepos] = useState<
+		Map<string, RepoItemOnDashboardFragment[]>
+	>(new Map())
+	const [seedCandidates, setSeedCandidates] = useState<AccessibleTenant[]>([])
+	const [libraryTenantIds, setLibraryTenantIds] = useState<Set<string>>(
+		new Set(),
+	)
 	const [seedingTenantId, setSeedingTenantId] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 
@@ -63,7 +74,7 @@ export function DashboardPage() {
 			if (!session?.user?.accessToken) return
 
 			try {
-				const result = await platformAction(async (sdk) => sdk.dashboard(), {
+				const result = await platformAction(async sdk => sdk.dashboard(), {
 					onError: handleNotFound,
 					accessToken: session.user.accessToken,
 				})
@@ -74,23 +85,35 @@ export function DashboardPage() {
 				}
 
 				setMe(result.me)
-				const seedResult = await executeGraphQL<{
-					tenantSeedCandidates: TenantSeedCandidate[]
-				}>(
-					TenantSeedCandidatesQuery,
-					undefined,
-					{ accessToken: session.user.accessToken },
+				const tenantResult = await executeGraphQL<{
+					accessibleTenants: AccessibleTenant[]
+				}>(AccessibleTenantsQuery, undefined, {
+					accessToken: session.user.accessToken,
+				})
+				const tenants = tenantResult.accessibleTenants ?? []
+				const inLibrary = new Set(
+					tenants
+						.filter(tenant => tenant.hasLibraryOrg)
+						.map(tenant => tenant.tenantId),
 				)
-				setSeedCandidates(seedResult.tenantSeedCandidates)
+				setLibraryTenantIds(inLibrary)
+				setSeedCandidates(
+					tenants.filter(
+						tenant => !tenant.hasLibraryOrg && tenant.canImportToLibrary,
+					),
+				)
 
-				const orgs = result.me.organizations.filter(
-					(org) => org.platformTenantId === platformId,
+				const orgs = selectVisibleOrgs(
+					result.me.organizations,
+					inLibrary,
+					platformId,
 				)
 
 				const repoResults = await Promise.allSettled(
-					orgs.map((org) =>
+					orgs.map(org =>
 						platformAction(
-							async (sdk) => sdk.dashboardOrgRepos({ username: org.operatorName }),
+							async sdk =>
+								sdk.dashboardOrgRepos({ username: org.operatorName }),
 							{
 								onError: handleNotFound,
 								accessToken: session.user.accessToken,
@@ -154,15 +177,56 @@ export function DashboardPage() {
 
 	const t = dictionary
 	const meData = me ?? { name: '', tenantIdList: [], organizations: [] }
-	const orgs = meData.organizations.filter(
-		(org) => org.platformTenantId === platformId,
+	const orgs = selectVisibleOrgs(
+		meData.organizations,
+		libraryTenantIds,
+		platformId,
 	)
-	const allRepos = orgs.flatMap((org) => {
+	const allRepos = orgs.flatMap(org => {
 		const repos = orgRepos.get(org.id) ?? []
-		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
+		return repos.map(repo => ({ ...repo, orgName: org.operatorName }))
 	})
 
-	if (seedCandidates.length > 0) {
+	const seedCandidateCards = (
+		<div className='space-y-3'>
+			{seedCandidates.map(candidate => (
+				<Card key={candidate.tenantId}>
+					<CardHeader className='pb-3'>
+						<CardTitle className='text-base'>{candidate.name}</CardTitle>
+					</CardHeader>
+					<CardContent className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+						<div className='min-w-0 space-y-2'>
+							<p className='truncate text-sm text-muted-foreground'>
+								/{candidate.username}
+							</p>
+							<div className='flex items-center gap-2 text-sm text-muted-foreground'>
+								<Users className='h-4 w-4' />
+								<span>{candidate.staffCount} staff members</span>
+							</div>
+						</div>
+						<Button
+							type='button'
+							className='w-full sm:w-auto'
+							disabled={seedingTenantId !== null}
+							onClick={() => seedTenant(candidate.tenantId)}
+						>
+							{seedingTenantId === candidate.tenantId ? (
+								<Loader2 className='h-4 w-4 animate-spin' />
+							) : (
+								<ArrowRight className='h-4 w-4' />
+							)}
+							Import to Library
+						</Button>
+					</CardContent>
+				</Card>
+			))}
+		</div>
+	)
+
+	// A first run with nothing in Library gets the setup screen to itself. Once
+	// there are organizations, the prompt is one section among many -- taking
+	// over the whole dashboard would hide the work that is already there.
+	if (orgs.length === 0 && seedCandidates.length > 0) {
 		return (
 			<I18nProvider locale={locale} dictionary={dictionary}>
 				<SpaHeader />
@@ -176,39 +240,7 @@ export function DashboardPage() {
 							Library.
 						</p>
 					</div>
-					<div className='space-y-3'>
-						{seedCandidates.map((candidate) => (
-							<Card key={candidate.tenantId}>
-								<CardHeader className='pb-3'>
-									<CardTitle className='text-base'>{candidate.name}</CardTitle>
-								</CardHeader>
-								<CardContent className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-									<div className='min-w-0 space-y-2'>
-										<p className='truncate text-sm text-muted-foreground'>
-											/{candidate.username}
-										</p>
-										<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-											<Users className='h-4 w-4' />
-											<span>{candidate.staffCount} staff members</span>
-										</div>
-									</div>
-									<Button
-										type='button'
-										className='w-full sm:w-auto'
-										disabled={seedingTenantId !== null}
-										onClick={() => seedTenant(candidate.tenantId)}
-									>
-										{seedingTenantId === candidate.tenantId ? (
-											<Loader2 className='h-4 w-4 animate-spin' />
-										) : (
-											<ArrowRight className='h-4 w-4' />
-										)}
-										Import to Library
-									</Button>
-								</CardContent>
-							</Card>
-						))}
-					</div>
+					{seedCandidateCards}
 				</div>
 			</I18nProvider>
 		)
@@ -242,7 +274,7 @@ export function DashboardPage() {
 									</Link>
 								</div>
 								<div className='mt-2 space-y-1 flex flex-col'>
-									{orgs.map((org) => (
+									{orgs.map(org => (
 										<Button
 											asChild
 											key={org.id}
@@ -269,7 +301,7 @@ export function DashboardPage() {
 								</p>
 								<div className='mt-2 space-y-1 flex flex-col'>
 									{allRepos.length > 0 ? (
-										allRepos.slice(0, 10).map((repo) => (
+										allRepos.slice(0, 10).map(repo => (
 											<Link
 												key={repo.id}
 												to={`/v1beta/${repo.orgName}/${repo.username}`}
@@ -322,13 +354,25 @@ export function DashboardPage() {
 							</div>
 						</div>
 
+						{seedCandidates.length > 0 && (
+							<div className='rounded-lg border p-4 dark:border-gray-800 dark:bg-gray-950'>
+								<h2 className='text-lg font-semibold dark:text-gray-200'>
+									Import an existing organization
+								</h2>
+								<p className='mt-1 mb-3 text-sm text-gray-600 dark:text-gray-400'>
+									Bring your organization profile and staff access into Library.
+								</p>
+								{seedCandidateCards}
+							</div>
+						)}
+
 						{allRepos.length > 0 && (
 							<div className='rounded-lg border p-4 dark:border-gray-800 dark:bg-gray-950'>
 								<h2 className='text-lg font-semibold dark:text-gray-200 mb-3'>
 									{t.dashboard.main.yourRepositories}
 								</h2>
 								<div className='space-y-2'>
-									{allRepos.map((repo) => (
+									{allRepos.map(repo => (
 										<Link
 											key={repo.id}
 											to={`/v1beta/${repo.orgName}/${repo.username}`}
