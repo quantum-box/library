@@ -470,6 +470,10 @@ pub async fn router(
     .data(oauth_bootstrap.clone())
     .data(auth_app_trait.clone())
     .data(library_app.clone())
+    // Registered on its own as well as inside `library_app` so that
+    // `User::organizations` can tell a Library organization from any
+    // other tenant without pulling in the whole application.
+    .data(library_app.organization_repo.clone())
     .data(integration_query_state)
     .data(github.clone())
     .data(inbound_sync_query_state)

@@ -1310,14 +1310,13 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
       {}
     )
     updateStoredAuthFromLibraryUser(payload.me)
+    // The API already returns only what Library treats as an organization.
+    // Narrowing it again by platform here dropped every tenant adopted from
+    // Tachyon, because an adopted tenant keeps the platform it came from.
     const organizations = payload.me?.organizations ?? []
-    const scopedOrganizations = organizations.filter(
-      (organization) => organization.platformTenantId === configuredPlatformId()
-    )
-    const selectedOrganizations = scopedOrganizations.length > 0 ? scopedOrganizations : organizations
 
     return Promise.all(
-      selectedOrganizations.map(async (organization) => {
+      organizations.map(async (organization) => {
         try {
           const repos = await fetchLibraryOrganizationRepos(organization)
           return {
