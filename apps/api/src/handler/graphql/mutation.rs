@@ -176,8 +176,6 @@ impl LibraryMutation {
         tenant_id: String,
     ) -> Result<SeedLibraryTenantPayload> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let library_app = ctx.data::<Arc<LibraryApp>>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
 
@@ -206,11 +204,21 @@ impl LibraryMutation {
             .map_err(|e| e.extend())?
             .ok_or_else(|| async_graphql::Error::new("Tenant not found"))?;
 
+        // Every upstream call about the tenant being imported must be
+        // scoped to that tenant: tachyon rejects a request whose
+        // operator scope differs from the tenant it asks about, and
+        // the request's own scope is whatever operator the client app
+        // happens to run under -- never the tenant being imported.
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
+
         let users = AuthAppTrait::find_users_by_tenant(
             library_app.auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &tenant_scope,
                 tenant_id: &tenant_id,
             },
         )
@@ -246,7 +254,6 @@ impl LibraryMutation {
             organization
         };
 
-        let platform_tenant = crate::domain::LIBRARY_TENANT.clone();
         let policy_id = library_user_policy_id();
         let repo_owner_policy_id = library_repo_owner_policy_id();
         // Grant as the caller, who `ensure_tenant_seed_admin` has just
@@ -256,11 +263,6 @@ impl LibraryMutation {
         // tenant and is rejected in any per-organization scope -- every
         // grant below would have been warned away and the seed would
         // have reported success while attaching nothing.
-        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-            Some(platform_tenant),
-            Some(tenant_id.clone()),
-        );
-
         for tenant_user in &users {
             if let Err(err) = AuthAppTrait::attach_user_policy(
                 library_app.auth_app.as_ref(),
@@ -1749,6 +1751,32 @@ mod tests {
         assert!(
             impl_source.contains("get_caller_user"),
             "seedLibraryTenant must authorize against all caller tenant memberships"
+        );
+    }
+
+    /// Tachyon rejects a user listing whose operator scope differs from
+    /// the tenant it asks about, and the request's scope is whichever
+    /// operator the client app runs under -- never the tenant being
+    /// imported. Listing with the request scope failed every import
+    /// with "Upstream authorization rejected".
+    #[test]
+    fn seed_library_tenant_lists_users_in_the_imported_tenant_scope() {
+        let source = include_str!("mutation.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        let seed_source = impl_source
+            .split("async fn seed_library_tenant")
+            .nth(1)
+            .expect("the seed mutation must exist");
+        let listing = seed_source
+            .split("find_users_by_tenant(")
+            .nth(1)
+            .expect("the seed must list the tenant's members");
+        let call = listing.split(".await").next().unwrap_or(listing);
+        assert!(
+            call.contains("multi_tenancy: &tenant_scope"),
+            "the member listing must be scoped to the tenant being \
+             imported, not the request's operator scope"
         );
     }
 
