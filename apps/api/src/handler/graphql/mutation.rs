@@ -282,7 +282,14 @@ impl LibraryMutation {
                 );
             }
 
-            if *tenant_user.role() == DefaultRole::Owner {
+            let owns_repos = member_owns_repos(
+                library_app.user_policy_mapping_repo.as_ref(),
+                tenant_user,
+                &tenant_id,
+            )
+            .await;
+
+            if owns_repos {
                 if let Err(err) = AuthAppTrait::attach_user_policy(
                     library_app.auth_app.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
@@ -1638,13 +1645,63 @@ async fn ensure_tenant_seed_admin(
     ))
 }
 
+/// Whether a member of a tenant being imported should get full access
+/// to the new organization's repositories.
+///
+/// The primary signal is the tachyon administrator policy attached to
+/// them inside that tenant, because that is what tachyon itself
+/// authorizes against -- `role` is a label on the user record that
+/// says nothing about what its holder may do.
+///
+/// The `role` check stays as a second, OR-ed signal rather than being
+/// replaced. Tenants that predate policy management still carry
+/// members recorded as `Owner` with nothing attached at all -- half
+/// the `OWNER`s in the platform tenant hold no `AdministratorAccess`
+/// today -- and dropping them would import an organization whose
+/// repositories nobody can manage. That is the worse failure of the
+/// two: an extra grant is something an owner can undo from the
+/// members screen, an ownerless organization is not.
+///
+/// A lookup that fails is not fatal: it degrades to the role check and
+/// the seed continues, since the alternative is an import that silently
+/// leaves the organization ownerless.
+async fn member_owns_repos(
+    mappings: &dyn tachyon_sdk::auth::UserPolicyMappingRepository,
+    member: &tachyon_sdk::auth::User,
+    tenant_id: &TenantId,
+) -> bool {
+    if *member.role() == DefaultRole::Owner {
+        return true;
+    }
+
+    match mappings.find_policies_by_user(member.id(), tenant_id).await {
+        Ok(policies) => policies
+            .iter()
+            .any(crate::domain::is_tenant_administrator_policy),
+        Err(err) => {
+            tracing::warn!(
+                user = %member.id(),
+                tenant = %tenant_id,
+                error = ?err,
+                "failed to read attached policies during tenant seed; \
+                 falling back to the role field"
+            );
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ensure_tenant_seed_admin, LibraryMutation};
+    use super::{
+        ensure_tenant_seed_admin, member_owns_repos, LibraryMutation,
+    };
+    use crate::domain::TENANT_ADMINISTRATOR_POLICY_ID;
     use async_graphql::{EmptySubscription, Object, Schema};
     use chrono::Utc;
     use tachyon_sdk::auth::{
-        DefaultRole, EvaluatePoliciesBatchOutcome, MockAuthApp, User,
+        DefaultRole, EvaluatePoliciesBatchOutcome, MockAuthApp, PolicyId,
+        User, UserPolicy, UserPolicyMappingRepository,
     };
     use value_object::{TenantId, UserId};
 
@@ -1779,6 +1836,172 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// A `UserPolicyMappingRepository` that answers only the one method
+    /// the seed decision reads, with a canned result.
+    ///
+    /// `None` stands for a lookup the upstream refuses to answer.
+    #[derive(Debug)]
+    struct StubPolicies(Option<Vec<PolicyId>>);
+
+    impl StubPolicies {
+        fn attached(ids: &[&str]) -> Self {
+            Self(Some(ids.iter().copied().map(PolicyId::from).collect()))
+        }
+
+        fn unavailable() -> Self {
+            Self(None)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UserPolicyMappingRepository for StubPolicies {
+        async fn find_policies_by_user(
+            &self,
+            _user_id: &UserId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<Vec<PolicyId>> {
+            self.0.clone().ok_or_else(|| {
+                errors::Error::internal_server_error(
+                    "upstream is down".to_string(),
+                )
+            })
+        }
+
+        async fn create_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_users_by_policy(
+            &self,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<Vec<UserId>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn exists_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<bool> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn create_mapping_with_scope(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete_mapping_with_scope(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_by_resource_scope(
+            &self,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<Vec<UserPolicy>> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    /// The point of PLT-3885: an administrator the tenant never
+    /// labelled `Owner` still owns the imported organization's repos.
+    #[tokio::test]
+    async fn seed_gives_repo_ownership_to_an_administrator_by_policy() {
+        let mappings =
+            StubPolicies::attached(&[TENANT_ADMINISTRATOR_POLICY_ID]);
+
+        assert!(
+            member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn seed_withholds_repo_ownership_from_a_plain_member() {
+        let mappings =
+            StubPolicies::attached(&["pol_01compute_readonly001"]);
+
+        assert!(
+            !member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    /// The OR-ed role check: tenants that never adopted policy
+    /// management record owners with nothing attached, and importing
+    /// them must not leave the organization without a repo owner.
+    #[tokio::test]
+    async fn seed_still_honours_an_owner_with_no_policies_attached() {
+        let mappings = StubPolicies::attached(&[]);
+
+        assert!(
+            member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::Owner),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    /// A failed lookup degrades to the role check instead of failing
+    /// the seed or granting ownership on a guess.
+    #[tokio::test]
+    async fn seed_falls_back_to_the_role_when_policies_cannot_be_read() {
+        assert!(
+            member_owns_repos(
+                &StubPolicies::unavailable(),
+                &test_user(DefaultRole::Owner),
+                &tenant(),
+            )
+            .await
+        );
+        assert!(
+            !member_owns_repos(
+                &StubPolicies::unavailable(),
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
     }
 }
 

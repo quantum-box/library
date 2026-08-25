@@ -554,6 +554,31 @@ impl SdkAuthApp {
         self.configuration(headers)
     }
 
+    /// Build an SDK Configuration scoped to `tenant_id` and
+    /// authenticated as the current request's caller when one is
+    /// known, falling back to the process-level credential otherwise.
+    ///
+    /// This is what [`sdk_config_with_context`] produces for a user
+    /// executor inside a tenant scope, for the endpoints whose trait
+    /// signature carries no executor to derive it from.
+    ///
+    /// [`sdk_config_with_context`]: Self::sdk_config_with_context
+    fn sdk_config_as_caller_for_tenant(
+        &self,
+        tenant_id: &TenantId,
+    ) -> Configuration {
+        let token = request_caller_token()
+            .unwrap_or_else(|| self.auth_token.clone());
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(value) = format!("Bearer {token}").parse() {
+            headers.insert("Authorization", value);
+        }
+        headers
+            .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
+
+        self.configuration(headers)
+    }
+
     /// Build an SDK Configuration authenticated as the current
     /// request's caller when one is known, falling back to the
     /// process-level credential otherwise.
@@ -1355,6 +1380,35 @@ impl SdkAuthApp {
                 })
             })
             .collect()
+    }
+
+    /// List the policies attached to a user inside a tenant.
+    ///
+    /// `GET /v1/auth/users/{user_id}/policies?tenantId=...`, the same
+    /// endpoint `tachyon org users policies` reads. Policy evaluation
+    /// (`evaluate_policies_batch`, `check_policy`) only ever answers
+    /// for the caller, so this is the one way to ask what somebody
+    /// *else* has been granted.
+    ///
+    /// Reads as the caller rather than the service account: the
+    /// service account belongs to the Library platform tenant and is
+    /// rejected in a per-organization scope.
+    pub async fn list_user_policies_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Vec<PolicyId>> {
+        let config = self.sdk_config_as_caller_for_tenant(tenant_id);
+        let resp =
+            tachyon_sdk::apis::auth_user_policies_api::list_user_policies(
+                &config,
+                user_id.as_ref(),
+                Some(tenant_id.as_str()),
+            )
+            .await
+            .map_err(sdk_api_err)?;
+
+        Ok(resp.policy_ids.into_iter().map(PolicyId::from).collect())
     }
 
     /// Get user by ID with tenant list via SDK.
@@ -2595,10 +2649,12 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
 
     async fn find_policies_by_user(
         &self,
-        _user_id: &tachyon_sdk::auth::UserId,
-        _tenant_id: &TenantId,
+        user_id: &tachyon_sdk::auth::UserId,
+        tenant_id: &TenantId,
     ) -> errors::Result<Vec<tachyon_sdk::auth::PolicyId>> {
-        Err(sdk_internal_err("find_policies_by_user: use AuthApp"))
+        self.sdk
+            .list_user_policies_in_tenant(user_id, tenant_id)
+            .await
     }
 
     async fn find_users_by_policy(
