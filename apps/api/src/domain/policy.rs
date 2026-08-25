@@ -40,3 +40,17 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
     }
     Some(PolicyId::new(id))
 }
+
+/// Tachyon's built-in tenant administrator policy.
+///
+/// This is the grant that actually makes someone an administrator of a
+/// tenant, as opposed to the `role` label on their user record. It is
+/// seeded platform-wide, so the id is the same in every environment.
+pub const TENANT_ADMINISTRATOR_POLICY_ID: &str =
+    "pol_01hjryxysgey07h5jz5w00001";
+
+/// Whether `policy_id` makes its holder an administrator of the tenant
+/// it is attached in.
+pub fn is_tenant_administrator_policy(policy_id: &PolicyId) -> bool {
+    policy_id.as_str() == TENANT_ADMINISTRATOR_POLICY_ID
+}
