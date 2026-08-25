@@ -192,17 +192,13 @@ impl LibraryMutation {
             .extend());
         }
 
-        let tenant_user = sdk
-            .get_user_by_id_full(&tenant_id, user.id().as_ref())
-            .await
-            .map_err(|e| e.extend())?
-            .ok_or_else(|| {
-                errors::permission_denied!(
-                    "User is not a member of this tenant"
-                )
-                .extend()
-            })?;
-        ensure_tenant_seed_admin(&tenant_user).map_err(|e| e.extend())?;
+        ensure_tenant_seed_admin(
+            library_app.auth_app.as_ref(),
+            executor,
+            &tenant_id,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let operator = sdk
             .get_operator(tenant_id.as_ref())
@@ -1622,17 +1618,24 @@ impl LibraryMutation {
     }
 }
 
-fn ensure_tenant_seed_admin(
-    user: &tachyon_sdk::auth::User,
+/// Reject a caller who cannot grant policies inside the tenant.
+///
+/// The check is a policy evaluation rather than a look at the user's
+/// `role`: tachyon authorizes by policy, and the role field the API
+/// returns is a label that says nothing about what the caller may do
+/// here.
+async fn ensure_tenant_seed_admin(
+    auth_app: &dyn AuthAppTrait,
+    executor: &dyn ExecutorAction,
+    tenant_id: &TenantId,
 ) -> errors::Result<()> {
-    match user.role() {
-        DefaultRole::Owner | DefaultRole::Manager => Ok(()),
-        DefaultRole::General | DefaultRole::Store => Err(
-            errors::permission_denied!(
-                "Only tenant owners or managers can import a tenant into Library"
-            ),
-        ),
+    if super::caller_can_seed_tenant(auth_app, executor, tenant_id).await? {
+        return Ok(());
     }
+
+    Err(errors::permission_denied!(
+        "Importing a tenant into Library needs permission to grant policies in it"
+    ))
 }
 
 #[cfg(test)]
@@ -1640,7 +1643,9 @@ mod tests {
     use super::{ensure_tenant_seed_admin, LibraryMutation};
     use async_graphql::{EmptySubscription, Object, Schema};
     use chrono::Utc;
-    use tachyon_sdk::auth::{DefaultRole, User};
+    use tachyon_sdk::auth::{
+        DefaultRole, EvaluatePoliciesBatchOutcome, MockAuthApp, User,
+    };
     use value_object::{TenantId, UserId};
 
     struct TestQuery;
@@ -1690,20 +1695,71 @@ mod tests {
         );
     }
 
-    #[test]
-    fn tenant_seed_admin_allows_owner_and_manager() {
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Owner))
-            .is_ok());
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Manager))
-            .is_ok());
+    #[tokio::test]
+    async fn tenant_seed_admin_allows_a_caller_the_tenant_authorizes() {
+        let mut auth_app = MockAuthApp::new();
+        auth_app
+            .expect_evaluate_policies_batch()
+            .returning(|input| {
+                let outcomes: Vec<_> = input
+                    .actions
+                    .iter()
+                    .map(|action| EvaluatePoliciesBatchOutcome {
+                        action: (*action).to_string(),
+                        allowed: true,
+                        error: None,
+                    })
+                    .collect();
+                Box::pin(async move { Ok(outcomes) })
+            });
+
+        assert!(ensure_tenant_seed_admin(
+            &auth_app,
+            &executor(),
+            &tenant(),
+        )
+        .await
+        .is_ok());
     }
 
-    #[test]
-    fn tenant_seed_admin_rejects_general_and_store() {
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::General))
-            .is_err());
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Store))
-            .is_err());
+    /// The role field says nothing about what the caller may do: an
+    /// `Owner` whose tenant denies the action must still be rejected,
+    /// and that is what makes this check policy-driven.
+    #[tokio::test]
+    async fn tenant_seed_admin_rejects_a_caller_the_tenant_denies() {
+        let mut auth_app = MockAuthApp::new();
+        auth_app
+            .expect_evaluate_policies_batch()
+            .returning(|input| {
+                let outcomes: Vec<_> = input
+                    .actions
+                    .iter()
+                    .map(|action| EvaluatePoliciesBatchOutcome {
+                        action: (*action).to_string(),
+                        allowed: false,
+                        error: None,
+                    })
+                    .collect();
+                Box::pin(async move { Ok(outcomes) })
+            });
+
+        assert!(ensure_tenant_seed_admin(
+            &auth_app,
+            &executor(),
+            &tenant(),
+        )
+        .await
+        .is_err());
+    }
+
+    fn tenant() -> TenantId {
+        TenantId::new("tn_01j702qf86pc2j35s0kv0gv3gy").unwrap()
+    }
+
+    fn executor() -> tachyon_sdk::auth::Executor {
+        tachyon_sdk::auth::Executor::User(Box::new(test_user(
+            DefaultRole::Owner,
+        )))
     }
 
     fn test_user(role: DefaultRole) -> User {

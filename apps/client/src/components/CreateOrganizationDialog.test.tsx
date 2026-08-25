@@ -150,7 +150,7 @@ describe('CreateOrganizationDialog — import', () => {
 
     const readOnly = screen.getByRole('button', { name: /Read Only/ })
     expect(readOnly).toBeDisabled()
-    expect(readOnly).toHaveTextContent('Needs owner or manager role')
+    expect(readOnly).toHaveTextContent('No permission to import')
   })
 
   it('disables importing when no tenant is selectable', async () => {
