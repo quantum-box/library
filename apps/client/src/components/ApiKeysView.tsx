@@ -21,7 +21,14 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   createApiKey,
   fetchApiKeys,
@@ -75,20 +82,30 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
   const [createError, setCreateError] = useState<string | null>(null)
   const [issued, setIssued] = useState<CreatedApiKey | null>(null)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   const [revokeTarget, setRevokeTarget] = useState<ApiKeySummary | null>(null)
   const [revokeBusy, setRevokeBusy] = useState(false)
   const [revokeError, setRevokeError] = useState<string | null>(null)
 
+  // Loads overlap: switching organizations, or creating a key while the
+  // first load is still in flight. Whichever request started last is the
+  // one whose answer is current, however the responses happen to arrive.
+  const loadGeneration = useRef(0)
+
   const loadApiKeys = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     setLoadError(null)
     try {
-      setApiKeys(await fetchApiKeys(target))
+      const keys = await fetchApiKeys(target)
+      if (generation !== loadGeneration.current) return
+      setApiKeys(keys)
     } catch (error) {
+      if (generation !== loadGeneration.current) return
       setLoadError(error)
     } finally {
-      setLoading(false)
+      if (generation === loadGeneration.current) setLoading(false)
     }
   }, [target])
 
@@ -140,9 +157,16 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
 
   const handleCopy = async () => {
     if (!issued) return
-    await navigator.clipboard.writeText(issued.value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      await navigator.clipboard.writeText(issued.value)
+      setCopyError(null)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Silently failing here loses the key: it is shown once and the
+      // reader would close the dialog believing they had it.
+      setCopyError('Could not reach the clipboard. Select the key below and copy it manually.')
+    }
   }
 
   return (
@@ -357,7 +381,15 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
         </DialogContent>
       </Dialog>
 
-      <Dialog open={issued !== null} onOpenChange={(open) => !open && setIssued(null)}>
+      <Dialog
+        open={issued !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIssued(null)
+            setCopyError(null)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Copy your API key</DialogTitle>
@@ -366,17 +398,31 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
               before closing this dialog.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 py-3">
-            <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-2xs">
-              {issued?.value}
-            </code>
-            <Button size="sm" variant="secondary" onClick={() => void handleCopy()}>
-              {copied ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
+          <div className="flex flex-col gap-2 py-3">
+            <div className="flex items-start gap-2">
+              <code className="min-w-0 flex-1 select-all break-all rounded-md border border-border bg-surface px-3 py-2 font-mono text-2xs">
+                {issued?.value}
+              </code>
+              <Button size="sm" variant="secondary" onClick={() => void handleCopy()}>
+                {copied ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            {copyError ? (
+              <p role="alert" className="text-2xs text-destructive">
+                {copyError}
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
-            <Button onClick={() => setIssued(null)}>Done</Button>
+            <Button
+              onClick={() => {
+                setIssued(null)
+                setCopyError(null)
+              }}
+            >
+              Done
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
