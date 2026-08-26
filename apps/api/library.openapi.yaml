@@ -435,6 +435,13 @@ components:
           type:
           - string
           - 'null'
+        org:
+          description: |-
+            Organization username to search in. Defaults to the organization named
+            by the `x-operator-id` header.
+          type:
+          - string
+          - 'null'
       type: object
     SignInRequest:
       description: Request body for sign-in endpoint
@@ -845,8 +852,7 @@ paths:
     get:
       operationId: search_repo
       parameters:
-      - description: Organization username to search in. Defaults to the x-operator-id
-          organization
+      - description: Organization username to search in. Defaults to the x-operator-id organization
         in: query
         name: org
         required: false

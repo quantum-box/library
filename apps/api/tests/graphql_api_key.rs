@@ -93,11 +93,23 @@ async fn test_graphql_create_api_key() -> anyhow::Result<()> {
 
     let mock_sync_data: Arc<dyn outbound_sync::SyncDataInputPort> =
         Arc::new(MockSyncData);
+    let library_db =
+        persistence::Db::new_lazy(dsn.clone().use_database("library"));
     let app = library_api::LibraryApp::new(
-        persistence::Db::new_lazy(dsn.clone().use_database("library")),
+        library_db.clone(),
         db_manager.clone(),
         sdk,
         mock_sync_data,
+        Arc::new(
+            inbound_sync::interface_adapter::SqlxWebhookEndpointRepository::new(
+                library_db.pool(),
+            ),
+        ),
+        Arc::new(
+            inbound_sync::interface_adapter::SqlxSyncStateRepository::new(
+                library_db.pool(),
+            ),
+        ),
     )
     .await;
 

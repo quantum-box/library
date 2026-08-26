@@ -302,6 +302,8 @@ export type ExchangeOAuthCodeInput = {
 
 /** Repository configuration for ext_github */
 export type ExtGithubRepoConfigInput = {
+  /** Target branch (defaults to "main") */
+  branch?: InputMaybe<Scalars['String']['input']>;
   /** Default path (optional, supports {{name}} placeholder) */
   defaultPath?: InputMaybe<Scalars['String']['input']>;
   /** Display label (optional) */
@@ -4010,6 +4012,7 @@ export function ExchangeOAuthCodeInputSchema(): z.ZodObject<Properties<ExchangeO
 
 export function ExtGithubRepoConfigInputSchema(): z.ZodObject<Properties<ExtGithubRepoConfigInput>> {
   return z.object({
+    branch: z.string().nullish(),
     defaultPath: z.string().nullish(),
     label: z.string().nullish(),
     repo: z.string().min(1)

@@ -20,6 +20,7 @@ describe('normalizeExtGithubEditorState', () => {
 		expect(normalizeExtGithubEditorState(undefined)).toEqual({
 			repo: '',
 			path: '',
+			ref: 'main',
 			enabled: false,
 		})
 	})
@@ -33,7 +34,34 @@ describe('normalizeExtGithubEditorState', () => {
 		).toEqual({
 			repo: 'quantum-box/library',
 			path: 'docs/example.md',
+			ref: 'main',
 			enabled: false,
 		})
+	})
+
+	it('keeps an explicit ref and enabled flag', () => {
+		expect(
+			normalizeExtGithubEditorState({
+				repo: 'quantum-box/library',
+				path: 'docs/example.md',
+				ref: 'develop',
+				enabled: true,
+			}),
+		).toEqual({
+			repo: 'quantum-box/library',
+			path: 'docs/example.md',
+			ref: 'develop',
+			enabled: true,
+		})
+	})
+
+	it('falls back to main for a blank ref', () => {
+		expect(
+			normalizeExtGithubEditorState({
+				repo: 'quantum-box/library',
+				path: 'docs/example.md',
+				ref: '  ',
+			}).ref,
+		).toBe('main')
 	})
 })

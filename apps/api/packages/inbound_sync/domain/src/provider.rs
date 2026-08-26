@@ -109,10 +109,11 @@ impl From<Provider> for OAuthProvider {
 impl Provider {
     pub fn readiness(&self) -> ProviderReadiness {
         match self {
-            Provider::Linear | Provider::Generic => ProviderReadiness::Ga,
+            Provider::Github | Provider::Linear | Provider::Generic => {
+                ProviderReadiness::Ga
+            }
             Provider::Square => ProviderReadiness::Experimental,
-            Provider::Github
-            | Provider::Hubspot
+            Provider::Hubspot
             | Provider::Stripe
             | Provider::Notion
             | Provider::Airtable => ProviderReadiness::NonGa,
@@ -121,9 +122,6 @@ impl Provider {
 
     pub fn unavailable_reason(&self) -> Option<&'static str> {
         match self {
-            Provider::Github => Some(
-                "GitHub inbound marketplace sync is not GA because the runtime still uses NoOp GitHub client/data handlers.",
-            ),
             Provider::Hubspot => Some(
                 "HubSpot is not GA because the runtime still uses NoOp HubSpot client/data handlers.",
             ),
@@ -139,13 +137,13 @@ impl Provider {
             Provider::Airtable => Some(
                 "Airtable is not GA because no runtime client, data handler, or API pull processor is wired.",
             ),
-            Provider::Linear | Provider::Generic => None,
+            Provider::Github | Provider::Linear | Provider::Generic => None,
         }
     }
 
     pub fn is_runtime_available(&self) -> bool {
         match self {
-            Provider::Linear | Provider::Generic => true,
+            Provider::Github | Provider::Linear | Provider::Generic => true,
             Provider::Square => {
                 std::env::var("LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS")
                     .map(|value| value.eq_ignore_ascii_case("true"))
@@ -154,8 +152,7 @@ impl Provider {
                         .map(|value| !value.trim().is_empty())
                         .unwrap_or(false)
             }
-            Provider::Github
-            | Provider::Hubspot
+            Provider::Hubspot
             | Provider::Stripe
             | Provider::Notion
             | Provider::Airtable => false,
@@ -264,14 +261,14 @@ mod tests {
             Provider::Square.readiness(),
             ProviderReadiness::Experimental
         );
-        assert_eq!(Provider::Github.readiness(), ProviderReadiness::NonGa);
-        assert!(Provider::Github.unavailable_reason().is_some());
+        assert_eq!(Provider::Github.readiness(), ProviderReadiness::Ga);
+        assert!(Provider::Github.unavailable_reason().is_none());
     }
 
     #[test]
     fn test_non_ga_providers_are_not_runtime_available() {
         assert!(Provider::Linear.is_runtime_available());
-        assert!(!Provider::Github.is_runtime_available());
+        assert!(Provider::Github.is_runtime_available());
         assert!(!Provider::Hubspot.is_runtime_available());
         assert!(!Provider::Stripe.is_runtime_available());
         assert!(!Provider::Notion.is_runtime_available());

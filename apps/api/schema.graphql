@@ -420,6 +420,10 @@ input ExtGithubRepoConfigInput {
 	Default path (optional, supports {{name}} placeholder)
 	"""
 	defaultPath: String
+	"""
+	Target branch (defaults to "main")
+	"""
+	branch: String
 }
 
 """
@@ -1903,21 +1907,6 @@ input RemoveRepoMemberInput {
 	userId: String!
 }
 
-input RevokeApiKeyInput {
-	"""
-	Organization that owns the key.
-	"""
-	organizationUsername: String!
-	"""
-	Identifier of the key to revoke, as returned by `apiKeys`.
-	"""
-	apiKeyId: String!
-	"""
-	Service account holding the key. Defaults to `default`.
-	"""
-	serviceAccountName: String
-}
-
 type Repo {
 	id: String!
 	organizationId: String!
@@ -2000,6 +1989,21 @@ type RepoPolicy {
 	Source of this permission (Repo or Org level)
 	"""
 	permissionSource: PermissionSource!
+}
+
+input RevokeApiKeyInput {
+	"""
+	Organization that owns the key.
+	"""
+	organizationUsername: String!
+	"""
+	Identifier of the key to revoke, as returned by `apiKeys`.
+	"""
+	apiKeyId: String!
+	"""
+	Service account holding the key. Defaults to `default`.
+	"""
+	serviceAccountName: String
 }
 
 type RichTextValue {
