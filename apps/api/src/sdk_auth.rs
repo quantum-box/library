@@ -954,6 +954,7 @@ impl SdkAuthApp {
                         client_secret: p.client_secret,
                         redirect_uri: p.redirect_uri,
                     });
+                    bootstrap.github_webhook_secret = p.webhook_secret;
                 }
                 "linear" => {
                     bootstrap.linear_credentials = Some(OAuthCredentials {
@@ -1624,6 +1625,7 @@ pub struct OAuthCredentials {
 #[derive(Debug, Clone, Default)]
 pub struct OAuthBootstrapConfig {
     pub github_credentials: Option<OAuthCredentials>,
+    pub github_webhook_secret: Option<String>,
     pub linear_credentials: Option<OAuthCredentials>,
     pub linear_webhook_secret: Option<String>,
 }

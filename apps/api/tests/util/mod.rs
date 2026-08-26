@@ -176,6 +176,16 @@ pub async fn setup_test_server() -> (String, oneshot::Sender<()>) {
             database_app.clone(),
             sdk.clone(),
             mock_sync_data,
+            Arc::new(
+                inbound_sync::interface_adapter::SqlxWebhookEndpointRepository::new(
+                    pools.library.pool(),
+                ),
+            ),
+            Arc::new(
+                inbound_sync::interface_adapter::SqlxSyncStateRepository::new(
+                    pools.library.pool(),
+                ),
+            ),
         )
         .await,
     );

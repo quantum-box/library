@@ -62,6 +62,7 @@ pub struct LibraryApp {
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
     pub bulk_sync_ext_github: Arc<dyn usecase::BulkSyncExtGithubInputPort>,
+    pub sync_data_to_github: Arc<dyn usecase::SyncDataToGithubInputPort>,
     // GitHub Import usecases
     pub list_github_directory:
         Arc<dyn usecase::ListGitHubDirectoryInputPort>,
@@ -95,6 +96,10 @@ impl LibraryApp {
         database_app: Arc<database_manager::App>,
         sdk: Arc<SdkAuthApp>,
         sync_data: Arc<dyn outbound_sync::SyncDataInputPort>,
+        webhook_endpoint_repo: Arc<
+            dyn inbound_sync_domain::WebhookEndpointRepository,
+        >,
+        sync_state_repo: Arc<dyn inbound_sync_domain::SyncStateRepository>,
     ) -> Self {
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
@@ -179,12 +184,24 @@ impl LibraryApp {
             find_all_repo_query,
             get_organization_by_username.clone(),
         );
-        let add_data = usecase::AddData::new(
-            auth_app.clone(),
-            get_repo_by_username.clone(),
-            get_organization_by_username.clone(),
-            database_app.clone(),
+        // GitHub auto-writeback: wraps the Data mutation ports so that
+        // saving a Data item with ext_github.enabled=true pushes its
+        // markdown back to GitHub (best-effort, echo-suppressed).
+        let github_writeback = usecase::GithubWritebackDispatch::new(
+            sync_data.clone(),
+            webhook_endpoint_repo,
+            sync_state_repo,
         );
+        let add_data: Arc<dyn usecase::AddDataInputPort> =
+            usecase::AddDataWithGithubWriteback::new(
+                usecase::AddData::new(
+                    auth_app.clone(),
+                    get_repo_by_username.clone(),
+                    get_organization_by_username.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
         let save_data = add_data.clone();
         let change_repo_policy =
             Arc::new(usecase::ChangeRepoPolicy::new(auth_app.clone()));
@@ -216,12 +233,16 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             database_app.clone(),
         );
-        let update_data = usecase::UpdateData::new(
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
-            auth_app.clone(),
-            database_app.clone(),
-        );
+        let update_data: Arc<dyn usecase::UpdateDataInputPort> =
+            usecase::UpdateDataWithGithubWriteback::new(
+                usecase::UpdateData::new(
+                    get_organization_by_username.clone(),
+                    get_repo_by_username.clone(),
+                    auth_app.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
         let delete_data = usecase::DeleteData::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -299,6 +320,14 @@ impl LibraryApp {
             Arc::new(usecase::ChangeOrgMemberRole::new(sdk.clone()));
 
         let bulk_sync_ext_github = usecase::BulkSyncExtGithub::new(
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            auth_app.clone(),
+            database_app.clone(),
+            sync_data.clone(),
+        );
+
+        let sync_data_to_github = usecase::SyncDataToGithub::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
             auth_app.clone(),
@@ -424,6 +453,7 @@ impl LibraryApp {
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,
+            sync_data_to_github,
             list_github_directory,
             get_markdown_previews,
             analyze_frontmatter,
