@@ -48,7 +48,7 @@ pub struct ListIntegrationsOutputData {
 pub trait ListIntegrationsInputPort: std::fmt::Debug + Send + Sync {
     /// Returns the policy action name for this use case.
     fn policy(&self) -> &'static str {
-        "inbound_sync:ListIntegrations"
+        "library:InboundSyncListIntegrations"
     }
 
     /// Execute the use case.
