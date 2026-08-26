@@ -31,6 +31,12 @@ import {
   type ApiKeyTarget,
   type CreatedApiKey,
 } from '../lib/apiKeysApi'
+import {
+  ApiCard,
+  DocumentationCard,
+  EndpointsCard,
+  QuickStartCard,
+} from './ApiUsageSection'
 
 interface ApiKeysViewProps {
   organization: string
@@ -102,8 +108,8 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
     setNotice(null)
     try {
       const created = await createApiKey(target, name)
-      // The value is readable only in this response, so the dialog holds it
-      // until the reader dismisses it rather than closing on success.
+      // The value is readable only in this response, so a second dialog
+      // holds it until the reader dismisses it.
       setIssued(created)
       setCreateOpen(false)
       setCreateName('')
@@ -151,107 +157,168 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
           <span className="text-subtle-foreground">/</span>
           <span className="truncate font-semibold">{repository}</span>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate text-muted-foreground">API keys</span>
+          <span className="truncate text-muted-foreground">API</span>
         </div>
-        <Badge variant="outline" className="hidden sm:inline-flex">
-          Organization scope
-        </Badge>
         <Button
           className="ml-auto"
           size="sm"
           variant="ghost"
           onClick={() => void loadApiKeys()}
           disabled={loading}
+          aria-label="Refresh API keys"
         >
-          <RefreshCw aria-hidden="true" />
+          <RefreshCw
+            className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
+            aria-hidden="true"
+          />
           <span className="hidden sm:inline">Refresh</span>
-        </Button>
-        <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
-          <Plus aria-hidden="true" />
-          Create API key
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5 md:px-5">
-          <p className="text-sm text-muted-foreground">
-            Keys are issued per organization, so a key made here reaches every
-            repository in <span className="font-medium text-foreground">{organization}</span> that
-            your permissions allow. Send one as{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-              Authorization: Bearer pk_…
-            </code>
-            .
-          </p>
-
-          {notice && (
-            <p className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
-              <CheckCircle2 className="size-4 text-primary" aria-hidden="true" />
-              {notice}
-            </p>
-          )}
-
-          {loading && apiKeys === null && (
-            <p className="text-sm text-muted-foreground">Loading API keys…</p>
-          )}
-
-          {loadError != null && (
-            <div className="flex items-start gap-2 rounded-md border border-border bg-surface px-3 py-3 text-sm">
-              {isApiKeyPermissionError(loadError) ? (
-                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-              ) : (
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-              )}
-              <div className="flex min-w-0 flex-col gap-2">
-                <span>{errorMessage(loadError)}</span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="self-start"
-                  onClick={() => void loadApiKeys()}
-                  disabled={loading}
-                >
-                  Try again
-                </Button>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface/50">
+        <div className="mx-auto w-full max-w-5xl px-4 py-5 md:px-6 md:py-6">
+          <div className="mb-5 flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold tracking-tight">API access</h1>
+                {apiKeys !== null ? (
+                  <Badge variant="neutral">
+                    {apiKeys.length} {apiKeys.length === 1 ? 'Key' : 'Keys'}
+                  </Badge>
+                ) : null}
               </div>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Issue a key and call this repository from your own code.
+              </p>
             </div>
-          )}
+            <span className="font-mono text-2xs text-subtle-foreground">
+              Keys scope to {organization}
+            </span>
+          </div>
 
-          {apiKeys !== null && loadError == null && apiKeys.length === 0 && (
-            <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-              No API keys yet. Create one to call the API from a script or service.
-            </p>
-          )}
+          {notice ? (
+            <div
+              role="status"
+              className="mb-4 flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs text-foreground"
+            >
+              <CheckCircle2 className="size-4 text-success" aria-hidden="true" />
+              {notice}
+            </div>
+          ) : null}
 
-          {apiKeys !== null && apiKeys.length > 0 && (
-            <ul className="divide-y divide-border overflow-hidden rounded-md border border-border">
-              {apiKeys.map((apiKey) => (
-                <li
-                  key={apiKey.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {apiKey.name}
-                  </span>
-                  <span className="font-mono text-xs text-muted-foreground">{apiKey.id}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatCreatedAt(apiKey.createdAt)}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setRevokeError(null)
-                      setRevokeTarget(apiKey)
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" />
-                    Revoke
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+            <div className="flex flex-col gap-5">
+              <ApiCard
+                icon={<KeyRound className="size-4" aria-hidden="true" />}
+                title="API keys"
+                subtitle={`Issued for ${organization}`}
+                action={
+                  <Button size="sm" onClick={() => setCreateOpen(true)}>
+                    <Plus aria-hidden="true" />
+                    Create
                   </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+                }
+              >
+                {loading && apiKeys === null ? (
+                  <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    Loading API keys…
+                  </p>
+                ) : loadError != null ? (
+                  <div role="alert" className="flex items-start gap-2 px-4 py-4 text-sm">
+                    {isApiKeyPermissionError(loadError) ? (
+                      <ShieldAlert
+                        className="mt-0.5 size-4 shrink-0 text-warning"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <AlertCircle
+                        className="mt-0.5 size-4 shrink-0 text-destructive"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="flex min-w-0 flex-col gap-2">
+                      <span>{errorMessage(loadError)}</span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="self-start"
+                        onClick={() => void loadApiKeys()}
+                        disabled={loading}
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  </div>
+                ) : apiKeys !== null && apiKeys.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm text-muted-foreground">No API keys yet.</p>
+                    <Button
+                      className="mt-3"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      Create the first one
+                    </Button>
+                  </div>
+                ) : (
+                  <ol className="divide-y divide-border" data-testid="api-key-list">
+                    {(apiKeys ?? []).map((apiKey, index) => (
+                      <li
+                        key={apiKey.id}
+                        className="group grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 hover:bg-surface"
+                      >
+                        <span
+                          className="font-mono text-2xs tabular-nums text-subtle-foreground"
+                          aria-label={`Key ${index + 1}`}
+                        >
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {apiKey.name}
+                          </span>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-muted-foreground">
+                            <span className="truncate font-mono text-subtle-foreground">
+                              {apiKey.id}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="shrink-0">
+                              {formatCreatedAt(apiKey.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Revoke ${apiKey.name}`}
+                          title="Revoke this key"
+                          onClick={() => {
+                            setRevokeError(null)
+                            setRevokeTarget(apiKey)
+                          }}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </ApiCard>
+
+              <EndpointsCard organization={organization} repository={repository} />
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <QuickStartCard
+                organization={organization}
+                repository={repository}
+                operatorId={operatorId}
+              />
+              <DocumentationCard />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -274,9 +341,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                 placeholder="ci-pipeline"
                 autoFocus
               />
-              {createError && (
-                <p className="text-sm text-destructive">{createError}</p>
-              )}
+              {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -284,7 +349,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" variant="primary" disabled={createBusy}>
+              <Button type="submit" disabled={createBusy}>
                 {createBusy ? 'Creating…' : 'Create'}
               </Button>
             </DialogFooter>
@@ -302,7 +367,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 py-3">
-            <code className="min-w-0 flex-1 truncate rounded bg-muted px-3 py-2 font-mono text-xs">
+            <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-2xs">
               {issued?.value}
             </code>
             <Button size="sm" variant="secondary" onClick={() => void handleCopy()}>
@@ -311,9 +376,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
             </Button>
           </div>
           <DialogFooter>
-            <Button variant="primary" onClick={() => setIssued(null)}>
-              Done
-            </Button>
+            <Button onClick={() => setIssued(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -331,14 +394,18 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
               being authenticated immediately. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          {revokeError && <p className="py-2 text-sm text-destructive">{revokeError}</p>}
+          {revokeError ? <p className="py-2 text-sm text-destructive">{revokeError}</p> : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="ghost">
                 Cancel
               </Button>
             </DialogClose>
-            <Button variant="destructive" onClick={() => void handleRevoke()} disabled={revokeBusy}>
+            <Button
+              variant="destructive"
+              onClick={() => void handleRevoke()}
+              disabled={revokeBusy}
+            >
               {revokeBusy ? 'Revoking…' : 'Revoke'}
             </Button>
           </DialogFooter>

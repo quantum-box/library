@@ -7,6 +7,14 @@ import { GraphQLClient } from 'graphql-request'
 export const baseURL =
   import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:50053'
 
+/**
+ * The user guide, deployed as the `library-user-guide` Cloud App. It covers
+ * what the OpenAPI reference cannot: issuing a key, what it is scoped to,
+ * and the header GraphQL needs.
+ */
+export const docsURL =
+  import.meta.env.VITE_LIBRARY_DOCS_URL || 'https://library-user-guide.txcloud.app'
+
 export const platformId =
   import.meta.env.VITE_PLATFORM_ID || 'tn_01j702qf86pc2j35s0kv0gv3gy'
 
