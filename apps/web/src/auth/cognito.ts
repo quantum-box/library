@@ -76,6 +76,8 @@ export async function signInWithCredentials(
 
   const email =
     userResponse.UserAttributes?.find((attr) => attr.Name === 'email')?.Value ?? ''
+  // Sign-in accepts an email alias, so trust Cognito for the account's username.
+  const resolvedUsername = userResponse.Username ?? username
 
   // Register with platform
   const sdk = getSdkPlatform(AccessToken)
@@ -91,7 +93,7 @@ export async function signInWithCredentials(
     expiresAt: Math.floor(Date.now() / 1000 + (ExpiresIn ?? 3600)),
     userId: user.id,
     email,
-    username,
+    username: resolvedUsername,
   }
 }
 

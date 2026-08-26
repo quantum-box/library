@@ -24,6 +24,7 @@ interface CognitoAuthenticationResult {
 }
 
 interface CognitoUser {
+  Username?: string
   UserAttributes?: Array<{ Name?: string; Value?: string }>
 }
 
@@ -424,7 +425,8 @@ export async function signInWithCredentials(
     ),
     userId: libraryUser.id,
     email: cognitoEmail || libraryUser.email || '',
-    username,
+    // Sign-in accepts an email alias, so trust Cognito for the account's username.
+    username: cognitoUser.Username ?? username,
   }
 }
 

@@ -87,6 +87,7 @@ describe('Library authentication', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
+          Username: 'person',
           UserAttributes: [
             { Name: 'sub', Value: 'cognito-user' },
             { Name: 'email', Value: 'person@example.test' },
@@ -143,6 +144,47 @@ describe('Library authentication', () => {
       platformId: 'platform-1',
       accessToken: 'cognito-access-token',
       allowSignUp: true,
+    })
+  })
+
+  it('keeps the account username when signing in with an email alias', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          AuthenticationResult: {
+            AccessToken: 'cognito-access-token',
+            RefreshToken: 'cognito-refresh-token',
+            ExpiresIn: 900,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          Username: 'person',
+          UserAttributes: [{ Name: 'email', Value: 'person@example.test' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            signIn: {
+              id: 'library-user',
+              email: 'person@example.test',
+            },
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const tokens = await signInWithCredentials('person@example.test', 'secret')
+
+    expect(tokens.username).toBe('person')
+    expect(requestBody(fetchMock.mock.calls[0]!)).toMatchObject({
+      AuthParameters: {
+        USERNAME: 'person@example.test',
+        PASSWORD: 'secret',
+      },
     })
   })
 
