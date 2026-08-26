@@ -13,6 +13,10 @@
         description: List library API keys
         resource_pattern: trn:library:api-key:*
       - context: library
+        name: RevokeApiKey
+        description: Revoke library API key
+        resource_pattern: trn:library:api-key:*
+      - context: library
         name: CreateOrganization
         description: Create library organization
         resource_pattern: trn:library:org:*
@@ -201,6 +205,8 @@
       - action: library:CreateApiKey
         effect: allow
       - action: library:ListApiKeys
+        effect: allow
+      - action: library:RevokeApiKey
         effect: allow
       - action: library:CreateOrganization
         effect: allow

@@ -360,22 +360,39 @@ where
 
         // For service account authentication
         if token.starts_with("pk_") {
-            let org_username = extract_org_username(parts);
-            if let Some(org_username) = org_username {
-                let ViewOrgOutputData {
-                    organization: org, ..
-                } = library_app
-                    .view_org
-                    .execute(&crate::usecase::ViewOrgInputData {
-                        executor: &SystemExecutor,
-                        multi_tenancy:
-                            &tachyon_sdk::auth::MultiTenancy::default(),
-                        organization_username: org_username,
-                    })
-                    .await?;
+            // A key is verified against the organization that issued
+            // it. Path-based routes name that organization in the URL;
+            // /v1/graphql does not, so a caller reaching GraphQL with a
+            // key states it through x-operator-id instead. Without
+            // either, there is nothing to verify the key against and
+            // the request falls through to anonymous.
+            let operator_id = match extract_org_username(parts) {
+                Some(org_username) => {
+                    let ViewOrgOutputData {
+                        organization: org, ..
+                    } = library_app
+                        .view_org
+                        .execute(&crate::usecase::ViewOrgInputData {
+                            executor: &SystemExecutor,
+                            multi_tenancy:
+                                &tachyon_sdk::auth::MultiTenancy::default(),
+                            organization_username: org_username,
+                        })
+                        .await?;
+                    Some(org.id().clone())
+                }
+                None => parts
+                    .headers
+                    .get("x-operator-id")
+                    .and_then(|value| value.to_str().ok())
+                    .filter(|value| !value.is_empty())
+                    .map(TenantId::new)
+                    .transpose()?,
+            };
 
+            if let Some(operator_id) = operator_id {
                 let out = sdk
-                    .verify_api_key(org.id(), token.as_str())
+                    .verify_api_key(&operator_id, token.as_str())
                     .await
                     .map_err(|err| {
                         tracing::error!("middleware error: {:?}", err);

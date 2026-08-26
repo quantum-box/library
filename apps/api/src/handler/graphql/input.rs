@@ -49,6 +49,16 @@ pub struct CreateApiKeyInput {
 }
 
 #[derive(InputObject, Debug, Clone)]
+pub struct RevokeApiKeyInput {
+    /// Organization that owns the key.
+    pub organization_username: String,
+    /// Identifier of the key to revoke, as returned by `apiKeys`.
+    pub api_key_id: String,
+    /// Service account holding the key. Defaults to `default`.
+    pub service_account_name: Option<String>,
+}
+
+#[derive(InputObject, Debug, Clone)]
 pub struct CreateOperatorInput {
     /// TODO: add English documentation
     pub platform_id: String,

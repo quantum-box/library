@@ -49,7 +49,8 @@ pub use inputs::{
     GetOperatorByIdInput, GetOperatorByIdentifierInput, GetPolicyByIdInput,
     GetServiceAccountByNameInput, GetUserByIdInput,
     GetUserIdByUserProviderIdInput, OAuthTokenInput, RegisterPolicyInput,
-    SaveOAuthTokenInput, UpdateServiceAccountInput,
+    RevokePublicApiKeyInput, SaveOAuthTokenInput,
+    UpdateServiceAccountInput,
 };
 
 // Main trait

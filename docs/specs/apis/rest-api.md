@@ -18,7 +18,7 @@
 ### 2.1 認証
 
 1. `Authorization: Bearer <token>` が優先で処理される。
-2. `pk_` プレフィックスは API キー扱いとして `verify_api_key` 経路へ接続される。
+2. `pk_` プレフィックスは API キー扱いとして `verify_api_key` 経路へ接続される。鍵はそれを発行した組織に対して検証されるため、検証には operator が必要。パスから組織名を取れるルート（`/orgs/`, `/repos/`, `/docs/` を含むもの）はそこから解決し、取れないルート（`/v1/graphql` など）は `x-operator-id` ヘッダを見る。どちらも無い場合は鍵は検証されず匿名として扱われる。
 3. 未指定時は匿名扱い（`LibraryExecutorKind::None`）。
 4. 開発・テスト環境では `dummy-token` と `x-user-id` の開発フォールバック経路が存在する。本番起動時は `SERVICE_AUTH_TOKEN=dummy-token` を拒否する。
 5. 実装: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/library_executor_extractor.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/library_executor_extractor.rs)

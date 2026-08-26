@@ -1364,6 +1364,10 @@ type Mutation {
 	"""
 	createApiKey(input: CreateApiKeyInput!): ApiKeyResponse!
 	"""
+	[LIBRARY-API] Revoke an API key so it stops authenticating.
+	"""
+	revokeApiKey(input: RevokeApiKeyInput!): Boolean!
+	"""
 	TODO: add English documentation
 	"""
 	createSource(input: CreateSourceInput!): Source!
@@ -1888,6 +1892,21 @@ input RemoveRepoMemberInput {
 	User ID to remove
 	"""
 	userId: String!
+}
+
+input RevokeApiKeyInput {
+	"""
+	Organization that owns the key.
+	"""
+	organizationUsername: String!
+	"""
+	Identifier of the key to revoke, as returned by `apiKeys`.
+	"""
+	apiKeyId: String!
+	"""
+	Service account holding the key. Defaults to `default`.
+	"""
+	serviceAccountName: String
 }
 
 type Repo {

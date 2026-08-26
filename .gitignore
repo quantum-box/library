@@ -37,6 +37,10 @@ test-results/
 # Storybook
 storybook-static/
 
+# VitePress
+.vitepress/cache/
+.vitepress/dist/
+
 # Misc
 *.log
 *.db

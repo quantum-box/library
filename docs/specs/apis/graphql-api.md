@@ -86,6 +86,7 @@
 22. `create_global_id_mapping(input: CreateGlobalIdMappingInput): GlobalIdMapping`
 23. `update_global_id_mapping(input: UpdateGlobalIdMappingInput): GlobalIdMapping`
 24. `create_api_key(input: CreateApiKeyInput): ApiKeyResponse`
+24-b. `revoke_api_key(input: RevokeApiKeyInput): Boolean`（`library:RevokeApiKey` を要求。上流の `POST /v1/auth/service-accounts/{sa}/api-keys/{key}/revoke` に接続し、既に消えている鍵でも成功を返す）
 25. `github_auth_url(repo_id: String, redirect_uri?: String, scope?: String): GitHubAuthUrl`
 26. `github_exchange_token(input: GitHubExchangeTokenInput): GitHubConnection`
 27. `github_disconnect(repo_id: String): GitHubConnection`

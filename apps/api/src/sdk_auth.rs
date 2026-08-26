@@ -839,6 +839,29 @@ impl SdkAuthApp {
         handle_rest_response(resp).await.map_err(Into::into)
     }
 
+    /// Make a POST request whose success carries no body.
+    ///
+    /// `rest_post` insists on decoding a JSON response, which turns a
+    /// `204 No Content` — the documented success of revoke — into a
+    /// decode error.
+    async fn rest_post_no_content<B: Serialize>(
+        config: &Configuration,
+        path: &str,
+        body: &B,
+    ) -> errors::Result<()> {
+        let resp = config
+            .client
+            .post(format!("{}{}", config.base_path, path))
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| SdkRequestError::transport(&error))?;
+        if !resp.status().is_success() {
+            return Err(SdkRequestError::http_status(resp.status()).into());
+        }
+        Ok(())
+    }
+
     /// Make a POST request while retaining safe downstream diagnostics.
     async fn rest_post_observed<
         B: Serialize,
@@ -2310,6 +2333,29 @@ impl AuthApp for SdkAuthApp {
             .into_iter()
             .map(|k| api_key_from_sdk(&k, input.operator_id))
             .collect()
+    }
+
+    async fn revoke_public_api_key<'a>(
+        &self,
+        input: &auth::RevokePublicApiKeyInput<'a>,
+    ) -> errors::Result<()> {
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+        let body = serde_json::json!({
+            "operatorId": input.operator_id.to_string(),
+        });
+
+        // Not in the generated client yet, so the path is spelled out.
+        Self::rest_post_no_content(
+            &config,
+            &format!(
+                "/v1/auth/service-accounts/{}/api-keys/{}/revoke",
+                input.service_account_id.as_str(),
+                input.api_key_id.as_str(),
+            ),
+            &body,
+        )
+        .await
     }
 
     async fn attach_user_policy<'a>(

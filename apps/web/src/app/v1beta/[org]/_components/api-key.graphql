@@ -24,3 +24,7 @@ fragment ApiKeyItem on PublicApiKey {
   name
   createdAt
 }
+
+mutation revokeAPIKey($input: RevokeApiKeyInput!) {
+  revokeApiKey(input: $input)
+}
