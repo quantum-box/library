@@ -17,10 +17,18 @@
 # that from happening so far. Keep the shape as it is.
 #
 # Adding an action therefore means: add it here so the intent is recorded,
-# and have it registered upstream as a system action. `library:admin`
-# matches `library:*` by pattern, so admins pick a new action up with no
-# edit to the policies below; granting it to `library:member` is a separate
-# upstream change.
+# and have it registered upstream as a system action.
+#
+# Note what the roles below are and are not. They read as the grant surface,
+# but the policy library-api actually attaches at sign-in is
+# `pol_01libraryuserpolicy` (LibraryUserPolicy), a system policy that the
+# API cannot amend -- which is why `library:org-creator` exists as a
+# companion in library-api-runtime.yml. `library:reader` / `member` /
+# `admin` exist upstream with no owner tenant and are not attached from
+# this codebase; the names also do duty in the web UI as repository member
+# roles, which map to `pol_01libraryrepo{owner,writer,reader}` instead. So
+# granting a newly registered action to real users means editing
+# LibraryUserPolicy upstream, not editing these.
 - apiVersion: auth.tachyon.io/v1
   kind: ActionSet
   metadata:
