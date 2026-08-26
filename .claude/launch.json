@@ -4,8 +4,33 @@
     {
       "name": "user-guide",
       "runtimeExecutable": "yarn",
-      "runtimeArgs": ["workspace", "library-user-guide", "dev"],
+      "runtimeArgs": [
+        "workspace",
+        "library-user-guide",
+        "dev"
+      ],
       "port": 5020
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": [
+        "workspace",
+        "library-web",
+        "dev"
+      ],
+      "port": 5010
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/client",
+        "run",
+        "dev"
+      ],
+      "port": 5173
     }
   ]
 }
