@@ -3,8 +3,8 @@ export const authTranslations = {
 		signIn: {
 			title: 'Sign in',
 			description: 'Sign in to start using the service',
-			usernameLabel: 'Username',
-			usernamePlaceholder: 'Enter username',
+			usernameLabel: 'Username or email',
+			usernamePlaceholder: 'Enter username or email',
 			passwordLabel: 'Password',
 			passwordPlaceholder: 'Enter password',
 			submit: 'Sign in',
@@ -141,8 +141,8 @@ export const authTranslations = {
 		signIn: {
 			title: 'サインイン',
 			description: 'サービスを利用するにはサインインしてください',
-			usernameLabel: 'ユーザー名',
-			usernamePlaceholder: 'ユーザー名を入力',
+			usernameLabel: 'ユーザー名 / メールアドレス',
+			usernamePlaceholder: 'ユーザー名かメールアドレスを入力',
 			passwordLabel: 'パスワード',
 			passwordPlaceholder: 'パスワードを入力',
 			submit: 'サインイン',
