@@ -895,7 +895,10 @@ impl LibraryMutation {
             .into())
     }
 
-    /// TODO: add English documentation
+    /// [LIBRARY-API] Issue an API key for an organization.
+    ///
+    /// The returned `apiKey.value` is the only time the key itself is
+    /// readable; afterwards only its name and id can be listed.
     #[tracing::instrument(name = "create_api_key", skip(self, ctx))]
     async fn create_api_key(
         &self,

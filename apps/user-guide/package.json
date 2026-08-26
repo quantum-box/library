@@ -5,11 +5,28 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vitepress dev",
-    "build": "vitepress build",
-    "preview": "vitepress preview"
+    "dev": "vite --port 5020",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "biome lint src",
+    "ts": "tsc --noEmit"
+  },
+  "dependencies": {
+    "graphql": "^16.7.1",
+    "lucide-react": "^0.474.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
-    "vitepress": "^1.6.3"
+    "@biomejs/biome": "^1.9.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "tailwindcss": "^3",
+    "typescript": "^5",
+    "vite": "^6.3.5"
   }
 }

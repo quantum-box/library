@@ -1360,7 +1360,10 @@ type Mutation {
 	"""
 	createOrganization(input: CreateOrganizationInput!): Organization!
 	"""
-	TODO: add English documentation
+	[LIBRARY-API] Issue an API key for an organization.
+	
+	The returned `apiKey.value` is the only time the key itself is
+	readable; afterwards only its name and id can be listed.
 	"""
 	createApiKey(input: CreateApiKeyInput!): ApiKeyResponse!
 	"""
@@ -1779,6 +1782,12 @@ type Query {
 	optionally filtered by `system`.
 	"""
 	globalIdMappings(system: String): [GlobalIdMapping!]!
+	"""
+	[LIBRARY-API] List the API keys issued for an organization.
+	
+	Key values are not included: they are readable only in the response
+	that created them.
+	"""
 	apiKeys(orgUsername: String!): [PublicApiKey!]!
 	"""
 	[LIBRARY-API] Get GitHub connection status

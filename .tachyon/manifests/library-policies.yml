@@ -1,0 +1,110 @@
+# Roles granting the actions declared in library-auth.yml.
+#
+# Kept in the older ActionSet/Policy shape, which the current CLI skips as
+# unsupported: these are a record of what the upstream policies should hold,
+# not something applied from this repo. `library:admin` matches library:* by
+# pattern, so a newly registered action needs no edit here to reach admins;
+# adding one to `library:member` is a change someone has to make upstream.
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:reader
+    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
+  spec:
+    description: Library reader policy for read-only API and repository access
+    actions:
+    - action: library:ViewRepo
+      effect: allow
+    - action: library:ViewPrivateRepo
+      effect: allow
+    - action: library:GetSource
+      effect: allow
+    - action: library:FindSources
+      effect: allow
+    - action: library:ViewData
+      effect: allow
+    - action: library:ReadGlobalIdMapping
+      effect: allow
+    - action: inbound_sync:ListIntegrations
+      effect: allow
+    - action: inbound_sync:ListConnections
+      effect: allow
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:member
+    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
+  spec:
+    description: Library member policy for normal read and write workflows
+    actions:
+    - action: library:CreateApiKey
+      effect: allow
+    - action: library:ListApiKeys
+      effect: allow
+    - action: library:RevokeApiKey
+      effect: allow
+    - action: library:CreateOrganization
+      effect: allow
+    - action: library:UpdateOrganization
+      effect: allow
+    - action: library:CreateRepo
+      effect: allow
+    - action: library:ViewRepo
+      effect: allow
+    - action: library:ViewPrivateRepo
+      effect: allow
+    - action: library:UpdateRepo
+      effect: allow
+    - action: library:CreateSource
+      effect: allow
+    - action: library:GetSource
+      effect: allow
+    - action: library:UpdateSource
+      effect: allow
+    - action: library:FindSources
+      effect: allow
+    - action: library:ViewData
+      effect: allow
+    - action: library:CreateData
+      effect: allow
+    - action: library:AddProperty
+      effect: allow
+    - action: library:UpdateProperty
+      effect: allow
+    - action: library:ReadGlobalIdMapping
+      effect: allow
+    - action: database:AddProperty
+      effect: allow
+    - action: database:UpdateProperty
+      effect: allow
+    - action: database:DeleteProperty
+      effect: allow
+    - action: inbound_sync:ListIntegrations
+      effect: allow
+    - action: inbound_sync:ListConnections
+      effect: allow
+    - action: inbound_sync:RegisterWebhookEndpoint
+      effect: allow
+    - action: inbound_sync:UpdateWebhookEndpoint
+      effect: allow
+    - action: inbound_sync:InitialSync
+      effect: allow
+    - action: inbound_sync:OnDemandPull
+      effect: allow
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:admin
+    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
+  spec:
+    description: Library admin policy for repository, member, and policy administration
+    action_patterns:
+    - context_pattern: library
+      name_pattern: '*'
+      effect: allow
+    - context_pattern: database
+      name_pattern: '*Property'
+      effect: allow
+    - context_pattern: inbound_sync
+      name_pattern: '*'
+      effect: allow

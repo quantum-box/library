@@ -486,6 +486,10 @@ impl LibraryQuery {
         Ok(mappings.into_iter().map(|m| m.into()).collect())
     }
 
+    /// [LIBRARY-API] List the API keys issued for an organization.
+    ///
+    /// Key values are not included: they are readable only in the response
+    /// that created them.
     #[tracing::instrument(name = "library_api_keys", skip(self, ctx))]
     async fn api_keys(
         &self,

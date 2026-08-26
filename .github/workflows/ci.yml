@@ -174,6 +174,16 @@ jobs:
         env:
           VITE_BACKEND_API_URL: ${{ steps.vite_backend.outputs.url }}
         run: yarn build
+      # The user guide is a separate workspace, so `yarn lint` / `tsc` /
+      # `build` above, which are all scoped to library-web, do not cover it.
+      - name: Lint (user guide)
+        run: yarn guide:lint
+      - name: Type check (user guide)
+        run: yarn guide:ts
+      - name: Build (user guide)
+        env:
+          VITE_LIBRARY_API_BASE_URL: ${{ steps.vite_backend.outputs.url }}
+        run: yarn guide:build
       - name: Install Playwright browsers
         run: |
           scripts/ci/apt-harden.sh
