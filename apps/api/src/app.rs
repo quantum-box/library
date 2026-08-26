@@ -40,6 +40,7 @@ pub struct LibraryApp {
     pub get_repo_members: Arc<dyn usecase::GetRepoMembersInputPort>,
     pub create_api_key: Arc<dyn usecase::CreateApiKeyInputPort>,
     pub list_api_keys: Arc<dyn usecase::ListApiKeysInputPort>,
+    pub revoke_api_key: Arc<dyn usecase::RevokeApiKeyInputPort>,
     pub create_source: Arc<dyn usecase::CreateSourceInputPort>,
     pub update_source: Arc<dyn usecase::UpdateSourceInputPort>,
     pub delete_source: Arc<dyn usecase::DeleteSourceInputPort>,
@@ -285,6 +286,11 @@ impl LibraryApp {
             get_organization_by_username.clone(),
         ));
 
+        let revoke_api_key = Arc::new(usecase::RevokeApiKey::new(
+            auth_app.clone(),
+            get_organization_by_username.clone(),
+        ));
+
         let sign_in = Arc::new(usecase::SignIn::new(sdk.clone()));
 
         let invite_org_member =
@@ -401,6 +407,7 @@ impl LibraryApp {
             get_repo_members,
             create_api_key,
             list_api_keys,
+            revoke_api_key,
             add_data,
             create_source,
             update_source,

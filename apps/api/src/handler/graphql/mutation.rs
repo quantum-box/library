@@ -925,6 +925,35 @@ impl LibraryMutation {
         })
     }
 
+    /// [LIBRARY-API] Revoke an API key so it stops authenticating.
+    #[tracing::instrument(name = "revoke_api_key", skip(self, ctx))]
+    async fn revoke_api_key(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        input: input::RevokeApiKeyInput,
+    ) -> Result<bool> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+
+        ctx.data::<Arc<LibraryApp>>()?
+            .revoke_api_key
+            .execute(&usecase::RevokeApiKeyInputData {
+                executor,
+                multi_tenancy,
+                org_name: &input.organization_username.parse()?,
+                api_key_id: &input.api_key_id,
+                service_account_name: input.service_account_name.as_deref(),
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to revoke API key: {:?}", e);
+                e.extend()
+            })?;
+
+        Ok(true)
+    }
+
     /// TODO: add English documentation
     #[tracing::instrument(name = "create_source", skip(self, ctx))]
     async fn create_source(

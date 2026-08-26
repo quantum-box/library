@@ -993,6 +993,8 @@ export type Mutation = {
   removeRepoMember: Scalars['Boolean']['output'];
   /** Retry a failed webhook event. */
   retryWebhookEvent: GqlWebhookEvent;
+  /** [LIBRARY-API] Revoke an API key so it stops authenticating. */
+  revokeApiKey: Scalars['Boolean']['output'];
   /** [LIBRARY-API] Seed a tachyon tenant into Library organizations. */
   seedLibraryTenant: SeedLibraryTenantPayload;
   /** Send a test webhook to an endpoint. */
@@ -1220,6 +1222,11 @@ export type MutationRemoveRepoMemberArgs = {
 
 export type MutationRetryWebhookEventArgs = {
   eventId: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeApiKeyArgs = {
+  input: RevokeApiKeyInput;
 };
 
 
@@ -1804,6 +1811,15 @@ export type RepoPolicy = {
   userId: Scalars['String']['output'];
 };
 
+export type RevokeApiKeyInput = {
+  /** Identifier of the key to revoke, as returned by `apiKeys`. */
+  apiKeyId: Scalars['String']['input'];
+  /** Organization that owns the key. */
+  organizationUsername: Scalars['String']['input'];
+  /** Service account holding the key. Defaults to `default`. */
+  serviceAccountName?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type RichTextValue = {
   __typename?: 'RichTextValue';
   /**
@@ -2335,6 +2351,13 @@ export type GetApiKeysQueryVariables = Exact<{
 export type GetApiKeysQuery = { __typename?: 'Query', apiKeys: Array<{ __typename?: 'PublicApiKey', id: string, name: string, createdAt: any }> };
 
 export type ApiKeyItemFragment = { __typename?: 'PublicApiKey', id: string, name: string, createdAt: any };
+
+export type RevokeApiKeyMutationVariables = Exact<{
+  input: RevokeApiKeyInput;
+}>;
+
+
+export type RevokeApiKeyMutation = { __typename?: 'Mutation', revokeApiKey: boolean };
 
 export type GitHubListDirectoryContentsQueryVariables = Exact<{
   input: ListGitHubDirectoryInput;
@@ -3397,6 +3420,11 @@ export const GetApiKeysDocument = gql`
   }
 }
     `;
+export const RevokeApiKeyDocument = gql`
+    mutation revokeAPIKey($input: RevokeApiKeyInput!) {
+  revokeApiKey(input: $input)
+}
+    `;
 export const GitHubListDirectoryContentsDocument = gql`
     query GitHubListDirectoryContents($input: ListGitHubDirectoryInput!) {
   githubListDirectoryContents(input: $input) {
@@ -3712,6 +3740,9 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     },
     getApiKeys(variables: GetApiKeysQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<GetApiKeysQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<GetApiKeysQuery>(GetApiKeysDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'getApiKeys', 'query');
+    },
+    revokeAPIKey(variables: RevokeApiKeyMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<RevokeApiKeyMutation> {
+      return withWrapper((wrappedRequestHeaders) => client.request<RevokeApiKeyMutation>(RevokeApiKeyDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'revokeAPIKey', 'mutation');
     },
     GitHubListDirectoryContents(variables: GitHubListDirectoryContentsQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<GitHubListDirectoryContentsQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<GitHubListDirectoryContentsQuery>(GitHubListDirectoryContentsDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'GitHubListDirectoryContents', 'query');
@@ -4102,6 +4133,14 @@ export function RemoveRepoMemberInputSchema(): z.ZodObject<Properties<RemoveRepo
   return z.object({
     repoId: z.string().min(1),
     userId: z.string().min(1)
+  })
+}
+
+export function RevokeApiKeyInputSchema(): z.ZodObject<Properties<RevokeApiKeyInput>> {
+  return z.object({
+    apiKeyId: z.string().min(1),
+    organizationUsername: z.string().min(1),
+    serviceAccountName: z.string().nullish()
   })
 }
 

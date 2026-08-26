@@ -346,6 +346,19 @@ export const v1betaTranslations = {
 			noApiKeys:
 				'No API keys found. Click "Create API Key" button to create a new one.',
 			id: 'ID',
+			name: 'Name',
+			created: 'Created',
+			loading: 'Loading API keys...',
+			failedLoad: 'Failed to load API keys',
+			signInRequired: 'Sign in to manage API keys.',
+			revoke: 'Revoke',
+			revoking: 'Revoking...',
+			revokeConfirmTitle: 'Revoke this API key?',
+			revokeConfirmDescription:
+				'Any application still sending this key stops being authenticated immediately. This cannot be undone.',
+			cancel: 'Cancel',
+			revoked: 'API key revoked',
+			failedRevoke: 'Failed to revoke API key',
 		},
 		githubImport: {
 			importFromGitHub: 'Import from GitHub',
@@ -1176,6 +1189,19 @@ export const v1betaTranslations = {
 			noApiKeys:
 				'APIキーがありません。「APIキーを作成」ボタンをクリックして新しいキーを作成してください。',
 			id: 'ID',
+			name: '名前',
+			created: '作成日時',
+			loading: 'APIキーを読み込み中...',
+			failedLoad: 'APIキーの取得に失敗しました',
+			signInRequired: 'APIキーを管理するにはサインインしてください。',
+			revoke: '失効',
+			revoking: '失効中...',
+			revokeConfirmTitle: 'このAPIキーを失効しますか？',
+			revokeConfirmDescription:
+				'このキーを送信しているアプリケーションは、ただちに認証されなくなります。この操作は取り消せません。',
+			cancel: 'キャンセル',
+			revoked: 'APIキーを失効しました',
+			failedRevoke: 'APIキーの失効に失敗しました',
 		},
 		githubImport: {
 			importFromGitHub: 'GitHubからインポート',
