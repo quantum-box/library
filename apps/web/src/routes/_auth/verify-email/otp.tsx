@@ -142,12 +142,12 @@ function VerifyEmailPage() {
 						render={({ field }) => (
 							<FormItem>
 								<FormLabel className='text-foreground'>
-									{t.auth.signIn.usernameLabel}
+									{t.auth.verifyEmail.usernameLabel}
 								</FormLabel>
 								<FormControl>
 									<Input
 										{...field}
-										placeholder={t.auth.signIn.usernamePlaceholder}
+										placeholder={t.auth.verifyEmail.usernamePlaceholder}
 										className='bg-background border-input'
 										autoComplete='username'
 									/>

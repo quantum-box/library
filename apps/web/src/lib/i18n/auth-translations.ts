@@ -111,6 +111,9 @@ export const authTranslations = {
 			title: 'Check your email',
 			description: 'We sent a 6-digit verification code to your email address.',
 			sentTo: 'Verification code sent to',
+			// Confirmation happens before the email alias exists, so only the username works here.
+			usernameLabel: 'Username',
+			usernamePlaceholder: 'Enter username',
 			codeLabel: 'Verification code',
 			codePlaceholder: 'Enter 6-digit code',
 			submit: 'Verify',
@@ -252,6 +255,8 @@ export const authTranslations = {
 			title: 'メールを確認してください',
 			description: 'ご登録のメールアドレスに6桁の認証コードを送信しました。',
 			sentTo: '認証コードの送信先',
+			usernameLabel: 'ユーザー名',
+			usernamePlaceholder: 'ユーザー名を入力',
 			codeLabel: '認証コード',
 			codePlaceholder: '6桁のコードを入力',
 			submit: '認証',
