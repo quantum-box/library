@@ -910,7 +910,12 @@ export type Mutation = {
    * For API key integrations, provide the API key.
    */
   connectIntegration: GqlConnection;
-  /** TODO: add English documentation */
+  /**
+   * [LIBRARY-API] Issue an API key for an organization.
+   *
+   * The returned `apiKey.value` is the only time the key itself is
+   * readable; afterwards only its name and id can be listed.
+   */
   createApiKey: ApiKeyResponse;
   /** TODO: add English documentation */
   createData: Data;
@@ -1506,6 +1511,12 @@ export type Query = {
   __typename?: 'Query';
   /** [LIBRARY-API] All Tachyon tenants the caller can access, with Library org flag. */
   accessibleTenants: Array<AccessibleTenant>;
+  /**
+   * [LIBRARY-API] List the API keys issued for an organization.
+   *
+   * Key values are not included: they are readable only in the response
+   * that created them.
+   */
   apiKeys: Array<PublicApiKey>;
   /** Get a single connection by ID. */
   connection?: Maybe<GqlConnection>;

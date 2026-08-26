@@ -21,7 +21,9 @@
     "smoke:library-rest-e2e": "scripts/library-rest-e2e-smoke.sh",
     "check:rust-workspace-cycles": "node scripts/check-rust-workspace-cycles.mjs",
     "guide:dev": "yarn workspace library-user-guide dev",
-    "guide:build": "yarn workspace library-user-guide build"
+    "guide:build": "yarn workspace library-user-guide build",
+    "guide:lint": "yarn workspace library-user-guide lint",
+    "guide:ts": "yarn workspace library-user-guide ts"
   },
   "resolutions": {
     "webpack": "5.101.2",

@@ -37,11 +37,8 @@ test-results/
 # Storybook
 storybook-static/
 
-# VitePress
-.vitepress/cache/
-.vitepress/dist/
-
 # Misc
+*.tsbuildinfo
 *.log
 *.db
 *.sqlite

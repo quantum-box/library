@@ -172,6 +172,29 @@ spec:
           value: tn_01j91h09tpj5ehwbwfwfxpak2b
         - name: VITE_COGNITO_USER_POOL_ID
           value: ap-northeast-1_8Ga4bK5M4
+    - name: library-user-guide
+      repository:
+        url: https://github.com/quantum-box/library
+        owner: quantum-box
+        name: library
+        defaultBranch: main
+      rootDirectory: apps/user-guide
+      watchPaths:
+        - apps/user-guide/**
+      framework: vite
+      deploymentTarget: cloudflare_pages
+      build:
+        installCommand: yarn install --immutable
+        command: yarn build
+        outputDirectory: dist
+        nodeVersion: "20"
+      envVars:
+        # The guide reads this API's OpenAPI document and GraphQL schema at
+        # page load, so a preview build documents whatever API it points at.
+        - name: VITE_LIBRARY_API_BASE_URL
+          value: https://library-api.txcloud.app
+        - name: VITE_LIBRARY_WEB_URL
+          value: https://library.txcloud.app
     - name: library-client
       repository:
         url: https://github.com/quantum-box/library

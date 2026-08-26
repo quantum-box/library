@@ -1,3 +1,26 @@
+# Actions and roles the library apps authorize against.
+#
+# This file is a record, not something applied from a developer machine.
+# Two things prevent that:
+#
+#   - The `library` context is reserved for system actions. Registering one
+#     through `POST /v1/auth/actions` is refused with "Context 'library' is
+#     reserved for system actions", so a new library action has to be added
+#     upstream in tachyon-apps rather than from here.
+#   - The other contexts here (`database`, `inbound_sync`) are NOT reserved,
+#     and their actions already exist upstream with no owning platform. An
+#     apply from a developer profile does not recognise those as the same
+#     action and registers a second copy owned by the caller's platform.
+#
+# `tachyon manifest apply` reads a flat `actions:`/`policies:` document and
+# skips this ActionSet/Policy shape as unsupported, which is what has kept
+# that from happening so far. Keep the shape as it is.
+#
+# Adding an action therefore means: add it here so the intent is recorded,
+# and have it registered upstream as a system action. `library:admin`
+# matches `library:*` by pattern, so admins pick a new action up with no
+# edit to the policies below; granting it to `library:member` is a separate
+# upstream change.
 - apiVersion: auth.tachyon.io/v1
   kind: ActionSet
   metadata:

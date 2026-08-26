@@ -1,45 +1,56 @@
 # library-user-guide
 
-Library の利用者向けドキュメントサイト。VitePress で構築しています。
+Library の利用者向けドキュメントサイト。Vite + React で、`apps/web` と同じ
+スタックです。Cloud App `library-user-guide` として Cloudflare Pages に
+デプロイされます（定義は repo ルートの `tachyon.yaml`）。
 
 対象読者は Library を API から使う人で、社内向けの仕様書 (`docs/specs/`) とは
 別物です。仕様書が「実装がどうなっているか」を記述するのに対し、こちらは
 「利用者が何をすればよいか」を記述します。
 
+## 内容は API から取得する
+
+エンドポイント一覧と GraphQL スキーマは、ページを開いたときに Library API
+から取得しています。手で書き写した一覧は実装から必ずずれるため、ここには
+置きません。
+
+| 表示するもの | 取得元 |
+| --- | --- |
+| REST エンドポイント一覧 | `GET /v1beta/api-docs/openapi.json` |
+| GraphQL の Query / Mutation | `GET /v1/graphql/introspection` |
+| API のバージョン | 同じ OpenAPI ドキュメントの `info.version` |
+
+取得に失敗しても、ページの散文は単体で意味が通るように書いてあります。
+一覧の位置には取得できなかった旨が表示されます。
+
+新しいページを書くときも、API から取れるものは取ってください。散文で書くのは
+手順・注意・判断の理由など、API が答えられないことに限ります。
+
 ## ローカルで動かす
 
 ```bash
+cp apps/user-guide/.env.example apps/user-guide/.env.local
 yarn guide:dev
 ```
 
-ビルド:
+`.env.local` の `VITE_LIBRARY_API_BASE_URL` が、ガイドが説明する API です。
+ローカルの API に向ければ、その API のエンドポイント一覧が表示されます。
 
 ```bash
-yarn guide:build
+yarn guide:build   # dist/ に出力
+yarn guide:ts      # 型チェック
+yarn guide:lint    # Biome
 ```
-
-出力先は `.vitepress/dist` です。
 
 ## 構成
 
 ```
-index.md              トップページ
-api/getting-started.md  最初のリクエストまで
-api/api-keys.md         API キーの発行・一覧・失効
-api/rest.md             REST エンドポイント
-api/graphql.md          GraphQL エンドポイント
+src/lib/openapi.ts         OpenAPI ドキュメントの取得と整形
+src/lib/graphql-schema.ts  SDL の取得と Query/Mutation の抽出
+src/lib/use-async.ts       loading / error / data の 3 状態
+src/components/            レイアウトと表示部品
+src/pages/                 4 ページ分の本文
 ```
 
-## デプロイ
-
-ホスティングは未設定です。静的サイトなので `.vitepress/dist` をそのまま配信できます。
-公開先を決める際は、`amplify.yml` および `tachyon.yaml` への追加が必要かどうかを
-あわせて検討してください。
-
-## 書くときの約束
-
-- ベース URL や組織 ID のような環境ごとに変わる値はハードコードせず、
-  `$LIBRARY_API_URL` のようなプレースホルダで書き、確認手段を示す
-- エンドポイントやフィールド名は `apps/api/schema.graphql` と
-  `apps/web/src/app/v1beta/[org]/[repo]/api/_components/endpoints-data.ts` を
-  実際に確認してから書く
+ルーティングは react-router の SPA です。`public/_redirects` が全パスを
+`index.html` に返すため、直接 URL を開いても動きます。
