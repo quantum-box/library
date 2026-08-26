@@ -277,6 +277,7 @@ export const v1betaTranslations = {
 				title: 'Full Documentation',
 				description:
 					'Explore the complete API documentation with interactive tools.',
+				userGuide: 'User Guide',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',
@@ -1121,6 +1122,7 @@ export const v1betaTranslations = {
 				title: '完全なドキュメント',
 				description:
 					'インタラクティブなツールで完全なAPIドキュメントを探索できます。',
+				userGuide: 'ユーザーガイド',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',

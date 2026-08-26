@@ -172,6 +172,8 @@ spec:
           value: tn_01j91h09tpj5ehwbwfwfxpak2b
         - name: VITE_COGNITO_USER_POOL_ID
           value: ap-northeast-1_8Ga4bK5M4
+        - name: VITE_LIBRARY_DOCS_URL
+          value: https://library-user-guide.txcloud.app
     - name: library-user-guide
       repository:
         url: https://github.com/quantum-box/library
@@ -229,3 +231,5 @@ spec:
           value: 5b0a8ncbi6v189p3un146fb6rf
         - name: VITE_COGNITO_REGION
           value: ap-northeast-1
+        - name: VITE_LIBRARY_DOCS_URL
+          value: https://library-user-guide.txcloud.app
