@@ -43,7 +43,7 @@ impl UpdatePropertyInputPort for UpdateProperty {
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                action: "database:UpdateProperty",
+                action: "library:DatabaseUpdateProperty",
             })
             .await?;
 

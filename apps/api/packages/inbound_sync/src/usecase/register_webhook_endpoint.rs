@@ -54,7 +54,7 @@ pub trait RegisterWebhookEndpointInputPort:
     std::fmt::Debug + Send + Sync
 {
     fn policy(&self) -> &'static str {
-        "inbound_sync:RegisterWebhookEndpoint"
+        "library:InboundSyncRegisterWebhookEndpoint"
     }
 
     async fn execute<'a>(
@@ -253,7 +253,7 @@ pub trait UpdateWebhookEndpointInputPort:
     std::fmt::Debug + Send + Sync
 {
     fn policy(&self) -> &'static str {
-        "inbound_sync:UpdateWebhookEndpoint"
+        "library:InboundSyncUpdateWebhookEndpoint"
     }
 
     async fn execute<'a>(
@@ -375,7 +375,7 @@ pub trait DeleteWebhookEndpointInputPort:
     std::fmt::Debug + Send + Sync
 {
     fn policy(&self) -> &'static str {
-        "inbound_sync:DeleteWebhookEndpoint"
+        "library:InboundSyncDeleteWebhookEndpoint"
     }
 
     async fn execute<'a>(

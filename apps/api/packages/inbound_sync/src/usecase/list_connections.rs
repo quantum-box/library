@@ -32,7 +32,7 @@ pub struct ListConnectionsOutputData {
 pub trait ListConnectionsInputPort: std::fmt::Debug + Send + Sync {
     /// Returns the policy action name for this use case.
     fn policy(&self) -> &'static str {
-        "inbound_sync:ListConnections"
+        "library:InboundSyncListConnections"
     }
 
     /// Execute the use case.

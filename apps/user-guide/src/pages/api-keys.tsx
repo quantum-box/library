@@ -187,10 +187,8 @@ export function ApiKeys() {
         </div>
         <Prose>
           <p>
-            <Code>library:admin</Code> ロールは <Code>library:*</Code>{' '}
-            を許可するため、いずれの操作も行えます。
-            <Code>library:member</Code>{' '}
-            で操作が「権限がありません」になる場合は、組織の管理者に権限の付与を
+            組織のオーナーであれば、いずれの操作も行えます。
+            操作が「権限がありません」になる場合は、組織の管理者に権限の付与を
             依頼してください。
           </p>
         </Prose>

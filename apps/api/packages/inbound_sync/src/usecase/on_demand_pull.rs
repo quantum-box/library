@@ -65,7 +65,7 @@ impl OnDemandPull {
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                action: "inbound_sync:OnDemandPull",
+                action: "library:InboundSyncOnDemandPull",
             })
             .await?;
 
