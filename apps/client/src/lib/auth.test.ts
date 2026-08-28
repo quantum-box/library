@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearAuthTokens,
+  getValidAuthTokens,
   loadAuthTokens,
   loadStoredAuthIdentity,
   refreshAccessToken,
@@ -271,6 +272,50 @@ describe('Library authentication', () => {
       reason: 'refreshed',
     })
     window.removeEventListener('library-auth-change', authChange)
+  })
+
+  it('keeps the session when a refresh fails for a transient reason', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem(
+      'library_auth',
+      JSON.stringify(storedTokens({ expiresAt: now / 1000 + 60 })),
+    )
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(refreshStoredAuthTokens()).rejects.toThrow('Failed to fetch')
+
+    // The refresh token is untouched, and the stale-but-unexpired access token
+    // is still worth sending until the retry succeeds.
+    expect(localStorage.getItem('library_auth')).not.toBeNull()
+    await expect(getValidAuthTokens()).resolves.toMatchObject({
+      accessToken: 'stored-access-token',
+    })
+  })
+
+  it('keeps the session when the Library platform call fails during refresh', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem(
+      'library_auth',
+      JSON.stringify(storedTokens({ expiresAt: now / 1000 - 1 })),
+    )
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          AuthenticationResult: {
+            AccessToken: 'refreshed-access-token',
+            ExpiresIn: 3600,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'internal error' }, 500))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(refreshStoredAuthTokens()).rejects.toThrow()
+    expect(localStorage.getItem('library_auth')).not.toBeNull()
   })
 
   it('clears the centralized session when refresh is rejected', async () => {

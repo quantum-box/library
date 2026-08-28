@@ -1,4 +1,5 @@
 import { type GraphqlSdk, getSdkPlatform } from '@/lib/apiClient'
+import { refreshTokens } from '@/auth/token-manager'
 import { ClientError } from 'graphql-request'
 
 export const ErrorCode = {
@@ -69,6 +70,39 @@ function classifyGraphQLError(
   return ErrorCode.UNKNOWN_ERROR
 }
 
+function isUnauthorized(err: unknown): boolean {
+  if (!(err instanceof ClientError)) return false
+  const graphqlError = err.response.errors?.[0]
+  if (!graphqlError) return err.response.status === 401
+  return (
+    classifyGraphQLError(
+      graphqlError.extensions?.code as string | undefined,
+      graphqlError.message,
+    ) === ErrorCode.UNAUTHORIZED_ERROR
+  )
+}
+
+/**
+ * The API can report an expired token as a GraphQL UNAUTHORIZED inside a 200,
+ * which the transport cannot retry on its own. Refresh once and try again
+ * before letting the caller redirect to sign-in.
+ */
+async function runWithUnauthorizedRetry<T>(
+  fn: (sdk: GraphqlSdk) => Promise<T>,
+  sdk: GraphqlSdk,
+): Promise<T> {
+  try {
+    return await fn(sdk)
+  } catch (err: unknown) {
+    if (!isUnauthorized(err)) throw err
+
+    const refreshed = await refreshTokens().catch(() => null)
+    if (!refreshed) throw err
+
+    return await fn(sdk)
+  }
+}
+
 /**
  * Client-side platform action. Token must be provided by the caller.
  */
@@ -85,7 +119,7 @@ export const platformAction = async <T>(
     : getSdkPlatform()
 
   try {
-    return await fn(sdk)
+    return await runWithUnauthorizedRetry(fn, sdk)
   } catch (err: unknown) {
     let platformError: PlatformActionError
 
