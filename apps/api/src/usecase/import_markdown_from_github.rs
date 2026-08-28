@@ -383,6 +383,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     content_is_rich_text,
                     &ext_github_prop_id,
                     &input.github_repo,
+                    input.enable_github_sync,
                 )
                 .await
                 {
@@ -435,6 +436,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     content_is_rich_text,
                     &ext_github_prop_id,
                     &input.github_repo,
+                    input.enable_github_sync,
                 )
                 .await
                 {
@@ -595,6 +597,7 @@ async fn import_single_file(
     content_is_rich_text: bool,
     ext_github_prop_id: &str,
     github_repo: &str,
+    enable_sync: bool,
 ) -> Result<(String, Vec<crate::usecase::PropertyDataInputData>), String> {
     // Get file content
     let content = github_provider::GitHub::get_raw_file_content(
@@ -632,7 +635,8 @@ async fn import_single_file(
     // Add ext_github property with metadata
     // sync_to_github flag controls whether this property is included in frontmatter
     // when syncing back to GitHub
-    let github_meta = github_import_metadata(github_repo, path, ref_name);
+    let github_meta =
+        github_import_metadata(github_repo, path, ref_name, enable_sync);
     property_data.push(crate::usecase::PropertyDataInputData {
         property_id: ext_github_prop_id.to_string(),
         value: crate::usecase::PropertyDataValueInputData::String(
@@ -689,13 +693,14 @@ fn github_import_metadata(
     github_repo: &str,
     path: &str,
     ref_name: Option<&str>,
+    enable_sync: bool,
 ) -> serde_json::Value {
     serde_json::json!({
         "repo": github_repo,
         "path": path,
         "ref": ref_name.unwrap_or("main"),
-        "enabled": false,
-        "sync_to_github": false,
+        "enabled": enable_sync,
+        "sync_to_github": enable_sync,
     })
 }
 
@@ -739,6 +744,7 @@ mod tests {
             "quantum-box/library",
             "docs/example.md",
             None,
+            false,
         );
 
         assert_eq!(
@@ -749,6 +755,27 @@ mod tests {
                 "ref": "main",
                 "enabled": false,
                 "sync_to_github": false,
+            })
+        );
+    }
+
+    #[test]
+    fn sync_enabled_import_metadata_opts_into_writeback() {
+        let metadata = github_import_metadata(
+            "quantum-box/library",
+            "docs/example.md",
+            Some("develop"),
+            true,
+        );
+
+        assert_eq!(
+            metadata,
+            serde_json::json!({
+                "repo": "quantum-box/library",
+                "path": "docs/example.md",
+                "ref": "develop",
+                "enabled": true,
+                "sync_to_github": true,
             })
         );
     }

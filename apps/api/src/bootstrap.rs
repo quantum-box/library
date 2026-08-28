@@ -113,11 +113,11 @@ async fn build_oauth_runtime(
     let oauth_bootstrap =
         Arc::new(OAuthBootstrap::new(sdk.clone(), LIBRARY_TENANT.clone()));
 
-    // The client credentials resolve on first use, but the Linear
-    // webhook secret has to be in the store before a webhook can be
-    // verified against it, so this server resolves the configuration
-    // now. It shares the cell with everything else, so nothing fetches
-    // it a second time.
+    // The client credentials resolve on first use, but the GitHub and
+    // Linear webhook secrets have to be in the store before a webhook
+    // can be verified against them, so this server resolves the
+    // configuration now. It shares the cell with everything else, so
+    // nothing fetches it a second time.
     let mut provider_secrets = inbound_sync::WebhookSecretStore::new();
     if let Some(bootstrap) = oauth_bootstrap.get().await {
         if bootstrap.github_credentials.is_some() {
@@ -130,14 +130,7 @@ async fn build_oauth_runtime(
         if bootstrap.linear_credentials.is_some() {
             tracing::info!("Linear OAuth credentials configured via REST");
         }
-        if let Some(secret) = &bootstrap.linear_webhook_secret {
-            if !secret.trim().is_empty() {
-                provider_secrets.insert(
-                    inbound_sync_domain::Provider::Linear,
-                    secret.clone(),
-                );
-            }
-        }
+        insert_provider_webhook_secrets(&mut provider_secrets, bootstrap);
     }
 
     let oauth_service = HttpOAuthService::new(oauth_token_repo.clone())
@@ -154,4 +147,70 @@ async fn build_oauth_runtime(
         Arc::new(provider_secrets),
         oauth_bootstrap,
     )
+}
+
+/// Copy the bootstrap-provided webhook secrets into the store.
+fn insert_provider_webhook_secrets(
+    provider_secrets: &mut inbound_sync::WebhookSecretStore,
+    bootstrap: &sdk_auth::OAuthBootstrapConfig,
+) {
+    let entries = [
+        (
+            inbound_sync_domain::Provider::Github,
+            &bootstrap.github_webhook_secret,
+        ),
+        (
+            inbound_sync_domain::Provider::Linear,
+            &bootstrap.linear_webhook_secret,
+        ),
+    ];
+    for (provider, secret) in entries {
+        if let Some(secret) = secret {
+            if !secret.trim().is_empty() {
+                provider_secrets.insert(provider, secret.clone());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::insert_provider_webhook_secrets;
+    use crate::sdk_auth::OAuthBootstrapConfig;
+
+    #[test]
+    fn github_and_linear_webhook_secrets_land_in_the_store() {
+        let bootstrap = OAuthBootstrapConfig {
+            github_webhook_secret: Some("gh_secret".to_string()),
+            linear_webhook_secret: Some("ln_secret".to_string()),
+            ..Default::default()
+        };
+
+        let mut store = inbound_sync::WebhookSecretStore::new();
+        insert_provider_webhook_secrets(&mut store, &bootstrap);
+
+        assert_eq!(
+            store.get(inbound_sync_domain::Provider::Github),
+            Some("gh_secret")
+        );
+        assert_eq!(
+            store.get(inbound_sync_domain::Provider::Linear),
+            Some("ln_secret")
+        );
+    }
+
+    #[test]
+    fn empty_or_missing_secrets_are_not_stored() {
+        let bootstrap = OAuthBootstrapConfig {
+            github_webhook_secret: Some("  ".to_string()),
+            linear_webhook_secret: None,
+            ..Default::default()
+        };
+
+        let mut store = inbound_sync::WebhookSecretStore::new();
+        insert_provider_webhook_secrets(&mut store, &bootstrap);
+
+        assert_eq!(store.get(inbound_sync_domain::Provider::Github), None);
+        assert_eq!(store.get(inbound_sync_domain::Provider::Linear), None);
+    }
 }

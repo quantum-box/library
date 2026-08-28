@@ -841,6 +841,8 @@ pub struct ExtGithubRepoConfig {
     pub label: Option<String>,
     /// TODO: add English documentation
     pub default_path: Option<String>,
+    /// Target branch (defaults to "main")
+    pub branch: Option<String>,
 }
 
 /// TODO: add English documentation
@@ -852,6 +854,48 @@ pub struct BulkSyncExtGithubOutputData {
     pub skipped_count: usize,
     /// TODO: add English documentation
     pub total_count: usize,
+}
+
+/// Sync a single Data item's markdown to a GitHub repository.
+#[async_trait::async_trait]
+pub trait SyncDataToGithubInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: SyncDataToGithubInputData<'a>,
+    ) -> errors::Result<SyncDataToGithubOutputData>;
+}
+
+/// Input for syncing a single Data item to GitHub.
+#[derive(Debug, Clone)]
+pub struct SyncDataToGithubInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub org_username: String,
+    pub repo_username: String,
+    pub data_id: String,
+    /// Target GitHub repository (owner/repo format)
+    pub target_repo: String,
+    /// Target path in the repository
+    pub target_path: String,
+    /// Target branch (defaults to "main")
+    pub target_branch: Option<String>,
+    /// Custom commit message
+    pub commit_message: Option<String>,
+    /// If true, only calculate diff without syncing
+    pub dry_run: bool,
+}
+
+/// Result of syncing a single Data item to GitHub.
+#[derive(Debug, Clone)]
+pub struct SyncDataToGithubOutputData {
+    pub status: outbound_sync::SyncStatus,
+    /// Result ID (commit SHA, etc.)
+    pub result_id: Option<String>,
+    /// URL to the synced resource
+    pub url: Option<String>,
+    /// Diff preview (for dry-run)
+    pub diff: Option<String>,
 }
 
 // ==================== GitHub Import Usecases ====================
@@ -1025,6 +1069,9 @@ pub struct ImportMarkdownFromGitHubInputData<'a> {
     pub content_property_name: String,
     /// TODO: add English documentation
     pub skip_existing: bool,
+    /// When true, imported data keeps GitHub sync enabled
+    /// (`ext_github.enabled` / `sync_to_github` are set to true).
+    pub enable_github_sync: bool,
 }
 
 /// TODO: add English documentation

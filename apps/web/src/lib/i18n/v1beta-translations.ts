@@ -277,6 +277,7 @@ export const v1betaTranslations = {
 				title: 'Full Documentation',
 				description:
 					'Explore the complete API documentation with interactive tools.',
+				userGuide: 'User Guide',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',
@@ -384,8 +385,9 @@ export const v1betaTranslations = {
 			syncExtGithub: 'Sync ext_github to frontmatter',
 			syncExtGithubDescription:
 				'When saving to GitHub, include ext_github in frontmatter',
-			oneShotImportOnly:
-				'GitHub Markdown import is one-shot for GA. GitHub sync and writeback are coming soon and will not be enabled by this import.',
+			enableSyncLabel: 'Enable GitHub sync',
+			enableSyncDescription:
+				'Keep imported data in sync with GitHub: pushes from GitHub update the data, and saving the data pushes markdown back to GitHub.',
 			propertyMappings: 'Property Mappings',
 			filesWithFrontmatter: '{valid}/{total} files with frontmatter',
 			noFrontmatter: 'No frontmatter properties found in selected files',
@@ -1120,6 +1122,7 @@ export const v1betaTranslations = {
 				title: '完全なドキュメント',
 				description:
 					'インタラクティブなツールで完全なAPIドキュメントを探索できます。',
+				userGuide: 'ユーザーガイド',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',
@@ -1229,8 +1232,9 @@ export const v1betaTranslations = {
 			syncExtGithub: 'ext_githubをfrontmatterに同期',
 			syncExtGithubDescription:
 				'GitHubに保存する際、frontmatterにext_githubを含める',
-			oneShotImportOnly:
-				'GAではGitHub Markdown importはone-shotです。GitHub同期と書き戻しはComing soonで、このインポートでは有効化されません。',
+			enableSyncLabel: 'GitHub同期を有効化',
+			enableSyncDescription:
+				'インポートしたデータをGitHubと同期し続けます。GitHubへのpushでデータが更新され、データを保存するとMarkdownがGitHubに書き戻されます。',
 			propertyMappings: 'プロパティマッピング',
 			filesWithFrontmatter: '{total}件中{valid}件がfrontmatterを含む',
 			noFrontmatter:

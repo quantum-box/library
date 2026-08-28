@@ -42,7 +42,11 @@ export interface AvailableRepo {
 export interface ExtGithubValue {
 	repo: string
 	path: string
+	/** 同期先ブランチ（デフォルト: main） */
+	ref?: string
 	enabled?: boolean
+	/** GitHub書き戻し時にfrontmatterへext_githubを含めるか */
+	sync_to_github?: boolean
 	/** パス変更時に古いファイルを削除するかどうか */
 	deleteOldPath?: boolean
 	/** 変更前のパス（古いファイル削除用） */
@@ -87,6 +91,7 @@ export function ExtGithubEditor({
 	const initialState = normalizeExtGithubEditorState(parsedValue)
 	const [repo, setRepo] = useState(initialState.repo)
 	const [path, setPath] = useState(initialState.path)
+	const [gitRef] = useState(initialState.ref)
 	const [enabled, setEnabled] = useState(initialState.enabled)
 	const [deleteOldPath, setDeleteOldPath] = useState(true)
 
@@ -141,7 +146,9 @@ export function ExtGithubEditor({
 			const json = JSON.stringify({
 				repo: newRepo,
 				path: newPath,
+				ref: gitRef,
 				enabled: newEnabled,
+				sync_to_github: newEnabled,
 				// パスが変更された場合のみ削除オプションを含める
 				...(hasPathChanged && {
 					deleteOldPath: shouldDeleteOld,
@@ -150,7 +157,7 @@ export function ExtGithubEditor({
 			} satisfies ExtGithubValue)
 			onChange(json)
 		},
-		[onChange],
+		[onChange, gitRef],
 	)
 
 	const handleRepoChange = (newRepo: string) => {
@@ -230,7 +237,7 @@ export function ExtGithubEditor({
 				<div className='flex items-center gap-2 text-sm'>
 					<FolderGit2 className='h-4 w-4 text-muted-foreground' />
 					<a
-						href={`https://github.com/${parsedValue.repo}/blob/main/${parsedValue.path}`}
+						href={`https://github.com/${parsedValue.repo}/blob/${parsedValue.ref ?? 'main'}/${parsedValue.path}`}
 						target='_blank'
 						rel='noopener noreferrer'
 						className='font-mono text-xs text-blue-600 hover:underline dark:text-blue-400'

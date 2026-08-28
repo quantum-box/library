@@ -116,12 +116,15 @@ impl GitHubEventProcessor {
                         )
                         .await
                     {
-                        Ok(created) => {
+                        Ok(Some(created)) => {
                             if created {
                                 stats.created += 1;
                             } else {
                                 stats.updated += 1;
                             }
+                        }
+                        Ok(None) => {
+                            stats.skipped += 1;
                         }
                         Err(e) => {
                             tracing::error!(
@@ -162,6 +165,11 @@ impl GitHubEventProcessor {
     }
 
     /// Process an added or modified file.
+    ///
+    /// Returns `None` when the file is skipped because its commit SHA
+    /// matches the recorded sync state (an echo of our own outbound
+    /// push, or a webhook redelivery), `Some(true)` when new data was
+    /// created, and `Some(false)` when existing data was updated.
     async fn process_added_or_modified(
         &self,
         endpoint: &WebhookEndpoint,
@@ -169,13 +177,7 @@ impl GitHubEventProcessor {
         branch: &str,
         path: &str,
         commit_sha: &str,
-    ) -> errors::Result<bool> {
-        // Fetch file content from GitHub
-        let content = self
-            .github_client
-            .get_file_content(endpoint.tenant_id(), repo, path, branch)
-            .await?;
-
+    ) -> errors::Result<Option<bool>> {
         // Generate external ID for this file
         let external_id = format!("{repo}:{path}");
 
@@ -183,6 +185,27 @@ impl GitHubEventProcessor {
         let existing_state = self
             .sync_state_repo
             .find_by_external_id(endpoint.id(), &external_id)
+            .await?;
+
+        // Echo suppression: skip commits this integration already knows
+        // about — either an echo of our own outbound push (the commit
+        // SHA was recorded by the writeback path) or a webhook
+        // redelivery of an already-processed commit.
+        if let Some(existing) = &existing_state {
+            if !existing.has_external_changed(commit_sha) {
+                tracing::debug!(
+                    path = path,
+                    commit_sha = commit_sha,
+                    "Skipping already-synced commit (echo or redelivery)"
+                );
+                return Ok(None);
+            }
+        }
+
+        // Fetch file content from GitHub
+        let content = self
+            .github_client
+            .get_file_content(endpoint.tenant_id(), repo, path, branch)
             .await?;
 
         let is_new = existing_state.is_none();
@@ -218,7 +241,7 @@ impl GitHubEventProcessor {
             "File synced from GitHub"
         );
 
-        Ok(is_new)
+        Ok(Some(is_new))
     }
 
     /// Process a removed file.
@@ -363,12 +386,15 @@ impl GitHubEventProcessor {
                         )
                         .await
                     {
-                        Ok(created) => {
+                        Ok(Some(created)) => {
                             if created {
                                 stats.created += 1;
                             } else {
                                 stats.updated += 1;
                             }
+                        }
+                        Ok(None) => {
+                            stats.skipped += 1;
                         }
                         Err(e) => {
                             tracing::error!(
@@ -581,9 +607,248 @@ pub trait GitHubDataHandler: Send + Sync + std::fmt::Debug {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use inbound_sync_domain::{
+        Provider, ProviderConfig, SyncDirection, SyncState, SyncStateId,
+        SyncStateRepository, WebhookEndpoint, WebhookEndpointId,
+    };
+    use value_object::TenantId;
+
+    use super::{
+        GitHubClient, GitHubDataHandler, GitHubEventProcessor,
+        PullRequestFile, RepositoryContent,
+    };
+
     #[test]
     fn test_external_id_format() {
         let external_id = format!("{}:{}", "owner/repo", "docs/article.md");
         assert_eq!(external_id, "owner/repo:docs/article.md");
+    }
+
+    #[derive(Debug)]
+    struct StubGitHubClient;
+
+    #[async_trait::async_trait]
+    impl GitHubClient for StubGitHubClient {
+        async fn get_file_content(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _path: &str,
+            _branch: &str,
+        ) -> errors::Result<String> {
+            Ok("# Hello".to_string())
+        }
+
+        async fn get_pr_files(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _pr_number: u64,
+        ) -> errors::Result<Vec<PullRequestFile>> {
+            Ok(vec![])
+        }
+
+        async fn list_repository_contents(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _branch: &str,
+            _path_pattern: Option<&str>,
+        ) -> errors::Result<Vec<RepositoryContent>> {
+            Ok(vec![])
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CountingDataHandler {
+        upserts: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl GitHubDataHandler for CountingDataHandler {
+        async fn upsert_data(
+            &self,
+            _endpoint: &WebhookEndpoint,
+            _path: &str,
+            _content: &str,
+            _mapping: Option<&inbound_sync_domain::PropertyMapping>,
+        ) -> errors::Result<String> {
+            self.upserts.fetch_add(1, Ordering::SeqCst);
+            Ok("data_test".to_string())
+        }
+
+        async fn delete_data(
+            &self,
+            _endpoint: &WebhookEndpoint,
+            _data_id: &str,
+        ) -> errors::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Sync state repository stub seeded with one state.
+    #[derive(Debug)]
+    struct SeededSyncStateRepo {
+        state: std::sync::Mutex<Option<SyncState>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SyncStateRepository for SeededSyncStateRepo {
+        async fn save(&self, state: &SyncState) -> errors::Result<()> {
+            *self.state.lock().unwrap() = Some(state.clone());
+            Ok(())
+        }
+
+        async fn find_by_id(
+            &self,
+            _id: &SyncStateId,
+        ) -> errors::Result<Option<SyncState>> {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        async fn find_by_external_id(
+            &self,
+            _endpoint_id: &WebhookEndpointId,
+            _external_id: &str,
+        ) -> errors::Result<Option<SyncState>> {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        async fn find_by_data_id(
+            &self,
+            _endpoint_id: &WebhookEndpointId,
+            _data_id: &str,
+        ) -> errors::Result<Option<SyncState>> {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        async fn find_by_endpoint(
+            &self,
+            _endpoint_id: &WebhookEndpointId,
+        ) -> errors::Result<Vec<SyncState>> {
+            Ok(self.state.lock().unwrap().clone().into_iter().collect())
+        }
+
+        async fn delete(&self, _id: &SyncStateId) -> errors::Result<()> {
+            Ok(())
+        }
+
+        async fn delete_by_endpoint(
+            &self,
+            _endpoint_id: &WebhookEndpointId,
+        ) -> errors::Result<u64> {
+            Ok(0)
+        }
+    }
+
+    fn test_endpoint() -> WebhookEndpoint {
+        WebhookEndpoint::create(
+            TenantId::default(),
+            "test",
+            Provider::Github,
+            ProviderConfig::Github {
+                repository: "owner/repo".to_string(),
+                branch: "main".to_string(),
+                path_pattern: None,
+            },
+            vec!["push".to_string()],
+            "secret_hash",
+        )
+    }
+
+    fn processor_with_state(
+        state: Option<SyncState>,
+        handler: Arc<CountingDataHandler>,
+    ) -> GitHubEventProcessor {
+        GitHubEventProcessor::new(
+            Arc::new(StubGitHubClient),
+            Arc::new(SeededSyncStateRepo {
+                state: std::sync::Mutex::new(state),
+            }),
+            handler,
+        )
+    }
+
+    #[tokio::test]
+    async fn skips_commit_matching_recorded_external_version() {
+        let endpoint = test_endpoint();
+        let mut state = SyncState::create(
+            endpoint.id().clone(),
+            "data_test",
+            "owner/repo:docs/a.md",
+            SyncDirection::Both,
+        );
+        // Simulates the outbound writeback having recorded this SHA.
+        state.update_outbound(Some("sha_echo".to_string()), None);
+
+        let handler = Arc::new(CountingDataHandler::default());
+        let processor = processor_with_state(Some(state), handler.clone());
+
+        let result = processor
+            .process_added_or_modified(
+                &endpoint,
+                "owner/repo",
+                "main",
+                "docs/a.md",
+                "sha_echo",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, None);
+        assert_eq!(handler.upserts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn processes_commit_with_changed_external_version() {
+        let endpoint = test_endpoint();
+        let mut state = SyncState::create(
+            endpoint.id().clone(),
+            "data_test",
+            "owner/repo:docs/a.md",
+            SyncDirection::Both,
+        );
+        state.update_outbound(Some("sha_old".to_string()), None);
+
+        let handler = Arc::new(CountingDataHandler::default());
+        let processor = processor_with_state(Some(state), handler.clone());
+
+        let result = processor
+            .process_added_or_modified(
+                &endpoint,
+                "owner/repo",
+                "main",
+                "docs/a.md",
+                "sha_new",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(false));
+        assert_eq!(handler.upserts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn processes_new_file_without_sync_state() {
+        let endpoint = test_endpoint();
+        let handler = Arc::new(CountingDataHandler::default());
+        let processor = processor_with_state(None, handler.clone());
+
+        let result = processor
+            .process_added_or_modified(
+                &endpoint,
+                "owner/repo",
+                "main",
+                "docs/a.md",
+                "sha_new",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(true));
+        assert_eq!(handler.upserts.load(Ordering::SeqCst), 1);
     }
 }

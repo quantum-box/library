@@ -27,11 +27,13 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::handler::data::ParquetStorage;
 
 use inbound_sync::interface_adapter::{
-    BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpGitHubClient,
-    NoOpGitHubDataHandler, NoOpHubSpotClient, NoOpHubSpotDataHandler,
-    NoOpNotionClient, NoOpNotionDataHandler, NoOpSquareClient,
-    NoOpStripeClient, NoOpStripeDataHandler, SqlxConnectionRepository,
-    SqlxSyncStateRepository,
+    BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpHubSpotClient,
+    NoOpHubSpotDataHandler, NoOpNotionClient, NoOpNotionDataHandler,
+    NoOpSquareClient, NoOpStripeClient, NoOpStripeDataHandler,
+    SqlxConnectionRepository, SqlxSyncStateRepository,
+};
+use inbound_sync::providers::github::{
+    DefaultGitHubDataHandler, OAuthGitHubClient,
 };
 use inbound_sync::providers::linear::{
     DefaultLinearDataHandler, OAuthLinearClient,
@@ -204,13 +206,7 @@ pub async fn router(
         Arc::new(HttpApiKeyValidator::new());
 
     // Default clients and data handlers
-    // Linear uses real implementations; others remain NoOp for now
-    let github_client: Arc<
-        dyn inbound_sync::providers::github::GitHubClient,
-    > = Arc::new(NoOpGitHubClient);
-    let github_data_handler: Arc<
-        dyn inbound_sync::providers::github::GitHubDataHandler,
-    > = Arc::new(NoOpGitHubDataHandler);
+    // GitHub and Linear use real implementations; others remain NoOp for now
     let repo_repository: Arc<dyn crate::domain::RepoRepository> =
         Arc::new(
             crate::interface_adapter::gateway::repo_repository::RepoRepositoryImpl::new(
@@ -224,6 +220,16 @@ pub async fn router(
         repo_repository.clone(),
         sync_state_repo.clone(),
         database_manager_db.clone(),
+    ));
+    let github_token_provider =
+        Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
+    let github_client: Arc<
+        dyn inbound_sync::providers::github::GitHubClient,
+    > = Arc::new(OAuthGitHubClient::new(github_token_provider));
+    let github_data_handler: Arc<
+        dyn inbound_sync::providers::github::GitHubDataHandler,
+    > = Arc::new(DefaultGitHubDataHandler::new(
+        library_data_repository.clone(),
     ));
     let linear_token_provider =
         Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
@@ -455,6 +461,8 @@ pub async fn router(
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),
+            webhook_endpoint_repo.clone(),
+            sync_state_repo.clone(),
         )
         .await,
     );

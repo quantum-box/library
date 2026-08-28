@@ -12,6 +12,7 @@ import {
   FileText,
   FolderGit2,
   GitBranch,
+  KeyRound,
   LayoutList,
   RefreshCw,
   Settings,
@@ -257,6 +258,14 @@ export function RepositoryOverview({
           <Activity className="size-3.5" aria-hidden="true" />
           Activity
         </a>
+        <Link
+          to="/$organization/$repository/api"
+          params={{ organization, repository }}
+          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <KeyRound className="size-3.5" aria-hidden="true" />
+          API
+        </Link>
         <Link
           to="/$organization/$repository/settings"
           params={{ organization, repository }}

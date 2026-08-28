@@ -12,7 +12,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import type { ApiKeyItemFragment } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
-import { baseURL } from '@/lib/apiClient'
+import { baseURL, docsURL } from '@/lib/apiClient'
 
 export const Route = createFileRoute('/v1beta/$org/$repo/api')({
   component: ApiPage,
@@ -90,6 +90,7 @@ function ApiPage() {
       org={org}
       repo={repo}
       apiBaseUrl={baseURL}
+      docsUrl={docsURL}
       apiKeySlot={
         signedIn ? (
           <ApiKeyDialog orgUsername={org} onCreate={handleCreate} />

@@ -222,10 +222,17 @@ impl BulkSyncExtGithubInputPort for BulkSyncExtGithub {
                     })
                     .unwrap_or_else(|| format!("{sanitized_name}.md"));
 
+                let branch = default_repo_config
+                    .branch
+                    .clone()
+                    .filter(|b| !b.trim().is_empty())
+                    .unwrap_or_else(|| "main".to_string());
                 let ext_github_value = serde_json::json!({
                     "repo": default_repo_config.repo,
                     "path": path,
+                    "ref": branch,
                     "enabled": true,
+                    "sync_to_github": true,
                 })
                 .to_string();
 
@@ -275,7 +282,7 @@ impl BulkSyncExtGithubInputPort for BulkSyncExtGithub {
                 let target = SyncTarget::git_with_branch(
                     &default_repo_config.repo,
                     &path,
-                    "main".to_string(),
+                    branch.clone(),
                 );
 
                 // Build payload

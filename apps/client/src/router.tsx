@@ -31,6 +31,7 @@ import { CreateRecordModal } from './components/CreateRecordModal'
 import { LibraryHome } from './components/LibraryHome'
 import { OrganizationOverview } from './components/OrganizationOverview'
 import { RepositoryOverview } from './components/RepositoryOverview'
+import { ApiKeysView } from './components/ApiKeysView'
 import { RepositorySettingsView } from './components/RepositorySettingsView'
 import { Kbd, KbdGroup } from './components/Kbd'
 import { ChatView } from './components/chat/ChatView'
@@ -837,6 +838,32 @@ function RepositorySettingsPage() {
 
   return (
     <RepositorySettingsView
+      organization={organization}
+      repository={repository}
+      operatorId={operatorId}
+    />
+  )
+}
+
+const repositoryApiKeysRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/api',
+  component: RepositoryApiKeysPage,
+})
+
+function RepositoryApiKeysPage() {
+  const { organization, repository } = repositoryApiKeysRoute.useParams()
+  const { databases } = useWorkspaceDatabases()
+  // Keys are verified against the organization that issued them, which
+  // /v1/graphql cannot read off the path, so the operator travels as a
+  // header. Resolved the same way repository settings resolves it.
+  const operatorId = databases.find(
+    (database) =>
+      database.orgUsername === organization && database.repoUsername === repository,
+  )?.operatorId
+
+  return (
+    <ApiKeysView
       organization={organization}
       repository={repository}
       operatorId={operatorId}
@@ -1817,6 +1844,7 @@ const routeTree = rootRoute.addChildren([
   organizationRoute,
   repositoryRoute,
   repositorySettingsRoute,
+  repositoryApiKeysRoute,
   legacyRepositoryRoute,
   legacyRepositorySettingsRoute,
   repoDataRoute.addChildren([repoDataIndexRoute, repoDataRecordRoute]),
