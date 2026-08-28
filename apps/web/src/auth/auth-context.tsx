@@ -7,14 +7,16 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { signInWithHostedUiCode, signInWithCredentials } from './cognito'
 import {
+  clearTokens,
+  getValidAccessToken,
+  loadStoredTokens,
+  startAuthTokenWatch,
+  storeTokens,
+  subscribeAuthChange,
   type AuthTokens,
-  signInWithHostedUiCode,
-  refreshAccessToken,
-  signInWithCredentials,
-} from './cognito'
-
-const AUTH_STORAGE_KEY = 'library_auth'
+} from './token-manager'
 
 export interface AuthSession {
   user: {
@@ -44,25 +46,8 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function loadStoredTokens(): AuthTokens | null {
-  try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (!stored) return null
-    return JSON.parse(stored) as AuthTokens
-  } catch {
-    return null
-  }
-}
-
-function storeTokens(tokens: AuthTokens): void {
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(tokens))
-}
-
-function clearTokens(): void {
-  localStorage.removeItem(AUTH_STORAGE_KEY)
-}
-
-function tokensToSession(tokens: AuthTokens): AuthSession {
+function tokensToSession(tokens: AuthTokens | null): AuthSession | null {
+  if (!tokens) return null
   return {
     user: {
       id: tokens.userId,
@@ -76,82 +61,43 @@ function tokensToSession(tokens: AuthTokens): AuthSession {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(null)
+  // Stored tokens are trusted up front even when the access token is stale:
+  // the token manager refreshes it, and only the manager decides to sign out.
+  const [session, setSession] = useState<AuthSession | null>(() =>
+    tokensToSession(loadStoredTokens()),
+  )
   const [isLoading, setIsLoading] = useState(true)
 
-  // Initialize from stored tokens
   useEffect(() => {
-    const tokens = loadStoredTokens()
-    if (tokens) {
-      // Check if token is expired
-      if (Date.now() / 1000 > tokens.expiresAt) {
-        // Try to refresh
-        refreshAccessToken(tokens.refreshToken, tokens.username)
-          .then((newTokens) => {
-            // Preserve email from stored tokens if refresh doesn't return it
-            newTokens.email = newTokens.email || tokens.email
-            storeTokens(newTokens)
-            setSession(tokensToSession(newTokens))
-          })
-          .catch(() => {
-            clearTokens()
-            setSession(null)
-          })
-          .finally(() => setIsLoading(false))
-      } else {
-        setSession(tokensToSession(tokens))
-        setIsLoading(false)
-      }
-    } else {
-      setIsLoading(false)
+    const unsubscribe = subscribeAuthChange(() => {
+      setSession(tokensToSession(loadStoredTokens()))
+    })
+    const stopWatch = startAuthTokenWatch()
+
+    // Refreshes now if the stored token is at or near expiry.
+    void getValidAccessToken().finally(() => setIsLoading(false))
+
+    return () => {
+      unsubscribe()
+      stopWatch()
     }
   }, [])
 
-  // Auto-refresh token before expiry
-  useEffect(() => {
-    const tokens = loadStoredTokens()
-    if (!tokens) return
-
-    const expiresInMs = (tokens.expiresAt - Date.now() / 1000) * 1000
-    // Refresh 5 minutes before expiry
-    const refreshIn = Math.max(expiresInMs - 5 * 60 * 1000, 0)
-
-    const timer = setTimeout(async () => {
-      try {
-        const newTokens = await refreshAccessToken(
-          tokens.refreshToken,
-          tokens.username,
-        )
-        newTokens.email = newTokens.email || tokens.email
-        storeTokens(newTokens)
-        setSession(tokensToSession(newTokens))
-      } catch {
-        clearTokens()
-        setSession(null)
-      }
-    }, refreshIn)
-
-    return () => clearTimeout(timer)
-  }, [session])
-
   const signIn = useCallback(async (username: string, password: string) => {
     const tokens = await signInWithCredentials(username, password)
-    storeTokens(tokens)
-    setSession(tokensToSession(tokens))
+    storeTokens(tokens, 'signed-in')
   }, [])
 
   const signInHostedUiCode = useCallback(
     async (code: string, codeVerifier: string, redirectUri: string) => {
       const tokens = await signInWithHostedUiCode(code, codeVerifier, redirectUri)
-      storeTokens(tokens)
-      setSession(tokensToSession(tokens))
+      storeTokens(tokens, 'signed-in')
     },
     [],
   )
 
   const signOut = useCallback(() => {
-    clearTokens()
-    setSession(null)
+    clearTokens('signed-out')
   }, [])
 
   const value = useMemo(
@@ -178,5 +124,8 @@ export function useAuth() {
 
 export function useSession() {
   const { session, isLoading } = useAuth()
-  return { data: session, status: isLoading ? 'loading' : session ? 'authenticated' : 'unauthenticated' } as const
+  return {
+    data: session,
+    status: isLoading ? 'loading' : session ? 'authenticated' : 'unauthenticated',
+  } as const
 }
