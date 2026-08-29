@@ -12,8 +12,16 @@ import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
+import { uploadLibraryImage } from '../lib/recordsApi'
 
 export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
+
+/** The repository an image dropped into the body is stored against. */
+export interface RecordBodyImageTarget {
+  org: string
+  repo: string
+  operatorId?: string
+}
 
 interface RecordBodyEditorProps {
   value: string
@@ -35,6 +43,12 @@ interface RecordBodyEditorProps {
   onCommit: (value: string) => void
   editable?: boolean
   surface?: 'panel' | 'page'
+  /**
+   * Where to store pasted and dropped images. Without it the editor still
+   * embeds images by URL, but has nowhere to put a local file, so BlockNote
+   * hides the upload tab.
+   */
+  imageTarget?: RecordBodyImageTarget
 }
 
 export function RecordBodyEditor(props: RecordBodyEditorProps) {
@@ -71,8 +85,31 @@ function isArtifactHtml(value: string): boolean {
   return value.trim() === '' || /^\s*</.test(value)
 }
 
-function useBodyEditor() {
-  return useCreateBlockNote({ schema: recordBodySchema })
+/**
+ * The editor is created once per mount, so `imageTarget` is read through a
+ * ref: a record that re-renders with a new object identity must not throw
+ * away the document under the caret. Whether uploads exist at all is fixed
+ * on the first render, because BlockNote reads `uploadFile` when it builds
+ * the editor and only offers the upload tab when it is set.
+ */
+function useBodyEditor(imageTarget: RecordBodyImageTarget | undefined) {
+  const imageTargetRef = useRef(imageTarget)
+  const [uploads] = useState(() => imageTarget !== undefined)
+
+  useEffect(() => {
+    imageTargetRef.current = imageTarget
+  }, [imageTarget])
+
+  return useCreateBlockNote({
+    schema: recordBodySchema,
+    uploadFile: uploads
+      ? async (file: File) => {
+        const target = imageTargetRef.current
+        if (!target) throw new Error('This body has no repository to store images in')
+        return uploadLibraryImage(target, file)
+      }
+      : undefined,
+  })
 }
 type BodyEditor = ReturnType<typeof useBodyEditor>
 /** A partial block in the record body schema — what replaceBlocks accepts. */
@@ -84,6 +121,7 @@ function BlockRecordBodyEditor({
   onCommit,
   editable = true,
   surface = 'panel',
+  imageTarget,
 }: RecordBodyEditorProps) {
   const lastCommitted = useRef(value)
   const loading = useRef(true)
@@ -91,7 +129,7 @@ function BlockRecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
-  const editor = useBodyEditor()
+  const editor = useBodyEditor(imageTarget)
 
   useEffect(() => {
     onCommitRef.current = onCommit

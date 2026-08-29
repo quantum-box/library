@@ -83,6 +83,7 @@
     "mock:tachyon": "cd packages/server && cargo run --bin mock-tachyon-api"
   },
   "dependencies": {
+    "@blocknote/code-block": "^0.50.0",
     "@blocknote/core": "^0.50.0",
     "@blocknote/react": "^0.50.0",
     "@blocknote/shadcn": "^0.50.0",
@@ -140,7 +141,7 @@
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1",
     "vitest": "^4.1.2",
-    "ws": "^8.18.0",
-    "wrangler": "^4.87.0"
+    "wrangler": "^4.87.0",
+    "ws": "^8.18.0"
   }
 }

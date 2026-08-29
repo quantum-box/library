@@ -9,6 +9,7 @@ use crate::interface_adapter::gateway::LibraryDataRepositoryImpl;
 use crate::sdk_auth::SdkAuthApp;
 use async_graphql::EmptySubscription;
 use async_graphql::Schema;
+use axum::extract::DefaultBodyLimit;
 use axum::http::method::Method;
 use axum::middleware;
 use axum::routing::get;
@@ -25,6 +26,9 @@ use telemetry::http::{
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::handler::data::ParquetStorage;
+use crate::handler::image::{
+    BucketImageStore, ImageObjectStore, TachyonImageStore, MAX_IMAGE_BYTES,
+};
 
 use inbound_sync::interface_adapter::{
     BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpHubSpotClient,
@@ -468,6 +472,7 @@ pub async fn router(
     );
 
     let parquet_storage = build_parquet_storage().await?;
+    let image_store = build_image_store().await?;
 
     let schema: graphql::AppSchema = Schema::build(
         graphql::Query::default(),
@@ -554,6 +559,19 @@ pub async fn router(
             get(handler::docs::view_doc_markdown),
         );
 
+    // Reading an image is unauthenticated on purpose: an `<img>` carries no
+    // bearer token, so the unguessable id in the URL is the credential.
+    let image_router = axum::Router::new()
+        .route(
+            "/v1beta/repos/:org/:repo/images",
+            post(handler::image::upload_image),
+        )
+        .route(
+            "/v1beta/repos/:org/:repo/images/:image_id",
+            get(handler::image::view_image),
+        )
+        .layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES));
+
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
         .route("/version", get(version))
@@ -592,6 +610,7 @@ pub async fn router(
         )
         .merge(handler::create_router())
         .merge(docs_router)
+        .merge(image_router)
         .merge(collab_router)
         .merge(webhook_router)
         // Layer order matters: outermost (first in chain) to innermost
@@ -626,6 +645,7 @@ pub async fn router(
         .layer(Extension(library_app))
         .layer(Extension(database_app))
         .layer(Extension(parquet_storage))
+        .layer(Extension(image_store))
         // Keep webhook worker alive by retaining the shutdown sender when enabled.
         .layer(Extension(shutdown_tx))
         .layer(Extension(schema));
@@ -645,8 +665,62 @@ async fn version() -> Json<VersionResponse> {
 
 async fn build_parquet_storage(
 ) -> Result<ParquetStorage, Box<dyn std::error::Error>> {
-    let parquet_bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
+    let bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
         .unwrap_or_else(|_| "library-parquet".to_string());
+    let (storage, presign_storage) = build_bucket_storage(&bucket).await?;
+    Ok(ParquetStorage::new(storage, presign_storage, bucket))
+}
+
+/// Where record body images go. Production speaks to Tachyon storage as
+/// the Library service account; everywhere else falls back to the MinIO
+/// the API already runs against, so development needs no Tachyon account.
+/// `LIBRARY_IMAGE_STORAGE=tachyon|bucket` overrides the default choice.
+async fn build_image_store(
+) -> Result<Arc<dyn ImageObjectStore>, Box<dyn std::error::Error>> {
+    let environment = std::env::var("ENVIRONMENT")
+        .unwrap_or_else(|_| "dev".to_string())
+        .to_lowercase();
+    let is_production =
+        environment == "prod" || environment == "production";
+    let use_tachyon = match std::env::var("LIBRARY_IMAGE_STORAGE")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "tachyon" => true,
+        "bucket" => false,
+        _ => is_production,
+    };
+
+    if use_tachyon {
+        let base_url = std::env::var("TACHYON_API_URL")
+            .unwrap_or_else(|_| "https://api.n1.tachy.one".to_string());
+        let auth_token = std::env::var("SERVICE_AUTH_TOKEN").map_err(
+            |_| "SERVICE_AUTH_TOKEN must be set to store images in Tachyon storage",
+        )?;
+        return Ok(Arc::new(TachyonImageStore::new(
+            base_url,
+            auth_token,
+            crate::domain::LIBRARY_TENANT.to_string(),
+        )));
+    }
+
+    let bucket = std::env::var("LIBRARY_IMAGE_BUCKET")
+        .unwrap_or_else(|_| "library-images".to_string());
+    let (storage, presign_storage) = build_bucket_storage(&bucket).await?;
+    Ok(Arc::new(BucketImageStore::new(
+        storage,
+        presign_storage,
+        bucket,
+    )))
+}
+
+/// Object storage for one bucket: S3 in production, MinIO everywhere else.
+/// The second driver signs URLs against the endpoint clients can reach,
+/// which in local development is not the endpoint the API talks to.
+async fn build_bucket_storage(
+    bucket: &str,
+) -> Result<(Arc<dyn Storage>, Arc<dyn Storage>), Box<dyn std::error::Error>>
+{
     let environment =
         std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
     let environment_lower = environment.to_lowercase();
@@ -656,40 +730,34 @@ async fn build_parquet_storage(
         || std::env::var("SKIP_MINIO_SETUP")
             .map(|value| matches!(value.as_str(), "true" | "1" | "TRUE"))
             .unwrap_or(false);
-    let (storage, presign_storage): (Arc<dyn Storage>, Arc<dyn Storage>) =
-        if is_production {
-            let s3 = S3Driver::new()? as Arc<dyn Storage>;
-            (s3.clone(), s3)
-        } else {
-            let access_key = std::env::var("MINIO_ROOT_USER")
-                .unwrap_or_else(|_| "admin".to_string());
-            let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
-                .unwrap_or_else(|_| "password".to_string());
-            let storage_url = std::env::var("MINIO_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:9000".to_string());
-            let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
-                .unwrap_or_else(|_| storage_url.clone());
-            let minio = MinioDriver::new(&MinioConfiguration {
-                storage_url,
-                access_key: access_key.clone(),
-                secret_key: secret_key.clone(),
-            })?;
-            if !skip_minio_setup {
-                minio.create_bucket(&parquet_bucket).await?;
-            }
-            let public_minio = MinioDriver::new(&MinioConfiguration {
-                storage_url: public_storage_url,
-                access_key,
-                secret_key,
-            })?;
-            (minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>)
-        };
 
-    Ok(ParquetStorage::new(
-        storage,
-        presign_storage,
-        parquet_bucket,
-    ))
+    if is_production {
+        let s3 = S3Driver::new()? as Arc<dyn Storage>;
+        return Ok((s3.clone(), s3));
+    }
+
+    let access_key = std::env::var("MINIO_ROOT_USER")
+        .unwrap_or_else(|_| "admin".to_string());
+    let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
+        .unwrap_or_else(|_| "password".to_string());
+    let storage_url = std::env::var("MINIO_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:9000".to_string());
+    let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
+        .unwrap_or_else(|_| storage_url.clone());
+    let minio = MinioDriver::new(&MinioConfiguration {
+        storage_url,
+        access_key: access_key.clone(),
+        secret_key: secret_key.clone(),
+    })?;
+    if !skip_minio_setup {
+        minio.create_bucket(bucket).await?;
+    }
+    let public_minio = MinioDriver::new(&MinioConfiguration {
+        storage_url: public_storage_url,
+        access_key,
+        secret_key,
+    })?;
+    Ok((minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>))
 }
 
 fn build_webhook_runtime(

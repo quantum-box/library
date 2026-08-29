@@ -8,8 +8,8 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, docs::*, global_id_mapping::*, organization::*,
-    property::*, repository::*, source::*,
+    auth::*, data::*, docs::*, global_id_mapping::*, image::*,
+    organization::*, property::*, repository::*, source::*,
 };
 
 // TODO: add English comment
@@ -49,6 +49,8 @@ use crate::handler::{
         update_source,
         delete_source,
         get_global_id_mapping,
+        upload_image,
+        view_image,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -77,6 +79,7 @@ use crate::handler::{
         crate::handler::types::CreateSourceRequest,
         crate::handler::types::UpdateSourceRequest,
         crate::handler::global_id_mapping::GlobalIdMappingResponse,
+        crate::handler::image::ImageResponse,
     ))
 )]
 pub struct ApiDoc;
