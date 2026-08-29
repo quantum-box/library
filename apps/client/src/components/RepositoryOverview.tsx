@@ -12,7 +12,6 @@ import {
   FileText,
   FolderGit2,
   GitBranch,
-  KeyRound,
   LayoutList,
   RefreshCw,
   Settings,
@@ -25,6 +24,7 @@ import { priorityConfig, statusConfig, type DatabaseRecord, type Status } from '
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { DataLink } from './DataLink'
 import { DocLink } from './DocLink'
+import { RepositoryTabs } from './RepositoryTabs'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
@@ -221,60 +221,7 @@ export function RepositoryOverview({
         </Button>
       </header>
 
-      <nav
-        aria-label="Repository sections"
-        className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1 md:px-3"
-      >
-        <span className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
-          <BookOpen className="size-3.5" aria-hidden="true" />
-          Overview
-        </span>
-        {([
-          ['table', 'Data', LayoutList],
-          ['board', 'Board', Columns3],
-          ['workflow', 'Workflow', Workflow],
-        ] as const).map(([type, label, Icon]) => (
-          <DataLink
-            key={type}
-            databaseId={databaseId}
-            view={databaseViewParam(type)}
-            className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <Icon className="size-3.5" aria-hidden="true" />
-            {label}
-          </DataLink>
-        ))}
-        <DocLink
-          databaseId={databaseId}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <FileText className="size-3.5" aria-hidden="true" />
-          Documents
-        </DocLink>
-        <a
-          href="#activity"
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <Activity className="size-3.5" aria-hidden="true" />
-          Activity
-        </a>
-        <Link
-          to="/$organization/$repository/api"
-          params={{ organization, repository }}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <KeyRound className="size-3.5" aria-hidden="true" />
-          API
-        </Link>
-        <Link
-          to="/$organization/$repository/settings"
-          params={{ organization, repository }}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <Settings className="size-3.5" aria-hidden="true" />
-          Settings
-        </Link>
-      </nav>
+      <RepositoryTabs organization={organization} repository={repository} active="overview" />
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-background">
         <div className="w-full">

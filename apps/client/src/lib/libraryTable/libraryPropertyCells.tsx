@@ -1,5 +1,6 @@
 import type { LibraryDataItem, LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
 import { getLibraryDataPropertyValue, propertyValueText } from './libraryPropertyFormat'
+import { isEmptyPropertyValue } from './libraryPropertyInput'
 
 function optionLabel(property: LibraryProperty, optionId: string | undefined) {
   if (!optionId) return undefined
@@ -48,7 +49,9 @@ function renderByTyp(
   value: LibraryPropertyDataValue | undefined
 ) {
   const typ = property.typ
-  if (!value) return <span className="text-xs text-subtle">—</span>
+  if (!value || isEmptyPropertyValue(value)) {
+    return <span className="text-xs text-subtle">—</span>
+  }
 
   if (typ === 'Select') {
     const label = optionLabel(property, value.optionId) ?? value.optionId ?? '—'

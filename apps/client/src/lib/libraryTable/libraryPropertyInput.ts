@@ -40,14 +40,17 @@ export function libraryPropertyValueToGraphqlInput(
       return value.markdown != null ? { markdown: value.markdown } : null
     case 'RichText':
       return value.richText != null ? { richText: value.richText } : null
+    // An empty value is a clear command on the API, so these arms test for
+    // presence rather than truthiness -- dropping "" would leave the old
+    // value on the server and the edit would silently do nothing.
     case 'Select':
-      return value.optionId ? { select: value.optionId } : null
+      return value.optionId != null ? { select: value.optionId } : null
     case 'MultiSelect':
-      return value.optionIds?.length ? { multiSelect: value.optionIds } : null
+      return value.optionIds != null ? { multiSelect: value.optionIds } : null
     case 'Date':
-      return value.date ? { date: value.date } : null
+      return value.date != null ? { date: value.date } : null
     case 'Image':
-      return value.url ? { image: value.url } : null
+      return value.url != null ? { image: value.url } : null
     case 'Relation':
       return value.dataIds?.length ? { relation: value.dataIds } : null
     case 'Location':
@@ -56,7 +59,7 @@ export function libraryPropertyValueToGraphqlInput(
       }
       return null
     case 'Id':
-      return value.id ? { string: value.id } : null
+      return value.id != null ? { string: value.id } : null
     default:
       return propertyValueTextFallback(value)
         ? { string: propertyValueTextFallback(value) }
@@ -176,6 +179,55 @@ export function parseEditablePropertyValue(
       return trimmed ? { id: trimmed } : null
     default:
       return trimmed ? { string: raw } : null
+  }
+}
+
+/**
+ * Whether a value carries nothing. A cleared Property keeps an entry with an
+ * empty value until the server answers, and the API can return one too, so
+ * every screen has to read it as "no value" rather than as an empty label.
+ */
+export function isEmptyPropertyValue(value: LibraryPropertyDataValue): boolean {
+  const fields = Object.values(value).filter((field) => field !== undefined)
+  return fields.every(
+    (field) => field === '' || (Array.isArray(field) && field.length === 0),
+  )
+}
+
+/**
+ * The value that clears a Property.
+ *
+ * `updateData` is a patch: a Property left out of the payload keeps whatever
+ * the server already holds, so emptying a field has to travel as an explicit
+ * empty value -- the API turns one into a clear command. `null` means the type
+ * has no empty form the API accepts, and the entry is dropped instead.
+ */
+export function clearedPropertyValue(
+  property: LibraryProperty
+): LibraryPropertyDataValue | null {
+  switch (property.typ) {
+    case 'String':
+      return { string: '' }
+    case 'Integer':
+      return { number: '' }
+    case 'Html':
+      return { html: '' }
+    case 'Markdown':
+      return { markdown: '' }
+    case 'RichText':
+      return { richText: '' }
+    case 'Select':
+      return { optionId: '' }
+    case 'MultiSelect':
+      return { optionIds: [] }
+    case 'Date':
+      return { date: '' }
+    case 'Image':
+      return { url: '' }
+    case 'Id':
+      return { id: '' }
+    default:
+      return null
   }
 }
 

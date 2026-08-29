@@ -286,17 +286,32 @@ function createData(input = {}) {
   return data
 }
 
+// The API treats an empty value as a clear command, which is the only way a
+// patch can remove a value.
+const isClearedPropertyValue = (value) =>
+  Object.values(value ?? {}).every(
+    (field) => field === '' || (Array.isArray(field) && field.length === 0),
+  )
+
 function updateData(input = {}) {
   const data = findData(input.dataId ?? input.id)
   if (!data) return null
   if (input.dataName ?? input.name) data.name = String(input.dataName ?? input.name)
   const inputPropertyData = input.propertyData ?? input.property_data
   if (inputPropertyData !== undefined) {
-    const identifier = data.propertyData.find((entry) => entry.propertyId === 'prop-identifier')
-    const replacement = inputPropertyData.map(inputPropertyDataEntry)
-    data.propertyData = identifier && !replacement.some((entry) => entry.propertyId === 'prop-identifier')
-      ? [clone(identifier), ...replacement]
-      : replacement
+    // updateData is a patch: a Property the payload omits keeps its stored
+    // value, so the fixture must not treat the payload as a replacement set.
+    for (const entry of inputPropertyData.map(inputPropertyDataEntry)) {
+      const index = data.propertyData.findIndex(
+        (candidate) => candidate.propertyId === entry.propertyId,
+      )
+      if (isClearedPropertyValue(entry.value)) {
+        if (index >= 0) data.propertyData.splice(index, 1)
+        continue
+      }
+      if (index >= 0) data.propertyData[index] = entry
+      else data.propertyData.push(entry)
+    }
   }
   data.updatedAt = new Date().toISOString()
   return data

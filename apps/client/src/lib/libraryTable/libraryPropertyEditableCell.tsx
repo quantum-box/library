@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LibraryDataItem, LibraryProperty } from '../recordsApi'
 import { getLibraryDataPropertyValue, propertyValueEditText } from './libraryPropertyFormat'
 import {
+  clearedPropertyValue,
+  isEmptyPropertyValue,
   isInlineEditableProperty,
   isMultilineEditableProperty,
+  mergeLibraryDataProperty,
   parseEditablePropertyValue,
 } from './libraryPropertyInput'
 import { LibraryPropertyCell } from './libraryPropertyCells'
@@ -15,12 +18,14 @@ function EditableTextInput({
   value,
   inputType = 'text',
   multiline = false,
+  testId,
   onCommit,
   onCancel,
 }: {
   value: string
   inputType?: 'text' | 'date'
   multiline?: boolean
+  testId?: string
   onCommit: (next: string) => void
   onCancel: () => void
 }) {
@@ -42,6 +47,7 @@ function EditableTextInput({
         ref={(element) => {
           fieldRef.current = element
         }}
+        data-testid={testId}
         value={editValue}
         rows={Math.min(12, Math.max(2, editValue.split('\n').length))}
         onChange={(event) => setEditValue(event.target.value)}
@@ -65,6 +71,7 @@ function EditableTextInput({
       ref={(element) => {
         fieldRef.current = element
       }}
+      data-testid={testId}
       type={inputType}
       value={editValue}
       onChange={(event) => setEditValue(event.target.value)}
@@ -82,11 +89,13 @@ function EditableTextInput({
 function EditableSelect({
   property,
   value,
+  testId,
   onCommit,
   onCancel,
 }: {
   property: LibraryProperty
   value: string
+  testId?: string
   onCommit: (optionId: string) => void
   onCancel: () => void
 }) {
@@ -99,6 +108,7 @@ function EditableSelect({
   return (
     <select
       ref={selectRef}
+      data-testid={testId}
       defaultValue={value}
       className="w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none"
       onClick={(event) => event.stopPropagation()}
@@ -121,11 +131,18 @@ export function LibraryPropertyEditableCell({
   item,
   property,
   disabled,
+  activation = 'double',
   onCommit,
 }: {
   item: LibraryDataItem
   property: LibraryProperty
   disabled?: boolean
+  /**
+   * How the editor opens. A table row uses `double` so a click can still
+   * select the row; a property list has nothing else to click, so it uses
+   * `single` -- a value nobody can find how to edit reads as read-only.
+   */
+  activation?: 'single' | 'double'
   onCommit: (item: LibraryDataItem) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -139,7 +156,10 @@ export function LibraryPropertyEditableCell({
 
   const handleCommitRaw = (raw: string) => {
     setEditing(false)
-    const parsed = parseEditablePropertyValue(property, raw)
+    // An emptied field has to keep travelling as an explicit empty value:
+    // updateData patches, so dropping the entry would leave the old value on
+    // the server while the screen showed the field as cleared.
+    const parsed = parseEditablePropertyValue(property, raw) ?? clearedPropertyValue(property)
     if (!parsed) {
       onCommit({
         ...item,
@@ -147,15 +167,7 @@ export function LibraryPropertyEditableCell({
       })
       return
     }
-    const exists = item.propertyData.some((entry) => entry.propertyId === property.id)
-    onCommit({
-      ...item,
-      propertyData: exists
-        ? item.propertyData.map((entry) =>
-            entry.propertyId === property.id ? { propertyId: property.id, value: parsed } : entry
-          )
-        : [...item.propertyData, { propertyId: property.id, value: parsed }],
-    })
+    onCommit(mergeLibraryDataProperty(item, property.id, parsed))
   }
 
   if (editing) {
@@ -164,19 +176,8 @@ export function LibraryPropertyEditableCell({
         <EditableSelect
           property={property}
           value={currentValue?.optionId ?? ''}
-          onCommit={(optionId) => {
-            setEditing(false)
-            if (!optionId) {
-              onCommit({
-                ...item,
-                propertyData: item.propertyData.filter(
-                  (entry) => entry.propertyId !== property.id
-                ),
-              })
-              return
-            }
-            handleCommitRaw(optionId)
-          }}
+          testId={`library-editable-input-${property.id}`}
+          onCommit={(optionId) => handleCommitRaw(optionId)}
           onCancel={() => setEditing(false)}
         />
       )
@@ -185,6 +186,7 @@ export function LibraryPropertyEditableCell({
     return (
       <EditableTextInput
         value={editText}
+        testId={`library-editable-input-${property.id}`}
         inputType={property.typ === 'Date' ? 'date' : 'text'}
         multiline={isMultilineEditableProperty(property, editText)}
         onCommit={handleCommitRaw}
@@ -193,18 +195,35 @@ export function LibraryPropertyEditableCell({
     )
   }
 
+  const singleClick = activation === 'single'
+  const beginEditing = (event: { stopPropagation: () => void }) => {
+    if (disabled) return
+    event.stopPropagation()
+    setEditing(true)
+  }
+
   return (
     <div
-      className={`min-w-0 px-1 ${disabled ? '' : 'cursor-text'}`}
+      className={`min-w-0 rounded px-1 ${disabled ? '' : 'cursor-text'} ${singleClick ? 'hover:bg-muted/60' : ''}`}
       data-testid={`library-editable-cell-${property.id}`}
-      title={disabled ? undefined : 'Double-click to edit'}
-      onDoubleClick={(event) => {
+      title={disabled ? undefined : singleClick ? 'Click to edit' : 'Double-click to edit'}
+      role={singleClick && !disabled ? 'button' : undefined}
+      tabIndex={singleClick && !disabled ? 0 : undefined}
+      aria-label={singleClick && !disabled ? `Edit ${property.name}` : undefined}
+      onClick={singleClick ? beginEditing : undefined}
+      onKeyDown={singleClick ? (event) => {
         if (disabled) return
-        event.stopPropagation()
-        setEditing(true)
-      }}
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        beginEditing(event)
+      } : undefined}
+      onDoubleClick={singleClick ? undefined : beginEditing}
     >
-      <LibraryPropertyCell item={item} property={property} />
+      {singleClick && (!currentValue || isEmptyPropertyValue(currentValue)) ? (
+        <span className="block text-sm text-subtle-foreground">Empty</span>
+      ) : (
+        <LibraryPropertyCell item={item} property={property} />
+      )}
     </div>
   )
 }

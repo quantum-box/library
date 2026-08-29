@@ -1,5 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// The screen links back to the repository, and a real Link needs a router.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children?: ReactNode }) => <a href="#repository">{children}</a>,
+}))
 
 const apiMocks = vi.hoisted(() => ({
   createRepositoryProperty: vi.fn(),

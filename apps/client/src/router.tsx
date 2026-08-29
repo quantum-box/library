@@ -36,6 +36,7 @@ import { OrganizationOverview } from './components/OrganizationOverview'
 import { RepositoryOverview } from './components/RepositoryOverview'
 import { ApiKeysView } from './components/ApiKeysView'
 import { RepositorySettingsView } from './components/RepositorySettingsView'
+import { RepositoryPropertiesView } from './components/RepositoryPropertiesView'
 import { Kbd, KbdGroup } from './components/Kbd'
 import { ChatView } from './components/chat/ChatView'
 import { DocsView } from './components/docs/DocsView'
@@ -873,6 +874,29 @@ function RepositorySettingsPage() {
 
   return (
     <RepositorySettingsView
+      organization={organization}
+      repository={repository}
+      operatorId={operatorId}
+    />
+  )
+}
+
+const repositoryPropertiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/properties',
+  component: RepositoryPropertiesPage,
+})
+
+function RepositoryPropertiesPage() {
+  const { organization, repository } = repositoryPropertiesRoute.useParams()
+  const { databases } = useWorkspaceDatabases()
+  const operatorId = databases.find(
+    (database) =>
+      database.orgUsername === organization && database.repoUsername === repository,
+  )?.operatorId
+
+  return (
+    <RepositoryPropertiesView
       organization={organization}
       repository={repository}
       operatorId={operatorId}
@@ -1918,6 +1942,7 @@ const routeTree = rootRoute.addChildren([
   organizationRoute,
   repositoryRoute,
   repositorySettingsRoute,
+  repositoryPropertiesRoute,
   repositoryApiKeysRoute,
   legacyRepositoryRoute,
   legacyRepositorySettingsRoute,
