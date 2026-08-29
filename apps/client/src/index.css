@@ -583,3 +583,16 @@
   border-color: var(--border-color);
   color: var(--text-primary);
 }
+
+/*
+ * BlockNote's shadcn menus paint hover and keyboard selection with
+ * `bg-accent`. Tailwind inlines that utility to `var(--accent)`, and in this
+ * app `--accent` is the brand near-black, so a hovered row came out as dark
+ * text on a dark background. Every BlockNote surface — including the menus
+ * it portals — lives under `.bn-root`, so give `accent` the meaning shadcn
+ * expects for the length of that subtree only.
+ */
+.bn-root {
+  --accent: var(--bg-hover);
+  --accent-hover: var(--bg-hover);
+}

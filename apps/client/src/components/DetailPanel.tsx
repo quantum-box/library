@@ -19,7 +19,7 @@ import { appKitConfig } from '../app/kitConfig'
 import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import type { FileAttachment } from './files/types'
-import { RecordBodyEditor } from './RecordBodyEditor'
+import { RecordBodyEditor, type RecordBodyImageTarget } from './RecordBodyEditor'
 
 interface DetailPanelProps {
   record: DatabaseRecord | null
@@ -28,6 +28,8 @@ interface DetailPanelProps {
   onDeleteRecord?: (recordId: string) => void
   recordIdentifier?: string
   repositoryPath?: string
+  /** Repository that images dropped into the body are stored against. */
+  imageTarget?: RecordBodyImageTarget
   loading?: boolean
   error?: string | null
 }
@@ -39,6 +41,7 @@ export function DetailPanel({
   onDeleteRecord,
   recordIdentifier,
   repositoryPath,
+  imageTarget,
   loading = false,
   error = null,
 }: DetailPanelProps) {
@@ -373,6 +376,7 @@ export function DetailPanel({
             <RecordBodyEditor
               key={record.id}
               value={record.description}
+              imageTarget={imageTarget}
               onCommit={(v) => onUpdateRecord(record.id, 'description', v)}
             />
           ) : (

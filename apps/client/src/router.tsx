@@ -1608,6 +1608,15 @@ function RecordDetailPanel({
           ? `${selectedDatabase.orgUsername}/${selectedDatabase.repoUsername}`
           : selectedDatabase?.label
       }
+      imageTarget={
+        selectedDatabase?.orgUsername && selectedDatabase.repoUsername
+          ? {
+            org: selectedDatabase.orgUsername,
+            repo: selectedDatabase.repoUsername,
+            operatorId: selectedDatabase.operatorId,
+          }
+          : undefined
+      }
       loading={!record && !detailError}
       error={detailError}
       onClose={closeEditor}

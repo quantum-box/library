@@ -1192,6 +1192,53 @@ interface LibraryRepoTarget {
   anonymous?: boolean
 }
 
+/**
+ * Image formats the API stores. Refusing here keeps the editor's error
+ * message specific instead of surfacing a bare 400 from the round trip.
+ */
+const UPLOADABLE_IMAGE_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+])
+
+/**
+ * Stores an image in the repository and returns the URL to embed in a body.
+ *
+ * The URL is a plain API address, not a presigned one, so it keeps working
+ * after the signature that fetched it first would have expired.
+ */
+export async function uploadLibraryImage(
+  target: { org: string; repo: string; operatorId?: string },
+  file: File,
+): Promise<string> {
+  if (!UPLOADABLE_IMAGE_TYPES.has(file.type)) {
+    throw new RecordApiError(
+      `Unsupported image type: ${file.type || 'unknown'}`,
+      415,
+    )
+  }
+
+  const headers = await libraryRestHeaders(target.operatorId)
+  headers['content-type'] = file.type
+  const query = `?filename=${encodeURIComponent(file.name)}`
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/images${query}`,
+    { method: 'POST', headers, body: file },
+  )
+  if (!response.ok) {
+    throw new RecordApiError(`Library image upload failed: ${response.status}`, response.status)
+  }
+
+  const payload = await response.json() as { url?: unknown }
+  if (typeof payload.url !== 'string' || !payload.url) {
+    throw new RecordApiError('Library image upload returned no URL', response.status)
+  }
+  return payload.url
+}
+
 function configuredLibraryPageSize(): number {
   const configured = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
   if (!Number.isInteger(configured) || configured < 1) return 100
