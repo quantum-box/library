@@ -31,6 +31,21 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "client-storybook",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/client",
+        "run",
+        "storybook",
+        "--",
+        "--no-open",
+        "-p",
+        "6016"
+      ],
+      "port": 6016
     }
   ]
 }

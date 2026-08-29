@@ -213,6 +213,16 @@ fn render_block(out: &mut String, block: &Value, typ: &str) {
             ));
         }
         "table" => render_table(out, block.get("content")),
+        // Rendered live, but inside a sandboxed frame so the embedded
+        // document's scripts never touch the page this fragment lands in.
+        "htmlPreview" => {
+            let source = prop_str(block, "source").unwrap_or_default();
+            out.push_str(&format!(
+                "<iframe class=\"html-preview\" sandbox=\"allow-scripts\" \
+                 srcdoc=\"{}\"></iframe>",
+                escape_attribute(source)
+            ));
+        }
         // Unknown block: keep the text rather than dropping it, same
         // policy as the Markdown renderer.
         _ => {

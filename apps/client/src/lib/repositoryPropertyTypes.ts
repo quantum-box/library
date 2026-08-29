@@ -12,6 +12,11 @@ export const propertyTypeChoices: Array<{
     detail: 'Body content. Markdown and HTML are produced from it on read, so it is the only body type worth choosing.',
   },
   {
+    value: 'HTML',
+    label: 'HTML',
+    detail: 'An HTML document stored as source and rendered live in a sandboxed preview, artifact-style. For a page you write, use Rich text; this is for markup that is the value.',
+  },
+  {
     value: 'MARKDOWN',
     label: 'Markdown (legacy)',
     detail: 'Markdown source. Superseded by Rich text, which stores the document itself instead of a rendering of it -- Markdown cannot represent a blank line, so one is lost on every save. Offered only so an existing Markdown Property can be moved off it.',
@@ -44,7 +49,6 @@ export function availablePropertyTypeChoices(currentType: string | undefined) {
 }
 
 export function propertyTypeLabel(type: string): string {
-  if (type === 'HTML') return 'HTML'
   return propertyTypeChoices.find((choice) => choice.value === type)?.label ?? type
 }
 

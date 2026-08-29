@@ -200,6 +200,16 @@ fn render_block(
             Some(format!("[{name}]({url})"))
         }
         "table" => render_table(block.get("content")),
+        // An embedded HTML document, previewed in a sandboxed frame. The
+        // source is the value, so a fenced block is its faithful Markdown
+        // view. The `preview` info word is what from_markdown keys on to
+        // rebuild this block instead of a plain code block; the leading
+        // `html` keeps GitHub's highlighter working.
+        "htmlPreview" => {
+            let source = prop_str(block, "source").unwrap_or_default();
+            let source = source.trim_end_matches('\n');
+            Some(format!("```html preview\n{source}\n```"))
+        }
         // A block type this binary does not know -- most likely a plugin
         // added in a newer editor. Keep its text as a paragraph rather than
         // letting the content vanish from the GitHub sync.

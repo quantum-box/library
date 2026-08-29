@@ -222,4 +222,22 @@ export const BLOCKNOTE_FIXTURE_CASES: BlocknoteFixtureCase[] = [
       },
     ] as PartialBlock[],
   },
+  {
+    // The custom htmlPreview block. Its document lives in props.source, so
+    // the Rust side needs explicit arms — this fixture pins the ```html
+    // preview fence (markdown) and the sandboxed iframe (html) it renders
+    // to, and that from_markdown rebuilds the block from that fence.
+    name: '13-html-preview',
+    blocks: [
+      { type: 'paragraph', content: [text('before the app')] },
+      {
+        type: 'htmlPreview',
+        props: {
+          source:
+            '<!doctype html>\n<h1>Hi</h1>\n<script>console.log("x")</script>',
+        },
+      },
+      { type: 'paragraph', content: [text('after the app')] },
+    ] as unknown as PartialBlock[],
+  },
 ]

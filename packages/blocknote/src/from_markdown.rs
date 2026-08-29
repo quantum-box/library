@@ -323,12 +323,25 @@ impl Builder {
             }),
             Leaf::Code => {
                 let language = std::mem::take(&mut self.code_language);
-                json!({
-                    "type": "codeBlock",
-                    "props": { "language": language },
-                    "content": content,
-                    "children": [],
-                })
+                if is_html_preview(&language) {
+                    // The parser hands back the body with its final newline
+                    // attached; keeping it would grow the source by a line
+                    // on every round trip.
+                    let source = plain_runs(&content);
+                    let source = source.trim_end_matches('\n');
+                    json!({
+                        "type": "htmlPreview",
+                        "props": { "source": source },
+                        "children": [],
+                    })
+                } else {
+                    json!({
+                        "type": "codeBlock",
+                        "props": { "language": language },
+                        "content": content,
+                        "children": [],
+                    })
+                }
             }
         };
         self.emit(block);
@@ -462,6 +475,14 @@ fn hoist_leading_paragraph(children: &mut Vec<Value>) -> Value {
     }
     let first = children.remove(0);
     first.get("content").cloned().unwrap_or_else(|| json!([]))
+}
+
+/// A fence whose info string marks an htmlPreview block, the form
+/// `to_markdown` writes: `html` first so highlighters still work, plus the
+/// word `preview`. A plain `html` fence stays a code block.
+fn is_html_preview(info: &str) -> bool {
+    let mut words = info.split_whitespace();
+    words.next() == Some("html") && words.any(|word| word == "preview")
 }
 
 fn plain_runs(runs: &[Value]) -> String {
