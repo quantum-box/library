@@ -37,6 +37,20 @@ Native UI は固定 commit の codeload tarball を利用します。通常の n
 
 期限の近いアクセストークンは `REFRESH_TOKEN_AUTH` で更新します。認証後はユーザー単位の PGlite / IndexedDB 名前空間へ切り替わるため、一度画面を再初期化します。手入力トークンは `VITE_ENABLE_DEV_TOKEN_AUTH=true` のローカル開発時だけ表示されます。
 
+## 公開ルート (read-only)
+
+public repository はサインインなしで閲覧できます。
+
+| ルート | 内容 |
+|---|---|
+| `/public/{org}/{repo}` | repository の Data 一覧（読み取り専用） |
+| `/public/{org}/{repo}/{dataId}` | Data 1件のページ表示（本文は編集不可） |
+
+- `/public/...` だけが `AuthGate` の外側で描画されます。ワークスペース側の provider（records / databases / views / attachments）は読み込まれません。
+- この2つのルートからの API 読み取りは常に匿名で行われ、セッションがあっても `Authorization` ヘッダーを付けません。サインイン中のオーナーが自分の repository を開いても、匿名の訪問者と同じ内容が表示されます。
+- repository が private の場合、`is_public` と API の 403 の両方で弾き、サインイン導線を表示します。存在しない場合は 404 として区別します。
+- org username が `public` の organization はこのルートに隠されます（静的セグメントが `$organization` より優先されるため）。アプリ内の他のルートからは通常どおり開けます。
+
 ## ローカル開発
 
 ```bash

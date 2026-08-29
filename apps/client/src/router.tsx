@@ -15,6 +15,9 @@ import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, 
 import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
+import { PublicShell } from './components/public/PublicShell'
+import { PublicRepositoryView } from './components/public/PublicRepositoryView'
+import { PublicDataView } from './components/public/PublicDataView'
 import { TableView } from './components/TableView'
 import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
@@ -756,8 +759,34 @@ function RouteState({
   )
 }
 
+/**
+ * The public read-only routes are the one surface that has to render for a
+ * visitor with no session, so they are matched here by path rather than
+ * placed under AuthGate. They also stay outside the workspace providers:
+ * records, databases, views and attachments all hydrate per signed-in user.
+ *
+ * Matching on the literal prefix means an organization whose username is
+ * "public" is unreachable at /public/<repo> — a static segment outranks
+ * $organization. That org is still reachable everywhere else in the app.
+ */
+function isPublicRoutePathname(pathname: string): boolean {
+  return pathname === '/public' || pathname.startsWith('/public/')
+}
+
 const rootRoute = createRootRoute({
   component: function RootLayout() {
+    const publicRoute = useRouterState({
+      select: (state) => isPublicRoutePathname(state.location.pathname),
+    })
+
+    if (publicRoute) {
+      return (
+        <PublicShell>
+          <Outlet />
+        </PublicShell>
+      )
+    }
+
     return (
       <AuthGate>
         <AuthenticatedWorkspaceRoot />
@@ -1836,6 +1865,36 @@ function DocsPage() {
   )
 }
 
+// ── Public Read-only Routes (/public/$org/$repo) ──────────────
+
+const publicRepositoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'public/$organization/$repository',
+  component: PublicRepositoryPage,
+})
+
+function PublicRepositoryPage() {
+  const { organization, repository } = publicRepositoryRoute.useParams()
+  return <PublicRepositoryView organization={organization} repository={repository} />
+}
+
+const publicDataRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'public/$organization/$repository/$dataId',
+  component: PublicDataPage,
+})
+
+function PublicDataPage() {
+  const { organization, repository, dataId } = publicDataRoute.useParams()
+  return (
+    <PublicDataView
+      organization={organization}
+      repository={repository}
+      dataId={dataId}
+    />
+  )
+}
+
 // ── Route Tree & Router ───────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -1859,6 +1918,8 @@ const routeTree = rootRoute.addChildren([
   documentDetailRoute,
   repoDocsRoute,
   repoDocumentDetailRoute,
+  publicRepositoryRoute,
+  publicDataRoute,
 ])
 
 export const router = createRouter({ routeTree })

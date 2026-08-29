@@ -16,6 +16,7 @@ import {
   fetchLibraryRecords,
   fetchLibraryRepoTableData,
   fetchLibraryRepositories,
+  fetchLibraryRepositoryProfile,
   libraryDataToRecord,
   RecordPropertyMappingError,
   toRecord,
@@ -743,5 +744,110 @@ describe('recordsApi', () => {
 
     await expect(fetchLibraryOrganizations()).resolves.toEqual([])
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reads a repository profile without the session token when asked anonymously', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      id: 'repo-1',
+      name: 'Docs',
+      username: 'docs',
+      description: 'Documentation repo',
+      is_public: true,
+      organization_id: 'org-1',
+      org_username: 'library-docs',
+    })))
+
+    await expect(fetchLibraryRepositoryProfile({
+      org: 'library-docs',
+      repo: 'docs',
+      anonymous: true,
+    })).resolves.toEqual({
+      id: 'repo-1',
+      name: 'Docs',
+      username: 'docs',
+      orgUsername: 'library-docs',
+      description: 'Documentation repo',
+      isPublic: true,
+    })
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
+    expect(vi.mocked(fetch).mock.calls[0][0])
+      .toBe('https://library.example.test/v1beta/repos/library-docs/docs')
+    expect(init.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('surfaces the repository status so a private repo stays distinguishable from a missing one', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('forbidden', { status: 403 })))
+
+    await expect(fetchLibraryRepositoryProfile({
+      org: 'library-docs',
+      repo: 'private',
+      anonymous: true,
+    })).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('reads repository table data anonymously without attaching the session token', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      data: {
+        repo: {
+          name: 'Docs',
+          properties: [],
+          dataList: { items: [], paginator: { totalPages: 1 } },
+        },
+      },
+    })))
+
+    await fetchLibraryRepoTableData({ org: 'library-docs', repo: 'docs', anonymous: true })
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
+    expect(init.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('still attaches the session token for a normal repository read', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      id: 'repo-1',
+      name: 'Docs',
+      username: 'docs',
+      description: null,
+      is_public: false,
+      organization_id: 'org-1',
+      org_username: 'library-docs',
+    })))
+
+    await fetchLibraryRepositoryProfile({ org: 'library-docs', repo: 'docs' })
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
   })
 })

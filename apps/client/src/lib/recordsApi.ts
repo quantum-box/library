@@ -777,12 +777,28 @@ async function validLibraryAccessToken(): Promise<string | undefined> {
   )
 }
 
-async function libraryRestHeaders(operatorId?: string): Promise<Record<string, string>> {
+/**
+ * `anonymous` sends the request with no Authorization header even when a
+ * session exists. The public read-only view is the only caller: a page that
+ * claims to show what a signed-out visitor sees has to actually ask as one,
+ * or an owner previewing their own repository would be shown their own
+ * privileged read.
+ */
+interface LibraryRequestOptions {
+  anonymous?: boolean
+}
+
+async function libraryRestHeaders(
+  operatorId?: string,
+  options?: LibraryRequestOptions
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
+  if (options?.anonymous) return headers
+
   const token = await validLibraryAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
@@ -810,15 +826,17 @@ function updateStoredAuthFromLibraryUser(user: { id: string; email?: string | nu
 async function requestLibraryGraphQL<TData>(
   query: string,
   variables: Record<string, unknown>,
-  options?: { operatorId?: string }
+  options?: LibraryRequestOptions & { operatorId?: string }
 ): Promise<TData> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = await validLibraryAccessToken()
-  if (token) headers.Authorization = `Bearer ${token}`
+  if (!options?.anonymous) {
+    const token = await validLibraryAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
 
   let response: Response
   try {
@@ -1171,6 +1189,7 @@ interface LibraryRepoTarget {
   repo: string
   operatorId?: string
   repoName?: string
+  anonymous?: boolean
 }
 
 function configuredLibraryPageSize(): number {
@@ -1197,7 +1216,7 @@ async function fetchLibraryGraphqlRepoTableData(
         pageSize: configuredLibraryPageSize(),
         page,
       },
-      { operatorId: target.operatorId }
+      { operatorId: target.operatorId, anonymous: target.anonymous }
     )
     const repoData = payload.repo
     if (!repoData) {
@@ -1226,6 +1245,65 @@ export async function fetchLibraryRepoTableData(
   }
 }
 
+export interface LibraryRepositoryProfile {
+  id: string
+  name: string
+  username: string
+  orgUsername: string
+  description: string | null
+  isPublic: boolean
+}
+
+interface LibraryRestRepoResponse {
+  id: string
+  name: string
+  username: string
+  description?: string | null
+  is_public: boolean
+  organization_id: string
+  org_username: string
+}
+
+/**
+ * Repository metadata, read over REST rather than GraphQL on purpose: the
+ * public view has to tell "this repository is private" (403) from "no such
+ * repository" (404), and the GraphQL transport collapses every field error
+ * into one 400-with-message.
+ */
+export async function fetchLibraryRepositoryProfile(
+  target: LibraryRepoTarget
+): Promise<LibraryRepositoryProfile> {
+  const org = encodeURIComponent(target.org)
+  const repo = encodeURIComponent(target.repo)
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${org}/${repo}`,
+    { headers: await libraryRestHeaders(target.operatorId, { anonymous: target.anonymous }) }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library repository request failed: ${response.status}`,
+      response.status
+    )
+  }
+
+  const payload = await response.json() as LibraryRestRepoResponse
+  if (!payload || typeof payload.id !== 'string' || typeof payload.is_public !== 'boolean') {
+    throw new RecordApiError(
+      'Library repository returned an invalid response',
+      response.status,
+      'invalid-response'
+    )
+  }
+  return {
+    id: payload.id,
+    name: payload.name,
+    username: payload.username,
+    orgUsername: payload.org_username,
+    description: payload.description ?? null,
+    isPublic: payload.is_public,
+  }
+}
+
 export async function fetchLibraryRecords(target?: LibraryRepoTarget): Promise<DatabaseRecord[]> {
   const org = target?.org ?? import.meta.env.VITE_LIBRARY_ORG
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
@@ -1236,6 +1314,7 @@ export async function fetchLibraryRecords(target?: LibraryRepoTarget): Promise<D
     repo,
     operatorId: target?.operatorId,
     repoName: target?.repoName,
+    anonymous: target?.anonymous,
   }
   try {
     const repoData = await fetchLibraryGraphqlRepoTableData(resolvedTarget)
@@ -1581,7 +1660,7 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
 async function fetchLibraryRestProperties(target: LibraryRepoTarget): Promise<LibraryProperty[]> {
   const response = await fetch(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/properties`,
-    { headers: await libraryRestHeaders(target.operatorId) }
+    { headers: await libraryRestHeaders(target.operatorId, { anonymous: target.anonymous }) }
   )
   if (!response.ok) {
     throw new RecordApiError(
@@ -1607,7 +1686,7 @@ export async function fetchLibraryRepoProperties(
     const payload = await requestLibraryGraphQL<LibraryPropertiesResponse>(
       libraryPropertiesQuery,
       { org: target.org, repo: target.repo },
-      { operatorId: target.operatorId }
+      { operatorId: target.operatorId, anonymous: target.anonymous }
     )
     if (!Array.isArray(payload.properties)) {
       throw new RecordApiError(
@@ -1627,7 +1706,7 @@ async function fetchLibraryRestRepoTableData(
   target: LibraryRepoTarget
 ): Promise<LibraryRepoTableData> {
   const pageSize = configuredLibraryPageSize()
-  const headers = await libraryRestHeaders(target.operatorId)
+  const headers = await libraryRestHeaders(target.operatorId, { anonymous: target.anonymous })
   const baseUrl = configuredLibraryApiBaseUrl()
   const propertiesResponsePromise = fetch(
     `${baseUrl}/v1beta/repos/${target.org}/${target.repo}/properties`,
@@ -1789,7 +1868,7 @@ async function fetchLibraryRestDataDetail(
   dataId: string,
   target: LibraryRepoTarget
 ): Promise<{ item: LibraryDataItem; properties: LibraryProperty[] }> {
-  const headers = await libraryRestHeaders(target.operatorId)
+  const headers = await libraryRestHeaders(target.operatorId, { anonymous: target.anonymous })
   const baseUrl = configuredLibraryApiBaseUrl()
   const [dataResponse, properties] = await Promise.all([
     fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}`, { headers }),
@@ -1813,12 +1892,12 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
   if (!org || !repo) throw new RecordApiError('Library API is not configured', 400)
 
-  const resolvedTarget = { org, repo, operatorId: target?.operatorId }
+  const resolvedTarget = { org, repo, operatorId: target?.operatorId, anonymous: target?.anonymous }
   try {
     const payload = await requestLibraryGraphQL<LibraryDataResponse>(
       libraryDataDetailQuery,
       { org, repo, dataId },
-      { operatorId: target?.operatorId }
+      { operatorId: target?.operatorId, anonymous: target?.anonymous }
     )
     if (!payload.data) throw new RecordApiError('Data not found', 404)
     if (!Array.isArray(payload.properties)) {
