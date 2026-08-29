@@ -130,10 +130,18 @@ components:
             Decimal Library record revision. Serialized as a string so clients do
             not lose precision when BIGINT values exceed JavaScript's safe range.
           type: string
+        url:
+          description: |-
+            Absolute URL that opens this document in the Library client, so
+            integrators can link back without rebuilding the route themselves.
+            Always points at the client, never at the older web app, and its
+            origin comes from `LIBRARY_CLIENT_BASE_URL`.
+          type: string
       required:
       - id
       - name
       - recordVersion
+      - url
       - items
       type: object
     GlobalIdMappingResponse:
@@ -711,7 +719,10 @@ paths:
       - public-docs
   /docs/{org}/{repo}/{data_id}/md:
     get:
-      description: Returns the raw composed Markdown (with YAML frontmatter).
+      description: |-
+        Returns the raw composed Markdown (with YAML frontmatter). The
+        frontmatter carries `url`, the address of this document in the
+        Library client, alongside `id` and `title`.
       operationId: view_doc_markdown
       parameters:
       - description: Organization username
@@ -738,7 +749,7 @@ paths:
             text/markdown:
               schema:
                 type: string
-          description: Composed Markdown with YAML frontmatter
+          description: Composed Markdown with YAML frontmatter, including the document's `url` in the Library client
         '403':
           description: Private repository access denied
         '404':
@@ -1295,6 +1306,10 @@ paths:
         schema:
           type: string
       responses: {}
+      summary: |-
+        Returns the document as Markdown with YAML frontmatter. The
+        frontmatter carries `url`, the address of this document in the
+        Library client, alongside `id` and `title`.
       tags: []
   /v1beta/repos/{org}/{repo}/properties:
     get:

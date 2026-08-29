@@ -43,6 +43,11 @@ pub struct DataResponse {
     /// Decimal Library record revision. Serialized as a string so clients do
     /// not lose precision when BIGINT values exceed JavaScript's safe range.
     pub record_version: String,
+    /// Absolute URL that opens this document in the Library client, so
+    /// integrators can link back without rebuilding the route themselves.
+    /// Always points at the client, never at the older web app, and its
+    /// origin comes from `LIBRARY_CLIENT_BASE_URL`.
+    pub url: String,
     pub items: Vec<PropertyDataResponse>,
 }
 
