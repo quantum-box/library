@@ -18,10 +18,10 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock(import('@blocknote/react'), async (importOriginal) => ({
+vi.mock('@blocknote/react', async (importOriginal) => ({
   // Partial: the schema module needs the real createReactBlockSpec.
-  ...(await importOriginal()),
-  useCreateBlockNote: () => mocks.editor as never,
+  ...(await importOriginal<typeof import('@blocknote/react')>()),
+  useCreateBlockNote: () => mocks.editor,
   useEditorChange: (onChange: typeof mocks.onEditorChange) => {
     mocks.onEditorChange = onChange
   },
