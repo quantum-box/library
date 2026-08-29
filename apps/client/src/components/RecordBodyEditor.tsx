@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PartialBlock } from '@blocknote/core'
 import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
 import {
   SuggestionMenuController,
@@ -76,6 +75,8 @@ function useBodyEditor() {
   return useCreateBlockNote({ schema: recordBodySchema })
 }
 type BodyEditor = ReturnType<typeof useBodyEditor>
+/** A partial block in the record body schema — what replaceBlocks accepts. */
+type BodyPartialBlock = Parameters<BodyEditor['replaceBlocks']>[1][number]
 
 function BlockRecordBodyEditor({
   value,
@@ -203,7 +204,7 @@ function seedBlocks(
   editor: BodyEditor,
   value: string,
   format: RecordBodyFormat,
-): PartialBlock[] {
+): BodyPartialBlock[] {
   if (format === 'richText' && value) {
     const parsed = parseDocument(value)
     if (parsed) return parsed
@@ -226,12 +227,12 @@ function looksLikeHtml(value: string): boolean {
   return /^\s*</.test(value)
 }
 
-function parseDocument(raw: string): PartialBlock[] | null {
+function parseDocument(raw: string): BodyPartialBlock[] | null {
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed as PartialBlock[]
+    if (Array.isArray(parsed)) return parsed as BodyPartialBlock[]
     const blocks = (parsed as { blocks?: unknown })?.blocks
-    if (Array.isArray(blocks)) return blocks as PartialBlock[]
+    if (Array.isArray(blocks)) return blocks as BodyPartialBlock[]
   } catch {
     // fall through
   }
