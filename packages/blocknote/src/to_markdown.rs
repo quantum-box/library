@@ -88,6 +88,15 @@ fn prop_str<'a>(block: &'a Value, name: &str) -> Option<&'a str> {
         .as_str()
 }
 
+/// The image block's resize width, rounded to whole pixels.
+fn prop_width(block: &Value) -> Option<u64> {
+    let width = block
+        .get("props")
+        .and_then(|props| props.get("previewWidth"))?
+        .as_f64()?;
+    (width.is_finite() && width > 0.0).then(|| width.round() as u64)
+}
+
 fn indent(text: &str, prefix: &str) -> String {
     text.lines()
         .map(|line| {
@@ -190,6 +199,14 @@ fn render_block(
                 .filter(|value| !value.is_empty())
                 .or_else(|| prop_str(block, "name"))
                 .unwrap_or_default();
+            // A resized image carries its width in a URL fragment so plain
+            // Markdown keeps it; the client editor reads the same dialect.
+            let url = match prop_width(block) {
+                Some(width) if !url.contains("#w=") => {
+                    format!("{url}#w={width}")
+                }
+                _ => url.to_string(),
+            };
             Some(format!("![{caption}]({url})"))
         }
         "video" | "audio" | "file" => {

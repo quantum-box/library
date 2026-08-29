@@ -1,0 +1,29 @@
+[
+  {
+    "id": "block-1",
+    "type": "image",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "",
+      "url": "https://example.com/wide.png",
+      "caption": "resized",
+      "showPreview": true,
+      "previewWidth": 256
+    },
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "image",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "",
+      "url": "https://example.com/plain.png",
+      "caption": "untouched",
+      "showPreview": true
+    },
+    "children": []
+  }
+]
