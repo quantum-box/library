@@ -132,6 +132,52 @@ fn markdown_round_trip_is_idempotent() {
 }
 
 #[test]
+fn html_preview_round_trips_through_markdown() {
+    let source = "<!doctype html>\n<button onclick=\"go()\">Go</button>";
+    let document = serde_json::json!([{
+        "type": "htmlPreview",
+        "props": { "source": source },
+        "children": [],
+    }]);
+
+    let markdown = to_markdown(&document);
+    assert_eq!(markdown, format!("```html preview\n{source}\n```"));
+
+    // The `preview` info word is what rebuilds the block; without the
+    // round trip a GitHub-side edit would demote it to a code block and
+    // the preview would be lost.
+    let back = from_markdown(&markdown);
+    assert_eq!(back[0]["type"], "htmlPreview");
+    assert_eq!(back[0]["props"]["source"], source);
+
+    // A plain ```html fence is somebody's code sample, not a preview.
+    let code = from_markdown("```html\n<p>hi</p>\n```");
+    assert_eq!(code[0]["type"], "codeBlock");
+}
+
+#[test]
+fn html_preview_renders_as_a_sandboxed_iframe() {
+    let document = serde_json::json!([{
+        "type": "htmlPreview",
+        "props": { "source": "<b>x & \"y\"</b>" },
+        "children": [],
+    }]);
+    let html = blocknote::to_html(&document);
+    assert!(html.starts_with("<iframe"), "got: {html}");
+    assert!(html.contains("sandbox=\"allow-scripts\""));
+    // Attribute-escaped, so the srcdoc cannot break out of the quotes.
+    assert!(
+        html.contains(
+            "srcdoc=\"&lt;b&gt;x &amp; &quot;y&quot;&lt;/b&gt;\""
+        ),
+        "got: {html}"
+    );
+    // The source still counts as text: a body holding only a preview must
+    // not be treated as an empty (cleared) value.
+    assert!(!blocknote::plain_text(&document).is_empty());
+}
+
+#[test]
 fn malformed_documents_degrade_instead_of_panicking() {
     for document in [
         serde_json::json!(null),

@@ -849,13 +849,12 @@ export function RepositorySettingsView({
                               {propertyTypeLabel(property.typ)}
                             </Badge>
                             {system ? <Badge variant="neutral">System</Badge> : null}
-                            {property.typ === 'HTML' ? <Badge variant="warning">Beta · read-only</Badge> : null}
                             {isLegacyPropertyType(property.typ) ? (
                               <Badge variant="warning" title="Markdown cannot represent a blank line, so one is lost on every save. Edit this Property and switch it to Rich text; existing content converts on read.">
                                 Legacy · switch to Rich text
                               </Badge>
                             ) : null}
-                            {property.typ !== 'HTML' && !isEditablePropertyType(property.typ) ? (
+                            {!isEditablePropertyType(property.typ) ? (
                               <Badge variant="warning">Unsupported · read-only</Badge>
                             ) : null}
                           </div>
@@ -874,9 +873,7 @@ export function RepositorySettingsView({
                             disabled={readOnly || writePermissionDenied}
                             title={system
                               ? 'System extensions are managed outside this screen'
-                              : property.typ === 'HTML'
-                                ? 'HTML Properties are Beta and read-only in this screen'
-                                : 'Edit Property'}
+                              : 'Edit Property'}
                             onClick={() => {
                               setPropertyError(null)
                               setPropertyDialog({ mode: 'edit', property })

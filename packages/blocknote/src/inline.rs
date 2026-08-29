@@ -104,6 +104,17 @@ pub fn plain_text(document: &Value) -> String {
 
 fn collect_plain_text(blocks: &[Value], out: &mut String) {
     for block in blocks {
+        // htmlPreview keeps its document in props, not content; without
+        // this a body holding only a preview would read as empty and be
+        // treated as a cleared value.
+        if block.get("type").and_then(Value::as_str) == Some("htmlPreview")
+            && let Some(source) = block
+                .get("props")
+                .and_then(|props| props.get("source"))
+                .and_then(Value::as_str)
+        {
+            out.push_str(source);
+        }
         collect_inline_text(block.get("content"), out);
         out.push('\n');
         if let Some(children) =

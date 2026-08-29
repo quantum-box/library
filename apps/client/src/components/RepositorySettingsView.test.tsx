@@ -98,9 +98,11 @@ describe('RepositorySettingsView', () => {
     expect(screen.getByText('Knowledge workspace')).toBeInTheDocument()
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Summary')
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('ext_github')
-    expect(screen.getByText('Beta · read-only')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit Legacy body' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Delete Legacy body' })).toBeDisabled()
+    // HTML graduated from Beta: an Html Property edits and deletes like any
+    // other now that the artifact preview exists.
+    expect(screen.queryByText('Beta · read-only')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Legacy body' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Delete Legacy body' })).toBeEnabled()
   })
 
   it('shows permission failure distinctly and retries the same GraphQL settings read', async () => {

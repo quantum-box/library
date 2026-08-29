@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react'
-import type { PartialBlock } from '@blocknote/core'
-import { useCreateBlockNote, useEditorChange } from '@blocknote/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import {
+  SuggestionMenuController,
+  getDefaultReactSlashMenuItems,
+  useCreateBlockNote,
+  useEditorChange,
+} from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
+import { CodeXml } from 'lucide-react'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
+import { recordBodySchema } from './blocknote/schema'
+import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 
 export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
 
@@ -17,10 +25,11 @@ interface RecordBodyEditorProps {
    * - `richText`: `value` is the block document as JSON and the editor's own
    *   document is committed back. Lossless; this is the reason the RichText
    *   property type exists.
-   * - `html`: `value` is markup. Legacy, but it has to be its own mode: an
-   *   Html Property is read as real HTML everywhere else (apps/web parses it
-   *   with `tryParseHTMLToBlocks`), so committing Markdown into one leaves a
-   *   value whose dialect contradicts its type.
+   * - `html`: `value` is markup, treated as an artifact: previewed in a
+   *   sandboxed frame and edited as source, never parsed into blocks. The
+   *   exception is a value that is really Markdown — this editor used to
+   *   commit Markdown into Html Properties, so those open in the block
+   *   editor exactly as before.
    */
   format?: RecordBodyFormat
   onCommit: (value: string) => void
@@ -28,7 +37,48 @@ interface RecordBodyEditorProps {
   surface?: 'panel' | 'page'
 }
 
-export function RecordBodyEditor({
+export function RecordBodyEditor(props: RecordBodyEditorProps) {
+  // Decided once per mount, so typing cannot flip a record between editors
+  // mid-edit. Callers key this component by record id.
+  const [artifact] = useState(
+    () => (props.format ?? 'markdown') === 'html' && isArtifactHtml(props.value),
+  )
+  if (artifact) {
+    return (
+      <HtmlArtifactEditor
+        value={props.value}
+        onCommit={props.onCommit}
+        editable={props.editable}
+        surface={props.surface}
+      />
+    )
+  }
+  return <BlockRecordBodyEditor {...props} />
+}
+
+/**
+ * Whether an Html Property's value should open as an artifact.
+ *
+ * Until this editor learned the type it committed Markdown into Html
+ * Properties, so a repository can hold either dialect under the same type.
+ * Running "## Heading" through the artifact preview would render the source
+ * text instead of a heading, so sniff the value rather than trusting the
+ * type. Every value that is actually HTML — including what apps/web writes
+ * with `blocksToFullHTML` — opens with a tag. An empty value is HTML-to-be:
+ * the Property's type is the only intent an empty body has.
+ */
+function isArtifactHtml(value: string): boolean {
+  return value.trim() === '' || /^\s*</.test(value)
+}
+
+function useBodyEditor() {
+  return useCreateBlockNote({ schema: recordBodySchema })
+}
+type BodyEditor = ReturnType<typeof useBodyEditor>
+/** A partial block in the record body schema — what replaceBlocks accepts. */
+type BodyPartialBlock = Parameters<BodyEditor['replaceBlocks']>[1][number]
+
+function BlockRecordBodyEditor({
   value,
   format = 'markdown',
   onCommit,
@@ -41,7 +91,7 @@ export function RecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
-  const editor = useCreateBlockNote()
+  const editor = useBodyEditor()
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -103,13 +153,46 @@ export function RecordBodyEditor({
         editable={editable}
         className="photon-blocknote"
         data-theming-css-variables-demo
-      />
+        slashMenu={false}
+      >
+        <SuggestionMenuController
+          triggerCharacter="/"
+          getItems={async (query) =>
+            filterSuggestionItems(
+              [
+                ...getDefaultReactSlashMenuItems(editor),
+                insertHtmlPreviewItem(editor),
+              ],
+              query,
+            )
+          }
+        />
+      </BlockNoteView>
     </div>
   )
 }
 
+/**
+ * The slash menu entry for the htmlPreview block. Offered in every format:
+ * only richText stores it losslessly, but the lossy formats degrade it to an
+ * ```html fence rather than dropping it, the same policy as everything else
+ * Markdown cannot hold.
+ */
+function insertHtmlPreviewItem(editor: BodyEditor) {
+  return {
+    title: 'HTML',
+    subtext: 'HTML document rendered in a sandboxed preview',
+    aliases: ['html', 'iframe', 'artifact', 'preview'],
+    group: 'Others',
+    icon: <CodeXml size={18} />,
+    onItemClick: () => {
+      insertOrUpdateBlockForSlashMenu(editor, { type: 'htmlPreview' })
+    },
+  }
+}
+
 function serializeDocument(
-  editor: ReturnType<typeof useCreateBlockNote>,
+  editor: BodyEditor,
   format: RecordBodyFormat,
 ): string {
   if (format === 'richText') return JSON.stringify(editor.document)
@@ -118,10 +201,10 @@ function serializeDocument(
 }
 
 function seedBlocks(
-  editor: ReturnType<typeof useCreateBlockNote>,
+  editor: BodyEditor,
   value: string,
   format: RecordBodyFormat,
-): PartialBlock[] {
+): BodyPartialBlock[] {
   if (format === 'richText' && value) {
     const parsed = parseDocument(value)
     if (parsed) return parsed
@@ -136,25 +219,20 @@ function seedBlocks(
 }
 
 /**
- * Whether an Html Property's value is really markup.
- *
- * Until this editor learned the type it committed Markdown into Html
- * Properties, so a repository can hold either dialect under the same type.
- * Running "## Heading" through the HTML parser would render the source text
- * instead of a heading, so sniff the value rather than trusting the type.
- * Every value that is actually HTML — including what apps/web writes with
- * `blocksToFullHTML` — opens with a tag.
+ * Whether an Html Property's value is really markup. Kept for the block
+ * editor's seeding path even though artifact-shaped values no longer reach
+ * it, because a read-only view can still be handed either dialect.
  */
 function looksLikeHtml(value: string): boolean {
   return /^\s*</.test(value)
 }
 
-function parseDocument(raw: string): PartialBlock[] | null {
+function parseDocument(raw: string): BodyPartialBlock[] | null {
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed as PartialBlock[]
+    if (Array.isArray(parsed)) return parsed as BodyPartialBlock[]
     const blocks = (parsed as { blocks?: unknown })?.blocks
-    if (Array.isArray(blocks)) return blocks as PartialBlock[]
+    if (Array.isArray(blocks)) return blocks as BodyPartialBlock[]
   } catch {
     // fall through
   }
