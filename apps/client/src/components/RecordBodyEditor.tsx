@@ -13,6 +13,10 @@ import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { uploadLibraryImage } from '../lib/recordsApi'
+import {
+  takeImageWidthFragments,
+  withImageWidthFragments,
+} from './blocknote/imageWidthFragments'
 
 export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
 
@@ -235,7 +239,9 @@ function serializeDocument(
 ): string {
   if (format === 'richText') return JSON.stringify(editor.document)
   if (format === 'html') return editor.blocksToHTMLLossy(editor.document)
-  return editor.blocksToMarkdownLossy(editor.document)
+  return editor.blocksToMarkdownLossy(
+    withImageWidthFragments(editor.document) as typeof editor.document,
+  )
 }
 
 function seedBlocks(
@@ -253,8 +259,9 @@ function seedBlocks(
   if (format === 'html' && looksLikeHtml(value)) {
     return editor.tryParseHTMLToBlocks(value)
   }
-  return editor.tryParseMarkdownToBlocks(value || '')
+  return takeImageWidthFragments(editor.tryParseMarkdownToBlocks(value || ''))
 }
+
 
 /**
  * Whether an Html Property's value is really markup. Kept for the block

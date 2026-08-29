@@ -251,9 +251,23 @@ impl Builder {
                     let caption =
                         if alt.is_empty() { caption } else { alt };
                     self.leaf = None;
+                    // The Markdown dialect carries a resize width in a
+                    // `#w=` fragment; store it as the block's own width
+                    // so a rich text document needs no decoding later.
+                    let (src, width) = split_width_fragment(&url);
+                    let props = match width {
+                        Some(width) => json!({
+                            "url": src,
+                            "caption": caption,
+                            "previewWidth": width,
+                        }),
+                        None => {
+                            json!({ "url": url, "caption": caption })
+                        }
+                    };
                     self.emit(json!({
                         "type": "image",
-                        "props": { "url": url, "caption": caption },
+                        "props": props,
                         "children": [],
                     }));
                 }
@@ -483,6 +497,18 @@ fn hoist_leading_paragraph(children: &mut Vec<Value>) -> Value {
 fn is_html_preview(info: &str) -> bool {
     let mut words = info.split_whitespace();
     words.next() == Some("html") && words.any(|word| word == "preview")
+}
+
+/// Splits a `#w=<pixels>` fragment off an image URL, returning the clean
+/// URL and the width it carried.
+fn split_width_fragment(url: &str) -> (&str, Option<u64>) {
+    let Some((src, fragment)) = url.rsplit_once("#w=") else {
+        return (url, None);
+    };
+    match fragment.parse::<u64>() {
+        Ok(width) if width > 0 => (src, Some(width)),
+        _ => (url, None),
+    }
 }
 
 fn plain_runs(runs: &[Value]) -> String {

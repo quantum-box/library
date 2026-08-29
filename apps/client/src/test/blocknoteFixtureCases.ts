@@ -240,4 +240,25 @@ export const BLOCKNOTE_FIXTURE_CASES: BlocknoteFixtureCase[] = [
       { type: 'paragraph', content: [text('after the app')] },
     ] as unknown as PartialBlock[],
   },
+  {
+    // A resized image next to an untouched one. Markdown keeps the resize
+    // width in a `#w=` URL fragment — the block editor's dialect — and the
+    // HTML rendering turns it into a width attribute; this fixture pins
+    // both sides of that round trip.
+    name: '14-image-width',
+    blocks: [
+      {
+        type: 'image',
+        props: {
+          url: 'https://example.com/wide.png',
+          caption: 'resized',
+          previewWidth: 256,
+        },
+      },
+      {
+        type: 'image',
+        props: { url: 'https://example.com/plain.png', caption: 'untouched' },
+      },
+    ] as unknown as PartialBlock[],
+  },
 ]

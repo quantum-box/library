@@ -136,6 +136,27 @@ fn children_of(block: &Value) -> &[Value] {
         .unwrap_or(&[])
 }
 
+/// The image block's resize width, rounded to whole pixels.
+fn prop_width(block: &Value) -> Option<u64> {
+    let width = block
+        .get("props")
+        .and_then(|props| props.get("previewWidth"))?
+        .as_f64()?;
+    (width.is_finite() && width > 0.0).then(|| width.round() as u64)
+}
+
+/// Splits a `#w=<pixels>` fragment off an image URL, returning the clean
+/// URL and the width it carried.
+fn split_width_fragment(url: &str) -> (&str, Option<u64>) {
+    let Some((src, fragment)) = url.rsplit_once("#w=") else {
+        return (url, None);
+    };
+    match fragment.parse::<u64>() {
+        Ok(width) if width > 0 => (src, Some(width)),
+        _ => (url, None),
+    }
+}
+
 fn prop_str<'a>(block: &'a Value, name: &str) -> Option<&'a str> {
     block
         .get("props")
@@ -195,11 +216,24 @@ fn render_block(out: &mut String, block: &Value, typ: &str) {
                 .filter(|value| !value.is_empty())
                 .or_else(|| prop_str(block, "name"))
                 .unwrap_or_default();
-            out.push_str(&format!(
-                "<img src=\"{}\" alt=\"{}\">",
-                escape_attribute(url),
-                escape_attribute(caption)
-            ));
+            // The resize width lives either on the block (rich text) or
+            // in the `#w=` URL fragment (Markdown dialect); honour both
+            // and keep the fragment out of the fetched src.
+            let (src, fragment_width) = split_width_fragment(url);
+            let width = prop_width(block).or(fragment_width);
+            match width {
+                Some(width) => out.push_str(&format!(
+                    "<img src=\"{}\" alt=\"{}\" width=\"{}\">",
+                    escape_attribute(src),
+                    escape_attribute(caption),
+                    width
+                )),
+                None => out.push_str(&format!(
+                    "<img src=\"{}\" alt=\"{}\">",
+                    escape_attribute(src),
+                    escape_attribute(caption)
+                )),
+            }
         }
         "video" | "audio" | "file" => {
             let url = prop_str(block, "url").unwrap_or_default();
