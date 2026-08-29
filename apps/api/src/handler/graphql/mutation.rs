@@ -557,14 +557,16 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
         input: ChangeRepoUsernameInput,
     ) -> Result<Repo> {
-        let _executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let _multi_tenancy =
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
             .change_repo_username
-            .execute(usecase::ChangeRepoUsernameInput {
+            .execute(usecase::ChangeRepoUsernameInputData {
+                executor,
+                multi_tenancy,
                 org_username: input.org_username,
                 old_repo_username: input.old_repo_username,
                 new_repo_username: input.new_repo_username,
@@ -2333,7 +2335,12 @@ pub struct UpdateDataInputData {
     pub property_data: Vec<usecase::PropertyDataInputData>,
 }
 
-pub use crate::usecase::change_repo_username::ChangeRepoUsernameInput;
+#[derive(Debug, Clone, InputObject)]
+pub struct ChangeRepoUsernameInput {
+    pub org_username: String,
+    pub old_repo_username: String,
+    pub new_repo_username: String,
+}
 
 fn property_type_from_input(
     value: PropertyInput,

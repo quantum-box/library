@@ -234,7 +234,7 @@ library --json data list acme/docs --page-size 50
 
 ## 8. 既知の制約
 
-- `library repo rename` が呼ぶ `PUT /v1beta/repos/{org}/{repo}/change-username` は API 側で executor を取り出しておらず、認可チェックが無い ([apps/api/src/handler/repository.rs](../../../apps/api/src/handler/repository.rs))。CLI 固有の問題ではなく endpoint 側の欠落で、同じ理由からこの操作は MCP tool には出していない。
+- `library repo rename` は MCP tool には出していない（CLI / REST / GraphQL のみ）。認可の欠落は解消済みで、`PUT /v1beta/repos/{org}/{repo}/change-username` は `library:UpdateRepo` の resource-level チェックを通す（[apps/api/src/usecase/change_repo_username.rs](../../../apps/api/src/usecase/change_repo_username.rs)）。repo の owner / writer 以外は 403 になる。
 - `data update` は置換であり、部分更新の口は無い。
 - 表出力は互換性を保証しない。
 - `mcp config --transport sse` が出す設定は、SSE を有効化した server にしか繋がらない。既定の配信では `http` を使う。詳細は [MCP 連携仕様](mcp.md) の GA status。
