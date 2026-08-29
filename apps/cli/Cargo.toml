@@ -1,0 +1,25 @@
+[package]
+name = "library-cli"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "Command line client for the Library REST API and MCP server"
+
+[[bin]]
+name = "library"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true, default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+], default-features = false }

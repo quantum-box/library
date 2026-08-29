@@ -574,6 +574,19 @@ pub async fn router(
             get(handler::mcp::mcp_oauth_authorization_server_metadata),
         )
         .route("/mcp", post(handler::mcp::mcp_handler))
+        // HTTP+SSE transport for MCP clients that open a stream rather
+        // than a single request/response pair. `/sse` and `/mcp/sse` are
+        // the two paths such clients probe for.
+        .route("/sse", get(handler::mcp_sse::mcp_sse_handler))
+        .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
+        .route(
+            "/messages",
+            post(handler::mcp_sse::mcp_sse_messages_handler),
+        )
+        .route(
+            "/mcp/messages",
+            post(handler::mcp_sse::mcp_sse_messages_handler),
+        )
         .route(
             "/mcp/oauth/register",
             post(handler::mcp::mcp_oauth_register),
