@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clearedPropertyValue,
   isMultilineEditableProperty,
+  libraryPropertyValueToGraphqlInput,
   libraryDataItemToGraphqlPropertyData,
   mergeLibraryDataProperty,
   parseEditablePropertyValue,
@@ -72,6 +74,30 @@ describe('libraryPropertyInput', () => {
       { propertyId: markdownProperty.id, value: { markdown: '# Hello' } },
       { propertyId: htmlProperty.id, value: { html: '<p>Hello</p>' } },
     ])
+  })
+
+  it('encodes an emptied value as a clear command instead of dropping the Property', () => {
+    const dateProperty: LibraryProperty = { id: 'prop-date', name: 'Date', typ: 'Date' }
+    const selectProperty: LibraryProperty = {
+      id: 'prop-status',
+      name: 'Status',
+      typ: 'Select',
+      meta: { options: [{ id: 'opt-1', name: 'Todo', key: 'todo' }] },
+    }
+
+    // parseEditablePropertyValue has no empty form for these types, and an
+    // omitted Property keeps its server value, so the empty value has to be
+    // spelled out and survive encoding.
+    expect(parseEditablePropertyValue(dateProperty, '')).toBeNull()
+    expect(clearedPropertyValue(dateProperty)).toEqual({ date: '' })
+    expect(libraryPropertyValueToGraphqlInput(dateProperty, { date: '' })).toEqual({ date: '' })
+    expect(libraryPropertyValueToGraphqlInput(selectProperty, { optionId: '' })).toEqual({
+      select: '',
+    })
+    expect(libraryDataItemToGraphqlPropertyData(
+      [dateProperty],
+      [{ propertyId: dateProperty.id, value: { date: '' } }],
+    )).toEqual([{ propertyId: dateProperty.id, value: { date: '' } }])
   })
 
   it('edits multi-line values multi-line so a single-line input cannot strip the newlines', () => {

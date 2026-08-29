@@ -384,6 +384,7 @@ export function DataEditorPage({
                     <LibraryPropertyEditableCell
                       item={item}
                       property={property}
+                      activation="single"
                       onCommit={persistItem}
                     />
                   </div>

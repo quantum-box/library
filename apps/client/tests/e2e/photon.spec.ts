@@ -390,6 +390,61 @@ test.describe('Library shell', () => {
     await expect(page.getByLabel('Description')).toHaveValue(description)
   })
 
+  test('edits and clears a data Property value from the data page', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/data/seed-data-201')
+    await expect(page.getByTestId('data-editor-page')).toBeVisible()
+
+    const cell = page.getByTestId('library-editable-cell-prop-assignee')
+    await expect(cell).toHaveText('Empty')
+
+    await cell.click()
+    const input = page.getByTestId('library-editable-input-prop-assignee')
+    await input.fill('Aoi')
+    await input.press('Enter')
+    await expect(cell).toHaveText('Aoi')
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('library-editable-cell-prop-assignee')).toHaveText('Aoi')
+
+    // Clearing has to reach the server too: updateData patches, so an omitted
+    // Property would keep the old value while the screen showed it emptied.
+    await page.getByTestId('library-editable-cell-prop-assignee').click()
+    const clearing = page.getByTestId('library-editable-input-prop-assignee')
+    await clearing.fill('')
+    await clearing.press('Enter')
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('library-editable-cell-prop-assignee')).toHaveText('Empty')
+
+    // A Select clears through the same path, and unlike a text Property it has
+    // no empty form of its own to fall back on.
+    const status = page.getByTestId('library-editable-cell-prop-status')
+    await expect(status).toHaveText('Todo')
+    await status.click()
+    await page.getByTestId('library-editable-input-prop-status').selectOption('')
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('library-editable-cell-prop-status')).toHaveText('Empty')
+  })
+
+  test('opens Properties from the repository tabs and navigates back out of settings', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core')
+
+    await page.getByTestId('repository-tabs').getByRole('link', { name: 'Properties' }).click()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/properties$/)
+    await expect(page.getByTestId('repository-properties-page')).toBeVisible()
+    await expect(page.getByTestId('repository-property-list')).toContainText('Status')
+
+    await page.getByTestId('repository-tabs').getByRole('link', { name: 'Settings' }).click()
+    await expect(page.getByTestId('repository-settings-page')).toBeVisible()
+
+    await page.getByTestId('repository-settings-back').click()
+    await expect(page.getByTestId('repository-page')).toBeVisible()
+  })
+
   test('creates, renames, duplicates, and deletes named database views', async ({ page }) => {
     await page.goto('/databases')
 

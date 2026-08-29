@@ -11,8 +11,10 @@ import {
   Input,
   Label,
 } from '@tachyon-sdk/native-ui'
+import { Link } from '@tanstack/react-router'
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   Copy,
   KeyRound,
@@ -38,6 +40,7 @@ import {
   type ApiKeyTarget,
   type CreatedApiKey,
 } from '../lib/apiKeysApi'
+import { RepositoryTabs } from './RepositoryTabs'
 import {
   ApiCard,
   DocumentationCard,
@@ -175,11 +178,32 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
+        <Button variant="ghost" size="icon" className="size-7" asChild>
+          <Link
+            to="/$organization/$repository"
+            params={{ organization, repository }}
+            aria-label={`Back to ${organization}/${repository}`}
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </Link>
+        </Button>
         <KeyRound className="size-4 shrink-0 text-primary" aria-hidden="true" />
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
-          <span className="truncate text-muted-foreground">{organization}</span>
+          <Link
+            to="/organizations/$organization"
+            params={{ organization }}
+            className="truncate text-muted-foreground no-underline hover:text-foreground"
+          >
+            {organization}
+          </Link>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate font-semibold">{repository}</span>
+          <Link
+            to="/$organization/$repository"
+            params={{ organization, repository }}
+            className="truncate font-semibold no-underline hover:text-primary"
+          >
+            {repository}
+          </Link>
           <span className="text-subtle-foreground">/</span>
           <span className="truncate text-muted-foreground">API</span>
         </div>
@@ -198,6 +222,8 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
           <span className="hidden sm:inline">Refresh</span>
         </Button>
       </header>
+
+      <RepositoryTabs organization={organization} repository={repository} active="api" />
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-surface/50">
         <div className="mx-auto w-full max-w-5xl px-4 py-5 md:px-6 md:py-6">
