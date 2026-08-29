@@ -242,9 +242,13 @@ pub async fn delete_repo(
 pub async fn change_repo_username(
     AxumPath((org, repo)): AxumPath<(String, String)>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
+    library_org: LibraryOrg,
     Json(payload): Json<ChangeRepoUsernameRequest>,
 ) -> errors::Result<Json<RepoResponse>> {
-    let input = crate::usecase::ChangeRepoUsernameInput {
+    let input = crate::usecase::ChangeRepoUsernameInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
         org_username: org,
         old_repo_username: repo,
         new_repo_username: payload.new_username,

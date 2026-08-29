@@ -167,6 +167,7 @@ impl LibraryApp {
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
             repo_repo.clone(),
+            auth_app.clone(),
         );
         let view_repo = Arc::new(usecase::ViewRepo::new(
             auth_app.clone(),
