@@ -30,6 +30,7 @@ mod github_writeback;
 mod import_markdown_from_github;
 mod invite_org_member;
 mod invite_repo_member;
+pub mod library_client_url;
 mod library_org;
 mod list_api_keys;
 mod list_github_directory;

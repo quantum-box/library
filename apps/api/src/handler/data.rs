@@ -32,6 +32,8 @@ use crate::handler::types::{
     convert_property_value, AddDataRequest, DataPaginationQuery,
     DataResponse, SearchDataQuery, UpdateDataRequest,
 };
+use crate::usecase::library_client_url::data_url;
+use crate::usecase::markdown_composer::compose_markdown_with_ui_url;
 use crate::usecase::LibraryOrg;
 use crate::usecase::{
     AddDataInputData, DeleteDataInputData, PropertyDataInputData,
@@ -100,9 +102,9 @@ pub async fn view_data(
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: org,
-        repo_username: repo,
-        data_id,
+        org_username: org.clone(),
+        repo_username: repo.clone(),
+        data_id: data_id.clone(),
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
@@ -110,6 +112,7 @@ pub async fn view_data(
         id: data.id().to_string(),
         name: data.name().to_string(),
         record_version: data.record_version().to_string(),
+        url: data_url(&org, &repo, &data_id),
         items: data
             .property_data()
             .iter()
@@ -128,6 +131,9 @@ pub async fn view_data(
     Ok(Json(response))
 }
 
+/// Returns the document as Markdown with YAML frontmatter. The
+/// frontmatter carries `url`, the address of this document in the
+/// Library client, alongside `id` and `title`.
 #[utoipa::path(
 	get,
 	path = "/v1beta/repos/{org}/{repo}/data/{data_id}/md",
@@ -147,13 +153,15 @@ pub async fn view_data_markdown(
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: org,
-        repo_username: repo,
-        data_id,
+        org_username: org.clone(),
+        repo_username: repo.clone(),
+        data_id: data_id.clone(),
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
-    let markdown = compose_markdown(&data, &properties);
+    let ui_url = data_url(&org, &repo, &data_id);
+    let markdown =
+        compose_markdown_with_ui_url(&data, &properties, Some(&ui_url));
 
     Ok((
         StatusCode::OK,
@@ -187,8 +195,8 @@ pub async fn view_data_list(
     let input = ViewDataListInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: org,
-        repo_username: repo,
+        org_username: org.clone(),
+        repo_username: repo.clone(),
         page: query.page,
         page_size: query.page_size,
     };
@@ -201,6 +209,7 @@ pub async fn view_data_list(
             id: data.id().to_string(),
             name: data.name().to_string(),
             record_version: data.record_version().to_string(),
+            url: data_url(&org, &repo, data.id().as_ref()),
             items: data
                 .property_data()
                 .iter()
@@ -269,6 +278,7 @@ pub async fn add_data(
         id: data.id().to_string(),
         name: data.name().to_string(),
         record_version: data.record_version().to_string(),
+        url: data_url(&org, &repo, data.id().as_ref()),
         items: data
             .property_data()
             .iter()
@@ -335,6 +345,7 @@ pub async fn update_data(
         id: data.id().to_string(),
         name: data.name().to_string(),
         record_version: data.record_version().to_string(),
+        url: data_url(&org, &repo, data.id().as_ref()),
         items: data
             .property_data()
             .iter()
@@ -426,6 +437,7 @@ pub async fn search_data(
             id: data.id().to_string(),
             name: data.name().to_string(),
             record_version: data.record_version().to_string(),
+            url: data_url(&org, &repo, data.id().as_ref()),
             items: data
                 .property_data()
                 .iter()

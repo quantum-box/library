@@ -18,7 +18,10 @@ use utoipa::IntoParams;
 
 use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::LibraryExecutor;
-use crate::usecase::markdown_composer::compose_markdown;
+use crate::usecase::library_client_url::data_url;
+use crate::usecase::markdown_composer::{
+    compose_markdown, compose_markdown_with_ui_url,
+};
 use crate::usecase::{
     LibraryOrg, ViewDataInputData, ViewDataListInputData,
 };
@@ -220,7 +223,9 @@ pub async fn view_doc(
 
 /// `GET /docs/:org/:repo/:data_id/md`
 ///
-/// Returns the raw composed Markdown (with YAML frontmatter).
+/// Returns the raw composed Markdown (with YAML frontmatter). The
+/// frontmatter carries `url`, the address of this document in the
+/// Library client, alongside `id` and `title`.
 #[utoipa::path(
     get,
     path = "/docs/{org}/{repo}/{data_id}/md",
@@ -230,7 +235,7 @@ pub async fn view_doc(
         ("data_id" = String, Path, description = "Data ID")
     ),
     responses(
-        (status = 200, description = "Composed Markdown with YAML frontmatter", body = String, content_type = "text/markdown"),
+        (status = 200, description = "Composed Markdown with YAML frontmatter, including the document's `url` in the Library client", body = String, content_type = "text/markdown"),
         (status = 403, description = "Private repository access denied"),
         (status = 404, description = "Organization, repository, or data not found")
     ),
@@ -247,13 +252,15 @@ pub async fn view_doc_markdown(
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: org,
-        repo_username: repo,
-        data_id,
+        org_username: org.clone(),
+        repo_username: repo.clone(),
+        data_id: data_id.clone(),
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
-    let markdown = compose_markdown(&data, &properties);
+    let ui_url = data_url(&org, &repo, &data_id);
+    let markdown =
+        compose_markdown_with_ui_url(&data, &properties, Some(&ui_url));
 
     Ok((
         StatusCode::OK,

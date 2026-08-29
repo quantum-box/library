@@ -270,6 +270,7 @@
                     {
                       "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
                       "name": "data name",
+                      "url": "https://planetlibrary.txcloud.app/quantum-box/corporate/data/data_01HQHBWPX62NCQDC1DK3PR5PG7",
                       "property_data": [
                         {
                           "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
@@ -334,6 +335,7 @@
                 "example": {
                   "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "name": "data name",
+                  "url": "https://planetlibrary.txcloud.app/quantum-box/corporate/data/data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "property_data": [
                     {
                       "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
@@ -420,6 +422,7 @@
                     {
                       "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
                       "name": "data name",
+                      "url": "https://planetlibrary.txcloud.app/quantum-box/corporate/data/data_01HQHBWPX62NCQDC1DK3PR5PG7",
                       "property_data": [
                         {
                           "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
@@ -485,6 +488,7 @@
                 "example": {
                   "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "name": "data name",
+                  "url": "https://planetlibrary.txcloud.app/quantum-box/corporate/data/data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "property_data": [
                     {
                       "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
@@ -553,6 +557,7 @@
                 "example": {
                   "id": "data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "name": "data name",
+                  "url": "https://planetlibrary.txcloud.app/quantum-box/corporate/data/data_01HQHBWPX62NCQDC1DK3PR5PG7",
                   "property_data": [
                     {
                       "property_id": "prop_01HQHBXEQV8H3P1PHYVCVNZAKK",
@@ -857,10 +862,14 @@
       },
       "Data": {
         "type": "object",
-        "required": ["id", "name", "property_data"],
+        "required": ["id", "name", "url", "property_data"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "url": {
+            "type": "string",
+            "description": "Absolute URL that opens this document in the Library client. Always the Library client, never the older web app. Its origin comes from LIBRARY_CLIENT_BASE_URL."
+          },
           "property_data": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/PropertyData" }

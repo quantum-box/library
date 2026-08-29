@@ -94,6 +94,16 @@
 10進文字列で返す。BIGINT を JavaScript number に変換してはならない。この
 expand/read 段階では更新要求に version を渡さず、write 時の CAS もまだ行わない。
 
+`DataResponse.url` は当該ドキュメントを Library Client（`apps/client`）で
+開く絶対 URL。オリジンは環境変数 `LIBRARY_CLIENT_BASE_URL` から取得する
+（本番は `https://planetlibrary.txcloud.app`）。利用側が UI の URL 構造を
+ハードコードしなくて済むよう、`/md` 系エンドポイントの YAML frontmatter でも
+同じ値を `url` キーで返す。
+
+この `url` は常に Library Client を指し、旧 web アプリ（`apps/web` /
+`/v1beta/{org}/{repo}/data/{dataId}`）は指さない。API が返す `url` に従う
+利用側は、v1 の縮退時に追加の移行を要さない。
+
 参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs)
 
 ### 4.5 Property / Source
@@ -119,7 +129,7 @@ expand/read 段階では更新要求に version を渡さず、write 時の CAS 
 | GET | `/v1beta/global-id-mapping` | 必要 | `GlobalIdMappingResponse` | `system`,`code` query |
 | GET | `/docs/{org}/{repo}` | 公開repoは不要 / private repoは必要 | HTML | page/page_size 対応の Docs 一覧 |
 | GET | `/docs/{org}/{repo}/{data_id}` | 公開repoは不要 / private repoは必要 | HTML | data_id canonical の Docs ページ |
-| GET | `/docs/{org}/{repo}/{data_id}/md` | 公開repoは不要 / private repoは必要 | Markdown | YAML frontmatter 付き。検索/埋め込み/外部 index 用 |
+| GET | `/docs/{org}/{repo}/{data_id}/md` | 公開repoは不要 / private repoは必要 | Markdown | YAML frontmatter 付き（`id` / `title` / `url`）。検索/埋め込み/外部 index 用 |
 参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/global_id_mapping.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/global_id_mapping.rs), [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/docs.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/docs.rs)
 
 ## 5. 変更差分（実装ベース）
