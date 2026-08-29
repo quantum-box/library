@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library themed icon glyph</title>
+  <!--
+    Android 13 themed icons are tinted by the system, so the glyph has to be one
+    opaque colour and the separators between the ring and the orbit have to be
+    real holes rather than navy strokes. The mask paints those holes.
+  -->
+  <mask id="glyph">
+    <rect width="1024" height="1024" fill="#000"/>
+    <g transform="translate(512 512) scale(0.78) translate(-512 -512)">
+      <circle cx="512" cy="512" r="300" fill="none" stroke="#fff" stroke-width="96"/>
+      <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#000" stroke-linecap="round" stroke-width="126"/>
+      <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="86"/>
+      <circle cx="235" cy="700" r="94" fill="#000"/>
+      <circle cx="235" cy="700" r="78" fill="#fff"/>
+      <circle cx="835" cy="335" r="94" fill="#000"/>
+      <circle cx="835" cy="335" r="78" fill="#fff"/>
+    </g>
+  </mask>
+  <rect width="1024" height="1024" fill="#fff" mask="url(#glyph)"/>
+</svg>

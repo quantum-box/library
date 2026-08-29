@@ -93,6 +93,30 @@ npm run tauri:ios:build:sim
 
 Tauri の生成物は `src-tauri/gen/android` と `src-tauri/gen/apple` に作られます。Android Studio / Xcode と各 SDK のセットアップは Tauri のプラットフォーム要件に従います。
 
+## アプリアイコン
+
+全プラットフォームのアイコンは `src-tauri/icons/icon-manifest.json` から生成します。元は `src/assets/brand/library-logo/badge-dark.svg` で、プラットフォームごとの要件に合わせた派生を同じディレクトリに置いています。
+
+| ソース | 用途 |
+|---|---|
+| `icon-source.svg` | macOS / Windows / Linux。バッジを macOS のアイコングリッド（1024 中 824）に収め、周囲は透明 |
+| `bg_color` (`#07172f`) | iOS。透明部分をブランドネイビーで埋めて全面塗りにする |
+| `icon-source-android-bg.svg` | Android adaptive icon の背景レイヤー |
+| `icon-source-android-fg.svg` | 同・前景レイヤー。safe zone (61%) に収まるよう縮小済み |
+| `icon-source-android-monochrome.svg` | Android 13 のテーマアイコン。単色＋実際の透明な隙間 |
+
+```bash
+npx tauri icon src-tauri/icons/icon-manifest.json
+```
+
+生成後、iOS のアイコンからアルファチャンネルを落とします（App Store はアルファ付きアイコンを弾きます）。
+
+```bash
+python3 -c "from PIL import Image; import glob; [ (lambda im: (lambda f: (f.paste(im, mask=im.split()[3]), f.save(p)))(Image.new('RGB', im.size, (7,23,47))))(Image.open(p).convert('RGBA')) for p in glob.glob('src-tauri/icons/ios/*.png') ]"
+```
+
+マニフェストの `android_fg_scale` は現行 CLI では反映されないため、前景の縮小はソース SVG 側で行っています。
+
 ## 設定上の注意
 
 - Production CSP は現在の Cognito、Tachyon API、Library API、Photon Live の origin に限定しています。接続先を変えた場合は `src-tauri/tauri.conf.json` も更新してください。
