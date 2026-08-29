@@ -14,12 +14,14 @@ use crate::client::LibraryClient;
 use crate::commands::{parse_pair, read_possible_file};
 use crate::output::{array, field, print_json, short_field, Format, Table};
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum McpTransport {
     /// Single request/response JSON-RPC over `POST /mcp`
     Http,
-    /// Event stream over `GET /sse` with requests posted to `/messages`
+    /// Event stream over `GET /sse` with requests posted to
+    /// `/messages`. Non-GA: the server registers these routes only when
+    /// it sets `LIBRARY_MCP_SSE_ENABLED=true`
     Sse,
 }
 
@@ -239,6 +241,15 @@ fn render_config(
         eprintln!(
             "warning: this output contains an API key; pass --no-key to \
              leave it out"
+        );
+    }
+    if transport == McpTransport::Sse {
+        // Emitting a config that points at an endpoint the server does
+        // not register would send the user to a client that just hangs.
+        eprintln!(
+            "warning: the SSE transport is Non-GA and off unless the \
+             server sets LIBRARY_MCP_SSE_ENABLED=true; --transport http \
+             works everywhere"
         );
     }
 }

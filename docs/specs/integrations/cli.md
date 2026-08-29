@@ -189,6 +189,8 @@ library mcp call list_data --arg org=acme --arg repo=docs --arg-json page_size=5
 
 `mcp config` は client の設定ファイルへ貼れる形を出す。`--transport` は `http` (既定) と `sse`。
 
+`sse` は Non-GA で、server 側が `LIBRARY_MCP_SSE_ENABLED=true` を設定した環境でしか route が登録されない。現行の Lambda 配信では有効化できないため、通常は `http` を使う。`--transport sse` を指定すると stderr にその旨を出す。
+
 ```bash
 library mcp config --transport sse --name library
 ```
@@ -235,6 +237,7 @@ library --json data list acme/docs --page-size 50
 - `library repo rename` が呼ぶ `PUT /v1beta/repos/{org}/{repo}/change-username` は API 側で executor を取り出しておらず、認可チェックが無い ([apps/api/src/handler/repository.rs](../../../apps/api/src/handler/repository.rs))。CLI 固有の問題ではなく endpoint 側の欠落で、同じ理由からこの操作は MCP tool には出していない。
 - `data update` は置換であり、部分更新の口は無い。
 - 表出力は互換性を保証しない。
+- `mcp config --transport sse` が出す設定は、SSE を有効化した server にしか繋がらない。既定の配信では `http` を使う。詳細は [MCP 連携仕様](mcp.md) の GA status。
 
 ## 9. 実装参照
 

@@ -6,10 +6,10 @@
 
 2 種類の transport を提供する。どちらも同じ tool set・同じ認証規則で動く。
 
-| Transport | Endpoint | 用途 |
-| --- | --- | --- |
-| HTTP (Streamable) | `POST /mcp` | 1 往復で完結する client |
-| HTTP + SSE | `GET /sse` + `POST /messages` | 長寿命の event stream を前提とする旧来の client |
+| Transport | Endpoint | 状態 | 用途 |
+| --- | --- | --- | --- |
+| HTTP (Streamable) | `POST /mcp` | GA | 1 往復で完結する client |
+| HTTP + SSE | `GET /sse` + `POST /messages` | **Non-GA / 既定 off** | 長寿命の event stream を前提とする旧来の client |
 
 共通の性質:
 
@@ -21,6 +21,25 @@
 private repo は既存の `ViewDataList` / `SearchData` / `ViewData` usecase 側の権限判定で拒否する。MCP endpoint 独自の bypass は持たない。
 
 ### SSE transport
+
+#### GA status
+
+1. 判断: **Non-GA / experimental**。
+2. 標準環境では `/sse` `/mcp/sse` `/messages` `/mcp/messages` を router に登録しない。
+3. 常駐 process を持つ環境でのみ `LIBRARY_MCP_SSE_ENABLED=true` を明示して有効化する。
+4. `POST /mcp` は無条件に登録される。1 往復で完結する MCP client はすべてそちらで足りる。
+
+**現行の Lambda 配信では動作しない。** Lambda の実行環境は 1 インスタンスにつき同時 1 リクエストであり、`GET /sse` の stream を保持しているインスタンスはその間占有される。したがって `POST /messages` は必ず別インスタンスに振られ、そこには session table も stream も無い。応答の受け渡しが成立しない。
+
+Lambda の `InvokeMode` を `RESPONSE_STREAM` にすれば byte は流れるようになるが、この配送問題は解決しない。tachyon-apps の ADR-0008 も、常時接続 origin は Lambda に載せず Cloudflare Durable Objects や常駐 compute で扱うと決めている。
+
+GA に上げる場合の完了条件:
+
+1. session と stream が同一 process に着地することが保証される配信形態を用意する（Durable Object のような session id で名前解決できる常駐 origin）。
+2. その配信経路で `GET /sse` → `POST /messages` の往復を実機で検証する。
+3. 複数 client の同時接続と再接続を検証する。
+
+#### 仕組み
 
 Streamable HTTP より前の MCP client は、event stream を開いてから request を別 endpoint に送る 2 endpoint 構成を期待する。
 
@@ -66,6 +85,7 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_COGNITO_CLIENT_ID` | MCP OAuth facade が Cognito `USER_PASSWORD_AUTH` に使う client id。`COGNITO_CLIENT_ID` / `VITE_COGNITO_CLIENT_ID` も fallback として読む |
 | `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` も fallback として読む。frontend に公開される `VITE_*` からは読まない |
 | `MCP_COGNITO_REGION` | Cognito region。未指定時は `ap-northeast-1` |
+| `LIBRARY_MCP_SSE_ENABLED` | `true` の場合のみ SSE transport の route を登録する。既定 off |
 | `MCP_SSE_MESSAGE_ENDPOINT` | SSE transport の `endpoint` event が返す post 先。未指定時は相対パス `/messages` |
 
 Library MCP OAuth facade は Dynamic Client Registration を受け付け、`/mcp/oauth/authorize` で Library login form を出す。入力された credential は Cognito `USER_PASSWORD_AUTH` で検証し、token endpoint は Cognito の実 access token を MCP client に返す。
@@ -267,7 +287,7 @@ MCP_AUTH_REQUIRED=true curl -i -sS http://localhost:50055/mcp \
   }'
 ```
 
-SSE transport。stream を開くと最初に `endpoint` event が届く。
+SSE transport。`LIBRARY_MCP_SSE_ENABLED=true` で起動した環境でのみ到達できる。stream を開くと最初に `endpoint` event が届く。
 
 ```bash
 curl -N -sS http://localhost:50055/sse

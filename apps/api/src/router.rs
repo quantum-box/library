@@ -52,6 +52,7 @@ use inbound_sync::{
 };
 
 const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
+const MCP_SSE_ENABLED_ENV: &str = "LIBRARY_MCP_SSE_ENABLED";
 const WEBHOOK_WORKER_ENABLED_ENV: &str = "LIBRARY_WEBHOOK_WORKER_ENABLED";
 
 #[derive(Serialize)]
@@ -61,6 +62,18 @@ struct VersionResponse {
 
 fn collaboration_ws_enabled() -> bool {
     std::env::var(COLLAB_WS_ENABLED_ENV)
+        .map(|value| env_flag_enabled(&value))
+        .unwrap_or(false)
+}
+
+/// The MCP HTTP+SSE transport needs one process to hold the stream and
+/// answer the messages posted against it. A Lambda execution environment
+/// serves one request at a time, so the instance holding an open `GET
+/// /sse` is busy and every `POST /messages` lands on a different one,
+/// which has neither the session nor the stream. The routes therefore
+/// stay unregistered unless a long-lived deployment opts in.
+fn mcp_sse_enabled() -> bool {
+    std::env::var(MCP_SSE_ENABLED_ENV)
         .map(|value| env_flag_enabled(&value))
         .unwrap_or(false)
 }
@@ -539,6 +552,36 @@ pub async fn router(
         axum::Router::new()
     };
 
+    // The MCP SSE transport is Non-GA for the same reason the
+    // collaboration WebSocket is: it needs a process that outlives a
+    // single request. `POST /mcp` carries every MCP client that can hold
+    // one round trip and stays registered unconditionally.
+    let mcp_sse_router = if mcp_sse_enabled() {
+        tracing::warn!(
+            env = MCP_SSE_ENABLED_ENV,
+            "enabling Non-GA MCP SSE transport routes"
+        );
+        // `/sse` and `/mcp/sse` are the two paths MCP clients probe for,
+        // depending on how they read the server's base path.
+        axum::Router::new()
+            .route("/sse", get(handler::mcp_sse::mcp_sse_handler))
+            .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
+            .route(
+                "/messages",
+                post(handler::mcp_sse::mcp_sse_messages_handler),
+            )
+            .route(
+                "/mcp/messages",
+                post(handler::mcp_sse::mcp_sse_messages_handler),
+            )
+    } else {
+        tracing::info!(
+            env = MCP_SSE_ENABLED_ENV,
+            "MCP SSE transport routes disabled; POST /mcp is unaffected"
+        );
+        axum::Router::new()
+    };
+
     // Webhook router
     let webhook_router =
         inbound_sync::adapter::create_webhook_router(webhook_handler_state);
@@ -574,19 +617,6 @@ pub async fn router(
             get(handler::mcp::mcp_oauth_authorization_server_metadata),
         )
         .route("/mcp", post(handler::mcp::mcp_handler))
-        // HTTP+SSE transport for MCP clients that open a stream rather
-        // than a single request/response pair. `/sse` and `/mcp/sse` are
-        // the two paths such clients probe for.
-        .route("/sse", get(handler::mcp_sse::mcp_sse_handler))
-        .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
-        .route(
-            "/messages",
-            post(handler::mcp_sse::mcp_sse_messages_handler),
-        )
-        .route(
-            "/mcp/messages",
-            post(handler::mcp_sse::mcp_sse_messages_handler),
-        )
         .route(
             "/mcp/oauth/register",
             post(handler::mcp::mcp_oauth_register),
@@ -606,6 +636,7 @@ pub async fn router(
         .merge(handler::create_router())
         .merge(docs_router)
         .merge(collab_router)
+        .merge(mcp_sse_router)
         .merge(webhook_router)
         // Layer order matters: outermost (first in chain) to innermost
         // Layers are applied in reverse order of declaration:
@@ -763,6 +794,27 @@ mod tests {
         assert!(!env_flag_enabled("false"));
         assert!(!env_flag_enabled("1"));
         assert!(!env_flag_enabled("yes"));
+    }
+
+    /// The SSE transport must stay off unless a deployment opts in.
+    /// Registering it on Lambda would advertise an endpoint that hangs:
+    /// the instance holding the stream cannot also answer the messages
+    /// posted against it.
+    #[test]
+    fn mcp_sse_is_disabled_unless_explicitly_enabled() {
+        // Absent the flag the routes must stay unregistered. Read the
+        // variable rather than assuming it is unset, so a developer who
+        // enabled the transport in their shell does not see a failure
+        // that says nothing about the code.
+        match std::env::var(super::MCP_SSE_ENABLED_ENV) {
+            Ok(value) => {
+                assert_eq!(
+                    super::mcp_sse_enabled(),
+                    env_flag_enabled(&value)
+                );
+            }
+            Err(_) => assert!(!super::mcp_sse_enabled()),
+        }
     }
 
     #[test]
