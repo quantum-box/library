@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Library desktop app icon</title>
+  <!--
+    src/assets/brand/library-logo/badge-dark.svg fitted to the macOS icon grid:
+    the badge is 928 wide on its own canvas, and macOS expects the artwork to
+    sit in an 824 square centred on 1024 with the rest left transparent.
+  -->
+  <g transform="translate(512 512) scale(0.8879) translate(-512 -512)">
+    <rect x="48" y="48" width="928" height="928" rx="176" fill="#07172f"/>
+    <circle cx="512" cy="512" r="300" fill="none" stroke="#fff" stroke-width="96"/>
+    <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#07172f" stroke-linecap="round" stroke-width="126"/>
+    <path d="M235 700C430 690 700 610 835 335" fill="none" stroke="#4d7cff" stroke-linecap="round" stroke-width="86"/>
+    <circle cx="235" cy="700" r="94" fill="#07172f"/>
+    <circle cx="235" cy="700" r="78" fill="#4d7cff"/>
+    <circle cx="835" cy="335" r="94" fill="#07172f"/>
+    <circle cx="835" cy="335" r="78" fill="#4d7cff"/>
+  </g>
+</svg>
