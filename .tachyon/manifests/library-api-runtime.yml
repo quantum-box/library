@@ -48,6 +48,13 @@
         effect: allow
       - action: storage:GeneratePresignedGetUrl
         effect: allow
+      # Presign-PUT's billing gate resolves the Stripe config tenant by
+      # reading the acting operator as the caller, so the metered write
+      # needs this read too. Presign-GET has no billing gate, which is
+      # why a missing grant here surfaces as uploads failing 403 while
+      # reads keep working. Applied to the live policy 2026-08-30.
+      - action: auth:GetOperatorById
+        effect: allow
 
 # Every Library user may create organizations. `library:CreateOrganization`
 # in LibraryUserPolicy is the product-level permission library-api checks;
