@@ -169,6 +169,18 @@ components:
       - created_at
       - updated_at
       type: object
+    ImageResponse:
+      properties:
+        id:
+          description: Storage name of the image, unique within the repository.
+          type: string
+        url:
+          description: Absolute URL to embed in a document.
+          type: string
+      required:
+      - id
+      - url
+      type: object
     Location:
       description: |-
         # Location
@@ -1310,6 +1322,83 @@ paths:
         Returns the document as Markdown with YAML frontmatter. The
         frontmatter carries `url`, the address of this document in the
         Library client, alongside `id` and `title`.
+      tags: []
+  /v1beta/repos/{org}/{repo}/images:
+    post:
+      operationId: upload_image
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Original file name, used only to keep a recognisable extension.
+        in: query
+        name: filename
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          image/png:
+            schema:
+              items:
+                format: int32
+                minimum: 0
+                type: integer
+              type: array
+        description: Raw image bytes; the Content-Type header names the format
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+          description: Image stored
+        '400':
+          description: Empty body, oversized body, or unsupported image format
+        '403':
+          description: Caller may not write to the repository
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/images/{image_id}:
+    get:
+      operationId: view_image
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Image id returned by the upload
+        in: path
+        name: image_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '307':
+          description: Redirect to the stored image
+        '400':
+          description: Malformed image id
+        '404':
+          description: Organization or image not found
       tags: []
   /v1beta/repos/{org}/{repo}/properties:
     get:

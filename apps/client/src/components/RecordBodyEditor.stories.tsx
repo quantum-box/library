@@ -39,6 +39,16 @@ const richTextWithHtmlBlock = JSON.stringify([
   },
 ])
 
+const markdownBody = [
+  '# Release notes',
+  '',
+  'The editor keeps Markdown, HTML and RichText bodies in one component.',
+  '',
+  '```typescript',
+  'const greet = (name: string) => `hi ${name}`',
+  '```',
+].join('\n')
+
 const meta = {
   title: 'Library/RecordBodyEditor',
   component: RecordBodyEditor,
@@ -87,5 +97,24 @@ export const RichTextWithHtmlBlockReadOnly: Story = {
     value: richTextWithHtmlBlock,
     format: 'richText',
     editable: false,
+  },
+}
+
+/** A Markdown body with a highlighted code block. */
+export const MarkdownWithCode: Story = {
+  args: {
+    value: markdownBody,
+  },
+}
+
+/**
+ * With a repository to store them in, the image block offers an upload tab —
+ * without one it can only embed an image that already has a URL.
+ */
+export const WithImageUploads: Story = {
+  args: {
+    value: markdownBody,
+    surface: 'page',
+    imageTarget: { org: 'acme', repo: 'handbook' },
   },
 }

@@ -465,6 +465,7 @@ export function DataEditorPage({
                   value={bodyValue}
                   format={bodyPropertyFormat(bodyProperty)}
                   surface="page"
+                  imageTarget={{ org, repo, operatorId }}
                   onCommit={(value) => {
                     const current = itemRef.current
                     if (!current) return

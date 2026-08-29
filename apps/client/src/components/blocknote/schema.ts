@@ -1,4 +1,5 @@
-import { BlockNoteSchema } from '@blocknote/core'
+import { BlockNoteSchema, createCodeBlockSpec } from '@blocknote/core'
+import { codeBlockOptions } from '@blocknote/code-block'
 import { htmlPreviewBlock } from './htmlPreviewBlock'
 
 /**
@@ -13,6 +14,15 @@ import { htmlPreviewBlock } from './htmlPreviewBlock'
 export const recordBodySchema = BlockNoteSchema.create().extend({
   blockSpecs: {
     htmlPreview: htmlPreviewBlock(),
+    // The stock code block has no highlighting and no language picker.
+    // This spec adds both and keeps the stored shape identical: a
+    // `codeBlock` with a `language` prop. The package's own default
+    // language is javascript, which would relabel every unlabelled code
+    // fence; pinning it back to `text` keeps that document unchanged.
+    codeBlock: createCodeBlockSpec({
+      ...codeBlockOptions,
+      defaultLanguage: 'text',
+    }),
   },
 })
 
