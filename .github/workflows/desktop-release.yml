@@ -1,12 +1,14 @@
-name: Release
+name: Desktop Release
 
 on:
   push:
     tags:
-      - 'v*'
-  workflow_run:
-    workflows: ['CI']
-    types: [completed]
+      - 'library-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. library-v0.1.5). Created if missing.'
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,69 +16,50 @@ concurrency:
 
 jobs:
   prepare-release:
-    if: >-
-      github.event_name == 'push' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
-      should_release: ${{ steps.release.outputs.should_release }}
       tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Prepare GitHub Release
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          TAG_NAME: ${{ github.ref_name }}
-          PUSH_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            tag="$TAG_NAME"
-            target="$PUSH_SHA"
-          else
-            version="$(node -p "require('./package.json').version")"
-            tag="v${version}"
-            target="$WORKFLOW_RUN_SHA"
-
-            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-              echo "Tag ${tag} already exists; skipping automatic release."
-              echo "should_release=false" >> "$GITHUB_OUTPUT"
-              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            git tag "$tag" "$target"
-            git push origin "refs/tags/${tag}"
+          version="$(node -p "require('./apps/client/package.json').version")"
+          if [ "$TAG_NAME" != "library-v${version}" ]; then
+            echo "Tag ${TAG_NAME} does not match apps/client/package.json version ${version}." >&2
+            exit 1
           fi
 
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
-              --target "$target" \
+          if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            git tag "$TAG_NAME" "$SHA"
+            git push origin "refs/tags/${TAG_NAME}"
+          fi
+
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --target "$SHA" \
               --draft \
               --generate-notes \
-              --title "$tag"
+              --title "Library Client ${version}"
           fi
 
-          release_id="$(gh release view "$tag" --json databaseId --jq .databaseId)"
-          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "release_id=$(gh release view "$TAG_NAME" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
 
   build-tauri:
     needs: prepare-release
-    if: needs.prepare-release.outputs.should_release == 'true'
     permissions:
       contents: write
     strategy:
@@ -107,11 +90,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: apps/client/package-lock.json
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/src-tauri
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.13.1
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -124,19 +117,23 @@ jobs:
             patchelf
 
       - name: Install dependencies
+        working-directory: apps/client
         run: npm ci
 
       - name: Build and upload Tauri binaries
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          projectPath: apps/client
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
   publish-release:
     needs: [prepare-release, build-tauri]
-    if: needs.prepare-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

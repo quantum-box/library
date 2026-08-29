@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Library Client",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "com.quantumbox.library.client",
   "build": {
     "frontendDist": "../dist",
@@ -55,9 +55,21 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/quantum-box/library/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0ODMxNjZDQjFGOURBREYKUldUZjJ2bXhiQmFEOUFjWFRWV3N5QndYOCtUZTVac2FzQU1tSlpQZVBpZXFLQ2ZuOUprWEdLRnYK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "iOS": {
       "developmentTeam": "J8429VCGMR",
       "minimumSystemVersion": "14.0"

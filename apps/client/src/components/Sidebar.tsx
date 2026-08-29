@@ -78,6 +78,7 @@ import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
 import { OPEN_CREATE_REPOSITORY_EVENT } from '../lib/ui/workspaceEvents'
+import { isDesktopApp, requestUpdateCheck } from '../lib/appUpdate'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
@@ -178,6 +179,12 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        {isDesktopApp() && (
+          <DropdownMenuItem data-testid="account-check-updates" onSelect={requestUpdateCheck}>
+            <RefreshCw aria-hidden="true" />
+            Check for updates
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
           onSelect={() => {
