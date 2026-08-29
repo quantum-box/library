@@ -41,6 +41,7 @@ import { ChatView } from './components/chat/ChatView'
 import { DocsView } from './components/docs/DocsView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
 import { CommandPalette } from './components/CommandPalette'
+import { WindowTabStrip } from './components/desktop/WindowTabStrip'
 import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
 import {
@@ -779,18 +780,23 @@ const rootRoute = createRootRoute({
       select: (state) => isPublicRoutePathname(state.location.pathname),
     })
 
-    if (publicRoute) {
-      return (
-        <PublicShell>
-          <Outlet />
-        </PublicShell>
-      )
-    }
-
+    // The tab strip is the window titlebar on macOS desktop, so it sits above
+    // both the public shell and the sign-in gate. It renders nothing elsewhere.
     return (
-      <AuthGate>
-        <AuthenticatedWorkspaceRoot />
-      </AuthGate>
+      <div className="flex h-full min-h-0 flex-col">
+        <WindowTabStrip />
+        <div className="min-h-0 flex-1">
+          {publicRoute ? (
+            <PublicShell>
+              <Outlet />
+            </PublicShell>
+          ) : (
+            <AuthGate>
+              <AuthenticatedWorkspaceRoot />
+            </AuthGate>
+          )}
+        </div>
+      </div>
     )
   },
   notFoundComponent: () => (
