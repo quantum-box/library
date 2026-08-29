@@ -7,6 +7,7 @@ pub mod image;
 pub mod library_executor_extractor;
 pub mod library_org_extractor;
 pub mod mcp;
+pub mod mcp_sse;
 pub mod openapi;
 pub mod organization;
 pub mod property;

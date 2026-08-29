@@ -13,6 +13,7 @@
 - [外部連携 readiness](integrations/readiness.md)
 - [コラボレーション WebSocket 仕様](integrations/collaboration-ws.md)
 - [MCP 連携仕様](integrations/mcp.md)
+- [Library CLI 仕様](integrations/cli.md)
 - [運用手順 / トラブル対応](integrations/operations.md)
 - [Library GA env / secrets Runbook](operations/library-ga-env-secrets-runbook.md)
 - [Database Manager tenant composite FK rollout](operations/database-manager-tenant-composite-fk-rollout.md)
@@ -43,6 +44,7 @@
 ## 主な参照元
 
 - API ルータ: [apps/api/src/router.rs](../../apps/api/src/router.rs)
+- CLI: [apps/cli/src](../../apps/cli/src)
 - 認証・権限抽出: [apps/api/src/handler/library_executor_extractor.rs](../../apps/api/src/handler/library_executor_extractor.rs)
 - GraphQL 定義: [apps/api/src/handler/graphql/mod.rs](../../apps/api/src/handler/graphql/mod.rs)
 - REST ハンドラ: [apps/api/src/handler](../../apps/api/src/handler)
