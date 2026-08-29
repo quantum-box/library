@@ -13,6 +13,6 @@ export const sampleOrg = 'acme'
 /** Repository used in examples until the reader substitutes their own. */
 export const sampleRepo = 'handbook'
 
-/** Where the reader issues a key, which is a page in the web app, not here. */
-export const portalUrl: string =
-  import.meta.env.VITE_LIBRARY_WEB_URL || 'https://library.txcloud.app'
+/** Where the reader issues a key, which is a page in the Library Client, not here. */
+export const clientUrl: string =
+  import.meta.env.VITE_LIBRARY_CLIENT_URL || 'https://planetlibrary.txcloud.app'

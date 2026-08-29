@@ -6,7 +6,7 @@ import {
   Prose,
   Section,
 } from '@/components/primitives'
-import { apiBaseUrl, sampleOrg, sampleRepo } from '@/lib/config'
+import { apiBaseUrl, clientUrl, sampleOrg, sampleRepo } from '@/lib/config'
 import { fetchApiDocument } from '@/lib/openapi'
 import { useAsync } from '@/lib/use-async'
 import { Link } from 'react-router-dom'
@@ -37,7 +37,7 @@ console.log(await response.json())`,
       <div className='space-y-3'>
         <h1 className='text-3xl font-bold tracking-tight'>はじめに</h1>
         <p className='text-[15px] leading-7 text-slate-600 dark:text-slate-400'>
-          Library の Web 画面でできることの多くは、API からも実行できます。
+          Library Client の画面でできることの多くは、API からも実行できます。
           このガイドは、API キーを発行してリポジトリのデータを読み書きするまでを扱います。
         </p>
         <p className='text-sm text-slate-500 dark:text-slate-500'>
@@ -62,7 +62,15 @@ console.log(await response.json())`,
       <Section title='1. API キーを発行する'>
         <Prose>
           <p>
-            Web 画面でリポジトリを開き、上部のタブから <strong>API</strong>{' '}
+            <a
+              href={clientUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='font-medium text-sky-700 hover:underline dark:text-sky-400'
+            >
+              Library Client
+            </a>{' '}
+            でリポジトリを開き、上部のタブから <strong>API</strong>{' '}
             を選びます。開発者ポータルのクイックスタート「① API キーを作成」から発行できます。
           </p>
           <p>
