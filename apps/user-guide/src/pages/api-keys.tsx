@@ -8,7 +8,7 @@ import {
 } from '@/components/primitives'
 import { fetchSchemaSummary } from '@/lib/graphql-schema'
 import { useAsync } from '@/lib/use-async'
-import { sampleOrg } from '@/lib/config'
+import { clientUrl, sampleOrg } from '@/lib/config'
 
 const KEY_FIELDS = ['apiKeys', 'createApiKey', 'revokeApiKey']
 
@@ -37,7 +37,17 @@ export function ApiKeys() {
       <Section title='発行する'>
         <Prose>
           <ol className='list-decimal space-y-1 pl-5'>
-            <li>Web 画面で対象組織のリポジトリを開きます</li>
+            <li>
+              <a
+                href={clientUrl}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='font-medium text-sky-700 hover:underline dark:text-sky-400'
+              >
+                Library Client
+              </a>{' '}
+              で対象組織のリポジトリを開きます
+            </li>
             <li>
               上部タブの <strong>API</strong> を選びます
             </li>

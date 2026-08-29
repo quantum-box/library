@@ -195,8 +195,8 @@ spec:
         # page load, so a preview build documents whatever API it points at.
         - name: VITE_LIBRARY_API_BASE_URL
           value: https://library-api.txcloud.app
-        - name: VITE_LIBRARY_WEB_URL
-          value: https://library.txcloud.app
+        - name: VITE_LIBRARY_CLIENT_URL
+          value: https://planetlibrary.txcloud.app
     - name: library-client
       repository:
         url: https://github.com/quantum-box/library
