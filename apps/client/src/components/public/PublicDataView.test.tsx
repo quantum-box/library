@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="#public">{children}</a>,
@@ -54,6 +54,20 @@ const detail = {
   ],
 }
 
+/**
+ * Renders and drains the page's reads before returning.
+ *
+ * The page reads the repository profile and only then the row, and both
+ * mocks settle as microtasks, so a single act flush lands it on its final
+ * state. Asserting after that keeps these tests off findBy*'s 1s polling
+ * window, which a loaded runner can overrun while the second read is still
+ * in flight — the page still says "Loading page…" and the assertion fails.
+ */
+async function renderSettled(ui: ReactElement) {
+  render(ui)
+  await act(async () => {})
+}
+
 describe('PublicDataView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -63,11 +77,11 @@ describe('PublicDataView', () => {
     apiMocks.fetchLibraryRepositoryProfile.mockResolvedValue(publicProfile)
     apiMocks.fetchLibraryDataDetail.mockResolvedValue(detail)
 
-    render(
+    await renderSettled(
       <PublicDataView organization="library-docs" repository="docs" dataId="data-1" />
     )
 
-    expect(await screen.findByTestId('public-data-title')).toHaveTextContent('Getting started')
+    expect(screen.getByTestId('public-data-title')).toHaveTextContent('Getting started')
     expect(screen.getByText('Published')).toBeTruthy()
     expect(apiMocks.fetchLibraryDataDetail).toHaveBeenCalledWith('data-1', {
       org: 'library-docs',
@@ -85,11 +99,11 @@ describe('PublicDataView', () => {
       isPublic: false,
     })
 
-    render(
+    await renderSettled(
       <PublicDataView organization="library-docs" repository="internal" dataId="data-1" />
     )
 
-    expect(await screen.findByTestId('public-repository-private')).toBeTruthy()
+    expect(screen.getByTestId('public-repository-private')).toBeTruthy()
     expect(apiMocks.fetchLibraryDataDetail).not.toHaveBeenCalled()
   })
 
@@ -99,10 +113,10 @@ describe('PublicDataView', () => {
       new RecordApiError('Library REST data detail failed: 404', 404)
     )
 
-    render(
+    await renderSettled(
       <PublicDataView organization="library-docs" repository="docs" dataId="missing" />
     )
 
-    expect(await screen.findByTestId('public-data-missing')).toBeTruthy()
+    expect(screen.getByTestId('public-data-missing')).toBeTruthy()
   })
 })
