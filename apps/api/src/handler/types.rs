@@ -141,6 +141,16 @@ pub struct UpdateDataRequest {
     pub property_data: Vec<PropertyDataRequest>,
 }
 
+/// Body of a create-or-update at a caller-supplied record id.
+///
+/// Same shape as `UpdateDataRequest`, kept separate so the two endpoints can
+/// diverge without a silent change to the other's contract.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct UpsertDataRequest {
+    pub name: String,
+    pub property_data: Vec<PropertyDataRequest>,
+}
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct AddPropertyRequest {
     pub name: String,

@@ -47,6 +47,7 @@ fn property_type_from_request(
             })?,
         ))),
         "location" => Ok(PropertyType::Location(Default::default())),
+        "date" => Ok(PropertyType::Date),
         "image" => Ok(PropertyType::Image),
         "rich_text" => Ok(PropertyType::RichText),
         _ => Err(errors::Error::invalid("Invalid property type")),
@@ -158,6 +159,22 @@ mod tests {
 
         assert!(error.is_bad_request());
         assert!(error.to_string().contains("auto_generate is required"));
+    }
+
+    /// `date` is a first-class property type — the MCP adapter accepts it
+    /// and repositories store it — but the REST adapter had no arm for
+    /// it, so `POST /properties` answered "Invalid property type".
+    #[test]
+    fn rest_date_property_is_accepted() {
+        let property_type =
+            property_type_from_request(&AddPropertyRequest {
+                name: "published".to_string(),
+                property_type: "date".to_string(),
+                auto_generate: None,
+            })
+            .expect("Date must be supported by the REST adapter");
+
+        assert!(matches!(property_type, PropertyType::Date));
     }
 
     #[test]

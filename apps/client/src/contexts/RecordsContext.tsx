@@ -235,6 +235,32 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     ydoc.transact(transaction)
   }, [])
 
+  /**
+   * A record that arrived from another client moves the projection too.
+   *
+   * `reconcileYRecords` deletes whatever the server list it was given does not
+   * mention, and the document it deletes from is shared — so a hydration must
+   * not reconcile a list that is older than the document. `transactProjection`
+   * establishes that for this tab's own writes, but only for those: a record
+   * another tab created reaches this one through `Y.applyUpdate`, which touches
+   * no counter here. A tab sitting on `/databases` making no edits of its own
+   * would therefore fetch, watch the other tab's new record arrive, and then
+   * reconcile it straight back out of the shared document — in both tabs.
+   *
+   * `transaction.local` is the discriminator Yjs already keeps: false for
+   * anything applied as an update, which is exactly the case this tab did not
+   * cause. Bumping the counter here routes it into the same refetch that a
+   * local edit during a fetch already triggers.
+   */
+  useEffect(() => {
+    const noteRemoteChange = (_events: unknown, transaction: Y.Transaction) => {
+      if (transaction.local) return
+      projectionGenerationRef.current += 1
+    }
+    recordsArray.observeDeep(noteRemoteChange)
+    return () => recordsArray.unobserveDeep(noteRemoteChange)
+  }, [])
+
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
     if (!ready) {

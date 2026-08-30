@@ -81,14 +81,26 @@ repository を取る引数はすべて `org/repo` の形で指定する。
 | --- | --- |
 | `library org get <username>` | organization と配下 repo を表示 |
 | `library org create <username> [--name --description --website]` | organization を作成 |
-| `library org update <username> --name <name> [--description --website]` | organization を更新 |
+| `library org update <username> --name <name> [--description --website]` | organization を更新。`data update` と同じく**置換**で、渡さなかった `--description` / `--website` は消える |
+
+`org update` は `data update` と同じ置換である。`PUT /v1beta/orgs/{org}` は受け取った payload から organization を組み直して保存するため ([apps/api/src/usecase/update_organization.rs](../../../apps/api/src/usecase/update_organization.rs))、名前だけ変えたつもりで description と website が NULL になる。残したい値は毎回渡し直すこと。
+
+```bash
+# description が消える
+library org update acme --name '新しい名前'
+
+# 残したいなら渡し直す
+library org update acme --name '新しい名前' --description "$(library --json org get acme | jq -r .description)"
+```
+
+`repo update` はこれと違い、渡さなかった項目には触らない。
 
 ### `repo`
 
 | コマンド | 説明 |
 | --- | --- |
 | `library repo list <org>` | organization の repo 一覧 |
-| `library repo search [--org <org>] [--name <name>] [--limit <n>]` | repo を名前で検索。`--limit` の既定は 20 |
+| `library repo search [--org <org>] [--name <name>] [--limit <n>]` | repo を名前で検索。`--limit` の既定は 20。検索できるのは自分が所属する organization の中だけで、匿名の呼び出しは常に空を返す |
 | `library repo get <org/repo>` | repo 詳細 |
 | `library repo create <org/repo> [--name --description --public]` | repo を作成。`repo` 部分が username になる |
 | `library repo update <org/repo> [--name --description --public --private --tag]` | repo 設定を更新。`--tag` は繰り返すと tag 一覧を置き換える |
@@ -181,6 +193,12 @@ MCP server を client 無しで直接叩くためのサブコマンド。仕様�
 
 `mcp tools` は認証の有無で結果が変わる。key なしなら read tool だけ、key ありなら write tool も並ぶので、権限の確認に使える。
 
+ただし `pk_` key は「その key を発行した organization」に対して検証されるため、organization を名指しできない呼び出しでは使えない。`tools/call` は tool の `org` 引数から拾えるが、`tools/list` には引数が無い。**`mcp tools` には `--operator-id` を付けること。** 付けないと key を渡していても匿名の一覧（read tool だけ）が返る。
+
+```bash
+library --operator-id tn_xxx mcp tools
+```
+
 ```bash
 library mcp call list_data --arg org=acme --arg repo=docs --arg-json page_size=5
 ```
@@ -235,7 +253,9 @@ library --json data list acme/docs --page-size 50
 ## 8. 既知の制約
 
 - `library repo rename` は MCP tool には出していない（CLI / REST / GraphQL のみ）。認可の欠落は解消済みで、`PUT /v1beta/repos/{org}/{repo}/change-username` は `library:UpdateRepo` の resource-level チェックを通す（[apps/api/src/usecase/change_repo_username.rs](../../../apps/api/src/usecase/change_repo_username.rs)）。repo の owner / writer 以外は 403 になる。
-- `data update` は置換であり、部分更新の口は無い。
+- `data update` と `org update` は置換であり、部分更新の口は無い。`repo update` / `property update` / `source update` は渡した項目だけを送る。
+- Library client が発行する API key は service account に紐づくが、その service account に policy を付ける経路が無いため、現状どの key でも書き込みが 403 / 401 になる。§7 の agent / CI 手順は本番では成立しない。追跡は [PLT-4037](https://linear.app/issue/PLT-4037)。
+- `repo search` は tenant 全体のディレクトリにはならない。executor が所属しない organization を `--org` に渡した場合も、認証なしで呼んだ場合も、エラーではなく空の一覧が返る ([apps/api/src/usecase/search_repo.rs](../../../apps/api/src/usecase/search_repo.rs))。公開 repo を名前で引く用途には使えないので、`library repo list <org>` や `library org get <org>` を使う。
 - 表出力は互換性を保証しない。
 - `mcp config --transport sse` が出す設定は、SSE を有効化した server にしか繋がらない。既定の配信では `http` を使う。詳細は [MCP 連携仕様](mcp.md) の GA status。
 

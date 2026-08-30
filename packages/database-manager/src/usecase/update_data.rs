@@ -12,7 +12,7 @@ use crate::usecase::{
 };
 use value_object::RepositoryV1;
 
-fn validate_auto_generated_id_update(
+pub(crate) fn validate_auto_generated_id_update(
     property: &crate::domain::Property,
     data_id: &crate::domain::DataId,
     existing_value: Option<&PropertyData>,

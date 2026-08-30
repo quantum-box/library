@@ -574,6 +574,23 @@ components:
           - string
           - 'null'
       type: object
+    UpsertDataRequest:
+      description: |-
+        Body of a create-or-update at a caller-supplied record id.
+
+        Same shape as `UpdateDataRequest`, kept separate so the two endpoints can
+        diverge without a silent change to the other's contract.
+      properties:
+        name:
+          type: string
+        property_data:
+          items:
+            $ref: '#/components/schemas/PropertyDataRequest'
+          type: array
+      required:
+      - name
+      - property_data
+      type: object
     UserResponse:
       description: User information in sign-in response
       properties:
@@ -1322,6 +1339,64 @@ paths:
         Returns the document as Markdown with YAML frontmatter. The
         frontmatter carries `url`, the address of this document in the
         Library client, alongside `id` and `title`.
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/upsert:
+    put:
+      description: |-
+        `PUT /data/{data_id}` deliberately keeps its update-only meaning — a caller
+        that edits a record it believes exists still wants a 404 when it does not.
+        This route is for the other caller: one that assigned the record id itself
+        and cannot tell its first write from an edit, because both look the same
+        from its side. Answering that with a 404 drops the record.
+
+        `property_data` is a patch on the existing branch, exactly as
+        `update_data` treats it: a Property left out keeps whatever it holds.
+      operationId: upsert_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID chosen by the caller
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertDataRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Existing data updated
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Data created at the given ID
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository or property not found
+      summary: |-
+        Create the record at `data_id`, or apply the payload to the one already
+        there.
       tags: []
   /v1beta/repos/{org}/{repo}/images:
     post:

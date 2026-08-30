@@ -84,7 +84,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@electric-sql/pglite": "^0.4.5",
-    "@quantum-box/photon": "^0.2.0",
+    "@quantum-box/photon": "^0.3.0",
     "@tachyon-sdk/native-ui": "https://codeload.github.com/quantum-box/native-ui/tar.gz/f2c2d704e61c321c8b73d5e2e35d5de104bfd3be",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-router": "^1.168.10",

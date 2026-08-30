@@ -36,6 +36,16 @@ export const LEGACY_ENGINE_DATA_DIR = appKitConfig.engine.pgliteDataDir
 /** Only what has no other home. `records` come back from the Library API. */
 const CARRIED_COLLECTIONS = ['documents', 'attachments'] as const
 
+/**
+ * Whether the carry-over writes to this collection.
+ *
+ * Reads and writes of a carried collection have to wait for it; everything
+ * else — `records` above all, which the first screen is drawn from — does not.
+ */
+export function isCarriedCollection(collection: string): boolean {
+  return (CARRIED_COLLECTIONS as readonly string[]).includes(collection)
+}
+
 const DONE_MARKER_COLLECTION = '__library_migration'
 const DONE_MARKER_RECORD = 'legacy-engine-v1'
 
@@ -154,7 +164,45 @@ async function markMigrated(client: PhotonClient, carried: number): Promise<void
   ])
 }
 
+/**
+ * Whether an old database is there at all, without opening one.
+ *
+ * `PGlite.create` does not probe a data directory, it *establishes* one: on a
+ * browser that never ran the old build it runs a full `initdb`, writes an
+ * empty Postgres into IndexedDB, and only then can be asked whether it holds
+ * anything. That is seconds of WASM work — enough to hit
+ * `MIGRATION_TIMEOUT_MS` on a loaded machine — to answer "no", and it leaves
+ * behind exactly the database it was looking for.
+ *
+ * `indexedDB.databases()` answers the same question for free. PGlite's `idb://`
+ * backend mounts at `/pglite/<dataDir>`, so the old store cannot exist without
+ * a database whose name ends in the directory it was given. Suffix, not
+ * substring: the engine's own directory is this one plus `-v2`, and a
+ * substring test would match it and put us straight back to opening PGlite.
+ *
+ * Only a listing that runs and comes back without a match is taken as an
+ * answer. Where `databases()` is missing (Firefox before 126) this says
+ * nothing and the caller opens the store as it always did.
+ */
+async function legacyDatabaseMissing(): Promise<boolean> {
+  try {
+    const list = await globalThis.indexedDB?.databases?.()
+    if (!list) return false
+    return !list.some((database) => namesLegacyDatabase(database.name))
+  } catch {
+    // A browser that refuses the listing has told us nothing either.
+    return false
+  }
+}
+
+/** Whether an IndexedDB database name is PGlite's for the old data directory. */
+export function namesLegacyDatabase(name: string | undefined): boolean {
+  return name?.endsWith(LEGACY_ENGINE_DATA_DIR.replace(/^idb:\/\//, '')) ?? false
+}
+
 async function readLegacyRows(): Promise<LegacyRecordRow[]> {
+  if (await legacyDatabaseMissing()) return []
+
   let db: PGlite | null = null
   try {
     db = await PGlite.create(LEGACY_ENGINE_DATA_DIR)

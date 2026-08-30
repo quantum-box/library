@@ -6,6 +6,7 @@
 use crate::domain::{Organization, Repo};
 use async_graphql::{InputObject, OneofObject};
 use database_manager::domain::{self, Data, Property};
+use database_manager::usecase::UpsertOutcome;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tachyon_sdk::auth::{AuthApp, ExecutorAction, MultiTenancyAction};
@@ -128,6 +129,22 @@ pub trait UpdateDataInputPort: Debug + Send + Sync {
         &self,
         input: UpdateDataInputData<'a>,
     ) -> errors::Result<(Data, Vec<Property>)>;
+}
+
+/// Create the record at `data_id`, or apply the payload to the one already
+/// there.
+///
+/// `UpdateDataInputPort` answers 404 for an id the server has never seen,
+/// which is the wrong answer for a client that assigns record ids itself and
+/// pushes later: its first push is indistinguishable from an edit, so the new
+/// record would be dropped. See `database_manager::UpsertDataInputData` for
+/// why the branch belongs next to the repository rather than in the caller.
+#[async_trait::async_trait]
+pub trait UpsertDataInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: UpsertDataInputData<'a>,
+    ) -> errors::Result<(Data, Vec<Property>, UpsertOutcome)>;
 }
 
 /// TODO: add English documentation
@@ -386,6 +403,20 @@ pub struct UpdateRepoInputData<'a> {
 
 #[derive(Debug, Clone)]
 pub struct UpdateDataInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    /// user_id
+    pub actor: &'a str,
+    pub org_username: &'a str,
+    pub repo_username: &'a str,
+    pub data_id: &'a str,
+    pub data_name: &'a str,
+    pub property_data: Vec<PropertyDataInputData>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertDataInputData<'a> {
     pub executor: &'a dyn ExecutorAction,
     pub multi_tenancy: &'a dyn MultiTenancyAction,
 

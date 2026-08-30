@@ -30,16 +30,17 @@ use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::LibraryExecutor;
 use crate::handler::types::{
     convert_property_value, AddDataRequest, DataPaginationQuery,
-    DataResponse, SearchDataQuery, UpdateDataRequest,
+    DataResponse, SearchDataQuery, UpdateDataRequest, UpsertDataRequest,
 };
 use crate::usecase::library_client_url::data_url;
 use crate::usecase::markdown_composer::compose_markdown_with_ui_url;
 use crate::usecase::LibraryOrg;
 use crate::usecase::{
     AddDataInputData, DeleteDataInputData, PropertyDataInputData,
-    SearchDataInputData, UpdateDataInputData, ViewDataInputData,
-    ViewDataListInputData,
+    SearchDataInputData, UpdateDataInputData, UpsertDataInputData,
+    ViewDataInputData, ViewDataListInputData,
 };
+use database_manager::usecase::UpsertOutcome;
 use tachyon_sdk::auth::ExecutorAction;
 
 use super::types::{
@@ -362,6 +363,90 @@ pub async fn update_data(
             .collect(),
     };
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    put,
+    path = "/v1beta/repos/{org}/{repo}/data/{data_id}/upsert",
+    request_body = UpsertDataRequest,
+    params(
+        ("org" = String, Path, description = "Organization username"),
+        ("repo" = String, Path, description = "Repository username"),
+        ("data_id" = String, Path, description = "Data ID chosen by the caller")
+    ),
+    responses(
+        (status = 200, description = "Existing data updated", body = DataResponse),
+        (status = 201, description = "Data created at the given ID", body = DataResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Repository or property not found")
+    )
+)]
+/// Create the record at `data_id`, or apply the payload to the one already
+/// there.
+///
+/// `PUT /data/{data_id}` deliberately keeps its update-only meaning — a caller
+/// that edits a record it believes exists still wants a 404 when it does not.
+/// This route is for the other caller: one that assigned the record id itself
+/// and cannot tell its first write from an edit, because both look the same
+/// from its side. Answering that with a 404 drops the record.
+///
+/// `property_data` is a patch on the existing branch, exactly as
+/// `update_data` treats it: a Property left out keeps whatever it holds.
+#[axum::debug_handler]
+pub async fn upsert_data(
+    executor: LibraryExecutor,
+    library_org: LibraryOrg,
+    AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
+    Extension(library_app): Extension<Arc<LibraryApp>>,
+    Json(payload): Json<UpsertDataRequest>,
+) -> errors::Result<(StatusCode, Json<DataResponse>)> {
+    let property_data = payload
+        .property_data
+        .into_iter()
+        .map(|p| PropertyDataInputData {
+            property_id: p.property_id,
+            value: convert_property_value(p.value),
+        })
+        .collect();
+
+    let input = UpsertDataInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        actor: executor.get_id(),
+        org_username: &org,
+        repo_username: &repo,
+        data_id: &data_id,
+        data_name: &payload.name,
+        property_data,
+    };
+
+    let (data, properties, outcome) =
+        library_app.upsert_data.execute(input).await?;
+    let status = match outcome {
+        UpsertOutcome::Created => StatusCode::CREATED,
+        UpsertOutcome::Updated => StatusCode::OK,
+    };
+    let response = DataResponse {
+        id: data.id().to_string(),
+        name: data.name().to_string(),
+        record_version: data.record_version().to_string(),
+        url: data_url(&org, &repo, data.id().as_ref()),
+        items: data
+            .property_data()
+            .iter()
+            .map(|p| PropertyDataResponse {
+                property_id: p.property_id().to_string(),
+                key: properties
+                    .iter()
+                    .find(|property| property.id() == p.property_id())
+                    .unwrap()
+                    .name()
+                    .to_string(),
+                value: p.value().clone().map(|v| v.into()),
+            })
+            .collect(),
+    };
+    Ok((status, Json(response)))
 }
 
 #[utoipa::path(

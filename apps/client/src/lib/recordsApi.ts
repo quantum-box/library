@@ -1,3 +1,5 @@
+import type { RestListResult, RestResource } from '@quantum-box/photon'
+
 import { appKitConfig } from '../app/kitConfig.js'
 import { type DatabaseRecord, type Priority, type Status } from '../data/mock'
 import {
@@ -1844,6 +1846,53 @@ async function updateLibraryRestData(
   return restDataToLibraryDataItem(await response.json() as LibraryRestDataResponse)
 }
 
+/**
+ * Create the record at `dataId`, or apply the payload to the one already there.
+ *
+ * `PUT .../data/{id}` is update-only and answers 404 for an id the server has
+ * never seen, which is the wrong answer for a caller that assigned the id
+ * itself. `.../upsert` is the route that creates instead. See
+ * `apps/api/src/handler/data.rs`.
+ */
+async function upsertLibraryRestData(
+  dataId: string,
+  dataName: string,
+  target: LibraryRepoTarget,
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData']
+): Promise<LibraryDataItem> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}/upsert`,
+    {
+      method: 'PUT',
+      headers: await libraryRestHeaders(target.operatorId),
+      body: JSON.stringify({
+        name: dataName,
+        property_data: restPropertyData(properties, propertyData),
+      }),
+    }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(`Library REST data upsert failed: ${response.status}`, response.status)
+  }
+  return restDataToLibraryDataItem(await response.json() as LibraryRestDataResponse)
+}
+
+async function deleteLibraryRestData(
+  dataId: string,
+  target: LibraryRepoTarget
+): Promise<void> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}`,
+    { method: 'DELETE', headers: await libraryRestHeaders(target.operatorId) }
+  )
+  // A record that is already gone is the outcome the caller wanted. Raising
+  // here would turn a retried delete into a rejection.
+  if (!response.ok && response.status !== 404) {
+    throw new RecordApiError(`Library REST data delete failed: ${response.status}`, response.status)
+  }
+}
+
 function reposFromRestForOrganization(
   repos: LibraryRestRepository[],
   organization: Pick<LibraryOrganization, 'id' | 'operatorName' | 'platformTenantId'>
@@ -2269,4 +2318,125 @@ export async function deleteServerRecord(recordId: string): Promise<void> {
   }
 
   await deleteClientEngineRecord(activeRecordsCollection(), recordId)
+}
+
+/**
+ * The records collection as a Photon `rest-backed` resource.
+ *
+ * Every method goes through the same base URL, auth headers and
+ * `RecordApiError` the rest of this module uses, which is what makes the
+ * adapter useful: `RecordApiError.status` is the one field Photon's
+ * `decisionForError` reads, so a 400 becomes a rejection and a 409 a conflict
+ * without anything here knowing about the engine.
+ *
+ * `upsert` is the reason this exists. Photon cannot tell a first write from an
+ * edit — it writes the optimistic value into the projection before the push
+ * runs, so both look identical from its side — and a resource without `upsert`
+ * relies on the backend tolerating an update to an id it has never seen.
+ * library-api does not: `PUT .../data/{id}` is update-only and 404s, which
+ * `decisionForError` maps to `rejected`, dropping the user's new record. With
+ * `upsert` present Photon routes upsert operations here and skips the guess.
+ */
+export interface LibraryRecordsResource extends RestResource<DatabaseRecord> {
+  list(): Promise<RestListResult<DatabaseRecord>>
+  create(value: DatabaseRecord): Promise<DatabaseRecord>
+  /**
+   * Required here, optional on `RestResource`. Photon leaves it optional
+   * because a backend may not have PUT-style semantics; library-api does, so
+   * a caller of this resource never has to check.
+   */
+  upsert(recordId: string, value: DatabaseRecord): Promise<DatabaseRecord>
+  update(recordId: string, fields: Partial<DatabaseRecord>): Promise<DatabaseRecord>
+}
+
+export function createLibraryRecordsResource(
+  target: LibraryRepoTarget
+): LibraryRecordsResource {
+  const toDatabaseRecord = (
+    item: LibraryDataItem,
+    properties: LibraryProperty[]
+  ): DatabaseRecord =>
+    libraryDataToRecord(item, properties, target.repoName ?? target.repo, {
+      orgUsername: target.org,
+      repoUsername: target.repo,
+      operatorId: target.operatorId,
+    })
+
+  return {
+    async list(): Promise<RestListResult<DatabaseRecord>> {
+      // `complete` is what lets Photon delete records that are gone upstream,
+      // so it may only be true for the whole collection. `fetchLibraryRestRepoTableData`
+      // pages until the paginator runs out, so it is.
+      return { items: await fetchLibraryRestRecords(target), complete: true }
+    },
+
+    async create(value: DatabaseRecord): Promise<DatabaseRecord> {
+      const properties = await fetchLibraryRepoProperties(target)
+      const created = await createLibraryRestData(
+        value,
+        target,
+        properties,
+        standardRecordPropertyData(properties, value)
+      )
+      // The id comes back different from the local one: `POST /data` mints its
+      // own. Returning the item is what lets Photon record the alias.
+      return toDatabaseRecord(created, properties)
+    },
+
+    async upsert(recordId: string, value: DatabaseRecord): Promise<DatabaseRecord> {
+      const properties = await fetchLibraryRepoProperties(target)
+      const stored = await upsertLibraryRestData(
+        recordId,
+        value.title,
+        target,
+        properties,
+        standardRecordPropertyData(properties, value)
+      )
+      return toDatabaseRecord(stored, properties)
+    },
+
+    async update(
+      recordId: string,
+      fields: Partial<DatabaseRecord>
+    ): Promise<DatabaseRecord> {
+      // Read first for the same reason `updateServerRecord` does: the PUT body
+      // carries the whole name and the merged property set, neither of which a
+      // patch of arbitrary fields contains. This is not a create-or-update
+      // guess — a missing record still 404s here, and it must, so Photon can
+      // reject the write and let the next pull reconcile.
+      const existing = await fetchLibraryDataDetail(recordId, target)
+      const propertyData = standardRecordPropertyData(
+        existing.properties,
+        fields
+      ).reduce(
+        (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
+        existing.item
+      ).propertyData
+      const updated = await updateLibraryRestData(
+        recordId,
+        fields.title ?? existing.item.name,
+        target,
+        existing.properties,
+        propertyData
+      )
+      return toDatabaseRecord(updated, existing.properties)
+    },
+
+    async remove(recordId: string): Promise<void> {
+      await deleteLibraryRestData(recordId, target)
+    },
+
+    /**
+     * Where a server-assigned id becomes the record's identity.
+     *
+     * `create` returns the record under the id library-api minted, not the one
+     * the client wrote optimistically, and this is the only place Photon learns
+     * that — the returned `recordId` is what it stores as `aliasRecordId`. Keying
+     * off anything but `item.id` would leave the alias pointing at the local id
+     * and the next pull would insert the server's row as a second record.
+     */
+    toRecord(item: DatabaseRecord) {
+      return { recordId: item.id, value: item }
+    },
+  }
 }

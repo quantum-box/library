@@ -128,7 +128,11 @@ async fn verify(stored: &StoredConfig) -> Result<()> {
     // `/health` is unauthenticated, so this proves the URL is a Library
     // API and reachable. Whether the key itself grants anything depends
     // on the organization, which login does not know yet.
-    client.get("/health", &[]).await.map_err(|error| {
+    //
+    // It answers `text/plain`, not JSON, so this must not go through the
+    // JSON-decoding `get` — doing so failed every login that did not
+    // pass `--no-verify`.
+    client.get_text("/health").await.map_err(|error| {
         anyhow::anyhow!(
             "{error}\nhint: pass --no-verify to save the key without \
              reaching the API"
