@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tachyon_sdk::auth::ExecutorAction;
+use tachyon_sdk::auth::{ExecutorAction, OperatorId};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -2011,8 +2011,16 @@ async fn resolve_auth_context(
     }
 
     if token.starts_with("pk_") {
-        if let Some(org_username) = org_username {
-            if let Ok(org) = library_app
+        // A key is verified against the organization that issued it, so
+        // something has to name that organization. `tools/call` names it
+        // in the tool arguments, but every other method names nothing —
+        // `tools/list` above all, which is what an operator runs to see
+        // whether a key reaches the write tools. Let the caller state it
+        // through `x-operator-id`, exactly as the REST routes already
+        // allow. With neither, there is nothing to verify the key
+        // against and the request stays anonymous.
+        let operator_id = match org_username {
+            Some(org_username) => library_app
                 .view_org
                 .execute(&ViewOrgInputData {
                     executor: &tachyon_sdk::auth::Executor::SystemUser,
@@ -2022,24 +2030,28 @@ async fn resolve_auth_context(
                     organization_username: org_username.to_string(),
                 })
                 .await
+                .ok()
+                .map(|org| org.organization.id().clone()),
+            None => operator_id_header(headers),
+        };
+
+        if let Some(operator_id) = operator_id {
+            if let Ok(service_account) =
+                sdk.verify_api_key(&operator_id, &token).await
             {
-                if let Ok(service_account) =
-                    sdk.verify_api_key(org.organization.id(), &token).await
-                {
-                    let executor = LibraryExecutor {
-                        inner: LibraryExecutorKind::ServiceAccount(
-                            Box::new(service_account),
-                        ),
-                        original_token: Some(token),
-                    };
-                    let caller_auth = executor
-                        .caller_auth_app(&sdk)
-                        .expect("authenticated MCP executor has a token");
-                    return McpAuthContext::authenticated(
-                        executor,
-                        caller_auth,
-                    );
-                }
+                let executor = LibraryExecutor {
+                    inner: LibraryExecutorKind::ServiceAccount(Box::new(
+                        service_account,
+                    )),
+                    original_token: Some(token),
+                };
+                let caller_auth = executor
+                    .caller_auth_app(&sdk)
+                    .expect("authenticated MCP executor has a token");
+                return McpAuthContext::authenticated(
+                    executor,
+                    caller_auth,
+                );
             }
         }
         return McpAuthContext::anonymous();
@@ -2123,6 +2135,18 @@ fn request_org_hint(request: &JsonRpcRequest) -> Option<String> {
                 .and_then(Value::as_str)
                 .map(ToOwned::to_owned)
         })
+}
+
+/// The organization a caller names when the request itself does not.
+/// Mirrors the REST executor extractor so one key behaves the same way
+/// on both surfaces.
+fn operator_id_header(headers: &HeaderMap) -> Option<OperatorId> {
+    headers
+        .get("x-operator-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<OperatorId>().ok())
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -2728,6 +2752,50 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `pk_` key is verified against the organization that issued it,
+    /// and only `tools/call` names one in its arguments. Without this
+    /// header there is nothing for `tools/list` to verify against, so an
+    /// operator checking a key's reach saw the anonymous tool list no
+    /// matter how privileged the key was.
+    #[test]
+    fn an_operator_id_header_names_the_organization_to_verify_against() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-operator-id",
+            "tn_01kxz0ytmhnab5vh53011cwctj".parse().unwrap(),
+        );
+
+        let operator_id = operator_id_header(&headers);
+
+        assert_eq!(
+            operator_id.map(|id| id.to_string()).as_deref(),
+            Some("tn_01kxz0ytmhnab5vh53011cwctj")
+        );
+    }
+
+    #[test]
+    fn a_missing_or_blank_operator_id_header_names_nothing() {
+        assert!(operator_id_header(&HeaderMap::new()).is_none());
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-operator-id", "   ".parse().unwrap());
+        assert!(operator_id_header(&headers).is_none());
+    }
+
+    #[test]
+    fn request_org_hint_only_reads_tool_call_arguments() {
+        // `tools/list` carries no arguments, which is precisely why the
+        // header fallback above exists.
+        let list = JsonRpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(1)),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+
+        assert_eq!(request_org_hint(&list), None);
+    }
 
     #[test]
     fn tools_list_includes_library_data_tools() {

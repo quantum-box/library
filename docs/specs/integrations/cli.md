@@ -181,6 +181,12 @@ MCP server を client 無しで直接叩くためのサブコマンド。仕様�
 
 `mcp tools` は認証の有無で結果が変わる。key なしなら read tool だけ、key ありなら write tool も並ぶので、権限の確認に使える。
 
+ただし `pk_` key は「その key を発行した organization」に対して検証されるため、organization を名指しできない呼び出しでは使えない。`tools/call` は tool の `org` 引数から拾えるが、`tools/list` には引数が無い。**`mcp tools` には `--operator-id` を付けること。** 付けないと key を渡していても匿名の一覧（read tool だけ）が返る。
+
+```bash
+library --operator-id tn_xxx mcp tools
+```
+
 ```bash
 library mcp call list_data --arg org=acme --arg repo=docs --arg-json page_size=5
 ```
