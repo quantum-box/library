@@ -135,6 +135,50 @@ pub trait UpdateDataInputPort: Debug + Send + Sync + 'static {
     ) -> errors::Result<Data>;
 }
 
+// UpsertData
+/// Create the record at `data_id`, or apply the payload to the one already
+/// there.
+///
+/// This exists because a caller can hold a record id that the server has never
+/// seen. A local-first client assigns the id itself and only later gets to
+/// push, so its first push and its later edits are indistinguishable at the
+/// wire — `UpdateData` answers both with 404, which drops the record. The
+/// caller cannot repair that by reading first: another writer can land between
+/// the read and the write.
+///
+/// Property semantics match `UpdateData` on the existing branch: a Property
+/// left out of `data` keeps whatever it holds. Only the missing-record case
+/// differs.
+#[derive(Debug)]
+pub struct UpsertDataInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub tenant_id: &'a TenantId,
+    pub database_id: &'a DatabaseId,
+    pub data_id: &'a DataId,
+    pub name: &'a str,
+    pub data: Vec<PropertyDataInputData>,
+}
+
+/// Whether an upsert created the record or applied to an existing one.
+///
+/// The REST layer turns this into 201 vs 200, so a caller can tell the two
+/// apart without a second request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpsertOutcome {
+    Created,
+    Updated,
+}
+
+#[async_trait::async_trait]
+pub trait UpsertDataInputPort: Debug + Send + Sync + 'static {
+    async fn execute(
+        &self,
+        input: UpsertDataInputData<'_>,
+    ) -> errors::Result<(Data, UpsertOutcome)>;
+}
+
 /// Expand-only application boundary for versioned Record patches.
 ///
 /// Public REST/GraphQL adoption is deliberately separate. This input accepts
