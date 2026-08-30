@@ -8,18 +8,24 @@ import type {
   DatabaseViewType,
   RecordPropertyKey,
 } from './types'
+import { collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
 
 export const ALL_DATABASES_ID = '__all__'
 
-export const RECORD_PROPERTIES: Array<{ id: RecordPropertyKey; label: string }> = [
-  { id: 'identifier', label: 'ID' },
-  { id: 'status', label: 'Status' },
-  { id: 'priority', label: 'Priority' },
-  { id: 'title', label: 'Title' },
-  { id: 'assignee', label: 'Assignee' },
-  { id: 'labels', label: 'Labels' },
-  { id: 'project', label: 'Repository' },
-  { id: 'updatedAt', label: 'Updated' },
+/**
+ * Record properties offered by the view settings panel. Labels are message
+ * keys so the panel, the table headers, and the sort menu all relabel together
+ * when the language changes.
+ */
+export const RECORD_PROPERTIES: Array<{ id: RecordPropertyKey; labelKey: MessageKey }> = [
+  { id: 'identifier', labelKey: 'table.column.id' },
+  { id: 'status', labelKey: 'table.column.status' },
+  { id: 'priority', labelKey: 'table.column.priority' },
+  { id: 'title', labelKey: 'table.column.title' },
+  { id: 'assignee', labelKey: 'table.column.assignee' },
+  { id: 'labels', labelKey: 'table.column.labels' },
+  { id: 'project', labelKey: 'table.column.repository' },
+  { id: 'updatedAt', labelKey: 'table.column.updated' },
 ]
 
 export const DEFAULT_VISIBLE_PROPERTIES: RecordPropertyKey[] = RECORD_PROPERTIES.map(
@@ -265,16 +271,23 @@ function getRecordPropertyValue(record: DatabaseRecord, property: RecordProperty
   return value ?? ''
 }
 
+/**
+ * Sorting what the reader sees, so it follows the reading language rather than
+ * a fixed one: kana, accents, and digit runs all order differently. `locale`
+ * is a parameter rather than read from the module so callers that memoize the
+ * result have it in their dependency list and re-sort when the language
+ * changes.
+ */
 export function sortRecordsForDatabaseView(
   records: DatabaseRecord[],
-  view: DatabaseViewDefinition
+  view: DatabaseViewDefinition,
+  locale: Locale = getActiveLocale()
 ): DatabaseRecord[] {
   if (!view.sorting) return records
   const { id, desc } = view.sorting
+  const compare = collator(locale)
   return [...records].sort((a, b) => {
-    const aValue = getRecordPropertyValue(a, id)
-    const bValue = getRecordPropertyValue(b, id)
-    const result = aValue.localeCompare(bValue, 'ja-JP', { numeric: true })
+    const result = compare.compare(getRecordPropertyValue(a, id), getRecordPropertyValue(b, id))
     return desc ? -result : result
   })
 }

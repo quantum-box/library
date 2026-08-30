@@ -18,6 +18,7 @@ import { useWorkspaceDatabases } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import type { DatabaseRecord } from '../data/mock'
 import { navigateToData } from '../lib/ui/dataLocation'
+import { useI18n } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
 interface CommandPaletteProps {
@@ -48,6 +49,7 @@ function recordRepositoryId(
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const navigate = useNavigate()
+  const { t } = useI18n()
   const { records } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
   const [query, setQuery] = useState('')
@@ -69,58 +71,58 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const navigationItems: PaletteItem[] = [
       {
         id: 'nav-home',
-        label: 'Home',
-        detail: 'Workspace overview',
+        label: t('palette.nav.home.label'),
+        detail: t('palette.nav.home.detail'),
         icon: Home,
-        keywords: 'home overview recent',
+        keywords: t('palette.nav.home.keywords'),
         run: () => void navigate({ to: '/home' }),
       },
       {
         id: 'nav-table',
-        label: 'All data · Table',
-        detail: 'Browse and search repository data',
+        label: t('palette.nav.table.label'),
+        detail: t('palette.nav.table.detail'),
         icon: Table2,
-        keywords: 'data records table search',
+        keywords: t('palette.nav.table.keywords'),
         run: databaseView('table'),
       },
       {
         id: 'nav-board',
-        label: 'All data · Board',
-        detail: 'Group data by status',
+        label: t('palette.nav.board.label'),
+        detail: t('palette.nav.board.detail'),
         icon: KanbanSquare,
-        keywords: 'data records board kanban status',
+        keywords: t('palette.nav.board.keywords'),
         run: databaseView('board'),
       },
       {
         id: 'nav-workflow',
-        label: 'All data · Workflow',
-        detail: 'Arrange and connect data',
+        label: t('palette.nav.workflow.label'),
+        detail: t('palette.nav.workflow.detail'),
         icon: Network,
-        keywords: 'data records workflow graph network',
+        keywords: t('palette.nav.workflow.keywords'),
         run: databaseView('workflow'),
       },
       {
         id: 'nav-docs',
-        label: 'Documents',
-        detail: 'Open local documents',
+        label: t('palette.nav.docs.label'),
+        detail: t('palette.nav.docs.detail'),
         icon: FileText,
-        keywords: 'docs documents pages',
+        keywords: t('palette.nav.docs.keywords'),
         run: () => void navigate({ to: '/docs' }),
       },
       {
         id: 'nav-chat',
-        label: 'Ask Library',
-        detail: 'Open the Library assistant',
+        label: t('palette.nav.chat.label'),
+        detail: t('palette.nav.chat.detail'),
         icon: Bot,
-        keywords: 'chat ask assistant',
+        keywords: t('palette.nav.chat.keywords'),
         run: () => void navigate({ to: '/chat' }),
       },
       {
         id: 'nav-sync',
-        label: 'Sync status',
-        detail: 'Inspect local engine diagnostics',
+        label: t('palette.nav.sync.label'),
+        detail: t('palette.nav.sync.detail'),
         icon: Cloud,
-        keywords: 'sync status diagnostics engine',
+        keywords: t('palette.nav.sync.keywords'),
         run: () => void navigate({ to: '/sync' }),
       },
     ]
@@ -128,9 +130,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const repositoryItems = databases.map<PaletteItem>((database) => ({
       id: `repository-${database.id}`,
       label: database.label,
-      detail: 'Repository',
+      detail: t('palette.repository.detail'),
       icon: GitBranch,
-      keywords: `repository ${database.orgUsername ?? ''} ${database.repoUsername ?? ''}`,
+      keywords: `${t('palette.repository.keywords')} ${database.orgUsername ?? ''} ${database.repoUsername ?? ''}`,
       run: () => {
         if (database.orgUsername && database.repoUsername) {
           void navigate({
@@ -153,7 +155,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       const databaseId = recordRepositoryId(record, databases)
       return {
         id: `record-${record.id}`,
-        label: record.title || 'Untitled data',
+        label: record.title || t('data.untitled'),
         detail: `${record.identifier} · ${record.project}`,
         icon: Database,
         keywords: `${record.identifier} ${record.project} ${record.description} ${record.labels.join(' ')}`,
@@ -162,7 +164,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     })
 
     return [...navigationItems, ...repositoryItems, ...recordItems]
-  }, [databases, navigate, records])
+  }, [databases, navigate, records, t])
 
   const results = useMemo(() => {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
@@ -210,13 +212,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         className="flex max-h-[72vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-overlay"
         tabIndex={-1}
       >
-        <h2 id="command-palette-title" className="sr-only">Search Library</h2>
+        <h2 id="command-palette-title" className="sr-only">{t('palette.title')}</h2>
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
           <Search className="size-4 shrink-0 text-subtle-foreground" aria-hidden="true" />
           <input
             ref={inputRef}
             role="combobox"
-            aria-label="Search Library"
+            aria-label={t('palette.title')}
             aria-autocomplete="list"
             aria-expanded="true"
             aria-haspopup="listbox"
@@ -244,14 +246,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
               }
             }}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-subtle-foreground"
-            placeholder="Search pages, data, and repositories…"
+            placeholder={t('palette.placeholder')}
             aria-controls="command-palette-results"
             aria-activedescendant={activeItem ? `command-${activeItem.id}` : undefined}
           />
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close search"
+            aria-label={t('palette.close')}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <X className="size-4" aria-hidden="true" />
@@ -261,13 +263,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         <div
           id="command-palette-results"
           role="listbox"
-          aria-label="Search results"
+          aria-label={t('palette.resultsLabel')}
           className="min-h-0 overflow-y-auto p-1.5"
         >
           {results.length === 0 ? (
             <div className="px-4 py-10 text-center" role="status">
-              <p className="text-sm font-medium">No matches</p>
-              <p className="mt-1 text-xs text-muted-foreground">Try a title, identifier, repository, or page name.</p>
+              <p className="text-sm font-medium">{t('palette.noMatches')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('palette.noMatchesHint')}</p>
             </div>
           ) : results.map((item, index) => {
             const Icon = item.icon
@@ -297,16 +299,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                   <span className="block truncate text-sm font-medium text-foreground">{item.label}</span>
                   <span className="block truncate text-2xs">{item.detail}</span>
                 </span>
-                {active && <span className="font-mono text-2xs text-subtle-foreground">Enter</span>}
+                {active && (
+                  <span className="font-mono text-2xs text-subtle-foreground">
+                    {t('palette.enterHint')}
+                  </span>
+                )}
               </button>
             )
           })}
         </div>
 
         <div className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-2 font-mono text-2xs text-subtle-foreground">
-          <span>↑↓ Navigate</span>
-          <span>↵ Open</span>
-          <span>Esc Close</span>
+          <span>↑↓ {t('palette.hint.navigate')}</span>
+          <span>↵ {t('palette.hint.open')}</span>
+          <span>Esc {t('palette.hint.close')}</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -52,6 +52,20 @@ const tableData = {
   ],
 }
 
+/**
+ * Renders and drains the page's reads before returning.
+ *
+ * The page reads the repository profile and only then its rows, and both
+ * mocks settle as microtasks, so a single act flush lands it on its final
+ * state. Asserting after that keeps these tests off findBy*'s 1s polling
+ * window, which a loaded runner can overrun while the second read is still
+ * in flight.
+ */
+async function renderSettled(ui: ReactElement) {
+  render(ui)
+  await act(async () => {})
+}
+
 describe('PublicRepositoryView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -61,10 +75,12 @@ describe('PublicRepositoryView', () => {
     apiMocks.fetchLibraryRepositoryProfile.mockResolvedValue(publicProfile)
     apiMocks.fetchLibraryRepoTableData.mockResolvedValue(tableData)
 
-    render(<PublicRepositoryView organization="library-docs" repository="docs" />)
+    await renderSettled(
+      <PublicRepositoryView organization="library-docs" repository="docs" />
+    )
 
-    expect(await screen.findByText('Docs')).toBeTruthy()
-    expect(await screen.findByText('Getting started')).toBeTruthy()
+    expect(screen.getByText('Docs')).toBeTruthy()
+    expect(screen.getByText('Getting started')).toBeTruthy()
     expect(screen.getByText('Published')).toBeTruthy()
 
     expect(apiMocks.fetchLibraryRepositoryProfile).toHaveBeenCalledWith({
@@ -85,12 +101,12 @@ describe('PublicRepositoryView', () => {
       isPublic: false,
     })
 
-    render(<PublicRepositoryView organization="library-docs" repository="internal" />)
+    await renderSettled(
+      <PublicRepositoryView organization="library-docs" repository="internal" />
+    )
 
-    expect(await screen.findByTestId('public-repository-private')).toBeTruthy()
-    await waitFor(() => {
-      expect(apiMocks.fetchLibraryRepoTableData).not.toHaveBeenCalled()
-    })
+    expect(screen.getByTestId('public-repository-private')).toBeTruthy()
+    expect(apiMocks.fetchLibraryRepoTableData).not.toHaveBeenCalled()
   })
 
   it('reports a forbidden read as private rather than missing', async () => {
@@ -98,9 +114,11 @@ describe('PublicRepositoryView', () => {
       new RecordApiError('Library repository request failed: 403', 403)
     )
 
-    render(<PublicRepositoryView organization="library-docs" repository="internal" />)
+    await renderSettled(
+      <PublicRepositoryView organization="library-docs" repository="internal" />
+    )
 
-    expect(await screen.findByTestId('public-repository-private')).toBeTruthy()
+    expect(screen.getByTestId('public-repository-private')).toBeTruthy()
   })
 
   it('reports an unknown repository as missing', async () => {
@@ -108,9 +126,11 @@ describe('PublicRepositoryView', () => {
       new RecordApiError('Library repository request failed: 404', 404)
     )
 
-    render(<PublicRepositoryView organization="library-docs" repository="nope" />)
+    await renderSettled(
+      <PublicRepositoryView organization="library-docs" repository="nope" />
+    )
 
-    expect(await screen.findByTestId('public-repository-missing')).toBeTruthy()
+    expect(screen.getByTestId('public-repository-missing')).toBeTruthy()
   })
 
   it('keeps the repository readable when only the data read fails', async () => {
@@ -119,9 +139,11 @@ describe('PublicRepositoryView', () => {
       new RecordApiError('Library GraphQL transport unavailable', 0, 'transport')
     )
 
-    render(<PublicRepositoryView organization="library-docs" repository="docs" />)
+    await renderSettled(
+      <PublicRepositoryView organization="library-docs" repository="docs" />
+    )
 
-    expect(await screen.findByTestId('public-repository-data-error')).toBeTruthy()
+    expect(screen.getByTestId('public-repository-data-error')).toBeTruthy()
     expect(screen.getByTestId('public-repository-view')).toBeTruthy()
   })
 })

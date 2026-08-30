@@ -1,5 +1,6 @@
 import { FileSpreadsheet, FileText, Paperclip, Presentation, X } from 'lucide-react'
 import { type FileAttachment, detectAttachmentFileType, formatFileSize, getFileColor } from './types'
+import { useI18n } from '../../i18n'
 
 interface FileChipProps {
   file: FileAttachment
@@ -8,6 +9,7 @@ interface FileChipProps {
 }
 
 export function FileChip({ file, onPreview, onRemove }: FileChipProps) {
+  const { t } = useI18n()
   const fileType = detectAttachmentFileType(file)
   const color = getFileColor(fileType)
   const ext = file.name.split('.').pop()?.toUpperCase() ?? ''
@@ -25,7 +27,7 @@ export function FileChip({ file, onPreview, onRemove }: FileChipProps) {
     >
       <button
         type="button"
-        aria-label={`Preview ${file.name}`}
+        aria-label={t('files.previewNamed', { name: file.name })}
         className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:px-2"
         onClick={() => onPreview(file)}
       >
@@ -48,7 +50,7 @@ export function FileChip({ file, onPreview, onRemove }: FileChipProps) {
       {onRemove && (
         <button
           type="button"
-          aria-label={`Remove ${file.name}`}
+          aria-label={t('files.removeNamed', { name: file.name })}
           onClick={(e) => { e.stopPropagation(); onRemove(file.id) }}
           className="w-7 h-7 shrink-0 rounded flex items-center justify-center text-xs opacity-100 transition-opacity cursor-pointer text-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:opacity-0 sm:group-hover/chip:opacity-100 sm:group-focus-within/chip:opacity-100"
         >

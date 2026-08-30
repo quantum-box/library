@@ -14,23 +14,29 @@ import {
   checkForAppUpdate,
   installAppUpdate,
   isDesktopApp,
+  listenForMenuUpdateCheck,
   type UpdateDownloadProgress,
 } from '../lib/appUpdate'
+import { useI18n, formatNumber, type Locale } from '../i18n'
 
 const startupCheckDelayMs = 5000
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'uptodate' | 'error'
 
-function formatBytes(bytes: number) {
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+function formatMegabytes(bytes: number, locale: Locale) {
+  return `${formatNumber(locale, bytes / 1024 / 1024, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })} MB`
 }
 
-function formatProgress({ downloaded, total }: UpdateDownloadProgress) {
-  if (!total) return formatBytes(downloaded)
-  return `${formatBytes(downloaded)} / ${formatBytes(total)}`
+function formatProgress({ downloaded, total }: UpdateDownloadProgress, locale: Locale) {
+  if (!total) return formatMegabytes(downloaded, locale)
+  return `${formatMegabytes(downloaded, locale)} / ${formatMegabytes(total, locale)}`
 }
 
 export function AppUpdateNotice() {
+  const { t, locale } = useI18n()
   const [phase, setPhase] = useState<Phase>('idle')
   const [update, setUpdate] = useState<Update | null>(null)
   const [progress, setProgress] = useState<UpdateDownloadProgress | null>(null)
@@ -62,7 +68,19 @@ export function AppUpdateNotice() {
     const timer = setTimeout(() => void runCheck(false), startupCheckDelayMs)
     const onRequest = () => void runCheck(true)
     window.addEventListener(CHECK_FOR_UPDATES_EVENT, onRequest)
+
+    // The menu bar listener resolves asynchronously, so it may land after the
+    // effect is torn down and has to be dropped straight away in that case.
+    let stopped = false
+    let unlistenMenu: (() => void) | undefined
+    void listenForMenuUpdateCheck().then((unlisten) => {
+      if (stopped) unlisten()
+      else unlistenMenu = unlisten
+    })
+
     return () => {
+      stopped = true
+      unlistenMenu?.()
       clearTimeout(timer)
       window.removeEventListener(CHECK_FOR_UPDATES_EVENT, onRequest)
     }
@@ -96,19 +114,19 @@ export function AppUpdateNotice() {
       <DialogContent data-testid="app-update-dialog">
         {phase === 'checking' && (
           <DialogHeader>
-            <DialogTitle>Checking for updates</DialogTitle>
-            <DialogDescription>Asking the release feed for a newer version.</DialogDescription>
+            <DialogTitle>{t('update.checking')}</DialogTitle>
+            <DialogDescription>{t('update.checkingHint')}</DialogDescription>
           </DialogHeader>
         )}
 
         {phase === 'uptodate' && (
           <>
             <DialogHeader>
-              <DialogTitle>Library Client is up to date</DialogTitle>
-              <DialogDescription>You are running the latest release.</DialogDescription>
+              <DialogTitle>{t('update.upToDate')}</DialogTitle>
+              <DialogDescription>{t('update.upToDateHint')}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button onClick={dismiss}>Close</Button>
+              <Button onClick={dismiss}>{t('common.close')}</Button>
             </DialogFooter>
           </>
         )}
@@ -116,9 +134,9 @@ export function AppUpdateNotice() {
         {phase === 'available' && update && (
           <>
             <DialogHeader>
-              <DialogTitle>Update to {update.version}</DialogTitle>
+              <DialogTitle>{t('update.updateTo', { version: update.version })}</DialogTitle>
               <DialogDescription>
-                You are on {update.currentVersion}. Installing restarts the app.
+                {t('update.currentVersion', { version: update.currentVersion })}
               </DialogDescription>
             </DialogHeader>
             {update.body ? (
@@ -128,10 +146,10 @@ export function AppUpdateNotice() {
             ) : null}
             <DialogFooter>
               <Button variant="ghost" onClick={dismiss}>
-                Later
+                {t('update.later')}
               </Button>
               <Button data-testid="app-update-install" onClick={() => void install()}>
-                Update now
+                {t('update.updateNow')}
               </Button>
             </DialogFooter>
           </>
@@ -139,10 +157,10 @@ export function AppUpdateNotice() {
 
         {phase === 'downloading' && (
           <DialogHeader>
-            <DialogTitle>Downloading {update?.version}</DialogTitle>
+            <DialogTitle>{t('update.downloading', { version: update?.version ?? '' })}</DialogTitle>
             <DialogDescription>
-              {progress ? formatProgress(progress) : 'Starting…'} — the app restarts when this
-              finishes.
+              {progress ? formatProgress(progress, locale) : t('update.starting')}{' '}
+              {t('update.restartNote')}
             </DialogDescription>
           </DialogHeader>
         )}
@@ -150,11 +168,11 @@ export function AppUpdateNotice() {
         {phase === 'error' && (
           <>
             <DialogHeader>
-              <DialogTitle>Update failed</DialogTitle>
+              <DialogTitle>{t('update.failed')}</DialogTitle>
               <DialogDescription>{error}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button onClick={dismiss}>Close</Button>
+              <Button onClick={dismiss}>{t('common.close')}</Button>
             </DialogFooter>
           </>
         )}

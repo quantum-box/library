@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { ToolCall, WebSearchResponse, WebSearchResult } from './types'
+import { useI18n } from '../../../i18n'
 
 function SearchResultItem({ result }: { result: WebSearchResult }) {
   // Extract domain from URL for display
@@ -57,6 +58,7 @@ interface WebSearchCardProps {
 }
 
 export const WebSearchCard = memo(function WebSearchCard({ toolCall }: WebSearchCardProps) {
+  const { t, tPlural } = useI18n()
   const isLoading = toolCall.status === 'pending' || toolCall.status === 'running'
   const isError = toolCall.status === 'error'
   const isCancelled = toolCall.status === 'cancelled'
@@ -83,7 +85,7 @@ export const WebSearchCard = memo(function WebSearchCard({ toolCall }: WebSearch
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <span className="text-xs font-medium text-foreground">
-            Web Search
+            {t('tool.webSearch')}
           </span>
           {query && (
             <span className="text-xs truncate px-1.5 py-0.5 rounded text-muted bg-surface-hover">
@@ -97,24 +99,22 @@ export const WebSearchCard = memo(function WebSearchCard({ toolCall }: WebSearch
           {isLoading && (
             <>
               <div className="tool-spinner" />
-              <span className="text-xs text-subtle">Searching…</span>
+              <span className="text-xs text-subtle">{t('tool.searching')}</span>
             </>
           )}
           {toolCall.status === 'completed' && response && (
             <span className="text-xs text-status-done">
-              {response.results.length} results
+              {tPlural('tool.resultCount', response.results.length)}
               {toolCall.result?.duration && ` · ${(toolCall.result.duration / 1000).toFixed(1)}s`}
             </span>
           )}
           {isError && (
             <span className="text-xs text-priority-urgent">
-              {toolCall.result?.error || 'Search failed'}
+              {toolCall.result?.error || t('tool.searchFailed')}
             </span>
           )}
           {isCancelled && (
-            <span className="text-xs text-subtle">
-              Cancelled
-            </span>
+            <span className="text-xs text-subtle">{t('tool.cancelled')}</span>
           )}
         </div>
       </div>
@@ -132,13 +132,13 @@ export const WebSearchCard = memo(function WebSearchCard({ toolCall }: WebSearch
 
       {isError && (
         <div className="px-3 py-3 text-xs text-subtle">
-          Could not complete the search. Please try again.
+          {t('tool.searchRetry')}
         </div>
       )}
 
       {isCancelled && (
         <div className="px-3 py-3 text-xs text-subtle">
-          Search was cancelled.
+          {t('tool.searchCancelled')}
         </div>
       )}
     </div>

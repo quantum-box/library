@@ -47,6 +47,7 @@ import {
   EndpointsCard,
   QuickStartCard,
 } from './ApiUsageSection'
+import { useI18n, t as translate, type I18nContextValue } from '../i18n'
 
 interface ApiKeysViewProps {
   organization: string
@@ -56,19 +57,19 @@ interface ApiKeysViewProps {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
-  return 'API keys could not be loaded.'
+  return translate('apiKeys.loadFailed')
 }
 
 /**
  * `createdAt` arrives as a GraphQL DateTime string. A value the browser
  * cannot parse is shown as-is rather than as "Invalid Date".
  */
-function formatCreatedAt(createdAt: string): string {
-  const parsed = new Date(createdAt)
-  return Number.isNaN(parsed.getTime()) ? createdAt : parsed.toLocaleString()
+function formatCreatedAt(createdAt: string, formatDate: I18nContextValue['formatDate']): string {
+  return formatDate(createdAt, { dateStyle: 'medium', timeStyle: 'short' }) ?? createdAt
 }
 
 export function ApiKeysView({ organization, repository, operatorId }: ApiKeysViewProps) {
+  const { t, tPlural, formatDate } = useI18n()
   const target = useMemo<ApiKeyTarget>(
     () => ({ orgUsername: organization, operatorId }),
     [organization, operatorId],
@@ -120,7 +121,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
     event.preventDefault()
     const name = createName.trim()
     if (!name) {
-      setCreateError('Give the key a name so it can be told apart later.')
+      setCreateError(t('apiKeys.nameRequired'))
       return
     }
     setCreateBusy(true)
@@ -149,7 +150,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
     try {
       await revokeApiKey(target, revokeTarget.id)
       setRevokeTarget(null)
-      setNotice(`Revoked "${revokeTarget.name}".`)
+      setNotice(t('apiKeys.revoked', { name: revokeTarget.name }))
       await loadApiKeys()
     } catch (error) {
       setRevokeError(errorMessage(error))
@@ -168,7 +169,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
     } catch {
       // Silently failing here loses the key: it is shown once and the
       // reader would close the dialog believing they had it.
-      setCopyError('Could not reach the clipboard. Select the key below and copy it manually.')
+      setCopyError(t('apiKeys.copyFailed'))
     }
   }
 
@@ -205,7 +206,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
             {repository}
           </Link>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate text-muted-foreground">API</span>
+          <span className="truncate text-muted-foreground">{t('apiKeys.breadcrumb')}</span>
         </div>
         <Button
           className="ml-auto"
@@ -213,13 +214,13 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
           variant="ghost"
           onClick={() => void loadApiKeys()}
           disabled={loading}
-          aria-label="Refresh API keys"
+          aria-label={t('apiKeys.refresh')}
         >
           <RefreshCw
             className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
             aria-hidden="true"
           />
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden sm:inline">{t('common.refresh')}</span>
         </Button>
       </header>
 
@@ -230,19 +231,19 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
           <div className="mb-5 flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold tracking-tight">API access</h1>
+                <h1 className="text-xl font-semibold tracking-tight">{t('apiKeys.title')}</h1>
                 {apiKeys !== null ? (
                   <Badge variant="neutral">
-                    {apiKeys.length} {apiKeys.length === 1 ? 'Key' : 'Keys'}
+                    {tPlural('apiKeys.keyCount', apiKeys.length)}
                   </Badge>
                 ) : null}
               </div>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                Issue a key and call this repository from your own code.
+                {t('apiKeys.subtitle')}
               </p>
             </div>
             <span className="font-mono text-2xs text-subtle-foreground">
-              Keys scope to {organization}
+              {t('apiKeys.scopeNote', { organization })}
             </span>
           </div>
 
@@ -259,19 +260,20 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <div className="flex flex-col gap-5">
               <ApiCard
+                id="api-keys"
                 icon={<KeyRound className="size-4" aria-hidden="true" />}
-                title="API keys"
-                subtitle={`Issued for ${organization}`}
+                title={t('apiKeys.cardTitle')}
+                subtitle={t('apiKeys.cardSubtitle', { organization })}
                 action={
                   <Button size="sm" onClick={() => setCreateOpen(true)}>
                     <Plus aria-hidden="true" />
-                    Create
+                    {t('common.create')}
                   </Button>
                 }
               >
                 {loading && apiKeys === null ? (
                   <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                    Loading API keys…
+                    {t('apiKeys.loading')}
                   </p>
                 ) : loadError != null ? (
                   <div role="alert" className="flex items-start gap-2 px-4 py-4 text-sm">
@@ -295,20 +297,20 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                         onClick={() => void loadApiKeys()}
                         disabled={loading}
                       >
-                        Try again
+                        {t('common.tryAgain')}
                       </Button>
                     </div>
                   </div>
                 ) : apiKeys !== null && apiKeys.length === 0 ? (
                   <div className="px-4 py-8 text-center">
-                    <p className="text-sm text-muted-foreground">No API keys yet.</p>
+                    <p className="text-sm text-muted-foreground">{t('apiKeys.empty')}</p>
                     <Button
                       className="mt-3"
                       size="sm"
                       variant="secondary"
                       onClick={() => setCreateOpen(true)}
                     >
-                      Create the first one
+                      {t('apiKeys.createFirst')}
                     </Button>
                   </div>
                 ) : (
@@ -320,7 +322,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                       >
                         <span
                           className="font-mono text-2xs tabular-nums text-subtle-foreground"
-                          aria-label={`Key ${index + 1}`}
+                          aria-label={t('apiKeys.keyIndex', { index: index + 1 })}
                         >
                           {String(index + 1).padStart(2, '0')}
                         </span>
@@ -334,7 +336,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                             </span>
                             <span aria-hidden="true">·</span>
                             <span className="shrink-0">
-                              {formatCreatedAt(apiKey.createdAt)}
+                              {formatCreatedAt(apiKey.createdAt, formatDate)}
                             </span>
                           </div>
                         </div>
@@ -342,8 +344,8 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                           type="button"
                           size="icon"
                           variant="ghost"
-                          aria-label={`Revoke ${apiKey.name}`}
-                          title="Revoke this key"
+                          aria-label={t('apiKeys.revokeNamed', { name: apiKey.name })}
+                          title={t('apiKeys.revokeTitle')}
                           onClick={() => {
                             setRevokeError(null)
                             setRevokeTarget(apiKey)
@@ -376,14 +378,11 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
         <DialogContent>
           <form onSubmit={handleCreate}>
             <DialogHeader>
-              <DialogTitle>Create API key</DialogTitle>
-              <DialogDescription>
-                Name it after what will use it, so it can be revoked without
-                guessing what breaks.
-              </DialogDescription>
+              <DialogTitle>{t('apiKeys.createTitle')}</DialogTitle>
+              <DialogDescription>{t('apiKeys.createDescription')}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-2 py-3">
-              <Label htmlFor="api-key-name">Name</Label>
+              <Label htmlFor="api-key-name">{t('apiKeys.nameLabel')}</Label>
               <Input
                 id="api-key-name"
                 value={createName}
@@ -396,11 +395,11 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="ghost">
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </DialogClose>
               <Button type="submit" disabled={createBusy}>
-                {createBusy ? 'Creating…' : 'Create'}
+                {createBusy ? t('common.creating') : t('common.create')}
               </Button>
             </DialogFooter>
           </form>
@@ -418,11 +417,8 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Copy your API key</DialogTitle>
-            <DialogDescription>
-              This is the only time the key is shown. Store it somewhere safe
-              before closing this dialog.
-            </DialogDescription>
+            <DialogTitle>{t('apiKeys.copyTitle')}</DialogTitle>
+            <DialogDescription>{t('apiKeys.copyDescription')}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2 py-3">
             <div className="flex items-start gap-2">
@@ -431,7 +427,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
               </code>
               <Button size="sm" variant="secondary" onClick={() => void handleCopy()}>
                 {copied ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? t('common.copied') : t('common.copy')}
               </Button>
             </div>
             {copyError ? (
@@ -447,7 +443,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                 setCopyError(null)
               }}
             >
-              Done
+              {t('common.done')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -459,18 +455,18 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke this API key?</DialogTitle>
+            <DialogTitle>{t('apiKeys.revokeDialogTitle')}</DialogTitle>
             <DialogDescription>
-              Anything still sending{' '}
-              <span className="font-medium text-foreground">{revokeTarget?.name}</span> stops
-              being authenticated immediately. This cannot be undone.
+              {t('apiKeys.revokeDialogPrefix')}{' '}
+              <span className="font-medium text-foreground">{revokeTarget?.name}</span>{' '}
+              {t('apiKeys.revokeDialogSuffix')}
             </DialogDescription>
           </DialogHeader>
           {revokeError ? <p className="py-2 text-sm text-destructive">{revokeError}</p> : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="ghost">
-                Cancel
+                {t('common.cancel')}
               </Button>
             </DialogClose>
             <Button
@@ -478,7 +474,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
               onClick={() => void handleRevoke()}
               disabled={revokeBusy}
             >
-              {revokeBusy ? 'Revoking…' : 'Revoke'}
+              {revokeBusy ? t('apiKeys.revoking') : t('apiKeys.revoke')}
             </Button>
           </DialogFooter>
         </DialogContent>

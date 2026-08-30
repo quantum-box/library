@@ -11,6 +11,7 @@ import {
   type LibraryOrganization,
   type LibraryRepository,
 } from '../lib/recordsApi'
+import { t } from '../i18n'
 
 export interface WorkspaceDatabase {
   id: string
@@ -94,7 +95,7 @@ function defaultOrganizationId(
 
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  return 'Failed to load repositories'
+  return t('errors.loadRepositories')
 }
 
 export function DatabasesProvider({ children }: { children: ReactNode }) {
@@ -162,7 +163,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     isPublic: boolean,
   ) => {
     const organization = organizations.find((candidate) => candidate.id === organizationId)
-    if (!organization) throw new Error('Select an organization for this repository.')
+    if (!organization) throw new Error(t('createRepo.organizationRequired'))
 
     const orgUsername = databases.find(
       (database) => database.operatorId === organization.id && database.orgUsername,

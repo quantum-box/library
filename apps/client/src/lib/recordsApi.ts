@@ -10,6 +10,7 @@ import {
 } from './libraryTable/libraryPropertyInput'
 import {
   deleteClientEngineRecord,
+  ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
   upsertClientEngineRecord,
@@ -20,6 +21,7 @@ import {
   loadStoredAuthIdentity,
   storeAuthTokens,
 } from './auth'
+import { t } from '../i18n'
 
 export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
@@ -1234,7 +1236,7 @@ export async function uploadLibraryImage(
 
   const payload = await response.json() as { url?: unknown }
   if (typeof payload.url !== 'string' || !payload.url) {
-    throw new RecordApiError('Library image upload returned no URL', response.status)
+    throw new RecordApiError(t('errors.imageUploadNoUrl'), response.status)
   }
   return payload.url
 }
@@ -1937,7 +1939,7 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
 }> {
   const org = target?.org ?? import.meta.env.VITE_LIBRARY_ORG
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
-  if (!org || !repo) throw new RecordApiError('Library API is not configured', 400)
+  if (!org || !repo) throw new RecordApiError(t('errors.apiNotConfigured'), 400)
 
   const resolvedTarget = { org, repo, operatorId: target?.operatorId, anonymous: target?.anonymous }
   try {
@@ -1946,7 +1948,7 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
       { org, repo, dataId },
       { operatorId: target?.operatorId, anonymous: target?.anonymous }
     )
-    if (!payload.data) throw new RecordApiError('Data not found', 404)
+    if (!payload.data) throw new RecordApiError(t('errors.dataNotFound'), 404)
     if (!Array.isArray(payload.properties)) {
       throw new RecordApiError(
         'Library GraphQL returned no Property definitions',
@@ -1999,6 +2001,22 @@ function nextIdentifier(records: DatabaseRecord[]) {
   return `${prefix}-${maxNumber + 1}`
 }
 
+/**
+ * Cache records the Library API just gave us.
+ *
+ * `ingest` rather than `upsert`: the Library API owns these rows, so storing
+ * one is not a local edit and must not enter the push queue. Writing them as
+ * operations meant every cached row became pending, and the pending set is
+ * scope-wide — so the next `documents` save tried to push the whole cache at
+ * the Engine.
+ */
+async function cacheLibraryRecords(records: readonly DatabaseRecord[]): Promise<void> {
+  await ingestClientEngineRecords(
+    libraryRecordsCollection,
+    records.map((record) => ({ recordId: record.id, value: record }))
+  )
+}
+
 function activeRecordsCollection(): string {
   return libraryApiConfigured() ? libraryRecordsCollection : 'records'
 }
@@ -2007,9 +2025,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
   if (libraryApiConfigured()) {
     try {
       const libraryRecords = await fetchLibraryRecords()
-      await Promise.all(
-        libraryRecords.map((record) => upsertClientEngineRecord(libraryRecordsCollection, record.id, record))
-      )
+      await cacheLibraryRecords(libraryRecords)
       return libraryRecords
     } catch (error) {
       const cached = await listClientEngineRecords<DatabaseRecord>(libraryRecordsCollection)
@@ -2035,9 +2051,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
             : Promise.resolve([])
         )
       )).flat()
-      await Promise.all(
-        libraryRecords.map((record) => upsertClientEngineRecord(libraryRecordsCollection, record.id, record))
-      )
+      await cacheLibraryRecords(libraryRecords)
       return libraryRecords
     } catch (error) {
       const cached = await listClientEngineRecords<DatabaseRecord>(libraryRecordsCollection)
@@ -2101,7 +2115,7 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
       repoUsername: targetRepo,
       operatorId: targetOperatorId,
     })
-    await upsertClientEngineRecord(libraryRecordsCollection, record.id, record)
+    await cacheLibraryRecords([record])
     return record
   }
 
@@ -2194,7 +2208,7 @@ export async function updateServerRecord(
       repoUsername: targetRepo,
       operatorId: targetOperatorId,
     })
-    await upsertClientEngineRecord(libraryRecordsCollection, record.id, record)
+    await cacheLibraryRecords([record])
     return record
   }
 
@@ -2202,7 +2216,7 @@ export async function updateServerRecord(
   const existing = (await listClientEngineRecords<DatabaseRecord>(collection))
     .find((record) => record.recordId === recordId)?.value
   if (!existing) {
-    throw new RecordApiError('Record not found', 404)
+    throw new RecordApiError(t('errors.recordNotFound'), 404)
   }
 
   const record: DatabaseRecord = {
@@ -2213,7 +2227,7 @@ export async function updateServerRecord(
     updatedAt: new Date().toISOString(),
   }
   const storedRecord = await patchClientEngineRecord<DatabaseRecord>(collection, recordId, record)
-  if (!storedRecord) throw new RecordApiError('Record not found', 404)
+  if (!storedRecord) throw new RecordApiError(t('errors.recordNotFound'), 404)
   return storedRecord.value
 }
 

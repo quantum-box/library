@@ -21,6 +21,7 @@ import type {
   WorkspaceDatabase,
   WorkspaceOrganization,
 } from '../contexts/DatabasesContext'
+import { useI18n } from '../i18n'
 
 interface CreateRepositoryDialogProps {
   open: boolean
@@ -50,6 +51,7 @@ export function CreateRepositoryDialog({
   onClose,
   onCreate,
 }: CreateRepositoryDialogProps) {
+  const { t } = useI18n()
   const [organizationId, setOrganizationId] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -87,15 +89,15 @@ export function CreateRepositoryDialog({
     event.preventDefault()
     if (busy) return
     if (!organizationId) {
-      setError('Select an organization for this repository.')
+      setError(t('createRepo.organizationRequired'))
       return
     }
     if (!trimmedName) {
-      setError('Repository name is required.')
+      setError(t('createRepo.nameRequired'))
       return
     }
     if (!usernameValid) {
-      setError('Repository slug must be 1–50 characters using letters, numbers, hyphens, or underscores.')
+      setError(t('createRepo.slugInvalid'))
       return
     }
 
@@ -111,7 +113,7 @@ export function CreateRepositoryDialog({
       )
       onClose()
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Repository could not be created.')
+      setError(createError instanceof Error ? createError.message : t('createRepo.failed'))
     } finally {
       setBusy(false)
     }
@@ -123,17 +125,15 @@ export function CreateRepositoryDialog({
     }}>
       <DialogContent className="max-w-lg" aria-busy={busy}>
         <DialogHeader>
-          <DialogTitle>Create repository</DialogTitle>
-          <DialogDescription>
-            Repositories keep related data, documents, and workflows together.
-          </DialogDescription>
+          <DialogTitle>{t('sidebar.repositories.create')}</DialogTitle>
+          <DialogDescription>{t('createRepo.description')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="repository-organization">Organization</Label>
+            <Label htmlFor="repository-organization">{t('createRepo.organizationLabel')}</Label>
             <Select value={organizationId} onValueChange={setOrganizationId} disabled={busy}>
               <SelectTrigger id="repository-organization" className="w-full">
-                <SelectValue placeholder="Select an organization" />
+                <SelectValue placeholder={t('createRepo.organizationPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {organizations.map((organization) => (
@@ -146,7 +146,7 @@ export function CreateRepositoryDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="repository-name">Repository name</Label>
+            <Label htmlFor="repository-name">{t('createRepo.nameLabel')}</Label>
             <Input
               id="repository-name"
               value={name}
@@ -156,14 +156,14 @@ export function CreateRepositoryDialog({
                 if (!usernameEdited) setUsername(normalizeUsername(nextName))
                 if (error) setError(null)
               }}
-              placeholder="Research library"
+              placeholder={t('createRepo.namePlaceholder')}
               disabled={busy}
               autoFocus
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="repository-username">Repository slug</Label>
+            <Label htmlFor="repository-username">{t('createRepo.slugLabel')}</Label>
             <Input
               id="repository-username"
               value={username}
@@ -172,7 +172,7 @@ export function CreateRepositoryDialog({
                 setUsernameEdited(true)
                 if (error) setError(null)
               }}
-              placeholder="research-library"
+              placeholder={t('createRepo.slugPlaceholder')}
               aria-describedby="repository-path-preview repository-username-help"
               disabled={busy}
             />
@@ -180,22 +180,31 @@ export function CreateRepositoryDialog({
               id="repository-path-preview"
               className="flex min-h-9 items-center rounded-md border border-border bg-surface px-3 font-mono text-xs text-muted-foreground"
             >
-              <span className="truncate">{selectedOrganization?.label ?? 'organization'}</span>
+              <span className="truncate">
+                {selectedOrganization?.label ?? t('createRepo.pathOrganization')}
+              </span>
               <span className="px-1.5 text-subtle-foreground">/</span>
-              <span className="truncate font-semibold text-foreground">{trimmedUsername || 'repository'}</span>
+              <span className="truncate font-semibold text-foreground">
+                {trimmedUsername || t('createRepo.pathRepository')}
+              </span>
             </div>
             <p id="repository-username-help" className="text-2xs text-muted-foreground">
-              This becomes the permanent repository URL.
+              {t('createRepo.slugHelp')}
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="repository-description">Description <span className="font-normal text-subtle-foreground">(optional)</span></Label>
+            <Label htmlFor="repository-description">
+              {t('createRepo.descriptionLabel')}{' '}
+              <span className="font-normal text-subtle-foreground">
+                {t('common.optionalSuffix')}
+              </span>
+            </Label>
             <textarea
               id="repository-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="What belongs in this repository?"
+              placeholder={t('createRepo.descriptionPlaceholder')}
               maxLength={500}
               disabled={busy}
               className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -203,7 +212,7 @@ export function CreateRepositoryDialog({
           </div>
 
           <fieldset className="space-y-1.5">
-            <legend className="text-sm font-medium">Visibility</legend>
+            <legend className="text-sm font-medium">{t('createRepo.visibility')}</legend>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -214,8 +223,10 @@ export function CreateRepositoryDialog({
               >
                 <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  <span className="block text-sm font-medium">Private</span>
-                  <span className="block text-2xs text-muted-foreground">Only permitted members</span>
+                  <span className="block text-sm font-medium">{t('createRepo.private')}</span>
+                  <span className="block text-2xs text-muted-foreground">
+                    {t('createRepo.privateHint')}
+                  </span>
                 </span>
               </button>
               <button
@@ -227,8 +238,10 @@ export function CreateRepositoryDialog({
               >
                 <Globe2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  <span className="block text-sm font-medium">Public</span>
-                  <span className="block text-2xs text-muted-foreground">Visible to everyone</span>
+                  <span className="block text-sm font-medium">{t('createRepo.public')}</span>
+                  <span className="block text-2xs text-muted-foreground">
+                    {t('createRepo.publicHint')}
+                  </span>
                 </span>
               </button>
             </div>
@@ -236,7 +249,7 @@ export function CreateRepositoryDialog({
 
           {organizations.length === 0 ? (
             <p role="alert" className="text-xs text-destructive">
-              Create an organization before creating a repository.
+              {t('createRepo.noOrganization')}
             </p>
           ) : error ? (
             <p role="alert" className="text-xs text-destructive">{error}</p>
@@ -244,14 +257,14 @@ export function CreateRepositoryDialog({
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" disabled={busy}>Cancel</Button>
+              <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
             </DialogClose>
             <Button
               type="submit"
               variant="primary"
               disabled={busy || organizations.length === 0 || !organizationId || !trimmedName || !usernameValid}
             >
-              {busy ? 'Creating…' : 'Create repository'}
+              {busy ? t('common.creating') : t('sidebar.repositories.create')}
             </Button>
           </DialogFooter>
         </form>

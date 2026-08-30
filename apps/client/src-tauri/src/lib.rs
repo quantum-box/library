@@ -1,6 +1,9 @@
 use photon_engine::{projection::apply_operation, Operation, Record};
 
 #[cfg(target_os = "macos")]
+mod macos_menu;
+
+#[cfg(target_os = "macos")]
 mod macos_tabs;
 
 #[cfg(target_os = "macos")]
@@ -53,7 +56,7 @@ pub fn run() {
             macos_tabs::close_window_tab,
             macos_tabs::update_window_tab_title
         ])
-        .menu(macos_tabs::menu_with_new_tab)
+        .menu(macos_menu::build)
         .on_menu_event(|app, event| {
             if event.id() == macos_tabs::NEW_TAB_MENU_ID {
                 if let Err(error) =
@@ -64,6 +67,12 @@ pub fn run() {
                     macos_tabs::emit_tabs_changed(app)
                 {
                     log::error!("failed to emit tab change: {error}");
+                }
+            } else if event.id() == macos_menu::CHECK_FOR_UPDATES_MENU_ID {
+                if let Err(error) = macos_menu::request_update_check(app) {
+                    log::error!(
+                        "failed to request an update check: {error}"
+                    );
                 }
             }
         })

@@ -38,6 +38,13 @@ ESLint is configured in `eslint.config.js`. Use two-space indentation, single qu
 
 Keep reusable shell code independent of project names. Put labels, defaults, persistence keys, and WebSocket paths in `src/app/kitConfig.ts`.
 
+Every user-facing string goes through the message catalogs in `src/i18n/`, never
+into a component as a literal: add the key to `messages/en.ts`, translate it in
+the other catalogs, and read it with `useI18n()` (or the module-level `t()`
+outside React). Constant tables carry a `labelKey`, not a label. Dates, numbers,
+byte sizes, and sorting use the helpers in `src/i18n/format.ts` so they follow
+the reader's locale. See [`docs/i18n.md`](docs/i18n.md).
+
 ## Testing Guidelines
 
 Use Vitest for focused unit tests in `src/**/*.{test,spec}.{ts,tsx}`. Use Playwright for browser flows in `tests/e2e/*.spec.ts`.

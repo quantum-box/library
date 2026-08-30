@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Library Client",
+  "productName": "Library",
   "version": "../package.json",
   "identifier": "com.quantumbox.library.client",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Library Client",
+        "title": "Library",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -70,6 +70,11 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "windows": {
+      "wix": {
+        "upgradeCode": "053a7581-a632-5412-942e-82424a9627c5"
+      }
+    },
     "iOS": {
       "developmentTeam": "J8429VCGMR",
       "minimumSystemVersion": "14.0"

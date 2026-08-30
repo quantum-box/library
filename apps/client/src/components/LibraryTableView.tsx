@@ -21,6 +21,7 @@ import {
 } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { Kbd, KbdGroup } from './Kbd'
+import { useI18n, t as translate, collator } from '../i18n'
 
 const ROW_HEIGHT = 40
 const columnHelper = createColumnHelper<LibraryDataItem>()
@@ -39,7 +40,7 @@ interface LibraryTableViewProps {
 
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  return 'Failed to load repository data'
+  return translate('libraryTable.loadFailed')
 }
 
 export function LibraryTableView({
@@ -53,6 +54,7 @@ export function LibraryTableView({
   globalFilter: controlledGlobalFilter,
   onGlobalFilterChange,
 }: LibraryTableViewProps) {
+  const { t, tPlural, locale, formatDate } = useI18n()
   const [items, setItems] = useState<LibraryDataItem[]>([])
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -201,8 +203,8 @@ export function LibraryTableView({
             data-testid={`library-table-delete-${row.original.id}`}
             className="rounded px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-status-cancelled"
             disabled={saving}
-            title="Delete row"
-            aria-label={`Delete ${row.original.name}`}
+            title={t('libraryTable.deleteRow')}
+            aria-label={t('repoSettings.deleteNamed', { name: row.original.name })}
             onClick={(event) => {
               event.stopPropagation()
               setPendingDelete(row.original)
@@ -215,7 +217,7 @@ export function LibraryTableView({
       }),
       columnHelper.accessor('name', {
         id: 'name',
-        header: 'Name',
+        header: t('apiKeys.nameLabel'),
         size: 240,
         cell: ({ row }) => (
           <LibraryNameEditableCell
@@ -243,29 +245,26 @@ export function LibraryTableView({
             const valueB = getLibraryDataPropertyValue(rowB.original, property.id)
             const textA = valueA ? propertyValueText(property, valueA) ?? '' : ''
             const textB = valueB ? propertyValueText(property, valueB) ?? '' : ''
-            return textA.localeCompare(textB, 'ja')
+            return collator(locale).compare(textA, textB)
           },
         })
       ),
       columnHelper.accessor('updatedAt', {
         id: 'updatedAt',
-        header: 'Updated',
+        header: t('table.column.updated'),
         size: 110,
         cell: (info) => {
           const value = info.getValue()
           if (!value) return <span className="text-xs text-subtle">—</span>
-          const parsed = new Date(value)
           return (
             <span className="text-xs text-subtle">
-              {Number.isNaN(parsed.getTime())
-                ? value
-                : parsed.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+              {formatDate(value, { month: 'short', day: 'numeric' }) ?? value}
             </span>
           )
         },
       }),
     ],
-    [handleNameCommit, handlePropertyCommit, properties, saving]
+    [formatDate, handleNameCommit, handlePropertyCommit, locale, properties, saving, t]
   )
 
   const table = useReactTable({
@@ -317,7 +316,7 @@ export function LibraryTableView({
           <Input
             data-testid="library-table-global-filter"
             type="text"
-            placeholder="Search data"
+            placeholder={t('libraryTable.searchPlaceholder')}
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
             className="h-7 w-full bg-surface pl-8 pr-24 text-xs"
@@ -341,12 +340,12 @@ export function LibraryTableView({
           }}
         >
           <Plus aria-hidden="true" />
-          New data
+          {t('data.new')}
         </Button>
         <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
           <Rows3 className="size-3.5" aria-hidden="true" />
-          {loading ? 'Loading…' : `${rows.length} data`}
-          {saving ? ' · Saving…' : ''}
+          {loading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
+          {saving ? ` · ${t('common.saving')}` : ''}
         </span>
         <Button
           variant="ghost"
@@ -354,8 +353,8 @@ export function LibraryTableView({
           className="size-7"
           onClick={() => void reload()}
           disabled={loading}
-          aria-label="Refresh data"
-          title="Refresh data"
+          aria-label={t('libraryTable.refresh')}
+          title={t('libraryTable.refresh')}
         >
           <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
         </Button>
@@ -374,7 +373,7 @@ export function LibraryTableView({
             data-testid="library-table-new-row-name"
             type="text"
             value={newRowName}
-            placeholder="Data name"
+            placeholder={t('createRecord.nameLabel')}
             onChange={(event) => setNewRowName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') void handleCreateRow()
@@ -391,7 +390,7 @@ export function LibraryTableView({
             disabled={saving || !newRowName.trim()}
             onClick={() => void handleCreateRow()}
           >
-            Create
+            {t('common.create')}
           </button>
           <button
             type="button"
@@ -401,14 +400,14 @@ export function LibraryTableView({
               setNewRowName('')
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       )}
 
       {loading && (
         <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-loading">
-          Loading repository data…
+          {t('libraryTable.loading')}
         </div>
       )}
 
@@ -421,14 +420,14 @@ export function LibraryTableView({
             data-testid="library-table-retry"
             onClick={() => void reload()}
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       )}
 
       {!loading && !error && rows.length === 0 && !creatingRow && (
         <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-empty">
-          No data in this repository. Use &quot;+ New data&quot; to add a row.
+          {t('libraryTable.empty')}
         </div>
       )}
 

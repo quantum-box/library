@@ -1,3 +1,5 @@
+import { formatNumber, getActiveLocale } from '../../i18n'
+
 export interface FileAttachment {
   id: string
   name: string
@@ -28,10 +30,17 @@ export function detectAttachmentFileType(file: Pick<FileAttachment, 'name' | 'ty
   return detectFileType(new File([], file.name, { type: file.type }))
 }
 
+/**
+ * Size label for a chip or list row. Unit suffixes stay SI, which reads the
+ * same everywhere; only the digits are formatted for the active locale, so
+ * the decimal separator follows it.
+ */
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  const locale = getActiveLocale()
+  const oneDecimal = { minimumFractionDigits: 1, maximumFractionDigits: 1 } as const
+  if (bytes < 1024) return `${formatNumber(locale, bytes)} B`
+  if (bytes < 1024 * 1024) return `${formatNumber(locale, bytes / 1024, oneDecimal)} KB`
+  return `${formatNumber(locale, bytes / (1024 * 1024), oneDecimal)} MB`
 }
 
 export type FileIconName = 'document' | 'spreadsheet' | 'presentation' | 'attachment'

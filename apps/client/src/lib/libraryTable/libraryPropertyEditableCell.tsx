@@ -10,6 +10,7 @@ import {
   parseEditablePropertyValue,
 } from './libraryPropertyInput'
 import { LibraryPropertyCell } from './libraryPropertyCells'
+import { t } from '../../i18n'
 
 const editableFieldClassName =
   'w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none'
@@ -206,10 +207,16 @@ export function LibraryPropertyEditableCell({
     <div
       className={`min-w-0 rounded px-1 ${disabled ? '' : 'cursor-text'} ${singleClick ? 'hover:bg-muted/60' : ''}`}
       data-testid={`library-editable-cell-${property.id}`}
-      title={disabled ? undefined : singleClick ? 'Click to edit' : 'Double-click to edit'}
+      title={disabled
+        ? undefined
+        : singleClick
+          ? t('common.clickToEdit')
+          : t('table.doubleClickToEdit')}
       role={singleClick && !disabled ? 'button' : undefined}
       tabIndex={singleClick && !disabled ? 0 : undefined}
-      aria-label={singleClick && !disabled ? `Edit ${property.name}` : undefined}
+      aria-label={singleClick && !disabled
+        ? t('common.editNamed', { name: property.name })
+        : undefined}
       onClick={singleClick ? beginEditing : undefined}
       onKeyDown={singleClick ? (event) => {
         if (disabled) return
@@ -220,7 +227,9 @@ export function LibraryPropertyEditableCell({
       onDoubleClick={singleClick ? undefined : beginEditing}
     >
       {singleClick && (!currentValue || isEmptyPropertyValue(currentValue)) ? (
-        <span className="block text-sm text-subtle-foreground">Empty</span>
+        <span className="block text-sm text-subtle-foreground">
+          {t('libraryTable.emptyValue')}
+        </span>
       ) : (
         <LibraryPropertyCell item={item} property={property} />
       )}
@@ -255,7 +264,7 @@ export function LibraryNameEditableCell({
   return (
     <span
       className={`block truncate text-sm font-medium text-foreground ${disabled ? '' : 'cursor-text'}`}
-      title={disabled ? undefined : 'Double-click to edit name'}
+      title={disabled ? undefined : t('libraryTable.doubleClickToEditName')}
       onDoubleClick={(event) => {
         if (disabled) return
         event.stopPropagation()

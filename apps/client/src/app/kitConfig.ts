@@ -1,4 +1,5 @@
 import { loadStoredAuthIdentity } from '../lib/auth'
+import type { MessageKey } from '../i18n'
 
 export type DeploymentMode = 'local' | 'cloud' | 'onprem'
 export type FrontendWorkerRuntime = 'cloudflare-workers' | 'workerd'
@@ -79,7 +80,8 @@ export interface AppKitConfig {
   }
   chat: {
     productName: string
-    disclaimer: string
+    /** Message key for the assistant disclaimer, resolved at render time. */
+    disclaimerKey: MessageKey
     stream: {
       mode: ChatStreamMode
       transport: ChatStreamTransport
@@ -143,6 +145,7 @@ export interface AppKitConfig {
   }
   storage: {
     themeKey: string
+    localeKey: string
   }
 }
 
@@ -385,7 +388,7 @@ const frontendWorkerRuntime = resolveFrontendWorkerRuntime(
 )
 const appProfile = {
   id: 'library-client',
-  displayName: 'Library Client',
+  displayName: 'Library',
   storageNamespace: 'library-client',
 } as const
 const DEFAULT_TENANT_ID = 'library'
@@ -522,7 +525,7 @@ export const appKitConfig: AppKitConfig = {
   },
   chat: {
     productName: 'Library Chat',
-    disclaimer: 'Library AI can make mistakes. Verify important information.',
+    disclaimerKey: 'chat.disclaimer',
     stream: {
       mode: resolveChatStreamMode(
         deploymentMode,
@@ -589,5 +592,6 @@ export const appKitConfig: AppKitConfig = {
   },
   storage: {
     themeKey: namespacedKey(appProfile.storageNamespace, 'theme'),
+    localeKey: namespacedKey(appProfile.storageNamespace, 'locale'),
   },
 }

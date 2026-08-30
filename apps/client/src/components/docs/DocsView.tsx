@@ -39,6 +39,7 @@ import {
 } from '../../lib/docs/workspaceContext'
 import type { DocMetadata, DocumentRecordLink } from '../../lib/docs/types'
 import type { DatabaseRecord } from '../../data/mock'
+import { useI18n, t as translate, type MessageKey } from '../../i18n'
 
 interface DocsViewProps {
   selectedDocId: string | null
@@ -46,20 +47,11 @@ interface DocsViewProps {
   initialDatabaseId?: string
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('ja-JP', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-const syncStatusLabels = {
-  connecting: 'Server connecting',
-  connected: 'Server connected',
-  offline: 'Local only',
-} as const
+const syncStatusLabelKeys = {
+  connecting: 'docs.sync.connecting',
+  connected: 'docs.sync.connected',
+  offline: 'docs.sync.offline',
+} as const satisfies Record<string, MessageKey>
 
 const syncStatusColors = {
   connecting: '#ca8a04',
@@ -78,12 +70,14 @@ export function DocsList({
   onCreate: () => void
   initialDatabaseId?: string
 }) {
+  const { t, tPlural, formatDate } = useI18n()
+
   return (
     <div className="flex min-h-0 w-full shrink-0 flex-col border-b border-border bg-panel md:w-72 md:border-b-0 md:border-r">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 md:px-4 md:py-3">
         <div>
-          <h1 className="text-sm font-semibold">Docs</h1>
-          <p className="text-xs text-subtle">{docs.length} docs</p>
+          <h1 className="text-sm font-semibold">{t('shortcuts.docs')}</h1>
+          <p className="text-xs text-subtle">{tPlural('docs.count', docs.length)}</p>
         </div>
         <button
           data-testid="create-doc"
@@ -91,7 +85,7 @@ export function DocsList({
           onClick={onCreate}
         >
           <Plus className="mr-1 inline size-3.5" aria-hidden="true" />
-          New
+          {t('docs.newShort')}
         </button>
       </div>
 
@@ -108,12 +102,19 @@ export function DocsList({
             }`}
           >
             <div className="truncate text-sm font-medium">{doc.title}</div>
-            <div className="mt-1 text-xs text-subtle">{formatDate(doc.updatedAt)}</div>
+            <div className="mt-1 text-xs text-subtle">
+              {formatDate(doc.updatedAt, {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </div>
           </DocLink>
         ))}
         {docs.length === 0 && (
           <div className="px-3 py-8 text-sm text-subtle">
-            No docs yet.
+            {t('docs.empty')}
           </div>
         )}
       </div>
@@ -183,6 +184,7 @@ export function DocumentTitleInput({
   doc: DocMetadata
   onRename: (title: string) => void
 }) {
+  const { t } = useI18n()
   const [title, setTitle] = useState(doc.title)
 
   useEffect(() => {
@@ -198,7 +200,7 @@ export function DocumentTitleInput({
 
   return (
     <input
-      aria-label="Document title"
+      aria-label={t('docs.titleLabel')}
       className="w-full bg-transparent text-xl font-semibold outline-none"
       value={title}
       onChange={(event) => setTitle(event.target.value)}
@@ -235,6 +237,7 @@ export function DocumentEditor({
   onAttachFiles: (files: FileList | File[]) => void
   initialDatabaseId?: string
 }) {
+  const { t, formatDate } = useI18n()
   const { collab, ready, syncStatus, roomId } = useDocumentCollaboration(doc.id)
   const [selectedText, setSelectedText] = useState(() => readStoredSelectedText(doc.id))
   const selectedTextRef = useRef(selectedText)
@@ -314,7 +317,7 @@ export function DocumentEditor({
         record,
         selectedText: text,
         createdFromSelection,
-        message: error instanceof Error ? error.message : 'Failed to link data to the document.',
+        message: error instanceof Error ? error.message : translate('docs.linkFailed'),
       })
     } finally {
       setLinkRecordBusy(false)
@@ -343,7 +346,7 @@ export function DocumentEditor({
       }
     } catch (error: unknown) {
       setCreateRecordError(
-        error instanceof Error ? error.message : 'Failed to create data from the selection.'
+        error instanceof Error ? error.message : translate('docs.createFromSelectionFailed')
       )
     } finally {
       setCreateRecordBusy(false)
@@ -360,8 +363,8 @@ export function DocumentEditor({
           <button
             type="button"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-hover text-subtle hover:text-status-cancelled"
-            aria-label="Delete document"
-            title="Delete document"
+            aria-label={t('docs.deleteDocument')}
+            title={t('docs.deleteDocument')}
             onClick={onDelete}
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -373,14 +376,21 @@ export function DocumentEditor({
               className="inline-block h-2 w-2 rounded-full"
               style={{ background: syncStatusColors[syncStatus] }}
             />
-            {syncStatusLabels[syncStatus]}
+            {t(syncStatusLabelKeys[syncStatus])}
           </span>
           <span>·</span>
-          <span>PGlite metadata</span>
+          <span>{t('docs.pgliteMetadata')}</span>
           <span>·</span>
-          <span>Yjs blocks</span>
+          <span>{t('docs.yjsBlocks')}</span>
           <span>·</span>
-          <span>{formatDate(doc.updatedAt)}</span>
+          <span>
+            {formatDate(doc.updatedAt, {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
           {roomId && (
             <>
               <span>·</span>
@@ -391,7 +401,7 @@ export function DocumentEditor({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <select
             data-testid="doc-repository-select"
-            aria-label="Document repository"
+            aria-label={t('docs.repositorySelect')}
             className="max-w-xs rounded border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
             value={selectedDatabaseId}
             onChange={(event) => {
@@ -399,7 +409,7 @@ export function DocumentEditor({
               setSelectedRecordId('')
             }}
           >
-            <option value="">Repository...</option>
+            <option value="">{t('docs.repositoryPlaceholder')}</option>
             {databases.map((database) => (
               <option key={database.id} value={database.id}>
                 {database.label}
@@ -408,13 +418,13 @@ export function DocumentEditor({
           </select>
           <select
             data-testid="doc-link-record-select"
-            aria-label="Document data"
+            aria-label={t('docs.dataSelect')}
             className="max-w-xs rounded border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
             value={selectedRecordId}
             onChange={(event) => setSelectedRecordId(event.target.value)}
             disabled={!selectedDatabase}
           >
-            <option value="">Data...</option>
+            <option value="">{t('docs.dataPlaceholder')}</option>
             {selectableRecords.map((record) => (
               <option key={record.id} value={record.id}>
                 {record.identifier} {record.title}
@@ -428,7 +438,7 @@ export function DocumentEditor({
             disabled={!selectedRecordId || linkRecordBusy}
             onClick={() => void handleLinkSelectedRecord()}
           >
-            Link
+            {t('docs.link')}
           </button>
           <button
             type="button"
@@ -443,10 +453,10 @@ export function DocumentEditor({
             }
             onClick={() => void handleCreateFromSelection()}
           >
-            {createRecordBusy ? 'Creating data…' : 'Create data from selection'}
+            {createRecordBusy ? t('docs.creatingData') : t('docs.createFromSelection')}
           </button>
           <label className="cursor-pointer rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-foreground">
-            Attach
+            {t('detail.attach')}
             <input
               data-testid="doc-attach-file"
               type="file"
@@ -466,7 +476,7 @@ export function DocumentEditor({
             data-testid="doc-create-record-error"
             role="alert"
           >
-            Couldn&apos;t create data: {createRecordError}
+            {t('docs.createDataFailedPrefix')}: {createRecordError}
           </p>
         ) : null}
         {linkRecordFailure ? (
@@ -477,8 +487,8 @@ export function DocumentEditor({
           >
             <span>
               {linkRecordFailure.createdFromSelection
-                ? 'Data created, but link failed'
-                : "Couldn't link data"}
+                ? t('docs.linkFailedAfterCreate')
+                : t('docs.linkFailedShort')}
               : {linkRecordFailure.message}
             </span>
             <button
@@ -491,7 +501,7 @@ export function DocumentEditor({
                 linkRecordFailure.createdFromSelection
               )}
             >
-              {linkRecordBusy ? 'Linking…' : 'Retry link'}
+              {linkRecordBusy ? t('docs.linking') : t('docs.retryLink')}
             </button>
           </div>
         ) : null}
@@ -526,7 +536,7 @@ export function DocumentEditor({
         <div className="mx-auto max-w-3xl">
           {!ready || !collab ? (
             <div className="shimmer rounded bg-surface px-3 py-2 text-sm text-subtle">
-              Loading document...
+              {t('docs.loadingDocument')}
             </div>
           ) : (
             <BlockNoteDocumentEditor
@@ -558,6 +568,7 @@ function DocumentDeleteDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const { t } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
   useDialogFocus({
@@ -590,12 +601,11 @@ function DocumentDeleteDialog({
         className="w-full max-w-md rounded-lg border border-border bg-surface p-4 shadow-soft"
       >
         <h2 id="document-delete-dialog-title" className="text-sm font-semibold text-foreground">
-          Delete document?
+          {t('docs.deleteTitle')}
         </h2>
         <p id="document-delete-dialog-description" className="mt-2 text-sm text-muted">
-          <span className="font-medium text-foreground">{doc.title}</span>, its data links, and
-          this device&apos;s cached body will be removed. Attachments used elsewhere will be preserved.
-          Server collaboration history follows the workspace retention policy.
+          <span className="font-medium text-foreground">{doc.title}</span>
+          {t('docs.deleteDescription')}
         </p>
         {error && (
           <p className="mt-2 text-xs text-status-cancelled" role="alert">
@@ -610,7 +620,7 @@ function DocumentDeleteDialog({
             disabled={busy}
             onClick={onCancel}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -619,7 +629,7 @@ function DocumentDeleteDialog({
             disabled={busy}
             onClick={onConfirm}
           >
-            {busy ? 'Deleting…' : 'Delete'}
+            {busy ? t('common.deleting') : t('common.delete')}
           </button>
         </div>
       </div>
@@ -643,6 +653,7 @@ export function DocsView({
   createOnOpen = false,
   initialDatabaseId,
 }: DocsViewProps) {
+  const { t } = useI18n()
   const {
     docs,
     ready,
@@ -703,7 +714,7 @@ export function DocsView({
         if (cancelled) return
         autoCreateStartedRef.current = false
         setAutoCreateError(
-          error instanceof Error ? error.message : 'Failed to create document'
+          error instanceof Error ? error.message : translate('docs.createFailed')
         )
       }
     })()
@@ -728,7 +739,7 @@ export function DocsView({
         setDocumentLookup({
           docId: selectedDocId,
           status: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load document',
+          message: error instanceof Error ? error.message : translate('docs.loadFailed'),
         })
       })
     return () => {
@@ -775,7 +786,7 @@ export function DocsView({
   ) => {
     if (!selectedDoc || !selectedText.trim()) return null
     if (!database.orgUsername || !database.repoUsername) {
-      throw new Error('Select a repository with an organization and repository target.')
+      throw new Error(translate('docs.selectRepositoryFirst'))
     }
     const record = await createServerRecord({
       title: selectedText.trim().slice(0, 120),
@@ -831,7 +842,7 @@ export function DocsView({
       }
       setDeleteRedirect({ documentId: nextDoc?.id ?? null })
     } catch (error: unknown) {
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete document')
+      setDeleteError(error instanceof Error ? error.message : translate('docs.deleteFailed'))
     } finally {
       setDeleteBusy(false)
     }
@@ -890,7 +901,7 @@ export function DocsView({
           />
         ) : !ready ? (
           <div className="flex flex-1 items-center justify-center text-sm text-subtle">
-            Loading docs...
+            {t('docs.loadingDocs')}
           </div>
         ) : selectedDocId && selectedLookup?.status === 'not-found' ? (
           <div
@@ -898,40 +909,38 @@ export function DocsView({
             data-testid="document-not-found"
           >
             <div className="max-w-sm text-center">
-              <div className="text-sm font-semibold text-foreground">Document not found</div>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                This document may have been deleted, or the link may be incorrect.
-              </p>
+              <div className="text-sm font-semibold text-foreground">{t('docs.notFound')}</div>
+              <p className="mt-2 text-sm leading-6 text-muted">{t('docs.notFoundHint')}</p>
               <Link
                 to="/docs"
                 className="mt-4 inline-block rounded bg-surface-hover px-3 py-2 text-sm font-medium text-foreground no-underline"
               >
-                Back to Docs
+                {t('docs.backToDocs')}
               </Link>
             </div>
           </div>
         ) : selectedDocId && selectedLookup?.status === 'error' ? (
           <div className="flex flex-1 items-center justify-center px-6">
             <div className="max-w-sm text-center">
-              <div className="text-sm font-semibold text-foreground">Couldn’t load document</div>
+              <div className="text-sm font-semibold text-foreground">{t('docs.loadFailedTitle')}</div>
               <p className="mt-2 text-sm leading-6 text-muted">{selectedLookup.message}</p>
               <button
                 type="button"
                 className="mt-4 rounded bg-surface-hover px-3 py-2 text-sm font-medium text-foreground"
                 onClick={() => setLookupAttempt((attempt) => attempt + 1)}
               >
-                Retry
+                {t('common.retry')}
               </button>
             </div>
           </div>
         ) : selectedDocId ? (
           <div className="flex flex-1 items-center justify-center text-sm text-subtle">
-            Loading document...
+            {t('docs.loadingDocument')}
           </div>
         ) : createOnOpen && autoCreateError ? (
           <div className="flex flex-1 items-center justify-center px-6" role="alert">
             <div className="max-w-sm text-center">
-              <div className="text-sm font-semibold text-foreground">Couldn&apos;t create document</div>
+              <div className="text-sm font-semibold text-foreground">{t('docs.createFailedTitle')}</div>
               <p className="mt-2 text-sm leading-6 text-muted">{autoCreateError}</p>
               <button
                 type="button"
@@ -941,26 +950,24 @@ export function DocsView({
                   setAutoCreateAttempt((attempt) => attempt + 1)
                 }}
               >
-                Try again
+                {t('common.tryAgain')}
               </button>
             </div>
           </div>
         ) : createOnOpen ? (
           <div className="flex flex-1 items-center justify-center text-sm text-subtle" aria-busy="true">
-            Creating document...
+            {t('docs.creatingDocument')}
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center px-6">
             <div className="max-w-sm text-center">
-              <div className="text-sm font-semibold">Start a workspace doc</div>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                Capture notes, specs, and Library data context in one shared workspace.
-              </p>
+              <div className="text-sm font-semibold">{t('docs.emptyTitle')}</div>
+              <p className="mt-2 text-sm leading-6 text-muted">{t('docs.emptyHint')}</p>
               <button
                 className="mt-4 rounded bg-accent px-3 py-2 text-sm font-medium text-white"
                 onClick={handleCreate}
               >
-                Create doc
+                {t('docs.createDoc')}
               </button>
               <div className="mt-3 text-xs text-subtle">
                 {appKitConfig.docs.pgliteDataDir}

@@ -79,34 +79,37 @@ import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
 import { OPEN_CREATE_REPOSITORY_EVENT } from '../lib/ui/workspaceEvents'
 import { isDesktopApp, requestUpdateCheck } from '../lib/appUpdate'
+import { useI18n } from '../i18n'
+import type { MessageKey } from '../i18n'
+import { LanguageMenuSection } from './LanguageMenuSection'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
-  label: string
+  labelKey: MessageKey
   icon: LucideIcon
   to: '/home' | '/databases' | '/docs' | '/chat' | '/sync'
   shortcut?: string
 }
 
 const workspaceLinks: WorkspaceLink[] = [
-  { id: 'home', label: 'Home', icon: Home, to: '/home', shortcut: 'H' },
-  { id: 'data', label: 'All data', icon: Database, to: '/databases', shortcut: 'D' },
-  { id: 'docs', label: 'Documents', icon: FileText, to: '/docs' },
-  { id: 'chat', label: 'Ask Library', icon: Bot, to: '/chat' },
-  { id: 'sync', label: 'Sync status', icon: Cloud, to: '/sync' },
+  { id: 'home', labelKey: 'sidebar.nav.home', icon: Home, to: '/home', shortcut: 'H' },
+  { id: 'data', labelKey: 'sidebar.nav.allData', icon: Database, to: '/databases', shortcut: 'D' },
+  { id: 'docs', labelKey: 'sidebar.nav.documents', icon: FileText, to: '/docs' },
+  { id: 'chat', labelKey: 'sidebar.nav.askLibrary', icon: Bot, to: '/chat' },
+  { id: 'sync', labelKey: 'sidebar.nav.syncStatus', icon: Cloud, to: '/sync' },
 ]
 
-const themeOptions: Array<{ mode: ThemeMode; label: string; icon: LucideIcon }> = [
-  { mode: 'light', label: 'Light', icon: Sun },
-  { mode: 'dark', label: 'Dark', icon: Moon },
-  { mode: 'system', label: 'System', icon: Monitor },
+const themeOptions: Array<{ mode: ThemeMode; labelKey: MessageKey; icon: LucideIcon }> = [
+  { mode: 'light', labelKey: 'appearance.light', icon: Sun },
+  { mode: 'dark', labelKey: 'appearance.dark', icon: Moon },
+  { mode: 'system', labelKey: 'appearance.system', icon: Monitor },
 ]
 
-const connectionLabels = {
-  connected: 'Synced',
-  connecting: 'Connecting',
-  disconnected: 'Offline',
-} as const
+const connectionLabelKeys = {
+  connected: 'sidebar.connection.synced',
+  connecting: 'sidebar.connection.connecting',
+  disconnected: 'sidebar.connection.offline',
+} as const satisfies Record<string, MessageKey>
 
 const denseSidebarItemClass = 'h-7 px-1.5 text-xs [&_svg]:size-3.5'
 
@@ -131,6 +134,7 @@ function initials(value: string) {
 function AccountMenu({ mobile = false }: { mobile?: boolean }) {
   const [session, setSession] = useState(() => loadAuthTokens())
   const { mode, setMode } = useTheme()
+  const { t } = useI18n()
 
   useEffect(() => {
     const reload = () => setSession(loadAuthTokens())
@@ -138,14 +142,14 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
     return () => window.removeEventListener('library-auth-change', reload)
   }, [])
 
-  const accountName = session?.email || session?.username || 'Library account'
-  const accountDetail = session?.email ? session.username : 'Signed in'
+  const accountName = session?.email || session?.username || t('account.fallbackName')
+  const accountDetail = session?.email ? session.username : t('account.signedIn')
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {mobile ? (
-          <Button variant="ghost" size="icon" aria-label="Open account menu">
+          <Button variant="ghost" size="icon" aria-label={t('account.openMenu')}>
             <span className="flex size-6 items-center justify-center rounded-full bg-selected text-2xs font-medium text-primary">
               {initials(accountName)}
             </span>
@@ -162,27 +166,29 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
         <DropdownMenuLabel className="normal-case tracking-normal">
           <span className="block truncate text-sm font-medium text-foreground">{accountName}</span>
           <span className="mt-0.5 block truncate text-2xs font-normal text-muted-foreground">
-            {session?.userId ?? 'Authenticated account'}
+            {session?.userId ?? t('account.authenticated')}
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('account.appearance')}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={mode}
           onValueChange={(value) => setMode(value as ThemeMode)}
         >
-          {themeOptions.map(({ mode: optionMode, label, icon: Icon }) => (
+          {themeOptions.map(({ mode: optionMode, labelKey, icon: Icon }) => (
             <DropdownMenuRadioItem key={optionMode} value={optionMode}>
               <Icon aria-hidden="true" />
-              {label}
+              {t(labelKey)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <LanguageMenuSection />
+        <DropdownMenuSeparator />
         {isDesktopApp() && (
           <DropdownMenuItem data-testid="account-check-updates" onSelect={requestUpdateCheck}>
             <RefreshCw aria-hidden="true" />
-            Check for updates
+            {t('account.checkForUpdates')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -193,7 +199,7 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
           }}
         >
           <LogOut aria-hidden="true" />
-          Sign out
+          {t('account.signOut')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -201,6 +207,7 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
 }
 
 function TenantWorkspaceSwitcher() {
+  const { t } = useI18n()
   const options = appKitConfig.tenancy.availableWorkspaces
   if (options.length <= 1) return null
 
@@ -219,7 +226,7 @@ function TenantWorkspaceSwitcher() {
         }}
       >
         <SelectTrigger data-testid="tenant-workspace-switcher" className="w-full">
-          <SelectValue placeholder="Choose a workspace" />
+          <SelectValue placeholder={t('sidebar.workspace.placeholder')} />
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
@@ -248,6 +255,7 @@ export function Sidebar() {
     createRepository,
   } = useWorkspaceDatabases()
   const navigate = useNavigate()
+  const { t, tPlural } = useI18n()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const search = useRouterState({ select: (state) => state.location.search }) as {
     database?: string
@@ -309,14 +317,14 @@ export function Sidebar() {
 
   const organizationOptions = useMemo(
     () => [
-      { value: 'all', label: 'All organizations' },
+      { value: 'all', label: t('sidebar.organizations.all') },
       ...organizations.map((organization) => ({
         value: organization.id,
         label: organization.label,
         description: organization.platformTenantId,
       })),
     ],
-    [organizations],
+    [organizations, t],
   )
 
   useEffect(() => {
@@ -439,8 +447,8 @@ export function Sidebar() {
   }
 
   const connectionText = connectionStatus === 'connected'
-    ? `${onlineCount} online`
-    : connectionLabels[connectionStatus]
+    ? tPlural('sidebar.connection.online', onlineCount)
+    : t(connectionLabelKeys[connectionStatus])
 
   const connectionIndicator = (
     <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
@@ -463,7 +471,7 @@ export function Sidebar() {
     const linkContent = (
       <>
         <Icon aria-hidden="true" />
-        <SidebarItemLabel>{link.label}</SidebarItemLabel>
+        <SidebarItemLabel>{t(link.labelKey)}</SidebarItemLabel>
         {link.shortcut ? <Kbd>{link.shortcut}</Kbd> : null}
       </>
     )
@@ -472,7 +480,7 @@ export function Sidebar() {
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
         <DataLink
           data-testid={`view-${link.id}${suffix}`}
-          aria-label={link.label}
+          aria-label={t(link.labelKey)}
           databaseId={selectedDatabaseId}
           view={currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType}
         >
@@ -481,7 +489,7 @@ export function Sidebar() {
       </SidebarItem>
     ) : (
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
-        <Link data-testid={`view-${link.id}${suffix}`} aria-label={link.label} to={link.to}>
+        <Link data-testid={`view-${link.id}${suffix}`} aria-label={t(link.labelKey)} to={link.to}>
           {linkContent}
         </Link>
       </SidebarItem>
@@ -490,7 +498,7 @@ export function Sidebar() {
     return (
       <Tooltip key={link.id}>
         <TooltipTrigger asChild>{item}</TooltipTrigger>
-        {!expanded && <TooltipContent side="right">{link.label}</TooltipContent>}
+        {!expanded && <TooltipContent side="right">{t(link.labelKey)}</TooltipContent>}
       </Tooltip>
     )
   }
@@ -516,8 +524,8 @@ export function Sidebar() {
                 options={organizationOptions}
                 value={selectedOrganizationId ?? 'all'}
                 onValueChange={handleOrganizationSelect}
-                placeholder="All organizations"
-                searchPlaceholder="Find an organization…"
+                placeholder={t('sidebar.organizations.all')}
+                searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
               />
             </div>
           )}
@@ -525,7 +533,7 @@ export function Sidebar() {
             type="button"
             variant="ghost"
             size="icon"
-            aria-label="Add organization"
+            aria-label={t('sidebar.organizations.add')}
             onClick={() => setCreateOrganizationOpen(true)}
           >
             <Plus aria-hidden="true" />
@@ -552,7 +560,7 @@ export function Sidebar() {
                 }}
               >
                 <Icon aria-hidden="true" />
-                {link.label}
+                {t(link.labelKey)}
               </Button>
             )
           })}
@@ -568,7 +576,7 @@ export function Sidebar() {
             }}
           >
             <Plus aria-hidden="true" />
-            New repository
+            {t('sidebar.repositories.new')}
           </Button>
           <Button
             variant="ghost"
@@ -578,7 +586,7 @@ export function Sidebar() {
             }
             onClick={() => void navigate({ to: '/repositories' })}
           >
-            All repositories
+            {t('sidebar.repositories.viewAll')}
           </Button>
           {visibleDatabases.map((database) => (
             <Button
@@ -599,11 +607,15 @@ export function Sidebar() {
         data-testid="side-nav"
         collapsed={!expanded}
         className="hidden gap-0 p-1.5 md:flex"
-        aria-label="Library navigation"
+        aria-label={t('sidebar.navigationLabel')}
       >
         <SidebarHeader className="h-7 px-1.5 text-xs">
           {expanded ? (
-            <Link to="/home" className="min-w-0 flex-1" aria-label={`${appKitConfig.workspace.name} home`}>
+            <Link
+              to="/home"
+              className="min-w-0 flex-1"
+              aria-label={t('sidebar.workspaceHome', { workspace: appKitConfig.workspace.name })}
+            >
               <img
                 src={libraryAppbarLogo}
                 alt="Library"
@@ -626,7 +638,7 @@ export function Sidebar() {
               size="icon"
               className="size-6"
               onClick={() => setExpanded(false)}
-              aria-label="Collapse sidebar"
+              aria-label={t('sidebar.collapse')}
             >
               <PanelLeftClose aria-hidden="true" />
             </Button>
@@ -641,12 +653,12 @@ export function Sidebar() {
                   <SidebarItem
                     data-testid="toggle-side-nav"
                     onClick={() => setExpanded(true)}
-                    aria-label="Expand sidebar"
+                    aria-label={t('sidebar.expand')}
                   >
                     <PanelLeftOpen aria-hidden="true" />
                   </SidebarItem>
                 </TooltipTrigger>
-                <TooltipContent side="right">Expand sidebar</TooltipContent>
+                <TooltipContent side="right">{t('sidebar.expand')}</TooltipContent>
               </Tooltip>
             </SidebarSection>
             <div className="flex justify-center px-2 py-1">
@@ -686,8 +698,8 @@ export function Sidebar() {
                   options={organizationOptions}
                   value={selectedOrganizationId ?? 'all'}
                   onValueChange={handleOrganizationSelect}
-                  placeholder="All organizations"
-                  searchPlaceholder="Find an organization…"
+                  placeholder={t('sidebar.organizations.all')}
+                  searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
                   className="bg-surface"
                 />
               </div>
@@ -699,13 +711,13 @@ export function Sidebar() {
                   variant="ghost"
                   size="icon"
                   className="shrink-0"
-                  aria-label="Add organization"
+                  aria-label={t('sidebar.organizations.add')}
                   onClick={() => setCreateOrganizationOpen(true)}
                 >
                   <Plus aria-hidden="true" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">Add organization</TooltipContent>
+              <TooltipContent side="right">{t('sidebar.organizations.add')}</TooltipContent>
             </Tooltip>
           </div>
         )}
@@ -716,12 +728,12 @@ export function Sidebar() {
 
         <SidebarSection className="min-h-0 flex-1 gap-0 overflow-y-auto [&:not(:first-child)]:mt-2">
           <SidebarSectionLabel className="h-5 px-1.5 text-2xs">
-            Repositories
+            {t('sidebar.repositories.heading')}
             <span className="ml-auto">{visibleDatabases.length}</span>
             <button
               type="button"
               className="ml-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label="Create repository"
+              aria-label={t('sidebar.repositories.create')}
               onClick={() => {
                 setCreateRepositoryOrganizationId(selectedOrganizationId)
                 setCreateRepositoryOpen(true)
@@ -735,29 +747,31 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <SidebarItem
                 active={pathname === '/repositories'}
-                aria-label="All repositories"
+                aria-label={t('sidebar.repositories.viewAll')}
                 className={denseSidebarItemClass}
                 onClick={() => void navigate({ to: '/repositories' })}
               >
                 <FolderGit2 aria-hidden="true" />
-                <SidebarItemLabel>All repositories</SidebarItemLabel>
+                <SidebarItemLabel>{t('sidebar.repositories.viewAll')}</SidebarItemLabel>
                 <Badge variant="neutral">{databases.length}</Badge>
               </SidebarItem>
             </TooltipTrigger>
-            {!expanded && <TooltipContent side="right">All repositories</TooltipContent>}
+            {!expanded && (
+              <TooltipContent side="right">{t('sidebar.repositories.viewAll')}</TooltipContent>
+            )}
           </Tooltip>
 
           {repositoriesLoading && (
             <SidebarItem disabled className={denseSidebarItemClass}>
               <RefreshCw className="animate-spin" aria-hidden="true" />
-              <SidebarItemLabel>Loading repositories…</SidebarItemLabel>
+              <SidebarItemLabel>{t('sidebar.repositories.loading')}</SidebarItemLabel>
             </SidebarItem>
           )}
 
           {!repositoriesLoading && repositoriesError && (
             <SidebarItem className={denseSidebarItemClass} onClick={() => void refreshRepositories()}>
               <AlertCircle className="text-destructive" aria-hidden="true" />
-              <SidebarItemLabel>Retry repositories</SidebarItemLabel>
+              <SidebarItemLabel>{t('sidebar.repositories.retry')}</SidebarItemLabel>
             </SidebarItem>
           )}
 
@@ -792,7 +806,7 @@ export function Sidebar() {
                     <DropdownMenuTrigger asChild>
                       <SidebarItemAction
                         data-testid={`database-actions-${database.id}`}
-                        aria-label={`Repository actions for ${path}`}
+                        aria-label={t('sidebar.repositories.actionsFor', { name: path })}
                       >
                         <MoreHorizontal aria-hidden="true" />
                       </SidebarItemAction>
@@ -810,14 +824,14 @@ export function Sidebar() {
                         onSelect={() => handleRepositorySelect(database)}
                       >
                         <Check aria-hidden="true" />
-                        Open repository
+                        {t('sidebar.repositories.open')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         data-testid="database-context-copy-link"
                         onSelect={() => void copyDatabaseLink(database.id)}
                       >
                         <Copy aria-hidden="true" />
-                        Copy link
+                        {t('sidebar.repositories.copyLink')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -828,7 +842,7 @@ export function Sidebar() {
           {!repositoriesLoading && !repositoriesError && visibleDatabases.length === 0 && (
             <SidebarItem disabled className={denseSidebarItemClass}>
               <WifiOff aria-hidden="true" />
-              <SidebarItemLabel>No repositories</SidebarItemLabel>
+              <SidebarItemLabel>{t('sidebar.repositories.empty')}</SidebarItemLabel>
             </SidebarItem>
           )}
         </SidebarSection>

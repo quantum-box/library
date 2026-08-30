@@ -2,6 +2,7 @@ import { memo, useState } from 'react'
 import type { ToolCall, ApiCallResponse, RecordToolResponse } from './types'
 import { statusConfig, priorityConfig } from '../../../data/mock'
 import { WebSearchCard } from './WebSearchCard'
+import { useI18n } from '../../../i18n'
 
 // --- Icons ---
 
@@ -48,6 +49,7 @@ const RecordIcon = (
 )
 
 function ToolStatus({ toolCall, loadingText }: { toolCall: ToolCall; loadingText: string }) {
+  const { t } = useI18n()
   const isLoading = toolCall.status === 'pending' || toolCall.status === 'running'
   if (isLoading) {
     return (
@@ -58,10 +60,10 @@ function ToolStatus({ toolCall, loadingText }: { toolCall: ToolCall; loadingText
     )
   }
   if (toolCall.status === 'cancelled') {
-    return <span className="text-xs text-subtle">Cancelled</span>
+    return <span className="text-xs text-subtle">{t('tool.cancelled')}</span>
   }
   if (toolCall.status === 'error') {
-    return <span className="text-xs text-priority-urgent">Failed</span>
+    return <span className="text-xs text-priority-urgent">{t('tool.failed')}</span>
   }
   if (toolCall.result?.duration) {
     return <span className="text-xs text-subtle">{(toolCall.result.duration / 1000).toFixed(1)}s</span>
@@ -72,6 +74,7 @@ function ToolStatus({ toolCall, loadingText }: { toolCall: ToolCall; loadingText
 // --- API Call Card ---
 
 function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
   const isLoading = toolCall.status === 'pending' || toolCall.status === 'running'
   const response = toolCall.result?.data as ApiCallResponse | undefined
@@ -84,7 +87,7 @@ function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
       >
         <span className="text-accent">{ApiIcon}</span>
         <span className="text-xs font-medium flex-1 text-left text-foreground">
-          API Call
+          {t('tool.apiCall')}
         </span>
 
         {response && (
@@ -104,7 +107,7 @@ function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
           </span>
         )}
 
-        <ToolStatus toolCall={toolCall} loadingText="Calling..." />
+        <ToolStatus toolCall={toolCall} loadingText={t('tool.calling')} />
 
         {!isLoading && <ChevronIcon open={expanded} />}
       </button>
@@ -117,7 +120,7 @@ function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
 
       {toolCall.status === 'error' && (
         <div className="px-3 py-2 text-xs text-subtle border-t border-border">
-          {toolCall.result?.error || 'API call failed'}
+          {toolCall.result?.error || t('tool.apiCallFailed')}
         </div>
       )}
     </div>
@@ -127,6 +130,7 @@ function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
 // --- Code Execution Card ---
 
 function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
   const isLoading = toolCall.status === 'pending' || toolCall.status === 'running'
   const result = toolCall.result?.data as { code: string; output: string; exitCode: number } | undefined
@@ -139,7 +143,7 @@ function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
       >
         <span className="text-accent">{CodeIcon}</span>
         <span className="text-xs font-medium flex-1 text-left text-foreground">
-          Code Execution
+          {t('tool.codeExecution')}
         </span>
 
         {result && (
@@ -150,11 +154,11 @@ function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
               color: result.exitCode === 0 ? 'var(--status-done)' : 'var(--priority-urgent)',
             }}
           >
-            exit {result.exitCode}
+            {t('tool.exitCode', { code: result.exitCode })}
           </span>
         )}
 
-        <ToolStatus toolCall={toolCall} loadingText="Executing..." />
+        <ToolStatus toolCall={toolCall} loadingText={t('tool.executing')} />
 
         {!isLoading && <ChevronIcon open={expanded} />}
       </button>
@@ -167,7 +171,7 @@ function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
 
       {toolCall.status === 'error' && (
         <div className="px-3 py-2 text-xs text-subtle border-t border-border">
-          {toolCall.result?.error || 'Code execution failed'}
+          {toolCall.result?.error || t('tool.codeExecutionFailed')}
         </div>
       )}
     </div>
@@ -177,6 +181,7 @@ function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
 // --- DatabaseRecord Tool Card ---
 
 function RecordToolCard({ toolCall }: { toolCall: ToolCall }) {
+  const { t } = useI18n()
   const result = toolCall.result?.data as RecordToolResponse | undefined
   const isLoading = toolCall.status === 'pending' || toolCall.status === 'running'
   const actionLabel = toolCall.name
@@ -194,19 +199,19 @@ function RecordToolCard({ toolCall }: { toolCall: ToolCall }) {
             {toolCall.result?.duration && ` · ${(toolCall.result.duration / 1000).toFixed(1)}s`}
           </span>
         )}
-        <ToolStatus toolCall={toolCall} loadingText="Updating..." />
+        <ToolStatus toolCall={toolCall} loadingText={t('tool.updating')} />
       </div>
 
       {isLoading && (
         <div className="px-3 py-3 text-xs text-subtle">
-          Reading Library data...
+          {t('tool.readingLibraryData')}
         </div>
       )}
 
       {toolCall.status === 'completed' && result && (
         <div className="divide-y divide-border">
           {result.records.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-subtle">No matching data.</div>
+            <div className="px-3 py-3 text-xs text-subtle">{t('tool.noMatchingData')}</div>
           ) : (
             result.records.map((record) => {
               const status = statusConfig[record.status]
@@ -224,9 +229,11 @@ function RecordToolCard({ toolCall }: { toolCall: ToolCall }) {
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
                     <span className="inline-flex items-center gap-1" style={{ color: status.color }}>
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: status.color }} />
-                      {status.label}
+                      {t(status.labelKey)}
                     </span>
-                    <span style={{ color: priority.color }}>{priority.icon} {priority.label}</span>
+                    <span style={{ color: priority.color }}>
+                      {priority.icon} {t(priority.labelKey)}
+                    </span>
                     {record.assignee && <span>{record.assignee}</span>}
                     {record.labels.slice(0, 3).map((label) => (
                       <span key={label} className="rounded bg-canvas px-1.5 py-0.5 text-subtle">
@@ -243,7 +250,7 @@ function RecordToolCard({ toolCall }: { toolCall: ToolCall }) {
 
       {(toolCall.status === 'error' || toolCall.status === 'cancelled') && (
         <div className="px-3 py-3 text-xs text-subtle">
-          {toolCall.result?.error || 'Library data tool did not complete.'}
+          {toolCall.result?.error || t('tool.recordToolIncomplete')}
         </div>
       )}
     </div>
@@ -257,6 +264,8 @@ interface ToolResultCardProps {
 }
 
 export const ToolResultCard = memo(function ToolResultCard({ toolCall }: ToolResultCardProps) {
+  const { t } = useI18n()
+
   switch (toolCall.type) {
     case 'web_search':
       return <WebSearchCard toolCall={toolCall} />
@@ -274,7 +283,7 @@ export const ToolResultCard = memo(function ToolResultCard({ toolCall }: ToolRes
     default:
       return (
         <div className="my-2 px-3 py-2 rounded-xl text-xs border border-border text-subtle">
-          Unknown tool: {toolCall.type}
+          {t('tool.unknown', { type: toolCall.type })}
         </div>
       )
   }

@@ -3,6 +3,7 @@ import { Badge, Button } from '@tachyon-sdk/native-ui'
 import { Eye, LogIn } from 'lucide-react'
 import type { ReactNode } from 'react'
 import libraryAppIcon from '../../assets/brand/library-logo/app-icon.svg'
+import { useI18n } from '../../i18n'
 
 /**
  * Chrome for the public read-only routes.
@@ -13,6 +14,8 @@ import libraryAppIcon from '../../assets/brand/library-logo/app-icon.svg'
  * has never signed in.
  */
 export function PublicShell({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-surface" data-testid="public-shell">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
@@ -22,13 +25,13 @@ export function PublicShell({ children }: { children: ReactNode }) {
         <span className="text-sm font-semibold tracking-tight">Library</span>
         <Badge variant="outline" className="gap-1">
           <Eye className="size-3" aria-hidden="true" />
-          Read-only
+          {t('public.readOnly')}
         </Badge>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button variant="secondary" size="sm" asChild>
             <Link to="/home">
               <LogIn aria-hidden="true" />
-              Sign in
+              {t('auth.signIn')}
             </Link>
           </Button>
         </div>

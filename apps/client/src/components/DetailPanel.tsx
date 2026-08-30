@@ -20,6 +20,7 @@ import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import type { FileAttachment } from './files/types'
 import { RecordBodyEditor, type RecordBodyImageTarget } from './RecordBodyEditor'
+import { useI18n } from '../i18n'
 
 interface DetailPanelProps {
   record: DatabaseRecord | null
@@ -45,6 +46,7 @@ export function DetailPanel({
   loading = false,
   error = null,
 }: DetailPanelProps) {
+  const { t, formatDate } = useI18n()
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [relatedDocs, setRelatedDocs] = useState<DocumentRecordLink[]>([])
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
@@ -75,13 +77,17 @@ export function DetailPanel({
         data-testid="detail-panel"
       >
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
-          <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label="Back to data">
+          <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label={t('detail.backToData')}>
             <ArrowLeft className="size-4" aria-hidden="true" />
           </Button>
           <Database className="size-4 text-primary" aria-hidden="true" />
-          <span className="truncate text-sm text-muted-foreground">{repositoryPath ?? 'All data'}</span>
+          <span className="truncate text-sm text-muted-foreground">
+            {repositoryPath ?? t('sidebar.nav.allData')}
+          </span>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate font-mono text-xs font-medium">{recordIdentifier ?? 'Data'}</span>
+          <span className="truncate font-mono text-xs font-medium">
+            {recordIdentifier ?? t('detail.dataFallback')}
+          </span>
         </header>
         <div className="flex flex-1 items-center justify-center p-6 text-center">
           <div>
@@ -91,12 +97,14 @@ export function DetailPanel({
               <Database className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
             )}
             <h1 className="mt-3 text-sm font-semibold">
-              {loading ? 'Opening data' : 'Data not found'}
+              {loading ? t('detail.opening') : t('detail.notFound')}
             </h1>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
               {error ?? (loading
-                ? 'Loading the latest content and properties…'
-                : `${recordIdentifier ?? 'This data'} is not available in the selected repository.`)}
+                ? t('detail.openingHint')
+                : t('detail.notFoundHint', {
+                    identifier: recordIdentifier ?? t('detail.thisData'),
+                  }))}
             </p>
           </div>
         </div>
@@ -163,8 +171,8 @@ export function DetailPanel({
                 e.currentTarget.style.background = ''
                 e.currentTarget.style.color = 'var(--text-muted)'
               }}
-              title="Delete record"
-              aria-label={`Delete ${record.title}`}
+              title={t('detail.deleteRecord')}
+              aria-label={t('detail.deleteNamed', { name: record.title })}
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
             </button>
@@ -177,7 +185,7 @@ export function DetailPanel({
             style={{ color: 'var(--text-muted)' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-            aria-label="Close data details"
+            aria-label={t('detail.close')}
           >
             <X className="size-3.5" aria-hidden="true" />
           </button>
@@ -198,14 +206,14 @@ export function DetailPanel({
 
         {/* Properties */}
         <div className="space-y-3 mb-6">
-          <PropertyRow label="Status">
+          <PropertyRow label={t('table.column.status')}>
             {onUpdateRecord ? (
               <InlineDropdown
                 value={record.status}
                 options={(Object.entries(statusConfig) as [Status, typeof statusConfig[Status]][]).map(
                   ([key, sc]) => ({
                     key,
-                    label: sc.label,
+                    label: t(sc.labelKey),
                     icon: sc.icon,
                     color: sc.color,
                   })
@@ -213,7 +221,7 @@ export function DetailPanel({
                 renderValue={(
                   <span className="flex items-center gap-1.5 text-sm">
                     <span style={{ color: status.color }}>{status.icon}</span>
-                    {status.label}
+                    {t(status.labelKey)}
                   </span>
                 )}
                 onSelect={(key) => onUpdateRecord(record.id, 'status', key)}
@@ -221,19 +229,19 @@ export function DetailPanel({
             ) : (
               <span className="flex items-center gap-1.5 text-sm">
                 <span style={{ color: status.color }}>{status.icon}</span>
-                {status.label}
+                {t(status.labelKey)}
               </span>
             )}
           </PropertyRow>
 
-          <PropertyRow label="Priority">
+          <PropertyRow label={t('table.column.priority')}>
             {onUpdateRecord ? (
               <InlineDropdown
                 value={record.priority}
                 options={(Object.entries(priorityConfig) as [Priority, typeof priorityConfig[Priority]][]).map(
                   ([key, pc]) => ({
                     key,
-                    label: pc.label,
+                    label: t(pc.labelKey),
                     icon: pc.icon,
                     color: pc.color,
                   })
@@ -241,7 +249,7 @@ export function DetailPanel({
                 renderValue={(
                   <span className="flex items-center gap-1.5 text-sm">
                     <span style={{ color: priority.color }}>{priority.icon}</span>
-                    {priority.label}
+                    {t(priority.labelKey)}
                   </span>
                 )}
                 onSelect={(key) => onUpdateRecord(record.id, 'priority', key)}
@@ -249,17 +257,17 @@ export function DetailPanel({
             ) : (
               <span className="flex items-center gap-1.5 text-sm">
                 <span style={{ color: priority.color }}>{priority.icon}</span>
-                {priority.label}
+                {t(priority.labelKey)}
               </span>
             )}
           </PropertyRow>
 
-          <PropertyRow label="Assignee">
+          <PropertyRow label={t('table.column.assignee')}>
             {onUpdateRecord ? (
               <InlineDropdown
                 value={record.assignee ?? ''}
                 options={[
-                  { key: '', label: 'Unassigned', icon: '', color: 'var(--text-muted)' },
+                  { key: '', label: t('detail.unassigned'), icon: '', color: 'var(--text-muted)' },
                   ...mockUsers.map((name) => ({
                     key: name,
                     label: name,
@@ -280,7 +288,7 @@ export function DetailPanel({
                         {record.assignee}
                       </span>
                     ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{t('detail.unassigned')}</span>
                     )}
                   </span>
                 )}
@@ -299,13 +307,13 @@ export function DetailPanel({
                     {record.assignee}
                   </span>
                 ) : (
-                  <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('detail.unassigned')}</span>
                 )}
               </span>
             )}
           </PropertyRow>
 
-          <PropertyRow label="Repository">
+          <PropertyRow label={t('table.column.repository')}>
             {onUpdateRecord ? (
               <EditableText
                 value={record.project}
@@ -322,7 +330,7 @@ export function DetailPanel({
             )}
           </PropertyRow>
 
-          <PropertyRow label="Labels">
+          <PropertyRow label={t('table.column.labels')}>
             {onUpdateRecord ? (
               <EditableLabels
                 labels={record.labels}
@@ -348,15 +356,15 @@ export function DetailPanel({
             )}
           </PropertyRow>
 
-          <PropertyRow label="Created">
+          <PropertyRow label={t('detail.created')}>
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {new Date(record.createdAt).toLocaleDateString('ja-JP')}
+              {formatDate(record.createdAt, { dateStyle: 'medium' })}
             </span>
           </PropertyRow>
 
-          <PropertyRow label="Updated">
+          <PropertyRow label={t('table.column.updated')}>
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {new Date(record.updatedAt).toLocaleDateString('ja-JP')}
+              {formatDate(record.updatedAt, { dateStyle: 'medium' })}
             </span>
           </PropertyRow>
         </div>
@@ -370,7 +378,7 @@ export function DetailPanel({
             className="text-xs font-medium uppercase tracking-wider mb-2"
             style={{ color: 'var(--text-muted)' }}
           >
-            Body
+            {t('detail.body')}
           </h3>
           {onUpdateRecord ? (
             <RecordBodyEditor
@@ -393,10 +401,10 @@ export function DetailPanel({
               className="text-xs font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              Attachments
+              {t('detail.attachments')}
             </h3>
             <label className="cursor-pointer rounded px-2 py-1 text-xs" style={{ background: 'var(--bg-hover)' }}>
-              Attach
+              {t('detail.attach')}
               <input
                 data-testid="record-attach-file"
                 type="file"
@@ -422,7 +430,7 @@ export function DetailPanel({
             </div>
           ) : (
             <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-              No attachments yet.
+              {t('detail.attachmentsEmpty')}
             </p>
           )}
         </div>
@@ -435,7 +443,7 @@ export function DetailPanel({
             className="mb-2 text-xs font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Related docs
+            {t('detail.relatedDocs')}
           </h3>
           {relatedDocs.length > 0 ? (
             <div className="space-y-2" data-testid="record-related-docs">
@@ -447,7 +455,7 @@ export function DetailPanel({
                   className="block rounded border border-border bg-surface px-3 py-2 text-sm no-underline hover:bg-surface-hover"
                 >
                   <div className="font-medium text-foreground">
-                    {link.docTitle ?? 'Untitled document'}
+                    {link.docTitle ?? t('docs.untitled')}
                   </div>
                   {link.selectedText && (
                     <div className="mt-1 line-clamp-2 text-xs text-subtle">
@@ -459,7 +467,7 @@ export function DetailPanel({
             </div>
           ) : (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              No related docs yet.
+              {t('detail.relatedDocsEmpty')}
             </p>
           )}
         </div>
@@ -510,6 +518,7 @@ function EditableTitle({
   value: string
   onCommit: (v: string) => void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -565,7 +574,7 @@ function EditableTitle({
       onClick={() => setEditing(true)}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-      title="Click to edit"
+      title={t('common.clickToEdit')}
     >
       {value}
     </h2>
@@ -579,6 +588,7 @@ function EditableText({
   value: string
   onCommit: (v: string) => void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -633,7 +643,7 @@ function EditableText({
       onClick={() => setEditing(true)}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-      title="Click to edit"
+      title={t('common.clickToEdit')}
     >
       <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent)' }} />
       {value || <span style={{ color: 'var(--text-muted)' }}>—</span>}
@@ -724,6 +734,7 @@ function EditableLabels({
   labels: string[]
   onCommit: (labels: string[]) => void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -765,7 +776,7 @@ function EditableLabels({
               onClick={() => removeLabel(label)}
               className="opacity-50 hover:opacity-100 transition-opacity"
               style={{ fontSize: '10px' }}
-              aria-label={`Remove ${label} label`}
+              aria-label={t('detail.removeLabel', { label })}
             >
               <X className="size-3" aria-hidden="true" />
             </button>
@@ -790,7 +801,7 @@ function EditableLabels({
                 setEditing(false)
               }
             }}
-            placeholder="Add label..."
+            placeholder={t('detail.addLabelPlaceholder')}
             className="px-1.5 py-0.5 rounded text-xs outline-none"
             style={{
               background: 'var(--bg-primary)',
@@ -813,7 +824,7 @@ function EditableLabels({
               e.currentTarget.style.color = 'var(--text-muted)'
             }}
           >
-            + Add
+            {t('detail.addLabel')}
           </button>
         )}
       </div>
@@ -832,6 +843,8 @@ function DeleteConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const { t } = useI18n()
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
@@ -856,10 +869,10 @@ function DeleteConfirmDialog({
         }}
       >
         <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-          Delete {identifier}?
+          {t('detail.deleteConfirmTitle', { identifier })}
         </h3>
         <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
-          <span className="font-medium">{title}</span> will be permanently deleted. This action cannot be undone.
+          <span className="font-medium">{title}</span> {t('detail.deleteConfirmBody')}
         </p>
         <div className="flex items-center justify-end gap-2">
           <button
@@ -869,14 +882,14 @@ function DeleteConfirmDialog({
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border-color)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
             style={{ background: 'var(--priority-urgent)', color: '#fff' }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       </div>

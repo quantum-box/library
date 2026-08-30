@@ -22,30 +22,30 @@ import { useWorkspaceDatabases, type WorkspaceDatabase } from '../contexts/Datab
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { priorityConfig, statusConfig, type DatabaseRecord, type Status } from '../data/mock'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
+import { useI18n, type I18nContextValue } from '../i18n'
 import { DataLink } from './DataLink'
 import { DocLink } from './DocLink'
 import { RepositoryTabs } from './RepositoryTabs'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
-function relativeDate(value: string) {
+function relativeDate(value: string, i18n: I18nContextValue) {
   const time = Date.parse(value)
-  if (Number.isNaN(time)) return 'Recently'
+  if (Number.isNaN(time)) return i18n.t('home.time.recently')
 
   const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000))
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return i18n.t('home.time.justNow')
+  if (minutes < 60) return i18n.t('repository.time.minutesAgo', { count: minutes })
 
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return i18n.t('repository.time.hoursAgo', { count: hours })
 
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
+  if (days < 7) return i18n.t('repository.time.daysAgo', { count: days })
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(time))
+  return (
+    i18n.formatDate(time, { month: 'short', day: 'numeric' }) ?? i18n.t('home.time.recently')
+  )
 }
 
 function recordBelongsToRepository(record: DatabaseRecord, database: WorkspaceDatabase) {
@@ -95,6 +95,8 @@ export function RepositoryOverview({
   organization: string
   repository: string
 }) {
+  const i18n = useI18n()
+  const { t, tPlural } = i18n
   const { records } = useDatabaseRecords()
   const {
     databases,
@@ -146,8 +148,8 @@ export function RepositoryOverview({
     return (
       <RepositoryState
         icon={RefreshCw}
-        title="Loading repository"
-        detail={`Opening ${organization}/${repository}…`}
+        title={t('repository.loading')}
+        detail={t('repository.loadingDetail', { path: `${organization}/${repository}` })}
       />
     )
   }
@@ -156,12 +158,12 @@ export function RepositoryOverview({
     return (
       <RepositoryState
         icon={CircleDot}
-        title="Repository unavailable"
+        title={t('repository.unavailable')}
         detail={repositoriesError}
         action={(
           <Button size="sm" onClick={() => void refreshRepositories()}>
             <RefreshCw aria-hidden="true" />
-            Try again
+            {t('common.tryAgain')}
           </Button>
         )}
       />
@@ -172,11 +174,11 @@ export function RepositoryOverview({
     return (
       <RepositoryState
         icon={FolderGit2}
-        title="Repository not found"
-        detail={`${organization}/${repository} is not available in this workspace.`}
+        title={t('repository.notFound')}
+        detail={t('repository.notFoundDetail', { path: `${organization}/${repository}` })}
         action={(
           <Button size="sm" asChild>
-            <Link to="/home">Back to Home</Link>
+            <Link to="/home">{t('repository.backToHome')}</Link>
           </Button>
         )}
       />
@@ -203,20 +205,22 @@ export function RepositoryOverview({
           <span className="text-subtle-foreground">/</span>
           <span className="truncate font-semibold">{repository}</span>
         </div>
-        <Badge variant="outline" className="hidden sm:inline-flex">Repository</Badge>
+        <Badge variant="outline" className="hidden sm:inline-flex">
+          {t('palette.repository.detail')}
+        </Badge>
         <Button className="ml-auto" variant="ghost" size="sm" asChild>
           <Link
             to="/$organization/$repository/settings"
             params={{ organization, repository }}
           >
             <Settings aria-hidden="true" />
-            <span className="hidden sm:inline">Settings</span>
+            <span className="hidden sm:inline">{t('common.settings')}</span>
           </Link>
         </Button>
         <Button variant="primary" size="sm" asChild>
           <DataLink data-testid="repository-open-data" databaseId={databaseId}>
             <Database aria-hidden="true" />
-            Open data
+            {t('repository.openData')}
           </DataLink>
         </Button>
       </header>
@@ -233,10 +237,12 @@ export function RepositoryOverview({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="truncate text-xl font-semibold tracking-tight">{repository}</h1>
-                  <Badge variant="neutral">{repositoryRecords.length} data</Badge>
+                  <Badge variant="neutral">
+                    {tPlural('table.rowCount', repositoryRecords.length)}
+                  </Badge>
                 </div>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {database.description || 'A shared repository for pages, structured data, and workflows.'}
+                  {database.description || t('repository.defaultDescription')}
                 </p>
               </div>
             </div>
@@ -247,20 +253,22 @@ export function RepositoryOverview({
               <section className="border-b border-border bg-background" aria-labelledby="repository-overview-heading">
                 <div className="flex h-10 items-center gap-2 bg-surface/60 px-4 md:px-5">
                   <BookOpen className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <h2 id="repository-overview-heading" className="text-sm font-semibold">Repository overview</h2>
+                  <h2 id="repository-overview-heading" className="text-sm font-semibold">
+                    {t('repository.overviewHeading')}
+                  </h2>
                   <span className="ml-auto font-mono text-2xs text-subtle-foreground">{organization}/{repository}</span>
                 </div>
                 <div className="px-4 py-4 md:px-5">
-                  <h3 className="text-base font-semibold">Workspace</h3>
+                  <h3 className="text-base font-semibold">{t('repository.workspace')}</h3>
                   <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Browse this repository as a table, shape work on a board, or connect it as a workflow.
+                    {t('repository.workspaceHint')}
                   </p>
                   <div className="mt-4 grid border-y border-border sm:grid-cols-4 sm:divide-x sm:divide-border">
                     {([
-                      ['table', 'Data table', 'Browse and filter every entry.', LayoutList],
-                      ['board', 'Board', 'Group work by status.', Columns3],
-                      ['workflow', 'Workflow', 'Connect records visually.', Workflow],
-                    ] as const).map(([type, label, detail, Icon]) => (
+                      ['table', 'repository.card.table', 'repository.card.tableDetail', LayoutList],
+                      ['board', 'viewTabs.board', 'repository.card.boardDetail', Columns3],
+                      ['workflow', 'viewTabs.workflow', 'repository.card.workflowDetail', Workflow],
+                    ] as const).map(([type, labelKey, detailKey, Icon]) => (
                       <DataLink
                         key={type}
                         databaseId={databaseId}
@@ -269,10 +277,12 @@ export function RepositoryOverview({
                       >
                         <span className="flex items-center gap-2 text-sm font-medium">
                           <Icon className="size-4 text-primary" aria-hidden="true" />
-                          {label}
+                          {t(labelKey)}
                           <ArrowRight className="ml-auto size-3.5 text-subtle-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100" aria-hidden="true" />
                         </span>
-                        <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">{detail}</span>
+                        <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
+                          {t(detailKey)}
+                        </span>
                       </DataLink>
                     ))}
                     <DocLink
@@ -281,11 +291,11 @@ export function RepositoryOverview({
                     >
                       <span className="flex items-center gap-2 text-sm font-medium">
                         <FileText className="size-4 text-primary" aria-hidden="true" />
-                        Documents
+                        {t('sidebar.nav.documents')}
                         <ArrowRight className="ml-auto size-3.5 text-subtle-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100" aria-hidden="true" />
                       </span>
                       <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
-                        Write with this repository&apos;s data context.
+                        {t('repository.card.documentsDetail')}
                       </span>
                     </DocLink>
                   </div>
@@ -295,11 +305,13 @@ export function RepositoryOverview({
               <section id="activity" className="border-b border-border bg-background" aria-labelledby="recent-data-heading">
                 <div className="flex h-10 items-center gap-2 bg-surface/60 px-4 md:px-5">
                   <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <h2 id="recent-data-heading" className="text-sm font-semibold">Recently updated</h2>
+                  <h2 id="recent-data-heading" className="text-sm font-semibold">
+                    {t('repository.recentlyUpdated')}
+                  </h2>
                   <Badge variant="neutral">{recentRecords.length}</Badge>
                   <Button className="ml-auto" variant="ghost" size="sm" asChild>
                     <DataLink databaseId={databaseId}>
-                      View all
+                      {t('common.viewAll')}
                       <ChevronRight aria-hidden="true" />
                     </DataLink>
                   </Button>
@@ -317,7 +329,7 @@ export function RepositoryOverview({
                         className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2 text-left no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:grid-cols-[minmax(0,1fr)_110px_78px] md:px-5"
                       >
                         <span className="flex min-w-0 items-center gap-3">
-                          <span className="text-base" style={{ color: status.color }} aria-label={status.label}>{status.icon}</span>
+                          <span className="text-base" style={{ color: status.color }} aria-label={t(status.labelKey)}>{status.icon}</span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-medium">{record.title}</span>
                             <span className="mt-0.5 block font-mono text-2xs text-subtle-foreground">{record.identifier}</span>
@@ -325,21 +337,21 @@ export function RepositoryOverview({
                         </span>
                         <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
                           <span style={{ color: priority.color }} aria-hidden="true">{priority.icon}</span>
-                          {priority.label}
+                          {t(priority.labelKey)}
                         </span>
-                        <span className="text-right text-2xs text-subtle-foreground">{relativeDate(record.updatedAt)}</span>
+                        <span className="text-right text-2xs text-subtle-foreground">{relativeDate(record.updatedAt, i18n)}</span>
                       </DataLink>
                     )
                   })
                 ) : (
                   <div className="px-5 py-9 text-center">
                     <FileText className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-medium">No data in this repository yet</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Open the data view to create the first entry.</p>
+                    <p className="mt-3 text-sm font-medium">{t('repository.empty')}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t('repository.emptyHint')}</p>
                     <Button className="mt-4" size="sm" variant="primary" asChild>
                       <DataLink databaseId={databaseId}>
                         <Database aria-hidden="true" />
-                        Open data
+                        {t('repository.openData')}
                       </DataLink>
                     </Button>
                   </div>
@@ -351,16 +363,18 @@ export function RepositoryOverview({
               <section className="border-b border-border" aria-labelledby="repository-data-heading">
                 <div className="flex h-10 items-center gap-2 border-b border-border px-3.5">
                   <Boxes className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <h2 id="repository-data-heading" className="text-sm font-semibold">Data</h2>
+                  <h2 id="repository-data-heading" className="text-sm font-semibold">
+                    {t('repository.dataHeading')}
+                  </h2>
                 </div>
                 <div className="grid grid-cols-2 border-b border-border">
                   <div className="p-3.5">
                     <span className="block text-xl font-semibold tabular-nums">{repositoryRecords.length}</span>
-                    <span className="mt-0.5 block text-2xs text-muted-foreground">Total</span>
+                    <span className="mt-0.5 block text-2xs text-muted-foreground">{t('repository.total')}</span>
                   </div>
                   <div className="border-l border-border p-3.5">
                     <span className="block text-xl font-semibold tabular-nums">{openCount}</span>
-                    <span className="mt-0.5 block text-2xs text-muted-foreground">Open</span>
+                    <span className="mt-0.5 block text-2xs text-muted-foreground">{t('repository.open')}</span>
                   </div>
                 </div>
                 <div className="space-y-2.5 p-3.5">
@@ -374,7 +388,7 @@ export function RepositoryOverview({
                       <div key={status}>
                         <div className="flex items-center gap-2 text-xs">
                           <span style={{ color: config.color }} aria-hidden="true">{config.icon}</span>
-                          <span>{config.label}</span>
+                          <span>{t(config.labelKey)}</span>
                           <span className="ml-auto tabular-nums text-muted-foreground">{count}</span>
                         </div>
                         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
@@ -383,7 +397,7 @@ export function RepositoryOverview({
                       </div>
                     )
                   }) : (
-                    <p className="text-xs leading-5 text-muted-foreground">Status totals will appear when data is added.</p>
+                    <p className="text-xs leading-5 text-muted-foreground">{t('repository.statusEmpty')}</p>
                   )}
                 </div>
               </section>
@@ -391,20 +405,28 @@ export function RepositoryOverview({
               <section className="border-b border-border" aria-labelledby="repository-about-heading">
                 <div className="flex h-10 items-center gap-2 border-b border-border px-3.5">
                   <GitBranch className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <h2 id="repository-about-heading" className="text-sm font-semibold">Repository</h2>
+                  <h2 id="repository-about-heading" className="text-sm font-semibold">
+                    {t('palette.repository.detail')}
+                  </h2>
                 </div>
                 <dl className="space-y-3 p-3.5 text-xs">
                   <div>
-                    <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">Organization</dt>
+                    <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">
+                      {t('createRepo.organizationLabel')}
+                    </dt>
                     <dd className="mt-1 font-medium">{organization}</dd>
                   </div>
                   <div>
-                    <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">Repository key</dt>
+                    <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">
+                      {t('repository.key')}
+                    </dt>
                     <dd className="mt-1 truncate font-mono text-2xs">{database.id}</dd>
                   </div>
                   {database.operatorId ? (
                     <div>
-                      <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">Operator</dt>
+                      <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">
+                        {t('repository.operator')}
+                      </dt>
                       <dd className="mt-1 truncate font-mono text-2xs">{database.operatorId}</dd>
                     </div>
                   ) : null}
@@ -414,13 +436,15 @@ export function RepositoryOverview({
               <section className="border-b border-border" aria-labelledby="repository-labels-heading">
                 <div className="flex h-10 items-center gap-2 border-b border-border px-3.5">
                   <CircleDot className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <h2 id="repository-labels-heading" className="text-sm font-semibold">Labels</h2>
+                  <h2 id="repository-labels-heading" className="text-sm font-semibold">
+                    {t('table.column.labels')}
+                  </h2>
                 </div>
                 <div className="flex flex-wrap gap-1.5 p-3.5">
                   {labels.length > 0 ? labels.map((label) => (
                     <Badge key={label} variant="neutral">{label}</Badge>
                   )) : (
-                    <span className="text-xs text-muted-foreground">No labels yet</span>
+                    <span className="text-xs text-muted-foreground">{t('repository.noLabels')}</span>
                   )}
                 </div>
               </section>

@@ -1,6 +1,7 @@
 import type { LibraryDataItem, LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
 import { getLibraryDataPropertyValue, propertyValueText } from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
+import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
 
 function optionLabel(property: LibraryProperty, optionId: string | undefined) {
   if (!optionId) return undefined
@@ -9,13 +10,13 @@ function optionLabel(property: LibraryProperty, optionId: string | undefined) {
 }
 
 function formatDate(value: string) {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  return (
+    formatDateTime(getActiveLocale(), value, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }) ?? value
+  )
 }
 
 function PlainTextCell({ text }: { text: string }) {
@@ -79,14 +80,18 @@ function renderByTyp(
         onClick={(event) => event.stopPropagation()}
       >
         <img src={value.url} alt="" className="h-6 w-6 rounded object-cover" />
-        <span className="truncate">Image</span>
+        <span className="truncate">{t('propertyType.image')}</span>
       </a>
     )
   }
 
   if (typ === 'Relation') {
     const count = value.dataIds?.length ?? 0
-    return <PlainTextCell text={count > 0 ? `${count} linked` : '—'} />
+    return (
+      <PlainTextCell
+        text={count > 0 ? tPlural('libraryTable.linkedCount', count) : '—'}
+      />
+    )
   }
 
   if (typ === 'Location') {

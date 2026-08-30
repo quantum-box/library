@@ -26,6 +26,29 @@ client, or move the feed to an explicit tag URL.
 2. Push a `library-v<version>` tag, or run the workflow manually with that tag. The
    workflow refuses to build if the tag and `package.json` disagree.
 
+The four platform builds run one at a time (`max-parallel: 1`). They all rewrite
+the release's shared `latest.json`, and tauri-action deletes the old asset before
+uploading its replacement, so overlapping legs race on that delete and the loser
+fails with a 404. A whole release therefore takes roughly 35 minutes.
+
+The workflow creates the release as a draft and only publishes it once every leg
+has uploaded, so a failed build leaves an unpublished draft rather than a broken
+feed — `library-v0.1.5` was left that way by exactly the race above.
+
+## The pinned Windows upgrade code
+
+`bundle.windows.wix.upgradeCode` in `tauri.conf.json` is pinned to
+`053a7581-a632-5412-942e-82424a9627c5`, the UUID v5 that Tauri derives in the DNS
+namespace from `Library Client.exe.app.x64` — the product name this app shipped
+under through 0.1.6.
+
+Windows identifies an MSI product by its upgrade code. Tauri generates one from
+`<productName>.exe.app.x64` unless told otherwise, so renaming the product would
+silently change it and Windows would install the update *alongside* the old
+version instead of over it. The code is pinned to the old derivation so existing
+installs keep upgrading. Never change it. `npx tauri inspect wix-upgrade-code`
+prints what the current config would otherwise generate.
+
 ## Required repository secrets
 
 | Secret | Purpose |
@@ -50,9 +73,12 @@ repository secret. Both halves must ship together.
 
 `src/lib/appUpdate.ts` and `src/components/AppUpdateNotice.tsx` implement the flow:
 a background check five seconds after launch, plus a manual "Check for updates"
-entry in the account menu. When an update exists the user is shown the version and
-release notes and chooses whether to install; installing downloads, applies, and
-relaunches.
+entry in the account menu. On macOS the same check also sits in the native menu
+bar under `Library ▸ Check for Updates…`; `src-tauri/src/macos_menu.rs`
+builds that item and emits `library-check-for-updates` to the front tab, which
+`listenForMenuUpdateCheck()` bridges onto the in-app path. When an update exists
+the user is shown the version and release notes and chooses whether to install;
+installing downloads, applies, and relaunches.
 
 The updater plugin is registered on desktop targets only, so the web build and the
 iOS/Android builds never reach it — `isDesktopApp()` gates every call.

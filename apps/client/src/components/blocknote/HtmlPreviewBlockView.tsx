@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { HtmlPreviewFrame } from '../HtmlPreviewFrame'
+import { useI18n } from '../../i18n'
 
 /**
  * The block UI for the htmlPreview custom block: a sandboxed live preview
@@ -17,6 +18,7 @@ export function HtmlPreviewBlockView({
   editable: boolean
   onChange: (source: string) => void
 }) {
+  const { t } = useI18n()
   // A brand-new block has nothing to show, so open straight into the code
   // editor; a filled one opens as the preview it is. While editing, the
   // draft is local-first; the preview always shows the committed props, so
@@ -66,7 +68,7 @@ export function HtmlPreviewBlockView({
               }
             }}
           >
-            {editing ? 'Done' : 'Edit'}
+            {editing ? t('common.done') : t('common.edit')}
           </button>
         ) : null}
       </div>
@@ -84,7 +86,7 @@ export function HtmlPreviewBlockView({
         <div className="h-80 resize-y overflow-auto">
           {source.trim() === '' ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Empty HTML block
+              {t('editor.emptyHtmlBlock')}
             </div>
           ) : (
             <HtmlPreviewFrame source={source} />

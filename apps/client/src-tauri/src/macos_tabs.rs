@@ -15,10 +15,8 @@ use std::{
 };
 
 use tauri::{
-    menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
-    utils::config::WebviewUrl,
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime,
-    Webview, WebviewBuilder,
+    utils::config::WebviewUrl, AppHandle, Emitter, Manager,
+    PhysicalPosition, PhysicalSize, Runtime, Webview, WebviewBuilder,
 };
 
 pub const NEW_TAB_MENU_ID: &str = "new_tab";
@@ -125,44 +123,6 @@ fn sanitize_tab_path(path: &str) -> Option<String> {
         return None;
     }
     Some(path.to_string())
-}
-
-/// Adds `File ▸ New Tab (⌘T)` to the default menu.
-pub fn menu_with_new_tab<R: Runtime>(
-    app: &AppHandle<R>,
-) -> tauri::Result<Menu<R>> {
-    let menu = Menu::default(app)?;
-    let new_tab = MenuItem::with_id(
-        app,
-        NEW_TAB_MENU_ID,
-        "New Tab",
-        true,
-        Some("CmdOrCtrl+T"),
-    )?;
-    let separator = PredefinedMenuItem::separator(app)?;
-
-    let file_menu = menu.items()?.into_iter().find_map(|item| match item {
-        MenuItemKind::Submenu(submenu)
-            if submenu.text().ok().as_deref() == Some("File") =>
-        {
-            Some(submenu)
-        }
-        _ => None,
-    });
-
-    if let Some(file_menu) = file_menu {
-        file_menu.prepend_items(&[&new_tab, &separator])?;
-    } else {
-        let file_menu = Submenu::with_items(
-            app,
-            "File",
-            true,
-            &[&new_tab, &separator],
-        )?;
-        menu.prepend(&file_menu)?;
-    }
-
-    Ok(menu)
 }
 
 /// Creates a child WebView off screen so its first paint never flashes white

@@ -1,7 +1,7 @@
 {
   "name": "@quantum-box/library-client",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.7",
   "type": "module",
   "engines": {
     "node": ">=22.12.0 <23"
@@ -42,7 +42,7 @@
   "scripts": {
     "dev": "vite",
     "dev:cf-sync": "VITE_PHOTON_SYNC_WS_URL=ws://127.0.0.1:8787/ws vite",
-    "build": "npm run engine:wasm && tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "build:cloud": "npm run build:package && tsc -b && vite build",
     "build:package": "tsc -p tsconfig.package.json && tsc -p tsconfig.package.worker.json",
     "lint": "eslint .",
@@ -69,7 +69,6 @@
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
     "tauri:ios:build:sim": "tauri ios build --target aarch64-sim",
-    "engine:wasm": "node scripts/build-photon-wasm.mjs",
     "server": "cd packages/server && cargo run --bin photon-server",
     "server:engine": "cd packages/server && cargo run --bin photon-engine-server",
     "server:live": "cd packages/server && cargo run --bin photon-live-server",
@@ -90,6 +89,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@electric-sql/pglite": "^0.4.5",
+    "@quantum-box/photon": "^0.2.0",
     "@tachyon-sdk/native-ui": "https://codeload.github.com/quantum-box/native-ui/tar.gz/f2c2d704e61c321c8b73d5e2e35d5de104bfd3be",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-router": "^1.168.10",

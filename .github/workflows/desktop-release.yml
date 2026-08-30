@@ -52,7 +52,7 @@ jobs:
               --target "$SHA" \
               --draft \
               --generate-notes \
-              --title "Library Client ${version}"
+              --title "Library ${version}"
           fi
 
           echo "release_id=$(gh release view "$TAG_NAME" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
@@ -64,6 +64,11 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      # Every leg rewrites the release's shared latest.json, and tauri-action
+      # deletes the old asset before uploading. Two legs finishing together race
+      # on that delete and the loser fails with a 404, which is what left
+      # library-v0.1.5 an unpublished draft. One at a time is slower but sound.
+      max-parallel: 1
       matrix:
         include:
           - platform: macos-latest
@@ -100,11 +105,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/client/src-tauri
-
-      - name: Install wasm-pack
-        uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.13.1
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
