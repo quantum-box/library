@@ -1,6 +1,6 @@
 import type { Priority, Status } from '../../data/mock'
 
-export type DatabaseViewType = 'table' | 'board' | 'workflow'
+export type DatabaseViewType = 'table' | 'board' | 'workflow' | 'timeline'
 
 export type RecordPropertyKey =
   | 'identifier'
@@ -11,6 +11,11 @@ export type RecordPropertyKey =
   | 'labels'
   | 'project'
   | 'updatedAt'
+
+/** Timestamp a timeline bar starts from. Every bar ends at `updatedAt`. */
+export type TimelineDateField = 'createdAt' | 'updatedAt'
+
+export type TimelineScale = 'day' | 'week' | 'month'
 
 export interface DatabaseViewFilters {
   search: string
@@ -30,6 +35,11 @@ export interface DatabaseViewBoardSettings {
   compact: boolean
 }
 
+export interface DatabaseViewTimelineSettings {
+  startField: TimelineDateField
+  scale: TimelineScale
+}
+
 export interface DatabaseViewDefinition {
   id: string
   databaseId: string
@@ -39,6 +49,7 @@ export interface DatabaseViewDefinition {
   sorting: DatabaseViewSorting | null
   visibleProperties: RecordPropertyKey[]
   board: DatabaseViewBoardSettings
+  timeline: DatabaseViewTimelineSettings
   workflowCanvasKey: string
   order: number
   createdAt: string

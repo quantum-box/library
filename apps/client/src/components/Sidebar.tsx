@@ -284,9 +284,11 @@ export function Sidebar() {
   const currentDatabaseViewType: DatabaseViewType =
     search.view === 'workflow' || search.view?.includes(':workflow')
       ? 'workflow'
-      : search.view === 'board' || search.view?.includes(':board')
-        ? 'board'
-        : 'table'
+      : search.view === 'timeline' || search.view?.includes(':timeline')
+        ? 'timeline'
+        : search.view === 'board' || search.view?.includes(':board')
+          ? 'board'
+          : 'table'
   const currentSection = pathname.startsWith('/home')
     ? 'home'
     : pathname.startsWith('/organizations')

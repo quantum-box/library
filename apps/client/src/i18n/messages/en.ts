@@ -127,6 +127,9 @@ export const en = {
   'palette.nav.workflow.label': 'All data · Workflow',
   'palette.nav.workflow.detail': 'Arrange and connect data',
   'palette.nav.workflow.keywords': 'data records workflow graph network',
+  'palette.nav.timeline.label': 'All data · Timeline',
+  'palette.nav.timeline.detail': 'See data laid out over dates',
+  'palette.nav.timeline.keywords': 'data records timeline gantt dates schedule',
   'palette.nav.docs.label': 'Documents',
   'palette.nav.docs.detail': 'Open local documents',
   'palette.nav.docs.keywords': 'docs documents pages',
@@ -240,6 +243,14 @@ export const en = {
   'kanban.densityCompact': 'Compact',
   'kanban.densityDefault': 'Default',
   'kanban.dragHint': '{count} data · drag to move',
+  'timeline.scaleLabel': 'Timeline zoom',
+  'timeline.scale.day': 'Day',
+  'timeline.scale.week': 'Week',
+  'timeline.scale.month': 'Month',
+  'timeline.axisLabel': 'Data',
+  'timeline.rangeHint': '{count} data · {from} – {to}',
+  'timeline.empty': 'No dated data',
+  'timeline.undated': '{count} without dates',
 
   // ---------------------------------------------------- create data dialog
   'createRecord.close': 'Close new record modal',
@@ -268,6 +279,10 @@ export const en = {
   'viewSettings.desc': 'Desc',
   'viewSettings.asc': 'Asc',
   'viewSettings.compactCards': 'Compact cards',
+  'viewSettings.timelineScale': 'Timeline zoom',
+  'viewSettings.timelineStart': 'Bar starts at',
+  'viewSettings.timelineStart.createdAt': 'Created',
+  'viewSettings.timelineStart.updatedAt': 'Updated',
   'viewSettings.properties': 'Properties',
 
   // -------------------------------------------------------------- view tabs
@@ -275,6 +290,7 @@ export const en = {
   'viewTabs.table': 'Table',
   'viewTabs.board': 'Board',
   'viewTabs.workflow': 'Workflow',
+  'viewTabs.timeline': 'Timeline',
   'viewTabs.tabTitle': '{name} ({type})',
   'viewTabs.unsavedChanges': 'Unsaved changes',
   'viewTabs.discard': 'Discard',

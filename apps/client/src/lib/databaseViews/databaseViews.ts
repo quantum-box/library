@@ -5,8 +5,11 @@ import type {
   DatabaseViewDefinition,
   DatabaseViewFilters,
   DatabaseViewSorting,
+  DatabaseViewTimelineSettings,
   DatabaseViewType,
   RecordPropertyKey,
+  TimelineDateField,
+  TimelineScale,
 } from './types'
 import { collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
 
@@ -40,6 +43,19 @@ export const DEFAULT_BOARD_VISIBLE_PROPERTIES: RecordPropertyKey[] = [
   'labels',
 ]
 
+/**
+ * The timeline spends its width on the bars, so the row label only carries
+ * what identifies a record at a glance. Dates are read off the axis instead of
+ * repeated in the label.
+ */
+export const DEFAULT_TIMELINE_VISIBLE_PROPERTIES: RecordPropertyKey[] = [
+  'identifier',
+  'status',
+  'priority',
+  'title',
+  'assignee',
+]
+
 const DEFAULT_FILTERS: DatabaseViewFilters = {
   search: '',
   labels: [],
@@ -47,6 +63,22 @@ const DEFAULT_FILTERS: DatabaseViewFilters = {
 
 const DEFAULT_BOARD: DatabaseViewBoardSettings = {
   compact: false,
+}
+
+const DEFAULT_TIMELINE: DatabaseViewTimelineSettings = {
+  startField: 'createdAt',
+  scale: 'day',
+}
+
+const TIMELINE_DATE_FIELDS: TimelineDateField[] = ['createdAt', 'updatedAt']
+const TIMELINE_SCALES: TimelineScale[] = ['day', 'week', 'month']
+
+export function isTimelineDateField(value: unknown): value is TimelineDateField {
+  return TIMELINE_DATE_FIELDS.includes(value as TimelineDateField)
+}
+
+export function isTimelineScale(value: unknown): value is TimelineScale {
+  return TIMELINE_SCALES.includes(value as TimelineScale)
 }
 
 const PROPERTY_SET = new Set(RECORD_PROPERTIES.map((property) => property.id))
@@ -82,6 +114,7 @@ export function getDefaultDatabaseViews(databaseId: string): DatabaseViewDefinit
       sorting: null,
       visibleProperties: DEFAULT_VISIBLE_PROPERTIES,
       board: { ...DEFAULT_BOARD },
+      timeline: { ...DEFAULT_TIMELINE },
       workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
       order: 0,
       createdAt: now,
@@ -96,6 +129,7 @@ export function getDefaultDatabaseViews(databaseId: string): DatabaseViewDefinit
       sorting: null,
       visibleProperties: DEFAULT_BOARD_VISIBLE_PROPERTIES,
       board: { ...DEFAULT_BOARD },
+      timeline: { ...DEFAULT_TIMELINE },
       workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
       order: 1,
       createdAt: now,
@@ -110,8 +144,24 @@ export function getDefaultDatabaseViews(databaseId: string): DatabaseViewDefinit
       sorting: null,
       visibleProperties: DEFAULT_VISIBLE_PROPERTIES,
       board: { ...DEFAULT_BOARD },
+      timeline: { ...DEFAULT_TIMELINE },
       workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
       order: 2,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: getDefaultDatabaseViewId(databaseId, 'timeline'),
+      databaseId,
+      name: 'Timeline',
+      type: 'timeline',
+      filters: { ...DEFAULT_FILTERS },
+      sorting: null,
+      visibleProperties: DEFAULT_TIMELINE_VISIBLE_PROPERTIES,
+      board: { ...DEFAULT_BOARD },
+      timeline: { ...DEFAULT_TIMELINE },
+      workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
+      order: 3,
       createdAt: now,
       updatedAt: now,
     },
@@ -145,8 +195,25 @@ function normalizeSorting(value: DatabaseViewSorting | null | undefined): Databa
   return { id: value.id, desc: Boolean(value.desc) }
 }
 
+function defaultVisibleProperties(type: DatabaseViewType): RecordPropertyKey[] {
+  if (type === 'board') return DEFAULT_BOARD_VISIBLE_PROPERTIES
+  if (type === 'timeline') return DEFAULT_TIMELINE_VISIBLE_PROPERTIES
+  return DEFAULT_VISIBLE_PROPERTIES
+}
+
+function normalizeTimeline(
+  value: Partial<DatabaseViewTimelineSettings> | undefined
+): DatabaseViewTimelineSettings {
+  return {
+    startField: isTimelineDateField(value?.startField)
+      ? value.startField
+      : DEFAULT_TIMELINE.startField,
+    scale: isTimelineScale(value?.scale) ? value.scale : DEFAULT_TIMELINE.scale,
+  }
+}
+
 function normalizeVisibleProperties(value: unknown, type: DatabaseViewType): RecordPropertyKey[] {
-  const fallback = type === 'board' ? DEFAULT_BOARD_VISIBLE_PROPERTIES : DEFAULT_VISIBLE_PROPERTIES
+  const fallback = defaultVisibleProperties(type)
   if (!Array.isArray(value)) return fallback
   const normalized = value.filter(
     (property): property is RecordPropertyKey =>
@@ -155,14 +222,14 @@ function normalizeVisibleProperties(value: unknown, type: DatabaseViewType): Rec
   return normalized.length > 0 ? normalized : fallback
 }
 
-type DatabaseViewInput = Omit<Partial<DatabaseViewDefinition>, 'filters'> &
+type DatabaseViewInput = Omit<Partial<DatabaseViewDefinition>, 'filters' | 'timeline'> &
   Pick<DatabaseViewDefinition, 'id' | 'databaseId'> & {
     filters?: Partial<DatabaseViewFilters>
+    timeline?: Partial<DatabaseViewTimelineSettings>
   }
 
 export function normalizeDatabaseView(input: DatabaseViewInput): DatabaseViewDefinition {
-  const type: DatabaseViewType =
-    input.type === 'board' || input.type === 'workflow' ? input.type : 'table'
+  const type: DatabaseViewType = isDatabaseViewType(input.type) ? input.type : 'table'
   const now = new Date().toISOString()
 
   return {
@@ -176,6 +243,7 @@ export function normalizeDatabaseView(input: DatabaseViewInput): DatabaseViewDef
     board: {
       compact: Boolean(input.board?.compact),
     },
+    timeline: normalizeTimeline(input.timeline),
     workflowCanvasKey:
       input.workflowCanvasKey ||
       (type === 'workflow'
@@ -204,9 +272,13 @@ export function ymapToDatabaseView(ymap: Y.Map<string>): DatabaseViewDefinition 
     ),
     visibleProperties: parseJson<RecordPropertyKey[]>(
       ymap.get('visibleProperties') as string | undefined,
-      type === 'board' ? DEFAULT_BOARD_VISIBLE_PROPERTIES : DEFAULT_VISIBLE_PROPERTIES
+      defaultVisibleProperties(type ?? 'table')
     ),
     board: parseJson<DatabaseViewBoardSettings>(ymap.get('board') as string | undefined, DEFAULT_BOARD),
+    timeline: parseJson<Partial<DatabaseViewTimelineSettings>>(
+      ymap.get('timeline') as string | undefined,
+      DEFAULT_TIMELINE
+    ),
     workflowCanvasKey: ymap.get('workflowCanvasKey') as string | undefined,
     order: Number(ymap.get('order') ?? 0),
     createdAt: ymap.get('createdAt') as string | undefined,
@@ -224,6 +296,7 @@ export function writeDatabaseViewToYMap(ymap: Y.Map<string>, view: DatabaseViewD
   ymap.set('sorting', JSON.stringify(normalized.sorting))
   ymap.set('visibleProperties', JSON.stringify(normalized.visibleProperties))
   ymap.set('board', JSON.stringify(normalized.board))
+  ymap.set('timeline', JSON.stringify(normalized.timeline))
   ymap.set('workflowCanvasKey', normalized.workflowCanvasKey)
   ymap.set('order', String(normalized.order))
   ymap.set('createdAt', normalized.createdAt)
@@ -292,10 +365,10 @@ export function sortRecordsForDatabaseView(
   })
 }
 
-const DATABASE_VIEW_TYPES: DatabaseViewType[] = ['table', 'board', 'workflow']
+const DATABASE_VIEW_TYPES: DatabaseViewType[] = ['table', 'board', 'workflow', 'timeline']
 
 export function isDatabaseViewType(value: string | undefined): value is DatabaseViewType {
-  return value === 'table' || value === 'board' || value === 'workflow'
+  return DATABASE_VIEW_TYPES.includes(value as DatabaseViewType)
 }
 
 export function resolveDatabaseViewFromParam(
@@ -346,8 +419,9 @@ export function createNewDatabaseView(
     type,
     filters: { ...DEFAULT_FILTERS },
     sorting: null,
-    visibleProperties: type === 'board' ? DEFAULT_BOARD_VISIBLE_PROPERTIES : DEFAULT_VISIBLE_PROPERTIES,
+    visibleProperties: defaultVisibleProperties(type),
     board: { ...DEFAULT_BOARD },
+    timeline: { ...DEFAULT_TIMELINE },
     workflowCanvasKey:
       type === 'workflow' ? `view:${databaseId}:${id}` : getDefaultWorkflowCanvasKey(databaseId),
     order,

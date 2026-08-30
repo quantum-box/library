@@ -109,7 +109,7 @@ test.describe('Library shell', () => {
     await expect(page.locator('tbody tr', { hasText: 'DATA-103' })).toBeVisible()
   })
 
-  test('switches between table, board, workflow, docs, and chat views', async ({ page }) => {
+  test('switches between table, board, workflow, timeline, docs, and chat views', async ({ page }) => {
     await page.goto('/databases')
     await page.getByTestId('view-kanban').click()
 
@@ -127,6 +127,14 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('workflow-template-kpi-tree')).toBeVisible()
     await expect(page.getByText('Workflow Canvas')).toBeVisible()
     await expect(page.locator('.react-flow__controls')).toBeVisible()
+
+    await page.getByTestId('view-timeline').click()
+
+    await expect(page).toHaveURL(/view=.*timeline/)
+    await expect(page.getByTestId('timeline-view')).toBeVisible()
+    await expect(page.getByTestId('timeline-scale-day')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('timeline-scale-month').click()
+    await expect(page.getByTestId('timeline-scale-month')).toHaveAttribute('aria-pressed', 'true')
 
     await page.getByTestId('view-docs').click()
 

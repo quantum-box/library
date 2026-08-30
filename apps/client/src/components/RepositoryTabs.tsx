@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import {
   Activity,
   BookOpen,
+  CalendarRange,
   Columns3,
   FileKey2,
   FileText,
@@ -20,6 +21,7 @@ export type RepositoryTab =
   | 'data'
   | 'board'
   | 'workflow'
+  | 'timeline'
   | 'docs'
   | 'properties'
   | 'api'
@@ -101,6 +103,7 @@ export function RepositoryTabs({
         ['data', 'repository.tab.data', LayoutList, undefined],
         ['board', 'viewTabs.board', Columns3, 'board'],
         ['workflow', 'viewTabs.workflow', Workflow, 'workflow'],
+        ['timeline', 'viewTabs.timeline', CalendarRange, 'timeline'],
       ] as const).map(([tab, labelKey, icon, view]) => (
         <Tab key={tab} active={active === tab} icon={icon} label={t(labelKey)}>
           {(className, content) => (
