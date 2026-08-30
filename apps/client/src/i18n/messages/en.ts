@@ -884,6 +884,32 @@ export const en = {
   'windowTabs.newTab': 'New tab',
   'windowTabs.closeTab': 'Close {title}',
 
+  // The native macOS menu bar. macOS translates none of it for us, so the
+  // whole bar is retitled from here; entries follow Apple's own wording and
+  // capitalisation for the platform rather than this catalog's sentence case.
+  // ------------------------------------------------------- native menu bar
+  'menuBar.about': 'About {name}',
+  'menuBar.services': 'Services',
+  'menuBar.hide': 'Hide {name}',
+  'menuBar.hideOthers': 'Hide Others',
+  'menuBar.quit': 'Quit {name}',
+  'menuBar.file': 'File',
+  'menuBar.newTab': 'New Tab',
+  'menuBar.closeWindow': 'Close Window',
+  'menuBar.edit': 'Edit',
+  'menuBar.undo': 'Undo',
+  'menuBar.redo': 'Redo',
+  'menuBar.cut': 'Cut',
+  'menuBar.copy': 'Copy',
+  'menuBar.paste': 'Paste',
+  'menuBar.selectAll': 'Select All',
+  'menuBar.view': 'View',
+  'menuBar.toggleFullScreen': 'Toggle Full Screen',
+  'menuBar.window': 'Window',
+  'menuBar.minimize': 'Minimize',
+  'menuBar.zoom': 'Zoom',
+  'menuBar.help': 'Help',
+
   // ---------------------------------------------------------------- editors
   'editor.noImageTarget': 'This body has no repository to store images in',
   'editor.htmlBlockTitle': 'HTML',
