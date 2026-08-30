@@ -10,6 +10,7 @@ import {
 } from './libraryTable/libraryPropertyInput'
 import {
   deleteClientEngineRecord,
+  ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
   upsertClientEngineRecord,
@@ -2000,6 +2001,22 @@ function nextIdentifier(records: DatabaseRecord[]) {
   return `${prefix}-${maxNumber + 1}`
 }
 
+/**
+ * Cache records the Library API just gave us.
+ *
+ * `ingest` rather than `upsert`: the Library API owns these rows, so storing
+ * one is not a local edit and must not enter the push queue. Writing them as
+ * operations meant every cached row became pending, and the pending set is
+ * scope-wide — so the next `documents` save tried to push the whole cache at
+ * the Engine.
+ */
+async function cacheLibraryRecords(records: readonly DatabaseRecord[]): Promise<void> {
+  await ingestClientEngineRecords(
+    libraryRecordsCollection,
+    records.map((record) => ({ recordId: record.id, value: record }))
+  )
+}
+
 function activeRecordsCollection(): string {
   return libraryApiConfigured() ? libraryRecordsCollection : 'records'
 }
@@ -2008,9 +2025,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
   if (libraryApiConfigured()) {
     try {
       const libraryRecords = await fetchLibraryRecords()
-      await Promise.all(
-        libraryRecords.map((record) => upsertClientEngineRecord(libraryRecordsCollection, record.id, record))
-      )
+      await cacheLibraryRecords(libraryRecords)
       return libraryRecords
     } catch (error) {
       const cached = await listClientEngineRecords<DatabaseRecord>(libraryRecordsCollection)
@@ -2036,9 +2051,7 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
             : Promise.resolve([])
         )
       )).flat()
-      await Promise.all(
-        libraryRecords.map((record) => upsertClientEngineRecord(libraryRecordsCollection, record.id, record))
-      )
+      await cacheLibraryRecords(libraryRecords)
       return libraryRecords
     } catch (error) {
       const cached = await listClientEngineRecords<DatabaseRecord>(libraryRecordsCollection)
@@ -2102,7 +2115,7 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
       repoUsername: targetRepo,
       operatorId: targetOperatorId,
     })
-    await upsertClientEngineRecord(libraryRecordsCollection, record.id, record)
+    await cacheLibraryRecords([record])
     return record
   }
 
@@ -2195,7 +2208,7 @@ export async function updateServerRecord(
       repoUsername: targetRepo,
       operatorId: targetOperatorId,
     })
-    await upsertClientEngineRecord(libraryRecordsCollection, record.id, record)
+    await cacheLibraryRecords([record])
     return record
   }
 
