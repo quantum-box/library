@@ -74,9 +74,9 @@ const mocks = vi.hoisted(() => {
     createServerRecord: vi.fn(),
     updateServerRecord: vi.fn(),
     deleteServerRecord: vi.fn(),
-    /** The rollback listeners the provider has registered, to fire by hand. */
-    rollbackListeners: new globalThis.Set<(rollbacks: unknown) => void>(),
+    /** The settlement listeners the provider registered, to fire by hand. */
     settlementListeners: new globalThis.Set<(settlement: unknown) => void>(),
+    pendingLibraryRecordIds: vi.fn(),
   }
 })
 
@@ -100,14 +100,11 @@ vi.mock('../lib/recordsApi', () => ({
   createServerRecord: mocks.createServerRecord,
   updateServerRecord: mocks.updateServerRecord,
   deleteServerRecord: mocks.deleteServerRecord,
-  subscribeRecordRollbacks: (listener: (rollbacks: unknown) => void) => {
-    mocks.rollbackListeners.add(listener)
-    return () => { mocks.rollbackListeners.delete(listener) }
-  },
   subscribeRecordSettlements: (listener: (settlement: unknown) => void) => {
     mocks.settlementListeners.add(listener)
     return () => { mocks.settlementListeners.delete(listener) }
   },
+  pendingLibraryRecordIds: mocks.pendingLibraryRecordIds,
 }))
 
 import { RecordsProvider, useRecords, type CreateRecordData } from './RecordsContext'
@@ -188,8 +185,8 @@ describe('RecordsProvider server-accepted projection', () => {
     mocks.createServerRecord.mockReset()
     mocks.updateServerRecord.mockReset()
     mocks.deleteServerRecord.mockReset()
-    mocks.rollbackListeners.clear()
     mocks.settlementListeners.clear()
+    mocks.pendingLibraryRecordIds.mockReset().mockResolvedValue([])
   })
 
   it('writes created records optimistically and replaces them with the server version', async () => {
@@ -663,61 +660,83 @@ describe('RecordsProvider server-accepted projection', () => {
    * The other half of a queued write.
    *
    * `createServerRecord` and friends report a write made offline as kept — the
-   * operation is durable and the record belongs on screen. When the network
-   * comes back and the server refuses it, the call that made it has long
-   * returned, so the only way the refusal reaches this shared document is the
-   * rollback subscription.
+   * operation is durable and the record belongs on screen. The verdict lands a
+   * cycle later, with the call that made the write long returned, so a listing
+   * is the only thing that can say what the record really is now.
    */
-  describe('rollbacks that land after the write returned', () => {
-    function fireRollback(rollbacks: { recordId: string; record: DatabaseRecord | null }[]) {
+  describe('settlements that land after the write returned', () => {
+    function fireSettlement(settlement: {
+      status: 'accepted' | 'rejected' | 'conflict'
+      recordId: string
+    }) {
       act(() => {
-        mocks.rollbackListeners.forEach((listener) => { listener(rollbacks) })
+        mocks.settlementListeners.forEach((listener) => { listener(settlement) })
       })
     }
 
-    it('takes a refused create back out of the projection', async () => {
-      seedYDatabaseRecord(serverDatabaseRecord)
+    it('reconciles the projection against the server listing', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, id: 'record-refused-1' })
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([serverDatabaseRecord])
       render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
 
-      // A create that was rolled back leaves no record behind at all.
-      fireRollback([{ recordId: serverDatabaseRecord.id, record: null }])
+      fireSettlement({ status: 'rejected', recordId: 'record-refused-1' })
 
-      expect(mocks.recordsArray.length).toBe(0)
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      // The refused record is gone and the one the server does have stayed.
+      await waitFor(() => {
+        expect(mocks.recordsArray.items.map((item) => item.get('id')))
+          .toEqual([serverDatabaseRecord.id])
+      })
     })
 
-    it('puts a record back when a refused delete is rolled back', async () => {
+    it('collapses a burst of settlements into one listing', async () => {
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
       render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
 
-      fireRollback([{ recordId: serverDatabaseRecord.id, record: serverDatabaseRecord }])
+      // One sync cycle settles every operation it carried.
+      act(() => {
+        mocks.settlementListeners.forEach((listener) => {
+          listener({ status: 'accepted', recordId: 'a' })
+          listener({ status: 'rejected', recordId: 'b' })
+          listener({ status: 'conflict', recordId: 'c' })
+        })
+      })
 
-      expect(mocks.recordsArray.length).toBe(1)
-      expect(mocks.recordsArray.get(0).get('title')).toBe('Server accepted record')
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2)
     })
 
-    it('writes back the value a refused edit was rolled back to', async () => {
-      seedYDatabaseRecord({ ...serverDatabaseRecord, title: 'Edited while offline' })
+    it('keeps a create that has not reached the server out of the reconcile', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, id: 'data_still-queued' })
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
+      mocks.pendingLibraryRecordIds.mockResolvedValue(['data_still-queued'])
       render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
 
-      fireRollback([{ recordId: serverDatabaseRecord.id, record: serverDatabaseRecord }])
+      fireSettlement({ status: 'accepted', recordId: 'other' })
 
-      expect(mocks.recordsArray.length).toBe(1)
-      expect(mocks.recordsArray.get(0).get('title')).toBe('Server accepted record')
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      // The listing has no idea this record exists; deleting it would throw
+      // away a write that is still on its way out.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.recordsArray.items.map((item) => item.get('id')))
+        .toEqual(['data_still-queued'])
     })
 
     it('tells the user the change was undone rather than reverting in silence', async () => {
-      seedYDatabaseRecord(serverDatabaseRecord)
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
       let context: ReturnType<typeof useRecords> | null = null
       render(
         <RecordsProvider>
           <ContextCapture onChange={(value) => { context = value }} />
         </RecordsProvider>
       )
-      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
 
-      fireRollback([{ recordId: serverDatabaseRecord.id, record: null }])
+      fireSettlement({ status: 'rejected', recordId: serverDatabaseRecord.id })
 
       await waitFor(() => {
         expect(context!.mutationError).toEqual({
@@ -728,52 +747,8 @@ describe('RecordsProvider server-accepted projection', () => {
       })
     })
 
-    it('stops listening once the provider unmounts', async () => {
-      const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
-
-      unmount()
-
-      expect(mocks.rollbackListeners.size).toBe(0)
-      expect(mocks.settlementListeners.size).toBe(0)
-    })
-  })
-
-  /**
-   * The verdicts that are not rollbacks.
-   *
-   * A `conflict` moves the record without undoing anything, and an `accepted`
-   * create brings back the `identifier` the server derived — which the queued
-   * write could only put a placeholder in for.
-   */
-  describe('settlements that land after the write returned', () => {
-    function fireSettlement(settlement: {
-      status: 'accepted' | 'conflict'
-      recordId: string
-      record: DatabaseRecord | null
-    }) {
-      act(() => {
-        mocks.settlementListeners.forEach((listener) => { listener(settlement) })
-      })
-    }
-
-    it('writes back the identifier an accepted create came home with', async () => {
-      seedYDatabaseRecord({ ...serverDatabaseRecord, identifier: serverDatabaseRecord.id })
-      render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
-
-      fireSettlement({
-        status: 'accepted',
-        recordId: serverDatabaseRecord.id,
-        record: serverDatabaseRecord,
-      })
-
-      expect(mocks.recordsArray.length).toBe(1)
-      expect(mocks.recordsArray.get(0).get('identifier')).toBe('PLT-1201')
-    })
-
-    it('drops a record the server turned out not to have, and says so', async () => {
-      seedYDatabaseRecord(serverDatabaseRecord)
+    it('says nothing to the user about a write the server accepted', async () => {
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
       let context: ReturnType<typeof useRecords> | null = null
       render(
         <RecordsProvider>
@@ -782,27 +757,19 @@ describe('RecordsProvider server-accepted projection', () => {
       )
       await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
 
-      fireSettlement({ status: 'conflict', recordId: serverDatabaseRecord.id, record: null })
-
-      expect(mocks.recordsArray.length).toBe(0)
-      await waitFor(() => {
-        expect(context!.mutationError).toMatchObject({
-          action: 'rollback',
-          recordId: serverDatabaseRecord.id,
-        })
-      })
-    })
-
-    it('refetches when an accepted record is no longer under the id it was written with', async () => {
-      render(<RecordsProvider><div /></RecordsProvider>)
-      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
-      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
-
-      // The server minted its own id and Photon moved the record under it.
-      // Nothing here knows the new one, so the list is the only way back.
-      fireSettlement({ status: 'accepted', recordId: serverDatabaseRecord.id, record: null })
+      fireSettlement({ status: 'accepted', recordId: serverDatabaseRecord.id })
 
       await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      expect(context!.mutationError).toBeNull()
+    })
+
+    it('stops listening once the provider unmounts', async () => {
+      const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      unmount()
+
+      expect(mocks.settlementListeners.size).toBe(0)
     })
   })
 

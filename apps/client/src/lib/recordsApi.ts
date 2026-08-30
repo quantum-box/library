@@ -15,7 +15,7 @@ import {
   newClientEngineRecordId,
   patchAndPushClientEngineRecord,
   patchClientEngineRecord,
-  subscribeClientEngineRollbacks,
+  pendingClientEngineRecordIds,
   subscribeClientEngineSettlements,
   upsertAndPushClientEngineRecord,
   upsertClientEngineRecord,
@@ -2263,85 +2263,60 @@ async function assertRecordFieldsMappable(
 }
 
 /**
- * A record the engine put back after this module had already returned it.
+ * What became of a write that this module reported as kept.
  *
- * `record` is where the record now stands locally: `null` when the write that
- * was rolled back was the record's creation, or when the rollback restored it
- * to deleted.
- */
-export interface RecordRollback {
-  recordId: string
-  record: DatabaseRecord | null
-}
-
-/**
- * Hear about writes the server refused only after they were reported queued.
+ * `settleRecordWrite` turns a verdict that arrives *inside* the call into a
+ * thrown `RecordApiError`, which is how the caller learns to undo what it drew.
+ * A queued write has none to throw: it is decided a sync cycle later, once the
+ * network is back, and by then the call that made it has long returned.
  *
- * `settleRecordWrite` turns an *immediate* rejection into a thrown
- * `RecordApiError`, which is how the caller learns to undo what it drew. A
- * queued write has no rejection to throw yet — it is decided on a later sync
- * cycle, once the network is back, and by then the call that made it is long
- * gone. Photon rolls its own projection back and nothing downstream hears;
- * this is the seam through which it does.
- *
- * Scoped to the records collections, because that is what these callers hold.
- * A rollback in `documents` or `attachments` belongs to a different projection
- * and is not this listener's to reconcile.
- */
-export function subscribeRecordRollbacks(
-  listener: (rollbacks: readonly RecordRollback[]) => void
-): () => void {
-  return subscribeClientEngineRollbacks((changes) => {
-    const rollbacks = changes
-      .filter((change) => libraryRecordsDatabaseId(change.collection) != null)
-      .map((change) => ({
-        recordId: change.recordId,
-        record: (change.record?.value as DatabaseRecord | undefined) ?? null,
-      }))
-    if (rollbacks.length > 0) listener(rollbacks)
-  })
-}
-
-/**
- * What became of a write that was reported as queued.
- *
- * `rejected` is not here: it travels the rollback seam above, which reports
- * the rolled-back value the moment Photon reprojects it rather than waiting
- * for the cycle to end.
- *
- * `record` is where the record now stands. `null` under `conflict` means the
- * server has no such record; under `accepted` it means the record is no longer
- * under the id it was written with — the server minted its own and Photon
- * moved it — and nothing here knows the new one.
+ * No record travels with it, on purpose — see `ClientEngineSettlement`. What
+ * the engine holds for the record at this moment is not necessarily what its
+ * authority holds, so the only sound reconciliation is to go and read the
+ * authority.
  */
 export interface RecordSettlement {
-  status: 'accepted' | 'conflict'
+  status: 'accepted' | 'rejected' | 'conflict'
   recordId: string
-  record: DatabaseRecord | null
+  reason?: string
 }
 
 /**
- * Hear what a queued write settled as, beyond the ones that were undone.
+ * Hear what a queued write settled as.
  *
- * A rejection is the loud case and `subscribeRecordRollbacks` has it. These
- * are the quiet ones, and they leave a projection built from the write's
- * return value just as wrong: a `conflict` puts the record back to the
- * server's value without rolling anything back, and an `accepted` create
- * carries the server-derived `identifier` that the queued write could only
- * guess at.
+ * Scoped to the records collections, because that is what these callers hold.
+ * A settlement in `documents` or `attachments` belongs to a different
+ * projection and is not this listener's to reconcile.
  */
 export function subscribeRecordSettlements(
   listener: (settlement: RecordSettlement) => void
 ): () => void {
   return subscribeClientEngineSettlements((settlement) => {
-    if (settlement.status === 'rejected') return
     if (libraryRecordsDatabaseId(settlement.collection) == null) return
     listener({
       status: settlement.status,
       recordId: settlement.recordId,
-      record: (settlement.record?.value as DatabaseRecord | undefined) ?? null,
+      ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
     })
   })
+}
+
+/**
+ * Every record holding a local write the server has not acknowledged.
+ *
+ * `fetchServerRecords` reads the Library API, which cannot mention a record
+ * that has never reached it, so reconciling a projection against that listing
+ * deletes a create made offline. These are the ids that listing is not
+ * entitled to remove.
+ */
+export async function pendingLibraryRecordIds(): Promise<string[]> {
+  const ids = await Promise.all(
+    knownLibraryRepositories().map((repository) =>
+      pendingClientEngineRecordIds(libraryRecordsCollection(repository.databaseId))
+        .catch(() => [] as string[])
+    )
+  )
+  return ids.flat()
 }
 
 /**

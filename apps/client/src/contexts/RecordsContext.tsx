@@ -16,7 +16,7 @@ import {
   createServerRecord,
   deleteServerRecord,
   fetchServerRecords,
-  subscribeRecordRollbacks,
+  pendingLibraryRecordIds,
   subscribeRecordSettlements,
   updateServerRecord,
   type ServerUpdateRecordData,
@@ -61,9 +61,10 @@ interface RecordsContextValue {
 
 export interface RecordMutationError {
   /**
-   * `rollback` is not an action the user took. It is one they took a while
-   * ago, offline, that the server has now refused — so the banner it raises
-   * says the change was undone rather than that something failed just now.
+   * `rollback` is not an action the user just took. It is one they took a
+   * while ago, offline, that the server has now refused — so the banner it
+   * raises says the change was undone rather than that something failed just
+   * now, and it is only ever raised for a write that was reported as queued.
    */
   action: 'move' | 'update' | 'delete' | 'rollback'
   recordId: string
@@ -235,7 +236,33 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const recordDeleteGenerationsRef = useRef(new Map<string, number>())
   const recordDeleteRequestGenerationsRef = useRef(new Map<string, number>())
   const pendingOptimisticRecordIdsRef = useRef(new Set<string>())
+  /**
+   * Records the Library API cannot be expected to list yet.
+   *
+   * `reconcileYRecords` deletes whatever the listing it is given does not
+   * mention, and a create made offline has never reached the server — so
+   * without this, the first listing after an offline create throws it away.
+   * Refreshed from the engine immediately before each reconcile, because a
+   * write that has since gone out must stop being protected.
+   */
+  const unsentRecordIdsRef = useRef(new Set<string>())
   const recordsSnapshotRequestGenerationRef = useRef(0)
+
+  /** Every record a server listing is not entitled to delete. */
+  const protectedRecordIds = useCallback((): Set<string> => new Set([
+    ...pendingOptimisticRecordIdsRef.current,
+    ...unsentRecordIdsRef.current,
+  ]), [])
+
+  const refreshUnsentRecordIds = useCallback(async (): Promise<void> => {
+    try {
+      unsentRecordIdsRef.current = new Set(await pendingLibraryRecordIds())
+    } catch {
+      // Best effort: a projection that cannot be read protects nothing, which
+      // is what it did before this existed.
+      unsentRecordIdsRef.current = new Set()
+    }
+  }, [])
 
   const transactProjection = useCallback((transaction: () => void) => {
     projectionGenerationRef.current += 1
@@ -268,45 +295,6 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     return () => recordsArray.unobserveDeep(noteRemoteChange)
   }, [])
 
-  /**
-   * A write refused long after it was made still has to leave the screen.
-   *
-   * An offline create, edit or delete is reported as queued, and everything
-   * below treats that as kept: `handleCreateRecord` swaps the optimistic
-   * record for the returned one, `enqueueRecordUpdate` writes the returned
-   * record into the document, `handleDeleteRecord` removes it. When the
-   * network comes back and the server refuses the operation, Photon rolls its
-   * own projection back — and, until this, told nobody. The refused record sat
-   * in the shared Yjs document, on every tab, until something happened to
-   * refetch.
-   *
-   * `record` is the value the engine now holds, so this writes what is true
-   * rather than trying to invert the edit: a refused create has nothing left
-   * to hold and is removed, a refused edit comes back as the value before it,
-   * and a refused delete comes back as the record.
-   */
-  useEffect(() => subscribeRecordRollbacks((rollbacks) => {
-    transactProjection(() => {
-      for (const rollback of rollbacks) {
-        if (rollback.record) upsertYDatabaseRecord(rollback.record)
-        else removeYDatabaseRecord(rollback.recordId)
-      }
-    })
-
-    // Otherwise the edit just leaves the screen. The user made it long enough
-    // ago — before the network came back — that nothing on screen connects it
-    // to what is happening now, so a record quietly reverting or vanishing
-    // reads as the app losing their work rather than the server refusing it.
-    const [first] = rollbacks
-    if (first) {
-      setMutationError({
-        action: 'rollback',
-        recordId: first.recordId,
-        message: t('errors.offlineWriteUndone'),
-      })
-    }
-  }), [transactProjection])
-
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
     if (!ready) {
@@ -326,8 +314,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       setHydrationLoading(true)
       setHydrationError(null)
 
-      fetchServerRecords()
-        .then((serverRecords) => {
+      Promise.all([fetchServerRecords(), refreshUnsentRecordIds()])
+        .then(([serverRecords]) => {
           if (cancelled || hydrationGeneration !== hydrationGenerationRef.current) return
           if (projectionGeneration !== projectionGenerationRef.current) {
             reload()
@@ -335,7 +323,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           }
 
           transactProjection(() => {
-            reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+            reconcileYRecords(serverRecords, protectedRecordIds())
           })
           setHydrationLoading(false)
         })
@@ -357,45 +345,11 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       hydrationGenerationRef.current += 1
       window.removeEventListener('library-auth-change', reload)
     }
-  }, [hydrationRevision, ready, transactProjection])
+  }, [hydrationRevision, protectedRecordIds, ready, refreshUnsentRecordIds, transactProjection])
 
   const refreshRecords = useCallback(() => {
     setHydrationRevision((revision) => revision + 1)
   }, [])
-
-  /**
-   * The quieter half of a late verdict.
-   *
-   * A rollback is not the only way a queued write ends up disagreeing with
-   * what was drawn for it. A `conflict` puts the record back to the server's
-   * value without rolling anything back, and an `accepted` create carries the
-   * `identifier` the server derived — which `createServerRecord` could only
-   * put a placeholder in for a write that had not been sent yet.
-   *
-   * `accepted` with no record is the one case nothing here can settle: the
-   * server minted its own id and Photon moved the record under it, so the id
-   * this document holds is dead and the new one is unknown. The list is the
-   * only way back to it.
-   */
-  useEffect(() => subscribeRecordSettlements((settlement) => {
-    if (settlement.record) {
-      const record = settlement.record
-      transactProjection(() => { upsertYDatabaseRecord(record) })
-    } else if (settlement.status === 'conflict') {
-      transactProjection(() => { removeYDatabaseRecord(settlement.recordId) })
-    } else {
-      refreshRecords()
-      return
-    }
-
-    if (settlement.status === 'conflict') {
-      setMutationError({
-        action: 'rollback',
-        recordId: settlement.recordId,
-        message: t('errors.offlineWriteUndone'),
-      })
-    }
-  }), [refreshRecords, transactProjection])
 
   const recordCountByStatus = useMemo(
     () =>
@@ -578,10 +532,72 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     }
 
     transactProjection(() => {
-      reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+      reconcileYRecords(serverRecords, protectedRecordIds())
     })
     return true
-  }, [transactProjection])
+  }, [protectedRecordIds, transactProjection])
+
+  /**
+   * A queued write's verdict, reconciled against the record's authority.
+   *
+   * An offline create, edit or delete is reported as kept, and everything here
+   * treats it that way: `handleCreateRecord` swaps its optimistic record for
+   * the returned one, `enqueueRecordUpdate` writes the returned record into the
+   * document, `handleDeleteRecord` removes it. When the network comes back and
+   * the server refuses the operation — or resolves it into a conflict, or
+   * accepts it and fills in the identifier it derived — the call that made the
+   * write has long returned, and the refused or stale record sits in the shared
+   * Yjs document, on every tab, until something happens to refetch.
+   *
+   * Refetching *is* the reconciliation, rather than reading back what Photon
+   * rolled its own projection to. A rollback is replayed from the record's
+   * accepted local operations, and a record this client listed rather than
+   * wrote has none, so the replay would report an ordinary server record as
+   * gone. The engine's pull would correct that, but it serves one collection
+   * per cycle, so there is no moment at which the projection can be trusted to
+   * hold this record's canonical value. The Library API always does.
+   */
+  const reconcileSettledRecords = useCallback(async (): Promise<void> => {
+    await refreshUnsentRecordIds()
+    const token = beginRecordsSnapshot()
+    try {
+      syncRecords(await fetchServerRecords(), token)
+    } catch (error: unknown) {
+      // Best effort. The verdict has already been applied to the engine; this
+      // is the projection catching up, and a failed catch-up must not become a
+      // second error message about a write the user made minutes ago.
+      console.warn('Failed to reconcile records after a queued write settled', error)
+    }
+  }, [beginRecordsSnapshot, refreshUnsentRecordIds, syncRecords])
+
+  const settlementReconcileScheduledRef = useRef(false)
+
+  useEffect(() => subscribeRecordSettlements((settlement) => {
+    // Otherwise the edit just leaves the screen. The user made it long enough
+    // ago — before the network came back — that nothing on screen connects it
+    // to what is happening now, so a record quietly reverting or vanishing
+    // reads as the app losing their work rather than the server refusing it.
+    //
+    // A settlement only ever describes a write that was reported as queued, so
+    // this cannot land on top of the more precise error an immediate failure
+    // already gave the caller.
+    if (settlement.status !== 'accepted') {
+      setMutationError({
+        action: 'rollback',
+        recordId: settlement.recordId,
+        message: t('errors.offlineWriteUndone'),
+      })
+    }
+
+    // One cycle settles every operation it carried, so the verdicts arrive in
+    // a burst. Collapse the burst into a single listing.
+    if (settlementReconcileScheduledRef.current) return
+    settlementReconcileScheduledRef.current = true
+    queueMicrotask(() => {
+      settlementReconcileScheduledRef.current = false
+      void reconcileSettledRecords()
+    })
+  }), [reconcileSettledRecords])
 
   return (
     <RecordsContext.Provider
