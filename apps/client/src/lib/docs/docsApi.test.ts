@@ -132,9 +132,11 @@ describe('docsApi', () => {
     await expect(fetchServerDocuments()).resolves.toHaveLength(1)
 
     expect(engineMocks.syncClientEngineOperations).toHaveBeenCalledOnce()
-    // The base URL, auth header and timeout are the transport's now, fixed
-    // where the client is built rather than re-supplied per call.
-    expect(engineMocks.syncClientEngineOperations).toHaveBeenCalledWith()
+    expect(engineMocks.syncClientEngineOperations).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      5_000,
+    )
     expect(engineMocks.syncClientEngineOperations.mock.invocationCallOrder[0]).toBeLessThan(
       engineMocks.listClientEngineRecords.mock.invocationCallOrder[0],
     )
@@ -195,8 +197,16 @@ describe('docsApi', () => {
   it('aborts a half-open sync after five seconds and keeps local metadata readable', async () => {
     vi.useFakeTimers()
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    engineMocks.syncClientEngineOperations.mockImplementation(() =>
-      halfOpenSync(undefined, undefined, 5_000),
+    const request = { timeoutMs: null as number | null }
+    engineMocks.syncClientEngineOperations.mockImplementation(
+      (
+        apiBaseUrl: string | undefined,
+        signal: AbortSignal | undefined,
+        requestTimeoutMs: number | undefined,
+      ) => {
+        request.timeoutMs = requestTimeoutMs ?? null
+        return halfOpenSync(apiBaseUrl, signal, requestTimeoutMs)
+      },
     )
     engineMocks.listClientEngineRecords.mockResolvedValue([{
       value: {
@@ -211,10 +221,8 @@ describe('docsApi', () => {
     const documents = fetchServerDocuments()
     await vi.advanceTimersByTimeAsync(5_000)
 
-    // The point is that a sync which never answers does not wedge the read:
-    // the cached metadata still comes back and the failure is a warning. The
-    // five-second bound itself now belongs to the transport.
     await expect(documents).resolves.toMatchObject([{ id: 'doc-half-open' }])
+    expect(request.timeoutMs).toBe(5_000)
     expect(warning).toHaveBeenCalledOnce()
   })
 

@@ -213,6 +213,17 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.13.1
+          fallback: none
+      - name: Build Photon WASM for package preparation
+        timeout-minutes: 15
+        run: npm run engine:wasm
       - name: Install client dependencies
         run: npm ci
       - name: Lint client
