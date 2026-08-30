@@ -39,6 +39,26 @@ const CARRIED_COLLECTIONS = ['documents', 'attachments'] as const
 const DONE_MARKER_COLLECTION = '__library_migration'
 const DONE_MARKER_RECORD = 'legacy-engine-v1'
 
+/**
+ * Cross-tab guard, checked before anything opens the old database.
+ *
+ * PGlite holds one connection per data directory and a second *tab* on the
+ * same directory is invisible to its in-process registry. Opening the old
+ * directory on every load in every tab doubled the contention for no reason:
+ * after the first success there is nothing left to read. `localStorage` is
+ * shared across tabs and synchronous, so the common case costs one string
+ * read. The record inside the new store stays the durable answer — this flag
+ * can be cleared, and then the marker still stops a second run.
+ */
+const DONE_FLAG_KEY = `library.photon.legacy-migrated::${LEGACY_ENGINE_DATA_DIR}`
+
+/**
+ * A migration that cannot finish must not stop the app from starting.
+ * Everything it moves is best-effort, and an unmigrated load retries on the
+ * next one, so a bound is strictly better than a hang.
+ */
+const MIGRATION_TIMEOUT_MS = 10_000
+
 interface LegacyRecordRow {
   collection: string
   record_id: string
@@ -56,22 +76,63 @@ interface LegacyRecordRow {
  * not.
  */
 export async function migrateLegacyEngineData(client: PhotonClient): Promise<void> {
+  if (readDoneFlag()) return
   try {
-    if (await alreadyMigrated(client)) return
-
-    const rows = await readLegacyRows()
-    for (const collection of CARRIED_COLLECTIONS) {
-      const items = rows
-        .filter((row) => row.collection === collection && !row.deleted)
-        .map((row) => ({ recordId: row.record_id, value: decodeValue(row) }))
-        .filter((item): item is { recordId: string; value: unknown } => item.value !== undefined)
-
-      if (items.length) client.ingest(collection, items)
-    }
-
-    await markMigrated(client, rows.length)
+    await withTimeout(carryOver(client), MIGRATION_TIMEOUT_MS)
   } catch (error: unknown) {
     console.warn('[photon] could not carry the previous local store over', error)
+  }
+}
+
+async function carryOver(client: PhotonClient): Promise<void> {
+  if (await alreadyMigrated(client)) {
+    writeDoneFlag()
+    return
+  }
+
+  const rows = await readLegacyRows()
+  for (const collection of CARRIED_COLLECTIONS) {
+    const items = rows
+      .filter((row) => row.collection === collection && !row.deleted)
+      .map((row) => ({ recordId: row.record_id, value: decodeValue(row) }))
+      .filter((item): item is { recordId: string; value: unknown } => item.value !== undefined)
+
+    if (items.length) client.ingest(collection, items)
+  }
+
+  await markMigrated(client, rows.length)
+  writeDoneFlag()
+}
+
+function readDoneFlag(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(DONE_FLAG_KEY) === '1'
+  } catch {
+    // Private-mode browsers throw on access. Fall through to the slow path.
+    return false
+  }
+}
+
+function writeDoneFlag(): void {
+  try {
+    globalThis.localStorage?.setItem(DONE_FLAG_KEY, '1')
+  } catch {
+    // Not being able to remember is survivable: the in-store marker still
+    // makes a second run a no-op.
+  }
+}
+
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 
