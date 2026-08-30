@@ -857,14 +857,30 @@ describe('recordsApi', () => {
 describe('createLibraryRecordsResource', () => {
   const target = { org: 'quantum-box', repo: 'docs', operatorId: 'operator-1', repoName: 'Docs' }
 
-  // Two constraints shape this fixture. `standardRecordPropertyData` refuses to
-  // guess, so a record carrying `status` or `priority` needs a matching Property
-  // or it throws. And both are `String` rather than `Select` because
-  // `restPropertyValue` cannot encode a Select over REST at all — a real limit
-  // of this transport, and not what these tests are about.
+  // `standardRecordPropertyData` refuses to guess, so a record carrying
+  // `status` or `priority` needs a matching Property or it throws. These are
+  // `String` to keep the routing tests below about routing; the Select
+  // roundtrip has its own fixture.
   const properties = [
     { id: 'prop-status', name: 'status', typ: 'String', meta: null },
     { id: 'prop-priority', name: 'priority', typ: 'String', meta: null },
+  ]
+
+  // What a real repository looks like: the standard fields are Select, so
+  // every REST write has to encode an option id.
+  const selectProperties = [
+    {
+      id: 'prop-status',
+      name: 'status',
+      typ: 'Select',
+      meta: { options: [{ id: 'opt-todo', key: 'todo', name: 'Todo' }] },
+    },
+    {
+      id: 'prop-priority',
+      name: 'priority',
+      typ: 'Select',
+      meta: { options: [{ id: 'opt-none', key: 'none', name: 'None' }] },
+    },
   ]
 
   function record(overrides: Partial<DatabaseRecord> = {}): DatabaseRecord {
@@ -890,7 +906,10 @@ describe('createLibraryRecordsResource', () => {
    * REST. Anything the test did not anticipate 404s, so a method that reaches
    * for an endpoint it should not fails loudly.
    */
-  function stubLibrary(rest: (url: string, init: RequestInit) => Response | undefined) {
+  function stubLibrary(
+    rest: (url: string, init: RequestInit) => Response | undefined,
+    schema: typeof properties | typeof selectProperties = properties
+  ) {
     const calls: Array<{ url: string; method: string; body: unknown }> = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? 'GET'
@@ -905,10 +924,10 @@ describe('createLibraryRecordsResource', () => {
               name: 'Route the first write',
               propertyData: [{ propertyId: 'prop-status', value: { string: 'todo' } }],
             },
-            properties,
+            properties: schema,
           } })
         }
-        return Response.json({ data: { properties } })
+        return Response.json({ data: { properties: schema } })
       }
       return rest(url, init) ?? new Response('not found', { status: 404 })
     }))
@@ -1023,6 +1042,70 @@ describe('createLibraryRecordsResource', () => {
       recordId: 'data_01k9server',
       value: created,
     })
+  })
+
+  /**
+   * The gap this fixture exists for: standard repositories type status and
+   * priority as Select, so a REST-backed write that cannot encode one cannot
+   * write anything at all. `{ optionId }` is tagged rather than a bare string
+   * because the API reads the JSON without knowing the target Property, and a
+   * bare string means `String` there.
+   */
+  it('encodes a Select as a tagged option id on create', async () => {
+    const calls = stubLibrary((url, init) => {
+      if (url.endsWith('/repos/quantum-box/docs/data') && init.method === 'POST') {
+        return Response.json({
+          id: 'data_01k9server',
+          name: 'Route the first write',
+          items: [
+            { property_id: 'prop-status', value: { select: 'opt-todo' } },
+            { property_id: 'prop-priority', value: { select: 'opt-none' } },
+          ],
+        })
+      }
+      return undefined
+    }, selectProperties)
+
+    const created = await createLibraryRecordsResource(target).create(record({ id: 'local-1' }))
+
+    // Not just any POST — the GraphQL Property fetch is one too.
+    const write = calls.find(
+      (call) => call.method === 'POST' && call.url.endsWith('/repos/quantum-box/docs/data')
+    )
+    expect(write?.body).toMatchObject({
+      property_data: [
+        { property_id: 'prop-status', value: { optionId: 'opt-todo' } },
+        { property_id: 'prop-priority', value: { optionId: 'opt-none' } },
+      ],
+    })
+    // And the option ids come back as the record fields they stand for, so the
+    // write survives a read.
+    expect(created.status).toBe('todo')
+    expect(created.priority).toBe('none')
+  })
+
+  it('encodes a Select the same way on upsert', async () => {
+    const calls = stubLibrary((url, init) => {
+      if (url.endsWith('/data/local-1/upsert') && init.method === 'PUT') {
+        return Response.json({
+          id: 'local-1',
+          name: 'Route the first write',
+          items: [{ property_id: 'prop-status', value: { select: 'opt-todo' } }],
+        })
+      }
+      return undefined
+    }, selectProperties)
+
+    const stored = await createLibraryRecordsResource(target).upsert('local-1', record())
+
+    const write = calls.find((call) => call.method === 'PUT')
+    expect(write?.body).toMatchObject({
+      property_data: [
+        { property_id: 'prop-status', value: { optionId: 'opt-todo' } },
+        { property_id: 'prop-priority', value: { optionId: 'opt-none' } },
+      ],
+    })
+    expect(stored.status).toBe('todo')
   })
 
   it('treats a delete of an already-gone record as done', async () => {
