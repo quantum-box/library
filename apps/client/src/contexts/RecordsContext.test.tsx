@@ -398,6 +398,88 @@ describe('RecordsProvider server-accepted projection', () => {
     expect(mocks.recordsArray.get(0).get('id')).toBe(serverDatabaseRecord.id)
   })
 
+  /**
+   * A record another tab created reaches this projection over the Live
+   * WebSocket, not through the Library API. It lands while a hydration request
+   * is already in flight, so the answer that comes back cannot mention it —
+   * that silence is not evidence the record was deleted. Reconciling it away
+   * would be worse than a local miss: the deletion is a CRDT operation, so it
+   * propagates back and removes the record from the tab that created it too,
+   * and nothing refetches.
+   */
+  it('keeps a record that reached the projection while a hydration request was in flight', async () => {
+    const hydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords.mockReturnValue(hydration.promise)
+
+    render(<RecordsProvider>{null}</RecordsProvider>)
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+    // Applying a remote Yjs update writes straight into the projection; it does
+    // not go through a local transaction, so it moves no local generation.
+    const fromAnotherTab: DatabaseRecord = {
+      ...serverDatabaseRecord,
+      id: 'record-from-another-tab',
+      title: 'Created in another tab',
+    }
+    seedYDatabaseRecord(fromAnotherTab)
+
+    await act(async () => {
+      hydration.resolve([])
+      await hydration.promise
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('id')).toBe(fromAnotherTab.id)
+  })
+
+  it('drops a record the hydration request knew about and the server no longer returns', async () => {
+    const hydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords.mockReturnValue(hydration.promise)
+    seedYDatabaseRecord(serverDatabaseRecord)
+
+    render(<RecordsProvider>{null}</RecordsProvider>)
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      hydration.resolve([])
+      await hydration.promise
+    })
+
+    expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  it('keeps a record that arrived after an independently requested snapshot started', async () => {
+    let context: ReturnType<typeof useRecords> | null = null
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={(value) => { context = value }} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(context).not.toBeNull())
+    const snapshot = context!.beginRecordsSnapshot()
+
+    const fromAnotherTab: DatabaseRecord = {
+      ...serverDatabaseRecord,
+      id: 'record-from-another-tab',
+      title: 'Created in another tab',
+    }
+    seedYDatabaseRecord(fromAnotherTab)
+
+    let applied = false
+    act(() => {
+      applied = context!.syncRecords([serverDatabaseRecord], snapshot)
+    })
+
+    expect(applied).toBe(true)
+    const projectedIds = mocks.recordsArray.items.map((item) => item.get('id'))
+    expect(projectedIds).toContain(fromAnotherTab.id)
+    expect(projectedIds).toContain(serverDatabaseRecord.id)
+  })
+
   it('ignores a full snapshot that started before a newer projection was accepted', async () => {
     const update = deferred<DatabaseRecord>()
     mocks.updateServerRecord.mockReturnValue(update.promise)

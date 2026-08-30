@@ -66,6 +66,11 @@ export interface RecordMutationError {
 export interface RecordsSnapshotToken {
   readonly requestGeneration: number
   readonly projectionGeneration: number
+  /**
+   * The record ids the projection already held when this snapshot was
+   * requested. See `reconcileYRecords`.
+   */
+  readonly knownRecordIds?: ReadonlySet<string>
 }
 
 const RecordsContext = createContext<RecordsContextValue | null>(null)
@@ -73,6 +78,16 @@ const RecordsContext = createContext<RecordsContextValue | null>(null)
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Every record id the projection holds right now. */
+function currentYRecordIds(): ReadonlySet<string> {
+  const ids = new Set<string>()
+  for (let i = 0; i < recordsArray.length; i++) {
+    const id = recordsArray.get(i).get('id')
+    if (typeof id === 'string') ids.add(id)
+  }
+  return ids
+}
 
 function findYMap(id: string): Y.Map<string> | null {
   for (let i = 0; i < recordsArray.length; i++) {
@@ -130,9 +145,24 @@ function removeYDatabaseRecord(recordId: string) {
   }
 }
 
+/**
+ * Bring the Yjs projection in line with a Library API snapshot.
+ *
+ * `knownRecordIds` is the horizon of that snapshot: the ids the projection
+ * held at the moment the request went out. Absence from `serverRecords` only
+ * means "deleted" for a record the server was asked about — a record that
+ * reached this projection *after* the request left (another tab created it and
+ * it arrived over the Live WebSocket) is newer than the answer we are holding,
+ * and deleting it would be acting on stale information. That deletion is a
+ * CRDT operation, so it propagates: it would remove the record from the tab
+ * that created it as well, permanently, since nothing refetches.
+ *
+ * Callers that hold no snapshot horizon pass none and keep the old behaviour.
+ */
 function reconcileYRecords(
   serverRecords: DatabaseRecord[],
-  protectedRecordIds: ReadonlySet<string> = new Set()
+  protectedRecordIds: ReadonlySet<string> = new Set(),
+  knownRecordIds?: ReadonlySet<string>
 ) {
   const serverRecordIds = new Set(serverRecords.map((record) => record.id))
   for (let index = recordsArray.length - 1; index >= 0; index--) {
@@ -140,7 +170,8 @@ function reconcileYRecords(
     if (
       typeof recordId === 'string' &&
       !serverRecordIds.has(recordId) &&
-      !protectedRecordIds.has(recordId)
+      !protectedRecordIds.has(recordId) &&
+      (knownRecordIds === undefined || knownRecordIds.has(recordId))
     ) {
       recordsArray.delete(index, 1)
     }
@@ -251,6 +282,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       const hydrationGeneration = hydrationGenerationRef.current + 1
       hydrationGenerationRef.current = hydrationGeneration
       const projectionGeneration = projectionGenerationRef.current
+      const knownRecordIds = currentYRecordIds()
       setHydrationLoading(true)
       setHydrationError(null)
 
@@ -263,7 +295,11 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           }
 
           transactProjection(() => {
-            reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+            reconcileYRecords(
+              serverRecords,
+              pendingOptimisticRecordIdsRef.current,
+              knownRecordIds
+            )
           })
           setHydrationLoading(false)
         })
@@ -458,6 +494,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const beginRecordsSnapshot = useCallback((): RecordsSnapshotToken => ({
     requestGeneration: ++recordsSnapshotRequestGenerationRef.current,
     projectionGeneration: projectionGenerationRef.current,
+    knownRecordIds: currentYRecordIds(),
   }), [])
 
   const syncRecords = useCallback((
@@ -472,7 +509,11 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     }
 
     transactProjection(() => {
-      reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+      reconcileYRecords(
+        serverRecords,
+        pendingOptimisticRecordIdsRef.current,
+        token.knownRecordIds
+      )
     })
     return true
   }, [transactProjection])
