@@ -15,6 +15,8 @@ import {
   newClientEngineRecordId,
   patchAndPushClientEngineRecord,
   patchClientEngineRecord,
+  pendingClientEngineRecordIds,
+  subscribeClientEngineSettlements,
   upsertAndPushClientEngineRecord,
   upsertClientEngineRecord,
   type ClientEngineWriteResult,
@@ -25,6 +27,7 @@ import {
   LIBRARY_REPOSITORIES_COLLECTION,
   type LibraryRecordsRepository,
   libraryRecordsCollection,
+  libraryRecordsDatabaseId,
   libraryRepositoryByName,
   rememberLibraryRepositories,
   setLibraryRecordsResourceFactory,
@@ -2257,6 +2260,63 @@ async function assertRecordFieldsMappable(
     return
   }
   restPropertyData(properties, standardRecordPropertyData(properties, data))
+}
+
+/**
+ * What became of a write that this module reported as kept.
+ *
+ * `settleRecordWrite` turns a verdict that arrives *inside* the call into a
+ * thrown `RecordApiError`, which is how the caller learns to undo what it drew.
+ * A queued write has none to throw: it is decided a sync cycle later, once the
+ * network is back, and by then the call that made it has long returned.
+ *
+ * No record travels with it, on purpose — see `ClientEngineSettlement`. What
+ * the engine holds for the record at this moment is not necessarily what its
+ * authority holds, so the only sound reconciliation is to go and read the
+ * authority.
+ */
+export interface RecordSettlement {
+  status: 'accepted' | 'rejected' | 'conflict'
+  recordId: string
+  reason?: string
+}
+
+/**
+ * Hear what a queued write settled as.
+ *
+ * Scoped to the records collections, because that is what these callers hold.
+ * A settlement in `documents` or `attachments` belongs to a different
+ * projection and is not this listener's to reconcile.
+ */
+export function subscribeRecordSettlements(
+  listener: (settlement: RecordSettlement) => void
+): () => void {
+  return subscribeClientEngineSettlements((settlement) => {
+    if (libraryRecordsDatabaseId(settlement.collection) == null) return
+    listener({
+      status: settlement.status,
+      recordId: settlement.recordId,
+      ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
+    })
+  })
+}
+
+/**
+ * Every record holding a local write the server has not acknowledged.
+ *
+ * `fetchServerRecords` reads the Library API, which cannot mention a record
+ * that has never reached it, so reconciling a projection against that listing
+ * deletes a create made offline. These are the ids that listing is not
+ * entitled to remove.
+ */
+export async function pendingLibraryRecordIds(): Promise<string[]> {
+  const ids = await Promise.all(
+    knownLibraryRepositories().map((repository) =>
+      pendingClientEngineRecordIds(libraryRecordsCollection(repository.databaseId))
+        .catch(() => [] as string[])
+    )
+  )
+  return ids.flat()
 }
 
 /**

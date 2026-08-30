@@ -74,6 +74,9 @@ const mocks = vi.hoisted(() => {
     createServerRecord: vi.fn(),
     updateServerRecord: vi.fn(),
     deleteServerRecord: vi.fn(),
+    /** The settlement listeners the provider registered, to fire by hand. */
+    settlementListeners: new globalThis.Set<(settlement: unknown) => void>(),
+    pendingLibraryRecordIds: vi.fn(),
   }
 })
 
@@ -97,6 +100,11 @@ vi.mock('../lib/recordsApi', () => ({
   createServerRecord: mocks.createServerRecord,
   updateServerRecord: mocks.updateServerRecord,
   deleteServerRecord: mocks.deleteServerRecord,
+  subscribeRecordSettlements: (listener: (settlement: unknown) => void) => {
+    mocks.settlementListeners.add(listener)
+    return () => { mocks.settlementListeners.delete(listener) }
+  },
+  pendingLibraryRecordIds: mocks.pendingLibraryRecordIds,
 }))
 
 import { RecordsProvider, useRecords, type CreateRecordData } from './RecordsContext'
@@ -177,6 +185,8 @@ describe('RecordsProvider server-accepted projection', () => {
     mocks.createServerRecord.mockReset()
     mocks.updateServerRecord.mockReset()
     mocks.deleteServerRecord.mockReset()
+    mocks.settlementListeners.clear()
+    mocks.pendingLibraryRecordIds.mockReset().mockResolvedValue([])
   })
 
   it('writes created records optimistically and replaces them with the server version', async () => {
@@ -644,6 +654,86 @@ describe('RecordsProvider server-accepted projection', () => {
       await update.promise
     })
     expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  /**
+   * The other half of a queued write.
+   *
+   * `createServerRecord` and friends report a write made offline as kept — the
+   * operation is durable and the record belongs on screen. The verdict lands a
+   * cycle later, with the call that made the write long returned, so a listing
+   * is the only thing that can say what the record really is now.
+   */
+  describe('settlements that land after the write returned', () => {
+    function fireSettlement(settlement: {
+      status: 'accepted' | 'rejected' | 'conflict'
+      recordId: string
+    }) {
+      act(() => {
+        mocks.settlementListeners.forEach((listener) => { listener(settlement) })
+      })
+    }
+
+    it('reconciles the projection against the server listing', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, id: 'record-refused-1' })
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([serverDatabaseRecord])
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+      fireSettlement({ status: 'rejected', recordId: 'record-refused-1' })
+
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      // The refused record is gone and the one the server does have stayed.
+      await waitFor(() => {
+        expect(mocks.recordsArray.items.map((item) => item.get('id')))
+          .toEqual([serverDatabaseRecord.id])
+      })
+    })
+
+    it('collapses a burst of settlements into one listing', async () => {
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+      // One sync cycle settles every operation it carried.
+      act(() => {
+        mocks.settlementListeners.forEach((listener) => {
+          listener({ status: 'accepted', recordId: 'a' })
+          listener({ status: 'rejected', recordId: 'b' })
+          listener({ status: 'conflict', recordId: 'c' })
+        })
+      })
+
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2)
+    })
+
+    it('keeps a create that has not reached the server out of the reconcile', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, id: 'data_still-queued' })
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
+      mocks.pendingLibraryRecordIds.mockResolvedValue(['data_still-queued'])
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+      fireSettlement({ status: 'accepted', recordId: 'other' })
+
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      // The listing has no idea this record exists; deleting it would throw
+      // away a write that is still on its way out.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.recordsArray.items.map((item) => item.get('id')))
+        .toEqual(['data_still-queued'])
+    })
+
+    it('stops listening once the provider unmounts', async () => {
+      const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      unmount()
+
+      expect(mocks.settlementListeners.size).toBe(0)
+    })
   })
 
   it('exposes hydration loading and the latest hydration error', async () => {

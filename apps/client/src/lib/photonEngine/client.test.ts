@@ -30,6 +30,8 @@ import {
   ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
+  pendingClientEngineRecordIds,
+  subscribeClientEngineSettlements,
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from './client'
@@ -389,6 +391,125 @@ describe('rest-backed write outcomes', () => {
 
     expect(outcome.status).toBe('rejected')
     expect(outcome.record?.value.title).toBe('saved')
+  })
+
+  /**
+   * The verdict nobody is waiting for.
+   *
+   * The tests above reject a write while its caller is still inside the call,
+   * so the verdict comes back as the return value and the caller acts on it. A
+   * write made offline cannot: it is reported `queued`, the caller has drawn it
+   * and moved on, and the verdict arrives a sync cycle later — possibly
+   * minutes later, when the network returns. Photon applies it to its own
+   * projection and that is the end of it, so anything built on top hears about
+   * it here or not at all.
+   */
+  describe('a verdict that lands after the write returned', () => {
+    let settled: { status: string; recordId: string; reason?: string }[]
+    let unsubscribe: () => void
+
+    beforeEach(() => {
+      settled = []
+      unsubscribe = subscribeClientEngineSettlements((settlement) => {
+        settled.push({
+          status: settlement.status,
+          recordId: settlement.recordId,
+          ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
+        })
+      })
+    })
+
+    afterEach(() => { unsubscribe() })
+
+    it('announces a rejection that arrived a cycle later', async () => {
+      offline = true
+      expect(
+        (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
+      ).toBe('queued')
+      // Nothing has been decided yet, so nothing has been announced.
+      expect(settled).toEqual([])
+
+      offline = false
+      failures = { r1: new Status(400, 'name is required') }
+      await syncClientEngineOperations()
+
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]?.status).toBe('rejected')
+      expect(settled[0]?.recordId).toBe('r1')
+      expect(settled[0]?.reason).toContain('name is required')
+    })
+
+    it('announces a conflict that arrived a cycle later', async () => {
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+      offline = true
+      await patchAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'mine' })
+
+      offline = false
+      failures = { r1: new Status(409, 'edited elsewhere') }
+      await syncClientEngineOperations()
+
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]?.status).toBe('conflict')
+      expect(await listClientEngineConflicts(collection)).toHaveLength(1)
+    })
+
+    it('announces an acceptance too, because it carries what the server derived', async () => {
+      offline = true
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+        title: 'written on a plane',
+      })
+
+      offline = false
+      await syncClientEngineOperations()
+
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]).toEqual({ status: 'accepted', recordId: 'r1' })
+    })
+
+    it('says nothing about a write that was answered on the spot', async () => {
+      failures = { r1: new Status(400, 'name is required') }
+      expect(
+        (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
+      ).toBe('rejected')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Its caller already had the verdict as a return value, and reported it
+      // more precisely than this could.
+      expect(settled).toEqual([])
+    })
+
+    it('stops announcing once the subscriber unsubscribes', async () => {
+      const seen: unknown[] = []
+      subscribeClientEngineSettlements((settlement) => seen.push(settlement))()
+
+      offline = true
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })
+      offline = false
+      failures = { r1: new Status(400) }
+      await syncClientEngineOperations()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      expect(seen).toEqual([])
+    })
+  })
+
+  /**
+   * A listing from the server cannot mention a record that never reached it,
+   * so whoever reconciles against one has to be told which records those are.
+   */
+  it('names the records still holding an unsent write', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+    expect(await pendingClientEngineRecordIds(collection)).toEqual([])
+
+    offline = true
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r2', { title: 'on a plane' })
+
+    expect(await pendingClientEngineRecordIds(collection)).toEqual(['r2'])
+
+    offline = false
+    await syncClientEngineOperations()
+    expect(await pendingClientEngineRecordIds(collection)).toEqual([])
   })
 
   it('raises a conflict row rather than losing the edit', async () => {

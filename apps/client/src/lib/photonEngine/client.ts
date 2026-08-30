@@ -247,6 +247,126 @@ function toEngineRecord<T>(record: PhotonRecord<T>): PhotonEngineRecord<T> {
   }
 }
 
+/**
+ * A verdict that arrived after the write reporting it had already returned.
+ *
+ * Carries what the server said and which record it said it about, and
+ * deliberately not the record itself. The engine's own value is not
+ * authoritative at this moment:
+ *
+ * - `reproject` rebuilds a rolled-back record from its **accepted local
+ *   operations**, and a record that reached this client through `ingest` has
+ *   none — the Library API is its author, not this client. Replaying nothing
+ *   produces nothing, so a rejected edit of an ordinary listed record removes
+ *   it from the projection outright.
+ * - The value that is authoritative arrives with the pull, and
+ *   `createRestTransport.pull` serves one collection per cycle round-robin.
+ *   Waiting for the cycle to end therefore says nothing about whether *this*
+ *   record's collection was among the ones refreshed.
+ *
+ * So the verdict is what gets announced, and reconciling is left to whoever
+ * can ask the record's actual authority.
+ */
+export interface ClientEngineSettlement {
+  status: 'accepted' | 'rejected' | 'conflict'
+  collection: string
+  recordId: string
+  reason?: string
+  conflictId?: string
+}
+
+type ClientEngineSettlementListener = (
+  settlement: ClientEngineSettlement
+) => void
+
+/**
+ * Held here rather than on the client, because a listener outlives one.
+ *
+ * The client is built lazily and rebuilt after a `__testOnly.reset`, and a
+ * subscriber has no way to know when either happens — subscribing through the
+ * client would mean either forcing a build (a WASM fetch and an IndexedDB
+ * open) at subscribe time, or losing the subscription on the next rebuild.
+ */
+const settlementListeners = new Set<ClientEngineSettlementListener>()
+
+/**
+ * Watch the verdicts that arrive after the write has returned.
+ *
+ * Every write here reports what the server said, and its caller acts on that
+ * return value — except one. A write made offline, or while the server is
+ * down, is reported `queued`: the operation is durable and the record is on
+ * screen, and the verdict comes a sync cycle later, once the network is back.
+ * By then the call that made it is long gone, so the rejection, the conflict
+ * or the server-assigned identifier reaches Photon's projection and stops
+ * there, leaving every projection built on top of it holding what the write
+ * optimistically drew.
+ *
+ * Only queued writes are announced. A verdict that arrives inside the call is
+ * already the caller's to handle, and announcing it again would report a
+ * failure the caller has just reported more precisely.
+ */
+export function subscribeClientEngineSettlements(
+  listener: ClientEngineSettlementListener
+): () => void {
+  settlementListeners.add(listener)
+  return () => {
+    settlementListeners.delete(listener)
+  }
+}
+
+/**
+ * Wait out a queued write and tell the subscribers what became of it.
+ *
+ * `handle.settled` resolves whenever the verdict lands, which for a write made
+ * offline is the cycle after the network returns. Nothing is awaiting it by
+ * then — `pushMutation` reported `queued` and returned — so this is where that
+ * promise is finally read.
+ */
+async function announceSettlement(
+  handle: MutationHandle<unknown>,
+  collection: string,
+  recordId: string
+): Promise<void> {
+  const decision = await handle.settled.then(
+    (result) => result,
+    () => null
+  )
+  if (!decision) return
+
+  const settlement: ClientEngineSettlement = {
+    status: decision.status,
+    collection,
+    recordId,
+    ...(decision.status === 'rejected' ? { reason: decision.reason } : {}),
+    ...(decision.status === 'conflict' ? { conflictId: decision.conflictId } : {}),
+  }
+  for (const listener of settlementListeners) listener(settlement)
+}
+
+/**
+ * The records in a collection carrying a local write the server has not
+ * acknowledged.
+ *
+ * A listing from the record's authority cannot mention a record that has never
+ * reached it, so reconciling against one would delete a create made offline.
+ * `pending` is the projection's own account of which records those are.
+ */
+export async function pendingClientEngineRecordIds(
+  collection: string
+): Promise<string[]> {
+  const client = await engineFor(collection)
+  await client.hydrateCollection(collection)
+  const query = client.query({ collection })
+  try {
+    return query
+      .getSnapshot()
+      .data.filter((record) => record.pending)
+      .map((record) => record.key.record_id)
+  } finally {
+    query.destroy()
+  }
+}
+
 export async function listClientEngineRecords<T>(
   collection: string
 ): Promise<PhotonEngineRecord<T>[]> {
@@ -381,7 +501,16 @@ async function pushMutation<T>(
         ? toEngineRecord<T>(stored)
         : null
 
-  if (!decision) return { status: 'queued', record: current }
+  if (!decision) {
+    // The one write whose verdict nobody is holding on to. Everything else
+    // here returns a decision the caller acts on; this one is decided on a
+    // later cycle, so the wait is handed to `announceSettlement` rather than
+    // abandoned.
+    if (collection && recordId) {
+      void announceSettlement(handle as MutationHandle<unknown>, collection, recordId)
+    }
+    return { status: 'queued', record: current }
+  }
   if (decision.status === 'rejected') {
     return { status: 'rejected', record: current, reason: decision.reason }
   }
