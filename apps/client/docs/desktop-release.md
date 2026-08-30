@@ -26,6 +26,15 @@ client, or move the feed to an explicit tag URL.
 2. Push a `library-v<version>` tag, or run the workflow manually with that tag. The
    workflow refuses to build if the tag and `package.json` disagree.
 
+The four platform builds run one at a time (`max-parallel: 1`). They all rewrite
+the release's shared `latest.json`, and tauri-action deletes the old asset before
+uploading its replacement, so overlapping legs race on that delete and the loser
+fails with a 404. A whole release therefore takes roughly 35 minutes.
+
+The workflow creates the release as a draft and only publishes it once every leg
+has uploaded, so a failed build leaves an unpublished draft rather than a broken
+feed — `library-v0.1.5` was left that way by exactly the race above.
+
 ## Required repository secrets
 
 | Secret | Purpose |
