@@ -6,6 +6,7 @@ import { SpreadsheetViewer } from './SpreadsheetViewer'
 import { DocxViewer } from './DocxViewer'
 import { PptxViewer } from './PptxViewer'
 import { useDialogFocus } from '../useDialogFocus'
+import { useI18n } from '../../i18n'
 
 interface FilePreviewModalProps {
   file: FileAttachment
@@ -13,6 +14,7 @@ interface FilePreviewModalProps {
 }
 
 export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
+  const { t } = useI18n()
   const fileType = detectAttachmentFileType(file)
   const canPreviewLocalFile = Boolean(file.file)
   const downloadUrl = file.url
@@ -38,7 +40,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
       return (
         <div className="flex h-full items-center justify-center px-6 text-center">
           <p className="text-sm text-subtle">
-            Preview metadata is synced. Open this file from the device that uploaded it or download it when object storage is configured.
+            {t('files.metadataOnly')}
           </p>
         </div>
       )
@@ -48,7 +50,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
       case 'pdf':
         return file.url ? <PdfViewer url={file.url} name={file.name} /> : (
           <div className="flex h-full items-center justify-center text-sm text-subtle">
-            PDF content is not cached on this device.
+            {t('files.pdfNotCached')}
           </div>
         )
       case 'excel':
@@ -61,7 +63,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
       default:
         return (
           <div className="flex items-center justify-center h-full">
-            <p className="text-subtle">Preview not available for this file type</p>
+            <p className="text-subtle">{t('files.previewUnavailable')}</p>
           </div>
         )
     }
@@ -102,7 +104,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
             <button
               ref={closeButtonRef}
               type="button"
-              aria-label={`Close preview for ${file.name}`}
+              aria-label={t('files.closePreviewNamed', { name: file.name })}
               onClick={onClose}
               className="w-7 h-7 rounded flex items-center justify-center text-sm cursor-pointer transition-colors text-subtle hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >

@@ -21,28 +21,28 @@ import {
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { statusConfig, type DatabaseRecord, type Status } from '../data/mock'
 import { openCreateRepository } from '../lib/ui/workspaceEvents'
+import { useI18n, type I18nContextValue } from '../i18n'
 import { DataLink } from './DataLink'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
 
-function relativeDate(value: string) {
+function relativeDate(value: string, i18n: I18nContextValue) {
   const time = Date.parse(value)
-  if (Number.isNaN(time)) return 'Recently'
+  if (Number.isNaN(time)) return i18n.t('home.time.recently')
 
   const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000))
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return i18n.t('home.time.justNow')
+  if (minutes < 60) return i18n.t('repository.time.minutesAgo', { count: minutes })
 
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return i18n.t('repository.time.hoursAgo', { count: hours })
 
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
+  if (days < 7) return i18n.t('repository.time.daysAgo', { count: days })
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(time))
+  return (
+    i18n.formatDate(time, { month: 'short', day: 'numeric' }) ?? i18n.t('home.time.recently')
+  )
 }
 
 function organizationSlug(
@@ -92,6 +92,8 @@ function OrganizationState({
 }
 
 export function OrganizationOverview({ organization: organizationPath }: { organization: string }) {
+  const i18n = useI18n()
+  const { t, tPlural } = i18n
   const { records } = useDatabaseRecords()
   const {
     databases,
@@ -170,8 +172,8 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
     return (
       <OrganizationState
         icon={RefreshCw}
-        title="Loading organization"
-        detail={`Opening ${organizationPath}…`}
+        title={t('organization.loading')}
+        detail={t('repository.loadingDetail', { path: organizationPath })}
       />
     )
   }
@@ -180,12 +182,12 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
     return (
       <OrganizationState
         icon={Building2}
-        title="Organization unavailable"
+        title={t('organization.unavailable')}
         detail={repositoriesError}
         action={(
           <Button size="sm" onClick={() => void refreshRepositories()}>
             <RefreshCw aria-hidden="true" />
-            Try again
+            {t('common.tryAgain')}
           </Button>
         )}
       />
@@ -196,11 +198,11 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
     return (
       <OrganizationState
         icon={Building2}
-        title="Organization not found"
-        detail={`${organizationPath} is not available in this workspace.`}
+        title={t('organization.notFound')}
+        detail={t('repository.notFoundDetail', { path: organizationPath })}
         action={(
           <Button size="sm" asChild>
-            <Link to="/home">Back to Home</Link>
+            <Link to="/home">{t('repository.backToHome')}</Link>
           </Button>
         )}
       />
@@ -219,7 +221,9 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         <Building2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
         <span className="truncate text-sm font-semibold">{slug}</span>
-        <Badge variant="outline" className="hidden sm:inline-flex">Organization</Badge>
+        <Badge variant="outline" className="hidden sm:inline-flex">
+          {t('createRepo.organizationLabel')}
+        </Badge>
         <Button
           className="ml-auto"
           variant="primary"
@@ -227,37 +231,37 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
           onClick={() => openCreateRepository(organization.id)}
         >
           <Plus aria-hidden="true" />
-          New repository
+          {t('sidebar.repositories.new')}
         </Button>
         <Button variant="ghost" size="sm" asChild>
           <Link to="/databases" search={allDataSearch}>
             <Database aria-hidden="true" />
-            Open all data
+            {t('organization.openAllData')}
           </Link>
         </Button>
       </header>
 
       <nav
-        aria-label="Organization sections"
+        aria-label={t('organization.sections')}
         className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1 md:px-3"
       >
         <span className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
           <Rows3 className="size-3.5" aria-hidden="true" />
-          Overview
+          {t('repository.overview')}
         </span>
         <a
           href="#repositories"
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <FolderGit2 className="size-3.5" aria-hidden="true" />
-          Repositories
+          {t('sidebar.repositories.heading')}
         </a>
         <a
           href="#activity"
           className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <Activity className="size-3.5" aria-hidden="true" />
-          Activity
+          {t('repository.activity')}
         </a>
       </nav>
 
@@ -269,10 +273,12 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-xl font-semibold tracking-tight">{slug}</h1>
-              <Badge variant="neutral">{repositories.length} repositories</Badge>
+              <Badge variant="neutral">
+                {tPlural('organization.repositoryCount', repositories.length)}
+              </Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Repositories, data, and recent work available to this organization.
+              {t('organization.subtitle')}
             </p>
           </div>
         </section>
@@ -282,13 +288,15 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
             <section id="repositories" className="border-b border-border" aria-labelledby="organization-repositories-heading">
               <div className="flex h-10 items-center gap-2 bg-surface/60 px-4 md:px-5">
                 <FolderGit2 className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 id="organization-repositories-heading" className="text-sm font-semibold">Repositories</h2>
+                <h2 id="organization-repositories-heading" className="text-sm font-semibold">
+                  {t('sidebar.repositories.heading')}
+                </h2>
                 <Badge variant="neutral">{repositories.length}</Badge>
               </div>
               <div className="grid h-8 grid-cols-[minmax(0,1fr)_70px_70px_24px] items-center gap-3 border-t border-border bg-surface/30 px-4 font-mono text-2xs text-subtle-foreground md:px-5">
-                <span>Repository</span>
-                <span className="text-right">Data</span>
-                <span className="text-right">Open</span>
+                <span>{t('table.column.repository')}</span>
+                <span className="text-right">{t('repository.dataHeading')}</span>
+                <span className="text-right">{t('repository.open')}</span>
                 <span />
               </div>
               {repositoryStats.length > 0 ? repositoryStats.map(({ repository, records: repositoryRecords, open }) => {
@@ -302,7 +310,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">{path}</span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {repository.description || 'No description'}
+                          {repository.description || t('organization.noDescription')}
                         </span>
                       </span>
                     </span>
@@ -339,8 +347,8 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
               }) : (
                 <div className="border-t border-border px-5 py-9 text-center">
                   <FolderGit2 className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">No repositories available</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Create the first repository for this organization.</p>
+                  <p className="mt-3 text-sm font-medium">{t('organization.noRepositories')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('organization.noRepositoriesHint')}</p>
                   <Button
                     className="mt-4"
                     variant="primary"
@@ -348,7 +356,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                     onClick={() => openCreateRepository(organization.id)}
                   >
                     <Plus aria-hidden="true" />
-                    Create repository
+                    {t('sidebar.repositories.create')}
                   </Button>
                 </div>
               )}
@@ -357,11 +365,13 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
             <section id="activity" className="border-b border-border" aria-labelledby="organization-activity-heading">
               <div className="flex h-10 items-center gap-2 bg-surface/60 px-4 md:px-5">
                 <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 id="organization-activity-heading" className="text-sm font-semibold">Recently updated</h2>
+                <h2 id="organization-activity-heading" className="text-sm font-semibold">
+                  {t('repository.recentlyUpdated')}
+                </h2>
                 <Badge variant="neutral">{recentRecords.length}</Badge>
                 <Button className="ml-auto" variant="ghost" size="sm" asChild>
                   <Link to="/databases" search={allDataSearch}>
-                    View all
+                    {t('common.viewAll')}
                     <ChevronRight aria-hidden="true" />
                   </Link>
                 </Button>
@@ -382,7 +392,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                     className="grid min-h-14 grid-cols-[minmax(0,1fr)_90px_70px] items-center gap-3 border-t border-border px-4 py-2 no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 md:px-5"
                   >
                     <span className="flex min-w-0 items-center gap-3">
-                      <span className="text-base" style={{ color: statusConfig[record.status].color }} aria-label={statusConfig[record.status].label}>
+                      <span className="text-base" style={{ color: statusConfig[record.status].color }} aria-label={t(statusConfig[record.status].labelKey)}>
                         {statusConfig[record.status].icon}
                       </span>
                       <span className="min-w-0">
@@ -392,15 +402,19 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                         </span>
                       </span>
                     </span>
-                    <span className="text-xs text-muted-foreground">{statusConfig[record.status].label}</span>
-                    <span className="text-right text-2xs text-subtle-foreground">{relativeDate(record.updatedAt)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t(statusConfig[record.status].labelKey)}
+                    </span>
+                    <span className="text-right text-2xs text-subtle-foreground">
+                      {relativeDate(record.updatedAt, i18n)}
+                    </span>
                   </DataLink>
                 )
               }) : (
                 <div className="border-t border-border px-5 py-9 text-center">
                   <FileText className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">No organization activity yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Updated repository data will appear here.</p>
+                  <p className="mt-3 text-sm font-medium">{t('organization.noActivity')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('organization.noActivityHint')}</p>
                 </div>
               )}
             </section>
@@ -410,15 +424,21 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
             <section className="border-b border-border" aria-labelledby="organization-details-heading">
               <div className="flex h-10 items-center gap-2 border-b border-border px-3.5">
                 <Building2 className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 id="organization-details-heading" className="text-sm font-semibold">Organization</h2>
+                <h2 id="organization-details-heading" className="text-sm font-semibold">
+                  {t('createRepo.organizationLabel')}
+                </h2>
               </div>
               <dl className="space-y-3 p-3.5 text-xs">
                 <div>
-                  <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">Workspace ID</dt>
+                  <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">
+                    {t('organization.workspaceId')}
+                  </dt>
                   <dd className="mt-1 truncate font-mono text-2xs">{organization.id}</dd>
                 </div>
                 <div>
-                  <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">Platform tenant</dt>
+                  <dt className="text-2xs uppercase tracking-wide text-subtle-foreground">
+                    {t('organization.platformTenant')}
+                  </dt>
                   <dd className="mt-1 truncate font-mono text-2xs">{organization.platformTenantId}</dd>
                 </div>
               </dl>
@@ -427,35 +447,37 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
             <section className="border-b border-border" aria-labelledby="organization-data-heading">
               <div className="flex h-10 items-center gap-2 border-b border-border px-3.5">
                 <Database className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 id="organization-data-heading" className="text-sm font-semibold">Data</h2>
+                <h2 id="organization-data-heading" className="text-sm font-semibold">
+                  {t('repository.dataHeading')}
+                </h2>
               </div>
               <div className="grid grid-cols-2 border-b border-border">
                 <div className="p-3.5">
                   <span className="block text-xl font-semibold tabular-nums">{organizationRecords.length}</span>
-                  <span className="mt-0.5 block text-2xs text-muted-foreground">Total</span>
+                  <span className="mt-0.5 block text-2xs text-muted-foreground">{t('repository.total')}</span>
                 </div>
                 <div className="border-l border-border p-3.5">
                   <span className="block text-xl font-semibold tabular-nums">{openCount}</span>
-                  <span className="mt-0.5 block text-2xs text-muted-foreground">Open</span>
+                  <span className="mt-0.5 block text-2xs text-muted-foreground">{t('repository.open')}</span>
                 </div>
               </div>
               <div className="space-y-2.5 p-3.5">
                 {statusOrder.filter((status) => statusCounts.has(status)).map((status) => (
                   <div key={status} className="flex items-center gap-2 text-xs">
                     <span style={{ color: statusConfig[status].color }} aria-hidden="true">{statusConfig[status].icon}</span>
-                    <span>{statusConfig[status].label}</span>
+                    <span>{t(statusConfig[status].labelKey)}</span>
                     <span className="ml-auto tabular-nums text-muted-foreground">{statusCounts.get(status)}</span>
                   </div>
                 ))}
                 {organizationRecords.length === 0 ? (
-                  <p className="text-xs leading-5 text-muted-foreground">Status totals will appear when repository data is added.</p>
+                  <p className="text-xs leading-5 text-muted-foreground">{t('organization.statusEmpty')}</p>
                 ) : null}
               </div>
             </section>
 
             <Button className="m-3.5" variant="ghost" size="sm" asChild>
               <Link to="/databases" search={allDataSearch}>
-                Browse organization data
+                {t('organization.browseData')}
                 <ArrowRight aria-hidden="true" />
               </Link>
             </Button>

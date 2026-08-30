@@ -62,7 +62,7 @@ describe('CreateRecordModal', () => {
     opener.focus()
     fireEvent.click(opener)
 
-    const dialog = screen.getByRole('dialog', { name: 'New Data' })
+    const dialog = screen.getByRole('dialog', { name: 'New data' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     await waitFor(() => expect(screen.getByTestId('create-record-title')).toHaveFocus())
 

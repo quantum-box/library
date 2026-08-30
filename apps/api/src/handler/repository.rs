@@ -7,7 +7,9 @@ use axum::{
 };
 
 use crate::app::LibraryApp;
-use crate::handler::library_executor_extractor::LibraryExecutor;
+use crate::handler::library_executor_extractor::{
+    LibraryExecutor, LibraryMultiTenancy,
+};
 use crate::handler::types::{
     ChangeRepoUsernameRequest, CreateRepoRequest, RepoResponse,
     SearchRepoQuery, UpdateRepoRequest,
@@ -240,9 +242,13 @@ pub async fn delete_repo(
 pub async fn change_repo_username(
     AxumPath((org, repo)): AxumPath<(String, String)>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
+    library_org: LibraryOrg,
     Json(payload): Json<ChangeRepoUsernameRequest>,
 ) -> errors::Result<Json<RepoResponse>> {
-    let input = crate::usecase::ChangeRepoUsernameInput {
+    let input = crate::usecase::ChangeRepoUsernameInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
         org_username: org,
         old_repo_username: repo,
         new_repo_username: payload.new_username,
@@ -269,6 +275,7 @@ pub async fn change_repo_username(
     get,
     path = "/v1beta/repos",
     params(
+        ("org" = Option<String>, Query, description = "Organization username to search in. Defaults to the x-operator-id organization"),
         ("name" = Option<String>, Query, description = "Repository name to search for"),
         ("limit" = Option<i64>, Query, description = "Maximum number of results to return")
     ),
@@ -280,9 +287,13 @@ pub async fn change_repo_username(
 pub async fn search_repo(
     Query(query): Query<SearchRepoQuery>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
+    executor: LibraryExecutor,
+    multi_tenancy: LibraryMultiTenancy,
 ) -> errors::Result<Json<Vec<RepoResponse>>> {
     let input = SearchRepoInputData {
-        org_username: None,
+        executor: &executor,
+        multi_tenancy: &multi_tenancy.0,
+        org_username: query.org,
         name: query.name,
         limit: query.limit,
     };

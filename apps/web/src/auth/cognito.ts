@@ -1,5 +1,4 @@
 import {
-  CognitoIdentityProvider,
   ConfirmSignUpCommand,
   GetUserCommand,
   InitiateAuthCommand,
@@ -8,42 +7,11 @@ import {
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
 } from '@aws-sdk/client-cognito-identity-provider'
-import { getSdkPlatform, platformId } from '@/lib/apiClient'
+import { getSdkPlatformWithToken, platformId } from '@/lib/apiClient'
+import { cognitoClient, getCognitoConfig } from './config'
+import type { AuthTokens } from './token-manager'
 
-const requireCognitoEnv = (name: string, value: string | undefined): string => {
-  const resolvedValue = value?.trim()
-
-  if (!resolvedValue) {
-    throw new Error(`${name} is required for Cognito authentication`)
-  }
-
-  return resolvedValue
-}
-
-const cognitoConfig = {
-  clientId: requireCognitoEnv(
-    'VITE_COGNITO_CLIENT_ID',
-    import.meta.env.VITE_COGNITO_CLIENT_ID,
-  ),
-  region: import.meta.env.VITE_COGNITO_REGION?.trim() || 'ap-northeast-1',
-  hostedUiDomain: import.meta.env.VITE_COGNITO_HOSTED_UI_DOMAIN?.trim() ?? '',
-}
-
-const getCognitoConfig = () => cognitoConfig
-
-const cognitoClient = () =>
-  new CognitoIdentityProvider({
-    region: getCognitoConfig().region,
-  })
-
-export interface AuthTokens {
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-  userId: string
-  email: string
-  username: string
-}
+export type { AuthTokens }
 
 export async function signInWithCredentials(
   username: string,
@@ -76,9 +44,11 @@ export async function signInWithCredentials(
 
   const email =
     userResponse.UserAttributes?.find((attr) => attr.Name === 'email')?.Value ?? ''
+  // Sign-in accepts an email alias, so trust Cognito for the account's username.
+  const resolvedUsername = userResponse.Username ?? username
 
   // Register with platform
-  const sdk = getSdkPlatform(AccessToken)
+  const sdk = getSdkPlatformWithToken(AccessToken)
   const { signIn: user } = await sdk.signInOrSignUp({
     platformId,
     accessToken: AccessToken,
@@ -91,7 +61,7 @@ export async function signInWithCredentials(
     expiresAt: Math.floor(Date.now() / 1000 + (ExpiresIn ?? 3600)),
     userId: user.id,
     email,
-    username,
+    username: resolvedUsername,
   }
 }
 
@@ -153,7 +123,7 @@ export async function signInWithHostedUiCode(
   const email = userInfo.email ?? ''
   const username = userInfo.username || email || userInfo.sub || ''
 
-  const sdk = getSdkPlatform(tokenResponse.access_token)
+  const sdk = getSdkPlatformWithToken(tokenResponse.access_token)
   const { signIn: user } = await sdk.signInOrSignUp({
     platformId,
     accessToken: tokenResponse.access_token,
@@ -166,46 +136,6 @@ export async function signInWithHostedUiCode(
     expiresAt: Math.floor(Date.now() / 1000 + (tokenResponse.expires_in ?? 3600)),
     userId: user.id,
     email,
-    username,
-  }
-}
-
-export async function refreshAccessToken(
-  refreshToken: string,
-  username: string,
-): Promise<AuthTokens> {
-  const config = getCognitoConfig()
-  const client = cognitoClient()
-
-  const response = await client.send(
-    new InitiateAuthCommand({
-      AuthFlow: 'REFRESH_TOKEN_AUTH',
-      ClientId: config.clientId,
-      AuthParameters: {
-        REFRESH_TOKEN: refreshToken,
-      },
-    }),
-  )
-
-  if (!response.AuthenticationResult?.AccessToken) {
-    throw new Error('No access token from refresh')
-  }
-
-  const { AccessToken, ExpiresIn, RefreshToken } = response.AuthenticationResult
-
-  const sdk = getSdkPlatform(AccessToken)
-  const { signIn: user } = await sdk.signInOrSignUp({
-    platformId,
-    accessToken: AccessToken,
-    allowSignUp: true,
-  })
-
-  return {
-    accessToken: AccessToken,
-    refreshToken: RefreshToken ?? refreshToken,
-    expiresAt: Math.floor(Date.now() / 1000 + (ExpiresIn ?? 3600)),
-    userId: user.id,
-    email: '', // email not returned on refresh
     username,
   }
 }

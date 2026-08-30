@@ -409,6 +409,14 @@ pub struct SdkAuthApp {
     auth_token: String,
 }
 
+/// Where and as whom the service calls tachyon-api for its own work.
+#[derive(Debug, Clone)]
+pub struct ServiceEndpoint {
+    pub base_url: String,
+    pub operator_id: String,
+    pub auth_token: String,
+}
+
 tokio::task_local! {
     /// Bearer token of the request currently being handled.
     ///
@@ -509,6 +517,21 @@ impl SdkAuthApp {
         }
     }
 
+    /// Base URL and process credential for calls the service makes on
+    /// its own behalf rather than for a caller.
+    ///
+    /// Deliberately the process token and not `request_caller_token`:
+    /// background work such as translating a repo's schema is billed
+    /// to the platform, and must not run with the permissions of
+    /// whoever happened to trigger it.
+    pub fn service_endpoint(&self) -> ServiceEndpoint {
+        ServiceEndpoint {
+            base_url: self.base_url.clone(),
+            operator_id: self.default_operator_id.clone(),
+            auth_token: self.auth_token.clone(),
+        }
+    }
+
     // ---- SDK Configuration builders ----
 
     /// Build an SDK Configuration that sends `headers` on every
@@ -548,6 +571,31 @@ impl SdkAuthApp {
         tenant_id: &TenantId,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
+        headers
+            .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
+
+        self.configuration(headers)
+    }
+
+    /// Build an SDK Configuration scoped to `tenant_id` and
+    /// authenticated as the current request's caller when one is
+    /// known, falling back to the process-level credential otherwise.
+    ///
+    /// This is what [`sdk_config_with_context`] produces for a user
+    /// executor inside a tenant scope, for the endpoints whose trait
+    /// signature carries no executor to derive it from.
+    ///
+    /// [`sdk_config_with_context`]: Self::sdk_config_with_context
+    fn sdk_config_as_caller_for_tenant(
+        &self,
+        tenant_id: &TenantId,
+    ) -> Configuration {
+        let token = request_caller_token()
+            .unwrap_or_else(|| self.auth_token.clone());
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(value) = format!("Bearer {token}").parse() {
+            headers.insert("Authorization", value);
+        }
         headers
             .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
 
@@ -814,6 +862,29 @@ impl SdkAuthApp {
         handle_rest_response(resp).await.map_err(Into::into)
     }
 
+    /// Make a POST request whose success carries no body.
+    ///
+    /// `rest_post` insists on decoding a JSON response, which turns a
+    /// `204 No Content` — the documented success of revoke — into a
+    /// decode error.
+    async fn rest_post_no_content<B: Serialize>(
+        config: &Configuration,
+        path: &str,
+        body: &B,
+    ) -> errors::Result<()> {
+        let resp = config
+            .client
+            .post(format!("{}{}", config.base_path, path))
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| SdkRequestError::transport(&error))?;
+        if !resp.status().is_success() {
+            return Err(SdkRequestError::http_status(resp.status()).into());
+        }
+        Ok(())
+    }
+
     /// Make a POST request while retaining safe downstream diagnostics.
     async fn rest_post_observed<
         B: Serialize,
@@ -906,6 +977,7 @@ impl SdkAuthApp {
                         client_secret: p.client_secret,
                         redirect_uri: p.redirect_uri,
                     });
+                    bootstrap.github_webhook_secret = p.webhook_secret;
                 }
                 "linear" => {
                     bootstrap.linear_credentials = Some(OAuthCredentials {
@@ -1357,6 +1429,35 @@ impl SdkAuthApp {
             .collect()
     }
 
+    /// List the policies attached to a user inside a tenant.
+    ///
+    /// `GET /v1/auth/users/{user_id}/policies?tenantId=...`, the same
+    /// endpoint `tachyon org users policies` reads. Policy evaluation
+    /// (`evaluate_policies_batch`, `check_policy`) only ever answers
+    /// for the caller, so this is the one way to ask what somebody
+    /// *else* has been granted.
+    ///
+    /// Reads as the caller rather than the service account: the
+    /// service account belongs to the Library platform tenant and is
+    /// rejected in a per-organization scope.
+    pub async fn list_user_policies_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Vec<PolicyId>> {
+        let config = self.sdk_config_as_caller_for_tenant(tenant_id);
+        let resp =
+            tachyon_sdk::apis::auth_user_policies_api::list_user_policies(
+                &config,
+                user_id.as_ref(),
+                Some(tenant_id.as_str()),
+            )
+            .await
+            .map_err(sdk_api_err)?;
+
+        Ok(resp.policy_ids.into_iter().map(PolicyId::from).collect())
+    }
+
     /// Get user by ID with tenant list via SDK.
     pub async fn get_user_by_id_full(
         &self,
@@ -1547,6 +1648,7 @@ pub struct OAuthCredentials {
 #[derive(Debug, Clone, Default)]
 pub struct OAuthBootstrapConfig {
     pub github_credentials: Option<OAuthCredentials>,
+    pub github_webhook_secret: Option<String>,
     pub linear_credentials: Option<OAuthCredentials>,
     pub linear_webhook_secret: Option<String>,
 }
@@ -2258,6 +2360,29 @@ impl AuthApp for SdkAuthApp {
             .collect()
     }
 
+    async fn revoke_public_api_key<'a>(
+        &self,
+        input: &auth::RevokePublicApiKeyInput<'a>,
+    ) -> errors::Result<()> {
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+        let body = serde_json::json!({
+            "operatorId": input.operator_id.to_string(),
+        });
+
+        // Not in the generated client yet, so the path is spelled out.
+        Self::rest_post_no_content(
+            &config,
+            &format!(
+                "/v1/auth/service-accounts/{}/api-keys/{}/revoke",
+                input.service_account_id.as_str(),
+                input.api_key_id.as_str(),
+            ),
+            &body,
+        )
+        .await
+    }
+
     async fn attach_user_policy<'a>(
         &self,
         input: &auth::AttachUserPolicyInput<'a>,
@@ -2595,10 +2720,12 @@ impl tachyon_sdk::auth::UserPolicyMappingRepository
 
     async fn find_policies_by_user(
         &self,
-        _user_id: &tachyon_sdk::auth::UserId,
-        _tenant_id: &TenantId,
+        user_id: &tachyon_sdk::auth::UserId,
+        tenant_id: &TenantId,
     ) -> errors::Result<Vec<tachyon_sdk::auth::PolicyId>> {
-        Err(sdk_internal_err("find_policies_by_user: use AuthApp"))
+        self.sdk
+            .list_user_policies_in_tenant(user_id, tenant_id)
+            .await
     }
 
     async fn find_users_by_policy(

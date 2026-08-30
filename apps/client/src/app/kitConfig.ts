@@ -1,4 +1,5 @@
 import { loadStoredAuthIdentity } from '../lib/auth'
+import type { MessageKey } from '../i18n'
 
 export type DeploymentMode = 'local' | 'cloud' | 'onprem'
 export type FrontendWorkerRuntime = 'cloudflare-workers' | 'workerd'
@@ -79,7 +80,8 @@ export interface AppKitConfig {
   }
   chat: {
     productName: string
-    disclaimer: string
+    /** Message key for the assistant disclaimer, resolved at render time. */
+    disclaimerKey: MessageKey
     stream: {
       mode: ChatStreamMode
       transport: ChatStreamTransport
@@ -101,7 +103,6 @@ export interface AppKitConfig {
   }
   attachments: {
     yjsArrayName: string
-    endpoint: string
     acceptedTypes: string
     maxPreviewBytes: number
     webStorageProvider: 'web-object-storage'
@@ -134,7 +135,6 @@ export interface AppKitConfig {
     backend: AppServerBackend
     apiBaseUrl?: string
     recordsPath: string
-    documentsPath: string
   }
   frontendWorker: {
     enabled: true
@@ -145,6 +145,7 @@ export interface AppKitConfig {
   }
   storage: {
     themeKey: string
+    localeKey: string
   }
 }
 
@@ -387,7 +388,7 @@ const frontendWorkerRuntime = resolveFrontendWorkerRuntime(
 )
 const appProfile = {
   id: 'library-client',
-  displayName: 'Library Client',
+  displayName: 'Library',
   storageNamespace: 'library-client',
 } as const
 const DEFAULT_TENANT_ID = 'library'
@@ -524,7 +525,7 @@ export const appKitConfig: AppKitConfig = {
   },
   chat: {
     productName: 'Library Chat',
-    disclaimer: 'Library AI can make mistakes. Verify important information.',
+    disclaimerKey: 'chat.disclaimer',
     stream: {
       mode: resolveChatStreamMode(
         deploymentMode,
@@ -554,7 +555,6 @@ export const appKitConfig: AppKitConfig = {
   },
   attachments: {
     yjsArrayName: 'attachments',
-    endpoint: '/api/attachments',
     acceptedTypes: '.pdf,.xlsx,.xls,.csv,.docx,.pptx',
     maxPreviewBytes: 25 * 1024 * 1024,
     webStorageProvider: 'web-object-storage',
@@ -582,7 +582,6 @@ export const appKitConfig: AppKitConfig = {
     ),
     apiBaseUrl: viteEnv.VITE_LIBRARY_API_BASE_URL ?? viteEnv.VITE_BACKEND_API_URL ?? viteEnv.VITE_PHOTON_API_BASE_URL,
     recordsPath: '/api/records',
-    documentsPath: '/api/documents',
   },
   frontendWorker: {
     enabled: true,
@@ -593,5 +592,6 @@ export const appKitConfig: AppKitConfig = {
   },
   storage: {
     themeKey: namespacedKey(appProfile.storageNamespace, 'theme'),
+    localeKey: namespacedKey(appProfile.storageNamespace, 'locale'),
   },
 }

@@ -23,7 +23,9 @@ pub struct TenantSeedCandidate {
     pub tenant_id: String,
     pub name: String,
     pub username: String,
-    pub staff_count: i32,
+    /// Members of the tenant, or null when the caller could not count
+    /// them. See `AccessibleTenant.staffCount`.
+    pub staff_count: Option<i32>,
     pub can_import_to_library: bool,
 }
 
@@ -33,7 +35,11 @@ pub struct AccessibleTenant {
     pub tenant_id: String,
     pub name: String,
     pub username: String,
-    pub staff_count: i32,
+    /// Members of the tenant, or null when the caller could not count
+    /// them: listing a tenant's users needs permission inside that
+    /// tenant, which a caller who merely belongs to it does not always
+    /// hold. Null means unknown, never empty, so do not render it as 0.
+    pub staff_count: Option<i32>,
     pub has_library_org: bool,
     pub can_import_to_library: bool,
 }

@@ -1,17 +1,38 @@
 import type { Preview } from '@storybook/react-vite'
 import { ThemeProvider } from '../src/contexts/ThemeContext'
+import { LOCALE_DESCRIPTORS, type Locale } from '../src/i18n'
+import { LocalizedStory } from './LocalizedStory'
 import '../src/index.css'
 
 document.documentElement.dataset.theme = 'dark'
 
 const preview: Preview = {
+  globalTypes: {
+    locale: {
+      description: 'Interface language',
+      toolbar: {
+        title: 'Language',
+        icon: 'globe',
+        items: LOCALE_DESCRIPTORS.map((descriptor) => ({
+          value: descriptor.code,
+          title: `${descriptor.nativeName} (${descriptor.code})`,
+        })),
+        dynamicTitle: true,
+      },
+    },
+  },
+  initialGlobals: {
+    locale: 'en',
+  },
   decorators: [
-    (Story) => (
-      <ThemeProvider>
-        <div className="min-h-screen bg-canvas p-6 text-foreground">
-          <Story />
-        </div>
-      </ThemeProvider>
+    (Story, context) => (
+      <LocalizedStory locale={(context.globals.locale as Locale) ?? 'en'}>
+        <ThemeProvider>
+          <div className="min-h-screen bg-canvas p-6 text-foreground">
+            <Story />
+          </div>
+        </ThemeProvider>
+      </LocalizedStory>
     ),
   ],
   parameters: {

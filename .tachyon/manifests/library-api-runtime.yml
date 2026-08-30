@@ -28,6 +28,33 @@
         effect: allow
       - action: auth:AttachUserPolicy
         effect: allow
+      # Record body images live in Tachyon storage inside each
+      # organization's own tenant, keyed `{org_tenant}/library/images/…`.
+      # The service account's credential verifies only in this platform
+      # tenant, so requests act here and name the organization through the
+      # storage API's `tenant_id` delegation (tachyon-apps branch
+      # cfeature/storage-platform-delegation — must be deployed before the
+      # image endpoints). Tachyon authorizes each call against
+      # `trn:storage:tenant:{org_tenant}` after verifying the organization
+      # descends from this platform, which these grants cover because the
+      # storage actions are registered with resource_pattern
+      # `trn:storage:tenant:*`. Billing for the metered presign-PUT lands
+      # on this platform tenant — the organizations have no billing
+      # accounts — so the platform tenant itself must have one for uploads
+      # to succeed.
+      - action: storage:GeneratePresignedPutUrl
+        effect: allow
+      - action: storage:ConfirmObject
+        effect: allow
+      - action: storage:GeneratePresignedGetUrl
+        effect: allow
+      # Presign-PUT's billing gate resolves the Stripe config tenant by
+      # reading the acting operator as the caller, so the metered write
+      # needs this read too. Presign-GET has no billing gate, which is
+      # why a missing grant here surfaces as uploads failing 403 while
+      # reads keep working. Applied to the live policy 2026-08-30.
+      - action: auth:GetOperatorById
+        effect: allow
 
 # Every Library user may create organizations. `library:CreateOrganization`
 # in LibraryUserPolicy is the product-level permission library-api checks;

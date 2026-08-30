@@ -286,20 +286,63 @@ function createData(input = {}) {
   return data
 }
 
+// The API treats an empty value as a clear command, which is the only way a
+// patch can remove a value.
+const isClearedPropertyValue = (value) =>
+  Object.values(value ?? {}).every(
+    (field) => field === '' || (Array.isArray(field) && field.length === 0),
+  )
+
 function updateData(input = {}) {
   const data = findData(input.dataId ?? input.id)
   if (!data) return null
   if (input.dataName ?? input.name) data.name = String(input.dataName ?? input.name)
   const inputPropertyData = input.propertyData ?? input.property_data
   if (inputPropertyData !== undefined) {
-    const identifier = data.propertyData.find((entry) => entry.propertyId === 'prop-identifier')
-    const replacement = inputPropertyData.map(inputPropertyDataEntry)
-    data.propertyData = identifier && !replacement.some((entry) => entry.propertyId === 'prop-identifier')
-      ? [clone(identifier), ...replacement]
-      : replacement
+    // updateData is a patch: a Property the payload omits keeps its stored
+    // value, so the fixture must not treat the payload as a replacement set.
+    for (const entry of inputPropertyData.map(inputPropertyDataEntry)) {
+      const index = data.propertyData.findIndex(
+        (candidate) => candidate.propertyId === entry.propertyId,
+      )
+      if (isClearedPropertyValue(entry.value)) {
+        if (index >= 0) data.propertyData.splice(index, 1)
+        continue
+      }
+      if (index >= 0) data.propertyData[index] = entry
+      else data.propertyData.push(entry)
+    }
   }
   data.updatedAt = new Date().toISOString()
   return data
+}
+
+/**
+ * Create the record at `dataId`, or patch the one already there.
+ *
+ * The route the v2 client's record writes go through: it names the record
+ * itself, so it cannot tell a first write from an edit and must not be
+ * answered with the 404 that `PUT .../data/{id}` gives. See
+ * `apps/api/src/handler/data.rs`.
+ */
+function upsertData(dataId, input = {}) {
+  const existing = findData(dataId)
+  if (existing) return { data: updateData({ ...input, dataId }), created: false }
+
+  const number = state.nextDataNumber++
+  const now = new Date().toISOString()
+  const data = {
+    id: dataId,
+    name: String(input.dataName ?? input.name ?? `Untitled ${number}`),
+    createdAt: now,
+    updatedAt: now,
+    propertyData: [
+      propertyDataEntry('prop-identifier', { id: `DATA-${number}` }),
+      ...(input.propertyData ?? input.property_data ?? []).map(inputPropertyDataEntry),
+    ],
+  }
+  state.data.push(data)
+  return { data, created: true }
 }
 
 function deleteData(value) {
@@ -659,6 +702,16 @@ const server = createServer(async (request, response) => {
 
       if (request.method === 'POST' && suffix === 'data') {
         sendJson(response, 201, restData(createData(await readJson(request))))
+        return
+      }
+
+      // Matched before the update-only route below, which would otherwise
+      // read "{id}/upsert" as the record id and answer 404.
+      const upsertMatch = suffix.match(/^data\/(.+)\/upsert$/)
+      if (upsertMatch && request.method === 'PUT') {
+        const dataId = decodeURIComponent(upsertMatch[1])
+        const { data, created } = upsertData(dataId, await readJson(request))
+        sendJson(response, created ? 201 : 200, restData(data))
         return
       }
 

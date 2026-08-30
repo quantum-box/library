@@ -1,0 +1,44 @@
+[
+  {
+    "id": "block-1",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "before the app",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "htmlPreview",
+    "props": {
+      "source": "<!doctype html>\n<h1>Hi</h1>\n<script>console.log(\"x\")</script>"
+    },
+    "children": []
+  },
+  {
+    "id": "block-3",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "after the app",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

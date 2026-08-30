@@ -65,7 +65,7 @@ impl InitialSync {
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                action: "inbound_sync:InitialSync",
+                action: "library:InboundSyncInitialSync",
             })
             .await?;
 

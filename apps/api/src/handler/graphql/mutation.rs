@@ -27,18 +27,6 @@ use value_object::{
 };
 
 type HmacSha256 = Hmac<Sha256>;
-const GITHUB_SYNC_NON_GA_MESSAGE: &str =
-    "GitHub sync/writeback is not part of Library GA. Use one-shot GitHub Markdown import with enableGithubSync=false.";
-
-fn require_one_shot_github_markdown_import(
-    enable_github_sync: Option<bool>,
-) -> errors::Result<()> {
-    if enable_github_sync.unwrap_or(false) {
-        return Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE));
-    }
-
-    Ok(())
-}
 
 /// Sign an OAuth state parameter with HMAC-SHA256 for CSRF protection.
 ///
@@ -176,8 +164,6 @@ impl LibraryMutation {
         tenant_id: String,
     ) -> Result<SeedLibraryTenantPayload> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let library_app = ctx.data::<Arc<LibraryApp>>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
 
@@ -192,17 +178,13 @@ impl LibraryMutation {
             .extend());
         }
 
-        let tenant_user = sdk
-            .get_user_by_id_full(&tenant_id, user.id().as_ref())
-            .await
-            .map_err(|e| e.extend())?
-            .ok_or_else(|| {
-                errors::permission_denied!(
-                    "User is not a member of this tenant"
-                )
-                .extend()
-            })?;
-        ensure_tenant_seed_admin(&tenant_user).map_err(|e| e.extend())?;
+        ensure_tenant_seed_admin(
+            library_app.auth_app.as_ref(),
+            executor,
+            &tenant_id,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let operator = sdk
             .get_operator(tenant_id.as_ref())
@@ -210,11 +192,21 @@ impl LibraryMutation {
             .map_err(|e| e.extend())?
             .ok_or_else(|| async_graphql::Error::new("Tenant not found"))?;
 
+        // Every upstream call about the tenant being imported must be
+        // scoped to that tenant: tachyon rejects a request whose
+        // operator scope differs from the tenant it asks about, and
+        // the request's own scope is whatever operator the client app
+        // happens to run under -- never the tenant being imported.
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
+
         let users = AuthAppTrait::find_users_by_tenant(
             library_app.auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &tenant_scope,
                 tenant_id: &tenant_id,
             },
         )
@@ -250,7 +242,6 @@ impl LibraryMutation {
             organization
         };
 
-        let platform_tenant = crate::domain::LIBRARY_TENANT.clone();
         let policy_id = library_user_policy_id();
         let repo_owner_policy_id = library_repo_owner_policy_id();
         // Grant as the caller, who `ensure_tenant_seed_admin` has just
@@ -260,11 +251,6 @@ impl LibraryMutation {
         // tenant and is rejected in any per-organization scope -- every
         // grant below would have been warned away and the seed would
         // have reported success while attaching nothing.
-        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-            Some(platform_tenant),
-            Some(tenant_id.clone()),
-        );
-
         for tenant_user in &users {
             if let Err(err) = AuthAppTrait::attach_user_policy(
                 library_app.auth_app.as_ref(),
@@ -286,7 +272,14 @@ impl LibraryMutation {
                 );
             }
 
-            if *tenant_user.role() == DefaultRole::Owner {
+            let owns_repos = member_owns_repos(
+                library_app.user_policy_mapping_repo.as_ref(),
+                tenant_user,
+                &tenant_id,
+            )
+            .await;
+
+            if owns_repos {
                 if let Err(err) = AuthAppTrait::attach_user_policy(
                     library_app.auth_app.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
@@ -564,14 +557,16 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
         input: ChangeRepoUsernameInput,
     ) -> Result<Repo> {
-        let _executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let _multi_tenancy =
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
             .change_repo_username
-            .execute(usecase::ChangeRepoUsernameInput {
+            .execute(usecase::ChangeRepoUsernameInputData {
+                executor,
+                multi_tenancy,
                 org_username: input.org_username,
                 old_repo_username: input.old_repo_username,
                 new_repo_username: input.new_repo_username,
@@ -890,7 +885,10 @@ impl LibraryMutation {
             .into())
     }
 
-    /// TODO: add English documentation
+    /// [LIBRARY-API] Issue an API key for an organization.
+    ///
+    /// The returned `apiKey.value` is the only time the key itself is
+    /// readable; afterwards only its name and id can be listed.
     #[tracing::instrument(name = "create_api_key", skip(self, ctx))]
     async fn create_api_key(
         &self,
@@ -918,6 +916,35 @@ impl LibraryMutation {
             api_key: result.api_key.into(),
             service_account: result.service_account.into(),
         })
+    }
+
+    /// [LIBRARY-API] Revoke an API key so it stops authenticating.
+    #[tracing::instrument(name = "revoke_api_key", skip(self, ctx))]
+    async fn revoke_api_key(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        input: input::RevokeApiKeyInput,
+    ) -> Result<bool> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+
+        ctx.data::<Arc<LibraryApp>>()?
+            .revoke_api_key
+            .execute(&usecase::RevokeApiKeyInputData {
+                executor,
+                multi_tenancy,
+                org_name: &input.organization_username.parse()?,
+                api_key_id: &input.api_key_id,
+                service_account_name: input.service_account_name.as_deref(),
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to revoke API key: {:?}", e);
+                e.extend()
+            })?;
+
+        Ok(true)
     }
 
     /// TODO: add English documentation
@@ -1295,37 +1322,147 @@ impl LibraryMutation {
     // ==================== Data Sync ====================
 
     /// [LIBRARY-API] Sync data to GitHub
-    #[tracing::instrument(name = "sync_data_to_github", skip(self, _ctx))]
+    #[tracing::instrument(name = "sync_data_to_github", skip(self, ctx))]
     async fn sync_data_to_github(
         &self,
-        _ctx: &async_graphql::Context<'_>,
-        _input: SyncToGitHubInput,
+        ctx: &async_graphql::Context<'_>,
+        input: SyncToGitHubInput,
     ) -> Result<SyncResult> {
-        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let output = app
+            .sync_data_to_github
+            .execute(usecase::SyncDataToGithubInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username,
+                repo_username: input.repo_username,
+                data_id: input.data_id,
+                target_repo: input.target_repo,
+                target_path: input.target_path,
+                target_branch: input.target_branch,
+                commit_message: input.commit_message,
+                dry_run: input.dry_run.unwrap_or(false),
+            })
+            .await
+            .map_err(|e| e.extend())?;
+
+        let success =
+            !matches!(output.status, outbound_sync::SyncStatus::Failed(_));
+
+        Ok(SyncResult {
+            success,
+            status: output.status.into(),
+            result_id: output.result_id,
+            url: output.url,
+            diff: output.diff,
+        })
     }
 
     // ==================== Bulk Sync ====================
 
     /// [LIBRARY-API] Bulk sync ext_github property for all data items
-    #[tracing::instrument(name = "bulk_sync_ext_github", skip(self, _ctx))]
+    #[tracing::instrument(name = "bulk_sync_ext_github", skip(self, ctx))]
     async fn bulk_sync_ext_github(
         &self,
-        _ctx: &async_graphql::Context<'_>,
-        _input: BulkSyncExtGithubInput,
+        ctx: &async_graphql::Context<'_>,
+        input: BulkSyncExtGithubInput,
     ) -> Result<BulkSyncExtGithubResult> {
-        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let output = app
+            .bulk_sync_ext_github
+            .execute(usecase::BulkSyncExtGithubInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username,
+                repo_username: input.repo_username,
+                ext_github_property_id: input.ext_github_property_id,
+                repo_configs: input
+                    .repo_configs
+                    .into_iter()
+                    .map(|config| usecase::ExtGithubRepoConfig {
+                        repo: config.repo,
+                        label: config.label,
+                        default_path: config.default_path,
+                        branch: config.branch,
+                    })
+                    .collect(),
+            })
+            .await
+            .map_err(|e| e.extend())?;
+
+        Ok(BulkSyncExtGithubResult {
+            updated_count: output.updated_count as i32,
+            skipped_count: output.skipped_count as i32,
+            total_count: output.total_count as i32,
+        })
     }
 
     // ==================== Enable GitHub Sync ====================
 
     /// [LIBRARY-API] Enable GitHub sync by creating the ext_github property (system use only)
-    #[tracing::instrument(name = "enable_github_sync", skip(self, _ctx))]
+    #[tracing::instrument(name = "enable_github_sync", skip(self, ctx))]
     async fn enable_github_sync(
         &self,
-        _ctx: &async_graphql::Context<'_>,
-        _input: EnableGitHubSyncInput,
+        ctx: &async_graphql::Context<'_>,
+        input: EnableGitHubSyncInput,
     ) -> Result<EnableGitHubSyncResult> {
-        Err(errors::Error::bad_request(GITHUB_SYNC_NON_GA_MESSAGE).into())
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+
+        let properties = app
+            .get_properties
+            .execute(usecase::GetPropertiesInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username.clone(),
+                repo_username: input.repo_username.clone(),
+            })
+            .await
+            .map_err(|e| e.extend())?;
+
+        if let Some(prop) =
+            properties.iter().find(|p| p.name() == "ext_github")
+        {
+            return Ok(EnableGitHubSyncResult {
+                success: true,
+                property_id: prop.id().to_string(),
+            });
+        }
+
+        let property = app
+            .add_property
+            .execute(usecase::AddPropertyInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username.clone(),
+                repo_username: input.repo_username.clone(),
+                property_name: "ext_github".to_string(),
+                property_type:
+                    database_manager::domain::PropertyType::String,
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to create ext_github property: {:?}",
+                    e
+                );
+                e.extend()
+            })?;
+
+        Ok(EnableGitHubSyncResult {
+            success: true,
+            property_id: property.id().to_string(),
+        })
     }
 
     /// [LIBRARY-API] Enable Linear sync by creating the ext_linear property (system use only)
@@ -1555,9 +1692,6 @@ impl LibraryMutation {
         let app = ctx.data::<Arc<LibraryApp>>()?;
         let caller_auth = ctx.data::<CallerAuthApp>()?.auth_app();
 
-        require_one_shot_github_markdown_import(input.enable_github_sync)
-            .map_err(|e| e.extend())?;
-
         // Build property mappings
         let property_mappings: Vec<usecase::PropertyMapping> = input
             .property_mappings
@@ -1594,6 +1728,9 @@ impl LibraryMutation {
                 property_mappings,
                 content_property_name: input.content_property_name,
                 skip_existing: input.skip_existing.unwrap_or(false),
+                enable_github_sync: input
+                    .enable_github_sync
+                    .unwrap_or(false),
             })
             .await
             .map_err(|e| {
@@ -1622,25 +1759,84 @@ impl LibraryMutation {
     }
 }
 
-fn ensure_tenant_seed_admin(
-    user: &tachyon_sdk::auth::User,
+/// Reject a caller who cannot grant policies inside the tenant.
+///
+/// The check is a policy evaluation rather than a look at the user's
+/// `role`: tachyon authorizes by policy, and the role field the API
+/// returns is a label that says nothing about what the caller may do
+/// here.
+async fn ensure_tenant_seed_admin(
+    auth_app: &dyn AuthAppTrait,
+    executor: &dyn ExecutorAction,
+    tenant_id: &TenantId,
 ) -> errors::Result<()> {
-    match user.role() {
-        DefaultRole::Owner | DefaultRole::Manager => Ok(()),
-        DefaultRole::General | DefaultRole::Store => Err(
-            errors::permission_denied!(
-                "Only tenant owners or managers can import a tenant into Library"
-            ),
-        ),
+    if super::caller_can_seed_tenant(auth_app, executor, tenant_id).await? {
+        return Ok(());
+    }
+
+    Err(errors::permission_denied!(
+        "Importing a tenant into Library needs permission to grant policies in it"
+    ))
+}
+
+/// Whether a member of a tenant being imported should get full access
+/// to the new organization's repositories.
+///
+/// The primary signal is the tachyon administrator policy attached to
+/// them inside that tenant, because that is what tachyon itself
+/// authorizes against -- `role` is a label on the user record that
+/// says nothing about what its holder may do.
+///
+/// The `role` check stays as a second, OR-ed signal rather than being
+/// replaced. Tenants that predate policy management still carry
+/// members recorded as `Owner` with nothing attached at all -- half
+/// the `OWNER`s in the platform tenant hold no `AdministratorAccess`
+/// today -- and dropping them would import an organization whose
+/// repositories nobody can manage. That is the worse failure of the
+/// two: an extra grant is something an owner can undo from the
+/// members screen, an ownerless organization is not.
+///
+/// A lookup that fails is not fatal: it degrades to the role check and
+/// the seed continues, since the alternative is an import that silently
+/// leaves the organization ownerless.
+async fn member_owns_repos(
+    mappings: &dyn tachyon_sdk::auth::UserPolicyMappingRepository,
+    member: &tachyon_sdk::auth::User,
+    tenant_id: &TenantId,
+) -> bool {
+    if *member.role() == DefaultRole::Owner {
+        return true;
+    }
+
+    match mappings.find_policies_by_user(member.id(), tenant_id).await {
+        Ok(policies) => policies
+            .iter()
+            .any(crate::domain::is_tenant_administrator_policy),
+        Err(err) => {
+            tracing::warn!(
+                user = %member.id(),
+                tenant = %tenant_id,
+                error = ?err,
+                "failed to read attached policies during tenant seed; \
+                 falling back to the role field"
+            );
+            false
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_tenant_seed_admin, LibraryMutation};
+    use super::{
+        ensure_tenant_seed_admin, member_owns_repos, LibraryMutation,
+    };
+    use crate::domain::TENANT_ADMINISTRATOR_POLICY_ID;
     use async_graphql::{EmptySubscription, Object, Schema};
     use chrono::Utc;
-    use tachyon_sdk::auth::{DefaultRole, User};
+    use tachyon_sdk::auth::{
+        DefaultRole, EvaluatePoliciesBatchOutcome, MockAuthApp, PolicyId,
+        User, UserPolicy, UserPolicyMappingRepository,
+    };
     use value_object::{TenantId, UserId};
 
     struct TestQuery;
@@ -1690,20 +1886,97 @@ mod tests {
         );
     }
 
+    /// Tachyon rejects a user listing whose operator scope differs from
+    /// the tenant it asks about, and the request's scope is whichever
+    /// operator the client app runs under -- never the tenant being
+    /// imported. Listing with the request scope failed every import
+    /// with "Upstream authorization rejected".
     #[test]
-    fn tenant_seed_admin_allows_owner_and_manager() {
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Owner))
-            .is_ok());
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Manager))
-            .is_ok());
+    fn seed_library_tenant_lists_users_in_the_imported_tenant_scope() {
+        let source = include_str!("mutation.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        let seed_source = impl_source
+            .split("async fn seed_library_tenant")
+            .nth(1)
+            .expect("the seed mutation must exist");
+        let listing = seed_source
+            .split("find_users_by_tenant(")
+            .nth(1)
+            .expect("the seed must list the tenant's members");
+        let call = listing.split(".await").next().unwrap_or(listing);
+        assert!(
+            call.contains("multi_tenancy: &tenant_scope"),
+            "the member listing must be scoped to the tenant being \
+             imported, not the request's operator scope"
+        );
     }
 
-    #[test]
-    fn tenant_seed_admin_rejects_general_and_store() {
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::General))
-            .is_err());
-        assert!(ensure_tenant_seed_admin(&test_user(DefaultRole::Store))
-            .is_err());
+    #[tokio::test]
+    async fn tenant_seed_admin_allows_a_caller_the_tenant_authorizes() {
+        let mut auth_app = MockAuthApp::new();
+        auth_app
+            .expect_evaluate_policies_batch()
+            .returning(|input| {
+                let outcomes: Vec<_> = input
+                    .actions
+                    .iter()
+                    .map(|action| EvaluatePoliciesBatchOutcome {
+                        action: (*action).to_string(),
+                        allowed: true,
+                        error: None,
+                    })
+                    .collect();
+                Box::pin(async move { Ok(outcomes) })
+            });
+
+        assert!(ensure_tenant_seed_admin(
+            &auth_app,
+            &executor(),
+            &tenant(),
+        )
+        .await
+        .is_ok());
+    }
+
+    /// The role field says nothing about what the caller may do: an
+    /// `Owner` whose tenant denies the action must still be rejected,
+    /// and that is what makes this check policy-driven.
+    #[tokio::test]
+    async fn tenant_seed_admin_rejects_a_caller_the_tenant_denies() {
+        let mut auth_app = MockAuthApp::new();
+        auth_app
+            .expect_evaluate_policies_batch()
+            .returning(|input| {
+                let outcomes: Vec<_> = input
+                    .actions
+                    .iter()
+                    .map(|action| EvaluatePoliciesBatchOutcome {
+                        action: (*action).to_string(),
+                        allowed: false,
+                        error: None,
+                    })
+                    .collect();
+                Box::pin(async move { Ok(outcomes) })
+            });
+
+        assert!(ensure_tenant_seed_admin(
+            &auth_app,
+            &executor(),
+            &tenant(),
+        )
+        .await
+        .is_err());
+    }
+
+    fn tenant() -> TenantId {
+        TenantId::new("tn_01j702qf86pc2j35s0kv0gv3gy").unwrap()
+    }
+
+    fn executor() -> tachyon_sdk::auth::Executor {
+        tachyon_sdk::auth::Executor::User(Box::new(test_user(
+            DefaultRole::Owner,
+        )))
     }
 
     fn test_user(role: DefaultRole) -> User {
@@ -1723,6 +1996,172 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// A `UserPolicyMappingRepository` that answers only the one method
+    /// the seed decision reads, with a canned result.
+    ///
+    /// `None` stands for a lookup the upstream refuses to answer.
+    #[derive(Debug)]
+    struct StubPolicies(Option<Vec<PolicyId>>);
+
+    impl StubPolicies {
+        fn attached(ids: &[&str]) -> Self {
+            Self(Some(ids.iter().copied().map(PolicyId::from).collect()))
+        }
+
+        fn unavailable() -> Self {
+            Self(None)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UserPolicyMappingRepository for StubPolicies {
+        async fn find_policies_by_user(
+            &self,
+            _user_id: &UserId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<Vec<PolicyId>> {
+            self.0.clone().ok_or_else(|| {
+                errors::Error::internal_server_error(
+                    "upstream is down".to_string(),
+                )
+            })
+        }
+
+        async fn create_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_users_by_policy(
+            &self,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<Vec<UserId>> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn exists_mapping(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+        ) -> errors::Result<bool> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn create_mapping_with_scope(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn delete_mapping_with_scope(
+            &self,
+            _user_id: &UserId,
+            _policy_id: &PolicyId,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<()> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn find_by_resource_scope(
+            &self,
+            _tenant_id: &TenantId,
+            _resource_scope: &str,
+        ) -> errors::Result<Vec<UserPolicy>> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    /// The point of PLT-3885: an administrator the tenant never
+    /// labelled `Owner` still owns the imported organization's repos.
+    #[tokio::test]
+    async fn seed_gives_repo_ownership_to_an_administrator_by_policy() {
+        let mappings =
+            StubPolicies::attached(&[TENANT_ADMINISTRATOR_POLICY_ID]);
+
+        assert!(
+            member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn seed_withholds_repo_ownership_from_a_plain_member() {
+        let mappings =
+            StubPolicies::attached(&["pol_01compute_readonly001"]);
+
+        assert!(
+            !member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    /// The OR-ed role check: tenants that never adopted policy
+    /// management record owners with nothing attached, and importing
+    /// them must not leave the organization without a repo owner.
+    #[tokio::test]
+    async fn seed_still_honours_an_owner_with_no_policies_attached() {
+        let mappings = StubPolicies::attached(&[]);
+
+        assert!(
+            member_owns_repos(
+                &mappings,
+                &test_user(DefaultRole::Owner),
+                &tenant(),
+            )
+            .await
+        );
+    }
+
+    /// A failed lookup degrades to the role check instead of failing
+    /// the seed or granting ownership on a guess.
+    #[tokio::test]
+    async fn seed_falls_back_to_the_role_when_policies_cannot_be_read() {
+        assert!(
+            member_owns_repos(
+                &StubPolicies::unavailable(),
+                &test_user(DefaultRole::Owner),
+                &tenant(),
+            )
+            .await
+        );
+        assert!(
+            !member_owns_repos(
+                &StubPolicies::unavailable(),
+                &test_user(DefaultRole::General),
+                &tenant(),
+            )
+            .await
+        );
     }
 }
 
@@ -1848,6 +2287,8 @@ pub struct ExtGithubRepoConfigInput {
     pub label: Option<String>,
     /// Default path (optional, supports {{name}} placeholder)
     pub default_path: Option<String>,
+    /// Target branch (defaults to "main")
+    pub branch: Option<String>,
 }
 
 /// Result of bulk sync operation
@@ -1894,7 +2335,12 @@ pub struct UpdateDataInputData {
     pub property_data: Vec<usecase::PropertyDataInputData>,
 }
 
-pub use crate::usecase::change_repo_username::ChangeRepoUsernameInput;
+#[derive(Debug, Clone, InputObject)]
+pub struct ChangeRepoUsernameInput {
+    pub org_username: String,
+    pub old_repo_username: String,
+    pub new_repo_username: String,
+}
 
 fn property_type_from_input(
     value: PropertyInput,
@@ -2162,40 +2608,6 @@ pub struct SyncToGitHubInput {
     pub commit_message: Option<String>,
     /// If true, only calculate diff without syncing
     pub dry_run: Option<bool>,
-}
-
-#[cfg(test)]
-mod github_markdown_ga_tests {
-    use super::require_one_shot_github_markdown_import;
-
-    #[test]
-    fn generic_data_mutations_have_no_outbound_provider_dependency() {
-        let source = include_str!("mutation.rs");
-        let implementation =
-            source.split("#[cfg(test)]").next().unwrap_or(source);
-
-        assert!(!implementation.contains("SyncDataInputPort"));
-        assert!(!implementation.contains("SyncDataInputData"));
-        assert!(!implementation.contains("extract_ext_github"));
-    }
-
-    #[test]
-    fn github_markdown_import_defaults_to_one_shot_ga_path() {
-        assert!(require_one_shot_github_markdown_import(None).is_ok());
-        assert!(
-            require_one_shot_github_markdown_import(Some(false)).is_ok()
-        );
-    }
-
-    #[test]
-    fn github_markdown_import_rejects_sync_enablement() {
-        let err = require_one_shot_github_markdown_import(Some(true))
-            .unwrap_err();
-
-        assert!(err
-            .to_string()
-            .contains("GitHub sync/writeback is not part of Library GA"));
-    }
 }
 
 #[cfg(test)]

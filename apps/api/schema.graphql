@@ -5,7 +5,13 @@ type AccessibleTenant {
 	tenantId: String!
 	name: String!
 	username: String!
-	staffCount: Int!
+	"""
+	Members of the tenant, or null when the caller could not count
+	them: listing a tenant's users needs permission inside that
+	tenant, which a caller who merely belongs to it does not always
+	hold. Null means unknown, never empty, so do not render it as 0.
+	"""
+	staffCount: Int
 	hasLibraryOrg: Boolean!
 	canImportToLibrary: Boolean!
 }
@@ -414,6 +420,10 @@ input ExtGithubRepoConfigInput {
 	Default path (optional, supports {{name}} placeholder)
 	"""
 	defaultPath: String
+	"""
+	Target branch (defaults to "main")
+	"""
+	branch: String
 }
 
 """
@@ -1354,9 +1364,16 @@ type Mutation {
 	"""
 	createOrganization(input: CreateOrganizationInput!): Organization!
 	"""
-	TODO: add English documentation
+	[LIBRARY-API] Issue an API key for an organization.
+	
+	The returned `apiKey.value` is the only time the key itself is
+	readable; afterwards only its name and id can be listed.
 	"""
 	createApiKey(input: CreateApiKeyInput!): ApiKeyResponse!
+	"""
+	[LIBRARY-API] Revoke an API key so it stops authenticating.
+	"""
+	revokeApiKey(input: RevokeApiKeyInput!): Boolean!
 	"""
 	TODO: add English documentation
 	"""
@@ -1769,6 +1786,12 @@ type Query {
 	optionally filtered by `system`.
 	"""
 	globalIdMappings(system: String): [GlobalIdMapping!]!
+	"""
+	[LIBRARY-API] List the API keys issued for an organization.
+	
+	Key values are not included: they are readable only in the response
+	that created them.
+	"""
 	apiKeys(orgUsername: String!): [PublicApiKey!]!
 	"""
 	[LIBRARY-API] Get GitHub connection status
@@ -1968,6 +1991,21 @@ type RepoPolicy {
 	permissionSource: PermissionSource!
 }
 
+input RevokeApiKeyInput {
+	"""
+	Organization that owns the key.
+	"""
+	organizationUsername: String!
+	"""
+	Identifier of the key to revoke, as returned by `apiKeys`.
+	"""
+	apiKeyId: String!
+	"""
+	Service account holding the key. Defaults to `default`.
+	"""
+	serviceAccountName: String
+}
+
 type RichTextValue {
 	"""
 	The block document as JSON. Authoritative.
@@ -2159,7 +2197,11 @@ type TenantSeedCandidate {
 	tenantId: String!
 	name: String!
 	username: String!
-	staffCount: Int!
+	"""
+	Members of the tenant, or null when the caller could not count
+	them. See `AccessibleTenant.staffCount`.
+	"""
+	staffCount: Int
 	canImportToLibrary: Boolean!
 }
 

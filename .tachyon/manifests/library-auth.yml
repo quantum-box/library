@@ -1,3 +1,34 @@
+# Actions and roles the library apps authorize against.
+#
+# This file is a record, not something applied from a developer machine.
+# Two things prevent that:
+#
+#   - The `library` context is reserved for system actions. Registering one
+#     through `POST /v1/auth/actions` is refused with "Context 'library' is
+#     reserved for system actions", so a new library action has to be added
+#     upstream in tachyon-apps rather than from here.
+#   - The other contexts here (`database`, `inbound_sync`) are NOT reserved,
+#     and their actions already exist upstream with no owning platform. An
+#     apply from a developer profile does not recognise those as the same
+#     action and registers a second copy owned by the caller's platform.
+#
+# `tachyon manifest apply` reads a flat `actions:`/`policies:` document and
+# skips this ActionSet/Policy shape as unsupported, which is what has kept
+# that from happening so far. Keep the shape as it is.
+#
+# Adding an action therefore means: add it here so the intent is recorded,
+# and have it registered upstream as a system action.
+#
+# Note what the roles below are and are not. They read as the grant surface,
+# but the policy library-api actually attaches at sign-in is
+# `pol_01libraryuserpolicy` (LibraryUserPolicy), a system policy that the
+# API cannot amend -- which is why `library:org-creator` exists as a
+# companion in library-api-runtime.yml. `library:reader` / `member` /
+# `admin` exist upstream with no owner tenant and are not attached from
+# this codebase; the names also do duty in the web UI as repository member
+# roles, which map to `pol_01libraryrepo{owner,writer,reader}` instead. So
+# granting a newly registered action to real users means editing
+# LibraryUserPolicy upstream, not editing these.
 - apiVersion: auth.tachyon.io/v1
   kind: ActionSet
   metadata:
@@ -11,6 +42,10 @@
       - context: library
         name: ListApiKeys
         description: List library API keys
+        resource_pattern: trn:library:api-key:*
+      - context: library
+        name: RevokeApiKey
+        description: Revoke library API key
         resource_pattern: trn:library:api-key:*
       - context: library
         name: CreateOrganization
@@ -124,46 +159,53 @@
         name: ReadGlobalIdMapping
         description: Read Global ID mapping (bakuure SA Phase 1 read-only)
         resource_pattern: trn:library:global-id-mapping:*
-      - context: database
-        name: AddProperty
+      # Repository databases and inbound sync were their own contexts
+      # until they moved here. Neither is reserved, so anything holding a
+      # tenant could register an action into them, and an apply from a
+      # developer machine did exactly that -- registering a second copy of
+      # all ten alongside the originals. Under `library` the reservation
+      # refuses that write, and `library:admin` reaches these through the
+      # same `library:*` pattern as everything else.
+      - context: library
+        name: DatabaseAddProperty
         description: Add property to repository database
-        resource_pattern: trn:database:property:*
-      - context: database
-        name: UpdateProperty
+        resource_pattern: trn:library:database-property:*
+      - context: library
+        name: DatabaseUpdateProperty
         description: Update property of repository database
-        resource_pattern: trn:database:property:*
-      - context: database
-        name: DeleteProperty
+        resource_pattern: trn:library:database-property:*
+      - context: library
+        name: DatabaseDeleteProperty
         description: Delete property from repository database
-        resource_pattern: trn:database:property:*
-      - context: inbound_sync
-        name: ListIntegrations
+        resource_pattern: trn:library:database-property:*
+      - context: library
+        name: InboundSyncListIntegrations
         description: List available integrations
-        resource_pattern: trn:inbound_sync:integration:*
-      - context: inbound_sync
-        name: ListConnections
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncListConnections
         description: List tenant connections
-        resource_pattern: trn:inbound_sync:connection:*
-      - context: inbound_sync
-        name: RegisterWebhookEndpoint
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncRegisterWebhookEndpoint
         description: Register a new webhook endpoint
-        resource_pattern: trn:inbound_sync:webhook:*
-      - context: inbound_sync
-        name: UpdateWebhookEndpoint
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncUpdateWebhookEndpoint
         description: Update a webhook endpoint
-        resource_pattern: trn:inbound_sync:webhook:*
-      - context: inbound_sync
-        name: DeleteWebhookEndpoint
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncDeleteWebhookEndpoint
         description: Delete a webhook endpoint
-        resource_pattern: trn:inbound_sync:webhook:*
-      - context: inbound_sync
-        name: InitialSync
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncInitialSync
         description: Execute initial sync
-        resource_pattern: trn:inbound_sync:sync:*
-      - context: inbound_sync
-        name: OnDemandPull
+        resource_pattern: trn:library:inbound-sync:*
+      - context: library
+        name: InboundSyncOnDemandPull
         description: Execute on-demand pull sync
-        resource_pattern: trn:inbound_sync:sync:*
+        resource_pattern: trn:library:inbound-sync:*
 
 - apiVersion: auth.tachyon.io/v1
   kind: Policy
@@ -185,9 +227,9 @@
         effect: allow
       - action: library:ReadGlobalIdMapping
         effect: allow
-      - action: inbound_sync:ListIntegrations
+      - action: library:InboundSyncListIntegrations
         effect: allow
-      - action: inbound_sync:ListConnections
+      - action: library:InboundSyncListConnections
         effect: allow
 
 - apiVersion: auth.tachyon.io/v1
@@ -201,6 +243,8 @@
       - action: library:CreateApiKey
         effect: allow
       - action: library:ListApiKeys
+        effect: allow
+      - action: library:RevokeApiKey
         effect: allow
       - action: library:CreateOrganization
         effect: allow
@@ -232,23 +276,23 @@
         effect: allow
       - action: library:ReadGlobalIdMapping
         effect: allow
-      - action: database:AddProperty
+      - action: library:DatabaseAddProperty
         effect: allow
-      - action: database:UpdateProperty
+      - action: library:DatabaseUpdateProperty
         effect: allow
-      - action: database:DeleteProperty
+      - action: library:DatabaseDeleteProperty
         effect: allow
-      - action: inbound_sync:ListIntegrations
+      - action: library:InboundSyncListIntegrations
         effect: allow
-      - action: inbound_sync:ListConnections
+      - action: library:InboundSyncListConnections
         effect: allow
-      - action: inbound_sync:RegisterWebhookEndpoint
+      - action: library:InboundSyncRegisterWebhookEndpoint
         effect: allow
-      - action: inbound_sync:UpdateWebhookEndpoint
+      - action: library:InboundSyncUpdateWebhookEndpoint
         effect: allow
-      - action: inbound_sync:InitialSync
+      - action: library:InboundSyncInitialSync
         effect: allow
-      - action: inbound_sync:OnDemandPull
+      - action: library:InboundSyncOnDemandPull
         effect: allow
 
 - apiVersion: auth.tachyon.io/v1
@@ -258,13 +302,10 @@
     ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
   spec:
     description: Library admin policy for repository, member, and policy administration
+    # One pattern now covers everything: repository-database and
+    # inbound-sync actions moved into the library context, so the two
+    # extra patterns they needed are gone with them.
     action_patterns:
       - context_pattern: library
-        name_pattern: "*"
-        effect: allow
-      - context_pattern: database
-        name_pattern: "*Property"
-        effect: allow
-      - context_pattern: inbound_sync
         name_pattern: "*"
         effect: allow

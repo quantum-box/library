@@ -1,5 +1,8 @@
-import { appKitConfig } from '../app/kitConfig.js'
-import { getValidAuthTokens } from './auth'
+import {
+  configuredLibraryApiBaseUrl,
+  libraryGraphqlHeaders,
+} from './libraryGraphql'
+import { t } from '../i18n'
 
 export const repositoryPropertyTypes = [
   'STRING',
@@ -227,35 +230,6 @@ const updateRepositoryMutation = `
   }
 `
 
-function configuredLibraryApiBaseUrl(): string {
-  return (
-    import.meta.env.VITE_LIBRARY_API_BASE_URL ??
-    import.meta.env.VITE_BACKEND_API_URL ??
-    appKitConfig.server.apiBaseUrl ??
-    'http://localhost:50053'
-  ).replace(/\/+$/, '')
-}
-
-function configuredPlatformId(): string {
-  return (
-    import.meta.env.VITE_LIBRARY_PLATFORM_ID ??
-    import.meta.env.VITE_PLATFORM_ID ??
-    'tn_01j702qf86pc2j35s0kv0gv3gy'
-  )
-}
-
-async function repositoryGraphqlHeaders(operatorId?: string): Promise<Record<string, string>> {
-  const platformId = configuredPlatformId()
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    'x-platform-id': platformId,
-    'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? platformId,
-  }
-  const token = import.meta.env.VITE_LIBRARY_ACCESS_TOKEN || (await getValidAuthTokens())?.accessToken
-  if (token) headers.Authorization = `Bearer ${token}`
-  return headers
-}
-
 function graphqlErrorKind(error: GraphqlError): RepositorySettingsErrorKind {
   const code = error.extensions?.code?.toUpperCase() ?? ''
   const message = error.message?.toLowerCase() ?? ''
@@ -282,7 +256,7 @@ async function requestRepositoryGraphQL<TData>(
   try {
     response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
       method: 'POST',
-      headers: await repositoryGraphqlHeaders(target.operatorId),
+      headers: await libraryGraphqlHeaders(target.operatorId),
       body: JSON.stringify({ query, variables }),
     })
   } catch (error: unknown) {
@@ -362,7 +336,7 @@ function propertyInput(
 ): Record<string, unknown> {
   const name = draft.name.trim()
   if (!name) {
-    throw new RepositorySettingsApiError('Property name is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('repoSettings.propertyNameRequired'), 422, 'validation')
   }
 
   let meta: Record<string, unknown> | undefined
@@ -480,7 +454,7 @@ export async function updateRepositoryProperty(
   draft: RepositoryPropertyDraft,
 ): Promise<RepositoryPropertyDefinition> {
   if (!propertyId.trim()) {
-    throw new RepositorySettingsApiError('Property ID is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('errors.propertyIdRequired'), 422, 'validation')
   }
   const payload = await requestRepositoryGraphQL<RepositoryPropertyMutationResponse>(
     updateRepositoryPropertyMutation,
@@ -505,7 +479,7 @@ export async function deleteRepositoryProperty(
   propertyId: string,
 ): Promise<void> {
   if (!propertyId.trim()) {
-    throw new RepositorySettingsApiError('Property ID is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('errors.propertyIdRequired'), 422, 'validation')
   }
   const payload = await requestRepositoryGraphQL<RepositoryPropertyDeleteResponse>(
     deleteRepositoryPropertyMutation,

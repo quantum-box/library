@@ -6,13 +6,19 @@ export function isExtGithubSyncExplicitlyEnabled(
 
 export function normalizeExtGithubEditorState(
 	value:
-		| { repo?: string; path?: string; enabled?: boolean | null }
+		| {
+				repo?: string
+				path?: string
+				ref?: string | null
+				enabled?: boolean | null
+		  }
 		| null
 		| undefined,
-): { repo: string; path: string; enabled: boolean } {
+): { repo: string; path: string; ref: string; enabled: boolean } {
 	return {
 		repo: value?.repo ?? '',
 		path: value?.path ?? '',
+		ref: value?.ref?.trim() ? value.ref : 'main',
 		enabled: isExtGithubSyncExplicitlyEnabled(value?.enabled),
 	}
 }

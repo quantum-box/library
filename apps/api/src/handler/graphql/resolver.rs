@@ -15,8 +15,8 @@ use async_graphql::{
 };
 use futures_util::future::join_all;
 use inbound_sync::providers::linear::LinearClient;
+use tachyon_sdk::auth::ExecutorAction;
 use tachyon_sdk::auth::MultiTenancyAction;
-use tachyon_sdk::auth::{DefaultRole, ExecutorAction};
 use value_object::{self, TenantId};
 
 #[derive(Default)]
@@ -66,8 +66,6 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<Vec<TenantSeedCandidate>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
@@ -82,7 +80,6 @@ impl LibraryQuery {
         // calls. Walking the tenants one at a time made the resolver
         // as slow as the caller has memberships, so they are resolved
         // side by side; the results are sorted below either way.
-        let user_id = user.id().as_ref();
         let resolved: Vec<Result<Option<TenantSeedCandidate>>> =
             join_all(user.tenants().iter().map(|tenant| async move {
                 if app
@@ -105,28 +102,22 @@ impl LibraryQuery {
 
                 let tenant_id = TenantId::new(tenant.as_ref())
                     .map_err(|e| e.extend())?;
-                let Some(tenant_user) = sdk
-                    .get_user_by_id_full(&tenant_id, user_id)
-                    .await
-                    .map_err(|e| e.extend())?
-                else {
-                    return Ok(None);
-                };
-                if !can_import_library_tenant(tenant_user.role()) {
+                if !super::caller_can_seed_tenant(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await
+                .map_err(|e| e.extend())?
+                {
                     return Ok(None);
                 }
-                let staff_count =
-                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                        app.auth_app.as_ref(),
-                        &tachyon_sdk::auth::FindUsersByTenantInput {
-                            executor,
-                            multi_tenancy,
-                            tenant_id: &tenant_id,
-                        },
-                    )
-                    .await
-                    .map(|users| users.len() as i32)
-                    .unwrap_or(0);
+                let staff_count = super::count_tenant_staff(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await;
 
                 Ok(Some(TenantSeedCandidate {
                     tenant_id: operator.id,
@@ -165,8 +156,6 @@ impl LibraryQuery {
         ctx: &Context<'_>,
     ) -> Result<Vec<AccessibleTenant>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
@@ -175,7 +164,6 @@ impl LibraryQuery {
         // Resolved side by side for the same reason as the seed
         // candidates above: the per-tenant work is independent, and
         // the output is sorted before it is returned.
-        let user_id = user.id().as_ref();
         let resolved: Vec<Result<Option<AccessibleTenant>>> =
             join_all(user.tenants().iter().map(|tenant| async move {
                 let has_library_org = app
@@ -195,28 +183,33 @@ impl LibraryQuery {
 
                 let tenant_id = TenantId::new(tenant.as_ref())
                     .map_err(|e| e.extend())?;
-                let can_import_to_library = match sdk
-                    .get_user_by_id_full(&tenant_id, user_id)
-                    .await
-                    .map_err(|e| e.extend())?
+                // A failed evaluation is a transport problem rather than
+                // a denial, and it must not take the whole list down with
+                // it: the tenant is still listed, just not offered for
+                // import, and the mutation re-checks before it seeds.
+                let can_import_to_library = match super::caller_can_seed_tenant(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await
                 {
-                    Some(tenant_user) => {
-                        can_import_library_tenant(tenant_user.role())
+                    Ok(allowed) => allowed,
+                    Err(error) => {
+                        tracing::warn!(
+                            tenant = %tenant_id,
+                            error = ?error,
+                            "could not evaluate tenant import permission"
+                        );
+                        false
                     }
-                    None => false,
                 };
-                let staff_count =
-                    tachyon_sdk::auth::AuthApp::find_users_by_tenant(
-                        app.auth_app.as_ref(),
-                        &tachyon_sdk::auth::FindUsersByTenantInput {
-                            executor,
-                            multi_tenancy,
-                            tenant_id: &tenant_id,
-                        },
-                    )
-                    .await
-                    .map(|users| users.len() as i32)
-                    .unwrap_or(0);
+                let staff_count = super::count_tenant_staff(
+                    app.auth_app.as_ref(),
+                    executor,
+                    &tenant_id,
+                )
+                .await;
 
                 Ok(Some(AccessibleTenant {
                     tenant_id: operator.id,
@@ -493,6 +486,10 @@ impl LibraryQuery {
         Ok(mappings.into_iter().map(|m| m.into()).collect())
     }
 
+    /// [LIBRARY-API] List the API keys issued for an organization.
+    ///
+    /// Key values are not included: they are readable only in the response
+    /// that created them.
     #[tracing::instrument(name = "library_api_keys", skip(self, ctx))]
     async fn api_keys(
         &self,
@@ -1075,8 +1072,6 @@ impl Organization {
     #[tracing::instrument(skip(ctx))]
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-        let multi_tenancy =
-            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
 
         if executor.is_none() {
             return Ok(vec![]);
@@ -1085,11 +1080,19 @@ impl Organization {
         let tenant_id: value_object::TenantId =
             value_object::TenantId::new(&self.id)
                 .map_err(|e| e.extend())?;
+        // List the members in the organization's own operator scope:
+        // tachyon rejects a user listing whose scope differs from the
+        // tenant it asks about, and the request may run under another
+        // operator (for example the platform tenant).
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
         let users = tachyon_sdk::auth::AuthApp::find_users_by_tenant(
             auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &tenant_scope,
                 tenant_id: &tenant_id,
             },
         )
@@ -1348,14 +1351,8 @@ impl Repo {
     }
 }
 
-fn can_import_library_tenant(role: &DefaultRole) -> bool {
-    matches!(role, DefaultRole::Owner | DefaultRole::Manager)
-}
-
 #[cfg(test)]
 mod tenant_seed_candidate_tests {
-    use super::can_import_library_tenant;
-    use tachyon_sdk::auth::DefaultRole;
 
     /// Regression guard for PLT-1692: Field / other platform tenants must appear
     /// in the onboarding wizard when they lack a Library organization.
@@ -1381,11 +1378,53 @@ mod tenant_seed_candidate_tests {
         assert!(source.contains("tenants.sort_by"));
     }
 
+    /// Tachyon rejects a user listing whose operator scope differs from
+    /// the tenant it asks about, and the request's scope is whatever
+    /// operator the client app runs under. Listing with the request
+    /// scope failed the organization members field outright; the staff
+    /// counts go through `count_tenant_staff`, which builds the tenant
+    /// scope itself.
     #[test]
-    fn importable_tenant_roles_are_owner_and_manager_only() {
-        assert!(can_import_library_tenant(&DefaultRole::Owner));
-        assert!(can_import_library_tenant(&DefaultRole::Manager));
-        assert!(!can_import_library_tenant(&DefaultRole::General));
-        assert!(!can_import_library_tenant(&DefaultRole::Store));
+    fn user_listings_are_scoped_to_the_tenant_they_ask_about() {
+        let source = include_str!("resolver.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        let mut listings = 0;
+        for listing in impl_source.split("find_users_by_tenant(").skip(1) {
+            let call = listing.split(".await").next().unwrap_or(listing);
+            assert!(
+                call.contains("multi_tenancy: &tenant_scope"),
+                "every user listing must be scoped to the tenant it asks about"
+            );
+            listings += 1;
+        }
+        assert_eq!(
+            listings, 1,
+            "the organization members field is expected to list users; \
+             staff counts must go through count_tenant_staff instead"
+        );
+        assert_eq!(
+            impl_source.matches("count_tenant_staff(").count(),
+            2,
+            "both staff counts are expected to use the scoped helper"
+        );
+    }
+
+    /// Tachyon decides permissions by policy, and the `role` field on a
+    /// user record does not carry that decision. Importing must ask the
+    /// auth service for the action the seed performs.
+    #[test]
+    fn tenant_import_permission_is_evaluated_by_policy_not_by_role() {
+        let source = include_str!("resolver.rs");
+        let impl_source =
+            source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            impl_source.contains("caller_can_seed_tenant"),
+            "import permission must come from the policy evaluation helper"
+        );
+        assert!(
+            !impl_source.contains("DefaultRole::Owner"),
+            "import permission must not be decided by the user role field"
+        );
     }
 }

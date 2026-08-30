@@ -174,6 +174,16 @@ jobs:
         env:
           VITE_BACKEND_API_URL: ${{ steps.vite_backend.outputs.url }}
         run: yarn build
+      # The user guide is a separate workspace, so `yarn lint` / `tsc` /
+      # `build` above, which are all scoped to library-web, do not cover it.
+      - name: Lint (user guide)
+        run: yarn guide:lint
+      - name: Type check (user guide)
+        run: yarn guide:ts
+      - name: Build (user guide)
+        env:
+          VITE_LIBRARY_API_BASE_URL: ${{ steps.vite_backend.outputs.url }}
+        run: yarn guide:build
       - name: Install Playwright browsers
         run: |
           scripts/ci/apt-harden.sh
@@ -203,17 +213,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - name: Install wasm-pack
-        uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.13.1
-          fallback: none
-      - name: Build Photon WASM for package preparation
-        timeout-minutes: 15
-        run: npm run engine:wasm
       - name: Install client dependencies
         run: npm ci
       - name: Lint client
@@ -225,8 +224,6 @@ jobs:
       - name: Build client
         timeout-minutes: 15
         run: npm run build
-      - name: Test Photon server
-        run: cargo test --locked --manifest-path packages/server/Cargo.toml
       - name: Install Playwright Chromium
         run: |
           "${{ github.workspace }}/scripts/ci/apt-harden.sh"

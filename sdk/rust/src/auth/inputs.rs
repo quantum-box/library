@@ -1,8 +1,8 @@
 use super::domain::{NewOperatorOwnerMethod, PolicyActionRequest};
 use super::executor::{ExecutorAction, MultiTenancyAction};
 use super::types::{
-    Identifier, OperatorId, PlatformId, PolicyId, ServiceAccountId,
-    TenantId, UserId,
+    Identifier, OperatorId, PlatformId, PolicyId, PublicApiKeyId,
+    ServiceAccountId, TenantId, UserId,
 };
 
 // ─────────────── Policy check inputs ──────────────────
@@ -157,6 +157,15 @@ pub struct CreatePublicApiKeyInput<'a> {
     pub operator_id: &'a OperatorId,
     pub service_account_id: &'a ServiceAccountId,
     pub name: &'a str,
+}
+
+#[derive(Debug, Clone)]
+pub struct RevokePublicApiKeyInput<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+    pub operator_id: &'a OperatorId,
+    pub service_account_id: &'a ServiceAccountId,
+    pub api_key_id: &'a PublicApiKeyId,
 }
 
 // ────────── User policy inputs ─────────────────────────

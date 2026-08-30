@@ -86,17 +86,18 @@
 22. `create_global_id_mapping(input: CreateGlobalIdMappingInput): GlobalIdMapping`
 23. `update_global_id_mapping(input: UpdateGlobalIdMappingInput): GlobalIdMapping`
 24. `create_api_key(input: CreateApiKeyInput): ApiKeyResponse`
+24-b. `revoke_api_key(input: RevokeApiKeyInput): Boolean`（`library:RevokeApiKey` を要求。上流の `POST /v1/auth/service-accounts/{sa}/api-keys/{key}/revoke` に接続し、既に消えている鍵でも成功を返す）
 25. `github_auth_url(repo_id: String, redirect_uri?: String, scope?: String): GitHubAuthUrl`
 26. `github_exchange_token(input: GitHubExchangeTokenInput): GitHubConnection`
 27. `github_disconnect(repo_id: String): GitHubConnection`
-28. `sync_data_to_github(input: SyncDataToGitHubInput): SyncResult`（Non-GA: Library GA では拒否）
-29. `bulk_sync_ext_github(input: BulkSyncExtGitHubInput): SyncResult`（Non-GA: Library GA では拒否）
-30. `enable_github_sync(input: EnableGitHubSyncInput): SyncResult`（Non-GA: Library GA では拒否）
+28. `sync_data_to_github(input: SyncDataToGitHubInput): SyncResult`（GA: 単一 Data の GitHub writeback。`dryRun` 対応）
+29. `bulk_sync_ext_github(input: BulkSyncExtGitHubInput): SyncResult`（GA: repo 内全 Data への `ext_github` 一括設定 + writeback）
+30. `enable_github_sync(input: EnableGitHubSyncInput): SyncResult`（GA: `ext_github` property を作成）
 31. `disable_github_sync(input: DisableGitHubSyncInput): SyncResult`
 32. `invite_repo_member(input: InviteRepoMemberInput): RepoMember`
 33. `remove_repo_member(input: RemoveRepoMemberInput): Repo`
 34. `change_repo_member_role(input: ChangeRepoMemberRoleInput): RepoMember`
-35. `import_markdown_from_github(input: ImportMarkdownFromGitHubInput): ImportMarkdownResult`（GA: `enableGithubSync=false` の one-shot import のみ）
+35. `import_markdown_from_github(input: ImportMarkdownFromGitHubInput): ImportMarkdownResult`（GA: `enableGithubSync=true` で import と同時に継続同期を有効化。デフォルト false は one-shot import）
 
 ## 7. Query（同期系）
 

@@ -8,8 +8,8 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, docs::*, global_id_mapping::*, organization::*,
-    property::*, repository::*, source::*,
+    auth::*, data::*, docs::*, global_id_mapping::*, image::*,
+    organization::*, property::*, repository::*, source::*, translation::*,
 };
 
 // TODO: add English comment
@@ -33,9 +33,16 @@ use crate::handler::{
         list_docs,
         view_doc,
         view_doc_markdown,
+        list_doc_languages,
+        get_published_languages,
+        set_published_languages,
+        run_translations,
+        get_glossary,
+        set_glossary,
         view_data_parquet,
         add_data,
         update_data,
+        upsert_data,
         delete_data,
         search_data,
         get_properties,
@@ -49,6 +56,8 @@ use crate::handler::{
         update_source,
         delete_source,
         get_global_id_mapping,
+        upload_image,
+        view_image,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -67,16 +76,25 @@ use crate::handler::{
         crate::handler::types::ParquetResponse,
         crate::handler::types::AddDataRequest,
         crate::handler::types::UpdateDataRequest,
+        crate::handler::types::UpsertDataRequest,
         crate::handler::types::SearchDataQuery,
         crate::handler::types::DataPaginationQuery,
         value_object::OffsetPaginator,
         crate::handler::types::PropertyResponse,
         crate::handler::types::AddPropertyRequest,
         crate::handler::types::UpdatePropertyRequest,
+        crate::handler::translation::PublishedLanguagesResponse,
+        crate::handler::translation::SetPublishedLanguagesRequest,
+        crate::handler::translation::RunTranslationsResponse,
+        crate::handler::translation::TranslationOutcomeResponse,
+        crate::handler::translation::GlossaryResponse,
+        crate::handler::translation::SetGlossaryRequest,
+        crate::handler::translation::GlossaryTermPayload,
         crate::handler::types::SourceResponse,
         crate::handler::types::CreateSourceRequest,
         crate::handler::types::UpdateSourceRequest,
         crate::handler::global_id_mapping::GlobalIdMappingResponse,
+        crate::handler::image::ImageResponse,
     ))
 )]
 pub struct ApiDoc;
@@ -114,6 +132,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(view_data_parquet))
         .routes(routes!(add_data))
         .routes(routes!(update_data))
+        .routes(routes!(upsert_data))
         .routes(routes!(delete_data))
         .routes(routes!(search_data))
         .routes(routes!(get_properties))
@@ -125,6 +144,11 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(update_source))
         .routes(routes!(delete_source))
         .routes(routes!(get_global_id_mapping))
+        .routes(routes!(get_published_languages))
+        .routes(routes!(set_published_languages))
+        .routes(routes!(run_translations))
+        .routes(routes!(get_glossary))
+        .routes(routes!(set_glossary))
 }
 
 pub fn create_router() -> axum::Router {
@@ -166,4 +190,34 @@ pub fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&yaml_path, yaml_content)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The upsert route has to survive two conversions that silently drop it:
+    /// `routes!` must find a `#[utoipa::path]` for it, and utoipa-axum must
+    /// rewrite `{data_id}` into axum's own parameter syntax. A path that fails
+    /// either becomes a 404 at runtime, which is exactly the failure the
+    /// endpoint exists to prevent.
+    #[test]
+    fn the_data_upsert_route_is_registered() {
+        let api = OpenApiRouter::with_openapi(ApiDoc::openapi())
+            .merge(create_openapi_router())
+            .get_openapi()
+            .clone();
+
+        let path = api
+            .paths
+            .paths
+            .get("/v1beta/repos/{org}/{repo}/data/{data_id}/upsert")
+            .expect("the upsert path must reach the OpenAPI document");
+        assert!(path.put.is_some(), "upsert is a PUT");
+
+        // Building the axum router panics on a conflicting route pattern, so
+        // this also proves `/data/:data_id/upsert` and the `/md` sibling can
+        // coexist.
+        let _ = create_router();
+    }
 }

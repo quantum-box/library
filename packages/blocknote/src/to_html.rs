@@ -35,6 +35,12 @@ fn escape_attribute(text: &str) -> String {
     escape_text(text).replace('"', "&quot;")
 }
 
+/// Escaped for a text node. A newline inside a run is a hard break, and
+/// HTML collapses a bare one to a space, so it becomes an explicit `<br>`.
+fn escape_inline(text: &str) -> String {
+    escape_text(text).replace('\n', "<br>")
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum ListKind {
     Bullet,
@@ -130,6 +136,27 @@ fn children_of(block: &Value) -> &[Value] {
         .unwrap_or(&[])
 }
 
+/// The image block's resize width, rounded to whole pixels.
+fn prop_width(block: &Value) -> Option<u64> {
+    let width = block
+        .get("props")
+        .and_then(|props| props.get("previewWidth"))?
+        .as_f64()?;
+    (width.is_finite() && width > 0.0).then(|| width.round() as u64)
+}
+
+/// Splits a `#w=<pixels>` fragment off an image URL, returning the clean
+/// URL and the width it carried.
+fn split_width_fragment(url: &str) -> (&str, Option<u64>) {
+    let Some((src, fragment)) = url.rsplit_once("#w=") else {
+        return (url, None);
+    };
+    match fragment.parse::<u64>() {
+        Ok(width) if width > 0 => (src, Some(width)),
+        _ => (url, None),
+    }
+}
+
 fn prop_str<'a>(block: &'a Value, name: &str) -> Option<&'a str> {
     block
         .get("props")
@@ -189,11 +216,24 @@ fn render_block(out: &mut String, block: &Value, typ: &str) {
                 .filter(|value| !value.is_empty())
                 .or_else(|| prop_str(block, "name"))
                 .unwrap_or_default();
-            out.push_str(&format!(
-                "<img src=\"{}\" alt=\"{}\">",
-                escape_attribute(url),
-                escape_attribute(caption)
-            ));
+            // The resize width lives either on the block (rich text) or
+            // in the `#w=` URL fragment (Markdown dialect); honour both
+            // and keep the fragment out of the fetched src.
+            let (src, fragment_width) = split_width_fragment(url);
+            let width = prop_width(block).or(fragment_width);
+            match width {
+                Some(width) => out.push_str(&format!(
+                    "<img src=\"{}\" alt=\"{}\" width=\"{}\">",
+                    escape_attribute(src),
+                    escape_attribute(caption),
+                    width
+                )),
+                None => out.push_str(&format!(
+                    "<img src=\"{}\" alt=\"{}\">",
+                    escape_attribute(src),
+                    escape_attribute(caption)
+                )),
+            }
         }
         "video" | "audio" | "file" => {
             let url = prop_str(block, "url").unwrap_or_default();
@@ -207,6 +247,16 @@ fn render_block(out: &mut String, block: &Value, typ: &str) {
             ));
         }
         "table" => render_table(out, block.get("content")),
+        // Rendered live, but inside a sandboxed frame so the embedded
+        // document's scripts never touch the page this fragment lands in.
+        "htmlPreview" => {
+            let source = prop_str(block, "source").unwrap_or_default();
+            out.push_str(&format!(
+                "<iframe class=\"html-preview\" sandbox=\"allow-scripts\" \
+                 srcdoc=\"{}\"></iframe>",
+                escape_attribute(source)
+            ));
+        }
         // Unknown block: keep the text rather than dropping it, same
         // policy as the Markdown renderer.
         _ => {
@@ -227,7 +277,7 @@ fn render_inline(content: Option<&Value>) -> String {
         return String::new();
     };
     if let Some(text) = content.as_str() {
-        return escape_text(text);
+        return escape_inline(text);
     }
     let Some(items) = content.as_array() else {
         return String::new();
@@ -264,7 +314,7 @@ fn styled(text: &str, styles: Option<&Value>) -> String {
             .unwrap_or(false)
     };
 
-    let mut out = escape_text(text);
+    let mut out = escape_inline(text);
     // Unlike Markdown, HTML can carry all of these. Colors are still
     // dropped: their values are editor theme keywords, not CSS.
     if flag("code") {
@@ -321,10 +371,13 @@ fn render_table(out: &mut String, content: Option<&Value>) {
         let tag = if index == 0 { "th" } else { "td" };
         out.push_str("<tr>");
         for cell in cells {
-            out.push_str(&format!(
-                "<{tag}>{}</{tag}>",
-                render_inline(Some(cell))
-            ));
+            // A cell is an object wrapping its inline content; older
+            // documents carry the inline array directly.
+            let content = match cell.get("content") {
+                Some(content) => render_inline(Some(content)),
+                None => render_inline(Some(cell)),
+            };
+            out.push_str(&format!("<{tag}>{content}</{tag}>"));
         }
         out.push_str("</tr>");
     }

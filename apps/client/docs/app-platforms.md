@@ -28,6 +28,9 @@ Tauri release candidates must pass the CI Linux smoke build and should use
 `tauri-local-file-cache` for desktop attachment byte references. Synced
 attachment metadata must not contain absolute local filesystem paths.
 
+The macOS desktop shell runs its tabs as child WebViews of a single window; see
+[`macos-window-tabs.md`](./macos-window-tabs.md).
+
 Mobile release candidates must also pass the phone-viewport browser smoke:
 
 ```bash

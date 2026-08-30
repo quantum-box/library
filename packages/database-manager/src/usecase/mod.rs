@@ -20,6 +20,7 @@ pub mod relation_target_policy;
 mod search_data;
 pub mod update_data;
 mod update_property;
+pub mod upsert_data;
 
 pub use add_data::*;
 pub use add_property::*;
@@ -41,3 +42,4 @@ pub use relation_target_policy::*;
 pub use search_data::*;
 pub use update_data::*;
 pub use update_property::*;
+pub use upsert_data::*;

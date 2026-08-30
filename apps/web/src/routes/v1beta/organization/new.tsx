@@ -39,7 +39,12 @@ type AccessibleTenant = {
   tenantId: string
   name: string
   username: string
-  staffCount: number
+  /**
+   * Members of the tenant, or `null` when the API could not count them:
+   * listing a tenant's users is itself permissioned. A missing count must
+   * not be rendered as `0`, which reads as an empty tenant.
+   */
+  staffCount: number | null
   hasLibraryOrg: boolean
   canImportToLibrary: boolean
 }
@@ -302,12 +307,14 @@ function NewOrganizationPage() {
                   </Select>
                   {selectedTenant && !selectedTenant.hasLibraryOrg ? (
                     <p className='text-xs text-muted-foreground'>
-                      {selectedTenant.canImportToLibrary
-                        ? t.v1beta.newOrg.staffMembers.replace(
-                            '{count}',
-                            String(selectedTenant.staffCount),
-                          )
-                        : t.v1beta.newOrg.insufficientTenantRole}
+                      {!selectedTenant.canImportToLibrary
+                        ? t.v1beta.newOrg.insufficientTenantRole
+                        : selectedTenant.staffCount === null
+                          ? t.v1beta.newOrg.staffMembersUnknown
+                          : t.v1beta.newOrg.staffMembers.replace(
+                              '{count}',
+                              String(selectedTenant.staffCount),
+                            )}
                     </p>
                   ) : null}
                 </div>

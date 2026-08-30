@@ -4,7 +4,6 @@ import type {
 	MeOnDashboardFragment,
 	RepoItemOnDashboardFragment,
 } from '@/gen/graphql'
-import { platformId } from '@/lib/apiClient'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { ArrowRight, BookOpen, Globe, Loader2, Lock, Users } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -21,7 +20,12 @@ type TenantSeedCandidate = {
 	tenantId: string
 	name: string
 	username: string
-	staffCount: number
+	/**
+	 * Members of the tenant, or `null` when the API could not count them:
+	 * listing a tenant's users is itself permissioned. A missing count must
+	 * not be rendered as `0`, which reads as an empty tenant.
+	 */
+	staffCount: number | null
 	canImportToLibrary: boolean
 }
 
@@ -83,9 +87,10 @@ export function DashboardPage() {
 				)
 				setSeedCandidates(seedResult.tenantSeedCandidates)
 
-				const orgs = result.me.organizations.filter(
-					(org) => org.platformTenantId === platformId,
-				)
+				// `me.organizations` is already only what Library treats as an
+				// organization. Narrowing it again by platform here dropped every
+				// tenant adopted from Tachyon, since those keep their own platform.
+				const orgs = result.me.organizations
 
 				const repoResults = await Promise.allSettled(
 					orgs.map((org) =>
@@ -154,9 +159,7 @@ export function DashboardPage() {
 
 	const t = dictionary
 	const meData = me ?? { name: '', tenantIdList: [], organizations: [] }
-	const orgs = meData.organizations.filter(
-		(org) => org.platformTenantId === platformId,
-	)
+	const orgs = meData.organizations
 	const allRepos = orgs.flatMap((org) => {
 		const repos = orgRepos.get(org.id) ?? []
 		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
@@ -189,7 +192,11 @@ export function DashboardPage() {
 										</p>
 										<div className='flex items-center gap-2 text-sm text-muted-foreground'>
 											<Users className='h-4 w-4' />
-											<span>{candidate.staffCount} staff members</span>
+											<span>
+												{candidate.staffCount === null
+													? 'Staff count unavailable'
+													: `${candidate.staffCount} staff members`}
+											</span>
 										</div>
 									</div>
 									<Button

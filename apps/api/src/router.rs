@@ -9,6 +9,7 @@ use crate::interface_adapter::gateway::LibraryDataRepositoryImpl;
 use crate::sdk_auth::SdkAuthApp;
 use async_graphql::EmptySubscription;
 use async_graphql::Schema;
+use axum::extract::DefaultBodyLimit;
 use axum::http::method::Method;
 use axum::middleware;
 use axum::routing::get;
@@ -25,13 +26,18 @@ use telemetry::http::{
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::handler::data::ParquetStorage;
+use crate::handler::image::{
+    BucketImageStore, ImageObjectStore, TachyonImageStore, MAX_IMAGE_BYTES,
+};
 
 use inbound_sync::interface_adapter::{
-    BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpGitHubClient,
-    NoOpGitHubDataHandler, NoOpHubSpotClient, NoOpHubSpotDataHandler,
-    NoOpNotionClient, NoOpNotionDataHandler, NoOpSquareClient,
-    NoOpStripeClient, NoOpStripeDataHandler, SqlxConnectionRepository,
-    SqlxSyncStateRepository,
+    BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpHubSpotClient,
+    NoOpHubSpotDataHandler, NoOpNotionClient, NoOpNotionDataHandler,
+    NoOpSquareClient, NoOpStripeClient, NoOpStripeDataHandler,
+    SqlxConnectionRepository, SqlxSyncStateRepository,
+};
+use inbound_sync::providers::github::{
+    DefaultGitHubDataHandler, OAuthGitHubClient,
 };
 use inbound_sync::providers::linear::{
     DefaultLinearDataHandler, OAuthLinearClient,
@@ -50,6 +56,7 @@ use inbound_sync::{
 };
 
 const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
+const MCP_SSE_ENABLED_ENV: &str = "LIBRARY_MCP_SSE_ENABLED";
 const WEBHOOK_WORKER_ENABLED_ENV: &str = "LIBRARY_WEBHOOK_WORKER_ENABLED";
 
 #[derive(Serialize)]
@@ -59,6 +66,18 @@ struct VersionResponse {
 
 fn collaboration_ws_enabled() -> bool {
     std::env::var(COLLAB_WS_ENABLED_ENV)
+        .map(|value| env_flag_enabled(&value))
+        .unwrap_or(false)
+}
+
+/// The MCP HTTP+SSE transport needs one process to hold the stream and
+/// answer the messages posted against it. A Lambda execution environment
+/// serves one request at a time, so the instance holding an open `GET
+/// /sse` is busy and every `POST /messages` lands on a different one,
+/// which has neither the session nor the stream. The routes therefore
+/// stay unregistered unless a long-lived deployment opts in.
+fn mcp_sse_enabled() -> bool {
+    std::env::var(MCP_SSE_ENABLED_ENV)
         .map(|value| env_flag_enabled(&value))
         .unwrap_or(false)
 }
@@ -204,13 +223,7 @@ pub async fn router(
         Arc::new(HttpApiKeyValidator::new());
 
     // Default clients and data handlers
-    // Linear uses real implementations; others remain NoOp for now
-    let github_client: Arc<
-        dyn inbound_sync::providers::github::GitHubClient,
-    > = Arc::new(NoOpGitHubClient);
-    let github_data_handler: Arc<
-        dyn inbound_sync::providers::github::GitHubDataHandler,
-    > = Arc::new(NoOpGitHubDataHandler);
+    // GitHub and Linear use real implementations; others remain NoOp for now
     let repo_repository: Arc<dyn crate::domain::RepoRepository> =
         Arc::new(
             crate::interface_adapter::gateway::repo_repository::RepoRepositoryImpl::new(
@@ -224,6 +237,16 @@ pub async fn router(
         repo_repository.clone(),
         sync_state_repo.clone(),
         database_manager_db.clone(),
+    ));
+    let github_token_provider =
+        Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
+    let github_client: Arc<
+        dyn inbound_sync::providers::github::GitHubClient,
+    > = Arc::new(OAuthGitHubClient::new(github_token_provider));
+    let github_data_handler: Arc<
+        dyn inbound_sync::providers::github::GitHubDataHandler,
+    > = Arc::new(DefaultGitHubDataHandler::new(
+        library_data_repository.clone(),
     ));
     let linear_token_provider =
         Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
@@ -455,11 +478,14 @@ pub async fn router(
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),
+            webhook_endpoint_repo.clone(),
+            sync_state_repo.clone(),
         )
         .await,
     );
 
     let parquet_storage = build_parquet_storage().await?;
+    let image_store = build_image_store().await?;
 
     let schema: graphql::AppSchema = Schema::build(
         graphql::Query::default(),
@@ -470,6 +496,10 @@ pub async fn router(
     .data(oauth_bootstrap.clone())
     .data(auth_app_trait.clone())
     .data(library_app.clone())
+    // Registered on its own as well as inside `library_app` so that
+    // `User::organizations` can tell a Library organization from any
+    // other tenant without pulling in the whole application.
+    .data(library_app.organization_repo.clone())
     .data(integration_query_state)
     .data(github.clone())
     .data(inbound_sync_query_state)
@@ -527,6 +557,42 @@ pub async fn router(
         axum::Router::new()
     };
 
+    // The MCP SSE transport is Non-GA for the same reason the
+    // collaboration WebSocket is: it needs a process that outlives a
+    // single request. `POST /mcp` carries every MCP client that can hold
+    // one round trip and stays registered unconditionally.
+    let mcp_sse_router = if mcp_sse_enabled() {
+        tracing::warn!(
+            env = MCP_SSE_ENABLED_ENV,
+            "enabling Non-GA MCP SSE transport routes"
+        );
+        // `/sse` and `/mcp/sse` are the two paths MCP clients probe for,
+        // depending on how they read the server's base path.
+        axum::Router::new()
+            .route("/sse", get(handler::mcp_sse::mcp_sse_handler))
+            .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
+            .route(
+                "/messages",
+                post(handler::mcp_sse::mcp_sse_messages_handler),
+            )
+            .route(
+                "/mcp/messages",
+                post(handler::mcp_sse::mcp_sse_messages_handler),
+            )
+    } else {
+        tracing::info!(
+            env = MCP_SSE_ENABLED_ENV,
+            "MCP SSE transport routes disabled; POST /mcp is unaffected"
+        );
+        axum::Router::new()
+    };
+
+    // Photon Engine sync. Off unless LIBRARY_PHOTON_ENGINE_ENABLED is set;
+    // see `crate::photon_engine` for why, and for the authorization boundary
+    // these routes sit behind.
+    let engine_router =
+        crate::photon_engine::engine_router(&library_db).await?;
+
     // Webhook router
     let webhook_router =
         inbound_sync::adapter::create_webhook_router(webhook_handler_state);
@@ -540,7 +606,27 @@ pub async fn router(
         .route(
             "/docs/:org/:repo/:data_id/md",
             get(handler::docs::view_doc_markdown),
+        )
+        // Registered before the `:data_id` route would ever be tried
+        // for it; axum matches static segments ahead of captures, so
+        // `languages` cannot be mistaken for a document id.
+        .route(
+            "/docs/:org/:repo/languages",
+            get(handler::translation::list_doc_languages),
         );
+
+    // Reading an image is unauthenticated on purpose: an `<img>` carries no
+    // bearer token, so the unguessable id in the URL is the credential.
+    let image_router = axum::Router::new()
+        .route(
+            "/v1beta/repos/:org/:repo/images",
+            post(handler::image::upload_image),
+        )
+        .route(
+            "/v1beta/repos/:org/:repo/images/:image_id",
+            get(handler::image::view_image),
+        )
+        .layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES));
 
     let app = axum::Router::new()
         .route("/", axum::routing::get(health_check))
@@ -580,7 +666,10 @@ pub async fn router(
         )
         .merge(handler::create_router())
         .merge(docs_router)
+        .merge(image_router)
         .merge(collab_router)
+        .merge(mcp_sse_router)
+        .merge(engine_router)
         .merge(webhook_router)
         // Layer order matters: outermost (first in chain) to innermost
         // Layers are applied in reverse order of declaration:
@@ -614,6 +703,7 @@ pub async fn router(
         .layer(Extension(library_app))
         .layer(Extension(database_app))
         .layer(Extension(parquet_storage))
+        .layer(Extension(image_store))
         // Keep webhook worker alive by retaining the shutdown sender when enabled.
         .layer(Extension(shutdown_tx))
         .layer(Extension(schema));
@@ -633,8 +723,62 @@ async fn version() -> Json<VersionResponse> {
 
 async fn build_parquet_storage(
 ) -> Result<ParquetStorage, Box<dyn std::error::Error>> {
-    let parquet_bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
+    let bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
         .unwrap_or_else(|_| "library-parquet".to_string());
+    let (storage, presign_storage) = build_bucket_storage(&bucket).await?;
+    Ok(ParquetStorage::new(storage, presign_storage, bucket))
+}
+
+/// Where record body images go. Production speaks to Tachyon storage as
+/// the Library service account; everywhere else falls back to the MinIO
+/// the API already runs against, so development needs no Tachyon account.
+/// `LIBRARY_IMAGE_STORAGE=tachyon|bucket` overrides the default choice.
+async fn build_image_store(
+) -> Result<Arc<dyn ImageObjectStore>, Box<dyn std::error::Error>> {
+    let environment = std::env::var("ENVIRONMENT")
+        .unwrap_or_else(|_| "dev".to_string())
+        .to_lowercase();
+    let is_production =
+        environment == "prod" || environment == "production";
+    let use_tachyon = match std::env::var("LIBRARY_IMAGE_STORAGE")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "tachyon" => true,
+        "bucket" => false,
+        _ => is_production,
+    };
+
+    if use_tachyon {
+        let base_url = std::env::var("TACHYON_API_URL")
+            .unwrap_or_else(|_| "https://api.n1.tachy.one".to_string());
+        let auth_token = std::env::var("SERVICE_AUTH_TOKEN").map_err(
+            |_| "SERVICE_AUTH_TOKEN must be set to store images in Tachyon storage",
+        )?;
+        return Ok(Arc::new(TachyonImageStore::new(
+            base_url,
+            auth_token,
+            crate::domain::LIBRARY_TENANT.to_string(),
+        )));
+    }
+
+    let bucket = std::env::var("LIBRARY_IMAGE_BUCKET")
+        .unwrap_or_else(|_| "library-images".to_string());
+    let (storage, presign_storage) = build_bucket_storage(&bucket).await?;
+    Ok(Arc::new(BucketImageStore::new(
+        storage,
+        presign_storage,
+        bucket,
+    )))
+}
+
+/// Object storage for one bucket: S3 in production, MinIO everywhere else.
+/// The second driver signs URLs against the endpoint clients can reach,
+/// which in local development is not the endpoint the API talks to.
+async fn build_bucket_storage(
+    bucket: &str,
+) -> Result<(Arc<dyn Storage>, Arc<dyn Storage>), Box<dyn std::error::Error>>
+{
     let environment =
         std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
     let environment_lower = environment.to_lowercase();
@@ -644,40 +788,34 @@ async fn build_parquet_storage(
         || std::env::var("SKIP_MINIO_SETUP")
             .map(|value| matches!(value.as_str(), "true" | "1" | "TRUE"))
             .unwrap_or(false);
-    let (storage, presign_storage): (Arc<dyn Storage>, Arc<dyn Storage>) =
-        if is_production {
-            let s3 = S3Driver::new()? as Arc<dyn Storage>;
-            (s3.clone(), s3)
-        } else {
-            let access_key = std::env::var("MINIO_ROOT_USER")
-                .unwrap_or_else(|_| "admin".to_string());
-            let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
-                .unwrap_or_else(|_| "password".to_string());
-            let storage_url = std::env::var("MINIO_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:9000".to_string());
-            let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
-                .unwrap_or_else(|_| storage_url.clone());
-            let minio = MinioDriver::new(&MinioConfiguration {
-                storage_url,
-                access_key: access_key.clone(),
-                secret_key: secret_key.clone(),
-            })?;
-            if !skip_minio_setup {
-                minio.create_bucket(&parquet_bucket).await?;
-            }
-            let public_minio = MinioDriver::new(&MinioConfiguration {
-                storage_url: public_storage_url,
-                access_key,
-                secret_key,
-            })?;
-            (minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>)
-        };
 
-    Ok(ParquetStorage::new(
-        storage,
-        presign_storage,
-        parquet_bucket,
-    ))
+    if is_production {
+        let s3 = S3Driver::new()? as Arc<dyn Storage>;
+        return Ok((s3.clone(), s3));
+    }
+
+    let access_key = std::env::var("MINIO_ROOT_USER")
+        .unwrap_or_else(|_| "admin".to_string());
+    let secret_key = std::env::var("MINIO_ROOT_PASSWORD")
+        .unwrap_or_else(|_| "password".to_string());
+    let storage_url = std::env::var("MINIO_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:9000".to_string());
+    let public_storage_url = std::env::var("MINIO_PUBLIC_ENDPOINT")
+        .unwrap_or_else(|_| storage_url.clone());
+    let minio = MinioDriver::new(&MinioConfiguration {
+        storage_url,
+        access_key: access_key.clone(),
+        secret_key: secret_key.clone(),
+    })?;
+    if !skip_minio_setup {
+        minio.create_bucket(bucket).await?;
+    }
+    let public_minio = MinioDriver::new(&MinioConfiguration {
+        storage_url: public_storage_url,
+        access_key,
+        secret_key,
+    })?;
+    Ok((minio as Arc<dyn Storage>, public_minio as Arc<dyn Storage>))
 }
 
 fn build_webhook_runtime(
@@ -738,6 +876,27 @@ mod tests {
         assert!(!env_flag_enabled("false"));
         assert!(!env_flag_enabled("1"));
         assert!(!env_flag_enabled("yes"));
+    }
+
+    /// The SSE transport must stay off unless a deployment opts in.
+    /// Registering it on Lambda would advertise an endpoint that hangs:
+    /// the instance holding the stream cannot also answer the messages
+    /// posted against it.
+    #[test]
+    fn mcp_sse_is_disabled_unless_explicitly_enabled() {
+        // Absent the flag the routes must stay unregistered. Read the
+        // variable rather than assuming it is unset, so a developer who
+        // enabled the transport in their shell does not see a failure
+        // that says nothing about the code.
+        match std::env::var(super::MCP_SSE_ENABLED_ENV) {
+            Ok(value) => {
+                assert_eq!(
+                    super::mcp_sse_enabled(),
+                    env_flag_enabled(&value)
+                );
+            }
+            Err(_) => assert!(!super::mcp_sse_enabled()),
+        }
     }
 
     #[test]

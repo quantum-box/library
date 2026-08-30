@@ -1,0 +1,51 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "user-guide",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": [
+        "workspace",
+        "library-user-guide",
+        "dev"
+      ],
+      "port": 5020
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": [
+        "workspace",
+        "library-web",
+        "dev"
+      ],
+      "port": 5010
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/client",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "client-storybook",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/client",
+        "run",
+        "storybook",
+        "--",
+        "--no-open",
+        "-p",
+        "6016"
+      ],
+      "port": 6016
+    }
+  ]
+}

@@ -37,12 +37,17 @@ impl FromStr for DefaultRole {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Owner" => Ok(Self::Owner),
-            "Manager" => Ok(Self::Manager),
-            "General" => Ok(Self::General),
-            "Store" => Ok(Self::Store),
-            other => Err(format!("unknown DefaultRole: `{other}`")),
+        // Tachyon serialises roles in upper case (`OWNER`), while this
+        // enum renders them capitalised (`Owner`). Matching the exact
+        // casing meant every role read back from the API failed to
+        // parse, and callers that fall back on `General` treated even
+        // tenant owners as ordinary members.
+        match s.to_ascii_lowercase().as_str() {
+            "owner" => Ok(Self::Owner),
+            "manager" => Ok(Self::Manager),
+            "general" => Ok(Self::General),
+            "store" => Ok(Self::Store),
+            _ => Err(format!("unknown DefaultRole: `{s}`")),
         }
     }
 }
@@ -467,4 +472,50 @@ pub trait UserPolicyMappingRepository:
         tenant_id: &TenantId,
         resource_scope: &str,
     ) -> errors::Result<Vec<UserPolicy>>;
+}
+
+#[cfg(test)]
+mod default_role_tests {
+    use super::DefaultRole;
+    use std::str::FromStr;
+
+    #[test]
+    fn parses_the_upper_case_roles_the_api_returns() {
+        assert_eq!(
+            DefaultRole::from_str("OWNER").unwrap(),
+            DefaultRole::Owner
+        );
+        assert_eq!(
+            DefaultRole::from_str("MANAGER").unwrap(),
+            DefaultRole::Manager
+        );
+        assert_eq!(
+            DefaultRole::from_str("GENERAL").unwrap(),
+            DefaultRole::General
+        );
+        assert_eq!(
+            DefaultRole::from_str("STORE").unwrap(),
+            DefaultRole::Store
+        );
+    }
+
+    #[test]
+    fn still_parses_its_own_display_form() {
+        for role in [
+            DefaultRole::Owner,
+            DefaultRole::Manager,
+            DefaultRole::General,
+            DefaultRole::Store,
+        ] {
+            assert_eq!(
+                DefaultRole::from_str(&role.to_string()).unwrap(),
+                role
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_roles() {
+        assert!(DefaultRole::from_str("administrator").is_err());
+    }
 }

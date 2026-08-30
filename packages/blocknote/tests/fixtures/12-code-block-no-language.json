@@ -1,0 +1,32 @@
+[
+  {
+    "id": "block-1",
+    "type": "codeBlock",
+    "props": {
+      "language": "text"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "plain code\nsecond line",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "block-2",
+    "type": "codeBlock",
+    "props": {
+      "language": "typescript"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "const x: number = 1",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

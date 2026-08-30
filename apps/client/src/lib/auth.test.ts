@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearAuthTokens,
+  getValidAuthTokens,
   loadAuthTokens,
   loadStoredAuthIdentity,
   refreshAccessToken,
@@ -87,6 +88,7 @@ describe('Library authentication', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
+          Username: 'person',
           UserAttributes: [
             { Name: 'sub', Value: 'cognito-user' },
             { Name: 'email', Value: 'person@example.test' },
@@ -143,6 +145,47 @@ describe('Library authentication', () => {
       platformId: 'platform-1',
       accessToken: 'cognito-access-token',
       allowSignUp: true,
+    })
+  })
+
+  it('keeps the account username when signing in with an email alias', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          AuthenticationResult: {
+            AccessToken: 'cognito-access-token',
+            RefreshToken: 'cognito-refresh-token',
+            ExpiresIn: 900,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          Username: 'person',
+          UserAttributes: [{ Name: 'email', Value: 'person@example.test' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            signIn: {
+              id: 'library-user',
+              email: 'person@example.test',
+            },
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const tokens = await signInWithCredentials('person@example.test', 'secret')
+
+    expect(tokens.username).toBe('person')
+    expect(requestBody(fetchMock.mock.calls[0]!)).toMatchObject({
+      AuthParameters: {
+        USERNAME: 'person@example.test',
+        PASSWORD: 'secret',
+      },
     })
   })
 
@@ -229,6 +272,50 @@ describe('Library authentication', () => {
       reason: 'refreshed',
     })
     window.removeEventListener('library-auth-change', authChange)
+  })
+
+  it('keeps the session when a refresh fails for a transient reason', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem(
+      'library_auth',
+      JSON.stringify(storedTokens({ expiresAt: now / 1000 + 60 })),
+    )
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(refreshStoredAuthTokens()).rejects.toThrow('Failed to fetch')
+
+    // The refresh token is untouched, and the stale-but-unexpired access token
+    // is still worth sending until the retry succeeds.
+    expect(localStorage.getItem('library_auth')).not.toBeNull()
+    await expect(getValidAuthTokens()).resolves.toMatchObject({
+      accessToken: 'stored-access-token',
+    })
+  })
+
+  it('keeps the session when the Library platform call fails during refresh', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem(
+      'library_auth',
+      JSON.stringify(storedTokens({ expiresAt: now / 1000 - 1 })),
+    )
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          AuthenticationResult: {
+            AccessToken: 'refreshed-access-token',
+            ExpiresIn: 3600,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'internal error' }, 500))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(refreshStoredAuthTokens()).rejects.toThrow()
+    expect(localStorage.getItem('library_auth')).not.toBeNull()
   })
 
   it('clears the centralized session when refresh is rejected', async () => {

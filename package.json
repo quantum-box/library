@@ -4,7 +4,8 @@
   "license": "MIT",
   "packageManager": "yarn@4.4.1",
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/user-guide"
   ],
   "scripts": {
     "dev": "yarn workspace library-web dev",
@@ -18,7 +19,11 @@
     "test:e2e": "yarn workspace library-web test:e2e",
     "tsc": "yarn workspace library-web ts",
     "smoke:library-rest-e2e": "scripts/library-rest-e2e-smoke.sh",
-    "check:rust-workspace-cycles": "node scripts/check-rust-workspace-cycles.mjs"
+    "check:rust-workspace-cycles": "node scripts/check-rust-workspace-cycles.mjs",
+    "guide:dev": "yarn workspace library-user-guide dev",
+    "guide:build": "yarn workspace library-user-guide build",
+    "guide:lint": "yarn workspace library-user-guide lint",
+    "guide:ts": "yarn workspace library-user-guide ts"
   },
   "resolutions": {
     "webpack": "5.101.2",

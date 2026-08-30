@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tachyon_sdk::auth::ExecutorAction;
+use tachyon_sdk::auth::{ExecutorAction, OperatorId};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -29,12 +29,13 @@ use crate::handler::library_executor_extractor::{
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::markdown_composer::compose_markdown;
 use crate::usecase::{
-    AddDataInputData, AddPropertyInputData, CreateRepoInputData,
-    CreateSourceInputData, DeleteDataInputData, DeletePropertyInputData,
-    DeleteRepoInputData, DeleteSourceInputData, FindSourcesInputData,
-    GetPropertiesInputData, GetSourceInputData, LibraryOrg,
-    PropertyDataInputData, PropertyDataValueInputData, SearchDataInputData,
-    SearchRepoInputData, UpdateDataInputData, UpdatePropertyInputData,
+    AddDataInputData, AddPropertyInputData, CreateOrganizationInputData,
+    CreateRepoInputData, CreateSourceInputData, DeleteDataInputData,
+    DeletePropertyInputData, DeleteRepoInputData, DeleteSourceInputData,
+    FindSourcesInputData, GetPropertiesInputData, GetSourceInputData,
+    LibraryOrg, PropertyDataInputData, PropertyDataValueInputData,
+    SearchDataInputData, SearchRepoInputData, UpdateDataInputData,
+    UpdateOrganizationInputData, UpdatePropertyInputData,
     UpdateRepoInputData, UpdateSourceInputData, ViewDataInputData,
     ViewDataListInputData, ViewOrgInputData, ViewRepoInputData,
 };
@@ -53,8 +54,8 @@ static MCP_OAUTH_STORE: Lazy<Mutex<McpOAuthStore>> =
 pub struct JsonRpcRequest {
     #[allow(dead_code)]
     jsonrpc: Option<String>,
-    id: Option<Value>,
-    method: String,
+    pub(crate) id: Option<Value>,
+    pub(crate) method: String,
     params: Option<Value>,
 }
 
@@ -69,6 +70,34 @@ struct ToolCallParams {
 struct OrgRepoArgs {
     org: String,
     repo: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OrgArgs {
+    org: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateOrgArgs {
+    name: String,
+    username: String,
+    description: Option<String>,
+    website: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateOrgArgs {
+    org: String,
+    name: String,
+    description: Option<String>,
+    website: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetPropertyArgs {
+    org: String,
+    repo: String,
+    property_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -367,6 +396,15 @@ struct McpSource {
     url: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct McpOrganization {
+    id: String,
+    username: String,
+    name: String,
+    description: Option<String>,
+    website: Option<String>,
+}
+
 #[axum::debug_handler]
 pub async fn mcp_handler(
     headers: HeaderMap,
@@ -374,22 +412,62 @@ pub async fn mcp_handler(
     Extension(sdk): Extension<Arc<SdkAuthApp>>,
     Json(request): Json<JsonRpcRequest>,
 ) -> Response {
-    if should_challenge(&headers, &request) {
-        return auth_challenge_response();
+    match dispatch_rpc(&headers, library_app, sdk, request).await {
+        // A notification carries no id, so JSON-RPC has nothing to answer
+        // with. The plain HTTP transport still owes the caller a body, and
+        // an empty object is what MCP clients expect there.
+        Ok(None) => Json(json!({})).into_response(),
+        Ok(Some(response)) => Json(response).into_response(),
+        Err(challenge) => challenge,
+    }
+}
+
+/// Authenticate one JSON-RPC request and run it, independent of the
+/// transport that carried it. Both `POST /mcp` and the SSE pair
+/// (`GET /sse` + `POST /messages`) go through here, so the two transports
+/// cannot drift apart on which tools demand credentials.
+///
+/// `Ok(None)` means the request was a notification and owes no response.
+/// `Err` carries the ready-made `401` challenge.
+pub(crate) async fn dispatch_rpc(
+    headers: &HeaderMap,
+    library_app: Arc<LibraryApp>,
+    sdk: Arc<SdkAuthApp>,
+    request: JsonRpcRequest,
+) -> Result<Option<Value>, Response> {
+    if should_challenge(headers, &request) {
+        return Err(auth_challenge_response());
     }
 
     let org_hint = request_org_hint(&request);
     let auth = resolve_auth_context(
-        &headers,
+        headers,
         sdk,
         library_app.clone(),
         org_hint.as_deref(),
     )
     .await;
     if mcp_auth_required() && !auth.is_authenticated() {
-        return auth_challenge_response();
+        return Err(auth_challenge_response());
     }
-    Json(handle_rpc(library_app, auth, request).await).into_response()
+
+    let is_notification = request.id.is_none();
+    let response = handle_rpc(library_app, auth, request).await;
+    if is_notification {
+        return Ok(None);
+    }
+    Ok(Some(response))
+}
+
+/// Whether a stream opened without credentials must be refused. The SSE
+/// transport checks this at `GET /sse` so a client learns it needs to
+/// authenticate before it holds an open session it can never use.
+pub(crate) fn sse_requires_auth(headers: &HeaderMap) -> bool {
+    mcp_auth_required() && bearer_token(headers).is_none()
+}
+
+pub(crate) fn unauthorized_response() -> Response {
+    auth_challenge_response()
 }
 
 async fn handle_rpc(
@@ -434,9 +512,29 @@ async fn call_tool(
     .map_err(|err| json_rpc_error(-32602, err.to_string()))?;
 
     match params.name.as_str() {
+        "get_org" => {
+            let args: OrgArgs = parse_tool_args(params.arguments)?;
+            let output = get_org(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "get_property" => {
+            let args: GetPropertyArgs = parse_tool_args(params.arguments)?;
+            let output = get_property(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "create_org" => {
+            let args: CreateOrgArgs = parse_tool_args(params.arguments)?;
+            let output = create_org(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "update_org" => {
+            let args: UpdateOrgArgs = parse_tool_args(params.arguments)?;
+            let output = update_org(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
         "search_repos" => {
             let args: SearchReposArgs = parse_tool_args(params.arguments)?;
-            let output = search_repos(library_app, args).await?;
+            let output = search_repos(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         "get_repo" => {
@@ -578,11 +676,133 @@ async fn list_data(
     }))
 }
 
+async fn get_org(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: OrgArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let input = ViewOrgInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        organization_username: args.org,
+    };
+    let output = library_app
+        .view_org
+        .execute(&input)
+        .await
+        .map_err(tool_execution_error)?;
+    let repos = output.repos.iter().map(repo_to_mcp).collect::<Vec<_>>();
+
+    Ok(json!({
+        "organization": organization_to_mcp(&output.organization),
+        "repos": repos,
+    }))
+}
+
+async fn create_org(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: CreateOrgArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "create_org")?;
+    // A new organization has no tenancy of its own yet, so it is created
+    // against the Library platform tenant the same way `POST /v1beta/orgs`
+    // does.
+    let multi_tenancy = tachyon_sdk::auth::MultiTenancy::new_platform(
+        crate::LIBRARY_TENANT.clone(),
+    );
+    let input = CreateOrganizationInputData {
+        executor: &executor,
+        multi_tenancy: &multi_tenancy,
+        name: args.name,
+        username: args.username,
+        description: args.description,
+        website: args.website,
+    };
+    let organization = library_app
+        .create_organization
+        .execute(&input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "organization": organization_to_mcp(&organization) }))
+}
+
+async fn update_org(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdateOrgArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "update_org")?;
+    let library_org = authenticated_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let input = UpdateOrganizationInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        username: args.org,
+        name: args.name,
+        description: args.description,
+        website: args.website,
+    };
+    let output = library_app
+        .update_organization
+        .execute(&input)
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({
+        "organization": organization_to_mcp(&output.organization),
+    }))
+}
+
+async fn get_property(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: GetPropertyArgs,
+) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = LibraryOrg::with_org(args.org.clone());
+    let input = GetPropertiesInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
+        org_username: args.org,
+        repo_username: args.repo,
+    };
+    let properties = library_app
+        .get_properties
+        .execute(input)
+        .await
+        .map_err(tool_execution_error)?;
+    let property = properties
+        .iter()
+        .find(|property| *property.id() == args.property_id)
+        .ok_or_else(|| {
+            json_rpc_error(
+                -32000,
+                format!("Property not found: {}", args.property_id),
+            )
+        })?;
+
+    Ok(json!({ "property": property_to_mcp(property) }))
+}
+
 async fn search_repos(
     library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
     args: SearchReposArgs,
 ) -> Result<Value, Value> {
+    let executor = read_executor(&auth);
+    let library_org = args
+        .org
+        .clone()
+        .map(LibraryOrg::with_org)
+        .unwrap_or_default();
     let input = SearchRepoInputData {
+        executor: &executor,
+        multi_tenancy: &library_org,
         org_username: args.org,
         name: args.query,
         limit: Some(args.limit.unwrap_or(20).clamp(1, 100)),
@@ -1283,6 +1503,21 @@ fn property_to_mcp(property: &Property) -> McpProperty {
     }
 }
 
+fn organization_to_mcp(
+    organization: &crate::domain::Organization,
+) -> McpOrganization {
+    McpOrganization {
+        id: organization.id().to_string(),
+        username: organization.username().to_string(),
+        name: organization.name().to_string(),
+        description: organization
+            .description()
+            .as_ref()
+            .map(ToString::to_string),
+        website: organization.website().as_ref().map(ToString::to_string),
+    }
+}
+
 fn source_to_mcp(source: &crate::domain::Source) -> McpSource {
     McpSource {
         id: source.id().to_string(),
@@ -1308,15 +1543,27 @@ fn initialize_result() -> Value {
 fn tools_list_result(is_authenticated: bool) -> Value {
     let mut tools = vec![
         json!({
+            "name": "get_org",
+            "description": "Get one Library organization and the repositories it owns.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org": { "type": "string" }
+                },
+                "required": ["org"]
+            }
+        }),
+        json!({
             "name": "search_repos",
-            "description": "Search Library repositories, optionally within one organization.",
+            "description": "Search Library repositories within one organization you belong to.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "org": { "type": "string" },
                     "query": { "type": "string" },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
-                }
+                },
+                "required": ["org"]
             }
         }),
         json!({
@@ -1380,6 +1627,19 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             "inputSchema": org_repo_schema()
         }),
         json!({
+            "name": "get_property",
+            "description": "Get one property of a Library repository, including its type and meta.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org": { "type": "string" },
+                    "repo": { "type": "string" },
+                    "property_id": { "type": "string" }
+                },
+                "required": ["org", "repo", "property_id"]
+            }
+        }),
+        json!({
             "name": "list_sources",
             "description": "List sources attached to a Library repository.",
             "inputSchema": org_repo_schema()
@@ -1401,6 +1661,34 @@ fn tools_list_result(is_authenticated: bool) -> Value {
 
     if is_authenticated {
         tools.extend([
+            json!({
+                "name": "create_org",
+                "description": "Create a Library organization.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "username": { "type": "string" },
+                        "description": { "type": "string" },
+                        "website": { "type": "string" }
+                    },
+                    "required": ["name", "username"]
+                }
+            }),
+            json!({
+                "name": "update_org",
+                "description": "Update a Library organization. `name` is required; omitting `description` or `website` clears it.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "name": { "type": "string" },
+                        "description": { "type": "string" },
+                        "website": { "type": "string" }
+                    },
+                    "required": ["org", "name"]
+                }
+            }),
             json!({
                 "name": "create_repo",
                 "description": "Create a Library repository.",
@@ -1723,8 +2011,16 @@ async fn resolve_auth_context(
     }
 
     if token.starts_with("pk_") {
-        if let Some(org_username) = org_username {
-            if let Ok(org) = library_app
+        // A key is verified against the organization that issued it, so
+        // something has to name that organization. `tools/call` names it
+        // in the tool arguments, but every other method names nothing —
+        // `tools/list` above all, which is what an operator runs to see
+        // whether a key reaches the write tools. Let the caller state it
+        // through `x-operator-id`, exactly as the REST routes already
+        // allow. With neither, there is nothing to verify the key
+        // against and the request stays anonymous.
+        let operator_id = match org_username {
+            Some(org_username) => library_app
                 .view_org
                 .execute(&ViewOrgInputData {
                     executor: &tachyon_sdk::auth::Executor::SystemUser,
@@ -1734,24 +2030,28 @@ async fn resolve_auth_context(
                     organization_username: org_username.to_string(),
                 })
                 .await
+                .ok()
+                .map(|org| org.organization.id().clone()),
+            None => operator_id_header(headers),
+        };
+
+        if let Some(operator_id) = operator_id {
+            if let Ok(service_account) =
+                sdk.verify_api_key(&operator_id, &token).await
             {
-                if let Ok(service_account) =
-                    sdk.verify_api_key(org.organization.id(), &token).await
-                {
-                    let executor = LibraryExecutor {
-                        inner: LibraryExecutorKind::ServiceAccount(
-                            Box::new(service_account),
-                        ),
-                        original_token: Some(token),
-                    };
-                    let caller_auth = executor
-                        .caller_auth_app(&sdk)
-                        .expect("authenticated MCP executor has a token");
-                    return McpAuthContext::authenticated(
-                        executor,
-                        caller_auth,
-                    );
-                }
+                let executor = LibraryExecutor {
+                    inner: LibraryExecutorKind::ServiceAccount(Box::new(
+                        service_account,
+                    )),
+                    original_token: Some(token),
+                };
+                let caller_auth = executor
+                    .caller_auth_app(&sdk)
+                    .expect("authenticated MCP executor has a token");
+                return McpAuthContext::authenticated(
+                    executor,
+                    caller_auth,
+                );
             }
         }
         return McpAuthContext::anonymous();
@@ -1835,6 +2135,18 @@ fn request_org_hint(request: &JsonRpcRequest) -> Option<String> {
                 .and_then(Value::as_str)
                 .map(ToOwned::to_owned)
         })
+}
+
+/// The organization a caller names when the request itself does not.
+/// Mirrors the REST executor extractor so one key behaves the same way
+/// on both surfaces.
+fn operator_id_header(headers: &HeaderMap) -> Option<OperatorId> {
+    headers
+        .get("x-operator-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<OperatorId>().ok())
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -2440,6 +2752,50 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `pk_` key is verified against the organization that issued it,
+    /// and only `tools/call` names one in its arguments. Without this
+    /// header there is nothing for `tools/list` to verify against, so an
+    /// operator checking a key's reach saw the anonymous tool list no
+    /// matter how privileged the key was.
+    #[test]
+    fn an_operator_id_header_names_the_organization_to_verify_against() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-operator-id",
+            "tn_01kxz0ytmhnab5vh53011cwctj".parse().unwrap(),
+        );
+
+        let operator_id = operator_id_header(&headers);
+
+        assert_eq!(
+            operator_id.map(|id| id.to_string()).as_deref(),
+            Some("tn_01kxz0ytmhnab5vh53011cwctj")
+        );
+    }
+
+    #[test]
+    fn a_missing_or_blank_operator_id_header_names_nothing() {
+        assert!(operator_id_header(&HeaderMap::new()).is_none());
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-operator-id", "   ".parse().unwrap());
+        assert!(operator_id_header(&headers).is_none());
+    }
+
+    #[test]
+    fn request_org_hint_only_reads_tool_call_arguments() {
+        // `tools/list` carries no arguments, which is precisely why the
+        // header fallback above exists.
+        let list = JsonRpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(1)),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+
+        assert_eq!(request_org_hint(&list), None);
+    }
 
     #[test]
     fn tools_list_includes_library_data_tools() {

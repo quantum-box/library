@@ -42,7 +42,15 @@ fn render_blocks(blocks: &[Value]) -> String {
             .and_then(Value::as_str)
             .unwrap_or_default();
         if typ == "numberedListItem" {
-            ordinal += 1;
+            // A `start` prop rebases the run; later items count on from it.
+            match block
+                .get("props")
+                .and_then(|props| props.get("start"))
+                .and_then(Value::as_u64)
+            {
+                Some(start) => ordinal = start as usize,
+                None => ordinal += 1,
+            }
         }
         let Some(chunk) = render_block(block, typ, ordinal) else {
             continue;
@@ -80,6 +88,15 @@ fn prop_str<'a>(block: &'a Value, name: &str) -> Option<&'a str> {
         .as_str()
 }
 
+/// The image block's resize width, rounded to whole pixels.
+fn prop_width(block: &Value) -> Option<u64> {
+    let width = block
+        .get("props")
+        .and_then(|props| props.get("previewWidth"))?
+        .as_f64()?;
+    (width.is_finite() && width > 0.0).then(|| width.round() as u64)
+}
+
 fn indent(text: &str, prefix: &str) -> String {
     text.lines()
         .map(|line| {
@@ -100,6 +117,9 @@ fn render_block(
 ) -> Option<String> {
     let content = render_inline(block.get("content"));
     let children = children_of(block);
+    // Nested blocks have to line up past the parent's marker or CommonMark
+    // reads them as a sibling list, which splits a numbered run in two.
+    let mut child_indent = "  ".to_string();
 
     let rendered = match typ {
         "paragraph" => {
@@ -123,7 +143,9 @@ fn render_block(
         }
         "bulletListItem" | "toggleListItem" => Some(format!("- {content}")),
         "numberedListItem" => {
-            Some(format!("{}. {content}", ordinal.max(1)))
+            let marker = format!("{}. ", ordinal.max(1));
+            child_indent = " ".repeat(marker.chars().count());
+            Some(format!("{marker}{content}"))
         }
         "checkListItem" => {
             let checked = block
@@ -131,8 +153,9 @@ fn render_block(
                 .and_then(|props| props.get("checked"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let marker = if checked { "x" } else { " " };
-            Some(format!("- [{marker}] {content}"))
+            let marker = if checked { "- [x] " } else { "- [ ] " };
+            child_indent = " ".repeat(marker.chars().count());
+            Some(format!("{marker}{content}"))
         }
         "codeBlock" => {
             let language = prop_str(block, "language").unwrap_or("");
@@ -154,7 +177,20 @@ fn render_block(
                 }
                 quoted.push_str(&nested);
             }
-            return Some(indent(&quoted, "> "));
+            // Every line needs the marker, blank ones included: an
+            // unmarked blank line ends the quote and splits it in two.
+            let quoted = quoted
+                .lines()
+                .map(|line| {
+                    if line.is_empty() {
+                        ">".to_string()
+                    } else {
+                        format!("> {line}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Some(quoted);
         }
         "divider" | "pageBreak" => Some("---".to_string()),
         "image" => {
@@ -163,6 +199,14 @@ fn render_block(
                 .filter(|value| !value.is_empty())
                 .or_else(|| prop_str(block, "name"))
                 .unwrap_or_default();
+            // A resized image carries its width in a URL fragment so plain
+            // Markdown keeps it; the client editor reads the same dialect.
+            let url = match prop_width(block) {
+                Some(width) if !url.contains("#w=") => {
+                    format!("{url}#w={width}")
+                }
+                _ => url.to_string(),
+            };
             Some(format!("![{caption}]({url})"))
         }
         "video" | "audio" | "file" => {
@@ -173,6 +217,16 @@ fn render_block(
             Some(format!("[{name}]({url})"))
         }
         "table" => render_table(block.get("content")),
+        // An embedded HTML document, previewed in a sandboxed frame. The
+        // source is the value, so a fenced block is its faithful Markdown
+        // view. The `preview` info word is what from_markdown keys on to
+        // rebuild this block instead of a plain code block; the leading
+        // `html` keeps GitHub's highlighter working.
+        "htmlPreview" => {
+            let source = prop_str(block, "source").unwrap_or_default();
+            let source = source.trim_end_matches('\n');
+            Some(format!("```html preview\n{source}\n```"))
+        }
         // A block type this binary does not know -- most likely a plugin
         // added in a newer editor. Keep its text as a paragraph rather than
         // letting the content vanish from the GitHub sync.
@@ -189,7 +243,7 @@ fn render_block(
     match (rendered, nested.is_empty()) {
         (Some(text), true) => Some(text),
         (Some(text), false) => {
-            Some(format!("{text}\n{}", indent(&nested, "  ")))
+            Some(format!("{text}\n{}", indent(&nested, &child_indent)))
         }
         (None, true) => None,
         (None, false) => Some(nested),
@@ -214,6 +268,15 @@ fn raw_text(content: Option<&Value>) -> String {
         .collect()
 }
 
+/// A table cell is `{ type: "tableCell", content: [...] }`; older
+/// documents carry the inline array directly.
+fn render_cell(cell: &Value) -> String {
+    match cell.get("content") {
+        Some(content) => render_inline(Some(content)),
+        None => render_inline(Some(cell)),
+    }
+}
+
 fn render_table(content: Option<&Value>) -> Option<String> {
     let rows = content?.get("rows")?.as_array()?;
     if rows.is_empty() {
@@ -223,9 +286,7 @@ fn render_table(content: Option<&Value>) -> Option<String> {
     let cells_of = |row: &Value| -> Vec<String> {
         row.get("cells")
             .and_then(Value::as_array)
-            .map(|cells| {
-                cells.iter().map(|cell| render_inline(Some(cell))).collect()
-            })
+            .map(|cells| cells.iter().map(render_cell).collect())
             .unwrap_or_default()
     };
 

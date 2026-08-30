@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO repo_published_languages (repo_id, lang)\n                 VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "807a8c77eb723b7fd8506654b2e6f01f6d650b079edabbc6be73445892c7442a"
+}

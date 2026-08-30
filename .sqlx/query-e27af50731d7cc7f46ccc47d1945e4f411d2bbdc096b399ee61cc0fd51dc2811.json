@@ -1,0 +1,44 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT term, target_lang, translation\n             FROM repo_glossary_terms\n             WHERE repo_id = ?\n             ORDER BY term, target_lang",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "term",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_lang",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY",
+          "max_size": 64
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "translation",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e27af50731d7cc7f46ccc47d1945e4f411d2bbdc096b399ee61cc0fd51dc2811"
+}

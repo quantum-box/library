@@ -17,15 +17,36 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::app::LibraryApp;
-use crate::handler::library_executor_extractor::LibraryExecutor;
-use crate::usecase::markdown_composer::compose_markdown;
-use crate::usecase::{
-    LibraryOrg, ViewDataInputData, ViewDataListInputData,
+use crate::domain::translation::{
+    detect_source_language, negotiate_from_accept_language,
+    resolve_requested_language, source_hash, LanguageChoice, LanguageTag,
+    TranslationScope,
 };
+use crate::handler::library_executor_extractor::LibraryExecutor;
+use crate::usecase::library_client_url::data_url;
+use crate::usecase::markdown_composer::{
+    compose_markdown, compose_markdown_with_ui_url,
+};
+use crate::usecase::{
+    LibraryOrg, ViewDataInputData, ViewDataListInputData, ViewRepoInputData,
+};
+
+/// Language selection shared by every docs route.
+#[derive(Deserialize, IntoParams, Default)]
+#[into_params(parameter_in = Query)]
+pub struct DocsLangQuery {
+    /// BCP-47 tag. Anything the repo has not published is served as the
+    /// source text rather than refused, so a stale link never breaks.
+    pub lang: Option<String>,
+}
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct DocsListQuery {
+    /// BCP-47 tag, as on the other docs routes. Carried here rather
+    /// than in a second extractor because axum takes one `Query` per
+    /// handler.
+    pub lang: Option<String>,
     /// 1-origin page number. Defaults to 1.
     #[param(minimum = 1)]
     pub page: Option<u32>,
@@ -59,10 +80,39 @@ pub struct DocsListQuery {
 pub async fn list_docs(
     AxumPath((org, repo)): AxumPath<(String, String)>,
     Query(query): Query<DocsListQuery>,
+    headers: axum::http::HeaderMap,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     executor: LibraryExecutor,
-) -> errors::Result<impl IntoResponse> {
+) -> errors::Result<axum::response::Response> {
     let library_org = LibraryOrg::with_org(org.clone());
+    let path = format!("/docs/{org}/{repo}");
+
+    let language = resolve_doc_language(
+        &library_app,
+        &executor,
+        &library_org,
+        &org,
+        &repo,
+        query.lang.as_deref(),
+    )
+    .await?;
+
+    // Same redirect rule as the document page: the header picks a URL,
+    // never a body. Leaving it off here would make the listing and the
+    // pages it links to disagree about what a reader gets.
+    if query.lang.is_none() {
+        if let Some(tag) = negotiate_from_accept_language(
+            headers
+                .get(axum::http::header::ACCEPT_LANGUAGE)
+                .and_then(|value| value.to_str().ok()),
+            &language.published,
+        ) {
+            return Ok(axum::response::Redirect::temporary(&format!(
+                "{path}?lang={tag}"
+            ))
+            .into_response());
+        }
+    }
 
     let input = ViewDataListInputData {
         executor: &executor,
@@ -85,7 +135,14 @@ pub async fn list_docs(
             org = html_escape(&org),
             repo = html_escape(&repo),
             id = html_escape(data.id().as_ref()),
-            title = html_escape(&data.name().to_string()),
+            title = html_escape(
+                language
+                    .record_names
+                    .get(data.id().as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| data.name().to_string())
+                    .as_str()
+            ),
         ));
     }
 
@@ -110,13 +167,28 @@ pub async fn list_docs(
         String::new()
     };
 
+    // The listing has no body text, so the document titles are the
+    // only evidence of what language this repo is written in.
+    let titles = data_list
+        .iter()
+        .map(|data| data.name().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lang = match language.choice.translated_tag() {
+        Some(tag) => tag.to_string(),
+        None => document_lang(&titles),
+    };
+    let link_tags = language_link_tags(&path, &language);
+    let langbar = language_bar(&path, &language);
+
     let html = format!(
         r#"<!DOCTYPE html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{repo} — Docs</title>
+{link_tags}
 {STYLE}
 </head>
 <body>
@@ -126,6 +198,7 @@ pub async fn list_docs(
     </div>
 </header>
 <main>
+    {langbar}
     <h1>Documents</h1>
     <p class="meta">{total} documents</p>
     <ul class="doc-list">{items_html}</ul>
@@ -141,7 +214,7 @@ pub async fn list_docs(
         STYLE = DOCS_STYLE,
     );
 
-    Ok(Html(html))
+    Ok(docs_response(html, &lang, &language))
 }
 
 /// `GET /docs/:org/:repo/:data_id`
@@ -154,7 +227,8 @@ pub async fn list_docs(
     params(
         ("org" = String, Path, description = "Organization username"),
         ("repo" = String, Path, description = "Repository username"),
-        ("data_id" = String, Path, description = "Data ID")
+        ("data_id" = String, Path, description = "Data ID"),
+        DocsLangQuery
     ),
     responses(
         (status = 200, description = "Rendered document HTML", body = String, content_type = "text/html"),
@@ -166,33 +240,78 @@ pub async fn list_docs(
 #[axum::debug_handler]
 pub async fn view_doc(
     AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
+    Query(lang_query): Query<DocsLangQuery>,
+    headers: axum::http::HeaderMap,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     executor: LibraryExecutor,
-) -> errors::Result<impl IntoResponse> {
+) -> errors::Result<axum::response::Response> {
     let library_org = LibraryOrg::with_org(org.clone());
+    let path = format!("/docs/{org}/{repo}/{data_id}");
+
+    let language = resolve_doc_language(
+        &library_app,
+        &executor,
+        &library_org,
+        &org,
+        &repo,
+        lang_query.lang.as_deref(),
+    )
+    .await?;
+
+    // With no explicit choice, an `Accept-Language` match redirects to
+    // the canonical URL for that language rather than varying the body:
+    // one URL, one language, one cache entry.
+    if lang_query.lang.is_none() {
+        if let Some(tag) = negotiate_from_accept_language(
+            headers
+                .get(axum::http::header::ACCEPT_LANGUAGE)
+                .and_then(|value| value.to_str().ok()),
+            &language.published,
+        ) {
+            return Ok(axum::response::Redirect::temporary(&format!(
+                "{path}?lang={tag}"
+            ))
+            .into_response());
+        }
+    }
 
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
         org_username: org.clone(),
         repo_username: repo.clone(),
-        data_id,
+        data_id: data_id.clone(),
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
+    let properties = apply_property_name_translations(
+        &properties,
+        &language.property_names,
+    );
     let markdown = compose_markdown(&data, &properties);
 
     // Strip YAML frontmatter before rendering
     let body_md = strip_frontmatter(&markdown);
     let html_body = markdown_to_html(body_md);
 
+    // The declared language is the one actually being served: the
+    // requested translation when there is one, otherwise whatever the
+    // document is written in.
+    let lang = match language.choice.translated_tag() {
+        Some(tag) => tag.to_string(),
+        None => document_lang(&format!("{}\n{}", data.name(), body_md)),
+    };
+    let link_tags = language_link_tags(&path, &language);
+    let langbar = language_bar(&path, &language);
+
     let html = format!(
         r#"<!DOCTYPE html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} — {repo} Docs</title>
+{link_tags}
 {STYLE}
 </head>
 <body>
@@ -202,35 +321,46 @@ pub async fn view_doc(
     </div>
 </header>
 <main class="document">
+    {langbar}
     <article>{html_body}</article>
     <a href="/docs/{org_e}/{repo_e}" class="back">&larr; Back to documents</a>
 </main>
 <footer><p>Powered by <strong>Library</strong></p></footer>
 </body>
 </html>"#,
-        title = html_escape(&data.name().to_string()),
+        title = html_escape(
+            language
+                .record_names
+                .get(data.id().as_ref())
+                .cloned()
+                .unwrap_or_else(|| data.name().to_string())
+                .as_str()
+        ),
         repo = html_escape(&repo),
         org_e = html_escape(&org),
         repo_e = html_escape(&repo),
         STYLE = DOCS_STYLE,
     );
 
-    Ok(Html(html))
+    Ok(docs_response(html, &lang, &language))
 }
 
 /// `GET /docs/:org/:repo/:data_id/md`
 ///
-/// Returns the raw composed Markdown (with YAML frontmatter).
+/// Returns the raw composed Markdown (with YAML frontmatter). The
+/// frontmatter carries `url`, the address of this document in the
+/// Library client, alongside `id` and `title`.
 #[utoipa::path(
     get,
     path = "/docs/{org}/{repo}/{data_id}/md",
     params(
         ("org" = String, Path, description = "Organization username"),
         ("repo" = String, Path, description = "Repository username"),
-        ("data_id" = String, Path, description = "Data ID")
+        ("data_id" = String, Path, description = "Data ID"),
+        DocsLangQuery
     ),
     responses(
-        (status = 200, description = "Composed Markdown with YAML frontmatter", body = String, content_type = "text/markdown"),
+        (status = 200, description = "Composed Markdown with YAML frontmatter, including the document's `url` in the Library client", body = String, content_type = "text/markdown"),
         (status = 403, description = "Private repository access denied"),
         (status = 404, description = "Organization, repository, or data not found")
     ),
@@ -239,30 +369,393 @@ pub async fn view_doc(
 #[axum::debug_handler]
 pub async fn view_doc_markdown(
     AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
+    Query(lang_query): Query<DocsLangQuery>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     executor: LibraryExecutor,
 ) -> errors::Result<impl IntoResponse> {
     let library_org = LibraryOrg::with_org(org.clone());
 
+    let language = resolve_doc_language(
+        &library_app,
+        &executor,
+        &library_org,
+        &org,
+        &repo,
+        lang_query.lang.as_deref(),
+    )
+    .await?;
+
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: org,
-        repo_username: repo,
-        data_id,
+        org_username: org.clone(),
+        repo_username: repo.clone(),
+        data_id: data_id.clone(),
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
-    let markdown = compose_markdown(&data, &properties);
+    let properties = apply_property_name_translations(
+        &properties,
+        &language.property_names,
+    );
+    let ui_url = data_url(&org, &repo, &data_id);
+    let markdown =
+        compose_markdown_with_ui_url(&data, &properties, Some(&ui_url));
+
+    // No `Accept-Language` redirect here. This route is read by agents
+    // and scripts as much as by browsers, and a 302 on a data endpoint
+    // surprises callers that a browser would not notice.
+    let content_language = match language.choice.translated_tag() {
+        Some(tag) => tag.to_string(),
+        None => document_lang(&markdown),
+    };
 
     Ok((
         StatusCode::OK,
-        [("Content-Type", "text/markdown; charset=utf-8")],
+        [
+            ("Content-Type", "text/markdown; charset=utf-8".to_string()),
+            ("Content-Language", content_language),
+            (
+                "X-Library-Translation",
+                language.translation_state().to_string(),
+            ),
+        ],
         markdown,
     ))
 }
 
+// ──────────────────────── Language resolution ───────────────────────
+
+/// Default lifetime of a cached repo context.
+///
+/// Publishing a language becomes visible to readers within this window.
+const DEFAULT_DOCS_REPO_CACHE_TTL_SECS: u64 = 60;
+
+/// Distinct repos held at once. Public traffic concentrates on a few.
+const DOCS_REPO_CACHE_CAPACITY: usize = 512;
+
+/// The repo facts every docs request needs before it can pick a
+/// language: which repo this is, and what it publishes.
+///
+/// Cached because resolving them costs an organization lookup and a
+/// repo lookup that `view_data` is about to repeat, plus a query for
+/// the published set — three round trips added to the anonymous read
+/// path, paid even by repos that publish nothing.
+///
+/// This is not an authorization cache. It holds only identifiers and a
+/// language list, and the `view_data` / `view_data_list` call that
+/// follows still performs the full visibility check on every request,
+/// hit or miss.
+#[derive(Debug, Clone)]
+struct DocsRepoContext {
+    organization_id: value_object::TenantId,
+    published: Vec<LanguageTag>,
+}
+
+static DOCS_REPO_CONTEXT: once_cell::sync::Lazy<
+    crate::ttl_cache::TtlCache<(String, String), DocsRepoContext>,
+> = once_cell::sync::Lazy::new(|| {
+    crate::ttl_cache::TtlCache::new(
+        docs_repo_cache_ttl(),
+        DOCS_REPO_CACHE_CAPACITY,
+    )
+});
+
+/// `DOCS_REPO_CACHE_TTL_SECS` overrides the default, and `0` disables
+/// the cache outright — the switch to reach for when a stale entry has
+/// to be ruled out without a deploy.
+fn docs_repo_cache_ttl() -> std::time::Duration {
+    let secs = std::env::var("DOCS_REPO_CACHE_TTL_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DOCS_REPO_CACHE_TTL_SECS);
+    std::time::Duration::from_secs(secs)
+}
+
+/// The language a docs response is being served in, with the cached
+/// labels needed to render it.
+struct DocLanguage {
+    /// Everything the repo publishes, for the switcher and `hreflang`.
+    published: Vec<LanguageTag>,
+    choice: LanguageChoice,
+    /// Property definition id -> translated heading.
+    property_names: std::collections::HashMap<String, String>,
+    /// Record id -> translated name. The listing is nothing but these,
+    /// so an untranslated map here is what a reader notices first.
+    record_names: std::collections::HashMap<String, String>,
+}
+
+impl DocLanguage {
+    /// The value for `X-Library-Translation`, which lets an API or
+    /// agent caller tell a translation from the original.
+    fn translation_state(&self) -> &'static str {
+        match self.choice {
+            LanguageChoice::Source => "source",
+            LanguageChoice::Translated(_) => "fresh",
+        }
+    }
+}
+
+/// Resolves the requested language and loads its schema labels.
+///
+/// Never fails on an unknown language: the allow-list decides, and
+/// anything outside it degrades to the source text.
+async fn resolve_doc_language(
+    library_app: &LibraryApp,
+    executor: &LibraryExecutor,
+    library_org: &LibraryOrg,
+    org: &str,
+    repo: &str,
+    requested: Option<&str>,
+) -> errors::Result<DocLanguage> {
+    let cache_key = (org.to_string(), repo.to_string());
+    let context = match DOCS_REPO_CONTEXT.get(&cache_key) {
+        Some(hit) => hit,
+        None => {
+            let repo_entity = library_app
+                .view_repo
+                .execute(&ViewRepoInputData {
+                    executor,
+                    multi_tenancy: library_org,
+                    organization_username: org.to_string(),
+                    repo_username: repo.to_string(),
+                })
+                .await?
+                .repo;
+            let context = DocsRepoContext {
+                organization_id: repo_entity.organization_id().clone(),
+                published: library_app
+                    .published_language_repo
+                    .find_by_repo(repo_entity.id())
+                    .await?,
+            };
+            DOCS_REPO_CONTEXT.insert(cache_key, context.clone());
+            context
+        }
+    };
+    let published = context.published;
+
+    let choice = resolve_requested_language(requested, &published);
+
+    let (property_names, record_names) = match choice.translated_tag() {
+        None => Default::default(),
+        Some(tag) => {
+            let tenant = &context.organization_id;
+            (
+                translated_texts(
+                    library_app,
+                    tenant,
+                    TranslationScope::PropertyDef,
+                    tag,
+                )
+                .await?,
+                translated_texts(
+                    library_app,
+                    tenant,
+                    TranslationScope::RecordName,
+                    tag,
+                )
+                .await?,
+            )
+        }
+    };
+
+    Ok(DocLanguage {
+        published,
+        choice,
+        property_names,
+        record_names,
+    })
+}
+
+/// Loads one scope's cached text, dropping rows that carry none.
+///
+/// A pending or failed row is absent from the map, which is what makes
+/// the read path degrade to the source per item rather than per page.
+async fn translated_texts(
+    library_app: &LibraryApp,
+    tenant: &value_object::TenantId,
+    scope: TranslationScope,
+    tag: &LanguageTag,
+) -> errors::Result<std::collections::HashMap<String, String>> {
+    Ok(library_app
+        .translation_repo
+        .find_scope(tenant, scope, tag)
+        .await?
+        .into_iter()
+        .filter_map(|(target_id, record)| {
+            record.translated.map(|text| (target_id, text))
+        })
+        .collect())
+}
+
+/// Rebuilds the property list with translated headings.
+///
+/// Only the definition name changes; ids, types and configuration are
+/// carried through untouched, so nothing downstream can tell the
+/// difference apart from the label.
+fn apply_property_name_translations(
+    properties: &[database_manager::domain::Property],
+    names: &std::collections::HashMap<String, String>,
+) -> Vec<database_manager::domain::Property> {
+    properties
+        .iter()
+        .map(|property| match names.get(&property.id().to_string()) {
+            Some(translated) => {
+                database_manager::domain::Property::with_meta_json(
+                    property.id(),
+                    property.tenant_id(),
+                    property.database_id(),
+                    translated,
+                    property.property_type(),
+                    *property.is_indexed(),
+                    *property.property_num(),
+                    property.meta_json().clone(),
+                )
+            }
+            None => property.clone(),
+        })
+        .collect()
+}
+
+/// Renders the `hreflang` set and canonical link for a docs page.
+///
+/// Only published languages are advertised. Announcing a language that
+/// falls back to the source would tell a search engine a translation
+/// exists where it does not.
+fn language_link_tags(path: &str, language: &DocLanguage) -> String {
+    let mut tags = String::new();
+    let canonical = match language.choice.translated_tag() {
+        Some(tag) => format!("{path}?lang={tag}"),
+        None => path.to_string(),
+    };
+    tags.push_str(&format!(
+        r#"<link rel="canonical" href="{}">"#,
+        html_escape(&canonical)
+    ));
+    // The source is what a reader gets with no preference expressed.
+    tags.push_str(&format!(
+        r#"<link rel="alternate" hreflang="x-default" href="{}">"#,
+        html_escape(path)
+    ));
+    for tag in &language.published {
+        tags.push_str(&format!(
+            r#"<link rel="alternate" hreflang="{tag}" href="{}?lang={tag}">"#,
+            html_escape(path)
+        ));
+    }
+    tags
+}
+
+/// Renders the language switcher and, on a translation, the notice that
+/// the text is machine generated.
+///
+/// Hiding the machine-translation notice would leave a reader who spots
+/// an error with no way back to the original.
+fn language_bar(path: &str, language: &DocLanguage) -> String {
+    if language.published.is_empty() {
+        return String::new();
+    }
+
+    let mut bar = String::from(r#"<div class="langbar">"#);
+    let is_source = language.choice.translated_tag().is_none();
+    if is_source {
+        bar.push_str(r#"<span class="current">original</span>"#);
+    } else {
+        bar.push_str(&format!(
+            r#"<a href="{}">original</a>"#,
+            html_escape(path)
+        ));
+    }
+    for tag in &language.published {
+        let selected = language
+            .choice
+            .translated_tag()
+            .is_some_and(|current| current == tag);
+        if selected {
+            bar.push_str(&format!(r#"<span class="current">{tag}</span>"#));
+        } else {
+            bar.push_str(&format!(
+                r#"<a href="{}?lang={tag}">{tag}</a>"#,
+                html_escape(path)
+            ));
+        }
+    }
+    bar.push_str("</div>");
+
+    if !is_source {
+        bar.push_str(
+            r#"<p class="mt-notice">Machine translated. <a href=""#,
+        );
+        bar.push_str(&html_escape(path));
+        bar.push_str(r#"">View the original</a>.</p>"#);
+    }
+
+    bar
+}
+
+/// Wraps a rendered docs page with the headers a public, cacheable,
+/// possibly-translated page needs.
+///
+/// `Vary: Accept-Language` is deliberately not set. The header only ever
+/// drives a redirect, so the body for a given URL never depends on it,
+/// and declaring the variance would fragment every CDN entry by browser.
+fn docs_response(
+    html: String,
+    lang: &str,
+    language: &DocLanguage,
+) -> axum::response::Response {
+    use axum::http::header::{
+        HeaderValue, CACHE_CONTROL, CONTENT_LANGUAGE, ETAG,
+    };
+
+    // A strong validator over the rendered bytes. Conditional GET is not
+    // implemented yet, so this only helps caches dedupe; it is correct
+    // as far as it goes and costs one hash.
+    let etag = format!("\"{}\"", &source_hash(&html)[..32]);
+    let state = language.translation_state();
+
+    let mut response = Html(html).into_response();
+    let headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(lang) {
+        headers.insert(CONTENT_LANGUAGE, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&etag) {
+        headers.insert(ETAG, value);
+    }
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(
+            "public, max-age=300, stale-while-revalidate=86400",
+        ),
+    );
+    // `state` is one of a fixed set of ASCII literals, so this cannot
+    // fail; the fallible form avoids a panic path regardless.
+    if let Ok(value) = HeaderValue::from_str(state) {
+        headers.insert("x-library-translation", value);
+    }
+    response
+}
+
 // ───────────────────────────── Helpers ──────────────────────────────
+
+/// The `lang` attribute served when the text does not identify its own
+/// language.
+///
+/// Latin-script prose could be any of a dozen languages, so the page
+/// keeps the value it has always declared rather than guessing.
+const UNDETERMINED_DOC_LANG: &str = "en";
+
+/// Resolves the `lang` attribute for a rendered docs page.
+///
+/// The pages used to declare `en` unconditionally, which mislabelled
+/// every Japanese repo. Detection is script-based, so it settles the
+/// languages that Library actually mixes and abstains on the rest.
+fn document_lang(text: &str) -> String {
+    detect_source_language(text)
+        .map(|tag| tag.to_string())
+        .unwrap_or_else(|| UNDETERMINED_DOC_LANG.to_string())
+}
 
 /// Convert Markdown to HTML using pulldown-cmark with common extensions.
 fn markdown_to_html(md: &str) -> String {
@@ -415,6 +908,28 @@ article th, article td {
 article th { background: var(--surface); font-weight: 600; }
 article ul, article ol { margin-bottom: 1rem; padding-left: 1.5rem; }
 article li { margin-bottom: 0.25rem; }
+.langbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+}
+.langbar a, .langbar .current {
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    text-decoration: none;
+}
+.langbar a { background: var(--surface); color: var(--accent); }
+.langbar a:hover { text-decoration: underline; }
+.langbar .current { background: var(--accent); color: #fff; }
+.mt-notice {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 1.5rem;
+}
+.mt-notice a { color: var(--accent); }
 .back {
     display: inline-block;
     margin-top: 2rem;
@@ -454,6 +969,41 @@ mod tests {
         let html = markdown_to_html(md);
         assert!(html.contains("<h1>Hello</h1>"));
         assert!(html.contains("<p>World</p>"));
+    }
+
+    #[test]
+    fn document_lang_reports_the_language_of_japanese_content() {
+        assert_eq!(document_lang("# 設計メモ\n\n本文はこちらです"), "ja");
+    }
+
+    #[test]
+    fn document_lang_falls_back_for_latin_script_content() {
+        // Latin script cannot single out a language, so the page keeps
+        // the value it declared before detection existed.
+        assert_eq!(
+            document_lang("# Design notes\n\nThe body goes here"),
+            "en"
+        );
+    }
+
+    #[test]
+    fn document_lang_falls_back_when_there_is_nothing_to_judge() {
+        assert_eq!(document_lang(""), "en");
+    }
+
+    #[test]
+    fn document_lang_emits_a_value_safe_to_inline_unescaped() {
+        // The attribute is interpolated into the template without
+        // escaping, which is only sound while the tag stays
+        // alphanumeric.
+        for text in ["設計メモの本文", "이것은 한국어 문서입니다", ""]
+        {
+            let lang = document_lang(text);
+            assert!(
+                lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+                "`{lang}` must be safe to inline into the template"
+            );
+        }
     }
 
     #[test]

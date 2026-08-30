@@ -8,6 +8,14 @@ const ESCAPED: [char; 6] = ['\\', '`', '*', '_', '[', ']'];
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for character in text.chars() {
+        // A newline inside a run is a hard break. Emitting it bare would
+        // re-parse as a space, so the line join survives one round trip and
+        // then collapses; the backslash form is what CommonMark reads back
+        // as a break.
+        if character == '\n' {
+            out.push_str("\\\n");
+            continue;
+        }
         if ESCAPED.contains(&character) {
             out.push('\\');
         }
@@ -96,6 +104,17 @@ pub fn plain_text(document: &Value) -> String {
 
 fn collect_plain_text(blocks: &[Value], out: &mut String) {
     for block in blocks {
+        // htmlPreview keeps its document in props, not content; without
+        // this a body holding only a preview would read as empty and be
+        // treated as a cleared value.
+        if block.get("type").and_then(Value::as_str) == Some("htmlPreview")
+            && let Some(source) = block
+                .get("props")
+                .and_then(|props| props.get("source"))
+                .and_then(Value::as_str)
+        {
+            out.push_str(source);
+        }
         collect_inline_text(block.get("content"), out);
         out.push('\n');
         if let Some(children) =
@@ -119,6 +138,11 @@ fn collect_inline_text(content: Option<&Value>, out: &mut String) {
             }
             collect_inline_text(item.get("content"), out);
         }
+        return;
+    }
+    // A wrapper such as `tableCell`, which holds its runs under `content`.
+    if content.get("content").is_some() {
+        collect_inline_text(content.get("content"), out);
         return;
     }
     // `tableContent` and friends: walk whatever arrays it holds.

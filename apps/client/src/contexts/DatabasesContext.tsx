@@ -6,9 +6,12 @@ import {
   createLibraryRepository,
   fetchLibraryOrganizations,
   fetchLibraryRepositories,
+  importLibraryTenant,
+  type CreatedLibraryOrganization,
   type LibraryOrganization,
   type LibraryRepository,
 } from '../lib/recordsApi'
+import { t } from '../i18n'
 
 export interface WorkspaceDatabase {
   id: string
@@ -34,6 +37,7 @@ interface DatabasesContextValue {
   setSelectedOrganizationId: (organizationId: string | null) => void
   refreshRepositories: () => Promise<void>
   createOrganization: (name: string, username: string) => Promise<WorkspaceOrganization>
+  importOrganization: (tenantId: string) => Promise<WorkspaceOrganization>
   createRepository: (
     organizationId: string,
     name: string,
@@ -91,7 +95,7 @@ function defaultOrganizationId(
 
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  return 'Failed to load repositories'
+  return t('errors.loadRepositories')
 }
 
 export function DatabasesProvider({ children }: { children: ReactNode }) {
@@ -124,8 +128,9 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const createOrganization = useCallback(async (name: string, username: string) => {
-    const created = await createLibraryOrganization({ name, username })
+  // Creating an organization and importing an existing tenant both end with a
+  // new organization the user should land on, so they share the reconciliation.
+  const adoptOrganization = useCallback(async (created: CreatedLibraryOrganization) => {
     await refreshRepositories()
     const organization = {
       id: created.id,
@@ -139,6 +144,17 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     return organization
   }, [refreshRepositories])
 
+  const createOrganization = useCallback(
+    async (name: string, username: string) =>
+      adoptOrganization(await createLibraryOrganization({ name, username })),
+    [adoptOrganization],
+  )
+
+  const importOrganization = useCallback(
+    async (tenantId: string) => adoptOrganization(await importLibraryTenant(tenantId)),
+    [adoptOrganization],
+  )
+
   const createRepository = useCallback(async (
     organizationId: string,
     name: string,
@@ -147,7 +163,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     isPublic: boolean,
   ) => {
     const organization = organizations.find((candidate) => candidate.id === organizationId)
-    if (!organization) throw new Error('Select an organization for this repository.')
+    if (!organization) throw new Error(t('createRepo.organizationRequired'))
 
     const orgUsername = databases.find(
       (database) => database.operatorId === organization.id && database.orgUsername,
@@ -206,6 +222,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       setSelectedOrganizationId,
       refreshRepositories,
       createOrganization,
+      importOrganization,
       createRepository,
       addDatabase,
       removeDatabase,
@@ -217,6 +234,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       canRemoveDatabase,
       databases,
       createOrganization,
+      importOrganization,
       createRepository,
       getDatabase,
       organizations,

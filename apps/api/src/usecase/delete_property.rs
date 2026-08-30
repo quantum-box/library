@@ -43,7 +43,7 @@ impl DeletePropertyInputPort for DeleteProperty {
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                action: "database:DeleteProperty",
+                action: "library:DatabaseDeleteProperty",
             })
             .await?;
 

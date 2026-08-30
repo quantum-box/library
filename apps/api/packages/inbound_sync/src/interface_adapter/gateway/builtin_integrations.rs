@@ -54,7 +54,7 @@ impl BuiltinIntegrationRegistry {
 }
 
 fn is_ga_integration(provider: OAuthProvider) -> bool {
-    matches!(provider, OAuthProvider::Linear)
+    matches!(provider, OAuthProvider::Linear | OAuthProvider::Github)
 }
 
 #[cfg(test)]
@@ -67,13 +67,17 @@ mod ga_filter_tests {
             BuiltinIntegrationRegistry::with_experimental_integrations(
                 false,
             );
-        let providers = registry
+        let mut providers = registry
             .integrations
             .values()
             .map(|integration| integration.provider())
             .collect::<Vec<_>>();
+        providers.sort_by_key(|p| format!("{p:?}"));
 
-        assert_eq!(providers, vec![OAuthProvider::Linear]);
+        assert_eq!(
+            providers,
+            vec![OAuthProvider::Github, OAuthProvider::Linear]
+        );
     }
 
     #[test]
@@ -161,7 +165,7 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             "Connect your GitHub repositories to sync issues, pull requests, \
              and code changes with Library.",
             IntegrationCategory::CodeManagement,
-            SyncCapability::Inbound,
+            SyncCapability::Bidirectional,
         )
         .with_icon("github")
         .with_objects(vec![
@@ -179,8 +183,7 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             auth_url: "https://github.com/login/oauth/authorize".to_string(),
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             supports_refresh: false,
-        })
-        .as_non_ga(provider_reason(Provider::Github)),
+        }),
         // Linear Integration
         Integration::new(
             IntegrationId::new("int_linear"),
@@ -478,11 +481,8 @@ mod tests {
             .unwrap();
         assert_eq!(github.name(), "GitHub");
         assert!(github.requires_oauth());
-        assert!(!github.is_enabled());
-        assert_eq!(
-            github.unavailable_reason(),
-            Some(provider_reason(Provider::Github))
-        );
+        assert!(github.is_enabled());
+        assert_eq!(github.unavailable_reason(), None);
     }
 
     #[tokio::test]
@@ -502,12 +502,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_only_linear_is_enabled_for_ga_marketplace() {
+    async fn test_only_ga_providers_are_enabled_for_marketplace() {
         let registry = BuiltinIntegrationRegistry::new();
 
         let enabled = registry.find_enabled().await.unwrap();
 
-        assert_eq!(enabled.len(), 1);
-        assert_eq!(enabled[0].provider(), OAuthProvider::Linear);
+        let mut providers = enabled
+            .iter()
+            .map(|integration| integration.provider())
+            .collect::<Vec<_>>();
+        providers.sort_by_key(|p| format!("{p:?}"));
+        assert_eq!(
+            providers,
+            vec![OAuthProvider::Github, OAuthProvider::Linear]
+        );
     }
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM repo_glossary_terms\n                 WHERE repo_id = ? AND term = ? AND target_lang = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "c2978a63b15d7e2f97fece6714bfae6903aea8bbf0fa7407de5ab8719317ed32"
+}

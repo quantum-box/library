@@ -1,33 +1,22 @@
 import { ClientError } from 'graphql-request'
 
-import type { AuthTokens } from '@/auth/cognito'
-
-const AUTH_STORAGE_KEY = 'library_auth'
+import { loadStoredTokens } from '@/auth/token-manager'
 
 interface AuthContext {
   accessToken: string
   userId: string
 }
 
+/**
+ * The stored token may be stale; callers hand it to the API client, which
+ * refreshes before the request goes out.
+ */
 export const getAuthContext = (): AuthContext | null => {
-  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+  const tokens = loadStoredTokens()
+  if (!tokens?.accessToken || !tokens.userId) {
     return null
   }
-
-  const stored = localStorage.getItem(AUTH_STORAGE_KEY)
-  if (!stored) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(stored) as Partial<AuthTokens>
-    if (!parsed.accessToken || !parsed.userId) {
-      return null
-    }
-    return { accessToken: parsed.accessToken, userId: parsed.userId }
-  } catch {
-    return null
-  }
+  return { accessToken: tokens.accessToken, userId: tokens.userId }
 }
 
 export const getGraphQLErrorMessage = (error: unknown): string => {

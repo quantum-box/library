@@ -31,7 +31,13 @@ export type AccessibleTenant = {
   canImportToLibrary: Scalars['Boolean']['output'];
   hasLibraryOrg: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
-  staffCount: Scalars['Int']['output'];
+  /**
+   * Members of the tenant, or null when the caller could not count
+   * them: listing a tenant's users needs permission inside that
+   * tenant, which a caller who merely belongs to it does not always
+   * hold. Null means unknown, never empty, so do not render it as 0.
+   */
+  staffCount?: Maybe<Scalars['Int']['output']>;
   tenantId: Scalars['String']['output'];
   username: Scalars['String']['output'];
 };
@@ -296,6 +302,8 @@ export type ExchangeOAuthCodeInput = {
 
 /** Repository configuration for ext_github */
 export type ExtGithubRepoConfigInput = {
+  /** Target branch (defaults to "main") */
+  branch?: InputMaybe<Scalars['String']['input']>;
   /** Default path (optional, supports {{name}} placeholder) */
   defaultPath?: InputMaybe<Scalars['String']['input']>;
   /** Display label (optional) */
@@ -904,7 +912,12 @@ export type Mutation = {
    * For API key integrations, provide the API key.
    */
   connectIntegration: GqlConnection;
-  /** TODO: add English documentation */
+  /**
+   * [LIBRARY-API] Issue an API key for an organization.
+   *
+   * The returned `apiKey.value` is the only time the key itself is
+   * readable; afterwards only its name and id can be listed.
+   */
   createApiKey: ApiKeyResponse;
   /** TODO: add English documentation */
   createData: Data;
@@ -987,6 +1000,8 @@ export type Mutation = {
   removeRepoMember: Scalars['Boolean']['output'];
   /** Retry a failed webhook event. */
   retryWebhookEvent: GqlWebhookEvent;
+  /** [LIBRARY-API] Revoke an API key so it stops authenticating. */
+  revokeApiKey: Scalars['Boolean']['output'];
   /** [LIBRARY-API] Seed a tachyon tenant into Library organizations. */
   seedLibraryTenant: SeedLibraryTenantPayload;
   /** Send a test webhook to an endpoint. */
@@ -1214,6 +1229,11 @@ export type MutationRemoveRepoMemberArgs = {
 
 export type MutationRetryWebhookEventArgs = {
   eventId: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeApiKeyArgs = {
+  input: RevokeApiKeyInput;
 };
 
 
@@ -1493,6 +1513,12 @@ export type Query = {
   __typename?: 'Query';
   /** [LIBRARY-API] All Tachyon tenants the caller can access, with Library org flag. */
   accessibleTenants: Array<AccessibleTenant>;
+  /**
+   * [LIBRARY-API] List the API keys issued for an organization.
+   *
+   * Key values are not included: they are readable only in the response
+   * that created them.
+   */
   apiKeys: Array<PublicApiKey>;
   /** Get a single connection by ID. */
   connection?: Maybe<GqlConnection>;
@@ -1798,6 +1824,15 @@ export type RepoPolicy = {
   userId: Scalars['String']['output'];
 };
 
+export type RevokeApiKeyInput = {
+  /** Identifier of the key to revoke, as returned by `apiKeys`. */
+  apiKeyId: Scalars['String']['input'];
+  /** Organization that owns the key. */
+  organizationUsername: Scalars['String']['input'];
+  /** Service account holding the key. Defaults to `default`. */
+  serviceAccountName?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type RichTextValue = {
   __typename?: 'RichTextValue';
   /**
@@ -1942,7 +1977,11 @@ export type TenantSeedCandidate = {
   __typename?: 'TenantSeedCandidate';
   canImportToLibrary: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
-  staffCount: Scalars['Int']['output'];
+  /**
+   * Members of the tenant, or null when the caller could not count
+   * them. See `AccessibleTenant.staffCount`.
+   */
+  staffCount?: Maybe<Scalars['Int']['output']>;
   tenantId: Scalars['String']['output'];
   username: Scalars['String']['output'];
 };
@@ -2325,6 +2364,13 @@ export type GetApiKeysQueryVariables = Exact<{
 export type GetApiKeysQuery = { __typename?: 'Query', apiKeys: Array<{ __typename?: 'PublicApiKey', id: string, name: string, createdAt: any }> };
 
 export type ApiKeyItemFragment = { __typename?: 'PublicApiKey', id: string, name: string, createdAt: any };
+
+export type RevokeApiKeyMutationVariables = Exact<{
+  input: RevokeApiKeyInput;
+}>;
+
+
+export type RevokeApiKeyMutation = { __typename?: 'Mutation', revokeApiKey: boolean };
 
 export type GitHubListDirectoryContentsQueryVariables = Exact<{
   input: ListGitHubDirectoryInput;
@@ -3387,6 +3433,11 @@ export const GetApiKeysDocument = gql`
   }
 }
     `;
+export const RevokeApiKeyDocument = gql`
+    mutation revokeAPIKey($input: RevokeApiKeyInput!) {
+  revokeApiKey(input: $input)
+}
+    `;
 export const GitHubListDirectoryContentsDocument = gql`
     query GitHubListDirectoryContents($input: ListGitHubDirectoryInput!) {
   githubListDirectoryContents(input: $input) {
@@ -3703,6 +3754,9 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     getApiKeys(variables: GetApiKeysQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<GetApiKeysQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<GetApiKeysQuery>(GetApiKeysDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'getApiKeys', 'query');
     },
+    revokeAPIKey(variables: RevokeApiKeyMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<RevokeApiKeyMutation> {
+      return withWrapper((wrappedRequestHeaders) => client.request<RevokeApiKeyMutation>(RevokeApiKeyDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'revokeAPIKey', 'mutation');
+    },
     GitHubListDirectoryContents(variables: GitHubListDirectoryContentsQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<GitHubListDirectoryContentsQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<GitHubListDirectoryContentsQuery>(GitHubListDirectoryContentsDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'GitHubListDirectoryContents', 'query');
     },
@@ -3958,6 +4012,7 @@ export function ExchangeOAuthCodeInputSchema(): z.ZodObject<Properties<ExchangeO
 
 export function ExtGithubRepoConfigInputSchema(): z.ZodObject<Properties<ExtGithubRepoConfigInput>> {
   return z.object({
+    branch: z.string().nullish(),
     defaultPath: z.string().nullish(),
     label: z.string().nullish(),
     repo: z.string().min(1)
@@ -4092,6 +4147,14 @@ export function RemoveRepoMemberInputSchema(): z.ZodObject<Properties<RemoveRepo
   return z.object({
     repoId: z.string().min(1),
     userId: z.string().min(1)
+  })
+}
+
+export function RevokeApiKeyInputSchema(): z.ZodObject<Properties<RevokeApiKeyInput>> {
+  return z.object({
+    apiKeyId: z.string().min(1),
+    organizationUsername: z.string().min(1),
+    serviceAccountName: z.string().nullish()
   })
 }
 

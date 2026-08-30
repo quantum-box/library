@@ -220,6 +220,10 @@ Photon Live は一つの collaborative document を一つの coordination atom �
 
 ### 10. `apps/web` のみを primary client とする
 
+> **Superseded in part by [ADR-0007](ADR-0007-primary-client-apps-client.md) (2026-08-30)**
+> この section は無効である。primary client は `apps/client` (library v2) であり、`apps/web` (v1) は縮退中で新規の Photon / Property surface を持たない。
+> supersede されるのは §10 のみで、本 ADR の他 section は引き続き有効。
+
 この移行で変更する client は `apps/web` のみとする。`apps/client` は Photon integration、Property editor registry、optimistic state machine、tree projection の実装対象にしない。
 
 `apps/web` は次の adapter を持つ。

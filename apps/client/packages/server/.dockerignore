@@ -1,5 +1,0 @@
-target/
-photon.db
-*.db
-*.sqlite
-*.sqlite3

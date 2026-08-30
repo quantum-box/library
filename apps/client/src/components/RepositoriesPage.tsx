@@ -9,6 +9,7 @@ import {
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import type { DatabaseRecord } from '../data/mock'
 import { openCreateRepository } from '../lib/ui/workspaceEvents'
+import { useI18n } from '../i18n'
 import { DataLink } from './DataLink'
 
 function recordBelongsToRepository(record: DatabaseRecord, database: WorkspaceDatabase) {
@@ -71,6 +72,7 @@ function RepositoryRow({
 }
 
 export function RepositoriesPage() {
+  const { t } = useI18n()
   const { records } = useDatabaseRecords()
   const {
     databases,
@@ -106,23 +108,23 @@ export function RepositoriesPage() {
         !organizations.some((organization) => organization.id === database.operatorId),
     )
     if (ungrouped.length > 0) {
-      grouped.push({ key: 'ungrouped', label: 'Other', repositories: ungrouped })
+      grouped.push({ key: 'ungrouped', label: t('repositories.otherGroup'), repositories: ungrouped })
     }
     return grouped
-  }, [databases, organizations])
+  }, [databases, organizations, t])
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
         <FolderGit2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
-        <h1 className="truncate text-sm font-semibold">Repositories</h1>
+        <h1 className="truncate text-sm font-semibold">{t('sidebar.repositories.heading')}</h1>
         <Badge variant="neutral">{databases.length}</Badge>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Refresh repositories"
-            title="Refresh repositories"
+            aria-label={t('home.refreshRepositories')}
+            title={t('home.refreshRepositories')}
             disabled={repositoriesLoading}
             onClick={() => void refreshRepositories()}
           >
@@ -130,7 +132,7 @@ export function RepositoriesPage() {
           </Button>
           <Button variant="primary" size="sm" onClick={() => openCreateRepository()}>
             <Plus aria-hidden="true" />
-            New repository
+            {t('sidebar.repositories.new')}
           </Button>
         </div>
       </header>
@@ -139,10 +141,10 @@ export function RepositoriesPage() {
         {repositoriesError ? (
           <div className="px-4 py-6 md:px-5">
             <AlertCircle className="size-5 text-destructive" aria-hidden="true" />
-            <p className="mt-2 text-sm font-medium text-destructive">Repositories could not load</p>
+            <p className="mt-2 text-sm font-medium text-destructive">{t('home.repositoriesError')}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{repositoriesError}</p>
             <Button className="mt-3" size="sm" onClick={() => void refreshRepositories()}>
-              Try again
+              {t('common.tryAgain')}
             </Button>
           </div>
         ) : groups.length > 0 ? (
@@ -165,15 +167,15 @@ export function RepositoriesPage() {
           <div className="px-5 py-12 text-center">
             <FolderGit2 className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
             <p className="mt-3 text-sm font-medium">
-              {repositoriesLoading ? 'Loading repositories…' : 'No repositories yet'}
+              {repositoriesLoading
+                ? t('sidebar.repositories.loading')
+                : t('repositories.empty')}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Create a repository to start adding data, documents, and workflows.
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('repositories.emptyHint')}</p>
             {!repositoriesLoading && (
               <Button className="mt-4" variant="primary" size="sm" onClick={() => openCreateRepository()}>
                 <Plus aria-hidden="true" />
-                Create repository
+                {t('sidebar.repositories.create')}
               </Button>
             )}
           </div>

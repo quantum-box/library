@@ -93,6 +93,13 @@ spec:
           value: "https://api.n1.tachy.one"
         - name: LIBRARY_API_BASE_URL
           value: "https://library-api.txcloud.app"
+        # Origin the public API reports as a document's home, so callers
+        # such as corporate-site-v3 can link back without hard-coding a
+        # route. This is library-client (planetlibrary), not the older
+        # planet-library web app: integrators that follow the API's `url`
+        # land on the client and are carried off v1 for free.
+        - name: LIBRARY_CLIENT_BASE_URL
+          value: "https://planetlibrary.txcloud.app"
         - name: LIBRARY_TENANT_ID
           value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
         # Applied id of the library:org-creator custom policy
@@ -172,6 +179,31 @@ spec:
           value: tn_01j91h09tpj5ehwbwfwfxpak2b
         - name: VITE_COGNITO_USER_POOL_ID
           value: ap-northeast-1_8Ga4bK5M4
+        - name: VITE_LIBRARY_DOCS_URL
+          value: https://library-user-guide.txcloud.app
+    - name: library-user-guide
+      repository:
+        url: https://github.com/quantum-box/library
+        owner: quantum-box
+        name: library
+        defaultBranch: main
+      rootDirectory: apps/user-guide
+      watchPaths:
+        - apps/user-guide/**
+      framework: vite
+      deploymentTarget: cloudflare_pages
+      build:
+        installCommand: yarn install --immutable
+        command: yarn build
+        outputDirectory: dist
+        nodeVersion: "20"
+      envVars:
+        # The guide reads this API's OpenAPI document and GraphQL schema at
+        # page load, so a preview build documents whatever API it points at.
+        - name: VITE_LIBRARY_API_BASE_URL
+          value: https://library-api.txcloud.app
+        - name: VITE_LIBRARY_CLIENT_URL
+          value: https://planetlibrary.txcloud.app
     - name: library-client
       repository:
         url: https://github.com/quantum-box/library
@@ -206,3 +238,5 @@ spec:
           value: 5b0a8ncbi6v189p3un146fb6rf
         - name: VITE_COGNITO_REGION
           value: ap-northeast-1
+        - name: VITE_LIBRARY_DOCS_URL
+          value: https://library-user-guide.txcloud.app

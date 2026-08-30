@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Library Client",
-  "version": "0.1.0",
+  "productName": "Library",
+  "version": "../package.json",
   "identifier": "com.quantumbox.library.client",
   "build": {
     "frontendDist": "../dist",
@@ -12,14 +12,16 @@
   "app": {
     "windows": [
       {
-        "title": "Library Client",
+        "title": "Library",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
         "minHeight": 640,
         "center": true,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -53,9 +55,26 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/quantum-box/library/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0ODMxNjZDQjFGOURBREYKUldUZjJ2bXhiQmFEOUFjWFRWV3N5QndYOCtUZTVac2FzQU1tSlpQZVBpZXFLQ2ZuOUprWEdLRnYK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "wix": {
+        "upgradeCode": "053a7581-a632-5412-942e-82424a9627c5"
+      }
+    },
     "iOS": {
       "developmentTeam": "J8429VCGMR",
       "minimumSystemVersion": "14.0"

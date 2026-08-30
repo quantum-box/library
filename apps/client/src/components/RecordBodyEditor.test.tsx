@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RecordBodyEditor } from './RecordBodyEditor'
 
@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => {
     // Loosely typed: rich text tests replace this with realistic blocks.
     document: [{ id: 'body' }] as unknown[],
     tryParseMarkdownToBlocks: vi.fn((value: string) => [{ id: value || 'empty' }]),
+    tryParseHTMLToBlocks: vi.fn((value: string) => [{ id: `html:${value}` }]),
     replaceBlocks: vi.fn(),
     blocksToMarkdownLossy: vi.fn(() => ''),
+    blocksToHTMLLossy: vi.fn(() => ''),
   }
   return {
     editor,
@@ -16,7 +18,9 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('@blocknote/react', () => ({
+vi.mock('@blocknote/react', async (importOriginal) => ({
+  // Partial: the schema module needs the real createReactBlockSpec.
+  ...(await importOriginal<typeof import('@blocknote/react')>()),
   useCreateBlockNote: () => mocks.editor,
   useEditorChange: (onChange: typeof mocks.onEditorChange) => {
     mocks.onEditorChange = onChange
@@ -126,6 +130,60 @@ describe('RecordBodyEditor', () => {
     expect(onCommit).toHaveBeenCalledTimes(1)
     expect(JSON.parse(onCommit.mock.calls[0][0] as string)).toEqual(mocks.editor.document)
     expect(mocks.editor.blocksToMarkdownLossy).not.toHaveBeenCalled()
+  })
+
+  it('opens an html value as a sandboxed artifact preview, never parsed into blocks', () => {
+    const onCommit = vi.fn()
+    const { getByTestId } = render(
+      <RecordBodyEditor value="<h2>Heading</h2>" format="html" onCommit={onCommit} />,
+    )
+
+    const frame = getByTestId('html-preview-frame')
+    expect(frame.getAttribute('srcdoc')).toBe('<h2>Heading</h2>')
+    // allow-scripts without allow-same-origin: the document runs but gets an
+    // opaque origin, no reach into the app.
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(mocks.editor.replaceBlocks).not.toHaveBeenCalled()
+    expect(mocks.editor.tryParseHTMLToBlocks).not.toHaveBeenCalled()
+  })
+
+  it('opens an empty html property on the code tab, ready to write', () => {
+    const onCommit = vi.fn()
+    const { getByTestId } = render(
+      <RecordBodyEditor value="" format="html" onCommit={onCommit} />,
+    )
+
+    expect(getByTestId('html-artifact-code')).toBeTruthy()
+    expect(mocks.editor.replaceBlocks).not.toHaveBeenCalled()
+  })
+
+  it('reads an html property that still holds markdown as markdown', async () => {
+    const onCommit = vi.fn()
+    render(
+      <RecordBodyEditor value={'## Heading\n\nbody'} format="html" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalledTimes(1))
+
+    expect(mocks.editor.tryParseMarkdownToBlocks).toHaveBeenCalledWith('## Heading\n\nbody')
+    expect(mocks.editor.tryParseHTMLToBlocks).not.toHaveBeenCalled()
+  })
+
+  it('commits the edited source verbatim in html mode', () => {
+    const onCommit = vi.fn()
+    const { getByTestId, unmount } = render(
+      <RecordBodyEditor value="<p>before</p>" format="html" onCommit={onCommit} />,
+    )
+
+    fireEvent.click(getByTestId('html-artifact-tab-code'))
+    fireEvent.change(getByTestId('html-artifact-code'), {
+      target: { value: '<h2>Heading</h2>\n<script>run()</script>' },
+    })
+    unmount()
+
+    // The source string is the value: nothing rewrites it on the way out.
+    expect(onCommit).toHaveBeenCalledWith('<h2>Heading</h2>\n<script>run()</script>')
+    expect(mocks.editor.blocksToHTMLLossy).not.toHaveBeenCalled()
   })
 
   it('falls back to the markdown parser when a rich text value is not JSON', async () => {

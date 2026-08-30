@@ -24,6 +24,7 @@ interface CognitoAuthenticationResult {
 }
 
 interface CognitoUser {
+  Username?: string
   UserAttributes?: Array<{ Name?: string; Value?: string }>
 }
 
@@ -36,11 +37,28 @@ const authStorageKey = 'library_auth'
 const authChangeEvent = 'library-auth-change'
 const refreshEarlySeconds = 5 * 60
 const maximumTimerDelay = 2_147_483_647
+const transientRetryBaseDelay = 30_000
+const transientRetryCeiling = 5 * 60 * 1000
+
+/**
+ * Cognito errors that mean the refresh token itself is finished. Everything
+ * else - a dropped connection, throttling, a Library API hiccup - leaves the
+ * session in place so a blip cannot sign the user out.
+ */
+const unrecoverableAuthErrors = new Set([
+  'NotAuthorizedException',
+  'UserNotFoundException',
+  'UserNotConfirmedException',
+  'PasswordResetRequiredException',
+  'ResourceNotFoundException',
+  'InvalidParameterException',
+])
 
 let storageOverride: AuthTokenStorage | undefined
 let expiryTimer: ReturnType<typeof setTimeout> | undefined
 let refreshPromise: Promise<AuthTokens | null> | null = null
 let sessionRevision = 0
+let transientFailureCount = 0
 
 const signInWithPlatformMutation = `
   mutation LibraryClientSignInWithPlatform(
@@ -118,6 +136,30 @@ function cancelExpiryTimer() {
   }
 }
 
+function isUnrecoverableAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: unknown }).name
+  return typeof name === 'string' && unrecoverableAuthErrors.has(name)
+}
+
+/**
+ * Retries a refresh that failed for a reason the session can outlive, so the
+ * user is back in a working session as soon as the network is.
+ */
+function scheduleTransientRefreshRetry() {
+  cancelExpiryTimer()
+
+  const delay = Math.min(
+    transientRetryBaseDelay * 2 ** Math.max(transientFailureCount - 1, 0),
+    transientRetryCeiling,
+  )
+
+  expiryTimer = setTimeout(() => {
+    expiryTimer = undefined
+    void refreshStoredAuthTokens().catch(() => undefined)
+  }, delay)
+}
+
 function isAuthTokens(value: unknown): value is AuthTokens {
   if (!value || typeof value !== 'object') return false
   const tokens = value as Partial<AuthTokens>
@@ -157,6 +199,7 @@ function readStoredAuthTokens(): AuthTokens | null {
 function clearStoredAuthTokens(reason: AuthChangeReason) {
   cancelExpiryTimer()
   sessionRevision += 1
+  transientFailureCount = 0
   try {
     tokenStorage()?.removeItem(authStorageKey)
   } finally {
@@ -223,6 +266,7 @@ function persistAuthTokens(tokens: AuthTokens, reason: AuthChangeReason) {
 
   storage.setItem(authStorageKey, JSON.stringify(tokens))
   sessionRevision += 1
+  transientFailureCount = 0
   scheduleSessionExpiry(tokens)
   emitAuthChange(reason)
 }
@@ -263,7 +307,14 @@ async function requestCognito<T>(
   )
   const payload: unknown = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(errorMessage(payload) ?? `Cognito ${target} failed (${response.status})`)
+    const failure = new Error(
+      errorMessage(payload) ?? `Cognito ${target} failed (${response.status})`,
+    )
+    const type = (payload as { __type?: unknown } | null)?.__type
+    if (typeof type === 'string' && type) {
+      failure.name = type.split('#').at(-1) ?? failure.name
+    }
+    throw failure
   }
   return payload as T
 }
@@ -362,7 +413,11 @@ export async function getValidAuthTokens(): Promise<AuthTokens | null> {
     try {
       return await refreshStoredAuthTokens()
     } catch {
-      return null
+      // The refresh may have ended the session or just failed transiently;
+      // only in the latter case is the stale token still usable.
+      const remaining = readStoredAuthTokens()
+      if (!remaining) return null
+      return remaining.expiresAt - Date.now() / 1000 > 0 ? remaining : null
     }
   }
 
@@ -424,7 +479,8 @@ export async function signInWithCredentials(
     ),
     userId: libraryUser.id,
     email: cognitoEmail || libraryUser.email || '',
-    username,
+    // Sign-in accepts an email alias, so trust Cognito for the account's username.
+    username: cognitoUser.Username ?? username,
   }
 }
 
@@ -489,7 +545,14 @@ export function refreshStoredAuthTokens(): Promise<AuthTokens | null> {
       return nextTokens
     } catch (error) {
       if (sessionRevision === revisionAtStart) {
-        clearStoredAuthTokens('expired')
+        if (isUnrecoverableAuthError(error)) {
+          clearStoredAuthTokens('expired')
+        } else {
+          // The refresh token is still good, the network is not: keep the
+          // session and try again instead of signing the user out.
+          transientFailureCount += 1
+          scheduleTransientRefreshRetry()
+        }
       }
       throw error
     } finally {

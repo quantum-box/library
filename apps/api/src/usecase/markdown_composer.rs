@@ -191,9 +191,15 @@ fn pick_body(
 }
 
 /// Build YAML frontmatter from data and properties
+///
+/// `ui_url` is the address the document has in the Library client. Like
+/// `id` and `title` it is a reserved key: a property of the same name
+/// still overwrites it, because frontmatter mirrors the record's own
+/// fields.
 fn build_frontmatter(
     data: &database_manager::domain::Data,
     properties: &[database_manager::domain::Property],
+    ui_url: Option<&str>,
 ) -> Mapping {
     let mut map = Mapping::new();
     map.insert(
@@ -204,6 +210,12 @@ fn build_frontmatter(
         YamlValue::String("title".into()),
         YamlValue::String(data.name().to_string()),
     );
+    if let Some(ui_url) = ui_url {
+        map.insert(
+            YamlValue::String("url".into()),
+            YamlValue::String(ui_url.to_string()),
+        );
+    }
 
     let property_map: HashMap<_, _> =
         properties.iter().map(|p| (p.id(), p)).collect();
@@ -260,12 +272,27 @@ fn build_frontmatter(
 /// properties.
 ///
 /// This function is used both for the markdown export endpoint and for
-/// syncing data to external providers like GitHub.
+/// syncing data to external providers like GitHub. The GitHub copy is a
+/// mirror of the record, so it carries no `url` key -- see
+/// [`compose_markdown_with_ui_url`] for the served form.
 pub fn compose_markdown(
     data: &database_manager::domain::Data,
     properties: &[database_manager::domain::Property],
 ) -> String {
-    let frontmatter = build_frontmatter(data, properties);
+    compose_markdown_with_ui_url(data, properties, None)
+}
+
+/// Compose a Markdown document, optionally announcing where the document
+/// can be opened in the Library client.
+///
+/// Public endpoints pass the UI URL so callers can link back to the
+/// original without rebuilding the client's route themselves.
+pub fn compose_markdown_with_ui_url(
+    data: &database_manager::domain::Data,
+    properties: &[database_manager::domain::Property],
+    ui_url: Option<&str>,
+) -> String {
+    let frontmatter = build_frontmatter(data, properties, ui_url);
     let fm = serde_yaml::to_string(&frontmatter).unwrap_or_default();
     let body = pick_body(data, properties);
     format!("---\n{fm}---\n\n{body}\n")
@@ -437,5 +464,43 @@ mod tests {
 
         assert!(!markdown.contains("ext_github:"));
         assert!(markdown.ends_with("# Draft page\n\n"));
+    }
+
+    #[test]
+    fn compose_markdown_with_ui_url_announces_where_to_open_the_document() {
+        let mut fixture = Fixture::new();
+        let slug = fixture.property("slug", PropertyType::String);
+        let data = fixture.data(
+            "Privacy policy",
+            vec![PropertyData::new(&slug, "privacy".to_string()).unwrap()],
+        );
+
+        let markdown = compose_markdown_with_ui_url(
+            &data,
+            &fixture.properties,
+            Some("https://planetlibrary.example/org/repo/data/data_1"),
+        );
+
+        assert!(markdown.contains(
+            "url: https://planetlibrary.example/org/repo/data/data_1\n"
+        ));
+        // The keys integrators already read stay where they were.
+        assert!(markdown.contains(&format!("id: {}\n", data.id())));
+        assert!(markdown.contains("title: Privacy policy\n"));
+        assert!(markdown.contains("slug: privacy\n"));
+    }
+
+    #[test]
+    fn compose_markdown_leaves_the_github_mirror_without_a_url_key() {
+        let mut fixture = Fixture::new();
+        let slug = fixture.property("slug", PropertyType::String);
+        let data = fixture.data(
+            "Privacy policy",
+            vec![PropertyData::new(&slug, "privacy".to_string()).unwrap()],
+        );
+
+        let markdown = compose_markdown(&data, &fixture.properties);
+
+        assert!(!markdown.contains("url:"));
     }
 }

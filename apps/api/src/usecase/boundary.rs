@@ -6,6 +6,7 @@
 use crate::domain::{Organization, Repo};
 use async_graphql::{InputObject, OneofObject};
 use database_manager::domain::{self, Data, Property};
+use database_manager::usecase::UpsertOutcome;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tachyon_sdk::auth::{AuthApp, ExecutorAction, MultiTenancyAction};
@@ -47,9 +48,9 @@ pub trait ViewRepoInputPort: Debug + Send + Sync {
 #[async_trait::async_trait]
 pub trait SearchRepoInputPort: Debug + Send + Sync {
     /// TODO: add English documentation
-    async fn execute(
+    async fn execute<'a>(
         &self,
-        input: &SearchRepoInputData,
+        input: &SearchRepoInputData<'a>,
     ) -> errors::Result<Vec<Repo>>;
 }
 
@@ -128,6 +129,22 @@ pub trait UpdateDataInputPort: Debug + Send + Sync {
         &self,
         input: UpdateDataInputData<'a>,
     ) -> errors::Result<(Data, Vec<Property>)>;
+}
+
+/// Create the record at `data_id`, or apply the payload to the one already
+/// there.
+///
+/// `UpdateDataInputPort` answers 404 for an id the server has never seen,
+/// which is the wrong answer for a client that assigns record ids itself and
+/// pushes later: its first push is indistinguishable from an edit, so the new
+/// record would be dropped. See `database_manager::UpsertDataInputData` for
+/// why the branch belongs next to the repository rather than in the caller.
+#[async_trait::async_trait]
+pub trait UpsertDataInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: UpsertDataInputData<'a>,
+    ) -> errors::Result<(Data, Vec<Property>, UpsertOutcome)>;
 }
 
 /// TODO: add English documentation
@@ -299,8 +316,13 @@ pub struct ViewRepoOutputData {
 ///
 /// TODO: add English documentation
 /// TODO: add English documentation
-#[derive(Debug, Clone, Default)]
-pub struct SearchRepoInputData {
+#[derive(Debug, Clone)]
+pub struct SearchRepoInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    /// Organization to search in. When omitted the caller's own organization,
+    /// taken from the multi-tenancy context, is used.
     pub org_username: Option<String>,
     pub name: Option<String>,
     pub limit: Option<i64>,
@@ -381,6 +403,20 @@ pub struct UpdateRepoInputData<'a> {
 
 #[derive(Debug, Clone)]
 pub struct UpdateDataInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    /// user_id
+    pub actor: &'a str,
+    pub org_username: &'a str,
+    pub repo_username: &'a str,
+    pub data_id: &'a str,
+    pub data_name: &'a str,
+    pub property_data: Vec<PropertyDataInputData>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertDataInputData<'a> {
     pub executor: &'a dyn ExecutorAction,
     pub multi_tenancy: &'a dyn MultiTenancyAction,
 
@@ -836,6 +872,8 @@ pub struct ExtGithubRepoConfig {
     pub label: Option<String>,
     /// TODO: add English documentation
     pub default_path: Option<String>,
+    /// Target branch (defaults to "main")
+    pub branch: Option<String>,
 }
 
 /// TODO: add English documentation
@@ -847,6 +885,48 @@ pub struct BulkSyncExtGithubOutputData {
     pub skipped_count: usize,
     /// TODO: add English documentation
     pub total_count: usize,
+}
+
+/// Sync a single Data item's markdown to a GitHub repository.
+#[async_trait::async_trait]
+pub trait SyncDataToGithubInputPort: Debug + Send + Sync {
+    async fn execute<'a>(
+        &self,
+        input: SyncDataToGithubInputData<'a>,
+    ) -> errors::Result<SyncDataToGithubOutputData>;
+}
+
+/// Input for syncing a single Data item to GitHub.
+#[derive(Debug, Clone)]
+pub struct SyncDataToGithubInputData<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+
+    pub org_username: String,
+    pub repo_username: String,
+    pub data_id: String,
+    /// Target GitHub repository (owner/repo format)
+    pub target_repo: String,
+    /// Target path in the repository
+    pub target_path: String,
+    /// Target branch (defaults to "main")
+    pub target_branch: Option<String>,
+    /// Custom commit message
+    pub commit_message: Option<String>,
+    /// If true, only calculate diff without syncing
+    pub dry_run: bool,
+}
+
+/// Result of syncing a single Data item to GitHub.
+#[derive(Debug, Clone)]
+pub struct SyncDataToGithubOutputData {
+    pub status: outbound_sync::SyncStatus,
+    /// Result ID (commit SHA, etc.)
+    pub result_id: Option<String>,
+    /// URL to the synced resource
+    pub url: Option<String>,
+    /// Diff preview (for dry-run)
+    pub diff: Option<String>,
 }
 
 // ==================== GitHub Import Usecases ====================
@@ -1020,6 +1100,9 @@ pub struct ImportMarkdownFromGitHubInputData<'a> {
     pub content_property_name: String,
     /// TODO: add English documentation
     pub skip_existing: bool,
+    /// When true, imported data keeps GitHub sync enabled
+    /// (`ext_github.enabled` / `sync_to_github` are set to true).
+    pub enable_github_sync: bool,
 }
 
 /// TODO: add English documentation

@@ -123,6 +123,15 @@ pub trait AuthApp: Debug + Send + Sync + 'static {
         input: &FindAllPublicApiKeyInput<'a>,
     ) -> errors::Result<Vec<PublicApiKey>>;
 
+    /// Revoke a public API key.
+    ///
+    /// Revocation is idempotent upstream: a key that is already gone
+    /// still reports success.
+    async fn revoke_public_api_key<'a>(
+        &self,
+        input: &RevokePublicApiKeyInput<'a>,
+    ) -> errors::Result<()>;
+
     /// Attach a policy to a user in a tenant.
     async fn attach_user_policy<'a>(
         &self,

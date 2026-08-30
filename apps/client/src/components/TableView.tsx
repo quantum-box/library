@@ -21,6 +21,7 @@ import {
   priorityConfig,
   mockUsers,
 } from '../data/mock'
+import { useI18n } from '../i18n'
 import { Kbd, KbdGroup } from './Kbd'
 import type { RecordPropertyKey } from '../lib/databaseViews/types'
 
@@ -51,6 +52,7 @@ function EditableCell({
   field: keyof DatabaseRecord
   onUpdate: (recordId: string, field: keyof DatabaseRecord, value: string) => void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -97,7 +99,7 @@ function EditableCell({
         setEditing(true)
       }}
       style={{ minHeight: '24px' }}
-      title="ダブルクリックで編集"
+      title={t('table.doubleClickToEdit')}
     >
       {value}
     </span>
@@ -197,6 +199,7 @@ function StatusDropdownCell({
   recordId: string
   onUpdate: (recordId: string, field: keyof DatabaseRecord, value: string) => void
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const config = statusConfig[value]
@@ -215,7 +218,7 @@ function StatusDropdownCell({
           className="w-2 h-2 rounded-full shrink-0"
           style={{ background: config.color }}
         />
-        <span className="text-xs font-medium">{config.label}</span>
+        <span className="text-xs font-medium">{t(config.labelKey)}</span>
       </span>
       <CellDropdown open={open} anchorRef={ref} onClose={() => setOpen(false)}>
         {(
@@ -238,7 +241,7 @@ function StatusDropdownCell({
               style={{ background: sc.color }}
             />
             <span>{sc.icon}</span>
-            <span>{sc.label}</span>
+            <span>{t(sc.labelKey)}</span>
           </DropdownItem>
         ))}
       </CellDropdown>
@@ -256,6 +259,7 @@ function PriorityDropdownCell({
   recordId: string
   onUpdate: (recordId: string, field: keyof DatabaseRecord, value: string) => void
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const config = priorityConfig[value]
@@ -270,7 +274,7 @@ function PriorityDropdownCell({
         }}
       >
         <span style={{ color: config.color }}>{config.icon}</span>
-        <span className="text-xs">{config.label}</span>
+        <span className="text-xs">{t(config.labelKey)}</span>
       </span>
       <CellDropdown open={open} anchorRef={ref} onClose={() => setOpen(false)}>
         {(
@@ -289,7 +293,7 @@ function PriorityDropdownCell({
             }}
           >
             <span style={{ color: pc.color }}>{pc.icon}</span>
-            <span>{pc.label}</span>
+            <span>{t(pc.labelKey)}</span>
           </DropdownItem>
         ))}
       </CellDropdown>
@@ -307,6 +311,7 @@ function AssigneeDropdownCell({
   recordId: string
   onUpdate: (recordId: string, field: keyof DatabaseRecord, value: string) => void
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -341,9 +346,7 @@ function AssigneeDropdownCell({
             setOpen(false)
           }}
         >
-          <span className="text-xs text-subtle">
-            None
-          </span>
+          <span className="text-xs text-subtle">{t('common.none')}</span>
         </DropdownItem>
         {mockUsers.map((name) => (
           <DropdownItem
@@ -405,6 +408,7 @@ function MobileRecordCard({
   onUpdateRecord: (recordId: string, field: keyof DatabaseRecord, value: string) => void
   visibleProperties?: RecordPropertyKey[]
 }) {
+  const { formatDate } = useI18n()
   const isVisible = (property: RecordPropertyKey) =>
     !visibleProperties || visibleProperties.includes(property)
 
@@ -466,10 +470,7 @@ function MobileRecordCard({
           )}
           {isVisible('updatedAt') && (
             <span className="shrink-0 text-xs text-subtle">
-              {new Date(record.updatedAt).toLocaleDateString('ja-JP', {
-                month: 'short',
-                day: 'numeric',
-              })}
+              {formatDate(record.updatedAt, { month: 'short', day: 'numeric' })}
             </span>
           )}
         </div>
@@ -502,6 +503,7 @@ export function TableView({
   onGlobalFilterChange: controlledOnGlobalFilterChange,
   visibleProperties,
 }: TableViewProps) {
+  const { t, tPlural, formatDate } = useI18n()
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const sorting = controlledSorting ?? internalSorting
   const onSortingChange = controlledOnSortingChange ?? setInternalSorting
@@ -524,7 +526,7 @@ export function TableView({
   const columns = useMemo(
     () => [
       columnHelper.accessor('identifier', {
-        header: 'ID',
+        header: t('table.column.id'),
         size: 90,
         cell: (info) => (
           <span className="font-mono text-xs text-subtle">
@@ -533,7 +535,7 @@ export function TableView({
         ),
       }),
       columnHelper.accessor('status', {
-        header: 'Status',
+        header: t('table.column.status'),
         size: 140,
         cell: (info) => (
           <StatusDropdownCell
@@ -546,7 +548,7 @@ export function TableView({
           row.original.status === filterValue,
       }),
       columnHelper.accessor('priority', {
-        header: 'Priority',
+        header: t('table.column.priority'),
         size: 110,
         cell: (info) => (
           <PriorityDropdownCell
@@ -557,7 +559,7 @@ export function TableView({
         ),
       }),
       columnHelper.accessor('title', {
-        header: 'Title',
+        header: t('table.column.title'),
         size: 400,
         cell: (info) => (
           <EditableCell
@@ -569,7 +571,7 @@ export function TableView({
         ),
       }),
       columnHelper.accessor('assignee', {
-        header: 'Assignee',
+        header: t('table.column.assignee'),
         size: 140,
         cell: (info) => (
           <AssigneeDropdownCell
@@ -580,7 +582,7 @@ export function TableView({
         ),
       }),
       columnHelper.accessor('labels', {
-        header: 'Labels',
+        header: t('table.column.labels'),
         size: 160,
         cell: (info) => (
           <div className="flex gap-1 flex-wrap">
@@ -597,7 +599,7 @@ export function TableView({
         enableSorting: false,
       }),
       columnHelper.accessor('project', {
-        header: 'Repository',
+        header: t('table.column.repository'),
         size: 130,
         cell: (info) => (
           <EditableCell
@@ -609,19 +611,16 @@ export function TableView({
         ),
       }),
       columnHelper.accessor('updatedAt', {
-        header: 'Updated',
+        header: t('table.column.updated'),
         size: 100,
         cell: (info) => (
           <span className="text-xs text-subtle">
-            {new Date(info.getValue()).toLocaleDateString('ja-JP', {
-              month: 'short',
-              day: 'numeric',
-            })}
+            {formatDate(info.getValue(), { month: 'short', day: 'numeric' })}
           </span>
         ),
       }),
     ],
-    [onUpdateRecord]
+    [onUpdateRecord, formatDate, t]
   )
 
   const columnVisibility: VisibilityState | undefined = useMemo(() => {
@@ -677,7 +676,7 @@ export function TableView({
           <input
             data-testid="records-global-filter"
             type="text"
-            placeholder="Filter data..."
+            placeholder={t('table.filterPlaceholder')}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="w-full rounded border border-border bg-surface py-1.5 pl-3 pr-24 text-sm text-foreground outline-none"
@@ -691,7 +690,7 @@ export function TableView({
           </div>
         </div>
         <span className="shrink-0 text-xs text-subtle">
-          {rows.length} data
+          {tPlural('table.rowCount', rows.length)}
         </span>
       </div>
 
@@ -727,7 +726,7 @@ export function TableView({
                     setNewRecordTitle('')
                   }
                 }}
-                placeholder="Data name を入力して Enter..."
+                placeholder={t('table.newRecordPlaceholder')}
                 className="w-full rounded-md border border-accent bg-canvas px-3 py-2 text-sm text-foreground outline-none"
               />
             ) : (
@@ -736,7 +735,7 @@ export function TableView({
                 onClick={() => setCreatingDatabaseRecord(true)}
               >
                 <span>+</span>
-                <span>New Data</span>
+                <span>{t('data.new')}</span>
               </button>
             )}
           </div>
@@ -867,7 +866,7 @@ export function TableView({
                           setNewRecordTitle('')
                         }
                       }}
-                      placeholder="Data name を入力して Enter..."
+                      placeholder={t('table.newRecordPlaceholder')}
                       className="w-full px-2 py-1 rounded text-sm outline-none bg-canvas border border-accent text-foreground max-w-lg"
                     />
                   ) : (
@@ -876,7 +875,7 @@ export function TableView({
                       onClick={() => setCreatingDatabaseRecord(true)}
                     >
                       <span>+</span>
-                      <span>New Data</span>
+                      <span>{t('data.new')}</span>
                     </button>
                   )}
                 </td>

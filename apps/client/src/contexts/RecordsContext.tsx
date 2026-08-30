@@ -25,6 +25,7 @@ import {
   type Priority,
 } from '../data/mock'
 import { appKitConfig } from '../app/kitConfig'
+import { t } from '../i18n'
 
 export interface CreateRecordData {
   title: string
@@ -234,6 +235,32 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     ydoc.transact(transaction)
   }, [])
 
+  /**
+   * A record that arrived from another client moves the projection too.
+   *
+   * `reconcileYRecords` deletes whatever the server list it was given does not
+   * mention, and the document it deletes from is shared — so a hydration must
+   * not reconcile a list that is older than the document. `transactProjection`
+   * establishes that for this tab's own writes, but only for those: a record
+   * another tab created reaches this one through `Y.applyUpdate`, which touches
+   * no counter here. A tab sitting on `/databases` making no edits of its own
+   * would therefore fetch, watch the other tab's new record arrive, and then
+   * reconcile it straight back out of the shared document — in both tabs.
+   *
+   * `transaction.local` is the discriminator Yjs already keeps: false for
+   * anything applied as an update, which is exactly the case this tab did not
+   * cause. Bumping the counter here routes it into the same refetch that a
+   * local edit during a fetch already triggers.
+   */
+  useEffect(() => {
+    const noteRemoteChange = (_events: unknown, transaction: Y.Transaction) => {
+      if (transaction.local) return
+      projectionGenerationRef.current += 1
+    }
+    recordsArray.observeDeep(noteRemoteChange)
+    return () => recordsArray.unobserveDeep(noteRemoteChange)
+  }, [])
+
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
     if (!ready) {
@@ -271,7 +298,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           console.warn('Failed to hydrate records from Library API', error)
           setHydrationLoading(false)
           setHydrationError(
-            error instanceof Error ? error.message : 'Failed to hydrate records'
+            error instanceof Error ? error.message : t('errors.hydrateRecords')
           )
         })
     }
@@ -342,8 +369,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
         console.warn(
           action === 'move'
-            ? 'Failed to persist record status update'
-            : 'Failed to persist record field update',
+            ? t('errors.persistStatus')
+            : t('errors.persistField'),
           error
         )
         setMutationError({
@@ -352,8 +379,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           message: error instanceof Error
             ? error.message
             : action === 'move'
-              ? 'Failed to move data'
-              : 'Failed to update data',
+              ? t('errors.moveData')
+              : t('errors.updateData'),
         })
       })
 
@@ -441,7 +468,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         setMutationError({
           action: 'delete',
           recordId,
-          message: error instanceof Error ? error.message : 'Failed to delete data',
+          message: error instanceof Error ? error.message : t('errors.deleteData'),
         })
       })
   }, [transactProjection])

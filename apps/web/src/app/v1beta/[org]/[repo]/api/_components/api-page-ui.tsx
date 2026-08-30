@@ -11,6 +11,7 @@ interface ApiPageUiProps {
 	org: string
 	repo: string
 	apiBaseUrl: string
+	docsUrl: string
 	apiKeySlot?: React.ReactNode
 	apiKeyListSlot?: React.ReactNode
 }
@@ -19,6 +20,7 @@ export function ApiPageUi({
 	org,
 	repo,
 	apiBaseUrl,
+	docsUrl,
 	apiKeySlot,
 	apiKeyListSlot,
 }: ApiPageUiProps) {
@@ -96,6 +98,16 @@ export function ApiPageUi({
 						{t.v1beta.developerPortal.documentation.description}
 					</p>
 					<div className='flex flex-wrap gap-3'>
+						<a
+							href={`${docsUrl}/api/getting-started`}
+							target='_blank'
+							rel='noopener noreferrer'
+							className='inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors'
+						>
+							<BookOpen className='w-4 h-4' />
+							{t.v1beta.developerPortal.documentation.userGuide}
+							<ExternalLink className='w-3 h-3 text-muted-foreground' />
+						</a>
 						<a
 							href={`${apiBaseUrl}/v1beta/swagger-ui`}
 							target='_blank'

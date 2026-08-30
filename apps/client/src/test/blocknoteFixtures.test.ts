@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { BlockNoteEditor } from '@blocknote/core'
+import { recordBodySchema } from '../components/blocknote/schema'
 import { BLOCKNOTE_FIXTURE_CASES } from './blocknoteFixtureCases'
 
 /**
@@ -36,7 +37,9 @@ function withStableIds(blocks: unknown[], counter = { next: 1 }): unknown[] {
 }
 
 function documentFor(blocks: unknown[]): unknown[] {
-  const editor = BlockNoteEditor.create()
+  // The record body schema, not the default one: the fixtures must be what
+  // the real editor produces, custom blocks included.
+  const editor = BlockNoteEditor.create({ schema: recordBodySchema })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   editor.replaceBlocks(editor.document, blocks as any)
   return withStableIds(editor.document as unknown[])
@@ -61,8 +64,11 @@ describe('blocknote fixtures', () => {
         existsSync(path),
         `${path} is missing. Run "npm run fixtures:blocknote".`,
       ).toBe(true)
+      // Compare the serialized forms. Some props come back as `undefined`,
+      // which JSON turns into `null` inside arrays and drops entirely from
+      // objects, so a live-vs-file comparison never matches for those.
       expect(
-        document,
+        JSON.parse(JSON.stringify(document)),
         `${name} drifted from the committed fixture. Run "npm run fixtures:blocknote" and review the diff.`,
       ).toEqual(JSON.parse(readFileSync(path, 'utf8')))
     },

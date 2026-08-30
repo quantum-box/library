@@ -8,6 +8,7 @@ import {
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from '../photonEngine/client'
+import { t } from '../../i18n'
 
 export interface ServerDocumentMetadata {
   id: string
@@ -32,8 +33,6 @@ export class DocsApiError extends Error {
   }
 }
 
-const DOCUMENT_SYNC_TIMEOUT_MS = 5_000
-
 function withoutUndefined<T extends object>(payload: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined)
@@ -52,7 +51,7 @@ export function toDocMetadata(serverDocument: ServerDocumentMetadata): DocMetada
 
 async function syncDocumentsBestEffort(): Promise<boolean> {
   try {
-    await syncClientEngineOperations(undefined, undefined, DOCUMENT_SYNC_TIMEOUT_MS)
+    await syncClientEngineOperations()
     return true
   } catch (error: unknown) {
     console.warn('Failed to sync document metadata; using the local Photon Engine projection', error)
@@ -71,8 +70,8 @@ export async function fetchServerDocuments(): Promise<DocMetadata[]> {
 export async function fetchServerDocument(docId: string): Promise<DocMetadata> {
   const syncSucceeded = await syncDocumentsBestEffort()
   const record = await getClientEngineRecord<DocMetadata>('documents', docId)
-  if (!record && syncSucceeded) throw new DocsApiError('Document metadata not found', 404)
-  if (!record) throw new Error('Document metadata is temporarily unavailable')
+  if (!record && syncSucceeded) throw new DocsApiError(t('errors.docMetadataNotFound'), 404)
+  if (!record) throw new Error(t('errors.docMetadataUnavailable'))
   return record.value
 }
 
@@ -101,7 +100,7 @@ export async function updateServerDocument(
     updatedAt: new Date().toISOString(),
   }
   const record = await patchClientEngineRecord<DocMetadata>('documents', docId, document)
-  if (!record) throw new DocsApiError('Document metadata not found', 404)
+  if (!record) throw new DocsApiError(t('errors.docMetadataNotFound'), 404)
   await syncDocumentsBestEffort()
   return record.value
 }

@@ -18,12 +18,28 @@ pub struct LibraryApp {
     pub update_repo: Arc<dyn usecase::UpdateRepoInputPort>,
     pub change_repo_username: Arc<dyn usecase::ChangeRepoUsernameInputPort>,
     pub view_repo: Arc<dyn usecase::ViewRepoInputPort>,
+    pub get_published_languages:
+        Arc<dyn usecase::GetPublishedLanguagesInputPort>,
+    pub set_published_languages:
+        Arc<dyn usecase::SetPublishedLanguagesInputPort>,
+    pub translate_schema_labels: Arc<dyn usecase::TranslateRepoInputPort>,
+    /// Exposed for the public docs handlers, which resolve a requested
+    /// language and load its cached labels on the read path. Following
+    /// `organization_repo`'s precedent rather than adding a usecase
+    /// whose only job would be to forward two lookups.
+    pub published_language_repo:
+        Arc<dyn crate::domain::translation::PublishedLanguageRepository>,
+    pub translation_repo:
+        Arc<dyn crate::domain::translation::TranslationRepository>,
+    pub get_glossary: Arc<dyn usecase::GetGlossaryInputPort>,
+    pub set_glossary: Arc<dyn usecase::SetGlossaryInputPort>,
     pub search_data: Arc<dyn usecase::SearchDataInputPort>,
     pub search_repo: Arc<dyn usecase::SearchRepoInputPort>,
     pub add_data: Arc<dyn usecase::AddDataInputPort>,
     pub save_data: Arc<dyn usecase::AddDataInputPort>,
     pub view_data: Arc<dyn usecase::ViewDataInputPort>,
     pub update_data: Arc<dyn usecase::UpdateDataInputPort>,
+    pub upsert_data: Arc<dyn usecase::UpsertDataInputPort>,
     pub delete_data: Arc<dyn usecase::DeleteDataInputPort>,
     pub add_property: Arc<dyn usecase::AddPropertyInputPort>,
     pub update_property: Arc<dyn usecase::UpdatePropertyInputPort>,
@@ -40,6 +56,7 @@ pub struct LibraryApp {
     pub get_repo_members: Arc<dyn usecase::GetRepoMembersInputPort>,
     pub create_api_key: Arc<dyn usecase::CreateApiKeyInputPort>,
     pub list_api_keys: Arc<dyn usecase::ListApiKeysInputPort>,
+    pub revoke_api_key: Arc<dyn usecase::RevokeApiKeyInputPort>,
     pub create_source: Arc<dyn usecase::CreateSourceInputPort>,
     pub update_source: Arc<dyn usecase::UpdateSourceInputPort>,
     pub delete_source: Arc<dyn usecase::DeleteSourceInputPort>,
@@ -61,6 +78,7 @@ pub struct LibraryApp {
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
     pub bulk_sync_ext_github: Arc<dyn usecase::BulkSyncExtGithubInputPort>,
+    pub sync_data_to_github: Arc<dyn usecase::SyncDataToGithubInputPort>,
     // GitHub Import usecases
     pub list_github_directory:
         Arc<dyn usecase::ListGitHubDirectoryInputPort>,
@@ -94,6 +112,10 @@ impl LibraryApp {
         database_app: Arc<database_manager::App>,
         sdk: Arc<SdkAuthApp>,
         sync_data: Arc<dyn outbound_sync::SyncDataInputPort>,
+        webhook_endpoint_repo: Arc<
+            dyn inbound_sync_domain::WebhookEndpointRepository,
+        >,
+        sync_state_repo: Arc<dyn inbound_sync_domain::SyncStateRepository>,
     ) -> Self {
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
@@ -161,6 +183,7 @@ impl LibraryApp {
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
             repo_repo.clone(),
+            auth_app.clone(),
         );
         let view_repo = Arc::new(usecase::ViewRepo::new(
             auth_app.clone(),
@@ -168,19 +191,57 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             visibility_service.clone(),
         ));
+
+        // Translation: the published-language allow-list. Reading it is
+        // as privileged as reading the repo, so both usecases borrow
+        // `view_repo` for the visibility decision instead of restating
+        // it.
+        let published_language_repo: Arc<
+            dyn crate::domain::translation::PublishedLanguageRepository,
+        > = Arc::new(
+            interface_adapter::PublishedLanguageRepositoryImpl::new(
+                library_db.clone(),
+            ),
+        );
+        let get_published_languages =
+            Arc::new(usecase::GetPublishedLanguages::new(
+                view_repo.clone(),
+                published_language_repo.clone(),
+            ));
+        let set_published_languages =
+            Arc::new(usecase::SetPublishedLanguages::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                published_language_repo.clone(),
+            ));
         let search_data = usecase::SearchData::new(
             database_app.clone(),
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
             auth_app.clone(),
         );
-        let search_repo = usecase::SearchRepo::new(find_all_repo_query);
-        let add_data = usecase::AddData::new(
-            auth_app.clone(),
-            get_repo_by_username.clone(),
+        let search_repo = usecase::SearchRepo::new(
+            find_all_repo_query,
             get_organization_by_username.clone(),
-            database_app.clone(),
         );
+        // GitHub auto-writeback: wraps the Data mutation ports so that
+        // saving a Data item with ext_github.enabled=true pushes its
+        // markdown back to GitHub (best-effort, echo-suppressed).
+        let github_writeback = usecase::GithubWritebackDispatch::new(
+            sync_data.clone(),
+            webhook_endpoint_repo,
+            sync_state_repo,
+        );
+        let add_data: Arc<dyn usecase::AddDataInputPort> =
+            usecase::AddDataWithGithubWriteback::new(
+                usecase::AddData::new(
+                    auth_app.clone(),
+                    get_repo_by_username.clone(),
+                    get_organization_by_username.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
         let save_data = add_data.clone();
         let change_repo_policy =
             Arc::new(usecase::ChangeRepoPolicy::new(auth_app.clone()));
@@ -212,12 +273,26 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             database_app.clone(),
         );
-        let update_data = usecase::UpdateData::new(
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
-            auth_app.clone(),
-            database_app.clone(),
-        );
+        let update_data: Arc<dyn usecase::UpdateDataInputPort> =
+            usecase::UpdateDataWithGithubWriteback::new(
+                usecase::UpdateData::new(
+                    get_organization_by_username.clone(),
+                    get_repo_by_username.clone(),
+                    auth_app.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
+        let upsert_data: Arc<dyn usecase::UpsertDataInputPort> =
+            usecase::UpsertDataWithGithubWriteback::new(
+                usecase::UpsertData::new(
+                    get_organization_by_username.clone(),
+                    get_repo_by_username.clone(),
+                    auth_app.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
         let delete_data = usecase::DeleteData::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -237,12 +312,16 @@ impl LibraryApp {
             database_app.clone(),
         );
 
-        let get_properties = usecase::GetProperties::new(
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
-            database_app.clone(),
-            auth_app.clone(),
-        );
+        // `GetProperties::new` already hands back an `Arc`; the
+        // annotation only coerces it to the port so it can be shared.
+        let get_properties: Arc<dyn usecase::GetPropertiesInputPort> =
+            usecase::GetProperties::new(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                database_app.clone(),
+                auth_app.clone(),
+            );
+
         let delete_property = usecase::DeleteProperty::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -265,12 +344,62 @@ impl LibraryApp {
             organization_repo.clone(),
             auth_app.clone(),
         );
-        let view_data_list = usecase::ViewDataList::new(
-            database_app.clone(),
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
+        // `ViewDataList::new` already returns an `Arc`; the annotation
+        // only coerces it to the port so it can be shared.
+        let view_data_list: Arc<dyn usecase::ViewDataListInputPort> =
+            usecase::ViewDataList::new(
+                database_app.clone(),
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                auth_app.clone(),
+            );
+
+        // Translation. The translator is absent unless a model is
+        // configured, which turns the feature off rather than failing
+        // startup; the usecase then reports that plainly instead of
+        // pretending to have run. Built here because it needs
+        // `view_data_list` to page through record names.
+        let translation_repo: Arc<
+            dyn crate::domain::translation::TranslationRepository,
+        > = Arc::new(interface_adapter::TranslationRepositoryImpl::new(
+            library_db.clone(),
+        ));
+        let glossary_repo: Arc<
+            dyn crate::domain::translation::GlossaryRepository,
+        > = Arc::new(interface_adapter::GlossaryRepositoryImpl::new(
+            library_db.clone(),
+        ));
+        let get_glossary = Arc::new(usecase::GetGlossary::new(
+            view_repo.clone(),
+            glossary_repo.clone(),
+        ));
+        let set_glossary = Arc::new(usecase::SetGlossary::new(
             auth_app.clone(),
-        );
+            view_repo.clone(),
+            glossary_repo.clone(),
+        ));
+
+        let tachyon_translator =
+            interface_adapter::TachyonTranslator::from_env(sdk.clone());
+        let translation_model = tachyon_translator
+            .as_ref()
+            .map(|translator| translator.model().to_string());
+        let translator = tachyon_translator.map(|translator| {
+            Arc::new(translator)
+                as Arc<dyn crate::domain::translation::Translator>
+        });
+        let translate_schema_labels =
+            Arc::new(usecase::TranslateRepo::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                get_properties.clone(),
+                view_data_list.clone(),
+                published_language_repo.clone(),
+                glossary_repo.clone(),
+                translation_repo.clone(),
+                translator,
+                translation_model,
+            ));
 
         let create_api_key = Arc::new(usecase::CreateApiKey::new(
             auth_app.clone(),
@@ -278,6 +407,11 @@ impl LibraryApp {
         ));
 
         let list_api_keys = Arc::new(usecase::ListApiKeys::new(
+            auth_app.clone(),
+            get_organization_by_username.clone(),
+        ));
+
+        let revoke_api_key = Arc::new(usecase::RevokeApiKey::new(
             auth_app.clone(),
             get_organization_by_username.clone(),
         ));
@@ -290,6 +424,14 @@ impl LibraryApp {
             Arc::new(usecase::ChangeOrgMemberRole::new(sdk.clone()));
 
         let bulk_sync_ext_github = usecase::BulkSyncExtGithub::new(
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            auth_app.clone(),
+            database_app.clone(),
+            sync_data.clone(),
+        );
+
+        let sync_data_to_github = usecase::SyncDataToGithub::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
             auth_app.clone(),
@@ -378,11 +520,19 @@ impl LibraryApp {
             update_repo,
             change_repo_username,
             view_repo,
+            get_published_languages,
+            set_published_languages,
+            translate_schema_labels,
+            published_language_repo,
+            translation_repo,
+            get_glossary,
+            set_glossary,
             search_data,
             search_repo,
             save_data,
             view_data,
             update_data,
+            upsert_data,
             delete_data,
             add_property,
             update_property,
@@ -398,6 +548,7 @@ impl LibraryApp {
             get_repo_members,
             create_api_key,
             list_api_keys,
+            revoke_api_key,
             add_data,
             create_source,
             update_source,
@@ -414,6 +565,7 @@ impl LibraryApp {
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,
+            sync_data_to_github,
             list_github_directory,
             get_markdown_previews,
             analyze_frontmatter,

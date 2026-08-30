@@ -130,10 +130,18 @@ components:
             Decimal Library record revision. Serialized as a string so clients do
             not lose precision when BIGINT values exceed JavaScript's safe range.
           type: string
+        url:
+          description: |-
+            Absolute URL that opens this document in the Library client, so
+            integrators can link back without rebuilding the route themselves.
+            Always points at the client, never at the older web app, and its
+            origin comes from `LIBRARY_CLIENT_BASE_URL`.
+          type: string
       required:
       - id
       - name
       - recordVersion
+      - url
       - items
       type: object
     GlobalIdMappingResponse:
@@ -160,6 +168,47 @@ components:
       - name
       - created_at
       - updated_at
+      type: object
+    GlossaryResponse:
+      properties:
+        terms:
+          items:
+            $ref: '#/components/schemas/GlossaryTermPayload'
+          type: array
+      required:
+      - terms
+      type: object
+    GlossaryTermPayload:
+      description: One fixed term translation.
+      properties:
+        target_lang:
+          description: BCP-47 tag, or omitted to apply the entry to every language.
+          type:
+          - string
+          - 'null'
+        term:
+          description: The source term, as an author writes it.
+          type: string
+        translation:
+          description: |-
+            What the term must become. Repeat the term itself to keep it
+            untranslated.
+          type: string
+      required:
+      - term
+      - translation
+      type: object
+    ImageResponse:
+      properties:
+        id:
+          description: Storage name of the image, unique within the repository.
+          type: string
+        url:
+          description: Absolute URL to embed in a document.
+          type: string
+      required:
+      - id
+      - url
       type: object
     Location:
       description: |-
@@ -375,6 +424,19 @@ components:
       - name
       - property_type
       type: object
+    PublishedLanguagesResponse:
+      description: The languages a repo is published in.
+      properties:
+        languages:
+          description: |-
+            Normalized BCP-47 tags, sorted. Empty means the repo is served
+            only in the language each document was written in.
+          items:
+            type: string
+          type: array
+      required:
+      - languages
+      type: object
     RepoResponse:
       properties:
         description:
@@ -400,6 +462,27 @@ components:
       - is_public
       - organization_id
       - org_username
+      type: object
+    RunTranslationsResponse:
+      description: Result of a schema translation run.
+      properties:
+        outcomes:
+          items:
+            $ref: '#/components/schemas/TranslationOutcomeResponse'
+          type: array
+        records_scanned:
+          description: Records whose names this run considered.
+          minimum: 0
+          type: integer
+        records_truncated:
+          description: |-
+            True when the repo holds more records than one run visits. Call
+            again rather than reading a finished run into this.
+          type: boolean
+      required:
+      - outcomes
+      - records_scanned
+      - records_truncated
       type: object
     SearchDataQuery:
       properties:
@@ -435,6 +518,36 @@ components:
           type:
           - string
           - 'null'
+        org:
+          description: |-
+            Organization username to search in. Defaults to the organization named
+            by the `x-operator-id` header.
+          type:
+          - string
+          - 'null'
+      type: object
+    SetGlossaryRequest:
+      properties:
+        terms:
+          description: Replaces the glossary wholesale. An empty list clears it.
+          items:
+            $ref: '#/components/schemas/GlossaryTermPayload'
+          type: array
+      required:
+      - terms
+      type: object
+    SetPublishedLanguagesRequest:
+      description: Replaces the published set with exactly these languages.
+      properties:
+        languages:
+          description: |-
+            Tags are normalized and deduplicated, so `EN` and `en` are the
+            same entry. An empty list unpublishes every language.
+          items:
+            type: string
+          type: array
+      required:
+      - languages
       type: object
     SignInRequest:
       description: Request body for sign-in endpoint
@@ -480,6 +593,33 @@ components:
       - id
       - repo_id
       - name
+      type: object
+    TranslationOutcomeResponse:
+      description: What one language's schema pass did.
+      properties:
+        already_current:
+          description: Labels whose cached translation still matched the source.
+          minimum: 0
+          type: integer
+        human_reviewed:
+          description: Labels left alone because a person had edited the translation.
+          minimum: 0
+          type: integer
+        language:
+          type: string
+        skipped_same_language:
+          description: True when the schema is already written in this language.
+          type: boolean
+        translated:
+          description: Labels sent to the model and stored on this run.
+          minimum: 0
+          type: integer
+      required:
+      - language
+      - translated
+      - already_current
+      - human_reviewed
+      - skipped_same_language
       type: object
     UpdateDataRequest:
       properties:
@@ -546,6 +686,23 @@ components:
           type:
           - string
           - 'null'
+      type: object
+    UpsertDataRequest:
+      description: |-
+        Body of a create-or-update at a caller-supplied record id.
+
+        Same shape as `UpdateDataRequest`, kept separate so the two endpoints can
+        diverge without a silent change to the other's contract.
+      properties:
+        name:
+          type: string
+        property_data:
+          items:
+            $ref: '#/components/schemas/PropertyDataRequest'
+          type: array
+      required:
+      - name
+      - property_data
       type: object
     UserResponse:
       description: User information in sign-in response
@@ -630,6 +787,15 @@ paths:
         required: true
         schema:
           type: string
+      - description: |-
+          BCP-47 tag, as on the other docs routes. Carried here rather
+          than in a second extractor because axum takes one `Query` per
+          handler.
+        in: query
+        name: lang
+        required: false
+        schema:
+          type: string
       - description: 1-origin page number. Defaults to 1.
         in: query
         name: page
@@ -663,6 +829,40 @@ paths:
       summary: '`GET /docs/:org/:repo`'
       tags:
       - public-docs
+  /docs/{org}/{repo}/languages:
+    get:
+      description: |-
+        Anonymous for public repos, so the docs pages can render a language
+        switcher without a token. Private repos fall back to the usual
+        executor and policy checks.
+      operationId: list_doc_languages
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedLanguagesResponse'
+          description: Published languages
+        '403':
+          description: Private repository access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`GET /docs/:org/:repo/languages`'
+      tags:
+      - public-docs
   /docs/{org}/{repo}/{data_id}:
     get:
       description: |-
@@ -688,6 +888,14 @@ paths:
         required: true
         schema:
           type: string
+      - description: |-
+          BCP-47 tag. Anything the repo has not published is served as the
+          source text rather than refused, so a stale link never breaks.
+        in: query
+        name: lang
+        required: false
+        schema:
+          type: string
       responses:
         '200':
           content:
@@ -704,7 +912,10 @@ paths:
       - public-docs
   /docs/{org}/{repo}/{data_id}/md:
     get:
-      description: Returns the raw composed Markdown (with YAML frontmatter).
+      description: |-
+        Returns the raw composed Markdown (with YAML frontmatter). The
+        frontmatter carries `url`, the address of this document in the
+        Library client, alongside `id` and `title`.
       operationId: view_doc_markdown
       parameters:
       - description: Organization username
@@ -725,13 +936,21 @@ paths:
         required: true
         schema:
           type: string
+      - description: |-
+          BCP-47 tag. Anything the repo has not published is served as the
+          source text rather than refused, so a stale link never breaks.
+        in: query
+        name: lang
+        required: false
+        schema:
+          type: string
       responses:
         '200':
           content:
             text/markdown:
               schema:
                 type: string
-          description: Composed Markdown with YAML frontmatter
+          description: Composed Markdown with YAML frontmatter, including the document's `url` in the Library client
         '403':
           description: Private repository access denied
         '404':
@@ -845,6 +1064,12 @@ paths:
     get:
       operationId: search_repo
       parameters:
+      - description: Organization username to search in. Defaults to the x-operator-id organization
+        in: query
+        name: org
+        required: false
+        schema:
+          type: string
       - description: Repository name to search for
         in: query
         name: name
@@ -1282,6 +1507,288 @@ paths:
         schema:
           type: string
       responses: {}
+      summary: |-
+        Returns the document as Markdown with YAML frontmatter. The
+        frontmatter carries `url`, the address of this document in the
+        Library client, alongside `id` and `title`.
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/upsert:
+    put:
+      description: |-
+        `PUT /data/{data_id}` deliberately keeps its update-only meaning — a caller
+        that edits a record it believes exists still wants a 404 when it does not.
+        This route is for the other caller: one that assigned the record id itself
+        and cannot tell its first write from an edit, because both look the same
+        from its side. Answering that with a 404 drops the record.
+
+        `property_data` is a patch on the existing branch, exactly as
+        `update_data` treats it: a Property left out keeps whatever it holds.
+      operationId: upsert_data
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID chosen by the caller
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertDataRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Existing data updated
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResponse'
+          description: Data created at the given ID
+        '400':
+          description: Invalid request
+        '404':
+          description: Repository or property not found
+      summary: |-
+        Create the record at `data_id`, or apply the payload to the one already
+        there.
+      tags: []
+  /v1beta/repos/{org}/{repo}/glossary:
+    get:
+      operationId: get_glossary
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlossaryResponse'
+          description: The repo glossary
+        '403':
+          description: Access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`GET /v1beta/repos/:org/:repo/glossary`'
+      tags: []
+    put:
+      description: |-
+        Replaces the glossary. Existing translations are left as they are: a
+        glossary change makes them wrong in the owner's judgement, not stale
+        against their source, and discarding paid-for — possibly reviewed —
+        work is not this endpoint's decision. Re-run the translation to
+        apply the new vocabulary.
+      operationId: set_glossary
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetGlossaryRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlossaryResponse'
+          description: The glossary after the update
+        '400':
+          description: Malformed entry, duplicate term, or too many terms
+        '403':
+          description: Access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`PUT /v1beta/repos/:org/:repo/glossary`'
+      tags: []
+  /v1beta/repos/{org}/{repo}/images:
+    post:
+      operationId: upload_image
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Original file name, used only to keep a recognisable extension.
+        in: query
+        name: filename
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          image/png:
+            schema:
+              items:
+                format: int32
+                minimum: 0
+                type: integer
+              type: array
+        description: Raw image bytes; the Content-Type header names the format
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+          description: Image stored
+        '400':
+          description: Empty body, oversized body, or unsupported image format
+        '403':
+          description: Caller may not write to the repository
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/images/{image_id}:
+    get:
+      operationId: view_image
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Image id returned by the upload
+        in: path
+        name: image_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '307':
+          description: Redirect to the stored image
+        '400':
+          description: Malformed image id
+        '404':
+          description: Organization or image not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/languages:
+    get:
+      operationId: get_published_languages
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedLanguagesResponse'
+          description: Published languages
+        '403':
+          description: Access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`GET /v1beta/repos/:org/:repo/languages`'
+      tags: []
+    put:
+      description: |-
+        Declaring a language is what schedules translation for it, so this
+        route is the only way work enters the pipeline. It requires the same
+        permission as any other repo setting.
+
+        The public docs pages cache a repo's published set briefly, so a
+        change here can take up to a minute to show up there.
+      operationId: set_published_languages
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPublishedLanguagesRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedLanguagesResponse'
+          description: Published languages after the update
+        '400':
+          description: Malformed language tag, or too many languages
+        '403':
+          description: Access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`PUT /v1beta/repos/:org/:repo/languages`'
       tags: []
   /v1beta/repos/{org}/{repo}/properties:
     get:
@@ -1598,4 +2105,43 @@ paths:
           description: Invalid request
         '404':
           description: Source not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/translations/run:
+    post:
+      description: |-
+        Translates the repo's schema labels -- column headings and select
+        option labels -- into every published language.
+
+        The run is explicit rather than automatic because the API is
+        deployed on Lambda, where a resident worker has nowhere to live.
+        Declaring a language stays fast; this is what spends the money, so
+        it carries the same permission as changing a repo setting.
+      operationId: run_translations
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunTranslationsResponse'
+          description: Per-language outcome of the run
+        '400':
+          description: No translation model is configured
+        '403':
+          description: Access denied
+        '404':
+          description: Organization or repository not found
+      summary: '`POST /v1beta/repos/:org/:repo/translations/run`'
       tags: []

@@ -21,34 +21,28 @@ import {
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import { navigateToData } from '../lib/ui/dataLocation'
+import { useI18n, type I18nContextValue } from '../i18n'
 
-function relativeDate(value: string) {
+/**
+ * Compact "how long ago" label for dense list rows. Anything older than a week
+ * falls back to a locale-formatted calendar date.
+ */
+function relativeDate(value: string, i18n: I18nContextValue) {
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Recently'
+  if (Number.isNaN(date.getTime())) return i18n.t('home.time.recently')
 
   const deltaMs = Date.now() - date.getTime()
   const deltaMinutes = Math.max(0, Math.floor(deltaMs / 60_000))
-  if (deltaMinutes < 1) return 'Just now'
-  if (deltaMinutes < 60) return `${deltaMinutes}m`
+  if (deltaMinutes < 1) return i18n.t('home.time.justNow')
+  if (deltaMinutes < 60) return i18n.t('home.time.minutes', { count: deltaMinutes })
 
   const deltaHours = Math.floor(deltaMinutes / 60)
-  if (deltaHours < 24) return `${deltaHours}h`
+  if (deltaHours < 24) return i18n.t('home.time.hours', { count: deltaHours })
 
   const deltaDays = Math.floor(deltaHours / 24)
-  if (deltaDays < 7) return `${deltaDays}d`
+  if (deltaDays < 7) return i18n.t('home.time.days', { count: deltaDays })
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-  }).format(date)
-}
-
-function todayLabel() {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  }).format(new Date())
+  return i18n.formatDate(date, { month: 'short', day: 'numeric' }) ?? i18n.t('home.time.recently')
 }
 
 function recordPath(record: DatabaseRecord) {
@@ -81,6 +75,13 @@ function findDatabaseForRecord(
 
 export function LibraryHome() {
   const navigate = useNavigate()
+  const i18n = useI18n()
+  const { t, tPlural } = i18n
+  const todayLabel = i18n.formatDate(new Date(), {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
   const { records, hydrationLoading, hydrationError } = useDatabaseRecords()
   const {
     databases,
@@ -124,7 +125,7 @@ export function LibraryHome() {
           <img src={libraryAppIcon} alt="" className="size-4" />
           <span className="font-semibold">Library</span>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate text-muted-foreground">Home</span>
+          <span className="truncate text-muted-foreground">{t('home.title')}</span>
         </div>
 
         <Button
@@ -134,23 +135,23 @@ export function LibraryHome() {
           onClick={openCommandPalette}
         >
           <Search aria-hidden="true" />
-          <span>Search Library</span>
+          <span>{t('palette.title')}</span>
           <Kbd className="ml-auto">⌘ K</Kbd>
         </Button>
 
         <Badge variant="outline" className="hidden sm:inline-flex">
-          {organizations.length} {organizations.length === 1 ? 'organization' : 'organizations'}
+          {tPlural('home.organizationCount', organizations.length)}
         </Badge>
         <Button variant="primary" size="sm" onClick={openCreateData}>
           <Plus aria-hidden="true" />
-          New data
+          {t('data.new')}
         </Button>
       </header>
 
       <div className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1.5">
         <div className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
           <img src={libraryAppIcon} alt="" className="size-3.5" />
-          Home
+          {t('home.title')}
         </div>
         {recentRecords.slice(0, 2).map((record) => (
           <button
@@ -169,22 +170,20 @@ export function LibraryHome() {
         <div className="mx-auto w-full max-w-[1320px] px-4 py-5 md:px-6 md:py-6">
           <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="font-mono text-2xs text-subtle-foreground">{todayLabel()}</div>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight">Home</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Resume work across pages, data, and repositories.
-              </p>
+              <div className="font-mono text-2xs text-subtle-foreground">{todayLabel}</div>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight">{t('home.title')}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{t('home.subtitle')}</p>
             </div>
             <div className="flex items-center gap-2">
               <Button size="sm" asChild>
                 <Link to="/docs" search={{ create: true }}>
                   <FileText aria-hidden="true" />
-                  New document
+                  {t('docs.new')}
                 </Link>
               </Button>
               <Button variant="primary" size="sm" onClick={openCreateData}>
                 <Plus aria-hidden="true" />
-                New data
+                {t('data.new')}
               </Button>
             </div>
           </section>
@@ -192,7 +191,7 @@ export function LibraryHome() {
           <section className="mt-7" aria-labelledby="continue-working-heading">
             <div className="mb-2.5 flex h-7 items-center gap-2">
               <h2 id="continue-working-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Continue working
+                {t('home.continueWorking')}
               </h2>
               <span className="text-2xs text-subtle-foreground">{Math.min(recentRecords.length, 3)}</span>
             </div>
@@ -220,7 +219,7 @@ export function LibraryHome() {
                       <span className="font-mono text-2xs text-subtle-foreground">{record.identifier}</span>
                       <span className="ml-auto flex items-center gap-1.5 text-2xs text-muted-foreground">
                         <span className="text-xs" style={{ color: status.color }} aria-hidden="true">{status.icon}</span>
-                        {status.label}
+                        {t(status.labelKey)}
                       </span>
                     </div>
                   </button>
@@ -233,11 +232,11 @@ export function LibraryHome() {
             <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="activity-heading">
               <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
                 <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 id="activity-heading" className="text-sm font-semibold">Recent activity</h2>
+                <h2 id="activity-heading" className="text-sm font-semibold">{t('home.recentActivity')}</h2>
                 <Badge variant="neutral">{recentRecords.length}</Badge>
                 <Button className="ml-auto" variant="ghost" size="sm" asChild>
                   <Link to="/databases">
-                    View all
+                    {t('common.viewAll')}
                     <ChevronRight aria-hidden="true" />
                   </Link>
                 </Button>
@@ -255,7 +254,7 @@ export function LibraryHome() {
                       onClick={() => openRecord(record)}
                     >
                       <span className="flex min-w-0 items-center gap-3">
-                        <span className="text-base" style={{ color: status.color }} aria-label={status.label}>{status.icon}</span>
+                        <span className="text-base" style={{ color: status.color }} aria-label={t(status.labelKey)}>{status.icon}</span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">{record.title}</span>
                           <span className="mt-0.5 block truncate font-mono text-2xs text-subtle-foreground">
@@ -265,11 +264,11 @@ export function LibraryHome() {
                       </span>
                       <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
                         <span style={{ color: priority.color }} aria-hidden="true">{priority.icon}</span>
-                        {priority.label}
+                        {t(priority.labelKey)}
                       </span>
                       <span className="flex items-center justify-end gap-1 text-2xs text-subtle-foreground">
                         <Clock3 className="size-3" aria-hidden="true" />
-                        {relativeDate(record.updatedAt)}
+                        {relativeDate(record.updatedAt, i18n)}
                       </span>
                     </button>
                   )
@@ -277,19 +276,19 @@ export function LibraryHome() {
               ) : hydrationLoading ? (
                 <div className="px-5 py-10 text-center" aria-busy="true">
                   <RefreshCw className="mx-auto size-5 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">Loading recent activity</p>
+                  <p className="mt-3 text-sm font-medium">{t('home.activityLoading')}</p>
                 </div>
               ) : hydrationError ? (
                 <div className="px-5 py-10 text-center">
                   <FileText className="mx-auto size-5 text-destructive" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">Recent activity unavailable</p>
+                  <p className="mt-3 text-sm font-medium">{t('home.activityUnavailable')}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{hydrationError}</p>
                 </div>
               ) : (
                 <div className="px-5 py-10 text-center">
                   <FileText className="mx-auto size-5 text-subtle-foreground" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">No activity yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Create data to begin a repository timeline.</p>
+                  <p className="mt-3 text-sm font-medium">{t('home.activityEmpty')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('home.activityEmptyHint')}</p>
                 </div>
               )}
             </section>
@@ -297,8 +296,8 @@ export function LibraryHome() {
             <aside className="space-y-4">
               <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="working-set-heading">
                 <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
-                  <h2 id="working-set-heading" className="text-sm font-semibold">Working set</h2>
-                  <span className="text-2xs text-subtle-foreground">Open work</span>
+                  <h2 id="working-set-heading" className="text-sm font-semibold">{t('home.workingSet')}</h2>
+                  <span className="text-2xs text-subtle-foreground">{t('home.openWork')}</span>
                 </div>
                 {workingSet.length > 0 ? workingSet.map((record) => (
                   <button
@@ -314,25 +313,25 @@ export function LibraryHome() {
                     <span className="font-mono text-2xs text-subtle-foreground">{record.identifier}</span>
                   </button>
                 )) : (
-                  <div className="px-4 py-5 text-xs text-muted-foreground">No open work in the recent set.</div>
+                  <div className="px-4 py-5 text-xs text-muted-foreground">{t('home.workingSetEmpty')}</div>
                 )}
               </section>
 
               <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="repositories-heading">
                 <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
-                  <h2 id="repositories-heading" className="text-sm font-semibold">Repositories</h2>
+                  <h2 id="repositories-heading" className="text-sm font-semibold">{t('sidebar.repositories.heading')}</h2>
                   <Badge variant="neutral">{databases.length}</Badge>
                   <Button className="ml-auto" variant="ghost" size="sm" asChild>
                     <Link to="/repositories">
-                      View all
+                      {t('common.viewAll')}
                       <ChevronRight aria-hidden="true" />
                     </Link>
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Refresh repositories"
-                    title="Refresh repositories"
+                    aria-label={t('home.refreshRepositories')}
+                    title={t('home.refreshRepositories')}
                     disabled={repositoriesLoading}
                     onClick={() => void refreshRepositories()}
                   >
@@ -342,9 +341,11 @@ export function LibraryHome() {
 
                 {repositoriesError ? (
                   <div className="px-4 py-4">
-                    <p className="text-sm font-medium text-destructive">Repositories could not load</p>
+                    <p className="text-sm font-medium text-destructive">{t('home.repositoriesError')}</p>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">{repositoriesError}</p>
-                    <Button className="mt-3" size="sm" onClick={() => void refreshRepositories()}>Try again</Button>
+                    <Button className="mt-3" size="sm" onClick={() => void refreshRepositories()}>
+                      {t('common.tryAgain')}
+                    </Button>
                   </div>
                 ) : databases.length > 0 ? (
                   databases.slice(0, 7).map((database) => {
@@ -383,7 +384,9 @@ export function LibraryHome() {
                   })
                 ) : (
                   <div className="px-4 py-5 text-xs text-muted-foreground">
-                    {repositoriesLoading ? 'Loading repositories…' : 'No repositories connected.'}
+                    {repositoriesLoading
+                      ? t('sidebar.repositories.loading')
+                      : t('home.repositoriesEmpty')}
                   </div>
                 )}
               </section>

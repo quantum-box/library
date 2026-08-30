@@ -38,6 +38,7 @@ test-results/
 storybook-static/
 
 # Misc
+*.tsbuildinfo
 *.log
 *.db
 *.sqlite

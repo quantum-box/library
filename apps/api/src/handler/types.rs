@@ -43,6 +43,11 @@ pub struct DataResponse {
     /// Decimal Library record revision. Serialized as a string so clients do
     /// not lose precision when BIGINT values exceed JavaScript's safe range.
     pub record_version: String,
+    /// Absolute URL that opens this document in the Library client, so
+    /// integrators can link back without rebuilding the route themselves.
+    /// Always points at the client, never at the older web app, and its
+    /// origin comes from `LIBRARY_CLIENT_BASE_URL`.
+    pub url: String,
     pub items: Vec<PropertyDataResponse>,
 }
 
@@ -136,6 +141,16 @@ pub struct UpdateDataRequest {
     pub property_data: Vec<PropertyDataRequest>,
 }
 
+/// Body of a create-or-update at a caller-supplied record id.
+///
+/// Same shape as `UpdateDataRequest`, kept separate so the two endpoints can
+/// diverge without a silent change to the other's contract.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct UpsertDataRequest {
+    pub name: String,
+    pub property_data: Vec<PropertyDataRequest>,
+}
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct AddPropertyRequest {
     pub name: String,
@@ -177,6 +192,9 @@ pub struct UpdateSourceRequest {
 // TODO: add English comment
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct SearchRepoQuery {
+    /// Organization username to search in. Defaults to the organization named
+    /// by the `x-operator-id` header.
+    pub org: Option<String>,
     pub name: Option<String>,
     pub limit: Option<i64>,
 }
@@ -268,6 +286,21 @@ pub fn convert_property_value(
                 obj.get("html").and_then(|value| value.as_str())
             {
                 PropertyDataValueInputData::Html(html.to_string())
+            } else if let Some(option_id) = obj
+                .get("optionId")
+                .or_else(|| obj.get("option_id"))
+                .or_else(|| obj.get("select"))
+                .and_then(|value| value.as_str())
+            {
+                // A Select carries exactly one option id, so a bare string
+                // would be the obvious encoding -- but bare strings already
+                // mean `String`, and this function only sees the JSON, never
+                // the Property it is destined for. MultiSelect gets away with
+                // a bare array because nothing else here is an array of
+                // strings. Select has no such free slot, so it is tagged like
+                // the rich text family. Must stay above the `html` fallback
+                // below, which stringifies any unrecognized object.
+                PropertyDataValueInputData::Select(option_id.to_string())
             } else {
                 // TODO: add English comment
                 PropertyDataValueInputData::Html(
@@ -326,5 +359,68 @@ impl From<database_manager::domain::PropertyDataValue>
                 document,
             ) => PropertyDataValue::RichText(document.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn tagged_option_id_becomes_a_select() {
+        let value = convert_property_value(json!({ "optionId": "opt-1" }));
+        assert!(matches!(
+            value,
+            PropertyDataValueInputData::Select(ref id) if id == "opt-1"
+        ));
+    }
+
+    #[test]
+    fn snake_case_and_response_shaped_select_keys_are_accepted() {
+        for body in [
+            json!({ "option_id": "opt-1" }),
+            json!({ "select": "opt-1" }),
+        ] {
+            let value = convert_property_value(body);
+            assert!(matches!(
+                value,
+                PropertyDataValueInputData::Select(ref id) if id == "opt-1"
+            ));
+        }
+    }
+
+    /// An empty option id is how a caller clears a Select, so it has to stay a
+    /// `Select` rather than falling through to the stringify-as-Html arm.
+    #[test]
+    fn an_empty_option_id_still_reaches_the_select_arm() {
+        let value = convert_property_value(json!({ "optionId": "" }));
+        assert!(matches!(
+            value,
+            PropertyDataValueInputData::Select(ref id) if id.is_empty()
+        ));
+    }
+
+    /// The trap this arm's placement guards against: every unrecognized object
+    /// is stringified into `Html`, so a Select tag added below that fallback
+    /// would be accepted by the handler and then rejected against the Property.
+    #[test]
+    fn an_unknown_object_still_falls_back_to_html() {
+        let value = convert_property_value(json!({ "somethingElse": "x" }));
+        assert!(matches!(value, PropertyDataValueInputData::Html(_)));
+    }
+
+    /// A bare string is still a `String`; MultiSelect keeps its bare array.
+    /// Both would collide with Select if it were untagged.
+    #[test]
+    fn select_tagging_leaves_the_untagged_encodings_alone() {
+        assert!(matches!(
+            convert_property_value(json!("opt-1")),
+            PropertyDataValueInputData::String(_)
+        ));
+        assert!(matches!(
+            convert_property_value(json!(["opt-1", "opt-2"])),
+            PropertyDataValueInputData::MultiSelect(_)
+        ));
     }
 }

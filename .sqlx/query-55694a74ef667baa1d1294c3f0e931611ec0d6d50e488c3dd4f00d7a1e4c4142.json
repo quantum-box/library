@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO translations\n                 (tenant_id, scope, target_id, target_lang, source_lang,\n                  source_hash, translated, status, model)\n             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n             ON DUPLICATE KEY UPDATE\n                 source_lang = IF(reviewed_by IS NULL,\n                                  VALUES(source_lang), source_lang),\n                 source_hash = IF(reviewed_by IS NULL,\n                                  VALUES(source_hash), source_hash),\n                 translated  = IF(reviewed_by IS NULL,\n                                  VALUES(translated), translated),\n                 status      = IF(reviewed_by IS NULL,\n                                  VALUES(status), status),\n                 model       = IF(reviewed_by IS NULL,\n                                  VALUES(model), model)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "55694a74ef667baa1d1294c3f0e931611ec0d6d50e488c3dd4f00d7a1e4c4142"
+}

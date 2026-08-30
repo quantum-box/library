@@ -69,7 +69,6 @@ describe('appKitConfig', () => {
     expect(appKitConfig.engine.pullPath).toBe('/api/engine/pull')
     expect(appKitConfig.docs.yjsArrayName).toBe('blocks')
     expect(appKitConfig.attachments.yjsArrayName).toBe('attachments')
-    expect(appKitConfig.attachments.endpoint).toBe('/api/attachments')
     expect(appKitConfig.attachments.webStorageProvider).toBe('web-object-storage')
     expect(appKitConfig.sync.roomParam).toBe('room')
     expect(appKitConfig.server.recordsPath).toBe('/api/records')

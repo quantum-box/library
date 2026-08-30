@@ -98,11 +98,12 @@ export const v1betaTranslations = {
 			alreadyInLibrary: 'Already in Library',
 			openInLibrary: 'Open in Library',
 			insufficientTenantRole:
-				'Only Tachyon tenant owners or managers can import this tenant.',
+				'You do not have permission to import this tenant. Ask a tenant administrator.',
 			orCreateManually: 'Or create a new organization manually',
 			loadingTenants: 'Loading tenants...',
 			noTenants: 'No Tachyon tenants are available for this account.',
 			staffMembers: '{count} staff members',
+			staffMembersUnknown: 'Staff count unavailable',
 		},
 		repository: {
 			title: 'Repository',
@@ -276,6 +277,7 @@ export const v1betaTranslations = {
 				title: 'Full Documentation',
 				description:
 					'Explore the complete API documentation with interactive tools.',
+				userGuide: 'User Guide',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',
@@ -345,6 +347,19 @@ export const v1betaTranslations = {
 			noApiKeys:
 				'No API keys found. Click "Create API Key" button to create a new one.',
 			id: 'ID',
+			name: 'Name',
+			created: 'Created',
+			loading: 'Loading API keys...',
+			failedLoad: 'Failed to load API keys',
+			signInRequired: 'Sign in to manage API keys.',
+			revoke: 'Revoke',
+			revoking: 'Revoking...',
+			revokeConfirmTitle: 'Revoke this API key?',
+			revokeConfirmDescription:
+				'Any application still sending this key stops being authenticated immediately. This cannot be undone.',
+			cancel: 'Cancel',
+			revoked: 'API key revoked',
+			failedRevoke: 'Failed to revoke API key',
 		},
 		githubImport: {
 			importFromGitHub: 'Import from GitHub',
@@ -370,8 +385,9 @@ export const v1betaTranslations = {
 			syncExtGithub: 'Sync ext_github to frontmatter',
 			syncExtGithubDescription:
 				'When saving to GitHub, include ext_github in frontmatter',
-			oneShotImportOnly:
-				'GitHub Markdown import is one-shot for GA. GitHub sync and writeback are coming soon and will not be enabled by this import.',
+			enableSyncLabel: 'Enable GitHub sync',
+			enableSyncDescription:
+				'Keep imported data in sync with GitHub: pushes from GitHub update the data, and saving the data pushes markdown back to GitHub.',
 			propertyMappings: 'Property Mappings',
 			filesWithFrontmatter: '{valid}/{total} files with frontmatter',
 			noFrontmatter: 'No frontmatter properties found in selected files',
@@ -925,11 +941,12 @@ export const v1betaTranslations = {
 			alreadyInLibrary: 'Library に登録済み',
 			openInLibrary: 'Library で開く',
 			insufficientTenantRole:
-				'Tachyon テナントの Owner または Manager のみ取り込めます。',
+				'このテナントを取り込む権限がありません。テナント管理者に依頼してください。',
 			orCreateManually: 'または新しい組織を手動で作成',
 			loadingTenants: 'テナントを読み込んでいます...',
 			noTenants: 'このアカウントで利用可能な Tachyon テナントはありません。',
 			staffMembers: '{count} 人のスタッフ',
+			staffMembersUnknown: 'スタッフ数を取得できませんでした',
 		},
 		repository: {
 			title: 'リポジトリ',
@@ -1105,6 +1122,7 @@ export const v1betaTranslations = {
 				title: '完全なドキュメント',
 				description:
 					'インタラクティブなツールで完全なAPIドキュメントを探索できます。',
+				userGuide: 'ユーザーガイド',
 				swaggerUi: 'Swagger UI',
 				redoc: 'ReDoc',
 				openApiSpec: 'OpenAPI Spec (JSON)',
@@ -1174,6 +1192,19 @@ export const v1betaTranslations = {
 			noApiKeys:
 				'APIキーがありません。「APIキーを作成」ボタンをクリックして新しいキーを作成してください。',
 			id: 'ID',
+			name: '名前',
+			created: '作成日時',
+			loading: 'APIキーを読み込み中...',
+			failedLoad: 'APIキーの取得に失敗しました',
+			signInRequired: 'APIキーを管理するにはサインインしてください。',
+			revoke: '失効',
+			revoking: '失効中...',
+			revokeConfirmTitle: 'このAPIキーを失効しますか？',
+			revokeConfirmDescription:
+				'このキーを送信しているアプリケーションは、ただちに認証されなくなります。この操作は取り消せません。',
+			cancel: 'キャンセル',
+			revoked: 'APIキーを失効しました',
+			failedRevoke: 'APIキーの失効に失敗しました',
 		},
 		githubImport: {
 			importFromGitHub: 'GitHubからインポート',
@@ -1201,8 +1232,9 @@ export const v1betaTranslations = {
 			syncExtGithub: 'ext_githubをfrontmatterに同期',
 			syncExtGithubDescription:
 				'GitHubに保存する際、frontmatterにext_githubを含める',
-			oneShotImportOnly:
-				'GAではGitHub Markdown importはone-shotです。GitHub同期と書き戻しはComing soonで、このインポートでは有効化されません。',
+			enableSyncLabel: 'GitHub同期を有効化',
+			enableSyncDescription:
+				'インポートしたデータをGitHubと同期し続けます。GitHubへのpushでデータが更新され、データを保存するとMarkdownがGitHubに書き戻されます。',
 			propertyMappings: 'プロパティマッピング',
 			filesWithFrontmatter: '{total}件中{valid}件がfrontmatterを含む',
 			noFrontmatter:
