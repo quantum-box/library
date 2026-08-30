@@ -1,4 +1,4 @@
-# ADR-0007: Library migration は candidate Lambda を production 昇格前に実行する
+# ADR-0008: Library migration は candidate Lambda を production 昇格前に実行する
 
 ## Status
 
