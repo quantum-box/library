@@ -32,8 +32,6 @@ export class DocsApiError extends Error {
   }
 }
 
-const DOCUMENT_SYNC_TIMEOUT_MS = 5_000
-
 function withoutUndefined<T extends object>(payload: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined)
@@ -52,7 +50,7 @@ export function toDocMetadata(serverDocument: ServerDocumentMetadata): DocMetada
 
 async function syncDocumentsBestEffort(): Promise<boolean> {
   try {
-    await syncClientEngineOperations(undefined, undefined, DOCUMENT_SYNC_TIMEOUT_MS)
+    await syncClientEngineOperations()
     return true
   } catch (error: unknown) {
     console.warn('Failed to sync document metadata; using the local Photon Engine projection', error)
