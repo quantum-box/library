@@ -27,7 +27,11 @@ import { loadPhotonKernel } from '@quantum-box/photon/wasm'
 
 import { appKitConfig } from '../../app/kitConfig'
 import { getValidAuthTokens } from '../auth'
-import { LEGACY_ENGINE_DATA_DIR, migrateLegacyEngineData } from './legacyMigration'
+import {
+  LEGACY_ENGINE_DATA_DIR,
+  isCarriedCollection,
+  migrateLegacyEngineData,
+} from './legacyMigration'
 
 export type PhotonEngineMutationKind = 'upsert' | 'patch' | 'delete'
 
@@ -89,6 +93,14 @@ const SYNC_TIMEOUT_MS = 5_000
 let clientPromise: Promise<PhotonClient> | null = null
 
 /**
+ * The carry-over, running alongside the client rather than in front of it.
+ *
+ * `migrateLegacyEngineData` never rejects, so awaiting this adds no failure
+ * mode — only the wait, and only where the wait is owed. See `engineFor`.
+ */
+let legacyCarryOver: Promise<void> | null = null
+
+/**
  * Test seam. A test supplies an in-memory store and its own transport rather
  * than opening IndexedDB and talking to a server; nothing else about the
  * client changes, so the code under test is the code that ships.
@@ -109,6 +121,26 @@ async function engine(): Promise<PhotonClient> {
     throw error
   })
   return clientPromise
+}
+
+/**
+ * The client, ready for this collection.
+ *
+ * The carry-over used to be awaited inside `build`, which meant the first read
+ * or write of *any* collection queued behind it — `records` included, which
+ * the carry-over never touches and which the first screen is drawn from. On a
+ * browser with no old store to carry that was a `MIGRATION_TIMEOUT_MS` stall
+ * bolted onto the front of hydration and of every create, and the Library API
+ * request it was attached to had already returned.
+ *
+ * So only `documents` and `attachments` wait: they are what the carry-over
+ * writes, and a read that overtook it would report a document the user still
+ * has as missing.
+ */
+async function engineFor(collection: string): Promise<PhotonClient> {
+  const client = await engine()
+  if (isCarriedCollection(collection)) await legacyCarryOver
+  return client
 }
 
 async function build(): Promise<PhotonClient> {
@@ -142,7 +174,12 @@ async function build(): Promise<PhotonClient> {
     sync: { autoStart: false },
   })
 
-  if (!overrides?.skipLegacyMigration) await migrateLegacyEngineData(client)
+  legacyCarryOver = overrides?.skipLegacyMigration
+    ? Promise.resolve()
+    // `migrateLegacyEngineData` reports its own failures and resolves anyway;
+    // the catch keeps that true here, where the promise is held and may never
+    // be awaited, rather than resting on a promise made in another file.
+    : migrateLegacyEngineData(client).catch(() => undefined)
   return client
 }
 
@@ -160,7 +197,7 @@ function toEngineRecord<T>(record: PhotonRecord<T>): PhotonEngineRecord<T> {
 export async function listClientEngineRecords<T>(
   collection: string
 ): Promise<PhotonEngineRecord<T>[]> {
-  const client = await engine()
+  const client = await engineFor(collection)
   await client.hydrateCollection(collection)
   const query = client.query<T>({ collection })
   try {
@@ -177,7 +214,7 @@ export async function getClientEngineRecord<T>(
   collection: string,
   recordId: string
 ): Promise<PhotonEngineRecord<T> | null> {
-  const client = await engine()
+  const client = await engineFor(collection)
   await client.hydrateCollection(collection)
   const query = client.liveRecord<T>(collection, recordId)
   try {
@@ -194,7 +231,7 @@ export async function upsertClientEngineRecord<T>(
   recordId: string,
   value: T
 ): Promise<PhotonEngineRecord<T>> {
-  const client = await engine()
+  const client = await engineFor(collection)
   const handle = client.upsert<T>(collection, recordId, value)
   const stored = (await handle.local) ?? handle.optimistic
   if (!stored) throw new Error(`upsert produced no record for ${collection}/${recordId}`)
@@ -206,7 +243,7 @@ export async function patchClientEngineRecord<T>(
   recordId: string,
   fields: Partial<T>
 ): Promise<PhotonEngineRecord<T> | null> {
-  const client = await engine()
+  const client = await engineFor(collection)
   const existing = await getClientEngineRecord<T>(collection, recordId)
   if (!existing) return null
   const handle = client.patch<T>(collection, recordId, fields)
@@ -218,7 +255,7 @@ export async function deleteClientEngineRecord(
   collection: string,
   recordId: string
 ): Promise<void> {
-  const client = await engine()
+  const client = await engineFor(collection)
   await client.remove(collection, recordId).local
 }
 
@@ -236,7 +273,7 @@ export async function ingestClientEngineRecords<T>(
   collection: string,
   items: readonly { recordId: string; value: T }[]
 ): Promise<void> {
-  const client = await engine()
+  const client = await engineFor(collection)
   client.ingest<T>(collection, items)
 }
 
@@ -295,6 +332,7 @@ export const __testOnly = {
   async reset(): Promise<void> {
     const existing = clientPromise
     clientPromise = null
+    legacyCarryOver = null
     overrides = null
     if (!existing) return
     await existing.then((client) => client.close()).catch(() => undefined)
