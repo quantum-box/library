@@ -6,14 +6,21 @@ import './index.css'
 import { router } from './router'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AppUpdateNotice } from './components/AppUpdateNotice'
+import { I18nProvider, preloadInitialLocale } from './i18n'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ThemeProvider>
-      <TooltipProvider delayDuration={350}>
-        <RouterProvider router={router} />
-        <AppUpdateNotice />
-      </TooltipProvider>
-    </ThemeProvider>
-  </StrictMode>,
-)
+// Resolve the starting language before the first paint so the shell never
+// flashes English on its way to the user's locale.
+void preloadInitialLocale().then((locale) => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <I18nProvider initial={locale}>
+        <ThemeProvider>
+          <TooltipProvider delayDuration={350}>
+            <RouterProvider router={router} />
+            <AppUpdateNotice />
+          </TooltipProvider>
+        </ThemeProvider>
+      </I18nProvider>
+    </StrictMode>,
+  )
+})

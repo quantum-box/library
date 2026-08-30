@@ -8,6 +8,7 @@ import {
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from '../photonEngine/client'
+import { t } from '../../i18n'
 
 export interface ServerDocumentMetadata {
   id: string
@@ -71,8 +72,8 @@ export async function fetchServerDocuments(): Promise<DocMetadata[]> {
 export async function fetchServerDocument(docId: string): Promise<DocMetadata> {
   const syncSucceeded = await syncDocumentsBestEffort()
   const record = await getClientEngineRecord<DocMetadata>('documents', docId)
-  if (!record && syncSucceeded) throw new DocsApiError('Document metadata not found', 404)
-  if (!record) throw new Error('Document metadata is temporarily unavailable')
+  if (!record && syncSucceeded) throw new DocsApiError(t('errors.docMetadataNotFound'), 404)
+  if (!record) throw new Error(t('errors.docMetadataUnavailable'))
   return record.value
 }
 
@@ -101,7 +102,7 @@ export async function updateServerDocument(
     updatedAt: new Date().toISOString(),
   }
   const record = await patchClientEngineRecord<DocMetadata>('documents', docId, document)
-  if (!record) throw new DocsApiError('Document metadata not found', 404)
+  if (!record) throw new DocsApiError(t('errors.docMetadataNotFound'), 404)
   await syncDocumentsBestEffort()
   return record.value
 }

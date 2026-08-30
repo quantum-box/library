@@ -5,6 +5,7 @@ import { ToolResultCard } from './tools/ToolResultCard'
 import { FileChip } from '../files/FileChip'
 import type { ToolCall } from './tools/types'
 import type { FileAttachment } from '../files/types'
+import { useI18n } from '../../i18n'
 
 export interface Message {
   id: string
@@ -86,6 +87,7 @@ export const ChatMessage = memo(function ChatMessage({
   onDelete,
   onPreviewFile,
 }: ChatMessageProps) {
+  const { t, formatDate } = useI18n()
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
 
@@ -99,7 +101,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <article
-      aria-label={isUser ? 'Your message' : 'Assistant message'}
+      aria-label={isUser ? t('chat.yourMessage') : t('chat.assistantMessage')}
       className={`group relative flex gap-2 px-3 py-3 md:gap-3 md:px-4 ${isUser ? '' : 'bg-surface/30'}`}
     >
       {/* Avatar */}
@@ -109,20 +111,20 @@ export const ChatMessage = memo(function ChatMessage({
           isUser ? 'bg-surface-hover text-muted' : 'bg-accent text-white'
         }`}
       >
-        {isUser ? 'U' : 'A'}
+        {isUser ? t('chat.userInitial') : t('chat.assistantInitial')}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xs font-medium text-foreground">
-            {isUser ? 'You' : 'Assistant'}
+            {isUser ? t('chat.you') : t('chat.assistant')}
           </span>
           <time
             dateTime={new Date(message.timestamp).toISOString()}
             className="text-xs text-subtle"
           >
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {formatDate(message.timestamp, { hour: '2-digit', minute: '2-digit' })}
           </time>
         </div>
 
@@ -160,24 +162,24 @@ export const ChatMessage = memo(function ChatMessage({
         {showActions && (
           <div
             role="group"
-            aria-label="Message actions"
+            aria-label={t('chat.messageActions')}
             className="flex items-center gap-0.5 mt-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
           >
             <ActionButton
               icon={copied ? CheckIcon : CopyIcon}
-              title={copied ? 'Copied!' : 'Copy message'}
+              title={copied ? t('chat.copied') : t('chat.copyMessage')}
               onClick={handleCopy}
             />
             {!isUser && isLastAssistant && onRegenerate && (
-              <ActionButton icon={RegenerateIcon} title="Regenerate" onClick={onRegenerate} />
+              <ActionButton icon={RegenerateIcon} title={t('chat.regenerate')} onClick={onRegenerate} />
             )}
             {onDelete && (
-              <ActionButton icon={DeleteIcon} title="Delete message" onClick={onDelete} />
+              <ActionButton icon={DeleteIcon} title={t('chat.deleteMessage')} onClick={onDelete} />
             )}
           </div>
         )}
         <span className="sr-only" role="status" aria-live="polite">
-          {copied ? 'Message copied' : ''}
+          {copied ? t('chat.messageCopied') : ''}
         </span>
       </div>
     </article>

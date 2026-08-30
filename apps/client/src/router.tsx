@@ -89,6 +89,7 @@ import {
   focusRecordSearchInput,
   focusRecordSearchInputWhenReady,
 } from './lib/ui/focusRecordSearch'
+import { useI18n, t as translate, type MessageKey } from './i18n'
 
 // ── Search params ──────────────────────────────────────────────
 
@@ -117,20 +118,22 @@ function isEditableShortcutTarget(target: EventTarget | null) {
   return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
 }
 
-function shortcutViewLabel(view: DatabaseViewType | 'docs' | 'chat' | 'sync') {
+function shortcutViewLabelKey(
+  view: DatabaseViewType | 'docs' | 'chat' | 'sync'
+): MessageKey {
   switch (view) {
     case 'table':
-      return 'Table'
+      return 'viewTabs.table'
     case 'board':
-      return 'Board'
+      return 'viewTabs.board'
     case 'workflow':
-      return 'Workflow'
+      return 'viewTabs.workflow'
     case 'docs':
-      return 'Docs'
+      return 'shortcuts.docs'
     case 'chat':
-      return 'Chat'
+      return 'shortcuts.chat'
     case 'sync':
-      return 'Sync'
+      return 'shortcuts.sync'
   }
 }
 
@@ -271,6 +274,8 @@ function DatabaseHeader({
   onSaveView: () => void
   onDiscardChanges: () => void
 }) {
+  const { t } = useI18n()
+
   return (
     <>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
@@ -294,24 +299,24 @@ function DatabaseHeader({
                 {repository}
               </Link>
               <ChevronRight className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
-              <h1 className="truncate font-semibold">Data</h1>
+              <h1 className="truncate font-semibold">{t('repository.tab.data')}</h1>
             </>
           ) : (
             <h1 className="truncate font-semibold">{title}</h1>
           )}
         </div>
         <Badge data-testid="selected-database-pill" variant="outline" className="hidden sm:inline-flex">
-          {organization && repository ? 'Repository data' : databaseLabel}
+          {organization && repository ? t('databaseHeader.repositoryData') : databaseLabel}
         </Badge>
         {status && (
           <Badge data-testid="status-filter-pill" variant="neutral" className="hidden gap-1 md:inline-flex">
-            {statusConfig[status].label}
+            {t(statusConfig[status].labelKey)}
             {onClearStatus && (
               <button
                 type="button"
                 onClick={onClearStatus}
                 className="rounded-sm text-subtle-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                aria-label="Clear status filter"
+                aria-label={t('databaseHeader.clearStatusFilter')}
               >
                 <X className="size-3" aria-hidden="true" />
               </button>
@@ -328,7 +333,9 @@ function DatabaseHeader({
               onClick={onToggleFilters}
             >
               <Filter aria-hidden="true" />
-              <span className="hidden sm:inline">{filtersOpen ? 'Hide filters' : 'Filter'}</span>
+              <span className="hidden sm:inline">
+                {filtersOpen ? t('databaseHeader.hideFilters') : t('databaseHeader.filter')}
+              </span>
             </Button>
           )}
           {onCreate && (
@@ -339,7 +346,7 @@ function DatabaseHeader({
               onClick={onCreate}
             >
               <Plus aria-hidden="true" />
-              <span>New data</span>
+              <span>{t('data.new')}</span>
               <Kbd className="hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">C</Kbd>
             </Button>
           )}
@@ -368,25 +375,27 @@ function SignedInLibraryDashboard({
   organizationCount: number
   repositoryCount: number
 }) {
+  const { t, tPlural } = useI18n()
+
   return (
     <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 py-10">
       <div className="w-full max-w-xl text-center">
         <span className="mx-auto flex size-11 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
           <FolderGit2 className="size-5" aria-hidden="true" />
         </span>
-        <Badge variant="success" className="mt-5">Authenticated</Badge>
-        <h2 className="mt-3 text-xl font-semibold tracking-tight">No repository data yet</h2>
+        <Badge variant="success" className="mt-5">{t('dashboard.authenticated')}</Badge>
+        <h2 className="mt-3 text-xl font-semibold tracking-tight">{t('dashboard.noRepositoryData')}</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          Library organizes pages beneath GitHub-style repository paths. Create a repository to start adding data, documents, and workflows.
+          {t('dashboard.noRepositoryDataHint')}
         </p>
         <Button className="mt-5" variant="primary" onClick={() => openCreateRepository()}>
           <Plus aria-hidden="true" />
-          Create repository
+          {t('sidebar.repositories.create')}
         </Button>
         <div className="mt-5 flex items-center justify-center gap-3 font-mono text-2xs text-subtle-foreground">
-          <span>{organizationCount} organizations</span>
+          <span>{tPlural('home.organizationCount', organizationCount)}</span>
           <span aria-hidden="true">·</span>
-          <span>{repositoryCount} repositories</span>
+          <span>{tPlural('organization.repositoryCount', repositoryCount)}</span>
         </div>
       </div>
     </div>
@@ -394,6 +403,7 @@ function SignedInLibraryDashboard({
 }
 
 function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useDialogFocus({ open, dialogRef, initialFocusRef: closeButtonRef, onClose })
@@ -402,18 +412,18 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
 
   const modifier = modifierKeyLabel()
   const shortcuts = [
-    { keys: renderShortcutKeys(['C']), label: 'New data' },
-    { keys: renderShortcutKeys(['/']), label: 'Focus data search' },
-    { keys: renderShortcutKeys([modifier, 'F']), label: 'Focus data search' },
-    { keys: renderShortcutKeys([modifier, 'B']), label: 'Toggle table or board' },
-    { keys: renderShortcutKeys([modifier, 'K']), label: 'Open command menu' },
-    { keys: renderShortcutSequence(['G', 'T']), label: shortcutViewLabel('table') },
-    { keys: renderShortcutSequence(['G', 'B']), label: shortcutViewLabel('board') },
-    { keys: renderShortcutSequence(['G', 'W']), label: shortcutViewLabel('workflow') },
-    { keys: renderShortcutSequence(['G', 'D']), label: shortcutViewLabel('docs') },
-    { keys: renderShortcutSequence(['G', 'C']), label: shortcutViewLabel('chat') },
-    { keys: renderShortcutSequence(['G', 'S']), label: shortcutViewLabel('sync') },
-    { keys: renderShortcutKeys(['?']), label: 'Show shortcuts' },
+    { keys: renderShortcutKeys(['C']), label: t('data.new') },
+    { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
+    { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
+    { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
+    { keys: renderShortcutKeys([modifier, 'K']), label: t('shortcuts.openCommandMenu') },
+    { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
+    { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
+    { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
+    { keys: renderShortcutSequence(['G', 'D']), label: t(shortcutViewLabelKey('docs')) },
+    { keys: renderShortcutSequence(['G', 'C']), label: t(shortcutViewLabelKey('chat')) },
+    { keys: renderShortcutSequence(['G', 'S']), label: t(shortcutViewLabelKey('sync')) },
+    { keys: renderShortcutKeys(['?']), label: t('shortcuts.showShortcuts') },
   ]
 
   return (
@@ -433,11 +443,13 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
         className="w-full max-w-sm rounded-lg border border-border bg-surface p-4 text-foreground shadow-soft"
       >
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 id="keyboard-shortcuts-title" className="text-sm font-semibold">Keyboard shortcuts</h2>
+          <h2 id="keyboard-shortcuts-title" className="text-sm font-semibold">
+            {t('shortcuts.title')}
+          </h2>
           <button
             ref={closeButtonRef}
             type="button"
-            aria-label="Close keyboard shortcuts"
+            aria-label={t('shortcuts.close')}
             className="flex h-7 w-7 items-center justify-center rounded bg-surface-hover text-xs text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={onClose}
           >
@@ -665,6 +677,7 @@ function AuthenticatedWorkspaceRoot() {
 }
 
 function WorkspaceHydrationStatus() {
+  const { t } = useI18n()
   const { records, hydrationLoading, hydrationError, refreshRecords } = useDatabaseRecords()
   if (!hydrationError && (!hydrationLoading || records.length > 0)) return null
 
@@ -681,30 +694,33 @@ function WorkspaceHydrationStatus() {
       )}
       <div className="min-w-0 flex-1">
         <p className="font-medium">
-          {hydrationLoading ? 'Loading Library data' : 'Library data could not load'}
+          {hydrationLoading ? t('workspace.loadingData') : t('workspace.dataLoadFailed')}
         </p>
         {hydrationError ? (
           <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
-            {hydrationError} Cached local data remains available.
+            {hydrationError} {t('workspace.cachedDataAvailable')}
           </p>
         ) : null}
       </div>
       {hydrationError ? (
-        <Button size="sm" onClick={refreshRecords}>Try again</Button>
+        <Button size="sm" onClick={refreshRecords}>{t('common.tryAgain')}</Button>
       ) : null}
     </div>
   )
 }
 
 function WorkspaceMutationError() {
+  const { t } = useI18n()
   const { mutationError, clearMutationError } = useDatabaseRecords()
   if (!mutationError) return null
 
-  const actionLabel = mutationError.action === 'move'
-    ? 'move'
+  // Each action gets its own sentence rather than a verb slotted into one
+  // template: word order and verb form differ too much between languages.
+  const headline = mutationError.action === 'move'
+    ? t('workspace.mutation.moveFailed')
     : mutationError.action === 'delete'
-      ? 'delete'
-      : 'update'
+      ? t('workspace.mutation.deleteFailed')
+      : t('workspace.mutation.updateFailed')
 
   return (
     <div
@@ -713,15 +729,15 @@ function WorkspaceMutationError() {
     >
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium">Couldn’t {actionLabel} data</p>
+        <p className="font-medium">{headline}</p>
         <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
-          {mutationError.message} The current server-backed value was kept.
+          {mutationError.message} {t('workspace.mutation.valueKept')}
         </p>
       </div>
       <button
         type="button"
         className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        aria-label="Dismiss data error"
+        aria-label={t('workspace.dismissError')}
         onClick={clearMutationError}
       >
         <X className="size-4" aria-hidden="true" />
@@ -739,6 +755,8 @@ function RouteState({
   description: string
   action?: ReactNode
 }) {
+  const { t } = useI18n()
+
   return (
     <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-surface px-5 py-12">
       <div className="w-full max-w-md rounded-xl border border-border bg-background p-6 text-center shadow-soft">
@@ -752,7 +770,7 @@ function RouteState({
           <Button variant="primary" asChild>
             <Link to="/home">
               <Home aria-hidden="true" />
-              Home
+              {t('home.title')}
             </Link>
           </Button>
         </div>
@@ -800,24 +818,25 @@ const rootRoute = createRootRoute({
       </div>
     )
   },
-  notFoundComponent: () => (
-    <RouteState
-      title="Page not found"
-      description="This Library page does not exist or may have moved."
-    />
-  ),
-  errorComponent: ({ reset }) => (
-    <RouteState
-      title="Library could not open this page"
-      description="Your local data is still on this device. Retry the page, or return home and choose another view."
-      action={(
-        <Button variant="secondary" onClick={reset}>
-          <RotateCcw aria-hidden="true" />
-          Retry
-        </Button>
-      )}
-    />
-  ),
+  notFoundComponent: function RouteNotFound() {
+    const { t } = useI18n()
+    return <RouteState title={t('route.notFound')} description={t('route.notFoundHint')} />
+  },
+  errorComponent: function RouteError({ reset }) {
+    const { t } = useI18n()
+    return (
+      <RouteState
+        title={t('route.error')}
+        description={t('route.errorHint')}
+        action={(
+          <Button variant="secondary" onClick={reset}>
+            <RotateCcw aria-hidden="true" />
+            {t('common.retry')}
+          </Button>
+        )}
+      />
+    )
+  },
 })
 
 // ── Index Route (redirect → /home) ────────────────────────────
@@ -1012,6 +1031,7 @@ function DataWorkspace({
   desc?: boolean
   recordId?: string
 }) {
+  const { t, locale } = useI18n()
   const viewId = viewParam
   const {
     records,
@@ -1126,8 +1146,8 @@ function DataWorkspace({
     [databaseRecords, effectiveView]
   )
   const sortedRecords = useMemo(
-    () => sortRecordsForDatabaseView(filteredRecords, effectiveView),
-    [effectiveView, filteredRecords]
+    () => sortRecordsForDatabaseView(filteredRecords, effectiveView, locale),
+    [effectiveView, filteredRecords, locale]
   )
 
   const selectedRecord = useMemo(
@@ -1314,13 +1334,13 @@ function DataWorkspace({
   if (database && !selectedDatabase && !repositoriesLoading && !repositoriesError) {
     return (
       <RouteState
-        title="Repository not found"
-        description="This repository is not available in the current Library workspace. It may have been removed or you may need access."
+        title={t('repository.notFound')}
+        description={t('route.repositoryNotFoundHint')}
         action={(
           <Button variant="secondary" asChild>
             <Link to="/databases">
               <Database aria-hidden="true" />
-              Open all data
+              {t('organization.openAllData')}
             </Link>
           </Button>
         )}
@@ -1342,8 +1362,8 @@ function DataWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Header */}
         <DatabaseHeader
-          title={selectedDatabase?.repoUsername ?? 'All repository data'}
-          databaseLabel={selectedDatabase?.label ?? 'All repository data'}
+          title={selectedDatabase?.repoUsername ?? t('databaseHeader.allRepositoryData')}
+          databaseLabel={selectedDatabase?.label ?? t('databaseHeader.allRepositoryData')}
           organization={selectedDatabase?.orgUsername}
           repository={selectedDatabase?.repoUsername}
           views={scopedViews}
@@ -1585,21 +1605,21 @@ function RecordDetailPanel({
           if (!found) {
             setDetailFailure({
               recordId,
-              message: `${recordId} is not available in this data view.`,
+              message: translate('route.recordNotInView', { recordId }),
             })
           }
           return
         }
         setDetailFailure({
           recordId,
-          message: 'Data changed while loading. Close this panel and try again.',
+          message: translate('route.recordChangedWhileLoading'),
         })
       } catch (error: unknown) {
         console.warn('Failed to hydrate data detail from Library API', error)
         if (!cancelled) {
           setDetailFailure({
             recordId,
-            message: error instanceof Error ? error.message : 'Failed to load data',
+            message: error instanceof Error ? error.message : translate('route.recordLoadFailed'),
           })
         }
       }

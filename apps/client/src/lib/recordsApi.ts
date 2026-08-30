@@ -20,6 +20,7 @@ import {
   loadStoredAuthIdentity,
   storeAuthTokens,
 } from './auth'
+import { t } from '../i18n'
 
 export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
@@ -1234,7 +1235,7 @@ export async function uploadLibraryImage(
 
   const payload = await response.json() as { url?: unknown }
   if (typeof payload.url !== 'string' || !payload.url) {
-    throw new RecordApiError('Library image upload returned no URL', response.status)
+    throw new RecordApiError(t('errors.imageUploadNoUrl'), response.status)
   }
   return payload.url
 }
@@ -1937,7 +1938,7 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
 }> {
   const org = target?.org ?? import.meta.env.VITE_LIBRARY_ORG
   const repo = target?.repo ?? import.meta.env.VITE_LIBRARY_REPO
-  if (!org || !repo) throw new RecordApiError('Library API is not configured', 400)
+  if (!org || !repo) throw new RecordApiError(t('errors.apiNotConfigured'), 400)
 
   const resolvedTarget = { org, repo, operatorId: target?.operatorId, anonymous: target?.anonymous }
   try {
@@ -1946,7 +1947,7 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
       { org, repo, dataId },
       { operatorId: target?.operatorId, anonymous: target?.anonymous }
     )
-    if (!payload.data) throw new RecordApiError('Data not found', 404)
+    if (!payload.data) throw new RecordApiError(t('errors.dataNotFound'), 404)
     if (!Array.isArray(payload.properties)) {
       throw new RecordApiError(
         'Library GraphQL returned no Property definitions',
@@ -2202,7 +2203,7 @@ export async function updateServerRecord(
   const existing = (await listClientEngineRecords<DatabaseRecord>(collection))
     .find((record) => record.recordId === recordId)?.value
   if (!existing) {
-    throw new RecordApiError('Record not found', 404)
+    throw new RecordApiError(t('errors.recordNotFound'), 404)
   }
 
   const record: DatabaseRecord = {
@@ -2213,7 +2214,7 @@ export async function updateServerRecord(
     updatedAt: new Date().toISOString(),
   }
   const storedRecord = await patchClientEngineRecord<DatabaseRecord>(collection, recordId, record)
-  if (!storedRecord) throw new RecordApiError('Record not found', 404)
+  if (!storedRecord) throw new RecordApiError(t('errors.recordNotFound'), 404)
   return storedRecord.value
 }
 

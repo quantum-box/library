@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkspaceOrganization } from '../contexts/DatabasesContext'
+import { useI18n } from '../i18n'
 
 interface OrganizationComboboxProps {
   organizations: WorkspaceOrganization[]
@@ -12,6 +13,7 @@ export function OrganizationCombobox({
   selectedOrganizationId,
   onSelectOrganization,
 }: OrganizationComboboxProps) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -63,10 +65,10 @@ export function OrganizationCombobox({
       >
         <span className="flex min-w-0 items-center gap-1">
           <span className="shrink-0 text-[10px] font-medium uppercase tracking-wider text-subtle">
-            Org
+            {t('organizations.abbreviation')}
           </span>
           <span className="truncate text-xs font-medium">
-            {selectedOrganization?.label ?? 'Select org'}
+            {selectedOrganization?.label ?? t('organizations.select')}
           </span>
         </span>
         <span className="text-[10px] text-subtle">{open ? '⌃' : '⌄'}</span>
@@ -77,7 +79,7 @@ export function OrganizationCombobox({
           <input
             autoFocus
             className="mb-1.5 h-7 w-full rounded border border-border bg-canvas px-2 text-xs text-foreground outline-none focus:border-accent"
-            placeholder="Search org slug..."
+            placeholder={t('organizations.searchSlug')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -100,12 +102,14 @@ export function OrganizationCombobox({
                   }}
                 >
                   <span className="truncate font-medium">{organization.label}</span>
-                  {selected && <span className="text-[10px] text-subtle">Selected</span>}
+                  {selected && (
+                    <span className="text-[10px] text-subtle">{t('organizations.selected')}</span>
+                  )}
                 </button>
               )
             })}
             {filteredOrganizations.length === 0 && (
-              <div className="px-2 py-3 text-xs text-subtle">No organizations</div>
+              <div className="px-2 py-3 text-xs text-subtle">{t('organizations.empty')}</div>
             )}
           </div>
         </div>

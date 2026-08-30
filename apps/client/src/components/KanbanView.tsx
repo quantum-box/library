@@ -25,6 +25,7 @@ import {
   priorityConfig,
 } from '../data/mock'
 import type { RecordPropertyKey } from '../lib/databaseViews/types'
+import { useI18n } from '../i18n'
 
 interface KanbanViewProps {
   records: DatabaseRecord[]
@@ -221,6 +222,7 @@ export function KanbanColumn({
   compact: boolean
   visibleProperties?: RecordPropertyKey[]
 }) {
+  const { t } = useI18n()
   const config = statusConfig[status]
   const { setNodeRef, isOver } = useDroppable({
     id: `column-${status}`,
@@ -231,7 +233,7 @@ export function KanbanColumn({
     <div className="flex w-[82vw] max-w-[280px] shrink-0 flex-col sm:w-[280px]">
       <div className="flex items-center gap-2 px-3 py-2 mb-1">
         <span style={{ color: config.color }}>{config.icon}</span>
-        <span className="text-xs font-medium">{config.label}</span>
+        <span className="text-xs font-medium">{t(config.labelKey)}</span>
         <span className="text-xs px-1.5 rounded-full bg-surface-hover text-subtle">
           {records.length}
         </span>
@@ -281,6 +283,7 @@ export function KanbanView({
   onCompactChange,
   visibleProperties,
 }: KanbanViewProps) {
+  const { t } = useI18n()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [dragPreviewStatus, setDragPreviewStatus] = useState<Status | null>(null)
   const [internalCompact, setInternalCompact] = useState(false)
@@ -379,10 +382,10 @@ export function KanbanView({
           }`}
           onClick={() => setCompact(!compact)}
         >
-          {compact ? 'Compact' : 'Default'}
+          {compact ? t('kanban.densityCompact') : t('kanban.densityDefault')}
         </button>
         <span className="min-w-0 truncate text-xs text-subtle">
-          {records.length} data · drag to move
+          {t('kanban.dragHint', { count: records.length })}
         </span>
       </div>
 

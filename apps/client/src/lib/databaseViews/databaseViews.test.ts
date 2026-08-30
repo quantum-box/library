@@ -94,6 +94,25 @@ describe('database view definitions', () => {
     expect(sorted.map((record) => record.identifier)).toEqual(['PLT-1'])
   })
 
+  it('sorts titles by the locale it is given', () => {
+    const view = {
+      ...getDefaultDatabaseViews('photon-core')[0],
+      sorting: { id: 'title' as const, desc: false },
+    }
+    const rows = [
+      { ...records[0], id: 'a', identifier: 'A', title: 'Öl' },
+      { ...records[0], id: 'b', identifier: 'B', title: 'Zebra' },
+      { ...records[0], id: 'c', identifier: 'C', title: 'Ost' },
+    ]
+
+    // German collates Ö with O; Swedish sorts it after Z. Passing the locale
+    // is what lets a language switch re-sort rows that have not changed.
+    expect(sortRecordsForDatabaseView(rows, view, 'de').map((row) => row.title))
+      .toEqual(['Öl', 'Ost', 'Zebra'])
+    expect(sortRecordsForDatabaseView(rows, view, 'sv' as never).map((row) => row.title))
+      .toEqual(['Ost', 'Zebra', 'Öl'])
+  })
+
   it('applies legacy status and sort params as an unsaved view patch', () => {
     const view = createViewFromLegacySearch(getDefaultDatabaseViews('photon-core')[0], {
       status: 'done',

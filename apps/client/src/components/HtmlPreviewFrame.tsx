@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n'
+
 /**
  * Sandboxed rendering of an untrusted HTML document, artifact-style.
  *
@@ -9,19 +11,21 @@
  */
 export function HtmlPreviewFrame({
   source,
-  title = 'HTML preview',
+  title,
   className,
 }: {
   source: string
   title?: string
   className?: string
 }) {
+  const { t } = useI18n()
+
   return (
     <iframe
       data-testid="html-preview-frame"
       sandbox="allow-scripts"
       srcDoc={source}
-      title={title}
+      title={title ?? t('editor.htmlPreviewFrameTitle')}
       className={className ?? 'h-full w-full border-0 bg-white'}
     />
   )

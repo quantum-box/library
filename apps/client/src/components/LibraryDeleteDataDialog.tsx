@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useI18n } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
 interface LibraryDeleteDataDialogProps {
@@ -19,6 +20,7 @@ export function LibraryDeleteDataDialog({
   onCancel,
   onConfirm,
 }: LibraryDeleteDataDialogProps) {
+  const { t } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -54,11 +56,11 @@ export function LibraryDeleteDataDialog({
           id="library-delete-dialog-title"
           className="text-sm font-semibold text-foreground"
         >
-          Delete data?
+          {t('deleteData.title')}
         </h2>
         <p id="library-delete-dialog-description" className="mt-2 text-sm text-muted">
-          <span className="font-medium text-foreground">{dataName}</span> will be permanently
-          removed from this repository.
+          <span className="font-medium text-foreground">{dataName}</span>{' '}
+          {t('deleteData.description')}
         </p>
         {error && (
           <p
@@ -78,7 +80,7 @@ export function LibraryDeleteDataDialog({
             disabled={busy}
             onClick={onCancel}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -87,7 +89,7 @@ export function LibraryDeleteDataDialog({
             disabled={busy}
             onClick={onConfirm}
           >
-            {busy ? 'Deleting…' : 'Delete'}
+            {busy ? t('common.deleting') : t('common.delete')}
           </button>
         </div>
       </div>

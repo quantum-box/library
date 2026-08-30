@@ -13,6 +13,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import type { LibraryAccessibleTenant } from '../lib/recordsApi'
+import { useI18n, t as translate } from '../i18n'
 
 type Mode = 'import' | 'create'
 
@@ -54,6 +55,7 @@ export function CreateOrganizationDialog({
   onImport,
   loadTenants,
 }: CreateOrganizationDialogProps) {
+  const { t, tPlural } = useI18n()
   const [mode, setMode] = useState<Mode>('import')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -100,7 +102,7 @@ export function CreateOrganizationDialog({
       .catch((loadError: unknown) => {
         if (cancelled) return
         setTenantsError(
-          errorMessage(loadError, 'Organizations could not be loaded.'),
+          errorMessage(loadError, translate('createOrg.loadFailed')),
         )
       })
       .finally(() => {
@@ -123,15 +125,15 @@ export function CreateOrganizationDialog({
     event.preventDefault()
     if (busy) return
     if (!trimmedName) {
-      setError('Organization name is required.')
+      setError(t('createOrg.nameRequired'))
       return
     }
     if (!usernameValid) {
-      setError('Username must be 3–40 characters using letters, numbers, hyphens, or underscores.')
+      setError(t('createOrg.usernameInvalid'))
       return
     }
     if (usernameReserved) {
-      setError('This username is reserved for a Library page.')
+      setError(t('createOrg.usernameReserved'))
       return
     }
 
@@ -141,7 +143,7 @@ export function CreateOrganizationDialog({
       await onCreate(trimmedName, trimmedUsername)
       onClose()
     } catch (createError) {
-      setError(errorMessage(createError, 'Organization could not be created.'))
+      setError(errorMessage(createError, t('createOrg.createFailed')))
     } finally {
       setBusy(false)
     }
@@ -156,7 +158,7 @@ export function CreateOrganizationDialog({
       await onImport(selectedTenant.tenantId)
       onClose()
     } catch (importError) {
-      setError(errorMessage(importError, 'Organization could not be imported.'))
+      setError(errorMessage(importError, t('createOrg.importFailed')))
     } finally {
       setBusy(false)
     }
@@ -167,7 +169,7 @@ export function CreateOrganizationDialog({
       return (
         <p className="flex items-center gap-2 py-6 text-xs text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          Loading your organizations…
+          {t('createOrg.loadingTenants')}
         </p>
       )
     }
@@ -183,8 +185,7 @@ export function CreateOrganizationDialog({
     if (tenants.length === 0) {
       return (
         <p className="py-6 text-xs text-muted-foreground">
-          You do not belong to any organization outside Library yet. Use “Create new”
-          to start one from scratch.
+          {t('createOrg.noTenants')}
         </p>
       )
     }
@@ -198,16 +199,16 @@ export function CreateOrganizationDialog({
           // than `0 members`, which read as "this tenant is empty".
           const countUnknown = tenant.staffCount === null
           const memberNote = countUnknown
-            ? '— members'
-            : `${tenant.staffCount} ${tenant.staffCount === 1 ? 'member' : 'members'}`
+            ? t('createOrg.memberCountUnknown')
+            : tPlural('createOrg.memberCount', tenant.staffCount ?? 0)
           const note = tenant.hasLibraryOrg
-            ? 'Already in Library'
+            ? t('createOrg.alreadyInLibrary')
             : tenant.canImportToLibrary
               ? memberNote
-              : 'No permission to import'
+              : t('createOrg.noImportPermission')
           const noteTitle =
             countUnknown && !tenant.hasLibraryOrg && tenant.canImportToLibrary
-              ? 'Member count unavailable'
+              ? t('createOrg.memberCountUnavailable')
               : undefined
 
           return (
@@ -256,13 +257,15 @@ export function CreateOrganizationDialog({
     }}>
       <DialogContent className="max-w-md" aria-busy={busy}>
         <DialogHeader>
-          <DialogTitle>Add organization</DialogTitle>
-          <DialogDescription>
-            Organizations contain repositories, data, and members in Library.
-          </DialogDescription>
+          <DialogTitle>{t('sidebar.organizations.add')}</DialogTitle>
+          <DialogDescription>{t('createOrg.description')}</DialogDescription>
         </DialogHeader>
 
-        <div role="tablist" aria-label="Add organization" className="flex gap-3 border-b border-border">
+        <div
+          role="tablist"
+          aria-label={t('sidebar.organizations.add')}
+          className="flex gap-3 border-b border-border"
+        >
           <button
             type="button"
             role="tab"
@@ -274,7 +277,7 @@ export function CreateOrganizationDialog({
             }}
             className={tabClassName(mode === 'import')}
           >
-            Import existing
+            {t('createOrg.tabImport')}
           </button>
           <button
             type="button"
@@ -287,15 +290,14 @@ export function CreateOrganizationDialog({
             }}
             className={tabClassName(mode === 'create')}
           >
-            Create new
+            {t('createOrg.tabCreate')}
           </button>
         </div>
 
         {mode === 'import' ? (
           <div className="space-y-3">
             <p className="text-2xs text-muted-foreground">
-              Bring an organization you already belong to into Library. Everyone in it
-              keeps their access.
+              {t('createOrg.importHint')}
             </p>
             {renderTenantList()}
             {error && (
@@ -303,7 +305,7 @@ export function CreateOrganizationDialog({
             )}
             <DialogFooter>
               <DialogClose asChild>
-                <Button type="button" disabled={busy}>Cancel</Button>
+                <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
               </DialogClose>
               <Button
                 type="button"
@@ -311,14 +313,14 @@ export function CreateOrganizationDialog({
                 disabled={busy || !selectedTenant}
                 onClick={() => void handleImport()}
               >
-                {busy ? 'Importing…' : 'Import organization'}
+                {busy ? t('createOrg.importing') : t('createOrg.import')}
               </Button>
             </DialogFooter>
           </div>
         ) : (
           <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="organization-name">Organization name</Label>
+              <Label htmlFor="organization-name">{t('createOrg.nameLabel')}</Label>
               <Input
                 id="organization-name"
                 value={name}
@@ -328,13 +330,13 @@ export function CreateOrganizationDialog({
                   if (!usernameEdited) setUsername(normalizeUsername(nextName))
                   if (error) setError(null)
                 }}
-                placeholder="Acme Research"
+                placeholder={t('createOrg.namePlaceholder')}
                 disabled={busy}
                 autoFocus
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="organization-username">Username</Label>
+              <Label htmlFor="organization-username">{t('createOrg.usernameLabel')}</Label>
               <Input
                 id="organization-username"
                 value={username}
@@ -348,11 +350,11 @@ export function CreateOrganizationDialog({
                 disabled={busy}
               />
               <p id="organization-username-help" className="text-2xs text-muted-foreground">
-                3–40 characters. Letters, numbers, hyphens, and underscores only.
+                {t('createOrg.usernameHelp')}
               </p>
               {usernameReserved && (
                 <p role="alert" className="text-xs text-destructive">
-                  This username is reserved for a Library page.
+                  {t('createOrg.usernameReserved')}
                 </p>
               )}
             </div>
@@ -361,14 +363,14 @@ export function CreateOrganizationDialog({
             )}
             <DialogFooter>
               <DialogClose asChild>
-                <Button type="button" disabled={busy}>Cancel</Button>
+                <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
               </DialogClose>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={busy || !trimmedName || !usernameValid || usernameReserved}
               >
-                {busy ? 'Creating…' : 'Create organization'}
+                {busy ? t('common.creating') : t('createOrg.create')}
               </Button>
             </DialogFooter>
           </form>

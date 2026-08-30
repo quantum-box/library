@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
+import { useI18n, t as translate } from '../../i18n'
 
 interface SpreadsheetViewerProps {
   file: File
@@ -13,6 +14,7 @@ interface SheetData {
 }
 
 export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
+  const { t, tPlural } = useI18n()
   const [sheets, setSheets] = useState<SheetData[]>([])
   const [activeSheet, setActiveSheet] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -36,7 +38,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
 
         setSheets(parsed)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to parse file')
+        setError(err instanceof Error ? err.message : translate('files.parseFailed'))
       }
     }
 
@@ -53,7 +55,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
           const rows = json.slice(1).map((row) => row.map(String))
           setSheets([{ name: 'Sheet1', headers, rows }])
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to parse CSV')
+          setError(err instanceof Error ? err.message : translate('files.csvParseFailed'))
         }
       }
     } else {
@@ -66,7 +68,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-priority-urgent">
-        <p>Failed to load spreadsheet: {error}</p>
+        <p>{t('files.spreadsheetLoadFailed', { error })}</p>
       </div>
     )
   }
@@ -93,7 +95,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
           {name}
         </span>
         <span className="text-xs text-subtle">
-          {sheet.rows.length} rows
+          {tPlural('files.rowCount', sheet.rows.length)}
         </span>
       </div>
 

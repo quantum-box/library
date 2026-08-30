@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import mammoth from 'mammoth'
+import { useI18n } from '../../i18n'
 
 interface DocxViewerProps {
   file: File
@@ -7,6 +8,7 @@ interface DocxViewerProps {
 }
 
 export function DocxViewer({ file, name }: DocxViewerProps) {
+  const { t } = useI18n()
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,7 +29,7 @@ export function DocxViewer({ file, name }: DocxViewerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-priority-urgent">
-        <p>Failed to load document: {error}</p>
+        <p>{t('files.docxLoadFailed', { error })}</p>
       </div>
     )
   }

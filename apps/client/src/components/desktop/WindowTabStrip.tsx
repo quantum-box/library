@@ -13,6 +13,7 @@ import {
   updateWindowTabTitle,
   type WindowTab,
 } from '../../lib/desktop/windowTabs'
+import { useI18n } from '../../i18n'
 
 /**
  * True only inside the macOS desktop shell. Web, Windows, Linux, and mobile
@@ -70,6 +71,7 @@ function useModifierClickOpensTab(enabled: boolean) {
 }
 
 export function WindowTabStrip() {
+  const { t, locale } = useI18n()
   const enabled = useMacosDesktopShell()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [tabs, setTabs] = useState<WindowTab[]>([])
@@ -129,12 +131,16 @@ export function WindowTabStrip() {
     }
   }, [enabled, refreshTabs])
 
+  // `locale` is a dependency even though it is not read here: the native
+  // title comes from `tabTitleForPath`, which translates, so a language
+  // switch has to push the retitled tab back to the shell even when the
+  // route has not moved.
   useEffect(() => {
     if (!enabled) return
     updateWindowTabTitle(tabTitleForPath(pathname))
       .then(refreshTabs)
       .catch(console.error)
-  }, [enabled, pathname, refreshTabs])
+  }, [enabled, locale, pathname, refreshTabs])
 
   // Render as soon as the shell is known to be macOS, before the first tab list
   // arrives. The window has no titlebar of its own, so a late strip would drop
@@ -149,9 +155,9 @@ export function WindowTabStrip() {
       onTabSelect={(label) => void activateWindowTab(label).catch(console.error)}
       onTabClose={(label) => void closeWindowTab(label).catch(console.error)}
       onNewTab={() => void createWindowTab(null, true).catch(console.error)}
-      tabListLabel="Library tabs"
-      newTabLabel="新しいタブ"
-      closeTabLabel={(tab) => `${tab.title}を閉じる`}
+      tabListLabel={t('windowTabs.listLabel')}
+      newTabLabel={t('windowTabs.newTab')}
+      closeTabLabel={(tab: { title: string }) => t('windowTabs.closeTab', { title: tab.title })}
     />
   )
 }

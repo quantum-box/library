@@ -13,6 +13,7 @@ import {
 import { Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import type { DatabaseViewDefinition } from '../lib/databaseViews/types'
+import { useI18n } from '../i18n'
 
 function actionErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
@@ -27,6 +28,7 @@ export function RenameDatabaseViewDialog({
   onCancel: () => void
   onConfirm: (name: string) => void | Promise<void>
 }) {
+  const { t } = useI18n()
   const [name, setName] = useState(view.name)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +39,7 @@ export function RenameDatabaseViewDialog({
     event.preventDefault()
     if (busy) return
     if (!trimmedName) {
-      setError('View name is required.')
+      setError(t('viewDialogs.nameRequired'))
       return
     }
     if (unchanged) return
@@ -48,7 +50,7 @@ export function RenameDatabaseViewDialog({
       await onConfirm(trimmedName)
       onCancel()
     } catch (actionError) {
-      setError(actionErrorMessage(actionError, 'View could not be renamed.'))
+      setError(actionErrorMessage(actionError, t('viewDialogs.renameFailed')))
     } finally {
       setBusy(false)
     }
@@ -60,14 +62,12 @@ export function RenameDatabaseViewDialog({
     }}>
       <DialogContent className="max-w-sm" aria-busy={busy}>
         <DialogHeader>
-          <DialogTitle>Rename view</DialogTitle>
-          <DialogDescription>
-            Change the name shown in this repository’s view tabs.
-          </DialogDescription>
+          <DialogTitle>{t('viewDialogs.renameTitle')}</DialogTitle>
+          <DialogDescription>{t('viewDialogs.renameDescription')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="database-view-name">View name</Label>
+            <Label htmlFor="database-view-name">{t('viewDialogs.nameLabel')}</Label>
             <Input
               id="database-view-name"
               value={name}
@@ -82,14 +82,14 @@ export function RenameDatabaseViewDialog({
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" disabled={busy}>Cancel</Button>
+              <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
             </DialogClose>
             <Button
               type="submit"
               variant="primary"
               disabled={busy || !trimmedName || unchanged}
             >
-              {busy ? 'Renaming…' : 'Rename view'}
+              {busy ? t('viewDialogs.renaming') : t('viewDialogs.renameTitle')}
             </Button>
           </DialogFooter>
         </form>
@@ -107,6 +107,7 @@ export function DeleteDatabaseViewDialog({
   onCancel: () => void
   onConfirm: () => void | Promise<void>
 }) {
+  const { t } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -118,7 +119,7 @@ export function DeleteDatabaseViewDialog({
       await onConfirm()
       onCancel()
     } catch (actionError) {
-      setError(actionErrorMessage(actionError, 'View could not be deleted.'))
+      setError(actionErrorMessage(actionError, t('viewDialogs.deleteFailed')))
     } finally {
       setBusy(false)
     }
@@ -130,10 +131,10 @@ export function DeleteDatabaseViewDialog({
     }}>
       <DialogContent className="max-w-sm" aria-busy={busy}>
         <DialogHeader>
-          <DialogTitle>Delete view?</DialogTitle>
+          <DialogTitle>{t('viewDialogs.deleteTitle')}</DialogTitle>
           <DialogDescription>
-            <span className="font-medium text-foreground">{view.name}</span> will be removed.
-            Repository data will not be deleted.
+            <span className="font-medium text-foreground">{view.name}</span>{' '}
+            {t('viewDialogs.deleteDescription')}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -146,7 +147,7 @@ export function DeleteDatabaseViewDialog({
         ) : null}
         <DialogFooter>
           <DialogClose asChild>
-            <Button type="button" disabled={busy}>Cancel</Button>
+            <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
           </DialogClose>
           <Button
             type="button"
@@ -155,7 +156,7 @@ export function DeleteDatabaseViewDialog({
             onClick={() => void handleConfirm()}
           >
             <Trash2 aria-hidden="true" />
-            {busy ? 'Deleting…' : 'Delete view'}
+            {busy ? t('common.deleting') : t('viewDialogs.deleteConfirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

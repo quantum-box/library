@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import { Columns3, MoreHorizontal, Plus, Rows3, Workflow } from 'lucide-react'
 import type { DatabaseViewDefinition, DatabaseViewType } from '../lib/databaseViews/types'
+import { useI18n, type MessageKey } from '../i18n'
 
-const viewTypeMeta: Record<DatabaseViewType, { icon: typeof Rows3; label: string }> = {
-  table: { icon: Rows3, label: 'Table' },
-  board: { icon: Columns3, label: 'Board' },
-  workflow: { icon: Workflow, label: 'Workflow' },
+const viewTypeMeta: Record<
+  DatabaseViewType,
+  { icon: typeof Rows3; labelKey: MessageKey }
+> = {
+  table: { icon: Rows3, labelKey: 'viewTabs.table' },
+  board: { icon: Columns3, labelKey: 'viewTabs.board' },
+  workflow: { icon: Workflow, labelKey: 'viewTabs.workflow' },
 }
 
 function legacyTestId(view: DatabaseViewDefinition) {
@@ -38,13 +42,14 @@ export function DatabaseViewTabs({
   onSaveView: () => void
   onDiscardChanges: () => void
 }) {
+  const { t } = useI18n()
   const [optionsOpen, setOptionsOpen] = useState(false)
 
   return (
     <div className="flex h-9 shrink-0 items-end gap-1 border-b border-border bg-surface px-2 pt-1 md:px-3">
       <nav
         className="flex min-w-0 flex-1 overflow-x-auto"
-        aria-label="Library data views"
+        aria-label={t('viewTabs.navLabel')}
       >
         {views.map((view) => {
           const meta = viewTypeMeta[view.type]
@@ -60,12 +65,15 @@ export function DatabaseViewTabs({
                   : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
               onClick={() => onSelectView(view)}
-              title={`${view.name} (${meta.label})`}
+              title={t('viewTabs.tabTitle', { name: view.name, type: t(meta.labelKey) })}
             >
               <Icon className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{view.name}</span>
               {selected && dirty && (
-                <span aria-label="Unsaved changes" className="size-1.5 shrink-0 rounded-full bg-primary" />
+                <span
+                  aria-label={t('viewTabs.unsavedChanges')}
+                  className="size-1.5 shrink-0 rounded-full bg-primary"
+                />
               )}
               {selected && (
                 <span className="absolute inset-x-2 -bottom-px h-px bg-background" aria-hidden="true" />
@@ -83,14 +91,14 @@ export function DatabaseViewTabs({
               className="hidden h-6 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:inline-flex sm:items-center"
               onClick={onDiscardChanges}
             >
-              Discard
+              {t('viewTabs.discard')}
             </button>
             <button
               data-testid="save-view"
               className="inline-flex h-6 items-center rounded bg-primary px-2 text-xs font-medium text-primary-foreground"
               onClick={onSaveView}
             >
-              Save
+              {t('common.save')}
             </button>
           </>
         )}
@@ -101,7 +109,7 @@ export function DatabaseViewTabs({
             data-testid="view-options"
             className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={() => setOptionsOpen((open) => !open)}
-            aria-label="View options"
+            aria-label={t('viewTabs.options')}
             aria-expanded={optionsOpen}
           >
             <MoreHorizontal className="size-4" aria-hidden="true" />
@@ -116,7 +124,7 @@ export function DatabaseViewTabs({
                   setOptionsOpen(false)
                 }}
               >
-                Rename
+                {t('common.rename')}
               </button>
               <button
                 data-testid="duplicate-view"
@@ -126,7 +134,7 @@ export function DatabaseViewTabs({
                   setOptionsOpen(false)
                 }}
               >
-                Duplicate
+                {t('viewTabs.duplicate')}
               </button>
               <button
                 data-testid="delete-view"
@@ -137,11 +145,11 @@ export function DatabaseViewTabs({
                   setOptionsOpen(false)
                 }}
               >
-                Delete
+                {t('common.delete')}
               </button>
               <div className="my-1 border-t border-border" />
               <span className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-subtle-foreground">
-                New view
+                {t('viewTabs.newView')}
               </span>
               {(['table', 'board', 'workflow'] as const).map((type) => {
                 const meta = viewTypeMeta[type]
@@ -157,7 +165,7 @@ export function DatabaseViewTabs({
                     }}
                   >
                     <Icon className="size-3.5" aria-hidden="true" />
-                    {meta.label}
+                    {t(meta.labelKey)}
                   </button>
                 )
               })}
@@ -168,8 +176,8 @@ export function DatabaseViewTabs({
           type="button"
           className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           onClick={() => onCreateView('table')}
-          aria-label="New table view"
-          title="New table view"
+          aria-label={t('viewTabs.newTableView')}
+          title={t('viewTabs.newTableView')}
         >
           <Plus className="size-3.5" aria-hidden="true" />
         </button>

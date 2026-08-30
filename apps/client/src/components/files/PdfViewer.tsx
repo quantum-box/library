@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { configurePdfJsWorker } from '../../lib/pdfJsWorker'
+import { useI18n } from '../../i18n'
 
 configurePdfJsWorker(pdfjsLib)
 
@@ -10,6 +11,7 @@ interface PdfViewerProps {
 }
 
 export function PdfViewer({ url, name }: PdfViewerProps) {
+  const { t } = useI18n()
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -54,7 +56,7 @@ export function PdfViewer({ url, name }: PdfViewerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-priority-urgent">
-        <p>Failed to load PDF: {error}</p>
+        <p>{t('files.pdfLoadFailed', { error })}</p>
       </div>
     )
   }
@@ -88,7 +90,7 @@ export function PdfViewer({ url, name }: PdfViewerProps) {
             disabled={currentPage <= 1}
             className="px-2 py-0.5 rounded text-xs cursor-pointer disabled:opacity-30 bg-surface-hover text-muted"
           >
-            Prev
+            {t('common.previous')}
           </button>
           <span className="text-xs text-muted">
             {currentPage} / {totalPages}
@@ -98,7 +100,7 @@ export function PdfViewer({ url, name }: PdfViewerProps) {
             disabled={currentPage >= totalPages}
             className="px-2 py-0.5 rounded text-xs cursor-pointer disabled:opacity-30 bg-surface-hover text-muted"
           >
-            Next
+            {t('common.next')}
           </button>
         </div>
       </div>

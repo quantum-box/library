@@ -1,34 +1,23 @@
 import type { RepositoryPropertyType } from './repositorySettingsApi'
+import { t, type MessageKey } from '../i18n'
 
 export const propertyTypeChoices: Array<{
   value: RepositoryPropertyType
-  label: string
-  detail: string
+  labelKey: MessageKey
+  detailKey: MessageKey
 }> = [
-  { value: 'STRING', label: 'Text', detail: 'Short plain text' },
-  {
-    value: 'RICH_TEXT',
-    label: 'Rich text',
-    detail: 'Body content. Markdown and HTML are produced from it on read, so it is the only body type worth choosing.',
-  },
-  {
-    value: 'HTML',
-    label: 'HTML',
-    detail: 'An HTML document stored as source and rendered live in a sandboxed preview, artifact-style. For a page you write, use Rich text; this is for markup that is the value.',
-  },
-  {
-    value: 'MARKDOWN',
-    label: 'Markdown (legacy)',
-    detail: 'Markdown source. Superseded by Rich text, which stores the document itself instead of a rendering of it -- Markdown cannot represent a blank line, so one is lost on every save. Offered only so an existing Markdown Property can be moved off it.',
-  },
-  { value: 'INTEGER', label: 'Integer', detail: 'Whole numbers' },
-  { value: 'DATE', label: 'Date', detail: 'Calendar date and time' },
-  { value: 'SELECT', label: 'Select', detail: 'One option' },
-  { value: 'MULTI_SELECT', label: 'Multi-select', detail: 'Multiple options' },
-  { value: 'RELATION', label: 'Relation', detail: 'Data in another repository' },
-  { value: 'LOCATION', label: 'Location', detail: 'Latitude and longitude' },
-  { value: 'IMAGE', label: 'Image', detail: 'Image URL' },
-  { value: 'ID', label: 'ID', detail: 'Stable identifier' },
+  { value: 'STRING', labelKey: 'propertyType.string', detailKey: 'propertyType.string.detail' },
+  { value: 'RICH_TEXT', labelKey: 'propertyType.richText', detailKey: 'propertyType.richText.detail' },
+  { value: 'HTML', labelKey: 'propertyType.html', detailKey: 'propertyType.html.detail' },
+  { value: 'MARKDOWN', labelKey: 'propertyType.markdown', detailKey: 'propertyType.markdown.detail' },
+  { value: 'INTEGER', labelKey: 'propertyType.integer', detailKey: 'propertyType.integer.detail' },
+  { value: 'DATE', labelKey: 'propertyType.date', detailKey: 'propertyType.date.detail' },
+  { value: 'SELECT', labelKey: 'propertyType.select', detailKey: 'propertyType.select.detail' },
+  { value: 'MULTI_SELECT', labelKey: 'propertyType.multiSelect', detailKey: 'propertyType.multiSelect.detail' },
+  { value: 'RELATION', labelKey: 'propertyType.relation', detailKey: 'propertyType.relation.detail' },
+  { value: 'LOCATION', labelKey: 'propertyType.location', detailKey: 'propertyType.location.detail' },
+  { value: 'IMAGE', labelKey: 'propertyType.image', detailKey: 'propertyType.image.detail' },
+  { value: 'ID', labelKey: 'propertyType.id', detailKey: 'propertyType.id.detail' },
 ]
 
 /** Types kept out of the picker for new Properties.
@@ -48,8 +37,19 @@ export function availablePropertyTypeChoices(currentType: string | undefined) {
   )
 }
 
+/**
+ * Human label for a Property type in the active language. An unknown type —
+ * one the API added but this client does not model yet — falls back to its
+ * wire name so the row still identifies itself.
+ */
 export function propertyTypeLabel(type: string): string {
-  return propertyTypeChoices.find((choice) => choice.value === type)?.label ?? type
+  const choice = propertyTypeChoices.find((candidate) => candidate.value === type)
+  return choice ? t(choice.labelKey) : type
+}
+
+export function propertyTypeDetail(type: string): string {
+  const choice = propertyTypeChoices.find((candidate) => candidate.value === type)
+  return choice ? t(choice.detailKey) : ''
 }
 
 export function isEditablePropertyType(

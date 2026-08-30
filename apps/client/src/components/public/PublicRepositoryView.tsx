@@ -11,6 +11,7 @@ import { LibraryPropertyCell } from '../../lib/libraryTable/libraryPropertyCells
 import { libraryRowSearchText } from '../../lib/libraryTable/libraryRowSearchText'
 import { PublicLoadingState, PublicRepositoryState } from './PublicRepositoryState'
 import { publicRepositoryErrorMessage, usePublicRepository } from './usePublicRepository'
+import { useI18n } from '../../i18n'
 
 export function PublicRepositoryView({
   organization,
@@ -19,6 +20,7 @@ export function PublicRepositoryView({
   organization: string
   repository: string
 }) {
+  const { t, tPlural } = useI18n()
   const { status, profile, error, reload } = usePublicRepository(organization, repository)
   const [items, setItems] = useState<LibraryDataItem[]>([])
   const [properties, setProperties] = useState<LibraryProperty[]>([])
@@ -61,7 +63,7 @@ export function PublicRepositoryView({
     return items.filter((item) => libraryRowSearchText(item, properties).includes(needle))
   }, [items, properties, query])
 
-  if (status === 'loading') return <PublicLoadingState label="Opening repository…" />
+  if (status === 'loading') return <PublicLoadingState label={t('public.openingRepository')} />
   if (status !== 'ready' || !profile) {
     return (
       <PublicRepositoryState
@@ -110,14 +112,14 @@ export function PublicRepositoryView({
               data-testid="public-repository-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search data"
-              aria-label="Search data"
+              placeholder={t('libraryTable.searchPlaceholder')}
+              aria-label={t('libraryTable.searchPlaceholder')}
               className="h-8 pl-7 text-sm"
             />
           </div>
           <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
             <Rows3 className="size-3.5" aria-hidden="true" />
-            {dataLoading ? 'Loading…' : `${rows.length} data`}
+            {dataLoading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
           </span>
         </div>
       </div>
@@ -126,7 +128,7 @@ export function PublicRepositoryView({
         <div className="mx-auto w-full max-w-5xl px-4 py-4 md:px-6">
           {dataLoading ? (
             <p className="py-6 text-sm text-subtle" data-testid="public-repository-loading-data">
-              Loading repository data…
+              {t('libraryTable.loading')}
             </p>
           ) : null}
 
@@ -139,8 +141,8 @@ export function PublicRepositoryView({
           {!dataLoading && !dataError && rows.length === 0 ? (
             <p className="py-6 text-sm text-subtle" data-testid="public-repository-empty">
               {items.length === 0
-                ? 'This repository has no data yet.'
-                : 'No data matches this search.'}
+                ? t('public.repositoryEmpty')
+                : t('public.noSearchMatch')}
             </p>
           ) : null}
 
@@ -150,7 +152,7 @@ export function PublicRepositoryView({
                 <thead>
                   <tr>
                     <th className="border-b border-border bg-surface px-3 py-2 text-left text-xs font-medium text-subtle">
-                      Name
+                      {t('apiKeys.nameLabel')}
                     </th>
                     {properties.map((property) => (
                       <th
@@ -175,7 +177,7 @@ export function PublicRepositoryView({
                           params={{ organization, repository, dataId: item.id }}
                           className="block truncate text-sm font-medium text-foreground no-underline hover:text-primary"
                         >
-                          {item.name || 'Untitled'}
+                          {item.name || t('common.untitled')}
                         </Link>
                       </td>
                       {properties.map((property) => (

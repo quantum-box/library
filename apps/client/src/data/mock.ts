@@ -1,4 +1,5 @@
 import { appKitConfig } from '../app/kitConfig'
+import type { MessageKey } from '../i18n'
 
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none'
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled'
@@ -120,19 +121,30 @@ function makeRecord(title: string, status: Status): DatabaseRecord {
 
 export const mockDatabaseRecords: DatabaseRecord[] = generateRecords()
 
-export const statusConfig: Record<Status, { label: string; color: string; icon: string }> = {
-  backlog: { label: 'Backlog', color: 'var(--text-muted)', icon: '○' },
-  todo: { label: 'Todo', color: 'var(--status-todo)', icon: '◎' },
-  in_progress: { label: 'In Progress', color: 'var(--status-progress)', icon: '◑' },
-  in_review: { label: 'In Review', color: 'var(--accent)', icon: '◕' },
-  done: { label: 'Done', color: 'var(--status-done)', icon: '●' },
-  cancelled: { label: 'Cancelled', color: 'var(--status-cancelled)', icon: '⊘' },
+/**
+ * Status and priority presentation. `labelKey` is resolved through `t()` at
+ * render time so a language switch relabels every board column, select, and
+ * badge without rebuilding the record set.
+ */
+export const statusConfig: Record<
+  Status,
+  { labelKey: MessageKey; color: string; icon: string }
+> = {
+  backlog: { labelKey: 'status.backlog', color: 'var(--text-muted)', icon: '○' },
+  todo: { labelKey: 'status.todo', color: 'var(--status-todo)', icon: '◎' },
+  in_progress: { labelKey: 'status.inProgress', color: 'var(--status-progress)', icon: '◑' },
+  in_review: { labelKey: 'status.inReview', color: 'var(--accent)', icon: '◕' },
+  done: { labelKey: 'status.done', color: 'var(--status-done)', icon: '●' },
+  cancelled: { labelKey: 'status.cancelled', color: 'var(--status-cancelled)', icon: '⊘' },
 }
 
-export const priorityConfig: Record<Priority, { label: string; color: string; icon: string }> = {
-  urgent: { label: 'Urgent', color: 'var(--priority-urgent)', icon: '⚡' },
-  high: { label: 'High', color: 'var(--priority-high)', icon: '▲' },
-  medium: { label: 'Medium', color: 'var(--priority-medium)', icon: '■' },
-  low: { label: 'Low', color: 'var(--priority-low)', icon: '▽' },
-  none: { label: 'None', color: 'var(--text-muted)', icon: '─' },
+export const priorityConfig: Record<
+  Priority,
+  { labelKey: MessageKey; color: string; icon: string }
+> = {
+  urgent: { labelKey: 'priority.urgent', color: 'var(--priority-urgent)', icon: '⚡' },
+  high: { labelKey: 'priority.high', color: 'var(--priority-high)', icon: '▲' },
+  medium: { labelKey: 'priority.medium', color: 'var(--priority-medium)', icon: '■' },
+  low: { labelKey: 'priority.low', color: 'var(--priority-low)', icon: '▽' },
+  none: { labelKey: 'priority.none', color: 'var(--text-muted)', icon: '─' },
 }
