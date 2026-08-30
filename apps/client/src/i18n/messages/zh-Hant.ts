@@ -767,6 +767,7 @@ export const zhHant: LocaleMessages = {
   'public.repositoryEmpty': '此儲存庫尚無資料。',
   'public.noSearchMatch': '沒有符合此搜尋的資料。',
   'public.backToRepository': '返回儲存庫',
+  'public.openingRepository': '正在開啟儲存庫…',
   'public.loadingPage': '載入頁面中…',
   'public.pageNotFound': '找不到頁面',
   'public.pageNotFoundHint': '此頁面不在這個儲存庫中，或已被移除。',

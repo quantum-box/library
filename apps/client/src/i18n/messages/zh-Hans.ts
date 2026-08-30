@@ -767,6 +767,7 @@ export const zhHans: LocaleMessages = {
   'public.repositoryEmpty': '该仓库中还没有数据。',
   'public.noSearchMatch': '没有符合此搜索的数据。',
   'public.backToRepository': '返回仓库',
+  'public.openingRepository': '正在打开仓库…',
   'public.loadingPage': '正在加载页面…',
   'public.pageNotFound': '未找到页面',
   'public.pageNotFoundHint': '该页面不在此仓库中，或已被删除。',

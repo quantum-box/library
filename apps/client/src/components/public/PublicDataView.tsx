@@ -75,7 +75,7 @@ export function PublicDataView({
     void loadData()
   }, [loadData, status])
 
-  if (status === 'loading') return <PublicLoadingState label="Opening repository…" />
+  if (status === 'loading') return <PublicLoadingState label={t('public.openingRepository')} />
   if (status !== 'ready' || !profile) {
     return (
       <PublicRepositoryState

@@ -767,6 +767,7 @@ export const it: LocaleMessages = {
   'public.repositoryEmpty': 'Questo repository non contiene ancora dati.',
   'public.noSearchMatch': 'Nessun dato corrisponde a questa ricerca.',
   'public.backToRepository': 'Torna al repository',
+  'public.openingRepository': 'Apertura del repository…',
   'public.loadingPage': 'Caricamento della pagina…',
   'public.pageNotFound': 'Pagina non trovata',
   'public.pageNotFoundHint': 'Questa pagina non esiste in questo repository oppure è stata rimossa.',

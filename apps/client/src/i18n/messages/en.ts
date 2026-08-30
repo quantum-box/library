@@ -853,6 +853,7 @@ export const en = {
   'public.repositoryEmpty': 'This repository has no data yet.',
   'public.noSearchMatch': 'No data matches this search.',
   'public.backToRepository': 'Back to repository',
+  'public.openingRepository': 'Opening repository…',
   'public.loadingPage': 'Loading page…',
   'public.pageNotFound': 'Page not found',
   'public.pageNotFoundHint': 'This page does not exist in this repository, or it has been removed.',

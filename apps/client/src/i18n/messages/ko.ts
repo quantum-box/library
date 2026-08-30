@@ -767,6 +767,7 @@ export const ko: LocaleMessages = {
   'public.repositoryEmpty': '이 리포지터리에는 아직 데이터가 없습니다.',
   'public.noSearchMatch': '이 검색과 일치하는 데이터가 없습니다.',
   'public.backToRepository': '리포지터리로 돌아가기',
+  'public.openingRepository': '리포지토리를 여는 중…',
   'public.loadingPage': '페이지를 불러오는 중…',
   'public.pageNotFound': '페이지를 찾을 수 없습니다',
   'public.pageNotFoundHint': '이 페이지는 이 리포지터리에 없거나 삭제되었습니다.',

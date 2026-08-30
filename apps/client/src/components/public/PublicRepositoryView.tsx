@@ -63,7 +63,7 @@ export function PublicRepositoryView({
     return items.filter((item) => libraryRowSearchText(item, properties).includes(needle))
   }, [items, properties, query])
 
-  if (status === 'loading') return <PublicLoadingState label="Opening repository…" />
+  if (status === 'loading') return <PublicLoadingState label={t('public.openingRepository')} />
   if (status !== 'ready' || !profile) {
     return (
       <PublicRepositoryState

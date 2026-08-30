@@ -767,6 +767,7 @@ export const fr: LocaleMessages = {
   'public.repositoryEmpty': 'Ce dépôt ne contient pas encore de données.',
   'public.noSearchMatch': 'Aucune donnée ne correspond à cette recherche.',
   'public.backToRepository': 'Retour au dépôt',
+  'public.openingRepository': 'Ouverture du dépôt…',
   'public.loadingPage': 'Chargement de la page…',
   'public.pageNotFound': 'Page introuvable',
   'public.pageNotFoundHint': 'Cette page n’existe pas dans ce dépôt ou a été supprimée.',

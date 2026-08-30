@@ -770,6 +770,7 @@ export const ja: LocaleMessages = {
   'public.repositoryEmpty': 'このリポジトリにはまだデータがありません。',
   'public.noSearchMatch': '検索条件に一致するデータがありません。',
   'public.backToRepository': 'リポジトリに戻る',
+  'public.openingRepository': 'リポジトリを開いています…',
   'public.loadingPage': 'ページを読み込み中…',
   'public.pageNotFound': 'ページが見つかりません',
   'public.pageNotFoundHint': 'このページはこのリポジトリに存在しないか、削除されています。',

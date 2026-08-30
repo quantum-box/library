@@ -790,6 +790,7 @@ export const ru: LocaleMessages = {
   'public.repositoryEmpty': 'В этом репозитории пока нет данных.',
   'public.noSearchMatch': 'Под этот запрос данных нет.',
   'public.backToRepository': 'Назад к репозиторию',
+  'public.openingRepository': 'Открытие репозитория…',
   'public.loadingPage': 'Загрузка страницы…',
   'public.pageNotFound': 'Страница не найдена',
   'public.pageNotFoundHint': 'Такой страницы в этом репозитории нет или она была удалена.',
