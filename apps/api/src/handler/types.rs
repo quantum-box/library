@@ -278,6 +278,24 @@ pub fn convert_property_value(
                 .and_then(|value| value.as_str())
             {
                 PropertyDataValueInputData::RichText(rich_text.to_string())
+            } else if let Some(select) = obj
+                .get("select")
+                .or_else(|| obj.get("option_id"))
+                .or_else(|| obj.get("optionId"))
+                .and_then(|value| value.as_str())
+            {
+                // The one shape REST had no way to say. A Select option is
+                // identified by an id, and a bare string reaches the `String`
+                // arm above, which the adapter rejects against a Select
+                // Property — so the only spelling left was this object, and it
+                // used to fall through to the `html` stringify below. That is
+                // the same tag `PropertyDataValue::Select` serializes on read,
+                // so a value now round-trips through REST unchanged.
+                //
+                // An empty id is not a mistake: the adapter reads it as
+                // "clear this Property", which is how a caller unsets a
+                // Select without deleting the record.
+                PropertyDataValueInputData::Select(select.to_string())
             } else if let Some(markdown) =
                 obj.get("markdown").and_then(|value| value.as_str())
             {
@@ -344,5 +362,74 @@ impl From<database_manager::domain::PropertyDataValue>
                 document,
             ) => PropertyDataValue::RichText(document.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn rest_select_value_carries_the_option_id() {
+        assert!(matches!(
+            convert_property_value(json!({ "select": "opt_1" })),
+            PropertyDataValueInputData::Select(id) if id == "opt_1"
+        ));
+    }
+
+    #[test]
+    fn rest_select_value_accepts_the_option_id_spellings() {
+        for body in [
+            json!({ "option_id": "opt_1" }),
+            json!({ "optionId": "opt_1" }),
+        ] {
+            assert!(matches!(
+                convert_property_value(body),
+                PropertyDataValueInputData::Select(id) if id == "opt_1"
+            ));
+        }
+    }
+
+    #[test]
+    fn an_empty_select_id_stays_empty_so_the_adapter_can_clear_it() {
+        // `property_value_adapter` reads an empty id as `Clear`. Turning it
+        // into anything else here would make "unset this Select" unsayable
+        // over REST.
+        assert!(matches!(
+            convert_property_value(json!({ "select": "" })),
+            PropertyDataValueInputData::Select(id) if id.is_empty()
+        ));
+    }
+
+    #[test]
+    fn a_select_object_no_longer_reaches_the_html_fallback() {
+        // The bug this arm fixes: an unrecognized object is stringified into
+        // an Html value, so a Select write used to be stored as the JSON text
+        // `{"select":"opt_1"}` against a Property that cannot hold it.
+        assert!(!matches!(
+            convert_property_value(json!({ "select": "opt_1" })),
+            PropertyDataValueInputData::Html(_)
+        ));
+    }
+
+    #[test]
+    fn a_genuinely_unknown_object_still_falls_back_to_html() {
+        assert!(matches!(
+            convert_property_value(json!({ "unknown": "x" })),
+            PropertyDataValueInputData::Html(_)
+        ));
+    }
+
+    #[test]
+    fn rich_text_still_wins_over_the_select_arm() {
+        // Ordering guard: `richText` is checked first, and a payload carrying
+        // both must not be re-read as a Select.
+        assert!(matches!(
+            convert_property_value(
+                json!({ "richText": "{}", "select": "opt_1" })
+            ),
+            PropertyDataValueInputData::RichText(_)
+        ));
     }
 }
