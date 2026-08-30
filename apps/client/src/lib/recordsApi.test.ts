@@ -9,15 +9,21 @@ vi.mock('./photonEngine/client', () => ({
 }))
 import { appKitConfig } from '../app/kitConfig'
 import { clearAuthTokens } from './auth'
+import * as photonEngine from './photonEngine/client'
+import {
+  __testOnly as libraryCollections,
+  rememberLibraryRepositories,
+} from './photonEngine/libraryCollections'
 import {
   createLibraryOrganization,
   createLibraryRecordsResource,
   createLibraryRepository,
   createServerRecord,
+  deleteServerRecord,
   fetchLibraryOrganizations,
-  fetchLibraryRecords,
   fetchLibraryRepoTableData,
   fetchLibraryRepositories,
+  fetchServerRecords,
   fetchLibraryRepositoryProfile,
   libraryDataToRecord,
   RecordPropertyMappingError,
@@ -193,6 +199,9 @@ describe('recordsApi', () => {
       ],
       properties: [{ id: 'prop-1', name: 'Title', typ: 'String', meta: null }],
       repoName: 'Docs',
+      // The repository's canonical id comes back with the table: it is what
+      // names the collection these rows are cached in.
+      repoId: 'repo-1',
     })
   })
 
@@ -445,7 +454,7 @@ describe('recordsApi', () => {
     )
   })
 
-  it('fetches Library repo data through the GraphQL API contract', async () => {
+  it('fetches a pinned build\'s repo data through the GraphQL API contract', async () => {
     vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
     vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
@@ -475,7 +484,7 @@ describe('recordsApi', () => {
       headers: { 'content-type': 'application/json' },
     })))
 
-    await expect(fetchLibraryRecords()).resolves.toMatchObject([
+    await expect(fetchServerRecords()).resolves.toMatchObject([
       {
         id: 'data-1',
         title: 'First page',
@@ -1120,4 +1129,132 @@ describe('createLibraryRecordsResource', () => {
     await expect(resource.remove('data-1')).resolves.toBeUndefined()
   })
 })
+})
+
+/**
+ * Where a write goes, now that the collection says so.
+ *
+ * A record used to be routed by reading `orgUsername` off its own value, then
+ * off a cached copy of that value, then off the build's environment. All three
+ * are guesses at something the key already knows: a record lives in exactly
+ * one collection, and a collection *is* a repository.
+ */
+describe('the destination of a write', () => {
+  const photonCore = { databaseId: 'repo-1', org: 'quantum-box', repo: 'photon-core' }
+  const libraryRepo = { databaseId: 'repo-2', org: 'quantum-box', repo: 'library' }
+
+  /** The value lies about its repository, so only the key can be right. */
+  const heldByLibraryRepo = {
+    scope: 'test',
+    collection: 'data:repo-2',
+    recordId: 'data-9',
+    deleted: false,
+    updatedAt: '0',
+    value: {
+      id: 'data-9',
+      title: 'Held by the library repo',
+      orgUsername: 'stale-org',
+      repoUsername: 'stale-repo',
+    },
+  }
+
+  function signIn() {
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    // Deliberately no VITE_LIBRARY_ORG / VITE_LIBRARY_REPO: if the collection
+    // does not decide, nothing else can.
+    signIn()
+    rememberLibraryRepositories([photonCore, libraryRepo])
+    vi.mocked(photonEngine.listClientEngineRecords).mockImplementation(
+      async (collection: string) =>
+        collection === 'data:repo-2' ? [heldByLibraryRepo] : []
+    )
+  })
+
+  afterEach(() => {
+    libraryCollections.reset()
+    vi.mocked(photonEngine.listClientEngineRecords).mockReset().mockResolvedValue([])
+  })
+
+  it('updates against the repository whose collection holds the record', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string }
+      if (body.query.includes('LibraryClientDataDetail')) {
+        return Response.json({
+          data: {
+            data: { id: 'data-9', name: 'Held by the library repo', propertyData: [] },
+            properties: [{ id: 'status', name: 'Status', typ: 'Select', meta: { options: [
+              { id: 'status-done', key: 'done', name: 'Done' },
+            ] } }],
+          },
+        })
+      }
+      return Response.json({
+        data: { updateData: { id: 'data-9', name: 'Held by the library repo', propertyData: [] } },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateServerRecord('data-9', { status: 'done' })
+
+    const mutation = fetchMock.mock.calls.find(([, init]) =>
+      String(init?.body).includes('LibraryClientUpdateData')
+    )
+    const variables = (JSON.parse(String(mutation?.[1]?.body)) as {
+      variables: { input: { orgUsername: string; repoUsername: string } }
+    }).variables
+    expect(variables.input).toMatchObject({
+      orgUsername: 'quantum-box',
+      repoUsername: 'library',
+    })
+    // ...and the refreshed row goes back to the collection it came from.
+    expect(photonEngine.ingestClientEngineRecords).toHaveBeenCalledWith(
+      'data:repo-2',
+      [expect.objectContaining({ recordId: 'data-9' })]
+    )
+  })
+
+  it('deletes against that same repository', async () => {
+    const sent: string[] = []
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      sent.push(String(init?.body))
+      return Response.json({ data: { deleteData: 'data-9' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteServerRecord('data-9')
+
+    const variables = (JSON.parse(sent[0]) as {
+      variables: { org: string; repo: string }
+    }).variables
+    expect(variables).toMatchObject({ org: 'quantum-box', repo: 'library' })
+    // Tombstoned rather than removed: the collection is rest-backed, so a
+    // `remove` would queue the DELETE that has just been carried out.
+    expect(photonEngine.ingestClientEngineRecords).toHaveBeenCalledWith(
+      'data:repo-2',
+      [expect.objectContaining({ recordId: 'data-9', deleted: true })]
+    )
+  })
+
+  it('does nothing over the API for a record no collection holds', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: {} }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteServerRecord('never-fetched')
+
+    // The old chain would have fallen through to VITE_LIBRARY_ORG here and
+    // deleted an id in whichever repository the build happened to name.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(photonEngine.deleteClientEngineRecord).toHaveBeenCalledWith('records', 'never-fetched')
+  })
 })

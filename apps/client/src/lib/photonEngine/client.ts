@@ -28,6 +28,12 @@ import { loadPhotonKernel } from '@quantum-box/photon/wasm'
 import { appKitConfig } from '../../app/kitConfig'
 import { getValidAuthTokens } from '../auth'
 import {
+  LIBRARY_REPOSITORIES_COLLECTION,
+  type LibraryRecordsRepository,
+  rememberLibraryRepositories,
+  resolveLibraryCollection,
+} from './libraryCollections'
+import {
   LEGACY_ENGINE_DATA_DIR,
   isCarriedCollection,
   migrateLegacyEngineData,
@@ -170,9 +176,20 @@ async function build(): Promise<PhotonClient> {
         return { authorization: `Bearer ${tokens.accessToken}` }
       },
       }),
+    // Records are partitioned one collection per repository, and the set of
+    // repositories is only known at runtime — so the collections cannot be
+    // named when the client is built. The resolver is asked for each one as it
+    // is encountered instead. See `libraryCollections`.
+    resolveCollection: resolveLibraryCollection,
     // Sync runs when a caller asks for it, as it did before.
     sync: { autoStart: false },
   })
+
+  // Before the client is handed out, and so before anything can ask
+  // `resolveCollection` about a `data:` collection: the resolver is consulted
+  // once per name and its answer is kept, so a repository learned later than
+  // its own collection would be learned too late.
+  await restoreKnownRepositories(client)
 
   legacyCarryOver = overrides?.skipLegacyMigration
     ? Promise.resolve()
@@ -181,6 +198,31 @@ async function build(): Promise<PhotonClient> {
     // be awaited, rather than resting on a promise made in another file.
     : migrateLegacyEngineData(client).catch(() => undefined)
   return client
+}
+
+/**
+ * Re-learn the repositories a previous session recorded.
+ *
+ * This is the whole reason the repository list is stored locally: it names the
+ * collections, and an offline start cannot ask the Library API what they are.
+ * Without it a cold offline load would find no collection to read and show an
+ * empty workspace while holding every record on disk.
+ */
+async function restoreKnownRepositories(client: PhotonClient): Promise<void> {
+  await client.hydrateCollection(LIBRARY_REPOSITORIES_COLLECTION)
+  const query = client.query<LibraryRecordsRepository>({
+    collection: LIBRARY_REPOSITORIES_COLLECTION,
+  })
+  try {
+    rememberLibraryRepositories(
+      query
+        .getSnapshot()
+        .data.filter((record) => record.deletedAt == null)
+        .map((record) => record.value)
+    )
+  } finally {
+    query.destroy()
+  }
 }
 
 function toEngineRecord<T>(record: PhotonRecord<T>): PhotonEngineRecord<T> {
@@ -268,10 +310,14 @@ export async function deleteClientEngineRecord(
  * meant every cached row became a pending operation that the next `documents`
  * save tried to push to the Engine — the pending set is scope-wide, not
  * per-collection.
+ *
+ * `deleted` is how a row leaves such a collection. `remove()` would queue a
+ * delete for the authority to carry out, which is backwards when the authority
+ * is the one that has just carried it out.
  */
 export async function ingestClientEngineRecords<T>(
   collection: string,
-  items: readonly { recordId: string; value: T }[]
+  items: readonly { recordId: string; value: T; deleted?: boolean }[]
 ): Promise<void> {
   const client = await engineFor(collection)
   client.ingest<T>(collection, items)
