@@ -701,9 +701,314 @@ struct PolicyCheck {
     actions: Vec<String>,
 }
 
+/// The published-language allow-list is what gates the whole
+/// translation feature, so it is exercised end to end: normalization on
+/// write, anonymous readability for a public repo, and rejection of a
+/// list that would cost money to honour.
+#[tokio::test]
+async fn published_languages_round_trip_and_normalize() -> anyhow::Result<()>
+{
+    let (server_url, shutdown_tx, _) = setup_test_server().await?;
+    let client = create_test_client();
+    let suffix = unique_suffix();
+
+    let org = format!("lang-org-{suffix}");
+    let repo = format!("lang-repo-{suffix}");
+
+    post_json(
+        &client,
+        &format!("{server_url}/v1beta/orgs"),
+        json!({
+            "name": format!("Lang Org {suffix}"),
+            "username": org,
+            "description": "published language org",
+            "website": "https://example.com/lang"
+        }),
+        StatusCode::OK,
+    )
+    .await?;
+
+    post_json(
+        &client,
+        &format!("{server_url}/v1beta/repos/{org}"),
+        json!({
+            "name": format!("Lang Repo {suffix}"),
+            "username": repo,
+            "description": "published language repo",
+            // Public, so the docs route can be read without a token.
+            "is_public": true,
+            "database_id": null
+        }),
+        StatusCode::OK,
+    )
+    .await?;
+
+    let languages_url =
+        format!("{server_url}/v1beta/repos/{org}/{repo}/languages");
+
+    // Nothing is published until someone says so.
+    let initial = get_json(&client, &languages_url, StatusCode::OK).await?;
+    assert_eq!(initial["languages"], json!([]));
+
+    // Three spellings of two languages collapse into two normalized
+    // entries in a deterministic order.
+    let set = put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": ["EN", "en", "zh-hans"] }),
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(set["languages"], json!(["en", "zh-Hans"]));
+
+    let read_back =
+        get_json(&client, &languages_url, StatusCode::OK).await?;
+    assert_eq!(read_back["languages"], json!(["en", "zh-Hans"]));
+
+    // A public repo exposes the same list without any credentials, so a
+    // docs page can render a language switcher for anonymous readers.
+    let anonymous = Client::new()
+        .get(format!("{server_url}/docs/{org}/{repo}/languages"))
+        .send()
+        .await?;
+    assert_eq!(anonymous.status(), StatusCode::OK);
+    let anonymous: Value = anonymous.json().await?;
+    assert_eq!(anonymous["languages"], json!(["en", "zh-Hans"]));
+
+    // A tag that is not a language is refused rather than skipped, so a
+    // typo cannot silently publish less than the caller asked for.
+    put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": ["en", "not a language"] }),
+        StatusCode::BAD_REQUEST,
+    )
+    .await?;
+    let unchanged =
+        get_json(&client, &languages_url, StatusCode::OK).await?;
+    assert_eq!(unchanged["languages"], json!(["en", "zh-Hans"]));
+
+    // Replacing with a subset drops the missing language.
+    let narrowed = put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": ["en"] }),
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(narrowed["languages"], json!(["en"]));
+
+    // An empty list unpublishes everything.
+    let cleared = put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": [] }),
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(cleared["languages"], json!([]));
+
+    // Re-publish so the docs routes have something to negotiate over.
+    put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": ["en", "zh-Hans"] }),
+        StatusCode::OK,
+    )
+    .await?;
+
+    let docs_url = format!("{server_url}/docs/{org}/{repo}");
+    let no_redirect = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+
+    // A published language is served as a translation, declares itself
+    // in `<html lang>`, and advertises its siblings to search engines.
+    let english = no_redirect
+        .get(format!("{docs_url}?lang=en"))
+        .send()
+        .await?;
+    assert_eq!(english.status(), StatusCode::OK);
+    assert_eq!(
+        english
+            .headers()
+            .get("x-library-translation")
+            .and_then(|v| v.to_str().ok()),
+        Some("fresh")
+    );
+    assert_eq!(
+        english
+            .headers()
+            .get("content-language")
+            .and_then(|v| v.to_str().ok()),
+        Some("en")
+    );
+    let body = english.text().await?;
+    assert!(body.contains(r#"<html lang="en">"#), "{body}");
+    assert!(
+        body.contains(r#"hreflang="zh-Hans""#),
+        "the other published language must be advertised"
+    );
+    assert!(
+        body.contains(r#"hreflang="x-default""#),
+        "the source must be the x-default target"
+    );
+    assert!(
+        body.contains("Machine translated"),
+        "a translated page must say so and link to the original"
+    );
+
+    // An unpublished language degrades to the source instead of 404ing,
+    // so a stale or hand-edited link never breaks a public page.
+    let unpublished = no_redirect
+        .get(format!("{docs_url}?lang=ko"))
+        .send()
+        .await?;
+    assert_eq!(unpublished.status(), StatusCode::OK);
+    assert_eq!(
+        unpublished
+            .headers()
+            .get("x-library-translation")
+            .and_then(|v| v.to_str().ok()),
+        Some("source")
+    );
+
+    // `Accept-Language` picks a URL, not a body: the reader is sent to
+    // the canonical address for their language.
+    let negotiated = no_redirect
+        .get(&docs_url)
+        .header("Accept-Language", "en-GB,en;q=0.9")
+        .send()
+        .await?;
+    assert_eq!(negotiated.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        negotiated
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok()),
+        Some(format!("/docs/{org}/{repo}?lang=en").as_str())
+    );
+
+    // A language nobody published is not redirected to.
+    let unmatched = no_redirect
+        .get(&docs_url)
+        .header("Accept-Language", "ko")
+        .send()
+        .await?;
+    assert_eq!(unmatched.status(), StatusCode::OK);
+
+    put_json(
+        &client,
+        &languages_url,
+        json!({ "languages": [] }),
+        StatusCode::OK,
+    )
+    .await?;
+
+    // ── Glossary ──────────────────────────────────────────────────
+    let glossary_url =
+        format!("{server_url}/v1beta/repos/{org}/{repo}/glossary");
+
+    let empty = get_json(&client, &glossary_url, StatusCode::OK).await?;
+    assert_eq!(empty["terms"], json!([]));
+
+    // An every-language entry and a language-specific override of the
+    // same term coexist; entries come back sorted so the prompt they
+    // feed is stable between runs.
+    let saved = put_json(
+        &client,
+        &glossary_url,
+        json!({ "terms": [
+            { "term": "Repository", "translation": "Repository" },
+            { "term": "Library", "translation": "Library" },
+            { "term": "Library", "target_lang": "ja",
+              "translation": "ライブラリ" }
+        ]}),
+        StatusCode::OK,
+    )
+    .await?;
+    let terms = saved["terms"].as_array().unwrap();
+    assert_eq!(terms.len(), 3);
+    assert_eq!(terms[0]["term"], "Library");
+    assert!(terms[0].get("target_lang").is_none(), "{:?}", terms[0]);
+    assert_eq!(terms[1]["target_lang"], "ja");
+    assert_eq!(terms[2]["term"], "Repository");
+
+    let read_back =
+        get_json(&client, &glossary_url, StatusCode::OK).await?;
+    assert_eq!(read_back["terms"], saved["terms"]);
+
+    // The same term twice for one language has no defensible winner.
+    put_json(
+        &client,
+        &glossary_url,
+        json!({ "terms": [
+            { "term": "Library", "target_lang": "ja", "translation": "A" },
+            { "term": "Library", "target_lang": "ja", "translation": "B" }
+        ]}),
+        StatusCode::BAD_REQUEST,
+    )
+    .await?;
+
+    // An empty translation is refused, and the error says how to keep a
+    // term untranslated instead.
+    let refusal = client
+        .put(&glossary_url)
+        .header("Authorization", format!("Bearer {TOKEN}"))
+        .json(&json!({ "terms": [
+            { "term": "Library", "translation": "" }
+        ]}))
+        .send()
+        .await?;
+    assert_eq!(refusal.status(), StatusCode::BAD_REQUEST);
+    let refusal = refusal.text().await?;
+    assert!(
+        refusal.contains("repeat the term itself"),
+        "the error must say how to leave a term alone: {refusal}"
+    );
+
+    // The rejected writes changed nothing.
+    let unchanged =
+        get_json(&client, &glossary_url, StatusCode::OK).await?;
+    assert_eq!(unchanged["terms"], saved["terms"]);
+
+    let cleared = put_json(
+        &client,
+        &glossary_url,
+        json!({ "terms": [] }),
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(cleared["terms"], json!([]));
+
+    // With no model configured, an explicit run says so rather than
+    // reporting a successful no-op. The message has to name the setting
+    // the operator needs to change.
+    let refused = client
+        .post(format!(
+            "{server_url}/v1beta/repos/{org}/{repo}/translations/run"
+        ))
+        .header("Authorization", format!("Bearer {TOKEN}"))
+        .send()
+        .await?;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let body = refused.text().await?;
+    assert!(
+        body.contains("LIBRARY_TRANSLATION_MODEL"),
+        "the refusal must name the setting to change, got: {body}"
+    );
+
+    let _ = shutdown_tx.send(());
+    Ok(())
+}
+
 async fn setup_test_server(
 ) -> anyhow::Result<(String, oneshot::Sender<()>, FakeAuthState)> {
     std::env::set_var("ENVIRONMENT", "test");
+    // The docs read path caches a repo's published languages for a
+    // minute. Tests publish and read in the same breath, so the cache
+    // is switched off rather than have assertions depend on its timing.
+    std::env::set_var("DOCS_REPO_CACHE_TTL_SECS", "0");
     std::env::set_var("SKIP_MINIO_SETUP", "1");
     std::env::set_var("AWS_EC2_METADATA_DISABLED", "true");
     std::env::set_var("ROOT_ID", LIBRARY_TENANT_ID);

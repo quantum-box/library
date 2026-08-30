@@ -9,7 +9,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
     auth::*, data::*, docs::*, global_id_mapping::*, image::*,
-    organization::*, property::*, repository::*, source::*,
+    organization::*, property::*, repository::*, source::*, translation::*,
 };
 
 // TODO: add English comment
@@ -33,6 +33,12 @@ use crate::handler::{
         list_docs,
         view_doc,
         view_doc_markdown,
+        list_doc_languages,
+        get_published_languages,
+        set_published_languages,
+        run_translations,
+        get_glossary,
+        set_glossary,
         view_data_parquet,
         add_data,
         update_data,
@@ -77,6 +83,13 @@ use crate::handler::{
         crate::handler::types::PropertyResponse,
         crate::handler::types::AddPropertyRequest,
         crate::handler::types::UpdatePropertyRequest,
+        crate::handler::translation::PublishedLanguagesResponse,
+        crate::handler::translation::SetPublishedLanguagesRequest,
+        crate::handler::translation::RunTranslationsResponse,
+        crate::handler::translation::TranslationOutcomeResponse,
+        crate::handler::translation::GlossaryResponse,
+        crate::handler::translation::SetGlossaryRequest,
+        crate::handler::translation::GlossaryTermPayload,
         crate::handler::types::SourceResponse,
         crate::handler::types::CreateSourceRequest,
         crate::handler::types::UpdateSourceRequest,
@@ -131,6 +144,11 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(update_source))
         .routes(routes!(delete_source))
         .routes(routes!(get_global_id_mapping))
+        .routes(routes!(get_published_languages))
+        .routes(routes!(set_published_languages))
+        .routes(routes!(run_translations))
+        .routes(routes!(get_glossary))
+        .routes(routes!(set_glossary))
 }
 
 pub fn create_router() -> axum::Router {

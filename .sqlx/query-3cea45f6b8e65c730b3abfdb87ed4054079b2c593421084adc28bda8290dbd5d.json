@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT lang FROM repo_published_languages\n             WHERE repo_id = ?\n             ORDER BY lang",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lang",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 64
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3cea45f6b8e65c730b3abfdb87ed4054079b2c593421084adc28bda8290dbd5d"
+}

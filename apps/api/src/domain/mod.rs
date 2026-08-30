@@ -3,6 +3,9 @@ mod organization;
 pub mod policy;
 pub mod repo;
 mod role;
+// Not glob re-exported: `source_hash` and `LanguageTag` are generic
+// enough that pulling them into `domain::*` would be confusing.
+pub mod translation;
 
 pub use global_id_mapping::*;
 pub use organization::*;

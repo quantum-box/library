@@ -1,0 +1,84 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT target_id, source_lang, source_hash, translated,\n                    status, model, reviewed_by\n             FROM translations\n             WHERE tenant_id = ? AND scope = ? AND target_lang = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 288
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_lang",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 64
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_hash",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "translated",
+        "type_info": {
+          "type": "Blob",
+          "flags": "BLOB",
+          "max_size": 4294967295
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL",
+          "max_size": 32
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "model",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 256
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewed_by",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 256
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "4b76d88efefa1c512c4873006b2accffd8444841cdfe42a3cccfbdc7c5b940b8"
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT term, target_lang FROM repo_glossary_terms\n             WHERE repo_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "term",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_lang",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY",
+          "max_size": 64
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "83ecb718e7a332bc97680d5157ae5ce7a0ae5d334b0c0c6c5afd8e8469ea9ec9"
+}

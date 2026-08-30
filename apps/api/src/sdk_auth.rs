@@ -409,6 +409,14 @@ pub struct SdkAuthApp {
     auth_token: String,
 }
 
+/// Where and as whom the service calls tachyon-api for its own work.
+#[derive(Debug, Clone)]
+pub struct ServiceEndpoint {
+    pub base_url: String,
+    pub operator_id: String,
+    pub auth_token: String,
+}
+
 tokio::task_local! {
     /// Bearer token of the request currently being handled.
     ///
@@ -506,6 +514,21 @@ impl SdkAuthApp {
             base_url: self.base_url.clone(),
             default_operator_id: self.default_operator_id.clone(),
             auth_token: token.to_string(),
+        }
+    }
+
+    /// Base URL and process credential for calls the service makes on
+    /// its own behalf rather than for a caller.
+    ///
+    /// Deliberately the process token and not `request_caller_token`:
+    /// background work such as translating a repo's schema is billed
+    /// to the platform, and must not run with the permissions of
+    /// whoever happened to trigger it.
+    pub fn service_endpoint(&self) -> ServiceEndpoint {
+        ServiceEndpoint {
+            base_url: self.base_url.clone(),
+            operator_id: self.default_operator_id.clone(),
+            auth_token: self.auth_token.clone(),
         }
     }
 

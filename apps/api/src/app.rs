@@ -18,6 +18,21 @@ pub struct LibraryApp {
     pub update_repo: Arc<dyn usecase::UpdateRepoInputPort>,
     pub change_repo_username: Arc<dyn usecase::ChangeRepoUsernameInputPort>,
     pub view_repo: Arc<dyn usecase::ViewRepoInputPort>,
+    pub get_published_languages:
+        Arc<dyn usecase::GetPublishedLanguagesInputPort>,
+    pub set_published_languages:
+        Arc<dyn usecase::SetPublishedLanguagesInputPort>,
+    pub translate_schema_labels: Arc<dyn usecase::TranslateRepoInputPort>,
+    /// Exposed for the public docs handlers, which resolve a requested
+    /// language and load its cached labels on the read path. Following
+    /// `organization_repo`'s precedent rather than adding a usecase
+    /// whose only job would be to forward two lookups.
+    pub published_language_repo:
+        Arc<dyn crate::domain::translation::PublishedLanguageRepository>,
+    pub translation_repo:
+        Arc<dyn crate::domain::translation::TranslationRepository>,
+    pub get_glossary: Arc<dyn usecase::GetGlossaryInputPort>,
+    pub set_glossary: Arc<dyn usecase::SetGlossaryInputPort>,
     pub search_data: Arc<dyn usecase::SearchDataInputPort>,
     pub search_repo: Arc<dyn usecase::SearchRepoInputPort>,
     pub add_data: Arc<dyn usecase::AddDataInputPort>,
@@ -176,6 +191,29 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             visibility_service.clone(),
         ));
+
+        // Translation: the published-language allow-list. Reading it is
+        // as privileged as reading the repo, so both usecases borrow
+        // `view_repo` for the visibility decision instead of restating
+        // it.
+        let published_language_repo: Arc<
+            dyn crate::domain::translation::PublishedLanguageRepository,
+        > = Arc::new(
+            interface_adapter::PublishedLanguageRepositoryImpl::new(
+                library_db.clone(),
+            ),
+        );
+        let get_published_languages =
+            Arc::new(usecase::GetPublishedLanguages::new(
+                view_repo.clone(),
+                published_language_repo.clone(),
+            ));
+        let set_published_languages =
+            Arc::new(usecase::SetPublishedLanguages::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                published_language_repo.clone(),
+            ));
         let search_data = usecase::SearchData::new(
             database_app.clone(),
             get_organization_by_username.clone(),
@@ -274,12 +312,16 @@ impl LibraryApp {
             database_app.clone(),
         );
 
-        let get_properties = usecase::GetProperties::new(
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
-            database_app.clone(),
-            auth_app.clone(),
-        );
+        // `GetProperties::new` already hands back an `Arc`; the
+        // annotation only coerces it to the port so it can be shared.
+        let get_properties: Arc<dyn usecase::GetPropertiesInputPort> =
+            usecase::GetProperties::new(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                database_app.clone(),
+                auth_app.clone(),
+            );
+
         let delete_property = usecase::DeleteProperty::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -302,12 +344,62 @@ impl LibraryApp {
             organization_repo.clone(),
             auth_app.clone(),
         );
-        let view_data_list = usecase::ViewDataList::new(
-            database_app.clone(),
-            get_organization_by_username.clone(),
-            get_repo_by_username.clone(),
+        // `ViewDataList::new` already returns an `Arc`; the annotation
+        // only coerces it to the port so it can be shared.
+        let view_data_list: Arc<dyn usecase::ViewDataListInputPort> =
+            usecase::ViewDataList::new(
+                database_app.clone(),
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                auth_app.clone(),
+            );
+
+        // Translation. The translator is absent unless a model is
+        // configured, which turns the feature off rather than failing
+        // startup; the usecase then reports that plainly instead of
+        // pretending to have run. Built here because it needs
+        // `view_data_list` to page through record names.
+        let translation_repo: Arc<
+            dyn crate::domain::translation::TranslationRepository,
+        > = Arc::new(interface_adapter::TranslationRepositoryImpl::new(
+            library_db.clone(),
+        ));
+        let glossary_repo: Arc<
+            dyn crate::domain::translation::GlossaryRepository,
+        > = Arc::new(interface_adapter::GlossaryRepositoryImpl::new(
+            library_db.clone(),
+        ));
+        let get_glossary = Arc::new(usecase::GetGlossary::new(
+            view_repo.clone(),
+            glossary_repo.clone(),
+        ));
+        let set_glossary = Arc::new(usecase::SetGlossary::new(
             auth_app.clone(),
-        );
+            view_repo.clone(),
+            glossary_repo.clone(),
+        ));
+
+        let tachyon_translator =
+            interface_adapter::TachyonTranslator::from_env(sdk.clone());
+        let translation_model = tachyon_translator
+            .as_ref()
+            .map(|translator| translator.model().to_string());
+        let translator = tachyon_translator.map(|translator| {
+            Arc::new(translator)
+                as Arc<dyn crate::domain::translation::Translator>
+        });
+        let translate_schema_labels =
+            Arc::new(usecase::TranslateRepo::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                get_properties.clone(),
+                view_data_list.clone(),
+                published_language_repo.clone(),
+                glossary_repo.clone(),
+                translation_repo.clone(),
+                translator,
+                translation_model,
+            ));
 
         let create_api_key = Arc::new(usecase::CreateApiKey::new(
             auth_app.clone(),
@@ -428,6 +520,13 @@ impl LibraryApp {
             update_repo,
             change_repo_username,
             view_repo,
+            get_published_languages,
+            set_published_languages,
+            translate_schema_labels,
+            published_language_repo,
+            translation_repo,
+            get_glossary,
+            set_glossary,
             search_data,
             search_repo,
             save_data,
