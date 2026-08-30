@@ -88,7 +88,7 @@ repository を取る引数はすべて `org/repo` の形で指定する。
 | コマンド | 説明 |
 | --- | --- |
 | `library repo list <org>` | organization の repo 一覧 |
-| `library repo search [--org <org>] [--name <name>] [--limit <n>]` | repo を名前で検索。`--limit` の既定は 20 |
+| `library repo search [--org <org>] [--name <name>] [--limit <n>]` | repo を名前で検索。`--limit` の既定は 20。検索できるのは自分が所属する organization の中だけで、匿名の呼び出しは常に空を返す |
 | `library repo get <org/repo>` | repo 詳細 |
 | `library repo create <org/repo> [--name --description --public]` | repo を作成。`repo` 部分が username になる |
 | `library repo update <org/repo> [--name --description --public --private --tag]` | repo 設定を更新。`--tag` は繰り返すと tag 一覧を置き換える |
@@ -236,6 +236,7 @@ library --json data list acme/docs --page-size 50
 
 - `library repo rename` は MCP tool には出していない（CLI / REST / GraphQL のみ）。認可の欠落は解消済みで、`PUT /v1beta/repos/{org}/{repo}/change-username` は `library:UpdateRepo` の resource-level チェックを通す（[apps/api/src/usecase/change_repo_username.rs](../../../apps/api/src/usecase/change_repo_username.rs)）。repo の owner / writer 以外は 403 になる。
 - `data update` は置換であり、部分更新の口は無い。
+- `repo search` は tenant 全体のディレクトリにはならない。executor が所属しない organization を `--org` に渡した場合も、認証なしで呼んだ場合も、エラーではなく空の一覧が返る ([apps/api/src/usecase/search_repo.rs](../../../apps/api/src/usecase/search_repo.rs))。公開 repo を名前で引く用途には使えないので、`library repo list <org>` や `library org get <org>` を使う。
 - 表出力は互換性を保証しない。
 - `mcp config --transport sse` が出す設定は、SSE を有効化した server にしか繋がらない。既定の配信では `http` を使う。詳細は [MCP 連携仕様](mcp.md) の GA status。
 
