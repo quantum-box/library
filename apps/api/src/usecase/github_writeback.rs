@@ -1,6 +1,7 @@
 //! Automatic GitHub writeback decorators for Data mutations.
 //!
-//! Wraps the `AddDataInputPort` / `UpdateDataInputPort` usecases so that
+//! Wraps the `AddDataInputPort` / `UpdateDataInputPort` /
+//! `UpsertDataInputPort` usecases so that
 //! saving a Data item whose `ext_github` property has `enabled=true`
 //! pushes the composed markdown back to the configured GitHub
 //! repository. The push is best-effort: failures are logged and never
@@ -29,8 +30,9 @@ use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction};
 use crate::usecase::ext_github_meta::ExtGithubMeta;
 use crate::usecase::{
     AddDataInputData, AddDataInputPort, UpdateDataInputData,
-    UpdateDataInputPort,
+    UpdateDataInputPort, UpsertDataInputData, UpsertDataInputPort,
 };
+use database_manager::usecase::UpsertOutcome;
 
 /// Shared writeback logic used by the Add/Update decorators.
 pub struct GithubWritebackDispatch {
@@ -281,6 +283,48 @@ impl UpdateDataInputPort for UpdateDataWithGithubWriteback {
             .dispatch(executor, multi_tenancy, &data, &properties)
             .await;
         Ok((data, properties))
+    }
+}
+
+/// `UpsertDataInputPort` decorator that auto-pushes sync-enabled Data.
+///
+/// An upsert reaches GitHub whichever branch it took: a record created at a
+/// client-chosen id is as much a new document as one created through
+/// `AddData`.
+pub struct UpsertDataWithGithubWriteback {
+    inner: Arc<dyn UpsertDataInputPort>,
+    writeback: Arc<GithubWritebackDispatch>,
+}
+
+impl UpsertDataWithGithubWriteback {
+    pub fn new(
+        inner: Arc<dyn UpsertDataInputPort>,
+        writeback: Arc<GithubWritebackDispatch>,
+    ) -> Arc<Self> {
+        Arc::new(Self { inner, writeback })
+    }
+}
+
+impl std::fmt::Debug for UpsertDataWithGithubWriteback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpsertDataWithGithubWriteback")
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait::async_trait]
+impl UpsertDataInputPort for UpsertDataWithGithubWriteback {
+    async fn execute<'a>(
+        &self,
+        input: UpsertDataInputData<'a>,
+    ) -> errors::Result<(Data, Vec<Property>, UpsertOutcome)> {
+        let executor = input.executor;
+        let multi_tenancy = input.multi_tenancy;
+        let (data, properties, outcome) = self.inner.execute(input).await?;
+        self.writeback
+            .dispatch(executor, multi_tenancy, &data, &properties)
+            .await;
+        Ok((data, properties, outcome))
     }
 }
 

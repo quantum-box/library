@@ -22,7 +22,7 @@ pub struct AddDataInteractorImpl {
     relation_target_validator: Arc<dyn RelationTargetValidationPort>,
 }
 
-fn populate_auto_generated_ids(
+pub(crate) fn populate_auto_generated_ids(
     properties: &[Property],
     property_data: &mut Vec<PropertyData>,
     data_id: &DataId,

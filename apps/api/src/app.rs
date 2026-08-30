@@ -24,6 +24,7 @@ pub struct LibraryApp {
     pub save_data: Arc<dyn usecase::AddDataInputPort>,
     pub view_data: Arc<dyn usecase::ViewDataInputPort>,
     pub update_data: Arc<dyn usecase::UpdateDataInputPort>,
+    pub upsert_data: Arc<dyn usecase::UpsertDataInputPort>,
     pub delete_data: Arc<dyn usecase::DeleteDataInputPort>,
     pub add_property: Arc<dyn usecase::AddPropertyInputPort>,
     pub update_property: Arc<dyn usecase::UpdatePropertyInputPort>,
@@ -244,6 +245,16 @@ impl LibraryApp {
                 ),
                 github_writeback.clone(),
             );
+        let upsert_data: Arc<dyn usecase::UpsertDataInputPort> =
+            usecase::UpsertDataWithGithubWriteback::new(
+                usecase::UpsertData::new(
+                    get_organization_by_username.clone(),
+                    get_repo_by_username.clone(),
+                    auth_app.clone(),
+                    database_app.clone(),
+                ),
+                github_writeback.clone(),
+            );
         let delete_data = usecase::DeleteData::new(
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -422,6 +433,7 @@ impl LibraryApp {
             save_data,
             view_data,
             update_data,
+            upsert_data,
             delete_data,
             add_property,
             update_property,

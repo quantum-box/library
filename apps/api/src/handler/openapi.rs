@@ -36,6 +36,7 @@ use crate::handler::{
         view_data_parquet,
         add_data,
         update_data,
+        upsert_data,
         delete_data,
         search_data,
         get_properties,
@@ -69,6 +70,7 @@ use crate::handler::{
         crate::handler::types::ParquetResponse,
         crate::handler::types::AddDataRequest,
         crate::handler::types::UpdateDataRequest,
+        crate::handler::types::UpsertDataRequest,
         crate::handler::types::SearchDataQuery,
         crate::handler::types::DataPaginationQuery,
         value_object::OffsetPaginator,
@@ -117,6 +119,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(view_data_parquet))
         .routes(routes!(add_data))
         .routes(routes!(update_data))
+        .routes(routes!(upsert_data))
         .routes(routes!(delete_data))
         .routes(routes!(search_data))
         .routes(routes!(get_properties))
@@ -169,4 +172,34 @@ pub fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&yaml_path, yaml_content)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The upsert route has to survive two conversions that silently drop it:
+    /// `routes!` must find a `#[utoipa::path]` for it, and utoipa-axum must
+    /// rewrite `{data_id}` into axum's own parameter syntax. A path that fails
+    /// either becomes a 404 at runtime, which is exactly the failure the
+    /// endpoint exists to prevent.
+    #[test]
+    fn the_data_upsert_route_is_registered() {
+        let api = OpenApiRouter::with_openapi(ApiDoc::openapi())
+            .merge(create_openapi_router())
+            .get_openapi()
+            .clone();
+
+        let path = api
+            .paths
+            .paths
+            .get("/v1beta/repos/{org}/{repo}/data/{data_id}/upsert")
+            .expect("the upsert path must reach the OpenAPI document");
+        assert!(path.put.is_some(), "upsert is a PUT");
+
+        // Building the axum router panics on a conflicting route pattern, so
+        // this also proves `/data/:data_id/upsert` and the `/md` sibling can
+        // coexist.
+        let _ = create_router();
+    }
 }

@@ -30,7 +30,7 @@ use usecase::{
     FindDatabasesInteractorImpl, GetDataInteractorImpl,
     GetDatabaseDefinition, GetDatabaseInteractorImpl,
     PatchRecordInteractor, SearchData, UpdateDataInteractorImpl,
-    UpdatePropertyInteractorImpl,
+    UpdatePropertyInteractorImpl, UpsertDataInteractorImpl,
 };
 
 // #[async_trait::async_trait]
@@ -70,6 +70,7 @@ pub struct App {
         Arc<dyn GetDatabaseDefinitionInputPort>,
     add_data_usecase: Arc<dyn AddDataInputPort>,
     update_data_usecase: Arc<dyn UpdateDataInputPort>,
+    upsert_data_usecase: Arc<dyn UpsertDataInputPort>,
     patch_record_usecase: Arc<dyn PatchRecordInputPort>,
     find_database_usecase: Arc<dyn FindDatabasesInputPort>,
     get_data_usecase: Arc<dyn GetDataInputPort>,
@@ -98,6 +99,7 @@ impl App {
         >,
         add_data_usecase: Arc<dyn AddDataInputPort>,
         update_data_usecase: Arc<dyn UpdateDataInputPort>,
+        upsert_data_usecase: Arc<dyn UpsertDataInputPort>,
         patch_record_usecase: Arc<dyn PatchRecordInputPort>,
         find_database_usecase: Arc<dyn FindDatabasesInputPort>,
         get_data_usecase: Arc<dyn GetDataInputPort>,
@@ -115,6 +117,7 @@ impl App {
             get_database_definition_usecase,
             add_data_usecase,
             update_data_usecase,
+            upsert_data_usecase,
             patch_record_usecase,
             find_database_usecase,
             get_data_usecase,
@@ -227,6 +230,12 @@ pub fn factory_client_with_db(
         data_repo.clone(),
         data_repo.clone(),
     );
+    let upsert_data_usecase = UpsertDataInteractorImpl::new(
+        database_repo.clone(),
+        property_repo.clone(),
+        data_repo.clone(),
+        data_repo.clone(),
+    );
     let patch_record_usecase =
         PatchRecordInteractor::new(data_repo.clone());
     let find_database_usecase =
@@ -262,6 +271,7 @@ pub fn factory_client_with_db(
         get_database_definition_usecase,
         add_data_usecase,
         update_data_usecase,
+        upsert_data_usecase,
         patch_record_usecase,
         find_database_usecase,
         get_data_usecase,
