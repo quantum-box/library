@@ -185,8 +185,15 @@ async function build(): Promise<PhotonClient> {
     // named when the client is built. The resolver is asked for each one as it
     // is encountered instead. See `libraryCollections`.
     resolveCollection: resolveLibraryCollection,
-    // Sync runs when a caller asks for it, as it did before.
+    // Sync runs when a caller asks for it, as it did before — except while
+    // something is queued, which `followQueue` handles.
     sync: { autoStart: false },
+  })
+
+  // Stop as soon as the queue drains. Started in `followQueue`, and the pair
+  // is what keeps the loop's cost proportional to there being unsent work.
+  client.sync.subscribe(() => {
+    if (client.pendingCount() === 0) client.sync.stop()
   })
 
   // Before the client is handed out, and so before anything can ask
@@ -363,6 +370,7 @@ async function pushMutation<T>(
   )
   await syncClientEngineOperations().catch(() => undefined)
   const decision = settled.decision
+  followQueue(await engine())
 
   const collection = stored?.key.collection
   const recordId = stored?.key.record_id
@@ -381,6 +389,24 @@ async function pushMutation<T>(
     return { status: 'conflict', record: current, conflictId: decision.conflictId }
   }
   return { status: 'accepted', record: current }
+}
+
+/**
+ * Run the sync loop while, and only while, something is waiting to go out.
+ *
+ * `sync.start()` is what installs the `online` listener, the visibility
+ * handler and the backoff retry. Without it a write that could not be pushed
+ * sits in the durable log until the user happens to make another one — which
+ * is not what "it goes out when the network returns" means, and was the gap
+ * between what a queued write promised and what it did.
+ *
+ * Tied to the queue rather than left running, because the loop also polls, and
+ * a poll pulls: an idle client would re-list a repository every interval for
+ * no reason. Started here when a push leaves something behind, stopped in
+ * `build` as soon as the queue drains.
+ */
+function followQueue(client: PhotonClient): void {
+  if (client.pendingCount() > 0) client.sync.start()
 }
 
 /**
@@ -533,6 +559,10 @@ export const __testOnly = {
   /** Build the next client from these instead of IndexedDB and the network. */
   configure(next: EngineOverrides): void {
     overrides = next
+  },
+  /** The live client, for a test that needs to watch the sync loop itself. */
+  client(): Promise<PhotonClient> {
+    return engine()
   },
   engineScope,
   engineActorId,

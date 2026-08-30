@@ -897,7 +897,8 @@ function standardFieldNeedsProperty(
 function findStandardProperty(
   properties: LibraryProperty[],
   field: StandardRecordPropertyField,
-  value: ServerCreateRecordData[StandardRecordPropertyField]
+  value: ServerCreateRecordData[StandardRecordPropertyField],
+  options?: { requireProperty?: boolean }
 ): LibraryProperty | undefined {
   const spec = standardPropertySpecs[field]
   const aliases = new Set(spec.aliases.map(normalizedPropertyName))
@@ -905,6 +906,14 @@ function findStandardProperty(
 
   if (candidates.length === 0) {
     if (!standardFieldNeedsProperty(field, value)) return undefined
+    // Skipped rather than refused when the caller is a `RestResource`. What it
+    // holds is a whole `DatabaseRecord`, where `status` and `priority` are
+    // always set — a record carries them whether or not anyone asked for one —
+    // so their presence there is not evidence of a request the repository has
+    // to honour. `assertRecordFieldsMappable` has already refused the fields
+    // the caller really did supply, at the point the edit was made; by here
+    // the only thing left to drop is a default nobody chose.
+    if (options?.requireProperty === false) return undefined
     throw new RecordPropertyMappingError(
       field,
       `Repository schema has no Property for ${field}; expected one of: ${spec.aliases.join(', ')}`
@@ -992,9 +1001,24 @@ function standardPropertyValue(
   }
 }
 
+/**
+ * The canonical record fields, as this repository's Properties.
+ *
+ * `requireProperty: false` is for a caller holding a whole `DatabaseRecord`
+ * rather than the fields someone typed — the `RestResource`, which is handed
+ * the record Photon stored. A record always has a `status` and a `priority`,
+ * so refusing a repository that defines neither would reject every create
+ * against it, including the ones that never mentioned either field. The strict
+ * check still runs, once, in `assertRecordFieldsMappable`, against what the
+ * caller actually supplied.
+ *
+ * A Property that exists but has no matching option still throws in both
+ * modes: that is a value going missing, not a default being dropped.
+ */
 function standardRecordPropertyData(
   properties: LibraryProperty[],
-  data: ServerCreateRecordData | ServerUpdateRecordData
+  data: ServerCreateRecordData | ServerUpdateRecordData,
+  options?: { requireProperty?: boolean }
 ): LibraryDataItem['propertyData'] {
   const fields: StandardRecordPropertyField[] = [
     'status',
@@ -1007,7 +1031,7 @@ function standardRecordPropertyData(
   return fields.flatMap((field) => {
     const value = data[field]
     if (value === undefined) return []
-    const property = findStandardProperty(properties, field, value)
+    const property = findStandardProperty(properties, field, value, options)
     if (!property) return []
     return [{ propertyId: property.id, value: standardPropertyValue(field, property, value) }]
   })
@@ -2240,8 +2264,14 @@ async function assertRecordFieldsMappable(
  *
  * `queued` is deliberately not an error. The operation is durable, the record
  * is on screen, and the push will go out when the network comes back — that is
- * the whole reason records moved onto the engine. Only a verdict the server
- * actually gave becomes a throw.
+ * the whole reason records moved onto the engine.
+ *
+ * `conflict` is. Photon has put the record back to the server's value and kept
+ * the local one on a conflict row, so returning it would hand the caller a
+ * record that is not what it asked for while its mutation error was cleared —
+ * the UI would show a successful save of a change that is not there. Until
+ * there is a resolution flow to send the user to, saying so is the honest
+ * answer, and the row is still on `listClientEngineConflicts` for one.
  */
 function settleRecordWrite(
   outcome: ClientEngineWriteResult<DatabaseRecord>,
@@ -2251,6 +2281,13 @@ function settleRecordWrite(
     throw new RecordApiError(
       outcome.reason ?? 'The server rejected this change',
       422,
+      'http'
+    )
+  }
+  if (outcome.status === 'conflict') {
+    throw new RecordApiError(
+      outcome.reason ?? 'This record changed elsewhere while you were editing it',
+      409,
       'http'
     )
   }
@@ -2477,6 +2514,13 @@ export async function deleteServerRecord(recordId: string): Promise<void> {
         'http'
       )
     }
+    if (outcome.status === 'conflict') {
+      throw new RecordApiError(
+        outcome.reason ?? 'This record changed elsewhere while you were deleting it',
+        409,
+        'http'
+      )
+    }
     return
   }
 
@@ -2578,7 +2622,7 @@ export function createLibraryRecordsResource(
         value,
         target,
         properties,
-        standardRecordPropertyData(properties, value)
+        standardRecordPropertyData(properties, value, { requireProperty: false })
       )
       // The id comes back different from the local one: `POST /data` mints its
       // own. Returning the item is what lets Photon record the alias.
@@ -2592,7 +2636,7 @@ export function createLibraryRecordsResource(
         value.title,
         target,
         properties,
-        standardRecordPropertyData(properties, value)
+        standardRecordPropertyData(properties, value, { requireProperty: false })
       )
       return toDatabaseRecord(stored, properties)
     },
@@ -2609,7 +2653,8 @@ export function createLibraryRecordsResource(
       const existing = await fetchLibraryDataDetail(recordId, target)
       const propertyData = standardRecordPropertyData(
         existing.properties,
-        fields
+        fields,
+        { requireProperty: false }
       ).reduce(
         (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
         existing.item

@@ -427,6 +427,46 @@ describe('rest-backed write outcomes', () => {
     expect(outcome.record?.value.title).toBe('still mine')
   })
 
+  /**
+   * The gap between what a queued write promised and what it did.
+   *
+   * `autoStart: false` means nothing is listening for the network to come
+   * back, so an offline write used to sit in the log until the user happened
+   * to make another one. `followQueue` starts the loop when a push leaves
+   * something behind — which is what installs the `online` listener, the
+   * visibility handler and the backoff retry — and `build` stops it again as
+   * soon as the queue drains, so an idle client still does not poll.
+   */
+  it('runs the sync loop while, and only while, something is queued', async () => {
+    const client = await __testOnly.client()
+    const started: string[] = []
+    const realStart = client.sync.start.bind(client.sync)
+    const realStop = client.sync.stop.bind(client.sync)
+    client.sync.start = () => {
+      started.push('start')
+      realStart()
+    }
+    client.sync.stop = () => {
+      started.push('stop')
+      realStop()
+    }
+
+    offline = true
+    const queued = await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'written on a plane',
+    })
+    expect(queued.status).toBe('queued')
+    expect(started).toContain('start')
+
+    // Draining it stops the loop again: polling costs a pull per interval, and
+    // there is nothing left to send.
+    offline = false
+    started.length = 0
+    await syncClientEngineOperations()
+    expect(started).toContain('stop')
+    expect(server.get('r1')?.title).toBe('written on a plane')
+  })
+
   it('deletes through the resource', async () => {
     await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'doomed' })
 

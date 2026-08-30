@@ -380,6 +380,63 @@ describe('recordsApi', () => {
     libraryCollections.reset()
   })
 
+  /**
+   * The mirror image, and the one a whole-record write path gets wrong by
+   * default. A `DatabaseRecord` always carries a status and a priority, so the
+   * resource cannot read their presence as a request — only what the caller
+   * passed is that. A repository defining neither Property must still accept a
+   * record that never mentioned one.
+   */
+  it('creates against a repository with no Status Property when none was asked for', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'acme')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    rememberLibraryRepositories([{ databaseId: 'repo-docs', org: 'acme', repo: 'docs' }])
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { properties: [] } })))
+
+    const created = await createServerRecord({ title: 'No status here' })
+
+    // The record still gets the UI's defaults...
+    expect(created).toMatchObject({ status: 'todo', priority: 'none' })
+    // ...and the write went out rather than being refused for them.
+    expect(photonEngine.upsertAndPushClientEngineRecord).toHaveBeenCalled()
+
+    libraryCollections.reset()
+  })
+
+  /**
+   * And the resource itself must drop those defaults rather than refuse them,
+   * because what it is handed is the stored record, not the caller's input.
+   */
+  it('drops a default the repository has no Property for instead of refusing the write', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const bodies: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (String(url).endsWith('/v1/graphql')) return Response.json({ data: { properties: [] } })
+      bodies.push(JSON.parse(String(init.body)))
+      return Response.json({ id: 'data-1', name: 'No status here', items: [] })
+    }))
+
+    const resource = createLibraryRecordsResource({ org: 'acme', repo: 'docs' })
+    await expect(
+      resource.upsert('data-1', {
+        id: 'data-1',
+        identifier: 'data-1',
+        title: 'No status here',
+        status: 'todo',
+        priority: 'none',
+        assignee: null,
+        labels: [],
+        project: 'docs',
+        createdAt: '2026-08-30T00:00:00.000Z',
+        updatedAt: '2026-08-30T00:00:00.000Z',
+        description: '',
+      })
+    ).resolves.toMatchObject({ id: 'data-1' })
+
+    expect(bodies).toEqual([{ name: 'No status here', property_data: [] }])
+  })
+
   it('fetches a pinned build\'s repo data through the GraphQL API contract', async () => {
     vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
     vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
@@ -1160,6 +1217,27 @@ describe('the destination of a write', () => {
       'data-9'
     )
     expect(sent).toEqual([])
+  })
+
+  /**
+   * A conflict is not a save.
+   *
+   * Photon has already put the record back to the server's value and kept the
+   * user's on a conflict row, so returning it would clear `RecordsContext`'s
+   * mutation error and show a successful save of a change that is not there.
+   */
+  it('reports a conflicting edit as an error rather than a save', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { properties: [] } })))
+    vi.mocked(photonEngine.patchAndPushClientEngineRecord).mockResolvedValueOnce({
+      status: 'conflict',
+      record: null,
+      conflictId: 'c1',
+      reason: 'edited elsewhere',
+    })
+
+    await expect(updateServerRecord('data-9', { title: 'mine' })).rejects.toMatchObject({
+      status: 409,
+    })
   })
 
   it('does nothing over the API for a record no collection holds', async () => {
