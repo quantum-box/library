@@ -2,26 +2,32 @@
 
 ## Project Structure & Module Organization
 
-Photon is a React 19 + Vite client with Tauri and a Rust backend.
+**library v2** — the React 19 + Vite client that ships as web, desktop, and mobile. Its backend is `apps/api` (library-api), not anything in this directory.
 
-- `src/`: frontend app code. Routes live in `src/router.tsx`; shared state is under `src/contexts/`; Yjs sync helpers are in `src/lib/yjs/`.
-- `src/app/kitConfig.ts`: project settings for branding, navigation, record defaults, storage, and sync.
+- `src/`: frontend app code. Routes live in `src/router.tsx`; shared state is under `src/contexts/`; Yjs helpers are in `src/lib/yjs/`.
+- `src/app/kitConfig.ts`: app settings for branding, navigation, record defaults, storage, and sync.
+- `src/lib/recordsApi.ts`: the Library API client. `src/lib/photonEngine/`: the local-first store.
 - `src/components/chat/` and `src/components/files/`: chat and file preview features.
-- `src/assets/`: static frontend assets.
-- `src-tauri/`: Tauri desktop shell.
-- `packages/server/`: Rust axum + SQLite + yrs backend. Migrations live in `packages/server/migrations/`.
-- `tests/e2e/`: Playwright end-to-end tests.
+- `src-tauri/`: Tauri shell for desktop and mobile.
+- `workers/sync/`: Cloudflare Worker — Engine proxy and the Live Durable Object relay.
+- `tests/e2e/`: Playwright end-to-end tests, backed by the Node fixture in `tests/e2e/library-api-fixture.mjs`.
+- `docs/`: this app's own operational docs. See [`docs/README.md`](./docs/README.md).
+
+### Vendored Photon (being removed)
+
+`packages/photon-engine/` and `packages/server/` are a vendored copy of
+[quantum-box/photon](https://github.com/quantum-box/photon), taken at import and since diverged. They are excluded from the root Cargo workspace and **nothing in this app runs them** — E2E uses the Node fixture above, and the client talks to `apps/api`.
+
+They are being replaced by the published `@quantum-box/photon` package. Do not add code to them, and do not treat their contents as this app's design; the engine's design lives in the photon repo.
 
 ## Build, Test, and Development Commands
 
 - `npm install`: install frontend and test dependencies.
 - `npm run dev -- --host 127.0.0.1`: start the Vite frontend on port `5173`.
-- `cd packages/server && cargo run`: start the backend on port `3001`.
 - `npm run build`: type-check and build the frontend.
 - `npm run type-check`: run TypeScript checks without emitting files.
 - `npm test`: run Vitest unit tests.
-- `npm run test:e2e`: run Playwright E2E tests.
-- `cd packages/server && cargo test`: run backend Rust tests.
+- `npm run test:e2e`: run Playwright E2E tests (starts the Library API fixture itself).
 - `npm run tauri:dev`: run the desktop app during development.
 
 ## Coding Style & Naming Conventions
@@ -49,4 +55,4 @@ For pull requests, include a summary, linked ticket or PLT ID, verification comm
 
 ## Security & Configuration Tips
 
-Do not commit generated data such as `dist/`, `packages/server/target/`, local SQLite files, Playwright reports, or secrets. Keep ports and API endpoints explicit so frontend, backend, mobile, and desktop clients share runtime assumptions.
+Do not commit generated data such as `dist/`, `target/`, local SQLite files, Playwright reports, or secrets. Keep ports and API endpoints explicit so frontend, backend, mobile, and desktop clients share runtime assumptions.

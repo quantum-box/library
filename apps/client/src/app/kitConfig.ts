@@ -101,7 +101,6 @@ export interface AppKitConfig {
   }
   attachments: {
     yjsArrayName: string
-    endpoint: string
     acceptedTypes: string
     maxPreviewBytes: number
     webStorageProvider: 'web-object-storage'
@@ -134,7 +133,6 @@ export interface AppKitConfig {
     backend: AppServerBackend
     apiBaseUrl?: string
     recordsPath: string
-    documentsPath: string
   }
   frontendWorker: {
     enabled: true
@@ -554,7 +552,6 @@ export const appKitConfig: AppKitConfig = {
   },
   attachments: {
     yjsArrayName: 'attachments',
-    endpoint: '/api/attachments',
     acceptedTypes: '.pdf,.xlsx,.xls,.csv,.docx,.pptx',
     maxPreviewBytes: 25 * 1024 * 1024,
     webStorageProvider: 'web-object-storage',
@@ -582,7 +579,6 @@ export const appKitConfig: AppKitConfig = {
     ),
     apiBaseUrl: viteEnv.VITE_LIBRARY_API_BASE_URL ?? viteEnv.VITE_BACKEND_API_URL ?? viteEnv.VITE_PHOTON_API_BASE_URL,
     recordsPath: '/api/records',
-    documentsPath: '/api/documents',
   },
   frontendWorker: {
     enabled: true,
