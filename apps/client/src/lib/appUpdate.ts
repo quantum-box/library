@@ -16,6 +16,22 @@ export function isDesktopApp() {
   return desktopPlatforms.includes(import.meta.env.TAURI_ENV_PLATFORM)
 }
 
+// `Check for Updates…` in the native macOS menu bar is built in Rust, so it
+// arrives as a Tauri event rather than a click. Bridging it onto the same
+// window event the in-app menu dispatches keeps one code path for both.
+//
+// It has to be the WebView's own listener: a top-level `listen()` registers
+// against `Any` and would answer an event aimed at a single tab, so every tab
+// in the window would run its own check and leave a dialog open behind the one
+// in front.
+export async function listenForMenuUpdateCheck(): Promise<() => void> {
+  if (!isDesktopApp()) return () => {}
+  const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+  return await getCurrentWebview().listen(CHECK_FOR_UPDATES_EVENT, () =>
+    requestUpdateCheck(),
+  )
+}
+
 export async function checkForAppUpdate(): Promise<Update | null> {
   if (!isDesktopApp()) return null
   const { check } = await import('@tauri-apps/plugin-updater')
