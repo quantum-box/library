@@ -1,5 +1,3 @@
-use photon_engine::{projection::apply_operation, Operation, Record};
-
 #[cfg(target_os = "macos")]
 mod macos_menu;
 
@@ -8,14 +6,6 @@ mod macos_tabs;
 
 #[cfg(target_os = "macos")]
 use tauri::{Manager, WindowEvent};
-
-#[tauri::command]
-fn photon_engine_apply_operation(
-    current: Option<Record>,
-    operation: Operation,
-) -> Result<Record, String> {
-    apply_operation(current, &operation).map_err(|error| error.to_string())
-}
 
 /// Lets the shared frontend enable platform-specific native controls without
 /// sniffing the user agent.
@@ -47,7 +37,6 @@ pub fn run() {
     let builder = builder
         .manage(macos_tabs::WindowTabsState::default())
         .invoke_handler(tauri::generate_handler![
-            photon_engine_apply_operation,
             app_target_os,
             macos_tabs::list_window_tabs,
             macos_tabs::create_window_tab,
@@ -104,10 +93,8 @@ pub fn run() {
         });
 
     #[cfg(not(target_os = "macos"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        photon_engine_apply_operation,
-        app_target_os
-    ]);
+    let builder =
+        builder.invoke_handler(tauri::generate_handler![app_target_os]);
 
     builder
         .run(tauri::generate_context!())

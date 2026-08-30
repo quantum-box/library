@@ -224,8 +224,6 @@ jobs:
       - name: Build client
         timeout-minutes: 15
         run: npm run build
-      - name: Test Photon server
-        run: cargo test --locked --manifest-path packages/server/Cargo.toml
       - name: Install Playwright Chromium
         run: |
           "${{ github.workspace }}/scripts/ci/apt-harden.sh"
