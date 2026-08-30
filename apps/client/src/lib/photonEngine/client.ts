@@ -326,6 +326,122 @@ export function subscribeClientEngineRollbacks(
   }
 }
 
+/**
+ * A verdict that arrived after the write reporting it had already returned.
+ *
+ * The counterpart of `ClientEngineWriteResult` for a write that was reported
+ * `queued`: same three statuses, and `record` read once the cycle carrying the
+ * verdict was over rather than in the middle of it.
+ */
+export interface ClientEngineSettlement<T = unknown> {
+  status: 'accepted' | 'rejected' | 'conflict'
+  collection: string
+  recordId: string
+  /** Where the record now stands locally, or `null` when it no longer does. */
+  record: PhotonEngineRecord<T> | null
+  reason?: string
+  conflictId?: string
+}
+
+type ClientEngineSettlementListener = (
+  settlement: ClientEngineSettlement
+) => void
+
+/** Held for the same reason `rollbackListeners` is. */
+const settlementListeners = new Set<ClientEngineSettlementListener>()
+
+/**
+ * Watch every late verdict, not only the ones that roll a write back.
+ *
+ * `subscribeClientEngineRollbacks` reports what Photon undid, which covers a
+ * rejection and nothing else. Two other late verdicts leave a projection built
+ * from the write's return value just as stale:
+ *
+ * - `conflict`. The local value goes onto a conflict row and the projection
+ *   returns to the server's, so what the caller drew is no longer what the
+ *   engine holds — but nothing was rolled back, so no rollback is emitted.
+ * - `accepted`. A create is pushed with a client-minted id and the server
+ *   fills in what it derives from it; `createServerRecord` says as much of
+ *   `identifier`, and for a queued create that value arrives with the pull,
+ *   long after the placeholder was handed back.
+ *
+ * The record is read after the sync cycle finishes, because in both cases it
+ * is that cycle's *pull* that carries the value worth reporting.
+ */
+export function subscribeClientEngineSettlements(
+  listener: ClientEngineSettlementListener
+): () => void {
+  settlementListeners.add(listener)
+  return () => {
+    settlementListeners.delete(listener)
+  }
+}
+
+/**
+ * Resolve once the sync loop is out of a cycle.
+ *
+ * A verdict is delivered from inside `syncNow`, before the pull that goes with
+ * it has been applied — reading the record there would report the value the
+ * cycle is about to replace. `phase` leaving `syncing` is the loop saying the
+ * cycle is done.
+ *
+ * Bounded, because a listener that never fires would strand the announcement:
+ * a stalled cycle is worth reporting late, not never.
+ */
+function syncCycleSettled(client: PhotonClient): Promise<void> {
+  if (client.sync.getStatus().phase !== 'syncing') return Promise.resolve()
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | null = null
+    let done = false
+    const finish = (): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      unsubscribe?.()
+      resolve()
+    }
+    const timer = setTimeout(finish, SYNC_TIMEOUT_MS)
+    unsubscribe = client.sync.subscribe(() => {
+      if (client.sync.getStatus().phase !== 'syncing') finish()
+    })
+    if (client.sync.getStatus().phase !== 'syncing') finish()
+  })
+}
+
+/**
+ * Wait out a queued write and tell the subscribers what became of it.
+ *
+ * `handle.settled` resolves whenever the verdict lands, which for a write made
+ * offline is the cycle after the network returns. Nothing is awaiting it by
+ * then — `pushMutation` reported `queued` and returned — so this is where that
+ * promise is finally read.
+ */
+async function announceSettlement(
+  handle: MutationHandle<unknown>,
+  collection: string,
+  recordId: string
+): Promise<void> {
+  const decision = await handle.settled.then(
+    (result) => result,
+    () => null
+  )
+  if (!decision) return
+
+  const client = await engine()
+  await syncCycleSettled(client)
+  const record = await getClientEngineRecord(collection, recordId)
+
+  const settlement: ClientEngineSettlement = {
+    status: decision.status,
+    collection,
+    recordId,
+    record,
+    ...(decision.status === 'rejected' ? { reason: decision.reason } : {}),
+    ...(decision.status === 'conflict' ? { conflictId: decision.conflictId } : {}),
+  }
+  for (const listener of settlementListeners) listener(settlement)
+}
+
 export async function listClientEngineRecords<T>(
   collection: string
 ): Promise<PhotonEngineRecord<T>[]> {
@@ -460,7 +576,16 @@ async function pushMutation<T>(
         ? toEngineRecord<T>(stored)
         : null
 
-  if (!decision) return { status: 'queued', record: current }
+  if (!decision) {
+    // The one write whose verdict nobody is holding on to. Everything else
+    // here returns a decision the caller acts on; this one is decided on a
+    // later cycle, so the wait is handed to `announceSettlement` instead of
+    // being abandoned.
+    if (collection && recordId) {
+      void announceSettlement(handle as MutationHandle<unknown>, collection, recordId)
+    }
+    return { status: 'queued', record: current }
+  }
   if (decision.status === 'rejected') {
     return { status: 'rejected', record: current, reason: decision.reason }
   }

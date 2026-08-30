@@ -15,6 +15,7 @@ vi.mock('./photonEngine/client', () => ({
   patchAndPushClientEngineRecord: vi.fn(async () => ({ status: 'queued', record: null })),
   patchClientEngineRecord: vi.fn(),
   subscribeClientEngineRollbacks: vi.fn(() => () => undefined),
+  subscribeClientEngineSettlements: vi.fn(() => () => undefined),
   upsertAndPushClientEngineRecord: vi.fn(async () => ({ status: 'queued', record: null })),
   upsertClientEngineRecord: vi.fn(),
 }))

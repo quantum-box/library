@@ -17,6 +17,7 @@ import {
   deleteServerRecord,
   fetchServerRecords,
   subscribeRecordRollbacks,
+  subscribeRecordSettlements,
   updateServerRecord,
   type ServerUpdateRecordData,
 } from '../lib/recordsApi'
@@ -59,7 +60,12 @@ interface RecordsContextValue {
 }
 
 export interface RecordMutationError {
-  action: 'move' | 'update' | 'delete'
+  /**
+   * `rollback` is not an action the user took. It is one they took a while
+   * ago, offline, that the server has now refused — so the banner it raises
+   * says the change was undone rather than that something failed just now.
+   */
+  action: 'move' | 'update' | 'delete' | 'rollback'
   recordId: string
   message: string
 }
@@ -286,6 +292,19 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         else removeYDatabaseRecord(rollback.recordId)
       }
     })
+
+    // Otherwise the edit just leaves the screen. The user made it long enough
+    // ago — before the network came back — that nothing on screen connects it
+    // to what is happening now, so a record quietly reverting or vanishing
+    // reads as the app losing their work rather than the server refusing it.
+    const [first] = rollbacks
+    if (first) {
+      setMutationError({
+        action: 'rollback',
+        recordId: first.recordId,
+        message: t('errors.offlineWriteUndone'),
+      })
+    }
   }), [transactProjection])
 
   // Hydrate the Yjs projection from the configured Library API.
@@ -343,6 +362,40 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const refreshRecords = useCallback(() => {
     setHydrationRevision((revision) => revision + 1)
   }, [])
+
+  /**
+   * The quieter half of a late verdict.
+   *
+   * A rollback is not the only way a queued write ends up disagreeing with
+   * what was drawn for it. A `conflict` puts the record back to the server's
+   * value without rolling anything back, and an `accepted` create carries the
+   * `identifier` the server derived — which `createServerRecord` could only
+   * put a placeholder in for a write that had not been sent yet.
+   *
+   * `accepted` with no record is the one case nothing here can settle: the
+   * server minted its own id and Photon moved the record under it, so the id
+   * this document holds is dead and the new one is unknown. The list is the
+   * only way back to it.
+   */
+  useEffect(() => subscribeRecordSettlements((settlement) => {
+    if (settlement.record) {
+      const record = settlement.record
+      transactProjection(() => { upsertYDatabaseRecord(record) })
+    } else if (settlement.status === 'conflict') {
+      transactProjection(() => { removeYDatabaseRecord(settlement.recordId) })
+    } else {
+      refreshRecords()
+      return
+    }
+
+    if (settlement.status === 'conflict') {
+      setMutationError({
+        action: 'rollback',
+        recordId: settlement.recordId,
+        message: t('errors.offlineWriteUndone'),
+      })
+    }
+  }), [refreshRecords, transactProjection])
 
   const recordCountByStatus = useMemo(
     () =>

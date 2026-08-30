@@ -720,7 +720,9 @@ function WorkspaceMutationError() {
     ? t('workspace.mutation.moveFailed')
     : mutationError.action === 'delete'
       ? t('workspace.mutation.deleteFailed')
-      : t('workspace.mutation.updateFailed')
+      : mutationError.action === 'rollback'
+        ? t('workspace.mutation.undone')
+        : t('workspace.mutation.updateFailed')
 
   return (
     <div
@@ -731,7 +733,14 @@ function WorkspaceMutationError() {
       <div className="min-w-0 flex-1">
         <p className="font-medium">{headline}</p>
         <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
-          {mutationError.message} {t('workspace.mutation.valueKept')}
+          {/*
+            A rollback already says what was kept: the record is back to what
+            the server has. `valueKept` belongs to the other three, where the
+            edit never left the screen in the first place.
+          */}
+          {mutationError.action === 'rollback'
+            ? mutationError.message
+            : `${mutationError.message} ${t('workspace.mutation.valueKept')}`}
         </p>
       </div>
       <button

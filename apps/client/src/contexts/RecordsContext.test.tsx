@@ -76,6 +76,7 @@ const mocks = vi.hoisted(() => {
     deleteServerRecord: vi.fn(),
     /** The rollback listeners the provider has registered, to fire by hand. */
     rollbackListeners: new globalThis.Set<(rollbacks: unknown) => void>(),
+    settlementListeners: new globalThis.Set<(settlement: unknown) => void>(),
   }
 })
 
@@ -102,6 +103,10 @@ vi.mock('../lib/recordsApi', () => ({
   subscribeRecordRollbacks: (listener: (rollbacks: unknown) => void) => {
     mocks.rollbackListeners.add(listener)
     return () => { mocks.rollbackListeners.delete(listener) }
+  },
+  subscribeRecordSettlements: (listener: (settlement: unknown) => void) => {
+    mocks.settlementListeners.add(listener)
+    return () => { mocks.settlementListeners.delete(listener) }
   },
 }))
 
@@ -184,6 +189,7 @@ describe('RecordsProvider server-accepted projection', () => {
     mocks.updateServerRecord.mockReset()
     mocks.deleteServerRecord.mockReset()
     mocks.rollbackListeners.clear()
+    mocks.settlementListeners.clear()
   })
 
   it('writes created records optimistically and replaces them with the server version', async () => {
@@ -701,6 +707,27 @@ describe('RecordsProvider server-accepted projection', () => {
       expect(mocks.recordsArray.get(0).get('title')).toBe('Server accepted record')
     })
 
+    it('tells the user the change was undone rather than reverting in silence', async () => {
+      seedYDatabaseRecord(serverDatabaseRecord)
+      let context: ReturnType<typeof useRecords> | null = null
+      render(
+        <RecordsProvider>
+          <ContextCapture onChange={(value) => { context = value }} />
+        </RecordsProvider>
+      )
+      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+
+      fireRollback([{ recordId: serverDatabaseRecord.id, record: null }])
+
+      await waitFor(() => {
+        expect(context!.mutationError).toEqual({
+          action: 'rollback',
+          recordId: serverDatabaseRecord.id,
+          message: expect.any(String),
+        })
+      })
+    })
+
     it('stops listening once the provider unmounts', async () => {
       const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
       await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
@@ -708,6 +735,74 @@ describe('RecordsProvider server-accepted projection', () => {
       unmount()
 
       expect(mocks.rollbackListeners.size).toBe(0)
+      expect(mocks.settlementListeners.size).toBe(0)
+    })
+  })
+
+  /**
+   * The verdicts that are not rollbacks.
+   *
+   * A `conflict` moves the record without undoing anything, and an `accepted`
+   * create brings back the `identifier` the server derived — which the queued
+   * write could only put a placeholder in for.
+   */
+  describe('settlements that land after the write returned', () => {
+    function fireSettlement(settlement: {
+      status: 'accepted' | 'conflict'
+      recordId: string
+      record: DatabaseRecord | null
+    }) {
+      act(() => {
+        mocks.settlementListeners.forEach((listener) => { listener(settlement) })
+      })
+    }
+
+    it('writes back the identifier an accepted create came home with', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, identifier: serverDatabaseRecord.id })
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      fireSettlement({
+        status: 'accepted',
+        recordId: serverDatabaseRecord.id,
+        record: serverDatabaseRecord,
+      })
+
+      expect(mocks.recordsArray.length).toBe(1)
+      expect(mocks.recordsArray.get(0).get('identifier')).toBe('PLT-1201')
+    })
+
+    it('drops a record the server turned out not to have, and says so', async () => {
+      seedYDatabaseRecord(serverDatabaseRecord)
+      let context: ReturnType<typeof useRecords> | null = null
+      render(
+        <RecordsProvider>
+          <ContextCapture onChange={(value) => { context = value }} />
+        </RecordsProvider>
+      )
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      fireSettlement({ status: 'conflict', recordId: serverDatabaseRecord.id, record: null })
+
+      expect(mocks.recordsArray.length).toBe(0)
+      await waitFor(() => {
+        expect(context!.mutationError).toMatchObject({
+          action: 'rollback',
+          recordId: serverDatabaseRecord.id,
+        })
+      })
+    })
+
+    it('refetches when an accepted record is no longer under the id it was written with', async () => {
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      // The server minted its own id and Photon moved the record under it.
+      // Nothing here knows the new one, so the list is the only way back.
+      fireSettlement({ status: 'accepted', recordId: serverDatabaseRecord.id, record: null })
+
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
     })
   })
 

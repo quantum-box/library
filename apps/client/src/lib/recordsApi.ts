@@ -16,6 +16,7 @@ import {
   patchAndPushClientEngineRecord,
   patchClientEngineRecord,
   subscribeClientEngineRollbacks,
+  subscribeClientEngineSettlements,
   upsertAndPushClientEngineRecord,
   upsertClientEngineRecord,
   type ClientEngineWriteResult,
@@ -2298,6 +2299,48 @@ export function subscribeRecordRollbacks(
         record: (change.record?.value as DatabaseRecord | undefined) ?? null,
       }))
     if (rollbacks.length > 0) listener(rollbacks)
+  })
+}
+
+/**
+ * What became of a write that was reported as queued.
+ *
+ * `rejected` is not here: it travels the rollback seam above, which reports
+ * the rolled-back value the moment Photon reprojects it rather than waiting
+ * for the cycle to end.
+ *
+ * `record` is where the record now stands. `null` under `conflict` means the
+ * server has no such record; under `accepted` it means the record is no longer
+ * under the id it was written with — the server minted its own and Photon
+ * moved it — and nothing here knows the new one.
+ */
+export interface RecordSettlement {
+  status: 'accepted' | 'conflict'
+  recordId: string
+  record: DatabaseRecord | null
+}
+
+/**
+ * Hear what a queued write settled as, beyond the ones that were undone.
+ *
+ * A rejection is the loud case and `subscribeRecordRollbacks` has it. These
+ * are the quiet ones, and they leave a projection built from the write's
+ * return value just as wrong: a `conflict` puts the record back to the
+ * server's value without rolling anything back, and an `accepted` create
+ * carries the server-derived `identifier` that the queued write could only
+ * guess at.
+ */
+export function subscribeRecordSettlements(
+  listener: (settlement: RecordSettlement) => void
+): () => void {
+  return subscribeClientEngineSettlements((settlement) => {
+    if (settlement.status === 'rejected') return
+    if (libraryRecordsDatabaseId(settlement.collection) == null) return
+    listener({
+      status: settlement.status,
+      recordId: settlement.recordId,
+      record: (settlement.record?.value as DatabaseRecord | undefined) ?? null,
+    })
   })
 }
 

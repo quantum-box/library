@@ -31,6 +31,7 @@ import {
   listClientEngineRecords,
   patchClientEngineRecord,
   subscribeClientEngineRollbacks,
+  subscribeClientEngineSettlements,
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from './client'
@@ -470,6 +471,92 @@ describe('rest-backed write outcomes', () => {
       } finally {
         unsubscribe()
       }
+    })
+
+    /**
+     * A rollback is only one of the three verdicts a queued write can get, and
+     * the other two leave a projection built from the write's return value
+     * just as stale — without undoing anything, so no rollback is emitted.
+     */
+    describe('settlements', () => {
+      let settled: {
+        status: string
+        recordId: string
+        title: string | null
+      }[]
+      let unsubscribe: () => void
+
+      beforeEach(() => {
+        settled = []
+        unsubscribe = subscribeClientEngineSettlements((settlement) => {
+          settled.push({
+            status: settlement.status,
+            recordId: settlement.recordId,
+            title: (settlement.record?.value as Doc | undefined)?.title ?? null,
+          })
+        })
+      })
+
+      afterEach(() => { unsubscribe() })
+
+      it('reports the server value a late conflict put the record back to', async () => {
+        await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+        offline = true
+        expect(
+          (await patchAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'mine' })).status
+        ).toBe('queued')
+
+        offline = false
+        failures = { r1: new Status(409, 'edited elsewhere') }
+        await syncClientEngineOperations()
+
+        // The value is read after the cycle, not from inside it: it is that
+        // cycle's pull which puts the record back to the server's value.
+        await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+        expect(settled[0]).toEqual({ status: 'conflict', recordId: 'r1', title: 'saved' })
+        expect(await listClientEngineConflicts(collection)).toHaveLength(1)
+      })
+
+      it('reports the record a late acceptance brought home', async () => {
+        offline = true
+        expect(
+          (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+            title: 'written on a plane',
+          })).status
+        ).toBe('queued')
+        expect(settled).toEqual([])
+
+        offline = false
+        await syncClientEngineOperations()
+
+        await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+        expect(settled[0]).toEqual({
+          status: 'accepted',
+          recordId: 'r1',
+          title: 'written on a plane',
+        })
+      })
+
+      it('reports a late rejection too, for anything not watching rollbacks', async () => {
+        offline = true
+        await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })
+
+        offline = false
+        failures = { r1: new Status(400, 'name is required') }
+        await syncClientEngineOperations()
+
+        await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+        expect(settled[0]).toEqual({ status: 'rejected', recordId: 'r1', title: null })
+      })
+
+      it('says nothing about a write that was answered on the spot', async () => {
+        await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        // Its caller already had the verdict as a return value.
+        expect(settled).toEqual([])
+      })
     })
 
     it('stops announcing once the subscriber unsubscribes', async () => {
