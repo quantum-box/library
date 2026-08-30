@@ -11,11 +11,13 @@ let menuListener: (() => void) | null = null
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: () => check() }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: () => relaunch() }))
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: (_event: string, handler: () => void) => {
-    menuListener = handler
-    return Promise.resolve(unlistenMenu)
-  },
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    listen: (_event: string, handler: () => void) => {
+      menuListener = handler
+      return Promise.resolve(unlistenMenu)
+    },
+  }),
 }))
 
 function pretendDesktopBuild() {
