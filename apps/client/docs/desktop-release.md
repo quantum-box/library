@@ -35,6 +35,20 @@ The workflow creates the release as a draft and only publishes it once every leg
 has uploaded, so a failed build leaves an unpublished draft rather than a broken
 feed — `library-v0.1.5` was left that way by exactly the race above.
 
+## The pinned Windows upgrade code
+
+`bundle.windows.wix.upgradeCode` in `tauri.conf.json` is pinned to
+`053a7581-a632-5412-942e-82424a9627c5`, the UUID v5 that Tauri derives in the DNS
+namespace from `Library Client.exe.app.x64` — the product name this app shipped
+under through 0.1.6.
+
+Windows identifies an MSI product by its upgrade code. Tauri generates one from
+`<productName>.exe.app.x64` unless told otherwise, so renaming the product would
+silently change it and Windows would install the update *alongside* the old
+version instead of over it. The code is pinned to the old derivation so existing
+installs keep upgrading. Never change it. `npx tauri inspect wix-upgrade-code`
+prints what the current config would otherwise generate.
+
 ## Required repository secrets
 
 | Secret | Purpose |
@@ -60,7 +74,7 @@ repository secret. Both halves must ship together.
 `src/lib/appUpdate.ts` and `src/components/AppUpdateNotice.tsx` implement the flow:
 a background check five seconds after launch, plus a manual "Check for updates"
 entry in the account menu. On macOS the same check also sits in the native menu
-bar under `Library Client ▸ Check for Updates…`; `src-tauri/src/macos_menu.rs`
+bar under `Library ▸ Check for Updates…`; `src-tauri/src/macos_menu.rs`
 builds that item and emits `library-check-for-updates` to the front tab, which
 `listenForMenuUpdateCheck()` bridges onto the in-app path. When an update exists
 the user is shown the version and release notes and chooses whether to install;

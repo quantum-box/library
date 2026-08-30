@@ -1,4 +1,4 @@
-# Library Client
+# Library
 
 Library の React クライアントです。データの境界は GitHub に寄せ、日常の編集体験は Notion のようにページ中心で扱います。
 

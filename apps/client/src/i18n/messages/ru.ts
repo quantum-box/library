@@ -660,7 +660,7 @@ export const ru: LocaleMessages = {
   'auth.cognitoNote': 'Аутентификация выполняется через Cognito и создаёт или восстанавливает ваш аккаунт Library.',
   'update.checking': 'Проверка обновлений',
   'update.checkingHint': 'Запрашиваем у ленты релизов более новую версию.',
-  'update.upToDate': 'Library Client обновлён',
+  'update.upToDate': 'Library обновлён',
   'update.upToDateHint': 'У вас последняя версия.',
   'update.updateTo': 'Обновить до {version}',
   'update.currentVersion': 'Сейчас установлена {version}. После установки приложение перезапустится.',

@@ -715,7 +715,7 @@ export const en = {
   // --------------------------------------------------------- app updates
   'update.checking': 'Checking for updates',
   'update.checkingHint': 'Asking the release feed for a newer version.',
-  'update.upToDate': 'Library Client is up to date',
+  'update.upToDate': 'Library is up to date',
   'update.upToDateHint': 'You are running the latest release.',
   'update.updateTo': 'Update to {version}',
   'update.currentVersion': 'You are on {version}. Installing restarts the app.',

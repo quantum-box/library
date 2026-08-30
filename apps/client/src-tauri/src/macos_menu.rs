@@ -2,7 +2,7 @@
 //!
 //! `Menu::default` already lays out the standard app / File / Edit / … menus;
 //! this adds the two entries the app owns — `File ▸ New Tab` and
-//! `Library Client ▸ Check for Updates…`.
+//! `Library ▸ Check for Updates…`.
 
 use tauri::{
     menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
@@ -52,7 +52,7 @@ fn add_new_tab<R: Runtime>(
     Ok(())
 }
 
-/// Adds `Library Client ▸ Check for Updates…` just below the About item, where
+/// Adds `Library ▸ Check for Updates…` just below the About item, where
 /// macOS apps conventionally put it.
 fn add_check_for_updates<R: Runtime>(
     app: &AppHandle<R>,

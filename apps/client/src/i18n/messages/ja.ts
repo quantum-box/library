@@ -642,7 +642,7 @@ export const ja: LocaleMessages = {
   'auth.cognitoNote': '認証には Cognito を使用し、Library アカウントを作成または復元します。',
   'update.checking': 'アップデートを確認中',
   'update.checkingHint': 'リリースフィードに新しいバージョンを問い合わせています。',
-  'update.upToDate': 'Library Client は最新です',
+  'update.upToDate': 'Library は最新です',
   'update.upToDateHint': '最新のリリースを使用しています。',
   'update.updateTo': '{version} へアップデート',
   'update.currentVersion': '現在は {version} です。インストールするとアプリが再起動します。',

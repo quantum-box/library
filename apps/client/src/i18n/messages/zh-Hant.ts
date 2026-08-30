@@ -639,7 +639,7 @@ export const zhHant: LocaleMessages = {
   'auth.cognitoNote': '驗證使用 Cognito，並會建立或還原你的 Library 帳戶。',
   'update.checking': '檢查更新中',
   'update.checkingHint': '正在向發行來源查詢新版本。',
-  'update.upToDate': 'Library Client 已是最新版本',
+  'update.upToDate': 'Library 已是最新版本',
   'update.upToDateHint': '你使用的是最新的發行版本。',
   'update.updateTo': '更新到 {version}',
   'update.currentVersion': '目前版本為 {version}。安裝後應用程式會重新啟動。',
