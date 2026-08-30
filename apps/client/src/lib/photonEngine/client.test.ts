@@ -14,6 +14,12 @@ import type { SyncTransport } from '@quantum-box/photon'
 import { beforeAll, beforeEach, afterEach, describe, expect, it } from 'vitest'
 
 import {
+  __testOnly as libraryCollections,
+  libraryRecordsCollection,
+  rememberLibraryRepositories,
+  setLibraryRecordsResourceFactory,
+} from './libraryCollections'
+import {
   __testOnly,
   deleteClientEngineRecord,
   getClientEngineRecord,
@@ -70,6 +76,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await __testOnly.reset()
+  libraryCollections.reset()
 })
 
 describe('records', () => {
@@ -141,5 +148,93 @@ describe('ingest', () => {
     await syncClientEngineOperations()
 
     expect(pushed).toEqual([{ collection: 'documents', recordId: 'd1' }])
+  })
+})
+
+/**
+ * The wiring that makes a repository a collection.
+ *
+ * `createPhotonClient` is built with a fixed set of collections, and this app's
+ * set is discovered from the Library API at runtime. `resolveCollection` is the
+ * seam that closes the gap, and what it answers decides where a write goes —
+ * the engine transport, or the repository's own REST resource.
+ */
+describe('repository collections', () => {
+  const photonCore = {
+    databaseId: 'repo-1',
+    org: 'quantum-box',
+    repo: 'photon-core',
+  }
+
+  /** Records the resource was asked to write, so routing is observable. */
+  let restWrites: string[] = []
+
+  function stubRepositoryResource() {
+    setLibraryRecordsResourceFactory((repository) => ({
+      list: async () => ({ items: [], complete: true }),
+      create: async (value: { id: string }) => {
+        restWrites.push(`create ${repository.databaseId}/${value.id}`)
+        return value
+      },
+      upsert: async (recordId: string, value: unknown) => {
+        restWrites.push(`upsert ${repository.databaseId}/${recordId}`)
+        return value
+      },
+      update: async (recordId: string) => {
+        restWrites.push(`update ${repository.databaseId}/${recordId}`)
+        return { id: recordId }
+      },
+      remove: async (recordId: string) => {
+        restWrites.push(`remove ${repository.databaseId}/${recordId}`)
+      },
+      toRecord: (item: { id: string }) => ({ recordId: item.id, value: item }),
+    // The erasure Photon's own `CollectionConfig` uses for resources whose
+    // value type it cannot name.
+    }) as never)
+  }
+
+  beforeEach(() => {
+    restWrites = []
+  })
+
+  it('pushes a repository\'s records to its resource, not to the engine', async () => {
+    stubRepositoryResource()
+    rememberLibraryRepositories([photonCore])
+
+    const collection = libraryRecordsCollection(photonCore.databaseId)
+    await upsertClientEngineRecord(collection, 'data-1', { id: 'data-1', title: 'mine' })
+    await syncClientEngineOperations()
+
+    expect(restWrites).toEqual(['upsert repo-1/data-1'])
+    // The Library API owns these rows; the engine must never see them.
+    expect(pushed).toEqual([])
+  })
+
+  it('keeps engine-native collections on the engine transport', async () => {
+    stubRepositoryResource()
+    rememberLibraryRepositories([photonCore])
+
+    await upsertClientEngineRecord('documents', 'd1', { title: 'mine' })
+    await syncClientEngineOperations()
+
+    expect(pushed).toEqual([{ collection: 'documents', recordId: 'd1' }])
+    expect(restWrites).toEqual([])
+  })
+
+  it('ingests a tombstone without asking the API to delete it again', async () => {
+    stubRepositoryResource()
+    rememberLibraryRepositories([photonCore])
+    const collection = libraryRecordsCollection(photonCore.databaseId)
+
+    await ingestClientEngineRecords(collection, [
+      { recordId: 'data-1', value: { id: 'data-1' } },
+    ])
+    await ingestClientEngineRecords(collection, [
+      { recordId: 'data-1', value: { id: 'data-1' }, deleted: true },
+    ])
+
+    expect(await listClientEngineRecords(collection)).toEqual([])
+    await syncClientEngineOperations()
+    expect(restWrites).toEqual([])
   })
 })
