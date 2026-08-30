@@ -205,6 +205,7 @@ export function DatabaseViewsProvider({ children }: { children: ReactNode }) {
         sorting: view.sorting,
         visibleProperties: view.visibleProperties,
         board: view.board,
+        timeline: view.timeline,
       }
 
       ydoc.transact(() => {

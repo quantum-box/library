@@ -54,6 +54,7 @@ describe('database view definitions', () => {
       'photon-core:table',
       'photon-core:board',
       'photon-core:workflow',
+      'photon-core:timeline',
     ])
     expect(views[2].workflowCanvasKey).toBe('photon-core')
     expect(getDefaultDatabaseViewId(ALL_DATABASES_ID, 'board')).toBe('__all__:board')
@@ -65,6 +66,7 @@ describe('database view definitions', () => {
       filters: { search: 'sync', status: 'done' as const, labels: ['sync'] },
       sorting: { id: 'updatedAt' as const, desc: true },
       visibleProperties: ['identifier', 'title', 'updatedAt'] satisfies RecordPropertyKey[],
+      timeline: { startField: 'updatedAt' as const, scale: 'month' as const },
     }
     const doc = new Y.Doc()
     const ymap = doc.getMap<string>('view')
@@ -78,6 +80,21 @@ describe('database view definitions', () => {
       filters: view.filters,
       sorting: view.sorting,
       visibleProperties: ['identifier', 'title', 'updatedAt'],
+      timeline: { startField: 'updatedAt', scale: 'month' },
+    })
+  })
+
+  it('falls back to the default timeline settings when a stored view has none', () => {
+    const doc = new Y.Doc()
+    const ymap = doc.getMap<string>('view')
+
+    writeDatabaseViewToYMap(ymap, createNewDatabaseView('photon-core', 'timeline', 3))
+    // A view written before timelines existed, or with a value we no longer ship.
+    ymap.set('timeline', JSON.stringify({ startField: 'dueAt', scale: 'quarter' }))
+
+    expect(ymapToDatabaseView(ymap).timeline).toEqual({
+      startField: 'createdAt',
+      scale: 'day',
     })
   })
 
@@ -133,6 +150,7 @@ describe('database view URL params', () => {
 
     expect(resolveDatabaseViewFromParam(all, 'org/repo', undefined)?.id).toBe('org/repo:table')
     expect(resolveDatabaseViewFromParam(all, 'org/repo', 'board')?.id).toBe('org/repo:board')
+    expect(resolveDatabaseViewFromParam(all, 'org/repo', 'timeline')?.id).toBe('org/repo:timeline')
     expect(resolveDatabaseViewFromParam(all, 'org/repo', 'org/repo:workflow')?.id).toBe(
       'org/repo:workflow',
     )
@@ -142,10 +160,11 @@ describe('database view URL params', () => {
   })
 
   it('serializes default views to short params and custom views to suffixes', () => {
-    const [table, board, workflow] = getDefaultDatabaseViews(ALL_DATABASES_ID)
+    const [table, board, workflow, timeline] = getDefaultDatabaseViews(ALL_DATABASES_ID)
     expect(databaseViewUrlParam(table)).toBeUndefined()
     expect(databaseViewUrlParam(board)).toBe('board')
     expect(databaseViewUrlParam(workflow)).toBe('workflow')
+    expect(databaseViewUrlParam(timeline)).toBe('timeline')
 
     const custom = createNewDatabaseView(ALL_DATABASES_ID, 'table', 3, 'Mine')
     expect(databaseViewUrlParam(custom)).toBe(custom.id.split(':').at(-1))

@@ -22,6 +22,7 @@ import { TableView } from './components/TableView'
 import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
 import { WorkflowView } from './components/WorkflowView'
+import { TimelineView } from './components/TimelineView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
 import {
   DeleteDatabaseViewDialog,
@@ -128,6 +129,8 @@ function shortcutViewLabelKey(
       return 'viewTabs.board'
     case 'workflow':
       return 'viewTabs.workflow'
+    case 'timeline':
+      return 'viewTabs.timeline'
     case 'docs':
       return 'shortcuts.docs'
     case 'chat':
@@ -143,6 +146,7 @@ const goShortcutActions: Record<string, ShortcutAction> = {
   t: 'table',
   b: 'board',
   w: 'workflow',
+  l: 'timeline',
   d: 'docs',
   c: 'chat',
   s: 'sync',
@@ -420,6 +424,7 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
     { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
     { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
+    { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
     { keys: renderShortcutSequence(['G', 'D']), label: t(shortcutViewLabelKey('docs')) },
     { keys: renderShortcutSequence(['G', 'C']), label: t(shortcutViewLabelKey('chat')) },
     { keys: renderShortcutSequence(['G', 'S']), label: t(shortcutViewLabelKey('sync')) },
@@ -1472,6 +1477,19 @@ function DataWorkspace({
                 }))
               }
               visibleProperties={effectiveView.visibleProperties}
+            />
+          )}
+          {!showSignedInDashboard && effectiveView.type === 'timeline' && (
+            <TimelineView
+              records={sortedRecords}
+              selectedRecordId={selectedRecord?.id ?? null}
+              onSelectRecord={handleSelectRecord}
+              settings={effectiveView.timeline}
+              onSettingsChange={(timeline) =>
+                updateDraftView((current) => ({ ...current, timeline }))
+              }
+              visibleProperties={effectiveView.visibleProperties}
+              preserveOrder={Boolean(effectiveView.sorting)}
             />
           )}
           {!showSignedInDashboard && effectiveView.type === 'workflow' && (

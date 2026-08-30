@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import {
   Bot,
+  CalendarRange,
   Cloud,
   Database,
   FileText,
@@ -18,6 +19,7 @@ import { useWorkspaceDatabases } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import type { DatabaseRecord } from '../data/mock'
 import { navigateToData } from '../lib/ui/dataLocation'
+import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { useI18n } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
@@ -61,7 +63,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   useDialogFocus({ open, dialogRef, initialFocusRef: inputRef, onClose })
 
   const items = useMemo<PaletteItem[]>(() => {
-    const databaseView = (type: 'table' | 'board' | 'workflow') => () => {
+    const databaseView = (type: DatabaseViewType) => () => {
       void navigate({
         to: '/databases',
         search: type === 'table' ? {} : { view: type },
@@ -100,6 +102,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: Network,
         keywords: t('palette.nav.workflow.keywords'),
         run: databaseView('workflow'),
+      },
+      {
+        id: 'nav-timeline',
+        label: t('palette.nav.timeline.label'),
+        detail: t('palette.nav.timeline.detail'),
+        icon: CalendarRange,
+        keywords: t('palette.nav.timeline.keywords'),
+        run: databaseView('timeline'),
       },
       {
         id: 'nav-docs',

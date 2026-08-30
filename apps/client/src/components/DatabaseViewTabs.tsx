@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Columns3, MoreHorizontal, Plus, Rows3, Workflow } from 'lucide-react'
+import { CalendarRange, Columns3, MoreHorizontal, Plus, Rows3, Workflow } from 'lucide-react'
 import type { DatabaseViewDefinition, DatabaseViewType } from '../lib/databaseViews/types'
 import { useI18n, type MessageKey } from '../i18n'
 
@@ -10,12 +10,14 @@ const viewTypeMeta: Record<
   table: { icon: Rows3, labelKey: 'viewTabs.table' },
   board: { icon: Columns3, labelKey: 'viewTabs.board' },
   workflow: { icon: Workflow, labelKey: 'viewTabs.workflow' },
+  timeline: { icon: CalendarRange, labelKey: 'viewTabs.timeline' },
 }
 
 function legacyTestId(view: DatabaseViewDefinition) {
   if (view.id.endsWith(':table')) return 'view-table'
   if (view.id.endsWith(':board')) return 'view-kanban'
   if (view.id.endsWith(':workflow')) return 'view-workflow'
+  if (view.id.endsWith(':timeline')) return 'view-timeline'
   return `database-view-tab-${view.id}`
 }
 
@@ -151,7 +153,7 @@ export function DatabaseViewTabs({
               <span className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-subtle-foreground">
                 {t('viewTabs.newView')}
               </span>
-              {(['table', 'board', 'workflow'] as const).map((type) => {
+              {(['table', 'board', 'workflow', 'timeline'] as const).map((type) => {
                 const meta = viewTypeMeta[type]
                 const Icon = meta.icon
                 return (

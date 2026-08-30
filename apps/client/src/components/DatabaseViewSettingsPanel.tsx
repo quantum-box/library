@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   RECORD_PROPERTIES,
   isRecordPropertyKey,
+  isTimelineDateField,
+  isTimelineScale,
 } from '../lib/databaseViews/databaseViews'
 import type {
   DatabaseViewDefinition,
   DatabaseViewFilters,
   DatabaseViewSorting,
   RecordPropertyKey,
+  TimelineScale,
 } from '../lib/databaseViews/types'
 import { useI18n, collator, type Locale } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
@@ -353,6 +356,46 @@ export function DatabaseViewSettingsPanel({
             }
           />
         </label>
+      )}
+
+      {view.type === 'timeline' && (
+        <div className="mb-4 grid grid-cols-1 gap-2">
+          <label className="flex flex-col gap-1 text-xs text-subtle">
+            {t('viewSettings.timelineStart')}
+            <select
+              data-testid="timeline-start-field"
+              value={view.timeline.startField}
+              onChange={(event) => {
+                const startField = event.target.value
+                if (!isTimelineDateField(startField)) return
+                onChangeView({ ...view, timeline: { ...view.timeline, startField } })
+              }}
+              className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
+            >
+              <option value="createdAt">{t('viewSettings.timelineStart.createdAt')}</option>
+              <option value="updatedAt">{t('viewSettings.timelineStart.updatedAt')}</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-subtle">
+            {t('viewSettings.timelineScale')}
+            <select
+              data-testid="timeline-scale-select"
+              value={view.timeline.scale}
+              onChange={(event) => {
+                const scale = event.target.value
+                if (!isTimelineScale(scale)) return
+                onChangeView({ ...view, timeline: { ...view.timeline, scale } })
+              }}
+              className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
+            >
+              {(['day', 'week', 'month'] as TimelineScale[]).map((scale) => (
+                <option key={scale} value={scale}>
+                  {t(`timeline.scale.${scale}` as const)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       )}
 
       <div>
