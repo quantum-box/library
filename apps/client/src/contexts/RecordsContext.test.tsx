@@ -37,6 +37,21 @@ const mocks = vi.hoisted(() => {
       this.items.splice(index, count)
     }
 
+    observers = new globalThis.Set<(events: unknown, transaction: { local: boolean }) => void>()
+
+    observeDeep(handler: (events: unknown, transaction: { local: boolean }) => void) {
+      this.observers.add(handler)
+    }
+
+    unobserveDeep(handler: (events: unknown, transaction: { local: boolean }) => void) {
+      this.observers.delete(handler)
+    }
+
+    /** Deliver a change as Yjs does for an update applied from another client. */
+    emitRemoteChange() {
+      this.observers.forEach((handler) => { handler([], { local: false }) })
+    }
+
     forEach(
       callback: (
         value: { get: (key: string) => string | undefined; set: (key: string, value: string) => unknown },
@@ -343,6 +358,49 @@ describe('RecordsProvider server-accepted projection', () => {
     expect(mocks.recordsArray.length).toBe(1)
     expect(mocks.recordsArray.get(0).get('title')).toBe(reconciledRecord.title)
     await waitFor(() => expect(context!.hydrationLoading).toBe(false))
+  })
+
+  it('refetches rather than reconciling a list older than a record another tab created', async () => {
+    // The document is shared, so a hydration that reconciles a list predating
+    // another tab's create deletes that record for everyone. This tab makes no
+    // edit of its own, so nothing but the remote update marks the projection as
+    // having moved on.
+    const initialHydration = deferred<DatabaseRecord[]>()
+    const retryHydration = deferred<DatabaseRecord[]>()
+    mocks.fetchServerRecords
+      .mockReturnValueOnce(initialHydration.promise)
+      .mockReturnValueOnce(retryHydration.promise)
+
+    render(
+      <RecordsProvider>
+        <ContextCapture onChange={() => undefined} />
+      </RecordsProvider>
+    )
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(1))
+
+    const remoteRecord = { ...serverDatabaseRecord, id: 'record-from-another-tab', title: 'Made elsewhere' }
+    act(() => {
+      seedYDatabaseRecord(remoteRecord)
+      mocks.recordsArray.emitRemoteChange()
+    })
+
+    await act(async () => {
+      initialHydration.resolve([])
+      await initialHydration.promise
+    })
+
+    await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(remoteRecord.title)
+
+    await act(async () => {
+      retryHydration.resolve([remoteRecord])
+      await retryHydration.promise
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('title')).toBe(remoteRecord.title)
   })
 
   it('keeps an optimistic create while retried hydration has not observed it yet', async () => {
