@@ -227,7 +227,7 @@ spec:
         - name: VITE_LIBRARY_SYNC_BACKEND
           value: cloudflare-durable-object
         - name: VITE_LIBRARY_SYNC_WS_URL
-          value: wss://photon-sync.quantum-box.workers.dev/ws
+          value: wss://library-client-sync.quantum-box.workers.dev/ws
         - name: VITE_LIBRARY_CHAT_STREAM_MODE
           value: mock
         - name: VITE_LIBRARY_API_BASE_URL

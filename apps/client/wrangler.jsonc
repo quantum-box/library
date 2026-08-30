@@ -3,8 +3,19 @@
   "name": "library-client-sync",
   "main": "workers/sync/index.ts",
   "compatibility_date": "2026-05-05",
+  // Quantum Box, Inc. The deploying account has a personal account too, and
+  // wrangler cannot pick between them non-interactively.
+  "account_id": "fef3f6ef891ab3e121deb43eeb57318a",
   "vars": {
-    "PHOTON_CLOUD_ENGINE_BASE_URL": "http://127.0.0.1:3001"
+    // The Engine the edge proxies `/api/engine/*` to. library-api serves those
+    // routes itself (`apps/api/src/photon_engine.rs`), and it is also what the
+    // browser posts to directly -- `kitConfig`'s engine transport is built on
+    // `server.apiBaseUrl`, not on the Live origin -- so the two must name the
+    // same Engine or a push through the edge would land somewhere else.
+    "PHOTON_CLOUD_ENGINE_BASE_URL": "https://library-api.txcloud.app"
+  },
+  "observability": {
+    "enabled": true
   },
   "durable_objects": {
     "bindings": [

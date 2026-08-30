@@ -13,14 +13,28 @@ topology:
 - Sync backend: either the Rust server WebSocket endpoint or Cloudflare Durable
   Objects behind the frontend Worker.
 
-Production app builds point at the hosted sync Worker:
+Production app builds point at this app's own sync Worker:
 
 ```text
-wss://photon-sync.quantum-box.workers.dev/ws
+wss://library-client-sync.quantum-box.workers.dev/ws
 ```
 
-The production Worker endpoint is stored in `.env.production` so Vite builds
-work from macOS, Linux, and Windows shells.
+It is defined by `apps/client/wrangler.jsonc` and deployed with
+`npm run worker:deploy`. Production used to point at `photon-sync`, which is
+Photon's own deployment rather than this app's: Library did not control when it
+was redeployed, and the build serving it had been frozen since 2026-05-05.
+
+The endpoint is named in three places, and all three have to agree or one shell
+loses realtime sync: `.env.production` (local and desktop builds), the
+`library-client` app in the repo-root `tachyon.yaml` (hosted web builds), and
+the `connect-src` allowlist in `src-tauri/tauri.conf.json` -- the desktop shell
+refuses a WebSocket to an origin the CSP does not name.
+
+Moving the endpoint moves where Durable Object room state lives, but does not
+need the old rooms carried over. Both Yjs surfaces persist locally
+(`IndexeddbPersistence` in `src/lib/yjs/yjsProvider.ts` and
+`src/lib/docs/docYjs.ts`) and send their full state on connect, so an empty room
+rehydrates from the first client to reach it.
 
 Web release candidates must pass `npm run build` and keep API/WebSocket
 endpoints explicit through Vite environment variables or `src/app/kitConfig.ts`.
