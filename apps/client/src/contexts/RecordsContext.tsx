@@ -60,7 +60,13 @@ interface RecordsContextValue {
 }
 
 export interface RecordMutationError {
-  action: 'move' | 'update' | 'delete'
+  /**
+   * `rollback` is not an action the user just took. It is one they took a
+   * while ago, offline, that the server has now refused — so the banner it
+   * raises says the change was undone rather than that something failed just
+   * now, and it is only ever raised for a write that was reported as queued.
+   */
+  action: 'move' | 'update' | 'delete' | 'rollback'
   recordId: string
   message: string
 }
@@ -566,7 +572,23 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
   const settlementReconcileScheduledRef = useRef(false)
 
-  useEffect(() => subscribeRecordSettlements(() => {
+  useEffect(() => subscribeRecordSettlements((settlement) => {
+    // Otherwise the edit just leaves the screen. The user made it long enough
+    // ago — before the network came back — that nothing on screen connects it
+    // to what is happening now, so a record quietly reverting or vanishing
+    // reads as the app losing their work rather than the server refusing it.
+    //
+    // A settlement only ever describes a write that was reported as queued, so
+    // this cannot land on top of the more precise error an immediate failure
+    // already gave the caller.
+    if (settlement.status !== 'accepted') {
+      setMutationError({
+        action: 'rollback',
+        recordId: settlement.recordId,
+        message: t('errors.offlineWriteUndone'),
+      })
+    }
+
     // One cycle settles every operation it carried, so the verdicts arrive in
     // a burst. Collapse the burst into a single listing.
     if (settlementReconcileScheduledRef.current) return

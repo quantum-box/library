@@ -726,6 +726,43 @@ describe('RecordsProvider server-accepted projection', () => {
         .toEqual(['data_still-queued'])
     })
 
+    it('tells the user the change was undone rather than reverting in silence', async () => {
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
+      let context: ReturnType<typeof useRecords> | null = null
+      render(
+        <RecordsProvider>
+          <ContextCapture onChange={(value) => { context = value }} />
+        </RecordsProvider>
+      )
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      fireSettlement({ status: 'rejected', recordId: serverDatabaseRecord.id })
+
+      await waitFor(() => {
+        expect(context!.mutationError).toEqual({
+          action: 'rollback',
+          recordId: serverDatabaseRecord.id,
+          message: expect.any(String),
+        })
+      })
+    })
+
+    it('says nothing to the user about a write the server accepted', async () => {
+      mocks.fetchServerRecords.mockReset().mockResolvedValue([])
+      let context: ReturnType<typeof useRecords> | null = null
+      render(
+        <RecordsProvider>
+          <ContextCapture onChange={(value) => { context = value }} />
+        </RecordsProvider>
+      )
+      await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
+
+      fireSettlement({ status: 'accepted', recordId: serverDatabaseRecord.id })
+
+      await waitFor(() => expect(mocks.fetchServerRecords).toHaveBeenCalledTimes(2))
+      expect(context!.mutationError).toBeNull()
+    })
+
     it('stops listening once the provider unmounts', async () => {
       const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
       await waitFor(() => expect(mocks.settlementListeners.size).toBe(1))
