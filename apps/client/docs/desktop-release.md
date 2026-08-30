@@ -60,7 +60,7 @@ repository secret. Both halves must ship together.
 `src/lib/appUpdate.ts` and `src/components/AppUpdateNotice.tsx` implement the flow:
 a background check five seconds after launch, plus a manual "Check for updates"
 entry in the account menu. On macOS the same check also sits in the native menu
-bar under `Library Client ▸ Check for Updates…`; `src-tauri/src/macos_menu.rs`
+bar under `Library ▸ Check for Updates…`; `src-tauri/src/macos_menu.rs`
 builds that item and emits `library-check-for-updates` to the front tab, which
 `listenForMenuUpdateCheck()` bridges onto the in-app path. When an update exists
 the user is shown the version and release notes and chooses whether to install;

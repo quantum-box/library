@@ -64,7 +64,7 @@ describe('AppUpdateNotice', () => {
     render(<AppUpdateNotice />)
     requestUpdateCheck()
 
-    await screen.findByText('Library Client is up to date')
+    await screen.findByText('Library is up to date')
   })
 
   it('surfaces a failed manual check instead of failing silently', async () => {
@@ -86,6 +86,6 @@ describe('AppUpdateNotice', () => {
     await waitFor(() => expect(menuListener).not.toBeNull())
     menuListener!()
 
-    await screen.findByText('Library Client is up to date')
+    await screen.findByText('Library is up to date')
   })
 })

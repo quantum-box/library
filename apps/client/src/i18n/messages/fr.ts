@@ -639,7 +639,7 @@ export const fr: LocaleMessages = {
   'auth.cognitoNote': 'L’authentification utilise Cognito et crée ou restaure votre compte Library.',
   'update.checking': 'Recherche de mises à jour',
   'update.checkingHint': 'Interrogation du flux de versions pour une version plus récente.',
-  'update.upToDate': 'Library Client est à jour',
+  'update.upToDate': 'Library est à jour',
   'update.upToDateHint': 'Vous utilisez la dernière version.',
   'update.updateTo': 'Mettre à jour vers {version}',
   'update.currentVersion': 'Vous êtes en {version}. L’installation redémarre l’application.',

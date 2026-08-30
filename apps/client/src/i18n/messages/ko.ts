@@ -639,7 +639,7 @@ export const ko: LocaleMessages = {
   'auth.cognitoNote': '인증에는 Cognito를 사용하며, Library 계정을 만들거나 복구합니다.',
   'update.checking': '업데이트 확인 중',
   'update.checkingHint': '릴리스 피드에 새 버전을 문의하고 있습니다.',
-  'update.upToDate': 'Library Client가 최신 버전입니다',
+  'update.upToDate': 'Library가 최신 버전입니다',
   'update.upToDateHint': '최신 릴리스를 사용하고 있습니다.',
   'update.updateTo': '{version}(으)로 업데이트',
   'update.currentVersion': '현재 {version}입니다. 설치하면 앱이 다시 시작됩니다.',

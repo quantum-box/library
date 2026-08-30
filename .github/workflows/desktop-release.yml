@@ -52,7 +52,7 @@ jobs:
               --target "$SHA" \
               --draft \
               --generate-notes \
-              --title "Library Client ${version}"
+              --title "Library ${version}"
           fi
 
           echo "release_id=$(gh release view "$TAG_NAME" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"

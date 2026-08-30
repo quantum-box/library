@@ -388,7 +388,7 @@ const frontendWorkerRuntime = resolveFrontendWorkerRuntime(
 )
 const appProfile = {
   id: 'library-client',
-  displayName: 'Library Client',
+  displayName: 'Library',
   storageNamespace: 'library-client',
 } as const
 const DEFAULT_TENANT_ID = 'library'

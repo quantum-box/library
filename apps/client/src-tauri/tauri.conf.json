@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Library Client",
+  "productName": "Library",
   "version": "../package.json",
   "identifier": "com.quantumbox.library.client",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Library Client",
+        "title": "Library",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
