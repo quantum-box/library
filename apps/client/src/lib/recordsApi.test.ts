@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./photonEngine/client', () => ({
   deleteClientEngineRecord: vi.fn(),
@@ -11,6 +11,7 @@ import { appKitConfig } from '../app/kitConfig'
 import { clearAuthTokens } from './auth'
 import {
   createLibraryOrganization,
+  createLibraryRecordsResource,
   createLibraryRepository,
   createServerRecord,
   fetchLibraryOrganizations,
@@ -26,6 +27,7 @@ import {
   type LibraryProperty,
   type ServerRecord,
 } from './recordsApi'
+import type { DatabaseRecord } from '../data/mock'
 
 describe('recordsApi', () => {
   afterEach(() => {
@@ -851,4 +853,188 @@ describe('recordsApi', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
     expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
   })
+
+describe('createLibraryRecordsResource', () => {
+  const target = { org: 'quantum-box', repo: 'docs', operatorId: 'operator-1', repoName: 'Docs' }
+
+  // Two constraints shape this fixture. `standardRecordPropertyData` refuses to
+  // guess, so a record carrying `status` or `priority` needs a matching Property
+  // or it throws. And both are `String` rather than `Select` because
+  // `restPropertyValue` cannot encode a Select over REST at all — a real limit
+  // of this transport, and not what these tests are about.
+  const properties = [
+    { id: 'prop-status', name: 'status', typ: 'String', meta: null },
+    { id: 'prop-priority', name: 'priority', typ: 'String', meta: null },
+  ]
+
+  function record(overrides: Partial<DatabaseRecord> = {}): DatabaseRecord {
+    return {
+      id: 'local-1',
+      identifier: 'PLT-1',
+      title: 'Route the first write',
+      status: 'todo',
+      priority: 'none',
+      assignee: null,
+      labels: [],
+      project: 'Docs',
+      createdAt: '2026-08-30T00:00:00.000Z',
+      updatedAt: '2026-08-30T00:00:00.000Z',
+      description: '',
+      ...overrides,
+    }
+  }
+
+  /**
+   * One mock for every call the resource makes, routed the way the real API
+   * routes: Properties and the record detail come over GraphQL, the writes over
+   * REST. Anything the test did not anticipate 404s, so a method that reaches
+   * for an endpoint it should not fails loudly.
+   */
+  function stubLibrary(rest: (url: string, init: RequestInit) => Response | undefined) {
+    const calls: Array<{ url: string; method: string; body: unknown }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? 'GET'
+      const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+      calls.push({ url, method, body })
+      if (url.endsWith('/v1/graphql')) {
+        const query = String((body as { query?: string } | undefined)?.query ?? '')
+        if (query.includes('LibraryClientDataDetail')) {
+          return Response.json({ data: {
+            data: {
+              id: 'data-1',
+              name: 'Route the first write',
+              propertyData: [{ propertyId: 'prop-status', value: { string: 'todo' } }],
+            },
+            properties,
+          } })
+        }
+        return Response.json({ data: { properties } })
+      }
+      return rest(url, init) ?? new Response('not found', { status: 404 })
+    }))
+    return calls
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    vi.stubEnv('VITE_LIBRARY_OPERATOR_ID', 'operator-1')
+  })
+
+  /**
+   * The case Photon PR #71 exists for. The client cannot tell its first write
+   * from an edit, so it sends an upsert; if that went to the update-only
+   * `PUT .../data/{id}` the server would answer 404, `decisionForError` would
+   * map it to `rejected`, and the record the user just made would vanish.
+   */
+  it('sends a first write to the upsert route rather than the update-only one', async () => {
+    const calls = stubLibrary((url, init) => {
+      if (url.endsWith('/data/local-1/upsert') && init.method === 'PUT') {
+        return Response.json({
+          id: 'local-1',
+          name: 'Route the first write',
+          items: [{ property_id: 'prop-status', value: 'todo' }],
+        })
+      }
+      return undefined
+    })
+
+    const resource = createLibraryRecordsResource(target)
+    const stored = await resource.upsert('local-1', record())
+
+    expect(stored.id).toBe('local-1')
+    expect(stored.title).toBe('Route the first write')
+    const write = calls.find((call) => call.method === 'PUT')
+    expect(write?.url).toBe(
+      'https://library.example.test/v1beta/repos/quantum-box/docs/data/local-1/upsert'
+    )
+    expect(calls.some((call) => call.url.endsWith('/data/local-1'))).toBe(false)
+  })
+
+  it('still sends a later edit through the update-only route', async () => {
+    const calls = stubLibrary((url, init) => {
+      if (url.endsWith('/data/data-1') && init.method === 'PUT') {
+        return Response.json({
+          id: 'data-1',
+          name: 'Edited',
+          items: [{ property_id: 'prop-status', value: 'done' }],
+        })
+      }
+      return undefined
+    })
+
+    const resource = createLibraryRecordsResource(target)
+    const updated = await resource.update('data-1', { title: 'Edited', status: 'done' })
+
+    expect(updated.id).toBe('data-1')
+    expect(updated.title).toBe('Edited')
+    const write = calls.find((call) => call.method === 'PUT')
+    expect(write?.url).toBe(
+      'https://library.example.test/v1beta/repos/quantum-box/docs/data/data-1'
+    )
+    expect(write?.body).toMatchObject({ name: 'Edited' })
+  })
+
+  /**
+   * An upsert against a record the repository does not have must still fail.
+   * The endpoint creates records, it does not conjure repositories, and Photon
+   * needs the status to decide between a rejection and a retry.
+   */
+  it('carries the HTTP status so Photon can decide what the failure means', async () => {
+    stubLibrary((url, init) => {
+      if (url.endsWith('/data/local-1/upsert') && init.method === 'PUT') {
+        return new Response('bad request', { status: 400 })
+      }
+      return undefined
+    })
+
+    const resource = createLibraryRecordsResource(target)
+    await expect(resource.upsert('local-1', record())).rejects.toMatchObject({
+      name: 'RecordApiError',
+      status: 400,
+    })
+  })
+
+  /**
+   * `create` is the path where library-api mints its own id, and `toRecord` is
+   * the only place Photon learns it — the returned recordId becomes the
+   * `aliasRecordId`. Keying off the local id instead would make the next pull
+   * insert the server's row as a second record.
+   */
+  it('maps a server-assigned id through toRecord so it can become the alias', async () => {
+    stubLibrary((url, init) => {
+      if (url.endsWith('/repos/quantum-box/docs/data') && init.method === 'POST') {
+        return Response.json({
+          id: 'data_01k9server',
+          name: 'Route the first write',
+          items: [{ property_id: 'prop-status', value: 'todo' }],
+        })
+      }
+      return undefined
+    })
+
+    const resource = createLibraryRecordsResource(target)
+    const created = await resource.create(record({ id: 'local-1' }))
+
+    expect(created.id).toBe('data_01k9server')
+    expect(resource.toRecord(created)).toEqual({
+      recordId: 'data_01k9server',
+      value: created,
+    })
+  })
+
+  it('treats a delete of an already-gone record as done', async () => {
+    stubLibrary((url, init) => {
+      if (url.endsWith('/data/data-1') && init.method === 'DELETE') {
+        return new Response('gone', { status: 404 })
+      }
+      return undefined
+    })
+
+    const resource = createLibraryRecordsResource(target)
+    await expect(resource.remove('data-1')).resolves.toBeUndefined()
+  })
+})
 })
