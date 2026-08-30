@@ -14,6 +14,7 @@ import {
   checkForAppUpdate,
   installAppUpdate,
   isDesktopApp,
+  listenForMenuUpdateCheck,
   type UpdateDownloadProgress,
 } from '../lib/appUpdate'
 import { useI18n, formatNumber, type Locale } from '../i18n'
@@ -67,7 +68,19 @@ export function AppUpdateNotice() {
     const timer = setTimeout(() => void runCheck(false), startupCheckDelayMs)
     const onRequest = () => void runCheck(true)
     window.addEventListener(CHECK_FOR_UPDATES_EVENT, onRequest)
+
+    // The menu bar listener resolves asynchronously, so it may land after the
+    // effect is torn down and has to be dropped straight away in that case.
+    let stopped = false
+    let unlistenMenu: (() => void) | undefined
+    void listenForMenuUpdateCheck().then((unlisten) => {
+      if (stopped) unlisten()
+      else unlistenMenu = unlisten
+    })
+
     return () => {
+      stopped = true
+      unlistenMenu?.()
       clearTimeout(timer)
       window.removeEventListener(CHECK_FOR_UPDATES_EVENT, onRequest)
     }

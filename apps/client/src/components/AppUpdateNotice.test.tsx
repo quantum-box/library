@@ -6,9 +6,17 @@ import { requestUpdateCheck } from '../lib/appUpdate'
 const check = vi.fn()
 const downloadAndInstall = vi.fn()
 const relaunch = vi.fn()
+const unlistenMenu = vi.fn()
+let menuListener: (() => void) | null = null
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: () => check() }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: () => relaunch() }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (_event: string, handler: () => void) => {
+    menuListener = handler
+    return Promise.resolve(unlistenMenu)
+  },
+}))
 
 function pretendDesktopBuild() {
   vi.stubEnv('TAURI_ENV_PLATFORM', 'darwin')
@@ -17,6 +25,7 @@ function pretendDesktopBuild() {
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.clearAllMocks()
+  menuListener = null
 })
 
 describe('AppUpdateNotice', () => {
@@ -65,5 +74,16 @@ describe('AppUpdateNotice', () => {
 
     await screen.findByText('Update failed')
     expect(screen.getByText('release feed unreachable')).toBeVisible()
+  })
+
+  it('checks when the native menu bar asks it to', async () => {
+    pretendDesktopBuild()
+    check.mockResolvedValue(null)
+
+    render(<AppUpdateNotice />)
+    await waitFor(() => expect(menuListener).not.toBeNull())
+    menuListener!()
+
+    await screen.findByText('Library Client is up to date')
   })
 })

@@ -16,6 +16,15 @@ export function isDesktopApp() {
   return desktopPlatforms.includes(import.meta.env.TAURI_ENV_PLATFORM)
 }
 
+// `Check for Updates…` in the native macOS menu bar is built in Rust, so it
+// arrives as a Tauri event rather than a click. Bridging it onto the same
+// window event the in-app menu dispatches keeps one code path for both.
+export async function listenForMenuUpdateCheck(): Promise<() => void> {
+  if (!isDesktopApp()) return () => {}
+  const { listen } = await import('@tauri-apps/api/event')
+  return await listen(CHECK_FOR_UPDATES_EVENT, () => requestUpdateCheck())
+}
+
 export async function checkForAppUpdate(): Promise<Update | null> {
   if (!isDesktopApp()) return null
   const { check } = await import('@tauri-apps/plugin-updater')
