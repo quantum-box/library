@@ -33,9 +33,9 @@ run = "npm run type-check"
 description = "Run ESLint"
 run = "npm run lint"
 
-[tasks."sync:infra"]
-description = "Start local Photon Engine infra with Docker Compose"
-run = "docker compose -f docker-compose.local-sync.yml up --build mysql engine"
+# The local Engine authority lives in the photon repo now, not here. Run it
+# from a checkout of quantum-box/photon with `cargo run --bin photon-server`,
+# then point the tasks below at it.
 
 [tasks."sync:edge"]
 description = "Start local Edge Worker for Live and Engine proxy"
@@ -57,7 +57,3 @@ printf '\\n'
 curl -sS http://127.0.0.1:8787/api/engine/debug
 printf '\\n'
 """
-
-[tasks."sync:down"]
-description = "Stop local Docker Compose sync infra"
-run = "docker compose -f docker-compose.local-sync.yml down"

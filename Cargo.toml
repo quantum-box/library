@@ -22,11 +22,7 @@ members = [
     "sdk/rust",
 ]
 resolver = "2"
-exclude = [
-    "apps/client/packages/photon-engine",
-    "apps/client/packages/server",
-    "apps/client/src-tauri",
-]
+exclude = ["apps/client/src-tauri"]
 
 [workspace.package]
 license = "MIT"

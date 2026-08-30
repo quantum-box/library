@@ -13,12 +13,9 @@
 - `tests/e2e/`: Playwright end-to-end tests, backed by the Node fixture in `tests/e2e/library-api-fixture.mjs`.
 - `docs/`: this app's own operational docs. See [`docs/README.md`](./docs/README.md).
 
-### Vendored Photon (being removed)
+### The local-first store
 
-`packages/photon-engine/` and `packages/server/` are a vendored copy of
-[quantum-box/photon](https://github.com/quantum-box/photon), taken at import and since diverged. They are excluded from the root Cargo workspace and **nothing in this app runs them** — E2E uses the Node fixture above, and the client talks to `apps/api`.
-
-They are being replaced by the published `@quantum-box/photon` package. Do not add code to them, and do not treat their contents as this app's design; the engine's design lives in the photon repo.
+`src/lib/photonEngine/` wires up [`@quantum-box/photon`](https://github.com/quantum-box/photon) — the engine is the package's, not this repo's. Do not reimplement its parts here; the design lives in the photon repo, linked from [`docs/README.md`](./docs/README.md).
 
 ## Build, Test, and Development Commands
 
