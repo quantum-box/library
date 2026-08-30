@@ -27,6 +27,7 @@ mod get_repo_members;
 mod get_repo_policies;
 mod get_source;
 mod github_writeback;
+mod glossary;
 mod import_markdown_from_github;
 mod invite_org_member;
 mod invite_repo_member;
@@ -37,12 +38,14 @@ mod list_github_directory;
 pub mod markdown_composer;
 mod private_repo_access;
 mod property_value_adapter;
+mod published_languages;
 mod remove_repo_member;
 mod revoke_api_key;
 mod search_data;
 mod search_repo;
 mod sign_in;
 mod sync_data_to_github;
+mod translate_repo;
 mod update_data;
 mod update_global_id_mapping;
 mod update_organization;
@@ -137,6 +140,9 @@ pub trait UpdateOrganizationInputPort: Debug + Send + Sync {
 }
 #[allow(unused_imports)]
 pub use change_repo_policy::*;
+pub use glossary::*;
+pub use published_languages::*;
+pub use translate_repo::*;
 pub use view_repo::*;
 
 #[async_trait::async_trait]

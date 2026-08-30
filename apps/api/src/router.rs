@@ -600,6 +600,13 @@ pub async fn router(
         .route(
             "/docs/:org/:repo/:data_id/md",
             get(handler::docs::view_doc_markdown),
+        )
+        // Registered before the `:data_id` route would ever be tried
+        // for it; axum matches static segments ahead of captures, so
+        // `languages` cannot be mistaken for a document id.
+        .route(
+            "/docs/:org/:repo/languages",
+            get(handler::translation::list_doc_languages),
         );
 
     // Reading an image is unauthenticated on purpose: an `<img>` carries no

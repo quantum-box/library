@@ -13,6 +13,7 @@ pub mod organization;
 pub mod property;
 pub mod repository;
 pub mod source;
+pub mod translation;
 pub mod types;
 
 pub use self::openapi::codegen;

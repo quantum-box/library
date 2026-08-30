@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO repo_glossary_terms\n                     (repo_id, term, target_lang, translation)\n                 VALUES (?, ?, ?, ?)\n                 ON DUPLICATE KEY UPDATE\n                     translation = VALUES(translation)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "4b7ef6a5ef8bb23c41cadc98be08bdebb2a98e81e64d873cb0a315c1ab0cb220"
+}

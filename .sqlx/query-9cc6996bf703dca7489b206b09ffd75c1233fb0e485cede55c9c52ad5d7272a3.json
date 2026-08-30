@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "DELETE FROM repo_published_languages\n                 WHERE repo_id = ? AND lang = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9cc6996bf703dca7489b206b09ffd75c1233fb0e485cede55c9c52ad5d7272a3"
+}
