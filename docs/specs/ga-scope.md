@@ -39,6 +39,14 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 
 `GET /ws/collab/:document_key` は Non-GA / experimental とする。標準環境では router に登録せず、検証環境でのみ `LIBRARY_COLLAB_WS_ENABLED=true` を明示して有効化する。GA 判定では共同編集 WebSocket の利用導線、永続化、再接続、競合解決、認証・編集権限を成功条件に含めない。
 
+## 3.2 Photon Engine sync の扱い
+
+`POST /api/engine/push` / `POST /api/engine/pull` / `GET /api/engine/debug` は Non-GA / experimental とする。標準環境では router に登録せず、`LIBRARY_PHOTON_ENGINE_ENABLED=true` を明示した環境でのみ有効化する。`LIBRARY_PHOTON_ENGINE_TENANT`（既定 `library`）が、その deployment の受け付ける唯一の Photon tenant を決める。
+
+これらの route は upstream の `photon_axum::engine_routes()` をそのまま mount したもので、remote sequence の採番は storage 層（`StorageAdapter::append_authoritative_operation`）が行う。library-api は Lambda であり複数インスタンスが 1 つの TiDB を共有するため、プロセスローカルな採番器を持ち込んではならない。
+
+GA 判定に入れるには、少なくとも次が未解決である。`.env.production` は `VITE_LIBRARY_TENANT_ID` / `VITE_LIBRARY_WORKSPACE_ID` を設定しないため、本番のクライアントはすべて同一の `tenant:library:workspace:library-default` を解決する。したがって現状の Engine は「サインイン済みユーザー全員で 1 つの document 集合を共有する」意味になり、ユーザーごとの分離にはならない。Live WebSocket (`/ws`) は Lambda では動かせないため Cloudflare Durable Object 側に残す。
+
 ## 4. GA 入り判定基準
 
 機能を GA 正式提供に入れるには、次をすべて満たす。
