@@ -1,4 +1,51 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// The local store is exercised for real in `photonEngine/client.test.ts`.
+// Here it is a small in-memory stand-in: these tests are about the tool
+// protocol, and opening a PGlite database in jsdom is neither the subject nor
+// available. It stores, so read-after-write still behaves.
+vi.mock('../../../lib/photonEngine/client', () => {
+  const rows = new Map<string, { recordId: string; value: unknown }>()
+  const at = (collection: string, recordId: string) => `${collection}\u0000${recordId}`
+  const put = (collection: string, recordId: string, value: unknown) => {
+    rows.set(at(collection, recordId), { recordId, value })
+    return { scope: 'test', collection, recordId, value, deleted: false, updatedAt: '0' }
+  }
+  return {
+    listClientEngineRecords: vi.fn(async (collection: string) =>
+      [...rows.entries()]
+        .filter(([key]) => key.startsWith(`${collection}\u0000`))
+        .map(([, row]) => ({
+          scope: 'test', collection, recordId: row.recordId, value: row.value,
+          deleted: false, updatedAt: '0',
+        }))
+    ),
+    getClientEngineRecord: vi.fn(async (collection: string, recordId: string) => {
+      const row = rows.get(at(collection, recordId))
+      return row
+        ? { scope: 'test', collection, recordId, value: row.value, deleted: false, updatedAt: '0' }
+        : null
+    }),
+    upsertClientEngineRecord: vi.fn(async (collection: string, recordId: string, value: unknown) =>
+      put(collection, recordId, value)
+    ),
+    ingestClientEngineRecords: vi.fn(
+      async (collection: string, items: readonly { recordId: string; value: unknown }[]) => {
+        for (const item of items) put(collection, item.recordId, item.value)
+      }
+    ),
+    patchClientEngineRecord: vi.fn(async (collection: string, recordId: string, fields: object) => {
+      const row = rows.get(at(collection, recordId))
+      if (!row) return null
+      return put(collection, recordId, { ...(row.value as object), ...fields })
+    }),
+    deleteClientEngineRecord: vi.fn(async (collection: string, recordId: string) => {
+      rows.delete(at(collection, recordId))
+    }),
+    syncClientEngineOperations: vi.fn(async () => ({ pushed: 0, accepted: 0 })),
+    getClientEngineDebugState: vi.fn(async () => null),
+  }
+})
 import { startChatStream } from './startChatStream'
 import { backendStreamProtocol } from './backendStream'
 import type { ChatStreamConfig } from './types'
