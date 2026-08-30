@@ -1111,6 +1111,13 @@ function restPropertyValue(property: LibraryProperty, value: LibraryPropertyData
       // The tagged object is load-bearing: a bare string would reach the
       // API's String input arm and be rejected against a RichText property.
       return { richText: value.richText ?? '' }
+    case 'Select':
+      // Tagged, unlike the bare array MultiSelect sends just below. The API
+      // reads the JSON without knowing which Property it is for, so a bare
+      // string would land in its `String` arm and be rejected against a
+      // Select Property. An array of strings is unambiguous enough to stay
+      // bare; a single string is not. An empty option id clears the value.
+      return { optionId: value.optionId ?? '' }
     case 'MultiSelect':
       return value.optionIds ?? []
     default:
