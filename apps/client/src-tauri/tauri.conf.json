@@ -70,6 +70,11 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "windows": {
+      "wix": {
+        "upgradeCode": "053a7581-a632-5412-942e-82424a9627c5"
+      }
+    },
     "iOS": {
       "developmentTeam": "J8429VCGMR",
       "minimumSystemVersion": "14.0"
