@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // available. It stores, so read-after-write still behaves.
 vi.mock('../../../lib/photonEngine/client', () => {
   const rows = new Map<string, { recordId: string; value: unknown }>()
+  let nextId = 0
   const at = (collection: string, recordId: string) => `${collection}\u0000${recordId}`
   const put = (collection: string, recordId: string, value: unknown) => {
     rows.set(at(collection, recordId), { recordId, value })
@@ -44,6 +45,34 @@ vi.mock('../../../lib/photonEngine/client', () => {
     }),
     syncClientEngineOperations: vi.fn(async () => ({ pushed: 0, accepted: 0 })),
     getClientEngineDebugState: vi.fn(async () => null),
+    // The push-and-report helpers, backed by the same fake store. They report
+    // `accepted` because this fake has no server to refuse anything; the
+    // rejection and conflict paths are covered against the real engine in
+    // `photonEngine/client.test.ts`.
+    newClientEngineRecordId: vi.fn((prefix?: string) =>
+      `${prefix ? `${prefix}_` : ''}${(nextId += 1)}`
+    ),
+    listClientEngineConflicts: vi.fn(async () => []),
+    upsertAndPushClientEngineRecord: vi.fn(
+      async (collection: string, recordId: string, value: unknown) => ({
+        status: 'accepted' as const,
+        record: put(collection, recordId, value),
+      })
+    ),
+    patchAndPushClientEngineRecord: vi.fn(
+      async (collection: string, recordId: string, fields: object) => {
+        const row = rows.get(at(collection, recordId))
+        if (!row) return { status: 'rejected' as const, record: null, reason: 'record not found' }
+        return {
+          status: 'accepted' as const,
+          record: put(collection, recordId, { ...(row.value as object), ...fields }),
+        }
+      }
+    ),
+    deleteAndPushClientEngineRecord: vi.fn(async (collection: string, recordId: string) => {
+      rows.delete(at(collection, recordId))
+      return { status: 'accepted' as const, record: null }
+    }),
   }
 })
 import { startChatStream } from './startChatStream'

@@ -317,6 +317,34 @@ function updateData(input = {}) {
   return data
 }
 
+/**
+ * Create the record at `dataId`, or patch the one already there.
+ *
+ * The route the v2 client's record writes go through: it names the record
+ * itself, so it cannot tell a first write from an edit and must not be
+ * answered with the 404 that `PUT .../data/{id}` gives. See
+ * `apps/api/src/handler/data.rs`.
+ */
+function upsertData(dataId, input = {}) {
+  const existing = findData(dataId)
+  if (existing) return { data: updateData({ ...input, dataId }), created: false }
+
+  const number = state.nextDataNumber++
+  const now = new Date().toISOString()
+  const data = {
+    id: dataId,
+    name: String(input.dataName ?? input.name ?? `Untitled ${number}`),
+    createdAt: now,
+    updatedAt: now,
+    propertyData: [
+      propertyDataEntry('prop-identifier', { id: `DATA-${number}` }),
+      ...(input.propertyData ?? input.property_data ?? []).map(inputPropertyDataEntry),
+    ],
+  }
+  state.data.push(data)
+  return { data, created: true }
+}
+
 function deleteData(value) {
   const data = findData(value)
   if (!data) return null
@@ -674,6 +702,16 @@ const server = createServer(async (request, response) => {
 
       if (request.method === 'POST' && suffix === 'data') {
         sendJson(response, 201, restData(createData(await readJson(request))))
+        return
+      }
+
+      // Matched before the update-only route below, which would otherwise
+      // read "{id}/upsert" as the record id and answer 404.
+      const upsertMatch = suffix.match(/^data\/(.+)\/upsert$/)
+      if (upsertMatch && request.method === 'PUT') {
+        const dataId = decodeURIComponent(upsertMatch[1])
+        const { data, created } = upsertData(dataId, await readJson(request))
+        sendJson(response, created ? 201 : 200, restData(data))
         return
       }
 
