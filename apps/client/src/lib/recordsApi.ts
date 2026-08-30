@@ -6,16 +6,18 @@ import {
   propertyValueList,
   propertyValueText,
 } from './libraryTable/libraryPropertyFormat'
+import { mergeLibraryDataProperty } from './libraryTable/libraryPropertyInput'
 import {
-  libraryPropertyValueToGraphqlInput,
-  mergeLibraryDataProperty,
-} from './libraryTable/libraryPropertyInput'
-import {
+  deleteAndPushClientEngineRecord,
   deleteClientEngineRecord,
   ingestClientEngineRecords,
   listClientEngineRecords,
+  newClientEngineRecordId,
+  patchAndPushClientEngineRecord,
   patchClientEngineRecord,
+  upsertAndPushClientEngineRecord,
   upsertClientEngineRecord,
+  type ClientEngineWriteResult,
 } from './photonEngine/client'
 import {
   knownLibraryRepositories,
@@ -175,18 +177,6 @@ interface LibraryGraphqlPaginator {
 interface LibraryDataResponse {
   data?: LibraryDataItem | null
   properties?: LibraryProperty[]
-}
-
-interface LibraryAddDataResponse {
-  addData?: LibraryDataItem | null
-}
-
-interface LibraryUpdateDataResponse {
-  updateData?: LibraryDataItem | null
-}
-
-interface LibraryDeleteDataResponse {
-  deleteData?: string | null
 }
 
 export interface LibraryRepository {
@@ -624,68 +614,6 @@ const libraryDataDetailQuery = `
   }
 `
 
-const libraryAddDataMutation = `
-  mutation LibraryClientAddData($input: AddDataInputData!) {
-    addData(input: $input) {
-      id
-      name
-      createdAt
-      updatedAt
-      propertyData {
-        propertyId
-        value {
-          ... on StringValue { string }
-          ... on IntegerValue { number }
-          ... on HtmlValue { html }
-          ... on MarkdownValue { markdown }
-          ... on RichTextValue { richText }
-          ... on DateValue { date }
-          ... on ImageValue { url }
-          ... on IdValue { id }
-          ... on RelationValue { dataIds databaseId }
-          ... on SelectValue { optionId }
-          ... on MultiSelectValue { optionIds }
-          ... on LocationValue { latitude longitude }
-        }
-      }
-    }
-  }
-`
-
-const libraryUpdateDataMutation = `
-  mutation LibraryClientUpdateData($input: UpdateDataInputData!) {
-    updateData(input: $input) {
-      id
-      name
-      createdAt
-      updatedAt
-      propertyData {
-        propertyId
-        value {
-          ... on StringValue { string }
-          ... on IntegerValue { number }
-          ... on HtmlValue { html }
-          ... on MarkdownValue { markdown }
-          ... on RichTextValue { richText }
-          ... on DateValue { date }
-          ... on ImageValue { url }
-          ... on IdValue { id }
-          ... on RelationValue { dataIds databaseId }
-          ... on SelectValue { optionId }
-          ... on MultiSelectValue { optionIds }
-          ... on LocationValue { latitude longitude }
-        }
-      }
-    }
-  }
-`
-
-const libraryDeleteDataMutation = `
-  mutation LibraryClientDeleteData($org: String!, $repo: String!, $dataId: String!) {
-    deleteData(orgUsername: $org, repoUsername: $repo, dataId: $dataId)
-  }
-`
-
 export type RecordApiFailureKind =
   | 'transport'
   | 'endpoint-unavailable'
@@ -969,7 +897,8 @@ function standardFieldNeedsProperty(
 function findStandardProperty(
   properties: LibraryProperty[],
   field: StandardRecordPropertyField,
-  value: ServerCreateRecordData[StandardRecordPropertyField]
+  value: ServerCreateRecordData[StandardRecordPropertyField],
+  options?: { requireProperty?: boolean }
 ): LibraryProperty | undefined {
   const spec = standardPropertySpecs[field]
   const aliases = new Set(spec.aliases.map(normalizedPropertyName))
@@ -977,6 +906,14 @@ function findStandardProperty(
 
   if (candidates.length === 0) {
     if (!standardFieldNeedsProperty(field, value)) return undefined
+    // Skipped rather than refused when the caller is a `RestResource`. What it
+    // holds is a whole `DatabaseRecord`, where `status` and `priority` are
+    // always set — a record carries them whether or not anyone asked for one —
+    // so their presence there is not evidence of a request the repository has
+    // to honour. `assertRecordFieldsMappable` has already refused the fields
+    // the caller really did supply, at the point the edit was made; by here
+    // the only thing left to drop is a default nobody chose.
+    if (options?.requireProperty === false) return undefined
     throw new RecordPropertyMappingError(
       field,
       `Repository schema has no Property for ${field}; expected one of: ${spec.aliases.join(', ')}`
@@ -1064,9 +1001,24 @@ function standardPropertyValue(
   }
 }
 
+/**
+ * The canonical record fields, as this repository's Properties.
+ *
+ * `requireProperty: false` is for a caller holding a whole `DatabaseRecord`
+ * rather than the fields someone typed — the `RestResource`, which is handed
+ * the record Photon stored. A record always has a `status` and a `priority`,
+ * so refusing a repository that defines neither would reject every create
+ * against it, including the ones that never mentioned either field. The strict
+ * check still runs, once, in `assertRecordFieldsMappable`, against what the
+ * caller actually supplied.
+ *
+ * A Property that exists but has no matching option still throws in both
+ * modes: that is a value going missing, not a default being dropped.
+ */
 function standardRecordPropertyData(
   properties: LibraryProperty[],
-  data: ServerCreateRecordData | ServerUpdateRecordData
+  data: ServerCreateRecordData | ServerUpdateRecordData,
+  options?: { requireProperty?: boolean }
 ): LibraryDataItem['propertyData'] {
   const fields: StandardRecordPropertyField[] = [
     'status',
@@ -1079,31 +1031,9 @@ function standardRecordPropertyData(
   return fields.flatMap((field) => {
     const value = data[field]
     if (value === undefined) return []
-    const property = findStandardProperty(properties, field, value)
+    const property = findStandardProperty(properties, field, value, options)
     if (!property) return []
     return [{ propertyId: property.id, value: standardPropertyValue(field, property, value) }]
-  })
-}
-
-function graphqlPropertyData(
-  properties: LibraryProperty[],
-  propertyData: LibraryDataItem['propertyData']
-): Array<{ propertyId: string; value: Record<string, unknown> }> {
-  const propertyById = new Map(properties.map((property) => [property.id, property]))
-  return propertyData.flatMap((entry) => {
-    const property = propertyById.get(entry.propertyId)
-    if (!property) return []
-    let value: Record<string, unknown> | null
-    if (property.typ === 'Select' && entry.value.optionId !== undefined) {
-      value = { select: entry.value.optionId }
-    } else if (property.typ === 'MultiSelect' && entry.value.optionIds !== undefined) {
-      value = { multiSelect: entry.value.optionIds }
-    } else if (property.typ === 'Relation' && entry.value.dataIds !== undefined) {
-      value = { relation: entry.value.dataIds }
-    } else {
-      value = libraryPropertyValueToGraphqlInput(property, entry.value)
-    }
-    return value ? [{ propertyId: entry.propertyId, value }] : []
   })
 }
 
@@ -1823,16 +1753,6 @@ async function readRestRepositoryId(
   }
 }
 
-async function fetchLibraryRestRecords(target: LibraryRepoTarget): Promise<DatabaseRecord[]> {
-  const { items, properties, repoName } = await fetchLibraryRestRepoTableData(target)
-  return items.map((item) => libraryDataToRecord(
-    item,
-    properties,
-    repoName,
-    { orgUsername: target.org, repoUsername: target.repo, operatorId: target.operatorId }
-  ))
-}
-
 async function createLibraryRestData(
   data: ServerCreateRecordData,
   target: LibraryRepoTarget,
@@ -2311,58 +2231,169 @@ export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
   return []
 }
 
+/**
+ * Check a write against the repository's schema before it enters the queue.
+ *
+ * This is the same mapping the resource runs at push time, run early. Without
+ * it a record whose status has no Property to live in is accepted on screen,
+ * queued, and only rejected once the push reaches the server — and the message
+ * that explains what is wrong with the repository's schema arrives detached
+ * from the edit that caused it. `RecordPropertyMappingError` is a 422, so
+ * Photon would roll the write back correctly; it is *where* the user hears
+ * about it that this fixes.
+ *
+ * Best-effort on purpose. When the Properties cannot be read the write is
+ * still queued: "the network is down" must not become "you may not edit this
+ * record", which is the case this stage exists to serve.
+ */
+async function assertRecordFieldsMappable(
+  target: LibraryRepoTarget,
+  data: ServerCreateRecordData | ServerUpdateRecordData
+): Promise<void> {
+  let properties: LibraryProperty[]
+  try {
+    properties = await fetchLibraryRepoProperties(target)
+  } catch {
+    return
+  }
+  restPropertyData(properties, standardRecordPropertyData(properties, data))
+}
+
+/**
+ * Turn Photon's verdict into what this module's callers already expect.
+ *
+ * `queued` is deliberately not an error. The operation is durable, the record
+ * is on screen, and the push will go out when the network comes back — that is
+ * the whole reason records moved onto the engine.
+ *
+ * `conflict` is. Photon has put the record back to the server's value and kept
+ * the local one on a conflict row, so returning it would hand the caller a
+ * record that is not what it asked for while its mutation error was cleared —
+ * the UI would show a successful save of a change that is not there. Until
+ * there is a resolution flow to send the user to, saying so is the honest
+ * answer, and the row is still on `listClientEngineConflicts` for one.
+ */
+function settleRecordWrite(
+  outcome: ClientEngineWriteResult<DatabaseRecord>,
+  fallback: DatabaseRecord
+): DatabaseRecord {
+  if (outcome.status === 'rejected') {
+    throw new RecordApiError(
+      outcome.reason ?? 'The server rejected this change',
+      422,
+      'http'
+    )
+  }
+  if (outcome.status === 'conflict') {
+    throw new RecordApiError(
+      outcome.reason ?? 'This record changed elsewhere while you were editing it',
+      409,
+      'http'
+    )
+  }
+  return outcome.record?.value ?? fallback
+}
+
+/**
+ * Put a record the projection has never held where a patch can merge into it.
+ *
+ * Photon's `patch` merges into the local value, so an absent base would push a
+ * record made of nothing but the changed fields. A caller can legitimately
+ * reach an id the projection does not have — a deep link, a lazy collection
+ * nothing has queried, a tool acting on an id it was handed — so read it once
+ * and ingest it rather than refusing the edit.
+ *
+ * Returns `undefined` when the record cannot be read at all, which the caller
+ * reports as the 404 it is.
+ */
+async function seedLibraryRecord(
+  recordId: string,
+  repository: LibraryRecordsRepository,
+  target: LibraryRepoTarget
+): Promise<DatabaseRecord | undefined> {
+  let detail: { item: LibraryDataItem; properties: LibraryProperty[] }
+  try {
+    detail = await fetchLibraryDataDetail(recordId, target)
+  } catch {
+    return undefined
+  }
+  const record = libraryDataToRecord(
+    detail.item,
+    detail.properties,
+    target.repoName ?? target.repo,
+    {
+      orgUsername: target.org,
+      repoUsername: target.repo,
+      operatorId: target.operatorId,
+    }
+  )
+  await cacheLibraryRecords(repository, [record])
+  return record
+}
+
+/**
+ * Create a record by naming it first and telling the server second.
+ *
+ * The id is minted here, not by the API, which is what makes this work offline
+ * and makes the created record navigable in the same tick. `data_` is not
+ * decoration: library-api parses a `DataId` by its prefix and rejects anything
+ * else. The write goes out as an `upsert` operation so Photon routes it to
+ * `PUT .../data/{id}/upsert` — the create-or-update route — rather than
+ * guessing create-vs-update from a projection that already holds the
+ * optimistic value.
+ *
+ * A create names its own destination: the screen it was made from knows which
+ * repository it is showing. The environment only stands in for a build pinned
+ * to a single repository.
+ */
 export async function createServerRecord(data: ServerCreateRecordData): Promise<DatabaseRecord> {
-  // A create names its own destination — the screen it was made from knows
-  // which repository it is showing. There is nothing to reconstruct here; the
-  // environment only stands in for a build pinned to a single repository.
   const requested: LibraryRepoTarget | undefined =
     data.orgUsername && data.repoUsername
       ? { org: data.orgUsername, repo: data.repoUsername, operatorId: data.operatorId }
       : undefined
   const destination = requested ?? configuredRepoTarget()
-  if (destination && (libraryApiConfigured() || await validLibraryAccessToken())) {
-    const target: LibraryRepoTarget = {
-      ...destination,
-      repoName: data.project ?? destination.repo,
-    }
-    const properties = await fetchLibraryRepoProperties(target)
-    const propertyData = standardRecordPropertyData(properties, data)
-    let created: LibraryDataItem
-    try {
-      const payload = await requestLibraryGraphQL<LibraryAddDataResponse>(
-        libraryAddDataMutation,
-        {
-          input: {
-            actor: configuredLibraryActor(),
-            orgUsername: target.org,
-            repoUsername: target.repo,
-            dataName: data.title,
-            propertyData: graphqlPropertyData(properties, propertyData),
-          },
-        },
-        { operatorId: target.operatorId }
-      )
-      if (!payload.addData) {
-        throw new RecordApiError(
-          'Library API did not return created data',
-          500,
-          'invalid-response'
-        )
-      }
-      created = payload.addData
-    } catch (error: unknown) {
-      if (!shouldFallbackLibraryRequest(error, 'create')) throw error
-      created = await createLibraryRestData(data, target, properties, propertyData)
-    }
+  const repository =
+    destination && (libraryApiConfigured() || (await validLibraryAccessToken()))
+      ? await repositoryFor({ ...destination, repoName: data.project ?? destination.repo })
+      : undefined
 
-    const record = libraryDataToRecord(created, properties, target.repoName ?? target.repo, {
+  if (destination && repository) {
+    const target: LibraryRepoTarget = {
+      ...repoTargetFor(repository),
+      repoName: data.project ?? repository.repoName ?? destination.repo,
+    }
+    await assertRecordFieldsMappable(target, data)
+
+    const recordId = newClientEngineRecordId('data')
+    const now = new Date().toISOString()
+    const record: DatabaseRecord = {
+      id: recordId,
+      // The server derives this from an Id Property when the repository has
+      // one, and otherwise echoes the record id back. The pull at the end of
+      // the push replaces this with whatever it assigned.
+      identifier: recordId,
+      title: data.title,
+      status: data.status ?? 'todo',
+      priority: data.priority ?? 'none',
+      assignee: data.assignee ?? null,
+      labels: data.labels ?? [],
+      project: data.project ?? target.repoName ?? target.repo,
+      createdAt: now,
+      updatedAt: now,
+      description: data.description ?? '',
       orgUsername: target.org,
       repoUsername: target.repo,
       operatorId: target.operatorId,
-    })
-    const repository = await repositoryFor(target)
-    if (repository) await cacheLibraryRecords(repository, [record])
-    return record
+    }
+
+    return settleRecordWrite(
+      await upsertAndPushClientEngineRecord<DatabaseRecord>(
+        libraryRecordsCollection(repository.databaseId),
+        recordId,
+        record
+      ),
+      record
+    )
   }
 
   const records = (await listClientEngineRecords<DatabaseRecord>('records')).map((record) => record.value)
@@ -2387,75 +2418,51 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
   return storedRecord.value
 }
 
+/**
+ * Edit a record optimistically, then push the edit.
+ *
+ * A `patch` operation, so only the fields that changed travel; the resource
+ * re-reads the record and merges before it PUTs, because library-api's update
+ * body carries the whole name and Property set.
+ *
+ * The repository comes from the collection holding the record, not from a
+ * fallback chain over the value — that is what #285 moved up into the key.
+ */
 export async function updateServerRecord(
   recordId: string,
   data: ServerUpdateRecordData
 ): Promise<DatabaseRecord> {
   const owner = await repositoryOwning(recordId)
   const destination = owner ? repoTargetFor(owner.repository) : configuredRepoTarget()
-  if (destination && (libraryApiConfigured() || await validLibraryAccessToken())) {
+  const repository =
+    destination && (libraryApiConfigured() || (await validLibraryAccessToken()))
+      ? owner?.repository ?? (await repositoryFor(destination))
+      : undefined
+
+  if (destination && repository) {
     const target: LibraryRepoTarget = {
-      ...destination,
-      repoName: data.project ?? owner?.record.project ?? destination.repoName ?? destination.repo,
+      ...repoTargetFor(repository),
+      repoName: data.project ?? owner?.record.project ?? repository.repoName ?? destination.repo,
     }
-    const existing = await fetchLibraryDataDetail(recordId, target)
-    const nextName = data.title ?? existing.item.name
-    const changedPropertyData = standardRecordPropertyData(existing.properties, data)
-    const propertyData = changedPropertyData.reduce(
-      (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
-      existing.item
-    ).propertyData
-    let updated: LibraryDataItem
-    try {
-      const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
-        libraryUpdateDataMutation,
-        {
-          input: {
-            actor: configuredLibraryActor(),
-            orgUsername: target.org,
-            repoUsername: target.repo,
-            dataId: recordId,
-            dataName: nextName,
-            propertyData: graphqlPropertyData(existing.properties, propertyData),
-          },
-        },
-        { operatorId: target.operatorId }
-      )
-      if (!payload.updateData) {
-        throw new RecordApiError(
-          'Library API did not return updated data',
-          500,
-          'invalid-response'
-        )
-      }
-      updated = payload.updateData
-    } catch (error: unknown) {
-      if (!shouldFallbackLibraryRequest(error, 'update')) throw error
-      updated = await updateLibraryRestData(
-        recordId,
-        nextName,
-        target,
-        existing.properties,
-        propertyData
-      )
+    const collection = libraryRecordsCollection(repository.databaseId)
+    const existing =
+      owner?.record ?? (await seedLibraryRecord(recordId, repository, target))
+    if (!existing) {
+      throw new RecordApiError(t('errors.recordNotFound'), 404)
     }
-    const completeUpdated = updated.propertyData.reduce(
-      (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
-      { ...updated, propertyData }
+
+    await assertRecordFieldsMappable(target, data)
+
+    const fields: Partial<DatabaseRecord> = {
+      ...withoutUndefined(data),
+      ...(data.assignee === undefined ? {} : { assignee: data.assignee }),
+      ...(data.labels === undefined ? {} : { labels: data.labels }),
+      updatedAt: new Date().toISOString(),
+    }
+    return settleRecordWrite(
+      await patchAndPushClientEngineRecord<DatabaseRecord>(collection, recordId, fields),
+      { ...existing, ...fields }
     )
-    const record = libraryDataToRecord(
-      completeUpdated,
-      existing.properties,
-      target.repoName ?? target.repo,
-      {
-        orgUsername: target.org,
-        repoUsername: target.repo,
-        operatorId: target.operatorId,
-      }
-    )
-    const repository = owner?.repository ?? await repositoryFor(target)
-    if (repository) await cacheLibraryRecords(repository, [record])
-    return record
   }
 
   const existing = (await listClientEngineRecords<DatabaseRecord>('records'))
@@ -2476,43 +2483,42 @@ export async function updateServerRecord(
   return storedRecord.value
 }
 
+/**
+ * Delete a record through the engine.
+ *
+ * A `delete` operation rather than an API call plus a tombstone: the operation
+ * *is* the DELETE, queued like any other write, so a delete made offline
+ * survives and a delete the server refuses comes back.
+ */
 export async function deleteServerRecord(recordId: string): Promise<void> {
   const owner = await repositoryOwning(recordId)
   const destination = owner ? repoTargetFor(owner.repository) : configuredRepoTarget()
-  if (destination && (libraryApiConfigured() || await validLibraryAccessToken())) {
-    try {
-      const payload = await requestLibraryGraphQL<LibraryDeleteDataResponse>(
-        libraryDeleteDataMutation,
-        { org: destination.org, repo: destination.repo, dataId: recordId },
-        { operatorId: destination.operatorId }
-      )
-      if (!payload.deleteData) {
-        throw new RecordApiError(
-          'Library API did not delete data',
-          500,
-          'invalid-response'
-        )
-      }
-    } catch (error: unknown) {
-      if (!shouldFallbackLibraryRequest(error, 'delete')) throw error
-      const response = await fetch(
-        `${configuredLibraryApiBaseUrl()}/v1beta/repos/${destination.org}/${destination.repo}/data/${recordId}`,
-        {
-          method: 'DELETE',
-          headers: await libraryRestHeaders(destination.operatorId),
-        }
-      )
-      if (!response.ok && response.status !== 404) {
-        throw new RecordApiError(`Library REST data delete failed: ${response.status}`, response.status)
-      }
+  const repository =
+    destination && (libraryApiConfigured() || (await validLibraryAccessToken()))
+      ? owner?.repository ?? (await repositoryFor(destination))
+      : undefined
+
+  if (destination && repository) {
+    const collection = libraryRecordsCollection(repository.databaseId)
+    if (!owner) {
+      // Nothing local to delete. Seed it so the operation has a record to
+      // remove, and so a rejection has something to roll back to.
+      const seeded = await seedLibraryRecord(recordId, repository, repoTargetFor(repository))
+      if (!seeded) return
     }
-    if (owner) {
-      // Ingested as a tombstone, not removed: the collection is rest-backed,
-      // so a `remove` would queue a DELETE for library-api to carry out — the
-      // very request that just succeeded.
-      await ingestClientEngineRecords(
-        libraryRecordsCollection(owner.repository.databaseId),
-        [{ recordId, value: owner.record, deleted: true }]
+    const outcome = await deleteAndPushClientEngineRecord<DatabaseRecord>(collection, recordId)
+    if (outcome.status === 'rejected') {
+      throw new RecordApiError(
+        outcome.reason ?? 'The server rejected this deletion',
+        422,
+        'http'
+      )
+    }
+    if (outcome.status === 'conflict') {
+      throw new RecordApiError(
+        outcome.reason ?? 'This record changed elsewhere while you were deleting it',
+        409,
+        'http'
       )
     }
     return
@@ -2582,10 +2588,32 @@ export function createLibraryRecordsResource(
 
   return {
     async list(): Promise<RestListResult<DatabaseRecord>> {
+      // GraphQL first, REST as the fallback — the same read the rest of this
+      // module does, and not an inconsistency with the `rest-backed` mode.
+      // Photon's contract for a resource is "the application's own HTTP calls,
+      // wrapped"; it is the *writes* that have to be REST, because that is
+      // where the operation log, the rollback and the conflict row live.
+      //
+      // Reading over REST alone is in fact wrong here. `GET .../properties`
+      // returns a Property's id, name and type but not its Select options, so
+      // an option id in a record cannot be resolved to the option — and every
+      // record comes back with the default status and priority instead of the
+      // ones it has. The GraphQL `properties` query carries the options.
+      //
       // `complete` is what lets Photon delete records that are gone upstream,
-      // so it may only be true for the whole collection. `fetchLibraryRestRepoTableData`
-      // pages until the paginator runs out, so it is.
-      return { items: await fetchLibraryRestRecords(target), complete: true }
+      // so it may only be true for the whole collection. Both paths page until
+      // the paginator runs out, so it is.
+      const table = await fetchLibraryRepoTableData(target)
+      return {
+        items: table.items.map((item) =>
+          libraryDataToRecord(item, table.properties, table.repoName, {
+            orgUsername: target.org,
+            repoUsername: target.repo,
+            operatorId: target.operatorId,
+          })
+        ),
+        complete: true,
+      }
     },
 
     async create(value: DatabaseRecord): Promise<DatabaseRecord> {
@@ -2594,7 +2622,7 @@ export function createLibraryRecordsResource(
         value,
         target,
         properties,
-        standardRecordPropertyData(properties, value)
+        standardRecordPropertyData(properties, value, { requireProperty: false })
       )
       // The id comes back different from the local one: `POST /data` mints its
       // own. Returning the item is what lets Photon record the alias.
@@ -2608,7 +2636,7 @@ export function createLibraryRecordsResource(
         value.title,
         target,
         properties,
-        standardRecordPropertyData(properties, value)
+        standardRecordPropertyData(properties, value, { requireProperty: false })
       )
       return toDatabaseRecord(stored, properties)
     },
@@ -2625,7 +2653,8 @@ export function createLibraryRecordsResource(
       const existing = await fetchLibraryDataDetail(recordId, target)
       const propertyData = standardRecordPropertyData(
         existing.properties,
-        fields
+        fields,
+        { requireProperty: false }
       ).reduce(
         (item, entry) => mergeLibraryDataProperty(item, entry.propertyId, entry.value),
         existing.item

@@ -16,7 +16,11 @@
 import {
   createEngineTransport,
   createPhotonClient,
+  newId,
+  type AckResult,
+  type Conflict,
   type LocalStore,
+  type MutationHandle,
   type PhotonClient,
   type PhotonRecord,
   type SyncTransport,
@@ -181,8 +185,15 @@ async function build(): Promise<PhotonClient> {
     // named when the client is built. The resolver is asked for each one as it
     // is encountered instead. See `libraryCollections`.
     resolveCollection: resolveLibraryCollection,
-    // Sync runs when a caller asks for it, as it did before.
+    // Sync runs when a caller asks for it, as it did before — except while
+    // something is queued, which `followQueue` handles.
     sync: { autoStart: false },
+  })
+
+  // Stop as soon as the queue drains. Started in `followQueue`, and the pair
+  // is what keeps the loop's cost proportional to there being unsent work.
+  client.sync.subscribe(() => {
+    if (client.pendingCount() === 0) client.sync.stop()
   })
 
   // Before the client is handed out, and so before anything can ask
@@ -302,6 +313,161 @@ export async function deleteClientEngineRecord(
 }
 
 /**
+ * What became of a write that was pushed as well as stored.
+ *
+ * `queued` is the interesting one and it is not a failure: the operation is in
+ * the durable log and will go out on a later cycle. It is what an offline
+ * write looks like, and what a write looks like while the server is down.
+ * Callers show the record and move on.
+ *
+ * `rejected` means the server refused it and Photon has already replayed the
+ * record back to what it was, so `record` is the rolled-back value — `null`
+ * when the write was the record's creation. `conflict` means the server had a
+ * competing version; the local value is kept on the conflict row in
+ * `listClientEngineConflicts`, and the projection returns to the server's.
+ */
+export interface ClientEngineWriteResult<T> {
+  status: 'accepted' | 'queued' | 'rejected' | 'conflict'
+  /** The record as it now stands locally, after any rollback. */
+  record: PhotonEngineRecord<T> | null
+  reason?: string
+  conflictId?: string
+}
+
+/**
+ * Push one just-issued mutation and report what the server said.
+ *
+ * The verdict is captured before the cycle starts rather than awaited after
+ * it, because `handle.settled` only ever resolves when a decision exists —
+ * awaiting it directly would hang forever on the offline write this function
+ * exists to support. Photon resolves it from inside `handleDecision`, which
+ * runs while `syncNow` is still going, so by the time the cycle's promise
+ * resumes us the listener below has already run: microtasks queued earlier
+ * run first. No decision by then means there was none to have.
+ *
+ * The whole cycle is awaited, push and pull both. Returning as soon as the
+ * decision landed would leave the pull running against a store the caller is
+ * free to close, and would report a record the same cycle is about to
+ * refresh — the server-assigned identifier arrives on that pull.
+ *
+ * A transport failure is swallowed: it is not the write's verdict. The
+ * operation stays queued and the caller keeps its record.
+ */
+async function pushMutation<T>(
+  handle: MutationHandle<T>
+): Promise<ClientEngineWriteResult<T>> {
+  const stored = (await handle.local) ?? handle.optimistic
+
+  // A holder rather than a bare `let`: the assignment happens inside a
+  // callback, which TypeScript's flow analysis does not follow, so a plain
+  // variable would still read as `null` below.
+  const settled: { decision: AckResult | null } = { decision: null }
+  void handle.settled.then(
+    (result) => {
+      settled.decision = result
+    },
+    () => undefined
+  )
+  await syncClientEngineOperations().catch(() => undefined)
+  const decision = settled.decision
+  followQueue(await engine())
+
+  const collection = stored?.key.collection
+  const recordId = stored?.key.record_id
+  const current =
+    collection && recordId
+      ? await getClientEngineRecord<T>(collection, recordId)
+      : stored
+        ? toEngineRecord<T>(stored)
+        : null
+
+  if (!decision) return { status: 'queued', record: current }
+  if (decision.status === 'rejected') {
+    return { status: 'rejected', record: current, reason: decision.reason }
+  }
+  if (decision.status === 'conflict') {
+    return { status: 'conflict', record: current, conflictId: decision.conflictId }
+  }
+  return { status: 'accepted', record: current }
+}
+
+/**
+ * Run the sync loop while, and only while, something is waiting to go out.
+ *
+ * `sync.start()` is what installs the `online` listener, the visibility
+ * handler and the backoff retry. Without it a write that could not be pushed
+ * sits in the durable log until the user happens to make another one — which
+ * is not what "it goes out when the network returns" means, and was the gap
+ * between what a queued write promised and what it did.
+ *
+ * Tied to the queue rather than left running, because the loop also polls, and
+ * a poll pulls: an idle client would re-list a repository every interval for
+ * no reason. Started here when a push leaves something behind, stopped in
+ * `build` as soon as the queue drains.
+ */
+function followQueue(client: PhotonClient): void {
+  if (client.pendingCount() > 0) client.sync.start()
+}
+
+/**
+ * Write a record and push it in one call.
+ *
+ * The `upsert` kind specifically, not `patch`: it is the only one a
+ * `rest-backed` collection routes to `RestResource.upsert`, and therefore the
+ * only one whose first write reaches a create-or-update endpoint instead of an
+ * update-only one. See `createLibraryRecordsResource` in `recordsApi`.
+ */
+export async function upsertAndPushClientEngineRecord<T>(
+  collection: string,
+  recordId: string,
+  value: T
+): Promise<ClientEngineWriteResult<T>> {
+  const client = await engineFor(collection)
+  return pushMutation<T>(client.upsert<T>(collection, recordId, value))
+}
+
+/**
+ * Merge fields into a record and push it.
+ *
+ * Reports `rejected` with a null record when there is nothing to patch, rather
+ * than inventing a base: a patch against an absent record merges into `{}` and
+ * would push a record made of nothing but the changed fields.
+ */
+export async function patchAndPushClientEngineRecord<T>(
+  collection: string,
+  recordId: string,
+  fields: Partial<T>
+): Promise<ClientEngineWriteResult<T>> {
+  const client = await engineFor(collection)
+  const existing = await getClientEngineRecord<T>(collection, recordId)
+  if (!existing) {
+    return { status: 'rejected', record: null, reason: 'record not found' }
+  }
+  return pushMutation<T>(client.patch<T>(collection, recordId, fields))
+}
+
+export async function deleteAndPushClientEngineRecord<T = unknown>(
+  collection: string,
+  recordId: string
+): Promise<ClientEngineWriteResult<T>> {
+  const client = await engineFor(collection)
+  return pushMutation<T>(client.remove<T>(collection, recordId))
+}
+
+/** Unresolved conflict rows, for a collection or for the whole scope. */
+export async function listClientEngineConflicts(
+  collection?: string
+): Promise<readonly Conflict[]> {
+  const client = collection ? await engineFor(collection) : await engine()
+  return client.conflicts(collection)
+}
+
+/** A record id this client can use before it has ever reached a server. */
+export function newClientEngineRecordId(prefix?: string): string {
+  return newId(prefix)
+}
+
+/**
  * Store records fetched from an authority elsewhere, without writing
  * operations for them.
  *
@@ -314,13 +480,20 @@ export async function deleteClientEngineRecord(
  * `deleted` is how a row leaves such a collection. `remove()` would queue a
  * delete for the authority to carry out, which is backwards when the authority
  * is the one that has just carried it out.
+ *
+ * `complete` says `items` is the *whole* collection, which is the only thing
+ * that makes "deleted upstream" distinguishable from "not on this page", so
+ * pass it only for a listing that paged to the end. Records carrying an
+ * unpushed local write are never reconciled away, so a create made offline
+ * survives a refetch that predates it.
  */
 export async function ingestClientEngineRecords<T>(
   collection: string,
-  items: readonly { recordId: string; value: T; deleted?: boolean }[]
+  items: readonly { recordId: string; value: T; deleted?: boolean }[],
+  options?: { complete?: boolean }
 ): Promise<void> {
   const client = await engineFor(collection)
-  client.ingest<T>(collection, items)
+  client.ingest<T>(collection, items, options)
 }
 
 /**
@@ -386,6 +559,10 @@ export const __testOnly = {
   /** Build the next client from these instead of IndexedDB and the network. */
   configure(next: EngineOverrides): void {
     overrides = next
+  },
+  /** The live client, for a test that needs to watch the sync loop itself. */
+  client(): Promise<PhotonClient> {
+    return engine()
   },
   engineScope,
   engineActorId,

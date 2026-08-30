@@ -11,7 +11,7 @@ import path from 'node:path'
 import { createPGliteStore } from '@quantum-box/photon/store-pglite'
 import { loadPhotonKernel, setPhotonKernelSource } from '@quantum-box/photon/wasm'
 import type { SyncTransport } from '@quantum-box/photon'
-import { beforeAll, beforeEach, afterEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   __testOnly as libraryCollections,
@@ -21,14 +21,26 @@ import {
 } from './libraryCollections'
 import {
   __testOnly,
+  deleteAndPushClientEngineRecord,
   deleteClientEngineRecord,
   getClientEngineRecord,
+  listClientEngineConflicts,
+  patchAndPushClientEngineRecord,
+  upsertAndPushClientEngineRecord,
   ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from './client'
+
+/**
+ * Generous, because every test here builds a real WASM kernel and a real
+ * PGlite database in `beforeEach` and tears them down after. The defaults are
+ * sized for pure-JS unit tests and this file times out under them whenever the
+ * machine is doing anything else.
+ */
+vi.setConfig({ testTimeout: 20_000, hookTimeout: 30_000 })
 
 interface Doc {
   title: string
@@ -236,5 +248,232 @@ describe('repository collections', () => {
     expect(await listClientEngineRecords(collection)).toEqual([])
     await syncClientEngineOperations()
     expect(restWrites).toEqual([])
+  })
+})
+
+/**
+ * What a `rest-backed` collection buys beyond routing.
+ *
+ * The suite above proves a write reaches the repository's resource. This one
+ * is about what happens to it afterwards: queued when there is no answer,
+ * rolled back when the answer is no, held on a conflict row when the answer is
+ * "someone else got there first". That is the whole reason records went
+ * through the operation log rather than straight at library-api.
+ */
+describe('rest-backed write outcomes', () => {
+  const photonCore = {
+    databaseId: 'repo-1',
+    org: 'quantum-box',
+    repo: 'photon-core',
+  }
+  const collection = libraryRecordsCollection(photonCore.databaseId)
+
+  /**
+   * The stub's server. Real state, not a fixed list: `list()` claims
+   * `complete`, and a complete snapshot that omits a record the push just
+   * accepted tombstones it locally. That is the engine behaving correctly, and
+   * a stub that always listed nothing would delete every record one cycle
+   * after creating it.
+   */
+  let server: Map<string, Doc & { id: string }>
+  /**
+   * How the stub answers next. Mutable rather than re-registered, because
+   * `resolveCollection` is consulted once per collection and its answer is
+   * kept — handing over a second factory mid-test changes nothing.
+   */
+  let failures: Record<string, Error>
+  let offline: boolean
+
+  /** An HTTP-ish failure: `status` is the one field Photon's mapping reads. */
+  class Status extends Error {
+    readonly status: number
+
+    constructor(status: number, message = 'nope') {
+      super(message)
+      this.status = status
+    }
+  }
+
+  beforeEach(() => {
+    server = new Map()
+    failures = {}
+    offline = false
+    const reject = () => {
+      if (offline) throw new TypeError('Failed to fetch')
+    }
+    setLibraryRecordsResourceFactory(() => ({
+      list: async () => {
+        reject()
+        return { items: [...server.values()], complete: true }
+      },
+      create: async (value: Doc) => {
+        reject()
+        const stored = { ...value, id: 'server-assigned' }
+        server.set(stored.id, stored)
+        return stored
+      },
+      upsert: async (recordId: string, value: Doc) => {
+        reject()
+        if (failures[recordId]) throw failures[recordId]
+        const stored = { ...value, id: recordId }
+        server.set(recordId, stored)
+        return stored
+      },
+      update: async (recordId: string, fields: Partial<Doc>) => {
+        reject()
+        if (failures[recordId]) throw failures[recordId]
+        const stored = { ...server.get(recordId), ...fields, id: recordId } as Doc & { id: string }
+        server.set(recordId, stored)
+        return stored
+      },
+      remove: async (recordId: string) => {
+        reject()
+        if (failures[recordId]) throw failures[recordId]
+        server.delete(recordId)
+      },
+      toRecord: (item: Doc & { id: string }) => ({ recordId: item.id, value: item }),
+    }) as never)
+    rememberLibraryRepositories([photonCore])
+  })
+
+  it('reports a write the server accepted', async () => {
+    const outcome = await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'first',
+    })
+
+    expect(outcome.status).toBe('accepted')
+    expect(outcome.record?.value.title).toBe('first')
+    expect(pushed).toEqual([])
+  })
+
+  it('keeps an offline write, and sends it once the resource answers', async () => {
+    offline = true
+
+    const outcome = await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'written on a plane',
+    })
+
+    // Queued, not failed. The record is on screen and the operation is durable.
+    expect(outcome.status).toBe('queued')
+    expect(outcome.record?.value.title).toBe('written on a plane')
+    expect((await getClientEngineRecord<Doc>(collection, 'r1'))?.value.title).toBe(
+      'written on a plane'
+    )
+
+    // Back online: the same operation goes out, with no help from the caller.
+    offline = false
+    await syncClientEngineOperations()
+    expect(server.get('r1')?.title).toBe('written on a plane')
+  })
+
+  it('rolls a rejected create back off the screen', async () => {
+    failures = { r1: new Status(400, 'name is required') }
+
+    const outcome = await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })
+
+    expect(outcome.status).toBe('rejected')
+    expect(outcome.reason).toContain('name is required')
+    // The record was never on the server, so rolling back removes it entirely
+    // rather than restoring a previous value.
+    expect(outcome.record).toBeNull()
+    expect(await getClientEngineRecord<Doc>(collection, 'r1')).toBeNull()
+  })
+
+  it('restores the previous value when an edit is rejected', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+    failures = { r1: new Status(400) }
+    const outcome = await patchAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'not allowed',
+    })
+
+    expect(outcome.status).toBe('rejected')
+    expect(outcome.record?.value.title).toBe('saved')
+  })
+
+  it('raises a conflict row rather than losing the edit', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'mine' })
+
+    failures = { r1: new Status(409, 'edited elsewhere') }
+    const outcome = await patchAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'mine, edited',
+    })
+
+    expect(outcome.status).toBe('conflict')
+
+    // The edit is not lost, but it is not left on screen either: the conflict
+    // row holds it as `localValue`, and the projection goes back to what the
+    // server has. That split is the point — the work survives somewhere it can
+    // be resolved from, rather than silently winning a race it lost.
+    const conflicts = await listClientEngineConflicts(collection)
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]?.key.record_id).toBe('r1')
+    expect((conflicts[0]?.localValue as Doc).title).toBe('mine, edited')
+    expect(conflicts[0]?.reason).toContain('edited elsewhere')
+    expect(outcome.record?.value.title).toBe('mine')
+  })
+
+  it('does not roll back a write the server never answered', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+    // 503 is not a verdict. Treating it as one would delete a record the user
+    // will be able to save again in a moment.
+    failures = { r1: new Status(503) }
+    const outcome = await patchAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'still mine',
+    })
+
+    expect(outcome.status).toBe('queued')
+    expect(outcome.record?.value.title).toBe('still mine')
+  })
+
+  /**
+   * The gap between what a queued write promised and what it did.
+   *
+   * `autoStart: false` means nothing is listening for the network to come
+   * back, so an offline write used to sit in the log until the user happened
+   * to make another one. `followQueue` starts the loop when a push leaves
+   * something behind — which is what installs the `online` listener, the
+   * visibility handler and the backoff retry — and `build` stops it again as
+   * soon as the queue drains, so an idle client still does not poll.
+   */
+  it('runs the sync loop while, and only while, something is queued', async () => {
+    const client = await __testOnly.client()
+    const started: string[] = []
+    const realStart = client.sync.start.bind(client.sync)
+    const realStop = client.sync.stop.bind(client.sync)
+    client.sync.start = () => {
+      started.push('start')
+      realStart()
+    }
+    client.sync.stop = () => {
+      started.push('stop')
+      realStop()
+    }
+
+    offline = true
+    const queued = await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+      title: 'written on a plane',
+    })
+    expect(queued.status).toBe('queued')
+    expect(started).toContain('start')
+
+    // Draining it stops the loop again: polling costs a pull per interval, and
+    // there is nothing left to send.
+    offline = false
+    started.length = 0
+    await syncClientEngineOperations()
+    expect(started).toContain('stop')
+    expect(server.get('r1')?.title).toBe('written on a plane')
+  })
+
+  it('deletes through the resource', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'doomed' })
+
+    const outcome = await deleteAndPushClientEngineRecord(collection, 'r1')
+
+    expect(outcome.status).toBe('accepted')
+    expect(server.has('r1')).toBe(false)
+    expect(await getClientEngineRecord<Doc>(collection, 'r1')).toBeNull()
   })
 })
