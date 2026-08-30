@@ -18,6 +18,7 @@ import {
 } from '../lib/repositorySettingsApi'
 import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
 import { RepositoryTabs } from './RepositoryTabs'
+import { useI18n, t as translate } from '../i18n'
 
 interface RepositoryPropertiesViewProps {
   organization: string
@@ -27,7 +28,7 @@ interface RepositoryPropertiesViewProps {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
-  return 'Repository Properties could not be loaded.'
+  return translate('repoProperties.loadFailed')
 }
 
 /**
@@ -40,6 +41,7 @@ export function RepositoryPropertiesView({
   repository,
   operatorId,
 }: RepositoryPropertiesViewProps) {
+  const { t } = useI18n()
   const target = useMemo<RepositorySettingsTarget>(() => ({
     orgUsername: organization,
     repoUsername: repository,
@@ -87,7 +89,7 @@ export function RepositoryPropertiesView({
       >
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-          Loading {organization}/{repository} Properties…
+          {t('repoProperties.loading', { path: `${organization}/${repository}` })}
         </div>
       </main>
     )
@@ -103,7 +105,7 @@ export function RepositoryPropertiesView({
             <Icon className="size-5" aria-hidden="true" />
           </span>
           <h1 className="mt-4 text-base font-semibold">
-            {permission ? 'Permission required' : 'Properties unavailable'}
+            {permission ? t('repoSettings.permissionRequired') : t('repoProperties.unavailable')}
           </h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{errorMessage(loadError)}</p>
           <Button className="mt-4" size="sm" onClick={() => void loadProperties()} disabled={loading}>
@@ -111,7 +113,7 @@ export function RepositoryPropertiesView({
               className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
               aria-hidden="true"
             />
-            {loading ? 'Retrying…' : 'Try again'}
+            {loading ? t('repoSettings.retrying') : t('common.tryAgain')}
           </Button>
         </div>
       </main>
@@ -151,7 +153,7 @@ export function RepositoryPropertiesView({
             {repository}
           </Link>
           <span className="text-subtle-foreground">/</span>
-          <span className="truncate text-muted-foreground">Properties</span>
+          <span className="truncate text-muted-foreground">{t('viewSettings.properties')}</span>
         </div>
         <Badge variant="neutral" className="hidden sm:inline-flex">{properties.length}</Badge>
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -160,15 +162,15 @@ export function RepositoryPropertiesView({
             variant="ghost"
             onClick={() => void loadProperties()}
             disabled={loading}
-            aria-label="Refresh Properties"
+            aria-label={t('repoProperties.refresh')}
           >
             <RefreshCw className={loading ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
-            <span className="hidden sm:inline">Refresh</span>
+            <span className="hidden sm:inline">{t('common.refresh')}</span>
           </Button>
           <Button size="sm" variant="ghost" asChild>
             <Link to="/$organization/$repository/settings" params={{ organization, repository }}>
               <Settings aria-hidden="true" />
-              <span className="hidden sm:inline">Settings</span>
+              <span className="hidden sm:inline">{t('common.settings')}</span>
             </Link>
           </Button>
         </div>
@@ -186,10 +188,8 @@ export function RepositoryPropertiesView({
             >
               <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <div>
-                <p className="font-medium">Changes are read-only</p>
-                <p className="mt-0.5 text-xs leading-5">
-                  Your account can view this repository but cannot change its Properties. Ask a repository owner for access, then refresh.
-                </p>
+                <p className="font-medium">{t('repoSettings.readOnly')}</p>
+                <p className="mt-0.5 text-xs leading-5">{t('repoProperties.readOnlyHint')}</p>
               </div>
             </div>
           ) : null}
@@ -208,8 +208,8 @@ export function RepositoryPropertiesView({
             target={target}
             properties={properties}
             readOnly={writePermissionDenied}
-            heading="Properties"
-            detail="Every field this repository stores, in repository order"
+            heading={t('viewSettings.properties')}
+            detail={t('repoProperties.sectionDetail')}
             onPropertiesChange={setProperties}
             onNotice={setNotice}
             onPermissionDenied={() => setWritePermissionDenied(true)}

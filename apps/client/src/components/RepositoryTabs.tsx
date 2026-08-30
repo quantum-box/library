@@ -13,6 +13,7 @@ import {
 import type { ComponentType, ReactNode } from 'react'
 import { DataLink } from './DataLink'
 import { DocLink } from './DocLink'
+import { useI18n } from '../i18n'
 
 export type RepositoryTab =
   | 'overview'
@@ -75,15 +76,16 @@ export function RepositoryTabs({
   repository: string
   active: RepositoryTab
 }) {
+  const { t } = useI18n()
   const databaseId = `${organization}/${repository}`
 
   return (
     <nav
-      aria-label="Repository sections"
+      aria-label={t('repository.sections')}
       data-testid="repository-tabs"
       className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1 md:px-3"
     >
-      <Tab active={active === 'overview'} icon={BookOpen} label="Overview">
+      <Tab active={active === 'overview'} icon={BookOpen} label={t('repository.overview')}>
         {(className, content) => (
           <Link
             to="/$organization/$repository"
@@ -96,11 +98,11 @@ export function RepositoryTabs({
       </Tab>
 
       {([
-        ['data', 'Data', LayoutList, undefined],
-        ['board', 'Board', Columns3, 'board'],
-        ['workflow', 'Workflow', Workflow, 'workflow'],
-      ] as const).map(([tab, label, icon, view]) => (
-        <Tab key={tab} active={active === tab} icon={icon} label={label}>
+        ['data', 'repository.tab.data', LayoutList, undefined],
+        ['board', 'viewTabs.board', Columns3, 'board'],
+        ['workflow', 'viewTabs.workflow', Workflow, 'workflow'],
+      ] as const).map(([tab, labelKey, icon, view]) => (
+        <Tab key={tab} active={active === tab} icon={icon} label={t(labelKey)}>
           {(className, content) => (
             <DataLink databaseId={databaseId} view={view} className={className}>
               {content}
@@ -109,7 +111,7 @@ export function RepositoryTabs({
         </Tab>
       ))}
 
-      <Tab active={active === 'docs'} icon={FileText} label="Documents">
+      <Tab active={active === 'docs'} icon={FileText} label={t('sidebar.nav.documents')}>
         {(className, content) => (
           <DocLink databaseId={databaseId} className={className}>
             {content}
@@ -120,11 +122,11 @@ export function RepositoryTabs({
       {active === 'overview' ? (
         <a href="#activity" className={tabClassName}>
           <Activity className="size-3.5" aria-hidden="true" />
-          Activity
+          {t('repository.activity')}
         </a>
       ) : null}
 
-      <Tab active={active === 'properties'} icon={FileKey2} label="Properties">
+      <Tab active={active === 'properties'} icon={FileKey2} label={t('viewSettings.properties')}>
         {(className, content) => (
           <Link
             to="/$organization/$repository/properties"
@@ -136,7 +138,7 @@ export function RepositoryTabs({
         )}
       </Tab>
 
-      <Tab active={active === 'api'} icon={KeyRound} label="API">
+      <Tab active={active === 'api'} icon={KeyRound} label={t('apiKeys.breadcrumb')}>
         {(className, content) => (
           <Link
             to="/$organization/$repository/api"
@@ -148,7 +150,7 @@ export function RepositoryTabs({
         )}
       </Tab>
 
-      <Tab active={active === 'settings'} icon={Settings} label="Settings">
+      <Tab active={active === 'settings'} icon={Settings} label={t('common.settings')}>
         {(className, content) => (
           <Link
             to="/$organization/$repository/settings"

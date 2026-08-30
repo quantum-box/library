@@ -1,4 +1,5 @@
 import { configuredLibraryApiBaseUrl } from './libraryGraphql'
+import type { MessageKey } from '../i18n'
 
 /**
  * The user guide, which explains what the API reference cannot: how to
@@ -13,9 +14,10 @@ export function configuredDocsUrl(): string {
 }
 
 export interface ApiReferenceLink {
+  /** Product name of the destination; not translated. */
   label: string
   href: string
-  description: string
+  descriptionKey: MessageKey
 }
 
 /** Everything a reader might open from the API page, in one place. */
@@ -26,22 +28,22 @@ export function apiReferenceLinks(): ApiReferenceLink[] {
     {
       label: 'User guide',
       href: `${docs}/api/getting-started`,
-      description: 'Issuing a key through to the first request',
+      descriptionKey: 'apiDocs.userGuide',
     },
     {
       label: 'Swagger UI',
       href: `${api}/v1beta/swagger-ui`,
-      description: 'Every endpoint and schema',
+      descriptionKey: 'apiDocs.swagger',
     },
     {
       label: 'ReDoc',
       href: `${api}/v1beta/redoc`,
-      description: 'The reference as prose',
+      descriptionKey: 'apiDocs.redoc',
     },
     {
       label: 'GraphQL Playground',
       href: `${api}/v1/graphql`,
-      description: 'Build and run a query',
+      descriptionKey: 'apiDocs.graphql',
     },
   ]
 }
@@ -49,7 +51,7 @@ export function apiReferenceLinks(): ApiReferenceLink[] {
 export interface ApiEndpointExample {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   path: string
-  summary: string
+  summaryKey: MessageKey
 }
 
 export function repositoryBasePath(org: string, repo: string): string {
@@ -67,13 +69,13 @@ export function repositoryBasePath(org: string, repo: string): string {
  */
 export function commonEndpoints(): ApiEndpointExample[] {
   return [
-    { method: 'GET', path: '/data-list', summary: 'List data' },
-    { method: 'GET', path: '/data/{id}', summary: 'Get one entry' },
-    { method: 'POST', path: '/data', summary: 'Create an entry' },
-    { method: 'PUT', path: '/data/{id}', summary: 'Update an entry' },
-    { method: 'DELETE', path: '/data/{id}', summary: 'Delete an entry' },
-    { method: 'GET', path: '/properties', summary: 'List properties' },
-    { method: 'GET', path: '/data/parquet', summary: 'Export as Parquet' },
+    { method: 'GET', path: '/data-list', summaryKey: 'apiEndpoint.listData' },
+    { method: 'GET', path: '/data/{id}', summaryKey: 'apiEndpoint.getEntry' },
+    { method: 'POST', path: '/data', summaryKey: 'apiEndpoint.createEntry' },
+    { method: 'PUT', path: '/data/{id}', summaryKey: 'apiEndpoint.updateEntry' },
+    { method: 'DELETE', path: '/data/{id}', summaryKey: 'apiEndpoint.deleteEntry' },
+    { method: 'GET', path: '/properties', summaryKey: 'apiEndpoint.listProperties' },
+    { method: 'GET', path: '/data/parquet', summaryKey: 'apiEndpoint.exportParquet' },
   ]
 }
 

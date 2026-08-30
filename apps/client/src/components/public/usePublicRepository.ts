@@ -4,6 +4,7 @@ import {
   RecordApiError,
   type LibraryRepositoryProfile,
 } from '../../lib/recordsApi'
+import { t } from '../../i18n'
 
 export type PublicRepositoryFailure = 'private' | 'missing' | 'failed'
 export type PublicRepositoryStatus = 'loading' | 'ready' | PublicRepositoryFailure
@@ -33,7 +34,7 @@ export function publicRepositoryFailure(error: unknown): PublicRepositoryFailure
 
 export function publicRepositoryErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  return 'Failed to load this repository'
+  return t('public.loadFailed')
 }
 
 /**

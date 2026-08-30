@@ -16,6 +16,7 @@ import type {
   AttachmentSurfaceType,
   WorkspaceAttachment,
 } from './types'
+import { t } from '../../i18n'
 
 interface ServerAttachmentLink {
   id: string
@@ -173,7 +174,7 @@ export async function linkServerAttachment(
   surface: AttachmentSurfaceRef
 ): Promise<WorkspaceAttachment> {
   const record = await getClientEngineRecord<WorkspaceAttachment>('attachments', attachmentId)
-  if (!record) throw new AttachmentApiError('Attachment not found', 404)
+  if (!record) throw new AttachmentApiError(t('errors.attachmentNotFound'), 404)
   const now = new Date().toISOString()
   const existingLink = record.value.links.find((link) =>
     link.surfaceType === surface.surfaceType && link.surfaceId === surface.surfaceId
@@ -199,7 +200,7 @@ export async function linkServerAttachment(
     attachmentId,
     attachment
   )
-  if (!nextRecord) throw new AttachmentApiError('Attachment not found', 404)
+  if (!nextRecord) throw new AttachmentApiError(t('errors.attachmentNotFound'), 404)
   return nextRecord.value
 }
 
@@ -208,7 +209,7 @@ export async function unlinkServerAttachment(
   surface: AttachmentSurfaceRef
 ): Promise<WorkspaceAttachment | null> {
   const record = await getClientEngineRecord<WorkspaceAttachment>('attachments', attachmentId)
-  if (!record) throw new AttachmentApiError('Attachment not found', 404)
+  if (!record) throw new AttachmentApiError(t('errors.attachmentNotFound'), 404)
 
   const links = record.value.links.filter(
     (link) =>
@@ -231,7 +232,7 @@ export async function unlinkServerAttachment(
     attachmentId,
     attachment
   )
-  if (!nextRecord) throw new AttachmentApiError('Attachment not found', 404)
+  if (!nextRecord) throw new AttachmentApiError(t('errors.attachmentNotFound'), 404)
   return nextRecord.value
 }
 

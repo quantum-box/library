@@ -37,14 +37,15 @@ import {
 } from '../lib/workflows/workflowSync'
 import { initialSyncReady } from '../lib/yjs/yjsProvider'
 import { DetailPanel } from './DetailPanel'
+import { useI18n, type MessageKey } from '../i18n'
 
 type WorkflowTemplateId = WorkflowCanvasTemplateId
 
 type WorkflowTemplate = {
   id: WorkflowTemplateId
-  label: string
-  description: string
-  canvasHint: string
+  labelKey: MessageKey
+  descriptionKey: MessageKey
+  canvasHintKey: MessageKey
 }
 
 type WorkflowNodeData = {
@@ -63,19 +64,21 @@ type WorkflowRecordNode = Node<WorkflowNodeData, 'workflowRecord'>
 const workflowTemplates: WorkflowTemplate[] = [
   {
     id: 'business-flow',
-    label: 'Business Flow',
-    description: 'Arrange database items as process steps, decisions, handoffs, and outcomes.',
-    canvasHint: 'Use the database items as the real steps in the operation.',
+    labelKey: 'workflow.template.businessFlow.label',
+    descriptionKey: 'workflow.template.businessFlow.description',
+    canvasHintKey: 'workflow.template.businessFlow.canvasHint',
   },
   {
     id: 'kpi-tree',
-    label: 'KPI Tree',
-    description: 'Arrange database items as goals, KPIs, drivers, initiatives, and guardrails.',
-    canvasHint: 'Use the database items as the measurable pieces of the tree.',
+    labelKey: 'workflow.template.kpiTree.label',
+    descriptionKey: 'workflow.template.kpiTree.description',
+    canvasHintKey: 'workflow.template.kpiTree.canvasHint',
   },
 ]
 
 function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
+  const { t } = useI18n()
+
   return (
     <div
       className={`w-[260px] rounded-lg border bg-surface p-3 shadow-soft transition-colors ${
@@ -100,7 +103,7 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
           className="shrink-0 rounded bg-canvas px-2 py-1 text-[10px] font-medium"
           style={{ color: data.accent }}
         >
-          {priorityConfig[data.priority].label}
+          {t(priorityConfig[data.priority].labelKey)}
         </span>
       </div>
       <div className="line-clamp-2 text-xs leading-relaxed text-subtle">
@@ -108,9 +111,13 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
       </div>
       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-subtle">
         <span style={{ color: statusConfig[data.status].color }}>
-          {statusConfig[data.status].icon} {statusConfig[data.status].label}
+          {statusConfig[data.status].icon} {t(statusConfig[data.status].labelKey)}
         </span>
-        <span>{data.templateId === 'kpi-tree' ? 'KPI tree item' : 'Flow item'}</span>
+        <span>
+          {data.templateId === 'kpi-tree'
+            ? t('workflow.node.kpiTreeItem')
+            : t('workflow.node.flowItem')}
+        </span>
       </div>
       <Handle
         type="source"
@@ -196,6 +203,7 @@ export function WorkflowView({
   onUpdateRecord?: (recordId: string, field: keyof DatabaseRecord, value: string) => void
   onDeleteRecord?: (recordId: string) => void
 }) {
+  const { t } = useI18n()
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] =
     useState<WorkflowTemplateId>('business-flow')
@@ -233,10 +241,10 @@ export function WorkflowView({
     return records.filter((record) => [
       record.identifier,
       record.title,
-      statusConfig[record.status].label,
-      priorityConfig[record.priority].label,
+      t(statusConfig[record.status].labelKey),
+      t(priorityConfig[record.priority].labelKey),
     ].some((value) => value.toLowerCase().includes(normalizedRecordQuery)))
-  }, [normalizedRecordQuery, records])
+  }, [normalizedRecordQuery, records, t])
   const recordPageCount = Math.max(
     1,
     Math.ceil(matchingRecords.length / WORKFLOW_ITEM_PAGE_SIZE)
@@ -688,10 +696,10 @@ export function WorkflowView({
             type="button"
             data-testid="toggle-workflow-items"
             className="flex min-h-7 w-full items-center justify-center rounded bg-surface-hover px-1.5 py-1 text-[10px] font-medium text-muted hover:text-foreground"
-            title="Open Library data"
+            title={t('workflow.openLibraryData')}
             onClick={() => setItemsPanelOpen(true)}
           >
-            Items
+            {t('workflow.items')}
           </button>
         </aside>
       )}
@@ -704,21 +712,21 @@ export function WorkflowView({
         <div className="mb-2 px-0.5">
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs font-medium uppercase tracking-wider text-subtle">
-              Library Data
+              {t('workflow.libraryData')}
             </div>
             <button
               type="button"
               data-testid="toggle-workflow-items"
               className="flex h-7 w-7 items-center justify-center rounded bg-surface-hover text-muted hover:text-foreground"
-              title="Close Library data"
-              aria-label="Close Library data"
+              title={t('workflow.closeLibraryData')}
+              aria-label={t('workflow.closeLibraryData')}
               onClick={() => setItemsPanelOpen(false)}
             >
               <PanelLeftClose className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
           <p className="mt-1 text-[11px] leading-snug text-subtle">
-            Add data to the canvas.
+            {t('workflow.addDataHint')}
           </p>
         </div>
         <div className="mb-2 px-0.5">
@@ -729,18 +737,22 @@ export function WorkflowView({
             />
             <input
               type="search"
-              aria-label="Search Library data"
+              aria-label={t('workflow.searchLibraryData')}
               value={recordQuery}
               onChange={(event) => {
                 setRecordQuery(event.target.value)
                 setRecordPage(0)
               }}
-              placeholder="Search items"
+              placeholder={t('workflow.searchItems')}
               className="h-8 w-full rounded border border-border bg-surface pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-subtle focus:border-accent"
             />
           </div>
           <p className="mt-1 text-[10px] tabular-nums text-subtle" data-testid="workflow-item-count">
-            Showing {visibleRecordStart}-{visibleRecordEnd} of {matchingRecords.length} matching items
+            {t('workflow.showingRange', {
+              from: visibleRecordStart,
+              to: visibleRecordEnd,
+              total: matchingRecords.length,
+            })}
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -767,9 +779,10 @@ export function WorkflowView({
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-subtle">
-                    <span>{statusConfig[record.status].label}</span>
+                    <span>{t(statusConfig[record.status].labelKey)}</span>
                     <span style={{ color: priorityConfig[record.priority].color }}>
-                      {priorityConfig[record.priority].icon} {priorityConfig[record.priority].label}
+                      {priorityConfig[record.priority].icon}{' '}
+                      {t(priorityConfig[record.priority].labelKey)}
                     </span>
                   </div>
                 </div>
@@ -780,15 +793,15 @@ export function WorkflowView({
                   disabled={!workflowLoaded}
                   onClick={() => addRecord(record)}
                 >
-                  Add
+                  {t('common.add')}
                 </button>
               </div>
             ))}
             {matchingRecords.length === 0 && (
               <div className="rounded-md border border-dashed border-border bg-surface p-3 text-xs leading-relaxed text-subtle">
                 {records.length === 0
-                  ? 'No items in this database yet.'
-                  : 'No items match this search.'}
+                  ? t('workflow.noItems')
+                  : t('workflow.noMatchingItems')}
               </div>
             )}
             {recordPageCount > 1 && (
@@ -797,10 +810,10 @@ export function WorkflowView({
                   type="button"
                   className="rounded bg-surface-hover px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={visibleRecordPage === 0}
-                  aria-label="Previous Library data page"
+                  aria-label={t('workflow.previousPage')}
                   onClick={() => setRecordPage((page) => Math.max(0, page - 1))}
                 >
-                  Previous
+                  {t('common.previous')}
                 </button>
                 <span className="text-[10px] tabular-nums text-subtle">
                   {visibleRecordPage + 1}/{recordPageCount}
@@ -809,10 +822,10 @@ export function WorkflowView({
                   type="button"
                   className="rounded bg-surface-hover px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={visibleRecordPage >= recordPageCount - 1}
-                  aria-label="Next Library data page"
+                  aria-label={t('workflow.nextPage')}
                   onClick={() => setRecordPage((page) => Math.min(recordPageCount - 1, page + 1))}
                 >
-                  Next
+                  {t('common.next')}
                 </button>
               </div>
             )}
@@ -828,16 +841,16 @@ export function WorkflowView({
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded bg-surface-hover px-2 py-1 text-[11px] font-medium text-muted hover:text-foreground md:hidden"
-                aria-label="Open Library data"
+                aria-label={t('workflow.openLibraryData')}
                 onClick={() => setItemsPanelOpen(true)}
               >
                 <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                Items
+                {t('workflow.items')}
               </button>
             )}
-            <span className="text-xs font-medium text-foreground">Workflow Canvas</span>
+            <span className="text-xs font-medium text-foreground">{t('workflow.canvas')}</span>
             <span className="min-w-0 truncate text-xs text-subtle">
-              {selectedTemplate.canvasHint}
+              {t(selectedTemplate.canvasHintKey)}
             </span>
             <span
               className="ml-auto text-[10px] font-medium uppercase tracking-wider text-subtle"
@@ -845,8 +858,8 @@ export function WorkflowView({
               data-testid="workflow-persistence-status"
             >
               {saveStatus === 'saving' || savedSignature !== canvasSignature
-                ? 'Saving'
-                : 'Saved'}
+                ? t('workflow.saving')
+                : t('common.saved')}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
@@ -862,11 +875,11 @@ export function WorkflowView({
                 }`}
                 onClick={() => setSelectedTemplateId(template.id)}
               >
-                {template.label}
+                {t(template.labelKey)}
               </button>
             ))}
             <span className="ml-1 self-center text-xs text-subtle">
-              {selectedTemplate.description}
+              {t(selectedTemplate.descriptionKey)}
             </span>
             {selectedEdgeId && (
               <button
@@ -876,7 +889,7 @@ export function WorkflowView({
                 onClick={deleteSelectedEdge}
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                Delete connection
+                {t('workflow.deleteConnection')}
               </button>
             )}
           </div>

@@ -2,6 +2,7 @@ import {
   configuredLibraryApiBaseUrl,
   libraryGraphqlHeaders,
 } from './libraryGraphql'
+import { t } from '../i18n'
 
 export const repositoryPropertyTypes = [
   'STRING',
@@ -335,7 +336,7 @@ function propertyInput(
 ): Record<string, unknown> {
   const name = draft.name.trim()
   if (!name) {
-    throw new RepositorySettingsApiError('Property name is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('repoSettings.propertyNameRequired'), 422, 'validation')
   }
 
   let meta: Record<string, unknown> | undefined
@@ -453,7 +454,7 @@ export async function updateRepositoryProperty(
   draft: RepositoryPropertyDraft,
 ): Promise<RepositoryPropertyDefinition> {
   if (!propertyId.trim()) {
-    throw new RepositorySettingsApiError('Property ID is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('errors.propertyIdRequired'), 422, 'validation')
   }
   const payload = await requestRepositoryGraphQL<RepositoryPropertyMutationResponse>(
     updateRepositoryPropertyMutation,
@@ -478,7 +479,7 @@ export async function deleteRepositoryProperty(
   propertyId: string,
 ): Promise<void> {
   if (!propertyId.trim()) {
-    throw new RepositorySettingsApiError('Property ID is required.', 422, 'validation')
+    throw new RepositorySettingsApiError(t('errors.propertyIdRequired'), 422, 'validation')
   }
   const payload = await requestRepositoryGraphQL<RepositoryPropertyDeleteResponse>(
     deleteRepositoryPropertyMutation,

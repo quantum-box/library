@@ -7,6 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { t, type MessageKey } from '../../i18n'
 
 export const WINDOW_TABS_CHANGED_EVENT = 'library-tabs-changed'
 
@@ -60,23 +61,22 @@ export function listenWindowTabsChanged(onChange: () => void) {
   return listen(WINDOW_TABS_CHANGED_EVENT, onChange)
 }
 
-const STATIC_TITLES: Record<string, string> = {
-  '': 'Library',
-  home: 'Home',
-  repositories: 'Repositories',
-  databases: 'All data',
-  docs: 'Documents',
-  documents: 'Documents',
-  chat: 'Ask Library',
-  sync: 'Sync status',
-  kanban: 'All data · Board',
+const STATIC_TITLE_KEYS: Record<string, MessageKey> = {
+  home: 'sidebar.nav.home',
+  repositories: 'sidebar.repositories.heading',
+  databases: 'sidebar.nav.allData',
+  docs: 'sidebar.nav.documents',
+  documents: 'sidebar.nav.documents',
+  chat: 'sidebar.nav.askLibrary',
+  sync: 'sidebar.nav.syncStatus',
+  kanban: 'palette.nav.board.label',
 }
 
-const REPOSITORY_SECTION_TITLES: Record<string, string> = {
-  data: 'Data',
-  docs: 'Docs',
-  settings: 'Settings',
-  api: 'API keys',
+const REPOSITORY_SECTION_TITLE_KEYS: Record<string, MessageKey> = {
+  data: 'repository.tab.data',
+  docs: 'shortcuts.docs',
+  settings: 'common.settings',
+  api: 'apiKeys.cardTitle',
 }
 
 function decodeSegment(segment: string) {
@@ -99,14 +99,16 @@ export function tabTitleForPath(pathname: string): string {
 
   const [first, second, third] = segments
 
-  if (first === 'databases' && second === 'board') return 'All data · Board'
-  if (first === 'databases' && second === 'workflow') return 'All data · Workflow'
-  if (segments.length === 1 && first in STATIC_TITLES) return STATIC_TITLES[first]
-  if (first === 'documents' || first === 'docs') return 'Documents'
-  if (first === 'databases') return 'All data'
+  if (first === 'databases' && second === 'board') return t('palette.nav.board.label')
+  if (first === 'databases' && second === 'workflow') return t('palette.nav.workflow.label')
+  if (segments.length === 1 && first in STATIC_TITLE_KEYS) return t(STATIC_TITLE_KEYS[first])
+  if (first === 'documents' || first === 'docs') return t('sidebar.nav.documents')
+  if (first === 'databases') return t('sidebar.nav.allData')
 
   if (first === 'organizations' && second) return second
-  if (first === 'public' && second && third) return `${second}/${third} · Public`
+  if (first === 'public' && second && third) {
+    return `${second}/${third} · ${t('createRepo.public')}`
+  }
   if (first === 'repositories' && second && third) {
     return repositoryTitle(second, third, segments[3])
   }
@@ -117,6 +119,6 @@ export function tabTitleForPath(pathname: string): string {
 
 function repositoryTitle(organization: string, repository: string, section?: string) {
   const scope = `${organization}/${repository}`
-  const sectionTitle = section ? REPOSITORY_SECTION_TITLES[section] : undefined
-  return sectionTitle ? `${scope} · ${sectionTitle}` : scope
+  const sectionKey = section ? REPOSITORY_SECTION_TITLE_KEYS[section] : undefined
+  return sectionKey ? `${scope} · ${t(sectionKey)}` : scope
 }

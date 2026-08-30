@@ -78,10 +78,10 @@ describe('WindowTabStrip', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'acme/handbook · Data' }))
     expect(invoke).toHaveBeenCalledWith('activate_window_tab', { label: 'library-tab-1' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Homeを閉じる' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close Home' }))
     expect(invoke).toHaveBeenCalledWith('close_window_tab', { label: 'main' })
 
-    fireEvent.click(screen.getByRole('button', { name: '新しいタブ' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New tab' }))
     expect(invoke).toHaveBeenCalledWith('create_window_tab', { path: null, activate: true })
   })
 

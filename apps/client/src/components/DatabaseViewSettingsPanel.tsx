@@ -11,6 +11,7 @@ import type {
   DatabaseViewSorting,
   RecordPropertyKey,
 } from '../lib/databaseViews/types'
+import { useI18n, collator, type Locale } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
 const sortableProperties = RECORD_PROPERTIES.filter((property) => property.id !== 'labels')
@@ -32,10 +33,9 @@ function useDesktopLayout() {
   return desktop
 }
 
-function uniqueValues(values: Array<string | null | undefined>) {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) =>
-    a.localeCompare(b, 'ja-JP')
-  )
+function uniqueValues(values: Array<string | null | undefined>, locale: Locale) {
+  const compare = collator(locale)
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort(compare.compare)
 }
 
 function toggleValue(values: string[], value: string) {
@@ -85,9 +85,10 @@ export function DatabaseViewSettingsPanel({
   onChangeView: (view: DatabaseViewDefinition) => void
   onClose?: () => void
 }) {
-  const assignees = uniqueValues(records.map((record) => record.assignee))
-  const projects = uniqueValues(records.map((record) => record.project))
-  const labels = uniqueValues(records.flatMap((record) => record.labels))
+  const { t, locale } = useI18n()
+  const assignees = uniqueValues(records.map((record) => record.assignee), locale)
+  const projects = uniqueValues(records.map((record) => record.project), locale)
+  const labels = uniqueValues(records.flatMap((record) => record.labels), locale)
   const desktop = useDesktopLayout()
   const panelRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -129,13 +130,13 @@ export function DatabaseViewSettingsPanel({
             id="database-view-settings-title"
             className="text-xs font-medium uppercase tracking-wider text-subtle"
           >
-            View Settings
+            {t('viewSettings.title')}
           </span>
           <button
             ref={closeButtonRef}
             type="button"
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
-            aria-label="Close view settings"
+            aria-label={t('viewSettings.close')}
             onClick={requestClose}
           >
             <X className="size-4" aria-hidden="true" />
@@ -143,7 +144,7 @@ export function DatabaseViewSettingsPanel({
         </div>
 
       <label className="mb-3 flex flex-col gap-1 text-xs text-subtle">
-        Search
+        {t('common.search')}
         <input
           data-testid="view-search-filter"
           value={view.filters.search}
@@ -151,16 +152,16 @@ export function DatabaseViewSettingsPanel({
             onChangeView(updateFilters(view, { search: event.target.value }))
           }
           className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent"
-          placeholder="Filter data..."
+          placeholder={t('table.filterPlaceholder')}
         />
       </label>
 
       <div className="mb-4">
-        <span className="mb-1 block text-xs font-medium text-subtle">Status</span>
-        <div className="flex flex-col gap-1" role="group" aria-label="Status filter">
+        <span className="mb-1 block text-xs font-medium text-subtle">{t('table.column.status')}</span>
+        <div className="flex flex-col gap-1" role="group" aria-label={t('viewSettings.statusFilter')}>
           <button
             type="button"
-            aria-label={`All data (${records.length})`}
+            aria-label={t('viewSettings.allDataCount', { count: records.length })}
             aria-pressed={!view.filters.status}
             className={`flex items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
               !view.filters.status
@@ -169,7 +170,7 @@ export function DatabaseViewSettingsPanel({
             }`}
             onClick={() => onChangeView(updateFilters(view, { status: undefined }))}
           >
-            <span>All data</span>
+            <span>{t('sidebar.nav.allData')}</span>
             <span className="text-xs text-subtle">{records.length}</span>
           </button>
           {(Object.entries(statusConfig) as [Status, (typeof statusConfig)[Status]][]).map(
@@ -177,7 +178,10 @@ export function DatabaseViewSettingsPanel({
               <button
                 key={key}
                 type="button"
-                aria-label={`${config.label} (${records.filter((record) => record.status === key).length})`}
+                aria-label={t('viewSettings.statusCount', {
+                  status: t(config.labelKey),
+                  count: records.filter((record) => record.status === key).length,
+                })}
                 aria-pressed={view.filters.status === key}
                 className={`flex items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
                   view.filters.status === key
@@ -194,7 +198,7 @@ export function DatabaseViewSettingsPanel({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <span style={{ color: config.color }}>{config.icon}</span>
-                  <span className="truncate">{config.label}</span>
+                  <span className="truncate">{t(config.labelKey)}</span>
                 </span>
                 <span className="text-xs text-subtle">
                   {records.filter((record) => record.status === key).length}
@@ -207,7 +211,7 @@ export function DatabaseViewSettingsPanel({
 
       <div className="mb-4 grid grid-cols-1 gap-2">
         <label className="flex flex-col gap-1 text-xs text-subtle">
-          Priority
+          {t('table.column.priority')}
           <select
             value={view.filters.priority ?? ''}
             onChange={(event) =>
@@ -219,11 +223,11 @@ export function DatabaseViewSettingsPanel({
             }
             className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
           >
-            <option value="">Any priority</option>
+            <option value="">{t('viewSettings.anyPriority')}</option>
             {(Object.entries(priorityConfig) as [Priority, (typeof priorityConfig)[Priority]][]).map(
               ([key, config]) => (
                 <option key={key} value={key}>
-                  {config.label}
+                  {t(config.labelKey)}
                 </option>
               )
             )}
@@ -231,7 +235,7 @@ export function DatabaseViewSettingsPanel({
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-subtle">
-          Assignee
+          {t('table.column.assignee')}
           <select
             value={view.filters.assignee ?? ''}
             onChange={(event) =>
@@ -243,7 +247,7 @@ export function DatabaseViewSettingsPanel({
             }
             className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
           >
-            <option value="">Anyone</option>
+            <option value="">{t('viewSettings.anyone')}</option>
             {assignees.map((assignee) => (
               <option key={assignee} value={assignee}>
                 {assignee}
@@ -253,7 +257,7 @@ export function DatabaseViewSettingsPanel({
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-subtle">
-          Repository
+          {t('table.column.repository')}
           <select
             value={view.filters.project ?? ''}
             onChange={(event) =>
@@ -265,7 +269,7 @@ export function DatabaseViewSettingsPanel({
             }
             className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
           >
-            <option value="">Any repository</option>
+            <option value="">{t('viewSettings.anyRepository')}</option>
             {projects.map((project) => (
               <option key={project} value={project}>
                 {project}
@@ -277,8 +281,8 @@ export function DatabaseViewSettingsPanel({
 
       {labels.length > 0 && (
         <div className="mb-4">
-          <span className="mb-1 block text-xs font-medium text-subtle">Labels</span>
-          <div className="flex flex-wrap gap-1" role="group" aria-label="Label filters">
+          <span className="mb-1 block text-xs font-medium text-subtle">{t('table.column.labels')}</span>
+          <div className="flex flex-wrap gap-1" role="group" aria-label={t('viewSettings.labelFilters')}>
             {labels.map((label) => (
               <button
                 key={label}
@@ -302,7 +306,7 @@ export function DatabaseViewSettingsPanel({
 
       <div className="mb-4 grid grid-cols-[1fr_auto] gap-2">
         <label className="flex flex-col gap-1 text-xs text-subtle">
-          Sort
+          {t('viewSettings.sort')}
           <select
             value={view.sorting?.id ?? ''}
             onChange={(event) => {
@@ -311,10 +315,10 @@ export function DatabaseViewSettingsPanel({
             }}
             className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none"
           >
-            <option value="">Default</option>
+            <option value="">{t('viewSettings.sortDefault')}</option>
             {sortableProperties.map((property) => (
               <option key={property.id} value={property.id}>
-                {property.label}
+                {t(property.labelKey)}
               </option>
             ))}
           </select>
@@ -322,7 +326,7 @@ export function DatabaseViewSettingsPanel({
         <button
           type="button"
           data-testid="toggle-sort-direction"
-          aria-label="Sort descending"
+          aria-label={t('viewSettings.sortDescending')}
           aria-pressed={view.sorting?.desc ?? false}
           className="self-end rounded bg-surface-hover px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-40"
           disabled={!view.sorting}
@@ -330,13 +334,13 @@ export function DatabaseViewSettingsPanel({
             view.sorting && setSorting({ ...view.sorting, desc: !view.sorting.desc })
           }
         >
-          {view.sorting?.desc ? 'Desc' : 'Asc'}
+          {view.sorting?.desc ? t('viewSettings.desc') : t('viewSettings.asc')}
         </button>
       </div>
 
       {view.type === 'board' && (
         <label className="mb-4 flex items-center justify-between gap-3 rounded bg-surface px-2 py-2 text-sm text-muted">
-          Compact cards
+          {t('viewSettings.compactCards')}
           <input
             data-testid="board-compact-toggle"
             type="checkbox"
@@ -352,7 +356,7 @@ export function DatabaseViewSettingsPanel({
       )}
 
       <div>
-        <span className="mb-1 block text-xs font-medium text-subtle">Properties</span>
+        <span className="mb-1 block text-xs font-medium text-subtle">{t('viewSettings.properties')}</span>
         <div className="grid grid-cols-2 gap-1">
           {RECORD_PROPERTIES.map((property) => (
             <label
@@ -364,7 +368,7 @@ export function DatabaseViewSettingsPanel({
                 checked={view.visibleProperties.includes(property.id)}
                 onChange={() => onChangeView(updateVisibleProperties(view, property.id))}
               />
-              <span>{property.label}</span>
+              <span>{t(property.labelKey)}</span>
             </label>
           ))}
         </div>

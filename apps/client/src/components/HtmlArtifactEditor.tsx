@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HtmlPreviewFrame } from './HtmlPreviewFrame'
+import { useI18n } from '../i18n'
 
 /**
  * The body editor for an Html Property whose value really is markup: a
@@ -23,6 +24,7 @@ export function HtmlArtifactEditor({
   editable?: boolean
   surface?: 'panel' | 'page'
 }) {
+  const { t } = useI18n()
   // Local first, same contract as RecordBodyEditor: once mounted, the local
   // draft is the source of truth so a save echoing back does not stomp the
   // caret. Callers key this component by record id.
@@ -73,7 +75,7 @@ export function HtmlArtifactEditor({
           onClick={() => setTab('preview')}
           testId="html-artifact-tab-preview"
         >
-          Preview
+          {t('editor.previewTab')}
         </TabButton>
         {editable || shown ? (
           <TabButton
@@ -81,7 +83,7 @@ export function HtmlArtifactEditor({
             onClick={() => setTab('code')}
             testId="html-artifact-tab-code"
           >
-            Code
+            {t('editor.codeTab')}
           </TabButton>
         ) : null}
         <span className="ml-auto text-xs text-muted-foreground">HTML</span>
@@ -90,7 +92,7 @@ export function HtmlArtifactEditor({
         <div className={`${frameHeight} resize-y overflow-auto`}>
           {shown.trim() === '' ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Nothing to preview yet — write some HTML in the Code tab.
+              {t('editor.nothingToPreview')}
             </div>
           ) : (
             <HtmlPreviewFrame source={shown} />

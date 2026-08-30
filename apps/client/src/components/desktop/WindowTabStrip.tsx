@@ -13,6 +13,7 @@ import {
   updateWindowTabTitle,
   type WindowTab,
 } from '../../lib/desktop/windowTabs'
+import { useI18n } from '../../i18n'
 
 /**
  * True only inside the macOS desktop shell. Web, Windows, Linux, and mobile
@@ -70,6 +71,7 @@ function useModifierClickOpensTab(enabled: boolean) {
 }
 
 export function WindowTabStrip() {
+  const { t } = useI18n()
   const enabled = useMacosDesktopShell()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [tabs, setTabs] = useState<WindowTab[]>([])
@@ -149,9 +151,9 @@ export function WindowTabStrip() {
       onTabSelect={(label) => void activateWindowTab(label).catch(console.error)}
       onTabClose={(label) => void closeWindowTab(label).catch(console.error)}
       onNewTab={() => void createWindowTab(null, true).catch(console.error)}
-      tabListLabel="Library tabs"
-      newTabLabel="新しいタブ"
-      closeTabLabel={(tab) => `${tab.title}を閉じる`}
+      tabListLabel={t('windowTabs.listLabel')}
+      newTabLabel={t('windowTabs.newTab')}
+      closeTabLabel={(tab: { title: string }) => t('windowTabs.closeTab', { title: tab.title })}
     />
   )
 }

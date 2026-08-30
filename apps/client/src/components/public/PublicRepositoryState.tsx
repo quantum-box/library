@@ -2,24 +2,25 @@ import { Link } from '@tanstack/react-router'
 import { Button } from '@tachyon-sdk/native-ui'
 import { FolderGit2, LockKeyhole, RefreshCw, TriangleAlert } from 'lucide-react'
 import type { PublicRepositoryStatus } from './usePublicRepository'
+import { useI18n, type MessageKey } from '../../i18n'
 
 const stateCopy = {
   private: {
     icon: LockKeyhole,
-    title: 'This repository is private',
-    detail: 'Only members can read it. Sign in with an account that has access.',
+    titleKey: 'public.private.title',
+    detailKey: 'public.private.detail',
   },
   missing: {
     icon: FolderGit2,
-    title: 'Repository not found',
-    detail: 'Check the organization and repository names in the link.',
+    titleKey: 'public.missing.title',
+    detailKey: 'public.missing.detail',
   },
   failed: {
     icon: TriangleAlert,
-    title: 'Could not load this repository',
-    detail: 'The Library API did not answer this read.',
+    titleKey: 'public.failed.title',
+    detailKey: 'public.failed.detail',
   },
-} as const
+} as const satisfies Record<string, { icon: unknown; titleKey: MessageKey; detailKey: MessageKey }>
 
 export function PublicRepositoryState({
   status,
@@ -34,7 +35,8 @@ export function PublicRepositoryState({
   error?: string | null
   onRetry?: () => void
 }) {
-  const { icon: Icon, title, detail } = stateCopy[status]
+  const { t } = useI18n()
+  const { icon: Icon, titleKey, detailKey } = stateCopy[status]
 
   return (
     <main
@@ -45,11 +47,11 @@ export function PublicRepositoryState({
         <span className="mx-auto flex size-10 items-center justify-center rounded-lg bg-surface text-muted-foreground ring-1 ring-inset ring-border">
           <Icon className="size-5" aria-hidden="true" />
         </span>
-        <h1 className="mt-4 text-base font-semibold">{title}</h1>
+        <h1 className="mt-4 text-base font-semibold">{t(titleKey)}</h1>
         <p className="mt-1 font-mono text-xs text-subtle-foreground">
           {organization}/{repository}
         </p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{t(detailKey)}</p>
         {status === 'failed' && error ? (
           <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">{error}</p>
         ) : null}
@@ -57,11 +59,11 @@ export function PublicRepositoryState({
           {status === 'failed' && onRetry ? (
             <Button variant="secondary" size="sm" onClick={onRetry}>
               <RefreshCw aria-hidden="true" />
-              Try again
+              {t('common.tryAgain')}
             </Button>
           ) : null}
           <Button variant="primary" size="sm" asChild>
-            <Link to="/home">Sign in</Link>
+            <Link to="/home">{t('auth.signIn')}</Link>
           </Button>
         </div>
       </div>

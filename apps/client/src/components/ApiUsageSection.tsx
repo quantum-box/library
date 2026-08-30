@@ -9,6 +9,7 @@ import {
   graphqlCurlExample,
   repositoryBasePath,
 } from '../lib/libraryLinks'
+import { useI18n } from '../i18n'
 
 const METHOD_STYLES: Record<string, string> = {
   GET: 'text-success',
@@ -18,19 +19,26 @@ const METHOD_STYLES: Record<string, string> = {
 }
 
 export function ApiCard({
+  id,
   icon,
   title,
   subtitle,
   action,
   children,
 }: {
+  /**
+   * Stable slug for the heading anchor. It is passed in rather than derived
+   * from `title`, which is translated and would collapse to the same id in
+   * any script without ASCII letters.
+   */
+  id: string
   icon: ReactNode
   title: string
   subtitle: string
   action?: ReactNode
   children: ReactNode
 }) {
-  const headingId = `api-card-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`
+  const headingId = `api-card-${id}`
   return (
     <section
       className="overflow-hidden rounded-lg border border-border bg-background shadow-soft"
@@ -88,31 +96,35 @@ export function QuickStartCard({
   repository: string
   operatorId?: string
 }) {
+  const { t } = useI18n()
   const apiBaseUrl = configuredLibraryApiBaseUrl()
 
   return (
     <ApiCard
+      id="quick-start"
       icon={<Terminal className="size-4" aria-hidden="true" />}
-      title="Quick start"
-      subtitle="Base URL and a first request"
+      title={t('apiUsage.quickStart')}
+      subtitle={t('apiUsage.quickStartSubtitle')}
     >
       <div className="space-y-4 p-4">
         <div className="space-y-1.5">
-          <span className="text-xs font-medium">Base URL</span>
+          <span className="text-xs font-medium">{t('apiUsage.baseUrl')}</span>
           <div className="flex items-center gap-1 rounded-md border border-border bg-surface pl-3">
             <code className="min-w-0 flex-1 truncate py-2 font-mono text-2xs">{apiBaseUrl}</code>
-            <CopyButton value={apiBaseUrl} label="Copy base URL" />
+            <CopyButton value={apiBaseUrl} label={t('apiUsage.copyBaseUrl')} />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <span className="text-xs font-medium">List this repository&rsquo;s data</span>
+          <span className="text-xs font-medium">{t('apiUsage.listRepositoryData')}</span>
           <Snippet
             code={curlExample(apiBaseUrl, organization, repository)}
-            label="Copy the curl example"
+            label={t('apiUsage.copyCurl')}
           />
           <p className="text-2xs text-muted-foreground">
-            Put the key you issued in <code className="font-mono">LIBRARY_API_KEY</code>.
+            {t('apiUsage.keyEnvHintBefore')}{' '}
+            <code className="font-mono">LIBRARY_API_KEY</code>
+            {t('apiUsage.keyEnvHintAfter')}
           </p>
         </div>
 
@@ -122,13 +134,13 @@ export function QuickStartCard({
             <span className="text-xs font-medium">GraphQL</span>
           </div>
           <p className="text-2xs leading-5 text-muted-foreground">
-            The path names no organization, so{' '}
-            <code className="font-mono">x-operator-id</code> has to. Without it the key
-            goes unverified and the request is anonymous.
+            {t('apiUsage.graphqlOperatorHintBefore')}{' '}
+            <code className="font-mono">x-operator-id</code>{' '}
+            {t('apiUsage.graphqlOperatorHintAfter')}
           </p>
           <Snippet
             code={graphqlCurlExample(apiBaseUrl, organization, operatorId)}
-            label="Copy the GraphQL example"
+            label={t('apiUsage.copyGraphql')}
           />
         </div>
       </div>
@@ -143,21 +155,23 @@ export function EndpointsCard({
   organization: string
   repository: string
 }) {
+  const { t } = useI18n()
   const basePath = repositoryBasePath(organization, repository)
   const endpoints = commonEndpoints()
 
   return (
     <ApiCard
+      id="endpoints"
       icon={<Route className="size-4" aria-hidden="true" />}
-      title="Common endpoints"
-      subtitle="Relative to this repository"
+      title={t('apiUsage.commonEndpoints')}
+      subtitle={t('apiUsage.commonEndpointsSubtitle')}
       action={<Badge variant="neutral">{endpoints.length}</Badge>}
     >
       <div className="flex items-center gap-1 border-b border-border bg-surface/60 px-3 py-2">
         <code className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground">
           {basePath}
         </code>
-        <CopyButton value={basePath} label="Copy the repository path" />
+        <CopyButton value={basePath} label={t('apiUsage.copyRepositoryPath')} />
       </div>
       <ol className="divide-y divide-border">
         {endpoints.map((endpoint) => (
@@ -171,25 +185,27 @@ export function EndpointsCard({
               {endpoint.method}
             </span>
             <code className="truncate font-mono text-xs">{endpoint.path}</code>
-            <span className="text-2xs text-muted-foreground">{endpoint.summary}</span>
+            <span className="text-2xs text-muted-foreground">{t(endpoint.summaryKey)}</span>
           </li>
         ))}
       </ol>
       <p className="border-t border-border px-4 py-2.5 text-2xs text-muted-foreground">
-        The full list is generated from OpenAPI in Swagger UI and the user guide.
+        {t('apiUsage.fullListNote')}
       </p>
     </ApiCard>
   )
 }
 
 export function DocumentationCard() {
+  const { t } = useI18n()
   const links = apiReferenceLinks()
 
   return (
     <ApiCard
+      id="documentation"
       icon={<BookOpen className="size-4" aria-hidden="true" />}
-      title="Documentation"
-      subtitle="Reference and guides"
+      title={t('apiUsage.documentation')}
+      subtitle={t('apiUsage.documentationSubtitle')}
     >
       <ul className="divide-y divide-border">
         {links.map((link) => (
@@ -205,7 +221,7 @@ export function DocumentationCard() {
                   {link.label}
                 </span>
                 <span className="block truncate text-2xs text-muted-foreground">
-                  {link.description}
+                  {t(link.descriptionKey)}
                 </span>
               </div>
               <ExternalLink className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />

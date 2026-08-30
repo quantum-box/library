@@ -23,6 +23,7 @@ import {
   publicRepositoryFailure,
   usePublicRepository,
 } from './usePublicRepository'
+import { useI18n } from '../../i18n'
 
 export function PublicDataView({
   organization,
@@ -33,6 +34,7 @@ export function PublicDataView({
   repository: string
   dataId: string
 }) {
+  const { t } = useI18n()
   const { status, profile, error, reload } = usePublicRepository(organization, repository)
   const [item, setItem] = useState<LibraryDataItem | null>(null)
   const [properties, setProperties] = useState<LibraryProperty[]>([])
@@ -105,7 +107,7 @@ export function PublicDataView({
           <Link
             to="/public/$organization/$repository"
             params={{ organization, repository }}
-            aria-label="Back to repository"
+            aria-label={t('public.backToRepository')}
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
           </Link>
@@ -122,11 +124,11 @@ export function PublicDataView({
           <span className="truncate font-mono text-xs font-medium">{dataId}</span>
         </div>
         <Badge variant="outline" className="ml-auto hidden shrink-0 sm:inline-flex">
-          Public
+          {t('createRepo.public')}
         </Badge>
       </header>
 
-      {dataLoading ? <PublicLoadingState label="Loading page…" /> : null}
+      {dataLoading ? <PublicLoadingState label={t('public.loadingPage')} /> : null}
 
       {!dataLoading && (dataMissing || dataError) ? (
         <div
@@ -136,11 +138,11 @@ export function PublicDataView({
           <div>
             <TriangleAlert className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
             <h1 className="mt-3 text-sm font-semibold">
-              {dataMissing ? 'Page not found' : 'Could not load this page'}
+              {dataMissing ? t('public.pageNotFound') : t('public.pageLoadFailed')}
             </h1>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
               {dataMissing
-                ? 'This page does not exist in this repository, or it has been removed.'
+                ? t('public.pageNotFoundHint')
                 : dataError}
             </p>
             {dataMissing ? null : (
@@ -151,7 +153,7 @@ export function PublicDataView({
                 onClick={() => void loadData()}
               >
                 <RefreshCw aria-hidden="true" />
-                Try again
+                {t('common.tryAgain')}
               </Button>
             )}
           </div>
@@ -168,11 +170,11 @@ export function PublicDataView({
               data-testid="public-data-title"
               className="text-3xl font-semibold tracking-tight md:text-4xl"
             >
-              {item.name || 'Untitled'}
+              {item.name || t('common.untitled')}
             </h1>
 
             <section className="mt-8" aria-labelledby="public-data-properties">
-              <h2 id="public-data-properties" className="sr-only">Properties</h2>
+              <h2 id="public-data-properties" className="sr-only">{t('viewSettings.properties')}</h2>
               <div className="space-y-0.5">
                 {pageProperties.length > 0 ? pageProperties.map((property) => (
                   <div
@@ -185,7 +187,7 @@ export function PublicDataView({
                     <LibraryPropertyCell item={item} property={property} />
                   </div>
                 )) : (
-                  <p className="py-1.5 text-sm text-muted-foreground">No properties.</p>
+                  <p className="py-1.5 text-sm text-muted-foreground">{t('public.noProperties')}</p>
                 )}
               </div>
             </section>

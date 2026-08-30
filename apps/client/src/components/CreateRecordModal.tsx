@@ -9,6 +9,7 @@ import {
   mockUsers,
 } from '../data/mock'
 import type { CreateRecordData } from '../contexts/RecordsContext'
+import { useI18n } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
 interface CreateRecordModalProps {
@@ -44,6 +45,7 @@ export function CreateRecordModal({
   initialRepositoryId,
   requireRepository = false,
 }: CreateRecordModalProps) {
+  const { t } = useI18n()
   const [title, setTitle] = useState('')
   const [status, setStatus] = useState<Status>('todo')
   const [priority, setPriority] = useState<Priority>('none')
@@ -120,14 +122,14 @@ export function CreateRecordModal({
       onClose()
     } catch (err) {
       if (activeSubmissionRef.current !== submission || modalSessionRef.current !== submission.session) return
-      setError(err instanceof Error ? err.message : 'Failed to create data')
+      setError(err instanceof Error ? err.message : t('createRecord.failed'))
     } finally {
       if (activeSubmissionRef.current === submission && modalSessionRef.current === submission.session) {
         activeSubmissionRef.current = null
         setBusy(false)
       }
     }
-  }, [title, status, priority, assignee, description, onCreate, onClose, repositories, repositoryId, requireRepository])
+  }, [title, status, priority, assignee, description, onCreate, onClose, repositories, repositoryId, requireRepository, t])
 
   if (!open) return null
 
@@ -160,11 +162,11 @@ export function CreateRecordModal({
           style={{ borderColor: 'var(--border-color)' }}
         >
           <h2 id="create-record-modal-title" className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            New Data
+            {t('data.new')}
           </h2>
           <button
             type="button"
-            aria-label="Close new record modal"
+            aria-label={t('createRecord.close')}
             disabled={busy}
             onClick={requestClose}
             className="w-6 h-6 flex items-center justify-center rounded transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -181,7 +183,7 @@ export function CreateRecordModal({
           {/* Title */}
           <div>
             <label htmlFor="new-record-title" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Data name <span style={{ color: 'var(--priority-urgent)' }}>*</span>
+              {t('createRecord.nameLabel')} <span style={{ color: 'var(--priority-urgent)' }}>*</span>
             </label>
             <input
               id="new-record-title"
@@ -196,7 +198,7 @@ export function CreateRecordModal({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) handleSubmit()
               }}
-              placeholder="Data name..."
+              placeholder={t('createRecord.namePlaceholder')}
               className="w-full px-3 py-2 rounded text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               style={{
                 background: 'var(--bg-primary)',
@@ -209,7 +211,8 @@ export function CreateRecordModal({
           {(requireRepository || repositories.length > 0) && (
             <div>
               <label htmlFor="new-record-repository" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                Repository {requireRepository && <span style={{ color: 'var(--priority-urgent)' }}>*</span>}
+                {t('table.column.repository')}{' '}
+                {requireRepository && <span style={{ color: 'var(--priority-urgent)' }}>*</span>}
               </label>
               {repositories.length > 0 ? (
                 <>
@@ -228,20 +231,20 @@ export function CreateRecordModal({
                       color: 'var(--text-primary)',
                     }}
                   >
-                    <option value="">Choose a repository…</option>
+                    <option value="">{t('createRecord.chooseRepository')}</option>
                     {repositories.map((repository) => (
                       <option key={repository.id} value={repository.id}>{repository.label}</option>
                     ))}
                   </select>
                   {requireRepository && (
                     <p className="mt-1.5 text-2xs leading-5 text-subtle">
-                      Repository Properties can be filled in the data table after creation.
+                      {t('createRecord.repositoryPropertiesHint')}
                     </p>
                   )}
                 </>
               ) : (
                 <p role="status" className="rounded-md border border-border bg-surface-hover px-3 py-2 text-xs leading-5 text-muted">
-                  No repository is available. Ask for repository access before creating data.
+                  {t('createRecord.noRepository')}
                 </p>
               )}
             </div>
@@ -251,7 +254,7 @@ export function CreateRecordModal({
           {!requireRepository && <div className="flex gap-3">
             <div className="flex-1">
               <label htmlFor="new-record-status" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                Status
+                {t('table.column.status')}
               </label>
               <select
                 id="new-record-status"
@@ -269,7 +272,7 @@ export function CreateRecordModal({
                 {(Object.entries(statusConfig) as [Status, typeof statusConfig[Status]][]).map(
                   ([key, sc]) => (
                     <option key={key} value={key}>
-                      {sc.icon} {sc.label}
+                      {sc.icon} {t(sc.labelKey)}
                     </option>
                   )
                 )}
@@ -277,7 +280,7 @@ export function CreateRecordModal({
             </div>
             <div className="flex-1">
               <label htmlFor="new-record-priority" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                Priority
+                {t('table.column.priority')}
               </label>
               <select
                 id="new-record-priority"
@@ -295,7 +298,7 @@ export function CreateRecordModal({
                 {(Object.entries(priorityConfig) as [Priority, typeof priorityConfig[Priority]][]).map(
                   ([key, pc]) => (
                     <option key={key} value={key}>
-                      {pc.icon} {pc.label}
+                      {pc.icon} {t(pc.labelKey)}
                     </option>
                   )
                 )}
@@ -306,7 +309,7 @@ export function CreateRecordModal({
           {/* Assignee */}
           {!requireRepository && <div>
             <label htmlFor="new-record-assignee" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Assignee
+              {t('table.column.assignee')}
             </label>
             <select
               id="new-record-assignee"
@@ -321,7 +324,7 @@ export function CreateRecordModal({
                 color: 'var(--text-primary)',
               }}
             >
-              <option value="">Unassigned</option>
+              <option value="">{t('detail.unassigned')}</option>
               {mockUsers.map((name) => (
                 <option key={name} value={name}>
                   {name}
@@ -333,7 +336,7 @@ export function CreateRecordModal({
           {/* Body */}
           {!requireRepository && <div>
             <label htmlFor="new-record-description" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Body
+              {t('detail.body')}
             </label>
             <textarea
               id="new-record-description"
@@ -341,7 +344,7 @@ export function CreateRecordModal({
               value={description}
               disabled={busy}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Draft the internal document body..."
+              placeholder={t('createRecord.bodyPlaceholder')}
               rows={4}
               className="w-full px-3 py-2 rounded text-sm outline-none resize-none focus-visible:ring-2 focus-visible:ring-ring/50"
               style={{
@@ -380,7 +383,7 @@ export function CreateRecordModal({
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border-color)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -394,7 +397,7 @@ export function CreateRecordModal({
               cursor: title.trim() && !busy && (!requireRepository || repositoryId) ? 'pointer' : 'not-allowed',
             }}
           >
-            {busy ? 'Creating...' : 'Create Data'}
+            {busy ? t('common.creating') : t('createRecord.submit')}
           </button>
           </div>
         </div>

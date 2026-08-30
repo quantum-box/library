@@ -41,6 +41,7 @@ import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { RecordBodyEditor } from './RecordBodyEditor'
+import { useI18n, type I18nContextValue } from '../i18n'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -53,16 +54,16 @@ interface DataEditorPageProps {
   onBack: () => void
 }
 
-function formatEditorDate(value: string | undefined) {
-  if (!value) return 'Recently'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
+function formatEditorDate(value: string | undefined, i18n: I18nContextValue) {
+  if (!value) return i18n.t('home.time.recently')
+  return (
+    i18n.formatDate(value, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }) ?? value
+  )
 }
 
 function PageTitle({
@@ -72,6 +73,7 @@ function PageTitle({
   value: string
   onCommit: (value: string) => void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -117,7 +119,7 @@ function PageTitle({
         setDraft(value)
         setEditing(true)
       }}
-      title="Click to rename"
+      title={t('dataEditor.clickToRename')}
     >
       {value}
     </h1>
@@ -132,6 +134,8 @@ export function DataEditorPage({
   repoLabel,
   onBack,
 }: DataEditorPageProps) {
+  const i18n = useI18n()
+  const { t } = i18n
   const [item, setItem] = useState<LibraryDataItem | null>(null)
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,13 +173,13 @@ export function DataEditorPage({
       itemRef.current = next
       if (!next) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
     } catch (error: unknown) {
-      setLoadError(error instanceof Error ? error.message : 'Failed to load data')
+      setLoadError(error instanceof Error ? error.message : t('route.recordLoadFailed'))
       setItem(null)
       itemRef.current = null
     } finally {
       setLoading(false)
     }
-  }, [dataId, org, repo, repoTarget])
+  }, [dataId, org, repo, repoTarget, t])
 
   useEffect(() => {
     void reload()
@@ -213,9 +217,9 @@ export function DataEditorPage({
       .catch((error: unknown) => {
         if (revision !== revisionRef.current) return
         setSaveState('failed')
-        setSaveError(error instanceof Error ? error.message : 'Failed to save changes')
+        setSaveError(error instanceof Error ? error.message : t('dataEditor.saveFailed'))
       })
-  }, [repoTarget])
+  }, [repoTarget, t])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
@@ -228,9 +232,9 @@ export function DataEditorPage({
       ),
     ).catch((error: unknown) => {
       setSaveState('failed')
-      setSaveError(error instanceof Error ? error.message : 'Failed to attach files')
+      setSaveError(error instanceof Error ? error.message : t('dataEditor.attachFailed'))
     })
-  }, [createAttachment, item])
+  }, [createAttachment, item, t])
 
   const handleDelete = useCallback(async () => {
     if (!item) return
@@ -241,17 +245,17 @@ export function DataEditorPage({
       setDeleteOpen(false)
       onBack()
     } catch (error: unknown) {
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete data')
+      setDeleteError(error instanceof Error ? error.message : t('dataEditor.deleteFailed'))
     } finally {
       setDeleteBusy(false)
     }
-  }, [item, onBack, repoTarget])
+  }, [item, onBack, repoTarget, t])
 
   if (loading || !item) {
     return (
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background" data-testid="data-editor-page">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
-          <Button variant="ghost" size="icon" className="size-7" onClick={onBack} aria-label="Back to data">
+          <Button variant="ghost" size="icon" className="size-7" onClick={onBack} aria-label={t('detail.backToData')}>
             <ArrowLeft className="size-4" aria-hidden="true" />
           </Button>
           <Database className="size-4 text-primary" aria-hidden="true" />
@@ -266,14 +270,16 @@ export function DataEditorPage({
             ) : (
               <TriangleAlert className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
             )}
-            <h1 className="mt-3 text-sm font-semibold">{loading ? 'Opening data' : 'Data not found'}</h1>
+            <h1 className="mt-3 text-sm font-semibold">
+              {loading ? t('detail.opening') : t('detail.notFound')}
+            </h1>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              {loading ? 'Loading the latest content and properties…' : loadError}
+              {loading ? t('detail.openingHint') : loadError}
             </p>
             {!loading && (
               <Button variant="secondary" size="sm" className="mt-4" onClick={() => void reload()}>
                 <RefreshCw aria-hidden="true" />
-                Try again
+                {t('common.tryAgain')}
               </Button>
             )}
           </div>
@@ -311,7 +317,7 @@ export function DataEditorPage({
           size="icon"
           className="size-7"
           onClick={onBack}
-          aria-label="Back to data"
+          aria-label={t('detail.backToData')}
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
         </Button>
@@ -335,7 +341,9 @@ export function DataEditorPage({
           <span className="text-subtle-foreground">/</span>
           <span className="truncate font-mono text-xs font-medium">{item.id}</span>
         </div>
-        <Badge variant="outline" className="hidden sm:inline-flex">Data</Badge>
+        <Badge variant="outline" className="hidden sm:inline-flex">
+          {t('repository.tab.data')}
+        </Badge>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <span
             className={`hidden items-center gap-1 text-xs sm:flex ${saveState === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}
@@ -344,15 +352,19 @@ export function DataEditorPage({
             {saveState === 'saving' ? <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" /> : null}
             {saveState === 'saved' ? <Check className="size-3.5 text-status-done" aria-hidden="true" /> : null}
             {saveState === 'failed' ? <TriangleAlert className="size-3.5" aria-hidden="true" /> : null}
-            {saveState === 'saving' ? 'Saving' : saveState === 'failed' ? 'Save failed' : 'Saved'}
+            {saveState === 'saving'
+              ? t('workflow.saving')
+              : saveState === 'failed'
+                ? t('dataEditor.saveFailedShort')
+                : t('common.saved')}
           </span>
           <Button
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground hover:text-destructive"
             onClick={() => setDeleteOpen(true)}
-            aria-label="Delete data"
-            title="Delete data"
+            aria-label={t('dataEditor.deleteData')}
+            title={t('dataEditor.deleteData')}
           >
             <Trash2 className="size-3.5" aria-hidden="true" />
           </Button>
@@ -371,7 +383,7 @@ export function DataEditorPage({
             />
 
             <section className="mt-8" aria-labelledby="data-page-properties">
-              <h2 id="data-page-properties" className="sr-only">Properties</h2>
+              <h2 id="data-page-properties" className="sr-only">{t('viewSettings.properties')}</h2>
               <div className="space-y-0.5">
                 {pageProperties.length > 0 ? pageProperties.map((property) => (
                   <div
@@ -389,19 +401,23 @@ export function DataEditorPage({
                     />
                   </div>
                 )) : (
-                  <p className="py-1.5 text-sm text-muted-foreground">No properties yet.</p>
+                  <p className="py-1.5 text-sm text-muted-foreground">{t('dataEditor.noProperties')}</p>
                 )}
 
                 <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">Updated</span>
+                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
+                    {t('table.column.updated')}
+                  </span>
                   <span className="flex min-h-6 items-center gap-1.5 text-sm text-foreground">
                     <Clock3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    {formatEditorDate(item.updatedAt)}
+                    {formatEditorDate(item.updatedAt, i18n)}
                   </span>
                 </div>
 
                 <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">Attachments</span>
+                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
+                    {t('detail.attachments')}
+                  </span>
                   <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-2">
                     {attachments.length > 0 ? (
                       <div className="flex min-w-0 flex-wrap gap-2" data-testid="record-attachments">
@@ -412,7 +428,7 @@ export function DataEditorPage({
                     ) : null}
                     <label className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-selected hover:text-primary">
                       <Paperclip className="size-3.5" aria-hidden="true" />
-                      {attachments.length > 0 ? 'Add' : 'Attach file'}
+                      {attachments.length > 0 ? t('common.add') : t('dataEditor.attachFile')}
                       <input
                         data-testid="record-attach-file"
                         type="file"
@@ -429,7 +445,9 @@ export function DataEditorPage({
                 </div>
 
                 <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">Related docs</span>
+                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
+                    {t('detail.relatedDocs')}
+                  </span>
                   <div className="min-h-6 min-w-0" data-testid="record-related-docs">
                     {relatedDocs.length > 0 ? (
                       <div className="space-y-1">
@@ -442,7 +460,7 @@ export function DataEditorPage({
                           >
                             <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                             <span className="min-w-0">
-                              <span className="block truncate">{doc.docTitle ?? 'Untitled document'}</span>
+                              <span className="block truncate">{doc.docTitle ?? t('docs.untitled')}</span>
                               {doc.selectedText ? (
                                 <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">{doc.selectedText}</span>
                               ) : null}
@@ -451,7 +469,7 @@ export function DataEditorPage({
                         ))}
                       </div>
                     ) : (
-                      <span className="text-sm text-muted-foreground">No related docs</span>
+                      <span className="text-sm text-muted-foreground">{t('dataEditor.noRelatedDocs')}</span>
                     )}
                   </div>
                 </div>
@@ -459,7 +477,7 @@ export function DataEditorPage({
             </section>
 
             <section className="mt-6" aria-labelledby="data-page-body">
-              <h2 id="data-page-body" className="sr-only">Body</h2>
+              <h2 id="data-page-body" className="sr-only">{t('detail.body')}</h2>
               {bodyProperty ? (
                 <RecordBodyEditor
                   key={`${item.id}:${bodyProperty.id}`}
@@ -479,7 +497,7 @@ export function DataEditorPage({
                 />
               ) : (
                 <div className="py-10 text-sm text-muted-foreground">
-                  Add a Rich text property to this repository to start writing a page body.
+                  {t('dataEditor.noBodyProperty')}
                 </div>
               )}
             </section>

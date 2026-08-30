@@ -25,6 +25,7 @@ import {
   type Priority,
 } from '../data/mock'
 import { appKitConfig } from '../app/kitConfig'
+import { t } from '../i18n'
 
 export interface CreateRecordData {
   title: string
@@ -271,7 +272,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           console.warn('Failed to hydrate records from Library API', error)
           setHydrationLoading(false)
           setHydrationError(
-            error instanceof Error ? error.message : 'Failed to hydrate records'
+            error instanceof Error ? error.message : t('errors.hydrateRecords')
           )
         })
     }
@@ -342,8 +343,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
         console.warn(
           action === 'move'
-            ? 'Failed to persist record status update'
-            : 'Failed to persist record field update',
+            ? t('errors.persistStatus')
+            : t('errors.persistField'),
           error
         )
         setMutationError({
@@ -352,8 +353,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           message: error instanceof Error
             ? error.message
             : action === 'move'
-              ? 'Failed to move data'
-              : 'Failed to update data',
+              ? t('errors.moveData')
+              : t('errors.updateData'),
         })
       })
 
@@ -441,7 +442,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
         setMutationError({
           action: 'delete',
           recordId,
-          message: error instanceof Error ? error.message : 'Failed to delete data',
+          message: error instanceof Error ? error.message : t('errors.deleteData'),
         })
       })
   }, [transactProjection])

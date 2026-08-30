@@ -17,6 +17,7 @@ import {
   takeImageWidthFragments,
   withImageWidthFragments,
 } from './blocknote/imageWidthFragments'
+import { t } from '../i18n'
 
 export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
 
@@ -109,7 +110,7 @@ function useBodyEditor(imageTarget: RecordBodyImageTarget | undefined) {
     uploadFile: uploads
       ? async (file: File) => {
         const target = imageTargetRef.current
-        if (!target) throw new Error('This body has no repository to store images in')
+        if (!target) throw new Error(t('editor.noImageTarget'))
         return uploadLibraryImage(target, file)
       }
       : undefined,
@@ -222,10 +223,10 @@ function BlockRecordBodyEditor({
  */
 function insertHtmlPreviewItem(editor: BodyEditor) {
   return {
-    title: 'HTML',
-    subtext: 'HTML document rendered in a sandboxed preview',
+    title: t('editor.htmlBlockTitle'),
+    subtext: t('editor.htmlBlockSubtext'),
     aliases: ['html', 'iframe', 'artifact', 'preview'],
-    group: 'Others',
+    group: t('editor.slashMenuOthers'),
     icon: <CodeXml size={18} />,
     onItemClick: () => {
       insertOrUpdateBlockForSlashMenu(editor, { type: 'htmlPreview' })

@@ -27,6 +27,7 @@ import {
   saveChatHistory,
 } from '../../lib/chat/chatHistory'
 import libraryMarkUrl from '../../assets/brand/library-logo/app-icon.svg'
+import { useI18n } from '../../i18n'
 
 const CHAT_SURFACE_ID = 'general'
 const CHAT_HISTORY_STORAGE_KEY = chatHistoryStorageKey(
@@ -70,11 +71,13 @@ function ChatWorkspaceAttachments({
   onPreview: (file: FileAttachment) => void
   className: string
 }) {
+  const { t } = useI18n()
+
   return (
     <div
       className={className}
       data-testid="chat-workspace-attachments"
-      aria-label="Workspace attachments"
+      aria-label={t('chat.workspaceAttachments')}
     >
       {attachments.map((attachment) => (
         <FileChip
@@ -94,6 +97,7 @@ interface ActiveChatRun {
 }
 
 export function ChatView() {
+  const { t, tPlural } = useI18n()
   const { records, syncRecord, beginRecordsSnapshot, syncRecords } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
@@ -346,7 +350,9 @@ export function ChatView() {
         prev.map((message) => message.id === assistantId
           ? {
               ...message,
-              content: `Chat stream error: ${error instanceof Error ? error.message : 'Failed to start chat stream'}`,
+              content: t('chat.streamError', {
+                message: error instanceof Error ? error.message : t('chat.streamStartFailed'),
+              }),
             }
           : message
         )
@@ -363,6 +369,7 @@ export function ChatView() {
     beginRecordsSnapshot,
     syncRecord,
     syncRecords,
+    t,
   ])
 
   const chatAttachments = attachmentsForSurface({ surfaceType: 'chat', surfaceId: CHAT_SURFACE_ID })
@@ -563,12 +570,8 @@ export function ChatView() {
       {isDragOver && (
         <div className="absolute inset-0 z-40 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/[0.08]">
           <div className="text-center">
-            <p className="text-lg font-medium text-accent">
-              Drop files here
-            </p>
-            <p className="text-xs mt-1 text-subtle">
-              PDF, XLSX, CSV, DOCX, PPTX
-            </p>
+            <p className="text-lg font-medium text-accent">{t('chat.dropFiles')}</p>
+            <p className="text-xs mt-1 text-subtle">{t('chat.fileTypes')}</p>
           </div>
         </div>
       )}
@@ -577,19 +580,19 @@ export function ChatView() {
         {appKitConfig.chat.stream.mode === 'mock' ? (
           <span className="inline-flex items-center gap-1.5 rounded border border-warning/35 bg-warning/10 px-2 py-1 text-foreground">
             <Bot className="size-3.5" aria-hidden="true" />
-            Demo mode · local sample responses
+            {t('chat.demoMode')}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 rounded border border-success/35 bg-success/10 px-2 py-1 text-foreground">
             <ShieldCheck className="size-3.5" aria-hidden="true" />
-            Connected assistant
+            {t('chat.connectedAssistant')}
           </span>
         )}
         <label className="ml-auto inline-flex min-w-0 items-center gap-1.5">
           <Database className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="sr-only">Data repository</span>
+          <span className="sr-only">{t('chat.dataRepository')}</span>
           <select
-            aria-label="Data repository"
+            aria-label={t('chat.dataRepository')}
             data-testid="chat-repository-select"
             className="max-w-48 min-w-0 rounded border border-border bg-surface px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             value={effectiveRepositoryId}
@@ -598,7 +601,9 @@ export function ChatView() {
           >
             {repositoryTargets.length !== 1 && (
               <option value="">
-                {repositoryTargets.length === 0 ? 'No repository available' : 'Choose repository…'}
+                {repositoryTargets.length === 0
+                  ? t('chat.noRepositoryAvailable')
+                  : t('chat.chooseRepository')}
               </option>
             )}
             {repositoryTargets.map((target) => (
@@ -606,7 +611,7 @@ export function ChatView() {
             ))}
           </select>
         </label>
-        <span className="hidden sm:inline">Conversation history is saved on this device.</span>
+        <span className="hidden sm:inline">{t('chat.historyOnDevice')}</span>
         {messages.length > 0 && (
           <div className="flex items-center gap-1">
             {clearConfirmationOpen && (
@@ -615,7 +620,7 @@ export function ChatView() {
                 className="rounded px-2 py-1 text-muted hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 onClick={() => setClearConfirmationOpen(false)}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             )}
             <button
@@ -630,7 +635,7 @@ export function ChatView() {
                 : setClearConfirmationOpen(true)}
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
-              {clearConfirmationOpen ? 'Confirm clear' : 'Clear'}
+              {clearConfirmationOpen ? t('chat.confirmClear') : t('chat.clear')}
             </button>
           </div>
         )}
@@ -650,7 +655,7 @@ export function ChatView() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
         role="log"
-        aria-label="Conversation"
+        aria-label={t('chat.conversation')}
         aria-live="polite"
         aria-relevant="additions text"
       >
@@ -665,9 +670,7 @@ export function ChatView() {
               <h2 className="text-lg font-semibold mb-1 text-foreground">
                 {appKitConfig.chat.productName}
               </h2>
-              <p className="text-sm mb-4 text-subtle">
-                Send a message to start a conversation
-              </p>
+              <p className="text-sm mb-4 text-subtle">{t('chat.emptyState')}</p>
               {chatAttachments.length > 0 && (
                 <ChatWorkspaceAttachments
                   attachments={recentChatAttachments}
@@ -679,15 +682,27 @@ export function ChatView() {
               {/* Tool capability hints */}
               <div className="mx-auto flex max-w-md flex-wrap justify-center gap-2">
                 {[
-                  { icon: Database, label: 'Library Data', hint: 'List Library data' },
-                  { icon: Paperclip, label: 'File context', hint: 'PDF, XLSX, CSV, DOCX, PPTX' },
+                  {
+                    id: 'data',
+                    icon: Database,
+                    label: t('workflow.libraryData'),
+                    hint: t('chat.hint.listData'),
+                  },
+                  {
+                    id: 'file',
+                    icon: Paperclip,
+                    label: t('chat.fileContext'),
+                    hint: t('chat.fileTypes'),
+                  },
                 ].map((tool) => {
                   const Icon = tool.icon
                   return (
                     <button
                       type="button"
-                      key={tool.label}
-                      onClick={() => tool.hint.startsWith('PDF') ? fileInputRef.current?.click() : setInput(tool.hint)}
+                      key={tool.id}
+                      onClick={() => tool.id === 'file'
+                        ? fileInputRef.current?.click()
+                        : setInput(tool.hint)}
                       className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                       <Icon className="size-3.5" aria-hidden="true" />
@@ -698,7 +713,7 @@ export function ChatView() {
               </div>
               {appKitConfig.chat.stream.mode === 'mock' && (
                 <p className="mx-auto mt-3 max-w-md text-2xs leading-5 text-subtle-foreground">
-                  Web search, arbitrary API calls, and code execution are unavailable in demo mode.
+                  {t('chat.demoLimitations')}
                 </p>
               )}
             </div>
@@ -748,7 +763,7 @@ export function ChatView() {
           onClick={() => scrollToBottom()}
           className="absolute -top-10 left-1/2 -translate-x-1/2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          Scroll to bottom
+          {t('chat.scrollToBottom')}
         </button>
       </div>
 
@@ -762,19 +777,19 @@ export function ChatView() {
             <span className="font-medium text-foreground">{documentContext.title}</span>
             {documentContext.selectedText && (
               <span className="max-w-xs truncate">
-                Selected: {documentContext.selectedText}
+                {t('chat.selectedText', { text: documentContext.selectedText })}
               </span>
             )}
             {documentContext.relatedRecords.length > 0 && (
               <span>
-                {documentContext.relatedRecords.length} related data
+                {tPlural('chat.relatedData', documentContext.relatedRecords.length)}
               </span>
             )}
             <button
               className="ml-auto rounded bg-surface-hover px-2 py-1 text-xs text-foreground"
               onClick={refreshDocumentContext}
             >
-              Refresh
+              {t('common.refresh')}
             </button>
           </div>
         )}
@@ -800,7 +815,7 @@ export function ChatView() {
             data-testid="chat-attach-file"
             onClick={() => fileInputRef.current?.click()}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            aria-label="Attach file (PDF, Excel, CSV, DOCX, PPTX)"
+            aria-label={t('chat.attachFile')}
           >
             <Paperclip className="size-4.5" aria-hidden="true" />
           </button>
@@ -822,8 +837,8 @@ export function ChatView() {
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Send a message..."
-            aria-label="Message Library assistant"
+            placeholder={t('chat.inputPlaceholder')}
+            aria-label={t('chat.inputLabel')}
             rows={1}
             className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none"
             style={{ maxHeight: '200px' }}
@@ -834,7 +849,7 @@ export function ChatView() {
               data-testid="chat-stop"
               onClick={handleStop}
               className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer bg-priority-urgent text-white"
-              aria-label="Stop generating"
+              aria-label={t('chat.stopGenerating')}
             >
               <Square className="size-3" fill="currentColor" aria-hidden="true" />
             </button>
@@ -847,14 +862,14 @@ export function ChatView() {
               className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30 text-white ${
                 (input.trim() || pendingFiles.length > 0) ? 'bg-accent' : 'bg-surface-hover'
               }`}
-              aria-label="Send message"
+              aria-label={t('chat.sendMessage')}
             >
               <Send className="size-4" aria-hidden="true" />
             </button>
           )}
         </div>
         <p className="text-center mt-2 text-xs text-subtle">
-          {appKitConfig.chat.disclaimer}
+          {t(appKitConfig.chat.disclaimerKey)}
         </p>
       </div>
 

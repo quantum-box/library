@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { useI18n } from '../../i18n'
+import { formatFileSize } from './types'
 
 interface PptxViewerProps {
   file: File
@@ -11,6 +13,7 @@ interface SlideInfo {
 }
 
 export function PptxViewer({ file, name }: PptxViewerProps) {
+  const { t } = useI18n()
   const [slides, setSlides] = useState<SlideInfo[]>([])
   const [activeSlide, setActiveSlide] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -43,18 +46,24 @@ export function PptxViewer({ file, name }: PptxViewerProps) {
 
         setSlides(slideTexts)
       } catch {
-        setSlides([{ index: 1, texts: [`Presentation: ${file.name}`, `Size: ${(file.size / 1024).toFixed(1)} KB`] }])
+        setSlides([{
+          index: 1,
+          texts: [
+            t('files.presentationName', { name: file.name }),
+            t('files.presentationSize', { size: formatFileSize(file.size) }),
+          ],
+        }])
       }
     }).catch((err) => {
       if (!cancelled) setError(err.message)
     })
     return () => { cancelled = true }
-  }, [file])
+  }, [file, t])
 
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-priority-urgent">
-        <p>Failed to load presentation: {error}</p>
+        <p>{t('files.pptxLoadFailed', { error })}</p>
       </div>
     )
   }
@@ -86,17 +95,17 @@ export function PptxViewer({ file, name }: PptxViewerProps) {
             disabled={activeSlide <= 0}
             className="px-2 py-0.5 rounded text-xs cursor-pointer disabled:opacity-30 bg-surface-hover text-muted"
           >
-            Prev
+            {t('common.previous')}
           </button>
           <span className="text-xs text-muted">
-            Slide {activeSlide + 1} / {slides.length}
+            {t('files.slideProgress', { current: activeSlide + 1, total: slides.length })}
           </span>
           <button
             onClick={() => setActiveSlide((s) => Math.min(slides.length - 1, s + 1))}
             disabled={activeSlide >= slides.length - 1}
             className="px-2 py-0.5 rounded text-xs cursor-pointer disabled:opacity-30 bg-surface-hover text-muted"
           >
-            Next
+            {t('common.next')}
           </button>
         </div>
       </div>
