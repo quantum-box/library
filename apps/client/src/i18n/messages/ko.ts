@@ -826,4 +826,6 @@ export const ko: LocaleMessages = {
   'repoProperties.refresh': '속성 새로 고침',
   'repoProperties.readOnlyHint': '계정으로 이 리포지터리를 볼 수는 있지만 속성을 바꿀 수는 없습니다. 리포지터리 소유자에게 권한을 요청한 뒤 새로 고치세요.',
   'repoProperties.sectionDetail': '이 리포지터리가 저장하는 모든 필드, 리포지터리 순서대로',
+  'libraryTable.linkedCount.one': '{count}건 연결됨',
+  'libraryTable.linkedCount.other': '{count}건 연결됨',
 }

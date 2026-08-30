@@ -826,4 +826,6 @@ export const de: LocaleMessages = {
   'repoProperties.refresh': 'Eigenschaften aktualisieren',
   'repoProperties.readOnlyHint': 'Dein Konto kann dieses Repository sehen, aber seine Eigenschaften nicht ändern. Bitte eine Repository-Inhaberin oder einen Inhaber um Zugriff und aktualisiere danach.',
   'repoProperties.sectionDetail': 'Jedes Feld, das dieses Repository speichert, in Repository-Reihenfolge',
+  'libraryTable.linkedCount.one': '{count} verknüpft',
+  'libraryTable.linkedCount.other': '{count} verknüpft',
 }

@@ -89,7 +89,7 @@ import {
   focusRecordSearchInput,
   focusRecordSearchInputWhenReady,
 } from './lib/ui/focusRecordSearch'
-import { useI18n, type MessageKey } from './i18n'
+import { useI18n, t as translate, type MessageKey } from './i18n'
 
 // ── Search params ──────────────────────────────────────────────
 
@@ -1031,7 +1031,7 @@ function DataWorkspace({
   desc?: boolean
   recordId?: string
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const viewId = viewParam
   const {
     records,
@@ -1146,8 +1146,8 @@ function DataWorkspace({
     [databaseRecords, effectiveView]
   )
   const sortedRecords = useMemo(
-    () => sortRecordsForDatabaseView(filteredRecords, effectiveView),
-    [effectiveView, filteredRecords]
+    () => sortRecordsForDatabaseView(filteredRecords, effectiveView, locale),
+    [effectiveView, filteredRecords, locale]
   )
 
   const selectedRecord = useMemo(
@@ -1543,7 +1543,6 @@ function RecordDetailPanel({
   recordId: string
   viewParam?: string
 }) {
-  const { t } = useI18n()
   const view = viewParam
   const {
     records,
@@ -1606,21 +1605,21 @@ function RecordDetailPanel({
           if (!found) {
             setDetailFailure({
               recordId,
-              message: t('route.recordNotInView', { recordId }),
+              message: translate('route.recordNotInView', { recordId }),
             })
           }
           return
         }
         setDetailFailure({
           recordId,
-          message: t('route.recordChangedWhileLoading'),
+          message: translate('route.recordChangedWhileLoading'),
         })
       } catch (error: unknown) {
         console.warn('Failed to hydrate data detail from Library API', error)
         if (!cancelled) {
           setDetailFailure({
             recordId,
-            message: error instanceof Error ? error.message : t('route.recordLoadFailed'),
+            message: error instanceof Error ? error.message : translate('route.recordLoadFailed'),
           })
         }
       }
@@ -1628,7 +1627,7 @@ function RecordDetailPanel({
     return () => {
       cancelled = true
     }
-  }, [beginRecordsSnapshot, record, recordId, syncRecords, t, useLibraryEditor])
+  }, [beginRecordsSnapshot, record, recordId, syncRecords, useLibraryEditor])
 
   const closeEditor = () =>
     void navigateToData(navigate, database, { view })

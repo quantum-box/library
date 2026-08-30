@@ -826,4 +826,6 @@ export const fr: LocaleMessages = {
   'repoProperties.refresh': 'Actualiser les propriétés',
   'repoProperties.readOnlyHint': 'Votre compte peut consulter ce dépôt mais pas modifier ses propriétés. Demandez un accès à un propriétaire du dépôt, puis actualisez.',
   'repoProperties.sectionDetail': 'Chaque champ que ce dépôt stocke, dans l’ordre du dépôt',
+  'libraryTable.linkedCount.one': '{count} lié',
+  'libraryTable.linkedCount.other': '{count} liés',
 }

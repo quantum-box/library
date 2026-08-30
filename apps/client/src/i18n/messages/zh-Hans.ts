@@ -826,4 +826,6 @@ export const zhHans: LocaleMessages = {
   'repoProperties.refresh': '刷新属性',
   'repoProperties.readOnlyHint': '你的账户可以查看该仓库，但不能修改它的属性。请向仓库所有者申请权限后刷新。',
   'repoProperties.sectionDetail': '该仓库存储的每个字段，按仓库顺序排列',
+  'libraryTable.linkedCount.one': '已关联 {count} 条',
+  'libraryTable.linkedCount.other': '已关联 {count} 条',
 }

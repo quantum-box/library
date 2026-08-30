@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { useI18n } from '../../i18n'
+import { useI18n, t as translate } from '../../i18n'
 
 interface SpreadsheetViewerProps {
   file: File
@@ -38,7 +38,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
 
         setSheets(parsed)
       } catch (err) {
-        setError(err instanceof Error ? err.message : t('files.parseFailed'))
+        setError(err instanceof Error ? err.message : translate('files.parseFailed'))
       }
     }
 
@@ -55,7 +55,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
           const rows = json.slice(1).map((row) => row.map(String))
           setSheets([{ name: 'Sheet1', headers, rows }])
         } catch (err) {
-          setError(err instanceof Error ? err.message : t('files.csvParseFailed'))
+          setError(err instanceof Error ? err.message : translate('files.csvParseFailed'))
         }
       }
     } else {
@@ -63,7 +63,7 @@ export function SpreadsheetViewer({ file, name }: SpreadsheetViewerProps) {
     }
 
     return () => { cancelled = true }
-  }, [file, t])
+  }, [file])
 
   if (error) {
     return (

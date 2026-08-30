@@ -826,4 +826,6 @@ export const zhHant: LocaleMessages = {
   'repoProperties.refresh': '重新整理屬性',
   'repoProperties.readOnlyHint': '你的帳戶可以檢視此儲存庫，但無法變更其屬性。請向儲存庫擁有者申請權限後重新整理。',
   'repoProperties.sectionDetail': '此儲存庫儲存的每個欄位，依儲存庫順序排列',
+  'libraryTable.linkedCount.one': '已關聯 {count} 筆',
+  'libraryTable.linkedCount.other': '已關聯 {count} 筆',
 }

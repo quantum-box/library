@@ -41,7 +41,7 @@ import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { RecordBodyEditor } from './RecordBodyEditor'
-import { useI18n, type I18nContextValue } from '../i18n'
+import { useI18n, t as translate, type I18nContextValue } from '../i18n'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -173,13 +173,13 @@ export function DataEditorPage({
       itemRef.current = next
       if (!next) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
     } catch (error: unknown) {
-      setLoadError(error instanceof Error ? error.message : t('route.recordLoadFailed'))
+      setLoadError(error instanceof Error ? error.message : translate('route.recordLoadFailed'))
       setItem(null)
       itemRef.current = null
     } finally {
       setLoading(false)
     }
-  }, [dataId, org, repo, repoTarget, t])
+  }, [dataId, org, repo, repoTarget])
 
   useEffect(() => {
     void reload()
@@ -217,9 +217,9 @@ export function DataEditorPage({
       .catch((error: unknown) => {
         if (revision !== revisionRef.current) return
         setSaveState('failed')
-        setSaveError(error instanceof Error ? error.message : t('dataEditor.saveFailed'))
+        setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
       })
-  }, [repoTarget, t])
+  }, [repoTarget])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
@@ -232,9 +232,9 @@ export function DataEditorPage({
       ),
     ).catch((error: unknown) => {
       setSaveState('failed')
-      setSaveError(error instanceof Error ? error.message : t('dataEditor.attachFailed'))
+      setSaveError(error instanceof Error ? error.message : translate('dataEditor.attachFailed'))
     })
-  }, [createAttachment, item, t])
+  }, [createAttachment, item])
 
   const handleDelete = useCallback(async () => {
     if (!item) return
@@ -245,11 +245,11 @@ export function DataEditorPage({
       setDeleteOpen(false)
       onBack()
     } catch (error: unknown) {
-      setDeleteError(error instanceof Error ? error.message : t('dataEditor.deleteFailed'))
+      setDeleteError(error instanceof Error ? error.message : translate('dataEditor.deleteFailed'))
     } finally {
       setDeleteBusy(false)
     }
-  }, [item, onBack, repoTarget, t])
+  }, [item, onBack, repoTarget])
 
   if (loading || !item) {
     return (

@@ -113,8 +113,12 @@ export function I18nProvider({
   initial?: Locale
 }) {
   const [locale, setLocaleState] = useState<Locale>(() => initial ?? initialLocale())
+  // Only a stored preference counts as pinned. `initial` also carries the
+  // locale detected during bootstrap, and treating that as a choice would
+  // show the reader's device language as pinned in the switcher when nothing
+  // was ever chosen.
   const [isExplicit, setIsExplicit] = useState<boolean>(
-    () => initial !== undefined || readStoredLocale() !== undefined
+    () => readStoredLocale() !== undefined
   )
   // Bumped once a lazily imported catalog lands so the tree re-renders with
   // the translated strings instead of the English fallback.

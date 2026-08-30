@@ -178,6 +178,35 @@ describe('LanguageMenuSection', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
+  it('shows "follow device" when nothing was ever pinned', () => {
+    render(
+      <I18nProvider initial="ja">
+        <OpenMenu>
+          <LanguageMenuSection />
+        </OpenMenu>
+      </I18nProvider>,
+    )
+
+    // Bootstrap detected Japanese, but the reader never chose it, so the
+    // switcher must not present it as a pinned choice.
+    expect(screen.getByTestId('language-option-system')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('language-option-ja')).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('marks the stored locale as pinned', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'ja')
+    render(
+      <I18nProvider initial="ja">
+        <OpenMenu>
+          <LanguageMenuSection />
+        </OpenMenu>
+      </I18nProvider>,
+    )
+
+    expect(screen.getByTestId('language-option-ja')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('language-option-system')).toHaveAttribute('aria-checked', 'false')
+  })
+
   it('names every language in its own script', () => {
     render(
       <I18nProvider initial="en">

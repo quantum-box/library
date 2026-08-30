@@ -13,7 +13,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import type { LibraryAccessibleTenant } from '../lib/recordsApi'
-import { useI18n } from '../i18n'
+import { useI18n, t as translate } from '../i18n'
 
 type Mode = 'import' | 'create'
 
@@ -102,7 +102,7 @@ export function CreateOrganizationDialog({
       .catch((loadError: unknown) => {
         if (cancelled) return
         setTenantsError(
-          errorMessage(loadError, t('createOrg.loadFailed')),
+          errorMessage(loadError, translate('createOrg.loadFailed')),
         )
       })
       .finally(() => {
@@ -112,7 +112,7 @@ export function CreateOrganizationDialog({
     return () => {
       cancelled = true
     }
-  }, [open, loadTenants, t])
+  }, [open, loadTenants])
 
   const trimmedName = name.trim()
   const trimmedUsername = username.trim()

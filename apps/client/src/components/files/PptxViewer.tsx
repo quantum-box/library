@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useI18n } from '../../i18n'
+import { useI18n, t as translate } from '../../i18n'
 import { formatFileSize } from './types'
 
 interface PptxViewerProps {
@@ -49,8 +49,8 @@ export function PptxViewer({ file, name }: PptxViewerProps) {
         setSlides([{
           index: 1,
           texts: [
-            t('files.presentationName', { name: file.name }),
-            t('files.presentationSize', { size: formatFileSize(file.size) }),
+            translate('files.presentationName', { name: file.name }),
+            translate('files.presentationSize', { size: formatFileSize(file.size) }),
           ],
         }])
       }
@@ -58,7 +58,7 @@ export function PptxViewer({ file, name }: PptxViewerProps) {
       if (!cancelled) setError(err.message)
     })
     return () => { cancelled = true }
-  }, [file, t])
+  }, [file])
 
   if (error) {
     return (

@@ -829,4 +829,6 @@ export const ja: LocaleMessages = {
   'repoProperties.refresh': 'プロパティを更新',
   'repoProperties.readOnlyHint': 'このアカウントはリポジトリを閲覧できますが、プロパティは変更できません。リポジトリのオーナーにアクセス権を依頼してから更新してください。',
   'repoProperties.sectionDetail': 'このリポジトリが保持するすべてのフィールド（リポジトリ順）',
+  'libraryTable.linkedCount.one': '{count} 件リンク',
+  'libraryTable.linkedCount.other': '{count} 件リンク',
 }

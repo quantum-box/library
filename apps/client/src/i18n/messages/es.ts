@@ -826,4 +826,6 @@ export const es: LocaleMessages = {
   'repoProperties.refresh': 'Actualizar las Propiedades',
   'repoProperties.readOnlyHint': 'Tu cuenta puede ver este repositorio pero no cambiar sus Propiedades. Pide acceso a un propietario del repositorio y vuelve a actualizar.',
   'repoProperties.sectionDetail': 'Cada campo que guarda este repositorio, en el orden del repositorio',
+  'libraryTable.linkedCount.one': '{count} vinculado',
+  'libraryTable.linkedCount.other': '{count} vinculados',
 }

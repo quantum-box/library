@@ -826,4 +826,6 @@ export const ptBR: LocaleMessages = {
   'repoProperties.refresh': 'Atualizar as Propriedades',
   'repoProperties.readOnlyHint': 'Sua conta pode ver este repositório, mas não alterar suas Propriedades. Peça acesso a uma pessoa proprietária do repositório e atualize.',
   'repoProperties.sectionDetail': 'Cada campo que este repositório guarda, na ordem do repositório',
+  'libraryTable.linkedCount.one': '{count} vinculado',
+  'libraryTable.linkedCount.other': '{count} vinculados',
 }

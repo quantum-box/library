@@ -9,7 +9,7 @@ import {
   mockUsers,
 } from '../data/mock'
 import type { CreateRecordData } from '../contexts/RecordsContext'
-import { useI18n } from '../i18n'
+import { useI18n, t as translate } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
 
 interface CreateRecordModalProps {
@@ -122,14 +122,14 @@ export function CreateRecordModal({
       onClose()
     } catch (err) {
       if (activeSubmissionRef.current !== submission || modalSessionRef.current !== submission.session) return
-      setError(err instanceof Error ? err.message : t('createRecord.failed'))
+      setError(err instanceof Error ? err.message : translate('createRecord.failed'))
     } finally {
       if (activeSubmissionRef.current === submission && modalSessionRef.current === submission.session) {
         activeSubmissionRef.current = null
         setBusy(false)
       }
     }
-  }, [title, status, priority, assignee, description, onCreate, onClose, repositories, repositoryId, requireRepository, t])
+  }, [title, status, priority, assignee, description, onCreate, onClose, repositories, repositoryId, requireRepository])
 
   if (!open) return null
 

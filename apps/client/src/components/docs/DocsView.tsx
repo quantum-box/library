@@ -39,7 +39,7 @@ import {
 } from '../../lib/docs/workspaceContext'
 import type { DocMetadata, DocumentRecordLink } from '../../lib/docs/types'
 import type { DatabaseRecord } from '../../data/mock'
-import { useI18n, type MessageKey } from '../../i18n'
+import { useI18n, t as translate, type MessageKey } from '../../i18n'
 
 interface DocsViewProps {
   selectedDocId: string | null
@@ -317,7 +317,7 @@ export function DocumentEditor({
         record,
         selectedText: text,
         createdFromSelection,
-        message: error instanceof Error ? error.message : t('docs.linkFailed'),
+        message: error instanceof Error ? error.message : translate('docs.linkFailed'),
       })
     } finally {
       setLinkRecordBusy(false)
@@ -346,7 +346,7 @@ export function DocumentEditor({
       }
     } catch (error: unknown) {
       setCreateRecordError(
-        error instanceof Error ? error.message : t('docs.createFromSelectionFailed')
+        error instanceof Error ? error.message : translate('docs.createFromSelectionFailed')
       )
     } finally {
       setCreateRecordBusy(false)
@@ -714,7 +714,7 @@ export function DocsView({
         if (cancelled) return
         autoCreateStartedRef.current = false
         setAutoCreateError(
-          error instanceof Error ? error.message : t('docs.createFailed')
+          error instanceof Error ? error.message : translate('docs.createFailed')
         )
       }
     })()
@@ -722,7 +722,7 @@ export function DocsView({
     return () => {
       cancelled = true
     }
-  }, [autoCreateAttempt, createDocument, createOnOpen, initialDatabaseId, navigate, ready, selectedDocId, t])
+  }, [autoCreateAttempt, createDocument, createOnOpen, initialDatabaseId, navigate, ready, selectedDocId])
 
   useEffect(() => {
     if (!ready || !selectedDocId || selectedDoc) return
@@ -739,13 +739,13 @@ export function DocsView({
         setDocumentLookup({
           docId: selectedDocId,
           status: 'error',
-          message: error instanceof Error ? error.message : t('docs.loadFailed'),
+          message: error instanceof Error ? error.message : translate('docs.loadFailed'),
         })
       })
     return () => {
       cancelled = true
     }
-  }, [ensureDocument, lookupAttempt, ready, selectedDoc, selectedDocId, t])
+  }, [ensureDocument, lookupAttempt, ready, selectedDoc, selectedDocId])
 
   useEffect(() => {
     if (!selectedDoc) return
@@ -786,7 +786,7 @@ export function DocsView({
   ) => {
     if (!selectedDoc || !selectedText.trim()) return null
     if (!database.orgUsername || !database.repoUsername) {
-      throw new Error(t('docs.selectRepositoryFirst'))
+      throw new Error(translate('docs.selectRepositoryFirst'))
     }
     const record = await createServerRecord({
       title: selectedText.trim().slice(0, 120),
@@ -796,7 +796,7 @@ export function DocsView({
     })
     syncRecord(record)
     return record
-  }, [selectedDoc, syncRecord, t])
+  }, [selectedDoc, syncRecord])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!selectedDoc) return
@@ -842,7 +842,7 @@ export function DocsView({
       }
       setDeleteRedirect({ documentId: nextDoc?.id ?? null })
     } catch (error: unknown) {
-      setDeleteError(error instanceof Error ? error.message : t('docs.deleteFailed'))
+      setDeleteError(error instanceof Error ? error.message : translate('docs.deleteFailed'))
     } finally {
       setDeleteBusy(false)
     }
@@ -851,7 +851,6 @@ export function DocsView({
     deleteDocument,
     deleteTarget,
     docs,
-    t,
     unlinkAttachment,
   ])
 

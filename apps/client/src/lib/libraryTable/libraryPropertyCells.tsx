@@ -1,7 +1,7 @@
 import type { LibraryDataItem, LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
 import { getLibraryDataPropertyValue, propertyValueText } from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
-import { formatDateTime, getActiveLocale, t } from '../../i18n'
+import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
 
 function optionLabel(property: LibraryProperty, optionId: string | undefined) {
   if (!optionId) return undefined
@@ -87,7 +87,11 @@ function renderByTyp(
 
   if (typ === 'Relation') {
     const count = value.dataIds?.length ?? 0
-    return <PlainTextCell text={count > 0 ? `${count} linked` : '—'} />
+    return (
+      <PlainTextCell
+        text={count > 0 ? tPlural('libraryTable.linkedCount', count) : '—'}
+      />
+    )
   }
 
   if (typ === 'Location') {

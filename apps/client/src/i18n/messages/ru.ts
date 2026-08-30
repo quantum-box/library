@@ -851,4 +851,8 @@ export const ru: LocaleMessages = {
   'repoProperties.refresh': 'Обновить свойства',
   'repoProperties.readOnlyHint': 'Ваш аккаунт может просматривать репозиторий, но не может менять его свойства. Запросите доступ у владельца репозитория и обновите страницу.',
   'repoProperties.sectionDetail': 'Каждое поле, которое хранит этот репозиторий, в порядке репозитория',
+  'libraryTable.linkedCount.one': '{count} связь',
+  'libraryTable.linkedCount.few': '{count} связи',
+  'libraryTable.linkedCount.many': '{count} связей',
+  'libraryTable.linkedCount.other': '{count} связей',
 }

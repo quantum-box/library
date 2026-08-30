@@ -27,7 +27,7 @@ import {
   saveChatHistory,
 } from '../../lib/chat/chatHistory'
 import libraryMarkUrl from '../../assets/brand/library-logo/app-icon.svg'
-import { useI18n } from '../../i18n'
+import { useI18n, t as translate } from '../../i18n'
 
 const CHAT_SURFACE_ID = 'general'
 const CHAT_HISTORY_STORAGE_KEY = chatHistoryStorageKey(
@@ -350,8 +350,10 @@ export function ChatView() {
         prev.map((message) => message.id === assistantId
           ? {
               ...message,
-              content: t('chat.streamError', {
-                message: error instanceof Error ? error.message : t('chat.streamStartFailed'),
+              content: translate('chat.streamError', {
+                message: error instanceof Error
+                  ? error.message
+                  : translate('chat.streamStartFailed'),
               }),
             }
           : message
@@ -369,7 +371,6 @@ export function ChatView() {
     beginRecordsSnapshot,
     syncRecord,
     syncRecords,
-    t,
   ])
 
   const chatAttachments = attachmentsForSurface({ surfaceType: 'chat', surfaceId: CHAT_SURFACE_ID })

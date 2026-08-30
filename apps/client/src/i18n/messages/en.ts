@@ -920,4 +920,6 @@ export const en = {
   'repoProperties.refresh': 'Refresh Properties',
   'repoProperties.readOnlyHint': 'Your account can view this repository but cannot change its Properties. Ask a repository owner for access, then refresh.',
   'repoProperties.sectionDetail': 'Every field this repository stores, in repository order',
+  'libraryTable.linkedCount.one': '{count} linked',
+  'libraryTable.linkedCount.other': '{count} linked',
 } satisfies Record<string, string>

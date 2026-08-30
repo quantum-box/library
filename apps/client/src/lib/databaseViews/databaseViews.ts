@@ -8,7 +8,7 @@ import type {
   DatabaseViewType,
   RecordPropertyKey,
 } from './types'
-import { collator, getActiveLocale, type MessageKey } from '../../i18n'
+import { collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
 
 export const ALL_DATABASES_ID = '__all__'
 
@@ -271,15 +271,21 @@ function getRecordPropertyValue(record: DatabaseRecord, property: RecordProperty
   return value ?? ''
 }
 
+/**
+ * Sorting what the reader sees, so it follows the reading language rather than
+ * a fixed one: kana, accents, and digit runs all order differently. `locale`
+ * is a parameter rather than read from the module so callers that memoize the
+ * result have it in their dependency list and re-sort when the language
+ * changes.
+ */
 export function sortRecordsForDatabaseView(
   records: DatabaseRecord[],
-  view: DatabaseViewDefinition
+  view: DatabaseViewDefinition,
+  locale: Locale = getActiveLocale()
 ): DatabaseRecord[] {
   if (!view.sorting) return records
   const { id, desc } = view.sorting
-  // Sorting what the reader sees, so it follows the reading language rather
-  // than a fixed one: kana, accents, and digit runs all order differently.
-  const compare = collator(getActiveLocale())
+  const compare = collator(locale)
   return [...records].sort((a, b) => {
     const result = compare.compare(getRecordPropertyValue(a, id), getRecordPropertyValue(b, id))
     return desc ? -result : result
