@@ -350,14 +350,38 @@ struct ScopedBody {
     scope: String,
 }
 
-/// The tenant a request claims: from the JSON body's `scope` for `push` and
-/// `pull`, or from the `tenant_id` query parameter for `debug`.
+/// The tenant a request claims, read from wherever *the handler* will read it.
+///
+/// That "wherever" is the whole point, and getting it wrong opens the boundary
+/// rather than closing it. `push` and `pull` take `Json<..>` and read the body's
+/// `scope`; `debug` takes `Query<ListParams>` and reads `tenant_id`. Consulting
+/// the body first for every request meant a caller could send
+/// `GET /api/engine/debug?tenant_id=other` with a body naming the permitted
+/// tenant: this function saw the body and allowed it, and the handler then
+/// ignored that body and served `other` from the query.
+///
+/// So the source is chosen by method, not by what happens to parse. A method
+/// that carries no body cannot be answered from one.
 fn request_tenant(parts: &Parts, body: &[u8]) -> Option<String> {
-    if let Ok(scoped) = serde_json::from_slice::<ScopedBody>(body) {
+    if body_bearing_method(&parts.method) {
+        let scoped = serde_json::from_slice::<ScopedBody>(body).ok()?;
         return scope_tenant(&scoped.scope);
     }
 
-    parts.uri.query().and_then(|query| {
+    query_tenant(&parts.uri)
+}
+
+/// Whether the handler for this method reads the request body.
+///
+/// GET and HEAD are the ones Photon serves from the query string. Anything else
+/// is treated as body-bearing, so a route added upstream is guarded by the
+/// stricter of the two readings rather than silently by neither.
+fn body_bearing_method(method: &axum::http::Method) -> bool {
+    !matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD)
+}
+
+fn query_tenant(uri: &axum::http::Uri) -> Option<String> {
+    uri.query().and_then(|query| {
         url::form_urlencoded::parse(query.as_bytes())
             .find(|(key, _)| key == "tenant_id")
             .map(|(_, value)| value.into_owned())
@@ -421,8 +445,8 @@ mod tests {
     }
 
     #[test]
-    fn request_tenant_prefers_the_body_scope() {
-        let parts = parts_with_query(Some("tenant_id=other"));
+    fn a_push_is_read_from_its_body_scope() {
+        let parts = post_parts(None);
         let body =
             br#"{"scope":"tenant:library:workspace:library-default"}"#;
         assert_eq!(
@@ -432,17 +456,44 @@ mod tests {
     }
 
     #[test]
-    fn request_tenant_falls_back_to_the_debug_query() {
+    fn a_debug_request_is_read_from_its_query() {
         let parts =
             parts_with_query(Some("tenant_id=library&workspace_id=w"));
         assert_eq!(request_tenant(&parts, b""), Some("library".to_owned()));
     }
 
+    /// The debug handler reads `tenant_id` from the query and ignores the body,
+    /// so a body naming the permitted tenant must not speak for the request. It
+    /// used to: this is the bypass that read another tenant's debug state.
+    #[test]
+    fn a_debug_body_cannot_speak_for_the_query() {
+        let parts = parts_with_query(Some("tenant_id=other"));
+        let body =
+            br#"{"scope":"tenant:library:workspace:library-default"}"#;
+        assert_eq!(
+            request_tenant(&parts, body),
+            Some("other".to_owned()),
+            "the query is what the debug handler reads, so it is what the \
+             tenant pin has to see"
+        );
+    }
+
+    /// The mirror image: a query parameter must not speak for a `push`, whose
+    /// handler only ever reads the body.
+    #[test]
+    fn a_push_query_cannot_speak_for_the_body() {
+        let parts = post_parts(Some("tenant_id=library"));
+        assert_eq!(request_tenant(&parts, b"not json"), None);
+    }
+
     #[test]
     fn request_tenant_is_absent_when_nothing_names_one() {
-        let parts = parts_with_query(None);
-        assert_eq!(request_tenant(&parts, b"not json"), None);
-        assert_eq!(request_tenant(&parts, br#"{"scope":"bad"}"#), None);
+        assert_eq!(request_tenant(&post_parts(None), b"not json"), None);
+        assert_eq!(
+            request_tenant(&post_parts(None), br#"{"scope":"bad"}"#),
+            None
+        );
+        assert_eq!(request_tenant(&parts_with_query(None), b""), None);
     }
 
     #[test]
@@ -730,6 +781,21 @@ mod tests {
         builder.body(()).unwrap().into_parts().0
     }
 
+    /// A `POST /api/engine/push`, optionally carrying a query string it has no
+    /// business being read from.
+    fn post_parts(query: Option<&str>) -> Parts {
+        let uri = match query {
+            Some(query) => format!("/api/engine/push?{query}"),
+            None => "/api/engine/push".to_owned(),
+        };
+        axum::http::Request::post(uri)
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0
+    }
+
+    /// A `GET /api/engine/debug`, which is what `Request::builder` defaults to.
     fn parts_with_query(query: Option<&str>) -> Parts {
         let uri = match query {
             Some(query) => format!("/api/engine/debug?{query}"),
