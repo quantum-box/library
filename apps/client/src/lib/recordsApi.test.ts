@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./photonEngine/client', () => ({
   deleteClientEngineRecord: vi.fn(),
-  ingestClientEngineRecords: vi.fn(async () => undefined),
   listClientEngineRecords: vi.fn(async () => []),
   patchClientEngineRecord: vi.fn(),
   upsertClientEngineRecord: vi.fn(),
