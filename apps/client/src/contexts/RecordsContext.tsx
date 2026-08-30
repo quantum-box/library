@@ -16,7 +16,8 @@ import {
   createServerRecord,
   deleteServerRecord,
   fetchServerRecords,
-  subscribeRecordRollbacks,
+  pendingLibraryRecordIds,
+  subscribeRecordSettlements,
   updateServerRecord,
   type ServerUpdateRecordData,
 } from '../lib/recordsApi'
@@ -229,7 +230,33 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const recordDeleteGenerationsRef = useRef(new Map<string, number>())
   const recordDeleteRequestGenerationsRef = useRef(new Map<string, number>())
   const pendingOptimisticRecordIdsRef = useRef(new Set<string>())
+  /**
+   * Records the Library API cannot be expected to list yet.
+   *
+   * `reconcileYRecords` deletes whatever the listing it is given does not
+   * mention, and a create made offline has never reached the server — so
+   * without this, the first listing after an offline create throws it away.
+   * Refreshed from the engine immediately before each reconcile, because a
+   * write that has since gone out must stop being protected.
+   */
+  const unsentRecordIdsRef = useRef(new Set<string>())
   const recordsSnapshotRequestGenerationRef = useRef(0)
+
+  /** Every record a server listing is not entitled to delete. */
+  const protectedRecordIds = useCallback((): Set<string> => new Set([
+    ...pendingOptimisticRecordIdsRef.current,
+    ...unsentRecordIdsRef.current,
+  ]), [])
+
+  const refreshUnsentRecordIds = useCallback(async (): Promise<void> => {
+    try {
+      unsentRecordIdsRef.current = new Set(await pendingLibraryRecordIds())
+    } catch {
+      // Best effort: a projection that cannot be read protects nothing, which
+      // is what it did before this existed.
+      unsentRecordIdsRef.current = new Set()
+    }
+  }, [])
 
   const transactProjection = useCallback((transaction: () => void) => {
     projectionGenerationRef.current += 1
@@ -262,32 +289,6 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     return () => recordsArray.unobserveDeep(noteRemoteChange)
   }, [])
 
-  /**
-   * A write refused long after it was made still has to leave the screen.
-   *
-   * An offline create, edit or delete is reported as queued, and everything
-   * below treats that as kept: `handleCreateRecord` swaps the optimistic
-   * record for the returned one, `enqueueRecordUpdate` writes the returned
-   * record into the document, `handleDeleteRecord` removes it. When the
-   * network comes back and the server refuses the operation, Photon rolls its
-   * own projection back — and, until this, told nobody. The refused record sat
-   * in the shared Yjs document, on every tab, until something happened to
-   * refetch.
-   *
-   * `record` is the value the engine now holds, so this writes what is true
-   * rather than trying to invert the edit: a refused create has nothing left
-   * to hold and is removed, a refused edit comes back as the value before it,
-   * and a refused delete comes back as the record.
-   */
-  useEffect(() => subscribeRecordRollbacks((rollbacks) => {
-    transactProjection(() => {
-      for (const rollback of rollbacks) {
-        if (rollback.record) upsertYDatabaseRecord(rollback.record)
-        else removeYDatabaseRecord(rollback.recordId)
-      }
-    })
-  }), [transactProjection])
-
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
     if (!ready) {
@@ -307,8 +308,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       setHydrationLoading(true)
       setHydrationError(null)
 
-      fetchServerRecords()
-        .then((serverRecords) => {
+      Promise.all([fetchServerRecords(), refreshUnsentRecordIds()])
+        .then(([serverRecords]) => {
           if (cancelled || hydrationGeneration !== hydrationGenerationRef.current) return
           if (projectionGeneration !== projectionGenerationRef.current) {
             reload()
@@ -316,7 +317,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           }
 
           transactProjection(() => {
-            reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+            reconcileYRecords(serverRecords, protectedRecordIds())
           })
           setHydrationLoading(false)
         })
@@ -338,7 +339,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       hydrationGenerationRef.current += 1
       window.removeEventListener('library-auth-change', reload)
     }
-  }, [hydrationRevision, ready, transactProjection])
+  }, [hydrationRevision, protectedRecordIds, ready, refreshUnsentRecordIds, transactProjection])
 
   const refreshRecords = useCallback(() => {
     setHydrationRevision((revision) => revision + 1)
@@ -525,10 +526,56 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     }
 
     transactProjection(() => {
-      reconcileYRecords(serverRecords, pendingOptimisticRecordIdsRef.current)
+      reconcileYRecords(serverRecords, protectedRecordIds())
     })
     return true
-  }, [transactProjection])
+  }, [protectedRecordIds, transactProjection])
+
+  /**
+   * A queued write's verdict, reconciled against the record's authority.
+   *
+   * An offline create, edit or delete is reported as kept, and everything here
+   * treats it that way: `handleCreateRecord` swaps its optimistic record for
+   * the returned one, `enqueueRecordUpdate` writes the returned record into the
+   * document, `handleDeleteRecord` removes it. When the network comes back and
+   * the server refuses the operation — or resolves it into a conflict, or
+   * accepts it and fills in the identifier it derived — the call that made the
+   * write has long returned, and the refused or stale record sits in the shared
+   * Yjs document, on every tab, until something happens to refetch.
+   *
+   * Refetching *is* the reconciliation, rather than reading back what Photon
+   * rolled its own projection to. A rollback is replayed from the record's
+   * accepted local operations, and a record this client listed rather than
+   * wrote has none, so the replay would report an ordinary server record as
+   * gone. The engine's pull would correct that, but it serves one collection
+   * per cycle, so there is no moment at which the projection can be trusted to
+   * hold this record's canonical value. The Library API always does.
+   */
+  const reconcileSettledRecords = useCallback(async (): Promise<void> => {
+    await refreshUnsentRecordIds()
+    const token = beginRecordsSnapshot()
+    try {
+      syncRecords(await fetchServerRecords(), token)
+    } catch (error: unknown) {
+      // Best effort. The verdict has already been applied to the engine; this
+      // is the projection catching up, and a failed catch-up must not become a
+      // second error message about a write the user made minutes ago.
+      console.warn('Failed to reconcile records after a queued write settled', error)
+    }
+  }, [beginRecordsSnapshot, refreshUnsentRecordIds, syncRecords])
+
+  const settlementReconcileScheduledRef = useRef(false)
+
+  useEffect(() => subscribeRecordSettlements(() => {
+    // One cycle settles every operation it carried, so the verdicts arrive in
+    // a burst. Collapse the burst into a single listing.
+    if (settlementReconcileScheduledRef.current) return
+    settlementReconcileScheduledRef.current = true
+    queueMicrotask(() => {
+      settlementReconcileScheduledRef.current = false
+      void reconcileSettledRecords()
+    })
+  }), [reconcileSettledRecords])
 
   return (
     <RecordsContext.Provider

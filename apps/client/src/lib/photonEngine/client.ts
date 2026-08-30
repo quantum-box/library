@@ -196,36 +196,6 @@ async function build(): Promise<PhotonClient> {
     if (client.pendingCount() === 0) client.sync.stop()
   })
 
-  // A queued write's verdict arrives with nobody waiting on it: `pushMutation`
-  // has already reported `queued` and its caller has moved on. When that
-  // verdict is a rejection Photon puts its own projection back, and this is
-  // the only announcement of it. See `subscribeClientEngineRollbacks`.
-  client.subscribeChanges((changeSet) => {
-    if (changeSet.origin !== 'rollback' || rollbackListeners.size === 0) return
-
-    const changes = changeSet.changes
-      // Photon emits the release of the pending marker as a rollback change of
-      // its own, carrying the value the write had already put on screen. It is
-      // the reprojection that follows which holds the rolled-back value, so a
-      // change that leaves value and deletion alone has nothing to reconcile.
-      .filter(
-        (change) =>
-          change.previous?.value !== change.next?.value ||
-          change.previous?.deletedAt !== change.next?.deletedAt
-      )
-      .map((change) => ({
-        collection: change.collection,
-        recordId: change.recordId,
-        record:
-          change.next && change.next.deletedAt == null
-            ? toEngineRecord(change.next)
-            : null,
-      }))
-    if (changes.length === 0) return
-
-    for (const listener of rollbackListeners) listener(changes)
-  })
-
   // Before the client is handed out, and so before anything can ask
   // `resolveCollection` about a `data:` collection: the resolver is consulted
   // once per name and its answer is kept, so a repository learned later than
@@ -278,18 +248,35 @@ function toEngineRecord<T>(record: PhotonRecord<T>): PhotonEngineRecord<T> {
 }
 
 /**
- * One record the engine moved on its own, after the write that moved it had
- * already returned.
+ * A verdict that arrived after the write reporting it had already returned.
+ *
+ * Carries what the server said and which record it said it about, and
+ * deliberately not the record itself. The engine's own value is not
+ * authoritative at this moment:
+ *
+ * - `reproject` rebuilds a rolled-back record from its **accepted local
+ *   operations**, and a record that reached this client through `ingest` has
+ *   none — the Library API is its author, not this client. Replaying nothing
+ *   produces nothing, so a rejected edit of an ordinary listed record removes
+ *   it from the projection outright.
+ * - The value that is authoritative arrives with the pull, and
+ *   `createRestTransport.pull` serves one collection per cycle round-robin.
+ *   Waiting for the cycle to end therefore says nothing about whether *this*
+ *   record's collection was among the ones refreshed.
+ *
+ * So the verdict is what gets announced, and reconciling is left to whoever
+ * can ask the record's actual authority.
  */
-export interface ClientEngineRecordChange<T = unknown> {
+export interface ClientEngineSettlement {
+  status: 'accepted' | 'rejected' | 'conflict'
   collection: string
   recordId: string
-  /** Where the record now stands locally, or `null` when it no longer does. */
-  record: PhotonEngineRecord<T> | null
+  reason?: string
+  conflictId?: string
 }
 
-type ClientEngineRollbackListener = (
-  changes: readonly ClientEngineRecordChange[]
+type ClientEngineSettlementListener = (
+  settlement: ClientEngineSettlement
 ) => void
 
 /**
@@ -299,30 +286,84 @@ type ClientEngineRollbackListener = (
  * subscriber has no way to know when either happens — subscribing through the
  * client would mean either forcing a build (a WASM fetch and an IndexedDB
  * open) at subscribe time, or losing the subscription on the next rebuild.
- * `build` attaches the one fan-out that feeds this set.
  */
-const rollbackListeners = new Set<ClientEngineRollbackListener>()
+const settlementListeners = new Set<ClientEngineSettlementListener>()
 
 /**
- * Watch for writes the server refused after they were reported as `queued`.
+ * Watch the verdicts that arrive after the write has returned.
  *
- * Every projection built on top of the engine — the Yjs document records are
- * drawn from, above all — is written by the caller of a write, from that
- * write's return value. That works while the verdict arrives inside the call.
- * A queued write has no verdict to return: it is decided on a later sync
- * cycle, and Photon's rollback then reaches its own projection and stops
- * there, leaving the refused create, edit or delete on screen for good.
+ * Every write here reports what the server said, and its caller acts on that
+ * return value — except one. A write made offline, or while the server is
+ * down, is reported `queued`: the operation is durable and the record is on
+ * screen, and the verdict comes a sync cycle later, once the network is back.
+ * By then the call that made it is long gone, so the rejection, the conflict
+ * or the server-assigned identifier reaches Photon's projection and stops
+ * there, leaving every projection built on top of it holding what the write
+ * optimistically drew.
  *
- * Only rollbacks. `remote` changes are the pull's business and reconciling
- * those is what hydration already does; a rollback is the one decision nothing
- * else re-reads, because the caller was told the write had been kept.
+ * Only queued writes are announced. A verdict that arrives inside the call is
+ * already the caller's to handle, and announcing it again would report a
+ * failure the caller has just reported more precisely.
  */
-export function subscribeClientEngineRollbacks(
-  listener: ClientEngineRollbackListener
+export function subscribeClientEngineSettlements(
+  listener: ClientEngineSettlementListener
 ): () => void {
-  rollbackListeners.add(listener)
+  settlementListeners.add(listener)
   return () => {
-    rollbackListeners.delete(listener)
+    settlementListeners.delete(listener)
+  }
+}
+
+/**
+ * Wait out a queued write and tell the subscribers what became of it.
+ *
+ * `handle.settled` resolves whenever the verdict lands, which for a write made
+ * offline is the cycle after the network returns. Nothing is awaiting it by
+ * then — `pushMutation` reported `queued` and returned — so this is where that
+ * promise is finally read.
+ */
+async function announceSettlement(
+  handle: MutationHandle<unknown>,
+  collection: string,
+  recordId: string
+): Promise<void> {
+  const decision = await handle.settled.then(
+    (result) => result,
+    () => null
+  )
+  if (!decision) return
+
+  const settlement: ClientEngineSettlement = {
+    status: decision.status,
+    collection,
+    recordId,
+    ...(decision.status === 'rejected' ? { reason: decision.reason } : {}),
+    ...(decision.status === 'conflict' ? { conflictId: decision.conflictId } : {}),
+  }
+  for (const listener of settlementListeners) listener(settlement)
+}
+
+/**
+ * The records in a collection carrying a local write the server has not
+ * acknowledged.
+ *
+ * A listing from the record's authority cannot mention a record that has never
+ * reached it, so reconciling against one would delete a create made offline.
+ * `pending` is the projection's own account of which records those are.
+ */
+export async function pendingClientEngineRecordIds(
+  collection: string
+): Promise<string[]> {
+  const client = await engineFor(collection)
+  await client.hydrateCollection(collection)
+  const query = client.query({ collection })
+  try {
+    return query
+      .getSnapshot()
+      .data.filter((record) => record.pending)
+      .map((record) => record.key.record_id)
+  } finally {
+    query.destroy()
   }
 }
 
@@ -460,7 +501,16 @@ async function pushMutation<T>(
         ? toEngineRecord<T>(stored)
         : null
 
-  if (!decision) return { status: 'queued', record: current }
+  if (!decision) {
+    // The one write whose verdict nobody is holding on to. Everything else
+    // here returns a decision the caller acts on; this one is decided on a
+    // later cycle, so the wait is handed to `announceSettlement` rather than
+    // abandoned.
+    if (collection && recordId) {
+      void announceSettlement(handle as MutationHandle<unknown>, collection, recordId)
+    }
+    return { status: 'queued', record: current }
+  }
   if (decision.status === 'rejected') {
     return { status: 'rejected', record: current, reason: decision.reason }
   }

@@ -30,7 +30,8 @@ import {
   ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
-  subscribeClientEngineRollbacks,
+  pendingClientEngineRecordIds,
+  subscribeClientEngineSettlements,
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from './client'
@@ -393,98 +394,122 @@ describe('rest-backed write outcomes', () => {
   })
 
   /**
-   * The rollback nobody is waiting for.
+   * The verdict nobody is waiting for.
    *
-   * The two tests above reject a write while its caller is still inside the
-   * call, so the verdict comes back as the return value and the caller can act
-   * on it. A write made offline cannot: it is reported `queued`, the caller
-   * has drawn it and moved on, and the rejection arrives a sync cycle later —
-   * possibly minutes later, when the network returns. Photon rolls its own
-   * projection back and that is the end of it, so anything built on top hears
-   * about it here or not at all.
+   * The tests above reject a write while its caller is still inside the call,
+   * so the verdict comes back as the return value and the caller acts on it. A
+   * write made offline cannot: it is reported `queued`, the caller has drawn it
+   * and moved on, and the verdict arrives a sync cycle later — possibly
+   * minutes later, when the network returns. Photon applies it to its own
+   * projection and that is the end of it, so anything built on top hears about
+   * it here or not at all.
    */
   describe('a verdict that lands after the write returned', () => {
-    /**
-     * Let the reprojection settle. `handleDecision` starts it and does not
-     * await it, so the change can land a turn after `syncNow` resolves.
-     */
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+    let settled: { status: string; recordId: string; reason?: string }[]
+    let unsubscribe: () => void
 
-    it('announces the value an edit was rolled back to', async () => {
-      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
-
-      const seen: { recordId: string; title: string | null }[] = []
-      const unsubscribe = subscribeClientEngineRollbacks((changes) => {
-        for (const change of changes) {
-          seen.push({
-            recordId: change.recordId,
-            title: (change.record?.value as Doc | undefined)?.title ?? null,
-          })
-        }
-      })
-
-      try {
-        offline = true
-        const queued = await patchAndPushClientEngineRecord<Doc>(collection, 'r1', {
-          title: 'not allowed',
+    beforeEach(() => {
+      settled = []
+      unsubscribe = subscribeClientEngineSettlements((settlement) => {
+        settled.push({
+          status: settlement.status,
+          recordId: settlement.recordId,
+          ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
         })
-        expect(queued.status).toBe('queued')
-        // Nothing has been decided yet, so nothing has been announced.
-        expect(seen).toEqual([])
-
-        offline = false
-        failures = { r1: new Status(400, 'nope') }
-        await syncClientEngineOperations()
-        await flush()
-
-        expect(seen).toEqual([{ recordId: 'r1', title: 'saved' }])
-        expect((await getClientEngineRecord<Doc>(collection, 'r1'))?.value.title).toBe('saved')
-      } finally {
-        unsubscribe()
-      }
+      })
     })
 
-    it('announces a refused create as a record that is no longer there', async () => {
-      const seen: { recordId: string; record: unknown }[] = []
-      const unsubscribe = subscribeClientEngineRollbacks((changes) => {
-        for (const change of changes) {
-          seen.push({ recordId: change.recordId, record: change.record })
-        }
+    afterEach(() => { unsubscribe() })
+
+    it('announces a rejection that arrived a cycle later', async () => {
+      offline = true
+      expect(
+        (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
+      ).toBe('queued')
+      // Nothing has been decided yet, so nothing has been announced.
+      expect(settled).toEqual([])
+
+      offline = false
+      failures = { r1: new Status(400, 'name is required') }
+      await syncClientEngineOperations()
+
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]?.status).toBe('rejected')
+      expect(settled[0]?.recordId).toBe('r1')
+      expect(settled[0]?.reason).toContain('name is required')
+    })
+
+    it('announces a conflict that arrived a cycle later', async () => {
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+      offline = true
+      await patchAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'mine' })
+
+      offline = false
+      failures = { r1: new Status(409, 'edited elsewhere') }
+      await syncClientEngineOperations()
+
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]?.status).toBe('conflict')
+      expect(await listClientEngineConflicts(collection)).toHaveLength(1)
+    })
+
+    it('announces an acceptance too, because it carries what the server derived', async () => {
+      offline = true
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', {
+        title: 'written on a plane',
       })
 
-      try {
-        offline = true
-        expect(
-          (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
-        ).toBe('queued')
+      offline = false
+      await syncClientEngineOperations()
 
-        offline = false
-        failures = { r1: new Status(400, 'name is required') }
-        await syncClientEngineOperations()
-        await flush()
+      await vi.waitFor(() => { expect(settled).toHaveLength(1) })
+      expect(settled[0]).toEqual({ status: 'accepted', recordId: 'r1' })
+    })
 
-        // Rolling back a create leaves nothing behind, which is what the
-        // caller has to remove from whatever it drew the record into.
-        expect(seen).toEqual([{ recordId: 'r1', record: null }])
-        expect(await getClientEngineRecord<Doc>(collection, 'r1')).toBeNull()
-      } finally {
-        unsubscribe()
-      }
+    it('says nothing about a write that was answered on the spot', async () => {
+      failures = { r1: new Status(400, 'name is required') }
+      expect(
+        (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
+      ).toBe('rejected')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Its caller already had the verdict as a return value, and reported it
+      // more precisely than this could.
+      expect(settled).toEqual([])
     })
 
     it('stops announcing once the subscriber unsubscribes', async () => {
       const seen: unknown[] = []
-      subscribeClientEngineRollbacks((changes) => seen.push(changes))()
+      subscribeClientEngineSettlements((settlement) => seen.push(settlement))()
 
       offline = true
       await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })
       offline = false
       failures = { r1: new Status(400) }
       await syncClientEngineOperations()
-      await flush()
+      await new Promise((resolve) => setTimeout(resolve, 20))
 
       expect(seen).toEqual([])
     })
+  })
+
+  /**
+   * A listing from the server cannot mention a record that never reached it,
+   * so whoever reconciles against one has to be told which records those are.
+   */
+  it('names the records still holding an unsent write', async () => {
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+    expect(await pendingClientEngineRecordIds(collection)).toEqual([])
+
+    offline = true
+    await upsertAndPushClientEngineRecord<Doc>(collection, 'r2', { title: 'on a plane' })
+
+    expect(await pendingClientEngineRecordIds(collection)).toEqual(['r2'])
+
+    offline = false
+    await syncClientEngineOperations()
+    expect(await pendingClientEngineRecordIds(collection)).toEqual([])
   })
 
   it('raises a conflict row rather than losing the edit', async () => {
