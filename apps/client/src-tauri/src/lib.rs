@@ -54,7 +54,9 @@ pub fn run() {
             macos_tabs::mark_window_tab_content_ready,
             macos_tabs::activate_window_tab,
             macos_tabs::close_window_tab,
-            macos_tabs::update_window_tab_title
+            macos_tabs::update_window_tab_title,
+            macos_menu::app_product_name,
+            macos_menu::set_menu_labels
         ])
         .menu(macos_menu::build)
         .on_menu_event(|app, event| {
