@@ -9,4 +9,3 @@ storybook-static/
 
 # Rust
 packages/*/target/
-packages/server/photon.db
