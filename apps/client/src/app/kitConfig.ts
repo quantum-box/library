@@ -100,6 +100,12 @@ export interface AppKitConfig {
     pgliteDataDir: string
     pushPath: string
     pullPath: string
+    /**
+     * The durable sync scope, which is per signed-in user and so is *not*
+     * `workspace.scope`. See `buildUserWorkspaceId`.
+     */
+    scope: string
+    actorId: string
   }
   attachments: {
     yjsArrayName: string
@@ -231,8 +237,50 @@ export function buildUserStorageScope(
   workspaceScope: string,
   actorId: string | undefined,
 ): string {
-  const normalizedActor = actorId?.trim().replace(/[^a-zA-Z0-9_-]/g, '-')
+  const normalizedActor = normalizeActorId(actorId)
   return normalizedActor ? `${workspaceScope}:user:${normalizedActor}` : workspaceScope
+}
+
+/**
+ * Normalize an actor id to the character set both storage keys and Photon
+ * scope segments accept.
+ */
+function normalizeActorId(actorId: string | undefined): string | undefined {
+  const normalized = actorId?.trim().replace(/[^a-zA-Z0-9_-]/g, '-')
+  return normalized || undefined
+}
+
+/**
+ * The workspace id the Photon Engine durably syncs under.
+ *
+ * Photon's wire grammar is `tenant:{tenant}:workspace:{workspace}` and the
+ * workspace segment may not itself contain `:` — upstream's
+ * `parse_workspace_scope` and library-api's `scope_tenant` both split on it. So
+ * the signed-in user cannot get a segment of its own here the way
+ * `buildUserStorageScope` gives local directories one; it is folded into the
+ * workspace id instead.
+ *
+ * Naming a scope is not the same as being allowed to use it. library-api's
+ * `require_engine_caller` recomputes this id from the *authenticated* caller
+ * and rejects a request naming anyone else's, so the separation is enforced
+ * server-side and this function only has to agree with it. It is the pair to
+ * `photon_engine.rs::caller_workspace_id`; change one and the other has to
+ * move with it, which is why both sides pin the exact string in a test.
+ *
+ * With no actor the bare workspace id is returned, which is the id no
+ * authenticated caller can ever be assigned — every caller's id has the
+ * `-user-` suffix. A signed-out session therefore cannot reach the server at
+ * all: it carries no bearer token, so `require_engine_caller` 401s it before
+ * the scope is even read, and its local store lives in its own directory
+ * (`buildUserStorageScope` falls back the same way) that no signed-in session
+ * ever opens.
+ */
+export function buildUserWorkspaceId(
+  workspaceId: string,
+  actorId: string | undefined,
+): string {
+  const normalizedActor = normalizeActorId(actorId)
+  return normalizedActor ? `${workspaceId}-user-${normalizedActor}` : workspaceId
 }
 
 function browserAuthActorId(): string | undefined {
@@ -425,7 +473,12 @@ const tenantName = selectedTenantWorkspace.tenantName
 const workspaceId = selectedTenantWorkspace.workspaceId
 const workspaceName = selectedTenantWorkspace.workspaceName
 const workspaceScope = buildWorkspaceScope(tenantId, workspaceId)
-const userStorageScope = buildUserStorageScope(workspaceScope, browserAuthActorId())
+const authActorId = browserAuthActorId()
+const userStorageScope = buildUserStorageScope(workspaceScope, authActorId)
+// Durable Engine records are separated per signed-in user; the Live room below
+// deliberately is not, so collaborators still meet each other in `records`.
+const engineWorkspaceId = buildUserWorkspaceId(workspaceId, authActorId)
+const engineScope = buildWorkspaceScope(tenantId, engineWorkspaceId)
 const recordsRoomId = buildRoomId(workspaceScope, 'records')
 const recordsPersistenceKey = buildRoomId(userStorageScope, 'records')
 const syncWebsocketPath = appendRoomQuery('/ws', recordsRoomId)
@@ -552,6 +605,12 @@ export const appKitConfig: AppKitConfig = {
     pgliteDataDir: namespacedDataDir('idb://library-engine', userStorageScope),
     pushPath: '/api/engine/push',
     pullPath: '/api/engine/pull',
+    scope: engineScope,
+    // Carries the workspace id, so it identifies the signed-in user rather
+    // than just the deployment. Photon stores it on every operation and breaks
+    // Lamport ties with it, so one constant shared by every client would make
+    // two users' concurrent edits indistinguishable.
+    actorId: `${tenantId}:${engineWorkspaceId}:${appProfile.id}-client`,
   },
   attachments: {
     yjsArrayName: 'attachments',

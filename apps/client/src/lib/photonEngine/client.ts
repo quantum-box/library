@@ -82,8 +82,14 @@ export interface ClientEngineDebugState {
   }>
 }
 
-const engineScope = appKitConfig.workspace.scope
-const engineActorId = `${appKitConfig.tenant.id}:${appKitConfig.workspace.id}:${appKitConfig.app.id}-client`
+// Per signed-in user, not `workspace.scope`: every production client resolves
+// the same `tenant:library:workspace:library-default`, so syncing under it
+// would put every user's documents in one shared set. `kitConfig` derives both
+// of these from the authenticated identity, and library-api's
+// `require_engine_caller` re-derives the scope from the *verified* caller and
+// rejects a request naming another user's.
+const engineScope = appKitConfig.engine.scope
+const engineActorId = appKitConfig.engine.actorId
 
 /**
  * A new data directory, not the one the old implementation used.

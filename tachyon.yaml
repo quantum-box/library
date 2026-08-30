@@ -114,6 +114,24 @@ spec:
           type: credential
           valueFrom:
             secret: library-api/SENTRY_DSN
+        # Photon Engine sync (`/api/engine/*`), de-vendoring Stage 4.
+        #
+        # Preview only. Production stays off until the separation this
+        # depends on has been exercised against a real deployment: every
+        # client used to sync durable records under the one
+        # `tenant:library:workspace:library-default` scope, and
+        # `photon_engine.rs` now derives a workspace per authenticated caller
+        # instead. Turning it on is not reversible by turning it back off --
+        # by then each client has pulled whatever the shared scope held.
+        #
+        # `LIBRARY_PHOTON_ENGINE_TENANT` and `LIBRARY_PHOTON_ENGINE_WORKSPACE`
+        # are deliberately unset: their defaults (`library`,
+        # `library-default`) are already what `kitConfig.ts` sends, and both
+        # sides pin the pair in tests. Setting them here would add a second
+        # place for them to drift.
+        - name: LIBRARY_PHOTON_ENGINE_ENABLED
+          value: "true"
+          target: preview
         - name: DB_POOL_MAX_CONNECTIONS
           value: "16"
         - name: DB_POOL_ACQUIRE_TIMEOUT_SECS

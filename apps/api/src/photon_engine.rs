@@ -36,24 +36,35 @@
 //!   `sdk_auth::caller_token_middleware` only *propagates* the bearer token; it
 //!   does not authenticate. Without this middleware the routes would be open to
 //!   the internet.
-//! * the tenant a request names has to be this deployment's. The scope is
-//!   chosen by the client -- `kitConfig` reads it from a `tenant_id` URL
-//!   parameter and `localStorage` -- so an authenticated user could otherwise
-//!   name any tenant they liked.
+//! * the scope a request names has to be this caller's. The scope travels in
+//!   the request -- `kitConfig` builds it from a `tenant_id` URL parameter,
+//!   `localStorage` and the stored identity -- so it is a claim, not a fact,
+//!   and an authenticated user could otherwise name any scope they liked.
 //!
 //! It has to be middleware and not an [`EnginePolicy`]: the policy hook is
 //! consulted per pushed operation, and `/api/engine/pull` never consults it, so
 //! a policy would leave every read unguarded.
 //!
-//! # One scope per deployment
+//! # One workspace per caller
 //!
 //! `.env.production` sets neither `VITE_LIBRARY_TENANT_ID` nor
 //! `VITE_LIBRARY_WORKSPACE_ID`, so every production client resolves the same
-//! `tenant:library:workspace:library-default`. Enabling these routes therefore
-//! makes one shared document set, not a private one per user: the middleware
-//! below authenticates the caller and pins the tenant, but it does not (and
-//! given one workspace, cannot) separate one signed-in user's documents from
-//! another's. That is why [`ENGINE_ENABLED_ENV`] defaults to off.
+//! `tenant:library:workspace:library-default` for its *Live* room. Syncing
+//! durable records under that would give every signed-in user one shared
+//! document set, which is why [`ENGINE_ENABLED_ENV`] used to be documented as
+//! unshippable rather than merely off.
+//!
+//! So the Engine does not use it. [`caller_workspace_id`] derives a workspace
+//! per caller and [`require_engine_caller`] recomputes it from the
+//! *authenticated* identity, rejecting any request that names another. The
+//! client's `buildUserWorkspaceId` builds the same string, and the two are
+//! pinned to each other by tests on both sides.
+//!
+//! This separates users; it does not implement sharing. A workspace two people
+//! are both meant to reach cannot be expressed by this rule -- it names exactly
+//! one caller -- and would need an actual grant check here rather than a naming
+//! convention. Live rooms are deliberately left shared, so realtime `records`
+//! collaboration is unchanged.
 
 use std::sync::Arc;
 
@@ -77,16 +88,35 @@ use crate::handler::library_executor_extractor::LibraryExecutor;
 /// Opt-in switch for the Engine routes, following the precedent set by
 /// `LIBRARY_COLLAB_WS_ENABLED` and `LIBRARY_MCP_SSE_ENABLED`.
 ///
-/// Off by default so that merging this does not by itself change what
-/// production serves -- see the module note on the shared scope.
+/// Off by default so that enabling it stays a deliberate, per-environment
+/// decision: `tachyon.yaml` currently sets it for `preview` only. Turning it on
+/// is not undone by turning it back off -- by then clients have pulled whatever
+/// the server held.
 const ENGINE_ENABLED_ENV: &str = "LIBRARY_PHOTON_ENGINE_ENABLED";
 
 /// The single Photon tenant this deployment serves.
 const ENGINE_TENANT_ENV: &str = "LIBRARY_PHOTON_ENGINE_TENANT";
 
+/// The workspace id every caller's own workspace is derived from.
+const ENGINE_WORKSPACE_ENV: &str = "LIBRARY_PHOTON_ENGINE_WORKSPACE";
+
 /// Matches `DEFAULT_TENANT_ID` in `apps/client/src/app/kitConfig.ts`. Photon's
 /// own default is `photon`, which is not what this deployment's clients send.
 const DEFAULT_ENGINE_TENANT: &str = "library";
+
+/// Matches `DEFAULT_WORKSPACE_ID` in `apps/client/src/app/kitConfig.ts`. Note
+/// that no caller is ever *served* this workspace: it is the base that
+/// [`caller_workspace_id`] suffixes, so the bare value names nobody.
+const DEFAULT_ENGINE_WORKSPACE: &str = "library-default";
+
+/// Separator between the base workspace and the caller id.
+///
+/// The pair to `buildUserWorkspaceId` in `apps/client/src/app/kitConfig.ts`.
+/// The two derivations have to produce byte-identical strings -- a client that
+/// pushed under a workspace this function does not reproduce would be 403'd on
+/// every request -- so both sides pin the literal in a test rather than only
+/// describing the rule.
+const ENGINE_USER_INFIX: &str = "-user-";
 
 /// Liveness only, and it discloses nothing, so it answers without a credential.
 /// `apps/client/scripts/smoke-engine-api.mjs` probes it before pushing.
@@ -108,6 +138,46 @@ fn engine_tenant() -> String {
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_ENGINE_TENANT.to_owned())
+}
+
+fn engine_base_workspace() -> String {
+    std::env::var(ENGINE_WORKSPACE_ENV)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_ENGINE_WORKSPACE.to_owned())
+}
+
+/// The one workspace this caller may read and write.
+///
+/// Photon's scope grammar forbids `:` inside the workspace segment, so the
+/// caller cannot be a segment of its own and is folded into the workspace id.
+/// `buildUserWorkspaceId` in `kitConfig.ts` builds the same string from the
+/// same id: `sign_in` returns the `tachyon_sdk::auth::User` whose `id()` is
+/// what [`ExecutorAction::get_id`] yields here, and the client stores exactly
+/// that as `userId`.
+///
+/// Non-alphanumerics are folded to `-` on both sides. That is lossy, so two
+/// distinct caller ids could in principle normalize to one workspace -- but
+/// Tachyon ids are `[A-Za-z0-9_]` already, so nothing is folded in practice,
+/// and the alternative (rejecting ids that need normalizing) would fail closed
+/// on an id shape we do not actually issue.
+fn caller_workspace_id(caller_id: &str) -> String {
+    let normalized: String = caller_id
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric()
+                || character == '_'
+                || character == '-'
+            {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("{}{ENGINE_USER_INFIX}{normalized}", engine_base_workspace())
 }
 
 /// Engine sync routes, or an empty router when the feature is off.
@@ -256,7 +326,29 @@ fn is_already_exists(error: &photon_engine::EngineError) -> bool {
         })
 }
 
-/// Require a credential library-api recognises, and pin the tenant.
+/// Whether a request's claimed scope is the one this caller is entitled to.
+///
+/// Split out from the middleware because the middleware itself cannot be
+/// exercised without a live `SdkAuthApp` and `LibraryApp` to build a
+/// `LibraryExecutor` from, and this comparison is the part that decides whether
+/// one signed-in user can read another's documents.
+///
+/// A `None` claim is a rejection, not an abstention -- see the note at the call
+/// site: `engine_debug_state` substitutes Photon's own defaults for a missing
+/// `tenant_id`/`workspace_id`, so passing an unreadable claim through would
+/// serve whatever those defaults name.
+fn scope_belongs_to_caller(
+    caller_id: &str,
+    claimed: Option<&(String, String)>,
+) -> bool {
+    let Some((claimed_tenant, claimed_workspace)) = claimed else {
+        return false;
+    };
+    *claimed_tenant == engine_tenant()
+        && *claimed_workspace == caller_workspace_id(caller_id)
+}
+
+/// Require a credential library-api recognises, and pin the scope to it.
 async fn require_engine_caller(request: Request, next: Next) -> Response {
     if request.uri().path() == ENGINE_HEALTH_PATH {
         return next.run(request).await;
@@ -298,23 +390,31 @@ async fn require_engine_caller(request: Request, next: Next) -> Response {
             }
         };
 
-    // A request that names no tenant we can read is left to Photon: `push` and
-    // `pull` reject a body without a well-formed `scope`, and `debug` falls back
-    // to Photon's own `photon` tenant, which holds none of this deployment's
-    // data.
-    if let Some(claimed) = request_tenant(&parts, &bytes) {
-        let expected = engine_tenant();
-        if claimed != expected {
-            tracing::warn!(
-                claimed_tenant = %claimed,
-                expected_tenant = %expected,
-                "rejecting Photon Engine request for another tenant"
-            );
-            return errors::Error::forbidden(
-                "Photon Engine scope names another tenant",
-            )
-            .into_response();
-        }
+    // The tenant *and* the workspace both have to be this caller's. Checking
+    // only the tenant would leave every signed-in user free to name another
+    // user's workspace, which is the whole separation: `pull` would hand back
+    // their operations and `debug` their collection and record counts.
+    //
+    // Unlike the tenant check this used to be, a request whose scope cannot be
+    // read is now rejected rather than left to Photon. Absence is not
+    // innocent here: `engine_debug_state` defaults a missing `workspace_id` to
+    // Photon's own `default`, and letting the request through on the grounds
+    // that we could not see a claim would serve whatever that default holds.
+    // Photon would have answered 400 to most of these anyway; 403 is the
+    // stricter reading of the same request.
+    let caller_id = executor.get_id();
+    let claimed = request_scope(&parts, &bytes);
+    if !scope_belongs_to_caller(caller_id, claimed.as_ref()) {
+        tracing::warn!(
+            claimed = ?claimed,
+            expected_tenant = %engine_tenant(),
+            expected_workspace = %caller_workspace_id(caller_id),
+            "rejecting Photon Engine request for another scope"
+        );
+        return errors::Error::forbidden(
+            "Photon Engine scope names another tenant or workspace",
+        )
+        .into_response();
     }
 
     next.run(Request::from_parts(parts, Body::from(bytes)))
@@ -350,25 +450,25 @@ struct ScopedBody {
     scope: String,
 }
 
-/// The tenant a request claims, read from wherever *the handler* will read it.
+/// The scope a request claims, read from wherever *the handler* will read it.
 ///
 /// That "wherever" is the whole point, and getting it wrong opens the boundary
 /// rather than closing it. `push` and `pull` take `Json<..>` and read the body's
-/// `scope`; `debug` takes `Query<ListParams>` and reads `tenant_id`. Consulting
-/// the body first for every request meant a caller could send
-/// `GET /api/engine/debug?tenant_id=other` with a body naming the permitted
-/// tenant: this function saw the body and allowed it, and the handler then
-/// ignored that body and served `other` from the query.
+/// `scope`; `debug` takes `Query<ListParams>` and reads `tenant_id` and
+/// `workspace_id`. Consulting the body first for every request meant a caller
+/// could send `GET /api/engine/debug?tenant_id=other` with a body naming the
+/// permitted scope: this function saw the body and allowed it, and the handler
+/// then ignored that body and served `other` from the query.
 ///
 /// So the source is chosen by method, not by what happens to parse. A method
 /// that carries no body cannot be answered from one.
-fn request_tenant(parts: &Parts, body: &[u8]) -> Option<String> {
+fn request_scope(parts: &Parts, body: &[u8]) -> Option<(String, String)> {
     if body_bearing_method(&parts.method) {
         let scoped = serde_json::from_slice::<ScopedBody>(body).ok()?;
-        return scope_tenant(&scoped.scope);
+        return parse_workspace_scope(&scoped.scope);
     }
 
-    query_tenant(&parts.uri)
+    query_scope(&parts.uri)
 }
 
 /// Whether the handler for this method reads the request body.
@@ -380,20 +480,33 @@ fn body_bearing_method(method: &axum::http::Method) -> bool {
     !matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD)
 }
 
-fn query_tenant(uri: &axum::http::Uri) -> Option<String> {
-    uri.query().and_then(|query| {
-        url::form_urlencoded::parse(query.as_bytes())
-            .find(|(key, _)| key == "tenant_id")
-            .map(|(_, value)| value.into_owned())
-            .filter(|value| !value.is_empty())
-    })
+/// The `tenant_id` / `workspace_id` pair `engine_debug_state` reads.
+///
+/// Both must be present. Photon substitutes its own defaults for whichever is
+/// missing, and those defaults belong to no caller, so an incomplete pair is
+/// reported as no claim at all and the middleware rejects it.
+fn query_scope(uri: &axum::http::Uri) -> Option<(String, String)> {
+    let query = uri.query()?;
+    let mut tenant = None;
+    let mut workspace = None;
+    for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+        if value.is_empty() {
+            continue;
+        }
+        match key.as_ref() {
+            "tenant_id" => tenant = Some(value.into_owned()),
+            "workspace_id" => workspace = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    Some((tenant?, workspace?))
 }
 
 /// `tenant:{tenant}:workspace:{workspace}` -- the one scope shape Photon's HTTP
 /// boundary accepts, parsed to the same strictness as
 /// `photon_axum::parse_workspace_scope` so this check cannot pass something the
 /// handler would then read differently.
-fn scope_tenant(scope: &str) -> Option<String> {
+fn parse_workspace_scope(scope: &str) -> Option<(String, String)> {
     let mut parts = scope.splitn(4, ':');
     match (parts.next(), parts.next(), parts.next(), parts.next()) {
         (
@@ -405,7 +518,7 @@ fn scope_tenant(scope: &str) -> Option<String> {
             && !workspace.is_empty()
             && !workspace.contains(':') =>
         {
-            Some(tenant.to_owned())
+            Some((tenant.to_owned(), workspace.to_owned()))
         }
         _ => None,
     }
@@ -417,16 +530,21 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
-    fn scope_tenant_reads_the_tenant_segment() {
+    fn parse_workspace_scope_reads_both_segments() {
         assert_eq!(
-            scope_tenant("tenant:library:workspace:library-default"),
-            Some("library".to_owned())
+            parse_workspace_scope(
+                "tenant:library:workspace:library-default-user-usr_01"
+            ),
+            Some((
+                "library".to_owned(),
+                "library-default-user-usr_01".to_owned()
+            ))
         );
     }
 
     #[test]
-    fn scope_tenant_rejects_every_other_shape() {
-        // Each of these would otherwise let a caller past the tenant pin with a
+    fn parse_workspace_scope_rejects_every_other_shape() {
+        // Each of these would otherwise let a caller past the scope pin with a
         // scope the handler still parses, or parses differently.
         for malformed in [
             "workspace:library:library-default",
@@ -437,9 +555,51 @@ mod tests {
             "",
         ] {
             assert_eq!(
-                scope_tenant(malformed),
+                parse_workspace_scope(malformed),
                 None,
-                "scope {malformed:?} must not yield a tenant"
+                "scope {malformed:?} must not yield a scope"
+            );
+        }
+    }
+
+    /// The client builds this string; this side has to reproduce it byte for
+    /// byte or every request 403s. The literal is pinned here and in
+    /// `kitConfig.test.ts` so the two cannot drift apart silently.
+    #[test]
+    fn caller_workspace_id_matches_the_client_derivation() {
+        assert_eq!(
+            caller_workspace_id("usr_01j91h09tpj5ehwbwfwfxpak2b"),
+            "library-default-user-usr_01j91h09tpj5ehwbwfwfxpak2b"
+        );
+    }
+
+    #[test]
+    fn caller_workspace_id_folds_characters_a_scope_cannot_carry() {
+        // A `:` would split the scope into a shape `parse_workspace_scope`
+        // rejects, so it must not survive into the workspace segment.
+        assert_eq!(
+            caller_workspace_id("a:b/c"),
+            "library-default-user-a-b-c"
+        );
+    }
+
+    /// Distinct callers must never land on one workspace.
+    #[test]
+    fn caller_workspace_id_separates_two_callers() {
+        assert_ne!(
+            caller_workspace_id("usr_alice"),
+            caller_workspace_id("usr_bob")
+        );
+    }
+
+    /// The base workspace names nobody, so a client that kept syncing under
+    /// the old shared scope is rejected rather than silently served.
+    #[test]
+    fn the_bare_base_workspace_belongs_to_no_caller() {
+        for caller in ["usr_alice", "usr_bob", ""] {
+            assert_ne!(
+                caller_workspace_id(caller),
+                DEFAULT_ENGINE_WORKSPACE
             );
         }
     }
@@ -450,8 +610,8 @@ mod tests {
         let body =
             br#"{"scope":"tenant:library:workspace:library-default"}"#;
         assert_eq!(
-            request_tenant(&parts, body),
-            Some("library".to_owned())
+            request_scope(&parts, body),
+            Some(("library".to_owned(), "library-default".to_owned()))
         );
     }
 
@@ -459,22 +619,48 @@ mod tests {
     fn a_debug_request_is_read_from_its_query() {
         let parts =
             parts_with_query(Some("tenant_id=library&workspace_id=w"));
-        assert_eq!(request_tenant(&parts, b""), Some("library".to_owned()));
+        assert_eq!(
+            request_scope(&parts, b""),
+            Some(("library".to_owned(), "w".to_owned()))
+        );
     }
 
-    /// The debug handler reads `tenant_id` from the query and ignores the body,
-    /// so a body naming the permitted tenant must not speak for the request. It
-    /// used to: this is the bypass that read another tenant's debug state.
+    /// The debug handler reads the query and ignores the body, so a body
+    /// naming the permitted scope must not speak for the request. It used to:
+    /// this is the bypass that read another tenant's debug state.
     #[test]
     fn a_debug_body_cannot_speak_for_the_query() {
-        let parts = parts_with_query(Some("tenant_id=other"));
+        let parts =
+            parts_with_query(Some("tenant_id=other&workspace_id=w"));
         let body =
             br#"{"scope":"tenant:library:workspace:library-default"}"#;
         assert_eq!(
-            request_tenant(&parts, body),
-            Some("other".to_owned()),
+            request_scope(&parts, body),
+            Some(("other".to_owned(), "w".to_owned())),
             "the query is what the debug handler reads, so it is what the \
-             tenant pin has to see"
+             scope pin has to see"
+        );
+    }
+
+    /// `engine_debug_state` defaults a missing `workspace_id` to Photon's own
+    /// `default`, which belongs to no caller. Reporting the half-claim as a
+    /// whole one would compare the tenant and let the workspace through
+    /// unchecked, so an incomplete pair has to read as no claim at all.
+    #[test]
+    fn a_debug_query_missing_the_workspace_is_no_claim() {
+        assert_eq!(
+            request_scope(
+                &parts_with_query(Some("tenant_id=library")),
+                b""
+            ),
+            None
+        );
+        assert_eq!(
+            request_scope(
+                &parts_with_query(Some("workspace_id=library-default")),
+                b""
+            ),
+            None
         );
     }
 
@@ -482,18 +668,63 @@ mod tests {
     /// handler only ever reads the body.
     #[test]
     fn a_push_query_cannot_speak_for_the_body() {
-        let parts = post_parts(Some("tenant_id=library"));
-        assert_eq!(request_tenant(&parts, b"not json"), None);
+        let parts = post_parts(Some(
+            "tenant_id=library&workspace_id=library-default",
+        ));
+        assert_eq!(request_scope(&parts, b"not json"), None);
     }
 
     #[test]
-    fn request_tenant_is_absent_when_nothing_names_one() {
-        assert_eq!(request_tenant(&post_parts(None), b"not json"), None);
+    fn request_scope_is_absent_when_nothing_names_one() {
+        assert_eq!(request_scope(&post_parts(None), b"not json"), None);
         assert_eq!(
-            request_tenant(&post_parts(None), br#"{"scope":"bad"}"#),
+            request_scope(&post_parts(None), br#"{"scope":"bad"}"#),
             None
         );
-        assert_eq!(request_tenant(&parts_with_query(None), b""), None);
+        assert_eq!(request_scope(&parts_with_query(None), b""), None);
+    }
+
+    /// The separation itself: Alice's credential must not reach Bob's
+    /// workspace. `require_engine_caller` derives `caller_id` from a verified
+    /// token, so this is the whole of the decision it makes afterwards.
+    #[test]
+    fn one_caller_cannot_name_another_callers_workspace() {
+        let bob = ("library".to_owned(), caller_workspace_id("usr_bob"));
+        assert!(!scope_belongs_to_caller("usr_alice", Some(&bob)));
+        assert!(scope_belongs_to_caller("usr_bob", Some(&bob)));
+    }
+
+    #[test]
+    fn the_old_shared_workspace_is_no_longer_reachable() {
+        // What every client used to sync under. No caller may still name it,
+        // or the separation would be opt-in.
+        let shared =
+            ("library".to_owned(), DEFAULT_ENGINE_WORKSPACE.to_owned());
+        assert!(!scope_belongs_to_caller("usr_alice", Some(&shared)));
+    }
+
+    #[test]
+    fn another_tenant_is_rejected_even_in_the_callers_own_workspace() {
+        let other_tenant =
+            ("other".to_owned(), caller_workspace_id("usr_alice"));
+        assert!(!scope_belongs_to_caller("usr_alice", Some(&other_tenant)));
+    }
+
+    /// An unreadable claim fails closed. Photon would otherwise fall back to
+    /// its own defaults and serve them.
+    #[test]
+    fn an_unreadable_claim_is_rejected() {
+        assert!(!scope_belongs_to_caller("usr_alice", None));
+    }
+
+    /// An anonymous executor's id is the empty string. It must not
+    /// accidentally be entitled to anything -- the bearer check already turns
+    /// these away, so this pins the second line of defence.
+    #[test]
+    fn an_empty_caller_id_is_entitled_to_no_real_workspace() {
+        let alice =
+            ("library".to_owned(), caller_workspace_id("usr_alice"));
+        assert!(!scope_belongs_to_caller("", Some(&alice)));
     }
 
     #[test]

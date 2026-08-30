@@ -3,6 +3,7 @@ import {
   appKitConfig,
   buildRoomId,
   buildUserStorageScope,
+  buildUserWorkspaceId,
   buildWorkspaceScope,
   buildSyncWebsocketPath,
   namespacedKey,
@@ -85,6 +86,60 @@ describe('appKitConfig', () => {
     expect(buildUserStorageScope(workspaceScope, 'user:01/example')).toBe(
       'tenant:tenant-a:workspace:workspace-a:user:user-01-example',
     )
+  })
+
+  it('gives the Photon Engine a workspace per signed-in user', () => {
+    // library-api's `caller_workspace_id` builds this same string from the
+    // *authenticated* caller and 403s anything else, so the literal is pinned
+    // on both sides. `photon_engine.rs::caller_workspace_id_matches_the_client_derivation`
+    // is this assertion's other half.
+    expect(
+      buildUserWorkspaceId('library-default', 'usr_01j91h09tpj5ehwbwfwfxpak2b'),
+    ).toBe('library-default-user-usr_01j91h09tpj5ehwbwfwfxpak2b')
+  })
+
+  it('folds characters a Photon scope segment cannot carry', () => {
+    // A `:` would split the scope into a shape the server's
+    // `parse_workspace_scope` rejects outright.
+    expect(buildUserWorkspaceId('library-default', 'a:b/c')).toBe(
+      'library-default-user-a-b-c',
+    )
+  })
+
+  it('never lets two users share one Engine workspace', () => {
+    expect(buildUserWorkspaceId('library-default', 'usr_alice')).not.toBe(
+      buildUserWorkspaceId('library-default', 'usr_bob'),
+    )
+  })
+
+  it('syncs a signed-in user under a different scope than the shared Live room', () => {
+    // The regression this guards: the Engine used to sync under
+    // `workspace.scope`, which every production client resolves identically,
+    // so enabling it put every user's documents in one shared set.
+    //
+    // Composed from the pure builders rather than read off `appKitConfig`,
+    // because the config resolves its actor from `localStorage` once at module
+    // load and this suite has no signed-in identity to give it -- the very
+    // fallback the next assertion pins.
+    const sharedScope = buildWorkspaceScope('library', 'library-default')
+    const usersScope = buildWorkspaceScope(
+      'library',
+      buildUserWorkspaceId('library-default', 'usr_alice'),
+    )
+
+    expect(usersScope).not.toBe(sharedScope)
+    expect(usersScope).toBe(
+      'tenant:library:workspace:library-default-user-usr_alice',
+    )
+  })
+
+  it('falls back to the bare workspace id when nobody is signed in', () => {
+    // Not a hole: the shared scope is what `require_engine_caller` compares
+    // against `{base}-user-{caller}` and never matches, and a signed-out client
+    // sends no bearer token so it is 401'd before the scope is read.
+    expect(buildUserWorkspaceId('library-default', undefined)).toBe('library-default')
+    expect(buildUserWorkspaceId('library-default', '   ')).toBe('library-default')
+    expect(appKitConfig.engine.scope).toBe(appKitConfig.workspace.scope)
   })
 
   it('keeps the Cloudflare worker as a required frontend-side component', () => {

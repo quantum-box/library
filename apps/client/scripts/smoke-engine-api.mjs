@@ -1,10 +1,35 @@
 const apiBaseUrl = process.env.PHOTON_ENGINE_SMOKE_URL ?? 'http://127.0.0.1:3001'
-// `tenant:{tenant}:workspace:{workspace}` is the only scope shape Photon's HTTP
-// boundary accepts -- anything else is a 400 before the operation is read. The
-// tenant has to match the server's: `library` for library-api (see
-// LIBRARY_PHOTON_ENGINE_TENANT), `photon` for a bare Photon server.
+
+/**
+ * `tenant:{tenant}:workspace:{workspace}` is the only scope shape Photon's HTTP
+ * boundary accepts -- anything else is a 400 before the operation is read.
+ *
+ * Against library-api the scope also has to be *this caller's*, not merely
+ * well-formed: `require_engine_caller` derives the workspace from the verified
+ * bearer token and 403s anything else, which is what keeps one signed-in user
+ * out of another's documents. So set PHOTON_ENGINE_SMOKE_USER_ID to the Library
+ * user id the token belongs to -- the `signIn` mutation's `id`, which the client
+ * stores as `userId` -- and the workspace is derived here exactly as
+ * `buildUserWorkspaceId` derives it in `apps/client/src/app/kitConfig.ts`.
+ *
+ * A bare Photon server enforces none of this, so the older free-form
+ * PHOTON_ENGINE_SMOKE_SCOPE still works and still wins when both are set.
+ */
+const smokeTenant = process.env.PHOTON_ENGINE_SMOKE_TENANT ?? 'library'
+const smokeBaseWorkspace =
+  process.env.PHOTON_ENGINE_SMOKE_WORKSPACE ?? 'library-default'
+const smokeUserId = process.env.PHOTON_ENGINE_SMOKE_USER_ID
+
+function buildUserWorkspaceId(workspaceId, actorId) {
+  const normalizedActor = actorId?.trim().replace(/[^a-zA-Z0-9_-]/g, '-')
+  return normalizedActor ? `${workspaceId}-user-${normalizedActor}` : workspaceId
+}
+
 const scope =
-  process.env.PHOTON_ENGINE_SMOKE_SCOPE ?? 'tenant:library:workspace:smoke'
+  process.env.PHOTON_ENGINE_SMOKE_SCOPE ??
+  (smokeUserId
+    ? `tenant:${smokeTenant}:workspace:${buildUserWorkspaceId(smokeBaseWorkspace, smokeUserId)}`
+    : 'tenant:library:workspace:smoke')
 // library-api requires an authenticated caller on /api/engine/*; a bare Photon
 // server does not. Set this to a Cognito access token when pointing at a
 // library-api deployment.

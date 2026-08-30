@@ -43,9 +43,19 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 
 `POST /api/engine/push` / `POST /api/engine/pull` / `GET /api/engine/debug` は Non-GA / experimental とする。標準環境では router に登録せず、`LIBRARY_PHOTON_ENGINE_ENABLED=true` を明示した環境でのみ有効化する。`LIBRARY_PHOTON_ENGINE_TENANT`（既定 `library`）が、その deployment の受け付ける唯一の Photon tenant を決める。
 
+**現在の有効範囲は preview のみ。** `tachyon.yaml` は `target: preview` を付けてこの変数を宣言しており、production は依然として off である。
+
 これらの route は upstream の `photon_axum::engine_routes()` をそのまま mount したもので、remote sequence の採番は storage 層（`StorageAdapter::append_authoritative_operation`）が行う。library-api は Lambda であり複数インスタンスが 1 つの TiDB を共有するため、プロセスローカルな採番器を持ち込んではならない。
 
-GA 判定に入れるには、少なくとも次が未解決である。`.env.production` は `VITE_LIBRARY_TENANT_ID` / `VITE_LIBRARY_WORKSPACE_ID` を設定しないため、本番のクライアントはすべて同一の `tenant:library:workspace:library-default` を解決する。したがって現状の Engine は「サインイン済みユーザー全員で 1 つの document 集合を共有する」意味になり、ユーザーごとの分離にはならない。Live WebSocket (`/ws`) は Lambda では動かせないため Cloudflare Durable Object 側に残す。
+### scope の分離
+
+`.env.production` は `VITE_LIBRARY_TENANT_ID` / `VITE_LIBRARY_WORKSPACE_ID` を設定しないため、本番のクライアントはすべて同一の `tenant:library:workspace:library-default` を解決する。durable な Engine record をこの scope で同期すると「サインイン済みユーザー全員で 1 つの document 集合を共有する」意味になるため、**Engine はこの scope を使わない**。
+
+`kitConfig.ts` の `buildUserWorkspaceId` が workspace id にサインイン済み利用者を畳み込み（`library-default-user-{userId}`）、`photon_engine.rs` の `require_engine_caller` が *検証済みの* caller から同じ id を再計算して、他人の scope を名乗る request を 403 で落とす。scope を名乗ることと使用を許されることは別であり、強制は一貫してサーバ側にある。両者は文字列単位で一致する必要があるため、クライアント・サーバ双方のテストがリテラルを固定している。
+
+この規則が与えるのは**利用者間の分離であって共有ではない**。複数人が同じ workspace に到達する構成はこの命名規則では表現できず（1 caller をちょうど 1 つ指すため）、命名規則ではなく実際の grant 判定を `require_engine_caller` に追加する必要がある。Live room（`records` の realtime 共同編集）は意図的に共有のままである。
+
+Live WebSocket (`/ws`) は Lambda では動かせないため Cloudflare Durable Object 側に残す。
 
 ## 4. GA 入り判定基準
 
