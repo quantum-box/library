@@ -23,6 +23,14 @@
  *
  * The old directory is left untouched, so a build that predates this still
  * opens the data it knows.
+ *
+ * TODO(stage-4-followup): library-api now serves `/api/engine/*`, so the
+ * premise above is weakening: once a deployment has run with
+ * `LIBRARY_PHOTON_ENGINE_ENABLED=true` for long enough that every client has
+ * synced, `documents` and `attachments` have a server copy and could be
+ * refetched like records rather than carried by hand. Not yet: the flag is off
+ * by default, so for now no browser's documents have ever reached a server, and
+ * removing this would lose them.
  */
 
 import { PGlite } from '@electric-sql/pglite'

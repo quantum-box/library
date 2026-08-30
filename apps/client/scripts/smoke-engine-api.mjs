@@ -1,15 +1,28 @@
 const apiBaseUrl = process.env.PHOTON_ENGINE_SMOKE_URL ?? 'http://127.0.0.1:3001'
-const scope = process.env.PHOTON_ENGINE_SMOKE_SCOPE ?? 'workspace:smoke'
+// `tenant:{tenant}:workspace:{workspace}` is the only scope shape Photon's HTTP
+// boundary accepts -- anything else is a 400 before the operation is read. The
+// tenant has to match the server's: `library` for library-api (see
+// LIBRARY_PHOTON_ENGINE_TENANT), `photon` for a bare Photon server.
+const scope =
+  process.env.PHOTON_ENGINE_SMOKE_SCOPE ?? 'tenant:library:workspace:smoke'
+// library-api requires an authenticated caller on /api/engine/*; a bare Photon
+// server does not. Set this to a Cognito access token when pointing at a
+// library-api deployment.
+const authToken = process.env.PHOTON_ENGINE_SMOKE_TOKEN
 const collection = process.env.PHOTON_ENGINE_SMOKE_COLLECTION ?? 'smoke_records'
 const recordId = `smoke-${Date.now()}`
 const actorId = process.env.PHOTON_ENGINE_SMOKE_ACTOR ?? 'smoke-client'
 const operationId = `op_${crypto.randomUUID()}`
 const wallTimeMs = Date.now()
 
+function authHeaders(base = {}) {
+  return authToken ? { ...base, authorization: `Bearer ${authToken}` } : base
+}
+
 async function requestJson(path, body) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify(body),
   })
   const text = await response.text()
@@ -45,7 +58,9 @@ const operation = {
   },
 }
 
-const health = await fetch(`${apiBaseUrl}/api/health`)
+const health = await fetch(`${apiBaseUrl}/api/health`, {
+  headers: authHeaders(),
+})
 if (!health.ok) {
   throw new Error(`/api/health returned ${health.status}`)
 }
@@ -78,6 +93,7 @@ if (!pulled) {
 console.log(JSON.stringify({
   ok: true,
   apiBaseUrl,
+  authenticated: Boolean(authToken),
   scope,
   collection,
   recordId,
