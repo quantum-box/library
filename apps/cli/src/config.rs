@@ -71,11 +71,9 @@ pub fn config_path() -> Result<PathBuf> {
 pub fn load_stored() -> Result<StoredConfig> {
     let path = config_path()?;
     match fs::read_to_string(&path) {
-        Ok(contents) => {
-            serde_json::from_str(&contents).with_context(|| {
-                format!("{} is not valid CLI config JSON", path.display())
-            })
-        }
+        Ok(contents) => parse_stored(&contents).with_context(|| {
+            format!("{} is not valid CLI config JSON", path.display())
+        }),
         // A missing profile is the normal state before the first login.
         Err(error) if error.kind() == ErrorKind::NotFound => {
             Ok(StoredConfig::default())
@@ -83,6 +81,19 @@ pub fn load_stored() -> Result<StoredConfig> {
         Err(error) => Err(error)
             .with_context(|| format!("failed to read {}", path.display())),
     }
+}
+
+/// Decode the profile file's contents.
+///
+/// An empty file counts as no profile rather than as corruption: a
+/// `touch` on the config path, or a truncated write, would otherwise
+/// make every command fail with a parse error instead of falling
+/// through to the environment.
+fn parse_stored(contents: &str) -> Result<StoredConfig> {
+    if contents.trim().is_empty() {
+        return Ok(StoredConfig::default());
+    }
+    Ok(serde_json::from_str(contents)?)
 }
 
 pub fn save_stored(config: &StoredConfig) -> Result<PathBuf> {
@@ -266,6 +277,19 @@ mod tests {
 
         assert_eq!(resolved.api_base_url, DEFAULT_API_BASE_URL);
         assert!(resolved.api_key.is_none());
+    }
+
+    #[test]
+    fn an_empty_profile_file_reads_as_no_profile() {
+        // `touch ~/.config/library/config.json` used to make every
+        // command fail with "is not valid CLI config JSON".
+        assert!(parse_stored("").unwrap().api_key.is_none());
+        assert!(parse_stored("   \n").unwrap().api_key.is_none());
+    }
+
+    #[test]
+    fn a_malformed_profile_file_is_still_an_error() {
+        assert!(parse_stored("{not json").is_err());
     }
 
     #[test]
