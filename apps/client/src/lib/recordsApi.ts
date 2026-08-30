@@ -15,6 +15,7 @@ import {
   newClientEngineRecordId,
   patchAndPushClientEngineRecord,
   patchClientEngineRecord,
+  subscribeClientEngineRollbacks,
   upsertAndPushClientEngineRecord,
   upsertClientEngineRecord,
   type ClientEngineWriteResult,
@@ -25,6 +26,7 @@ import {
   LIBRARY_REPOSITORIES_COLLECTION,
   type LibraryRecordsRepository,
   libraryRecordsCollection,
+  libraryRecordsDatabaseId,
   libraryRepositoryByName,
   rememberLibraryRepositories,
   setLibraryRecordsResourceFactory,
@@ -2257,6 +2259,46 @@ async function assertRecordFieldsMappable(
     return
   }
   restPropertyData(properties, standardRecordPropertyData(properties, data))
+}
+
+/**
+ * A record the engine put back after this module had already returned it.
+ *
+ * `record` is where the record now stands locally: `null` when the write that
+ * was rolled back was the record's creation, or when the rollback restored it
+ * to deleted.
+ */
+export interface RecordRollback {
+  recordId: string
+  record: DatabaseRecord | null
+}
+
+/**
+ * Hear about writes the server refused only after they were reported queued.
+ *
+ * `settleRecordWrite` turns an *immediate* rejection into a thrown
+ * `RecordApiError`, which is how the caller learns to undo what it drew. A
+ * queued write has no rejection to throw yet — it is decided on a later sync
+ * cycle, once the network is back, and by then the call that made it is long
+ * gone. Photon rolls its own projection back and nothing downstream hears;
+ * this is the seam through which it does.
+ *
+ * Scoped to the records collections, because that is what these callers hold.
+ * A rollback in `documents` or `attachments` belongs to a different projection
+ * and is not this listener's to reconcile.
+ */
+export function subscribeRecordRollbacks(
+  listener: (rollbacks: readonly RecordRollback[]) => void
+): () => void {
+  return subscribeClientEngineRollbacks((changes) => {
+    const rollbacks = changes
+      .filter((change) => libraryRecordsDatabaseId(change.collection) != null)
+      .map((change) => ({
+        recordId: change.recordId,
+        record: (change.record?.value as DatabaseRecord | undefined) ?? null,
+      }))
+    if (rollbacks.length > 0) listener(rollbacks)
+  })
 }
 
 /**

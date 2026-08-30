@@ -74,6 +74,8 @@ const mocks = vi.hoisted(() => {
     createServerRecord: vi.fn(),
     updateServerRecord: vi.fn(),
     deleteServerRecord: vi.fn(),
+    /** The rollback listeners the provider has registered, to fire by hand. */
+    rollbackListeners: new globalThis.Set<(rollbacks: unknown) => void>(),
   }
 })
 
@@ -97,6 +99,10 @@ vi.mock('../lib/recordsApi', () => ({
   createServerRecord: mocks.createServerRecord,
   updateServerRecord: mocks.updateServerRecord,
   deleteServerRecord: mocks.deleteServerRecord,
+  subscribeRecordRollbacks: (listener: (rollbacks: unknown) => void) => {
+    mocks.rollbackListeners.add(listener)
+    return () => { mocks.rollbackListeners.delete(listener) }
+  },
 }))
 
 import { RecordsProvider, useRecords, type CreateRecordData } from './RecordsContext'
@@ -177,6 +183,7 @@ describe('RecordsProvider server-accepted projection', () => {
     mocks.createServerRecord.mockReset()
     mocks.updateServerRecord.mockReset()
     mocks.deleteServerRecord.mockReset()
+    mocks.rollbackListeners.clear()
   })
 
   it('writes created records optimistically and replaces them with the server version', async () => {
@@ -644,6 +651,64 @@ describe('RecordsProvider server-accepted projection', () => {
       await update.promise
     })
     expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  /**
+   * The other half of a queued write.
+   *
+   * `createServerRecord` and friends report a write made offline as kept — the
+   * operation is durable and the record belongs on screen. When the network
+   * comes back and the server refuses it, the call that made it has long
+   * returned, so the only way the refusal reaches this shared document is the
+   * rollback subscription.
+   */
+  describe('rollbacks that land after the write returned', () => {
+    function fireRollback(rollbacks: { recordId: string; record: DatabaseRecord | null }[]) {
+      act(() => {
+        mocks.rollbackListeners.forEach((listener) => { listener(rollbacks) })
+      })
+    }
+
+    it('takes a refused create back out of the projection', async () => {
+      seedYDatabaseRecord(serverDatabaseRecord)
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+
+      // A create that was rolled back leaves no record behind at all.
+      fireRollback([{ recordId: serverDatabaseRecord.id, record: null }])
+
+      expect(mocks.recordsArray.length).toBe(0)
+    })
+
+    it('puts a record back when a refused delete is rolled back', async () => {
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+
+      fireRollback([{ recordId: serverDatabaseRecord.id, record: serverDatabaseRecord }])
+
+      expect(mocks.recordsArray.length).toBe(1)
+      expect(mocks.recordsArray.get(0).get('title')).toBe('Server accepted record')
+    })
+
+    it('writes back the value a refused edit was rolled back to', async () => {
+      seedYDatabaseRecord({ ...serverDatabaseRecord, title: 'Edited while offline' })
+      render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+
+      fireRollback([{ recordId: serverDatabaseRecord.id, record: serverDatabaseRecord }])
+
+      expect(mocks.recordsArray.length).toBe(1)
+      expect(mocks.recordsArray.get(0).get('title')).toBe('Server accepted record')
+    })
+
+    it('stops listening once the provider unmounts', async () => {
+      const { unmount } = render(<RecordsProvider><div /></RecordsProvider>)
+      await waitFor(() => expect(mocks.rollbackListeners.size).toBe(1))
+
+      unmount()
+
+      expect(mocks.rollbackListeners.size).toBe(0)
+    })
   })
 
   it('exposes hydration loading and the latest hydration error', async () => {

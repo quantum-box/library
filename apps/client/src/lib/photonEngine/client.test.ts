@@ -30,6 +30,7 @@ import {
   ingestClientEngineRecords,
   listClientEngineRecords,
   patchClientEngineRecord,
+  subscribeClientEngineRollbacks,
   syncClientEngineOperations,
   upsertClientEngineRecord,
 } from './client'
@@ -389,6 +390,101 @@ describe('rest-backed write outcomes', () => {
 
     expect(outcome.status).toBe('rejected')
     expect(outcome.record?.value.title).toBe('saved')
+  })
+
+  /**
+   * The rollback nobody is waiting for.
+   *
+   * The two tests above reject a write while its caller is still inside the
+   * call, so the verdict comes back as the return value and the caller can act
+   * on it. A write made offline cannot: it is reported `queued`, the caller
+   * has drawn it and moved on, and the rejection arrives a sync cycle later —
+   * possibly minutes later, when the network returns. Photon rolls its own
+   * projection back and that is the end of it, so anything built on top hears
+   * about it here or not at all.
+   */
+  describe('a verdict that lands after the write returned', () => {
+    /**
+     * Let the reprojection settle. `handleDecision` starts it and does not
+     * await it, so the change can land a turn after `syncNow` resolves.
+     */
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    it('announces the value an edit was rolled back to', async () => {
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: 'saved' })
+
+      const seen: { recordId: string; title: string | null }[] = []
+      const unsubscribe = subscribeClientEngineRollbacks((changes) => {
+        for (const change of changes) {
+          seen.push({
+            recordId: change.recordId,
+            title: (change.record?.value as Doc | undefined)?.title ?? null,
+          })
+        }
+      })
+
+      try {
+        offline = true
+        const queued = await patchAndPushClientEngineRecord<Doc>(collection, 'r1', {
+          title: 'not allowed',
+        })
+        expect(queued.status).toBe('queued')
+        // Nothing has been decided yet, so nothing has been announced.
+        expect(seen).toEqual([])
+
+        offline = false
+        failures = { r1: new Status(400, 'nope') }
+        await syncClientEngineOperations()
+        await flush()
+
+        expect(seen).toEqual([{ recordId: 'r1', title: 'saved' }])
+        expect((await getClientEngineRecord<Doc>(collection, 'r1'))?.value.title).toBe('saved')
+      } finally {
+        unsubscribe()
+      }
+    })
+
+    it('announces a refused create as a record that is no longer there', async () => {
+      const seen: { recordId: string; record: unknown }[] = []
+      const unsubscribe = subscribeClientEngineRollbacks((changes) => {
+        for (const change of changes) {
+          seen.push({ recordId: change.recordId, record: change.record })
+        }
+      })
+
+      try {
+        offline = true
+        expect(
+          (await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })).status
+        ).toBe('queued')
+
+        offline = false
+        failures = { r1: new Status(400, 'name is required') }
+        await syncClientEngineOperations()
+        await flush()
+
+        // Rolling back a create leaves nothing behind, which is what the
+        // caller has to remove from whatever it drew the record into.
+        expect(seen).toEqual([{ recordId: 'r1', record: null }])
+        expect(await getClientEngineRecord<Doc>(collection, 'r1')).toBeNull()
+      } finally {
+        unsubscribe()
+      }
+    })
+
+    it('stops announcing once the subscriber unsubscribes', async () => {
+      const seen: unknown[] = []
+      subscribeClientEngineRollbacks((changes) => seen.push(changes))()
+
+      offline = true
+      await upsertAndPushClientEngineRecord<Doc>(collection, 'r1', { title: '' })
+      offline = false
+      failures = { r1: new Status(400) }
+      await syncClientEngineOperations()
+      await flush()
+
+      expect(seen).toEqual([])
+    })
   })
 
   it('raises a conflict row rather than losing the edit', async () => {

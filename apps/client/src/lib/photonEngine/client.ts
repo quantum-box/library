@@ -196,6 +196,36 @@ async function build(): Promise<PhotonClient> {
     if (client.pendingCount() === 0) client.sync.stop()
   })
 
+  // A queued write's verdict arrives with nobody waiting on it: `pushMutation`
+  // has already reported `queued` and its caller has moved on. When that
+  // verdict is a rejection Photon puts its own projection back, and this is
+  // the only announcement of it. See `subscribeClientEngineRollbacks`.
+  client.subscribeChanges((changeSet) => {
+    if (changeSet.origin !== 'rollback' || rollbackListeners.size === 0) return
+
+    const changes = changeSet.changes
+      // Photon emits the release of the pending marker as a rollback change of
+      // its own, carrying the value the write had already put on screen. It is
+      // the reprojection that follows which holds the rolled-back value, so a
+      // change that leaves value and deletion alone has nothing to reconcile.
+      .filter(
+        (change) =>
+          change.previous?.value !== change.next?.value ||
+          change.previous?.deletedAt !== change.next?.deletedAt
+      )
+      .map((change) => ({
+        collection: change.collection,
+        recordId: change.recordId,
+        record:
+          change.next && change.next.deletedAt == null
+            ? toEngineRecord(change.next)
+            : null,
+      }))
+    if (changes.length === 0) return
+
+    for (const listener of rollbackListeners) listener(changes)
+  })
+
   // Before the client is handed out, and so before anything can ask
   // `resolveCollection` about a `data:` collection: the resolver is consulted
   // once per name and its answer is kept, so a repository learned later than
@@ -244,6 +274,55 @@ function toEngineRecord<T>(record: PhotonRecord<T>): PhotonEngineRecord<T> {
     value: record.value,
     deleted: record.deletedAt != null,
     updatedAt: String(record.version.wall_time_ms),
+  }
+}
+
+/**
+ * One record the engine moved on its own, after the write that moved it had
+ * already returned.
+ */
+export interface ClientEngineRecordChange<T = unknown> {
+  collection: string
+  recordId: string
+  /** Where the record now stands locally, or `null` when it no longer does. */
+  record: PhotonEngineRecord<T> | null
+}
+
+type ClientEngineRollbackListener = (
+  changes: readonly ClientEngineRecordChange[]
+) => void
+
+/**
+ * Held here rather than on the client, because a listener outlives one.
+ *
+ * The client is built lazily and rebuilt after a `__testOnly.reset`, and a
+ * subscriber has no way to know when either happens — subscribing through the
+ * client would mean either forcing a build (a WASM fetch and an IndexedDB
+ * open) at subscribe time, or losing the subscription on the next rebuild.
+ * `build` attaches the one fan-out that feeds this set.
+ */
+const rollbackListeners = new Set<ClientEngineRollbackListener>()
+
+/**
+ * Watch for writes the server refused after they were reported as `queued`.
+ *
+ * Every projection built on top of the engine — the Yjs document records are
+ * drawn from, above all — is written by the caller of a write, from that
+ * write's return value. That works while the verdict arrives inside the call.
+ * A queued write has no verdict to return: it is decided on a later sync
+ * cycle, and Photon's rollback then reaches its own projection and stops
+ * there, leaving the refused create, edit or delete on screen for good.
+ *
+ * Only rollbacks. `remote` changes are the pull's business and reconciling
+ * those is what hydration already does; a rollback is the one decision nothing
+ * else re-reads, because the caller was told the write had been kept.
+ */
+export function subscribeClientEngineRollbacks(
+  listener: ClientEngineRollbackListener
+): () => void {
+  rollbackListeners.add(listener)
+  return () => {
+    rollbackListeners.delete(listener)
   }
 }
 

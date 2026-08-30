@@ -16,6 +16,7 @@ import {
   createServerRecord,
   deleteServerRecord,
   fetchServerRecords,
+  subscribeRecordRollbacks,
   updateServerRecord,
   type ServerUpdateRecordData,
 } from '../lib/recordsApi'
@@ -260,6 +261,32 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     recordsArray.observeDeep(noteRemoteChange)
     return () => recordsArray.unobserveDeep(noteRemoteChange)
   }, [])
+
+  /**
+   * A write refused long after it was made still has to leave the screen.
+   *
+   * An offline create, edit or delete is reported as queued, and everything
+   * below treats that as kept: `handleCreateRecord` swaps the optimistic
+   * record for the returned one, `enqueueRecordUpdate` writes the returned
+   * record into the document, `handleDeleteRecord` removes it. When the
+   * network comes back and the server refuses the operation, Photon rolls its
+   * own projection back — and, until this, told nobody. The refused record sat
+   * in the shared Yjs document, on every tab, until something happened to
+   * refetch.
+   *
+   * `record` is the value the engine now holds, so this writes what is true
+   * rather than trying to invert the edit: a refused create has nothing left
+   * to hold and is removed, a refused edit comes back as the value before it,
+   * and a refused delete comes back as the record.
+   */
+  useEffect(() => subscribeRecordRollbacks((rollbacks) => {
+    transactProjection(() => {
+      for (const rollback of rollbacks) {
+        if (rollback.record) upsertYDatabaseRecord(rollback.record)
+        else removeYDatabaseRecord(rollback.recordId)
+      }
+    })
+  }), [transactProjection])
 
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {
