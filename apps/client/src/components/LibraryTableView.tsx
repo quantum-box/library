@@ -13,7 +13,11 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchLibraryRepoTableData, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
-import { getLibraryDataPropertyValue, propertyValueText } from '../lib/libraryTable/libraryPropertyFormat'
+import {
+  getLibraryDataPropertyValue,
+  propertyValueDisplayText,
+  propertyValueText,
+} from '../lib/libraryTable/libraryPropertyFormat'
 import { libraryRowSearchText } from '../lib/libraryTable/libraryRowSearchText'
 import {
   LibraryNameEditableCell,
@@ -25,6 +29,10 @@ import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import { useI18n, t as translate, collator } from '../i18n'
 
 const ROW_HEIGHT = 40
+/* A card is taller than a table row and its height varies with how many
+   properties carry a value, so this is only the first guess the virtualizer
+   corrects by measuring. */
+const MOBILE_CARD_ESTIMATED_HEIGHT = 132
 const columnHelper = createColumnHelper<LibraryDataItem>()
 
 interface LibraryTableViewProps {
@@ -72,7 +80,7 @@ function LibraryDataCard({
   const shownProperties = properties
     .map((property) => {
       const value = getLibraryDataPropertyValue(item, property.id)
-      const text = value ? propertyValueText(property, value) : undefined
+      const text = value ? propertyValueDisplayText(property, value) : undefined
       return text?.trim() ? { property, text: text.trim() } : undefined
     })
     .filter((entry): entry is { property: LibraryProperty; text: string } => Boolean(entry))
@@ -89,6 +97,9 @@ function LibraryDataCard({
       }`}
       onClick={onSelect}
       onKeyDown={(event) => {
+        // The delete button is nested inside this card. Without this guard its
+        // Enter/Space would be swallowed here and open the record instead.
+        if (event.target !== event.currentTarget) return
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
           onSelect()
@@ -163,6 +174,7 @@ export function LibraryTableView({
   const globalFilter = controlledGlobalFilter ?? internalGlobalFilter
   const setGlobalFilter = onGlobalFilterChange ?? setInternalGlobalFilter
   const parentRef = useRef<HTMLDivElement>(null)
+  const cardScrollRef = useRef<HTMLDivElement>(null)
   const newRowInputRef = useRef<HTMLInputElement>(null)
   const isMobileViewport = useIsMobileViewport()
 
@@ -377,6 +389,14 @@ export function LibraryTableView({
   })
 
   const { rows } = table.getRowModel()
+  // A repository's whole table arrives in one payload, so the card list windows
+  // its rows for the same reason the desktop table does.
+  const cardVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => cardScrollRef.current,
+    estimateSize: () => MOBILE_CARD_ESTIMATED_HEIGHT,
+    overscan: 6,
+  })
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -526,22 +546,32 @@ export function LibraryTableView({
       )}
 
       {!loading && !error && rows.length > 0 && isMobileViewport && (
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <LibraryDataCard
-                key={row.id}
-                item={row.original}
-                properties={properties}
-                selected={row.original.id === selectedDataId}
-                disabled={saving}
-                onSelect={() => onSelectData(row.original)}
-                onDelete={() => {
-                  setPendingDelete(row.original)
-                  setDeleteError(null)
-                }}
-              />
-            ))}
+        <div ref={cardScrollRef} className="flex-1 overflow-y-auto px-3 py-3">
+          <div className="relative" style={{ height: cardVirtualizer.getTotalSize() }}>
+            {cardVirtualizer.getVirtualItems().map((virtualCard) => {
+              const row = rows[virtualCard.index]
+              return (
+                <div
+                  key={row.id}
+                  ref={cardVirtualizer.measureElement}
+                  data-index={virtualCard.index}
+                  className="absolute inset-x-0 top-0 pb-2"
+                  style={{ transform: `translateY(${virtualCard.start}px)` }}
+                >
+                  <LibraryDataCard
+                    item={row.original}
+                    properties={properties}
+                    selected={row.original.id === selectedDataId}
+                    disabled={saving}
+                    onSelect={() => onSelectData(row.original)}
+                    onDelete={() => {
+                      setPendingDelete(row.original)
+                      setDeleteError(null)
+                    }}
+                  />
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

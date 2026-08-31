@@ -8,6 +8,10 @@ import {
   type LibraryProperty,
 } from '../../lib/recordsApi'
 import { LibraryPropertyCell } from '../../lib/libraryTable/libraryPropertyCells'
+import {
+  getLibraryDataPropertyValue,
+  propertyValueDisplayText,
+} from '../../lib/libraryTable/libraryPropertyFormat'
 import { libraryRowSearchText } from '../../lib/libraryTable/libraryRowSearchText'
 import { useIsMobileViewport } from '../../lib/ui/useIsMobileViewport'
 import { PublicLoadingState, PublicRepositoryState } from './PublicRepositoryState'
@@ -164,21 +168,40 @@ export function PublicRepositoryView({
                     <span className="block text-sm font-medium text-foreground">
                       {item.name || t('common.untitled')}
                     </span>
-                    {properties.length > 0 ? (
-                      <dl className="mt-2 space-y-1">
-                        {properties.slice(0, PUBLIC_CARD_PROPERTY_LIMIT).map((property) => (
-                          <div
-                            key={property.id}
-                            className="flex min-w-0 items-baseline gap-2 text-xs"
-                          >
-                            <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
-                            <dd className="min-w-0 flex-1 truncate text-right">
-                              <LibraryPropertyCell item={item} property={property} />
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    ) : null}
+                    {/* Values are text here, not the table's typed cells: an
+                        Image cell renders its own anchor, and this card is
+                        already one link. Properties with no value are skipped
+                        before the limit, so a sparse schema still says
+                        something. */}
+                    {(() => {
+                      const shown = properties
+                        .map((property) => {
+                          const value = getLibraryDataPropertyValue(item, property.id)
+                          const text = value ? propertyValueDisplayText(property, value) : undefined
+                          return text?.trim() ? { property, text: text.trim() } : undefined
+                        })
+                        .filter(
+                          (entry): entry is { property: LibraryProperty; text: string } =>
+                            Boolean(entry)
+                        )
+                        .slice(0, PUBLIC_CARD_PROPERTY_LIMIT)
+                      if (shown.length === 0) return null
+                      return (
+                        <dl className="mt-2 space-y-1">
+                          {shown.map(({ property, text }) => (
+                            <div
+                              key={property.id}
+                              className="flex min-w-0 items-baseline gap-2 text-xs"
+                            >
+                              <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
+                              <dd className="min-w-0 flex-1 truncate text-right text-foreground">
+                                {text}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )
+                    })()}
                   </Link>
                 </li>
               ))}

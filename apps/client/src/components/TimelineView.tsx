@@ -276,8 +276,10 @@ export function TimelineView({
                       </span>
                     )}
                     {/* On a phone the narrow label column has room for one of
-                        the two, and the title is the readable one. */}
-                    {isVisible('identifier') && !isMobileViewport && (
+                        the two, and the title is the readable one — but only
+                        when the view is actually showing a title, or the row
+                        would end up with no label at all. */}
+                    {isVisible('identifier') && !(isMobileViewport && isVisible('title')) && (
                       <span className="shrink-0 font-mono text-2xs text-subtle">
                         {record.identifier}
                       </span>

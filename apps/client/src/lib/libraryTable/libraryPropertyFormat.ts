@@ -3,6 +3,7 @@ import type {
   LibraryProperty,
   LibraryPropertyDataValue,
 } from '../recordsApi'
+import { formatDateTime, getActiveLocale } from '../../i18n'
 
 export function getLibraryDataPropertyValue(
   item: LibraryDataItem,
@@ -53,6 +54,27 @@ export function propertyValueText(
     return `${value.latitude}, ${value.longitude}`
   }
   return undefined
+}
+
+/**
+ * The same value as `propertyValueText`, rendered for a reader rather than for
+ * a search index: dates come back in the reader's locale, the way the table
+ * cell shows them, instead of as the raw API string.
+ */
+export function propertyValueDisplayText(
+  property: LibraryProperty,
+  value: LibraryPropertyDataValue
+): string | undefined {
+  if (property.typ === 'Date' && typeof value.date === 'string') {
+    return (
+      formatDateTime(getActiveLocale(), value.date, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }) ?? value.date
+    )
+  }
+  return propertyValueText(property, value)
 }
 
 /**

@@ -59,7 +59,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import libraryAppbarLogoDark from '../assets/brand/library-logo/library-logo-appbar-dark.png'
 import libraryAppbarLogo from '../assets/brand/library-logo/library-logo-appbar.png'
@@ -85,6 +85,7 @@ import { isDesktopApp, requestUpdateCheck } from '../lib/appUpdate'
 import { useI18n } from '../i18n'
 import type { MessageKey } from '../i18n'
 import { LanguageMenuSection } from './LanguageMenuSection'
+import { useDialogFocus } from './useDialogFocus'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
@@ -269,6 +270,7 @@ export function Sidebar() {
   const { onlineCount } = useSyncPresence()
   const [expanded, setExpanded] = useState(true)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const mobileNavRef = useRef<HTMLDivElement>(null)
   const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
   const [createRepositoryOpen, setCreateRepositoryOpen] = useState(false)
   const [createRepositoryOrganizationId, setCreateRepositoryOrganizationId] = useState<string | null>(null)
@@ -335,16 +337,14 @@ export function Sidebar() {
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
 
-  // The drawer covers the screen on a phone, so Escape has to reach it even
-  // when focus is still on the button that opened it.
-  useEffect(() => {
-    if (!mobileNavOpen) return
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileNavOpen(false)
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [mobileNavOpen])
+  // The drawer covers the screen on a phone, so it has to behave like the
+  // modal it claims to be: focus moves into it, Tab stays inside, Escape
+  // closes it, and focus returns to the button that opened it.
+  useDialogFocus({
+    open: mobileNavOpen,
+    dialogRef: mobileNavRef,
+    onClose: closeMobileNav,
+  })
 
   useEffect(() => {
     const openCreateRepository = (event: Event) => {
@@ -563,6 +563,7 @@ export function Sidebar() {
             onClick={closeMobileNav}
           />
           <div
+            ref={mobileNavRef}
             role="dialog"
             aria-modal="true"
             aria-label={t('sidebar.navigationLabel')}
@@ -601,8 +602,12 @@ export function Sidebar() {
                 <span className="truncate">{t('palette.title')}</span>
               </button>
 
-              {organizations.length > 0 && (
-                <div className="flex gap-1 pb-2">
+              {/* Only the picker is conditional. An account with no
+                  organizations yet still needs the control that creates its
+                  first one, and the desktop sidebar it would fall back to is
+                  hidden below `md`. */}
+              <div className="flex gap-1 pb-2">
+                {organizations.length > 0 && (
                   <div className="min-w-0 flex-1">
                     <Combobox
                       options={organizationOptions}
@@ -615,21 +620,22 @@ export function Sidebar() {
                       searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
                     />
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-9 shrink-0"
-                    aria-label={t('sidebar.organizations.add')}
-                    onClick={() => {
-                      closeMobileNav()
-                      setCreateOrganizationOpen(true)
-                    }}
-                  >
-                    <Plus aria-hidden="true" />
-                  </Button>
-                </div>
-              )}
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={organizations.length > 0 ? 'size-9 shrink-0 p-0' : 'flex-1'}
+                  aria-label={t('sidebar.organizations.add')}
+                  onClick={() => {
+                    closeMobileNav()
+                    setCreateOrganizationOpen(true)
+                  }}
+                >
+                  <Plus aria-hidden="true" />
+                  {organizations.length === 0 && t('sidebar.organizations.add')}
+                </Button>
+              </div>
 
               <nav className="flex flex-col gap-0.5" aria-label={t('sidebar.navigationLabel')}>
                 {workspaceLinks.map((link) => {
