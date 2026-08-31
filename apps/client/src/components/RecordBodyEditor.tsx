@@ -132,6 +132,7 @@ function BlockRecordBodyEditor({
   const loading = useRef(true)
   const seeded = useRef(false)
   const composing = useRef(false)
+  const valueBeforeComposition = useRef<string | null>(null)
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
@@ -162,8 +163,11 @@ function BlockRecordBodyEditor({
 
   useEffect(() => () => {
     if (composing.current) {
-      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
-      pendingValue.current = null
+      // The live composition is not safe to persist, but an ordinary edit may
+      // already have been waiting in the debounce when composition started.
+      // Keep that confirmed snapshot instead of dropping it with the IME text.
+      pendingValue.current = valueBeforeComposition.current
+      commitPendingValue()
       return
     }
     commitPendingValue()
@@ -197,7 +201,14 @@ function BlockRecordBodyEditor({
     // re-renders the parent around BlockNote's live composition DOM and can
     // duplicate its unconfirmed text. Keep the newest document locally and
     // wait until compositionend before allowing the save to reach the parent.
-    if (composing.current) return
+    if (composing.current) {
+      // ProseMirror drops an inactive Android composition after five seconds,
+      // even when the browser never dispatches compositionend. Follow its
+      // actual state so the next ordinary edit can resume persistence.
+      if (changedEditor.prosemirrorView?.composing !== false) return
+      composing.current = false
+      valueBeforeComposition.current = null
+    }
     schedulePendingCommit()
   }, editor)
 
@@ -208,6 +219,7 @@ function BlockRecordBodyEditor({
         : 'record-body-blocknote rounded border border-border bg-surface px-2 py-3'}
       onCompositionStartCapture={() => {
         composing.current = true
+        valueBeforeComposition.current = pendingValue.current
         if (commitTimer.current !== null) {
           window.clearTimeout(commitTimer.current)
           commitTimer.current = null
@@ -215,6 +227,7 @@ function BlockRecordBodyEditor({
       }}
       onCompositionEndCapture={() => {
         composing.current = false
+        valueBeforeComposition.current = null
         if (pendingValue.current !== null) schedulePendingCommit()
       }}
     >

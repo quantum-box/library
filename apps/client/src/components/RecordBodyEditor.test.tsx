@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     replaceBlocks: vi.fn(),
     blocksToMarkdownLossy: vi.fn(() => ''),
     blocksToHTMLLossy: vi.fn(() => ''),
+    prosemirrorView: undefined as undefined | { composing: boolean },
   }
   return {
     editor,
@@ -35,6 +36,7 @@ describe('RecordBodyEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.onEditorChange = undefined
+    mocks.editor.prosemirrorView = undefined
   })
 
   it('flushes a pending edit when the editor unmounts before the debounce', async () => {
@@ -120,6 +122,53 @@ describe('RecordBodyEditor', () => {
     unmount()
 
     expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('preserves a confirmed pending edit when unmounted during composition', async () => {
+    const onCommit = vi.fn()
+    const { getByTestId, unmount } = render(
+      <RecordBodyEditor value="Original" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Confirmed edit')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    fireEvent.compositionStart(getByTestId('block-note-view'))
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Confirmed edit未確定')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    unmount()
+
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('Confirmed edit')
+  })
+
+  it('resumes commits when ProseMirror ends an Android composition internally', async () => {
+    const onCommit = vi.fn()
+    const { getByTestId } = render(
+      <RecordBodyEditor value="Original" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+    vi.useFakeTimers()
+
+    fireEvent.compositionStart(getByTestId('block-note-view'))
+    mocks.editor.prosemirrorView = { composing: true }
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('変換中')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(onCommit).not.toHaveBeenCalled()
+
+    mocks.editor.prosemirrorView.composing = false
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('変換後の通常入力')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    act(() => vi.advanceTimersByTime(500))
+
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('変換後の通常入力')
+    vi.useRealTimers()
   })
 
   it('follows the incoming value while read only', async () => {
