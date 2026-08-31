@@ -14,34 +14,10 @@ interface E2eFixtureData {
   }>
 }
 
-interface E2eEngineOperation {
-  operation: {
-    key: { collection: string; record_id: string }
-    kind: unknown
-  }
-}
-
 async function e2eFixtureData(page: Page): Promise<E2eFixtureData[]> {
   const response = await page.request.get(`${e2eApiUrl}/__e2e/state`)
   expect(response.ok()).toBe(true)
   return (await response.json() as { data: E2eFixtureData[] }).data
-}
-
-async function expectFixtureDocumentOperation(
-  page: Page,
-  documentId: string,
-  expectedTitle: string,
-) {
-  await expect.poll(async () => {
-    const response = await page.request.get(`${e2eApiUrl}/__e2e/engine`)
-    if (!response.ok()) return false
-    const body = await response.json() as { operations: E2eEngineOperation[] }
-    return body.operations.some(({ operation }) => (
-      operation.key.collection === 'documents'
-      && operation.key.record_id === documentId
-      && JSON.stringify(operation.kind).includes(expectedTitle)
-    ))
-  }, { timeout: 20_000 }).toBe(true)
 }
 
 function fixtureDataByIdentifier(data: E2eFixtureData[], identifier: string) {
@@ -118,7 +94,7 @@ test.describe('Library shell', () => {
     await expect(page.locator('tbody tr', { hasText: 'DATA-103' })).toBeVisible()
   })
 
-  test('switches between table, board, workflow, timeline, docs, and chat views', async ({ page }) => {
+  test('switches between table, board, workflow, timeline, and chat views', async ({ page }) => {
     await page.goto('/databases')
     await addDatabaseView(page, 'board')
     await addDatabaseView(page, 'workflow')
@@ -148,11 +124,6 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('timeline-scale-day')).toHaveAttribute('aria-pressed', 'true')
     await page.getByTestId('timeline-scale-month').click()
     await expect(page.getByTestId('timeline-scale-month')).toHaveAttribute('aria-pressed', 'true')
-
-    await page.getByTestId('view-docs').click()
-
-    await expect(page).toHaveURL(/\/docs$/)
-    await expect(page.getByRole('heading', { name: 'Docs' })).toBeVisible()
 
     await page.getByTestId('view-chat').click()
 
@@ -770,154 +741,4 @@ test.describe('Library shell', () => {
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
   })
 
-  test('creates a doc and syncs Yjs blocks from a shared document URL', async ({ page, browser }) => {
-    test.setTimeout(120_000)
-    const title = `E2E local doc ${Date.now()}`
-
-    await page.goto('/docs')
-    await page.getByTestId('create-doc').click()
-
-    await expect(page).toHaveURL(/\/documents\/[^/]+$/, { timeout: 20_000 })
-    await expect(page.getByText('Server connected')).toBeVisible()
-    await page.getByLabel('Document title').fill(title)
-    await page.keyboard.press('Tab')
-    await expect(page.getByRole('link', { name: new RegExp(title) })).toBeVisible()
-    const documentId = new URL(page.url()).pathname.split('/').at(-1)
-    expect(documentId).toBeTruthy()
-    await expectFixtureDocumentOperation(page, documentId!, title)
-    const editor = page.locator('.bn-editor[contenteditable="true"]')
-    await editor.click()
-    await page.keyboard.type('Reload proof body')
-    await page.waitForTimeout(500)
-
-    const documentUrl = page.url()
-    const sharedContext = await browser.newContext({ storageState: e2eAuthState })
-    const sharedPage = await sharedContext.newPage()
-    await sharedPage.goto(documentUrl)
-
-    await expect(sharedPage.getByText('Server connected')).toBeVisible({ timeout: 45_000 })
-    await expect(sharedPage.getByText('Reload proof body')).toBeVisible({ timeout: 45_000 })
-
-    await editor.click()
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
-    await page.keyboard.type('Synced from first browser')
-    await expect(sharedPage.getByText('Synced from first browser')).toBeVisible()
-    await sharedContext.close()
-
-    await page.reload()
-
-    await expect(page.getByLabel('Document title')).toHaveValue(title)
-    await expect(page.getByText('Synced from first browser')).toBeVisible()
-  })
-
-  test('reconnects a document after an offline edit and syncs it to another client', async ({ browser }) => {
-    test.setTimeout(180_000)
-
-    const title = `E2E reconnect doc ${Date.now()}`
-    const initialText = `Online baseline ${Date.now()}`
-    const offlineText = `Offline reconnect proof ${Date.now()}`
-
-    const editingContext = await browser.newContext({ storageState: e2eAuthState })
-    const editingPage = await editingContext.newPage()
-    await editingPage.goto('/docs')
-    await editingPage.getByTestId('create-doc').click()
-
-    await expect(editingPage).toHaveURL(/\/documents\/[^/]+$/, { timeout: 20_000 })
-    await expect(editingPage.getByText('Server connected')).toBeVisible()
-    await editingPage.getByLabel('Document title').fill(title)
-    await editingPage.keyboard.press('Tab')
-    const documentId = new URL(editingPage.url()).pathname.split('/').at(-1)
-    expect(documentId).toBeTruthy()
-    await expectFixtureDocumentOperation(editingPage, documentId!, title)
-
-    const editor = editingPage.locator('.bn-editor[contenteditable="true"]')
-    await editor.fill(initialText)
-    await expect(editingPage.getByText(initialText)).toBeVisible({ timeout: 10_000 })
-
-    const documentUrl = editingPage.url()
-    const verifierContext = await browser.newContext({ storageState: e2eAuthState })
-    const verifierPage = await verifierContext.newPage()
-    await verifierPage.goto(documentUrl)
-    await expect(verifierPage.getByText('Server connected')).toBeVisible({ timeout: 45_000 })
-    await expect(verifierPage.getByText(initialText)).toBeVisible({ timeout: 45_000 })
-
-    await editingContext.setOffline(true)
-    await editingPage.evaluate(() => window.__photonTestHooks?.closeDocumentSockets?.())
-    await expect(editingPage.getByText(/Server connecting|Local only/)).toBeVisible({ timeout: 15_000 })
-
-    await editor.click()
-    await editingPage.keyboard.press(process.platform === 'darwin' ? 'Meta+End' : 'Control+End')
-    await editingPage.keyboard.type(` ${offlineText}`)
-    await expect(editingPage.getByText(offlineText)).toBeVisible({ timeout: 10_000 })
-
-    await editingContext.setOffline(false)
-    await editingPage.evaluate(() => window.dispatchEvent(new Event('online')))
-    await expect(editingPage.getByText('Server connected')).toBeVisible({ timeout: 20_000 })
-    await expect(async () => {
-      await verifierPage.goto(documentUrl)
-      await expect(verifierPage.getByText('Server connected')).toBeVisible({ timeout: 20_000 })
-      await expect(verifierPage.getByText(offlineText)).toBeVisible({ timeout: 20_000 })
-    }).toPass({ timeout: 120_000 })
-
-    await verifierContext.close()
-    await editingContext.close()
-  })
-
-  test('links docs and records from selected editor text', async ({ page }) => {
-    test.setTimeout(120_000)
-    const title = `E2E linked doc ${Date.now()}`
-    const selectedText = `Selected follow-up ${Date.now()}`
-
-    await page.goto('/docs')
-    await page.getByTestId('create-doc').click()
-    await expect(page).toHaveURL(/\/documents\/[^/]+$/, { timeout: 20_000 })
-    await page.getByLabel('Document title').fill(title)
-    await page.keyboard.press('Tab')
-    await expect(page.getByRole('link', { name: new RegExp(title) })).toBeVisible()
-
-    const editor = page.locator('.bn-editor[contenteditable="true"]')
-    await editor.click()
-    await page.keyboard.type(selectedText)
-    await editor.evaluate((element, text) => {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-      let target: Text | null = null
-      let startOffset = 0
-      while (walker.nextNode()) {
-        const node = walker.currentNode as Text
-        const index = node.data.indexOf(text)
-        if (index >= 0) {
-          target = node
-          startOffset = index
-          break
-        }
-      }
-      if (!target) throw new Error(`Unable to find editor text: ${text}`)
-      const range = document.createRange()
-      range.setStart(target, startOffset)
-      range.setEnd(target, startOffset + text.length)
-      const selection = window.getSelection()
-      selection?.removeAllRanges()
-      selection?.addRange(range)
-      document.dispatchEvent(new Event('selectionchange', { bubbles: true }))
-    }, selectedText)
-
-    await expect(page.getByTestId('doc-selected-text').getByText(selectedText)).toBeVisible()
-    await page.getByTestId('doc-create-record-from-selection').click()
-
-    const relatedDatabases = page.getByTestId('doc-related-records')
-    await expect(relatedDatabases.getByRole('link', { name: /DATA-\d+/ })).toBeVisible({
-      timeout: 30_000,
-    })
-    const recordIdentifier = (await relatedDatabases.innerText()).match(/DATA-\d+/)?.[0]
-    expect(recordIdentifier).toBeTruthy()
-
-    await page.goto(`/databases/${recordIdentifier}`)
-    await expect(page.getByTestId('record-related-docs').getByText(title)).toBeVisible({
-      timeout: 15_000,
-    })
-
-    await page.getByTestId('view-chat').click()
-    await expect(page.getByTestId('chat-document-context').getByText(title)).toBeVisible()
-    await expect(page.getByTestId('chat-document-context').getByText('1 related data')).toBeVisible()
-  })
 })

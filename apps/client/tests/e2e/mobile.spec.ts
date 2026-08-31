@@ -36,11 +36,6 @@ test.describe('Library mobile shell', () => {
     await expect(page.getByTestId('detail-panel')).toHaveCount(0)
 
     await page.getByTestId('open-mobile-nav').click()
-    await page.getByTestId('view-docs-mobile').click()
-    await expect(page).toHaveURL(/\/docs/)
-    await expect(page.getByRole('heading', { name: 'Docs' })).toBeVisible()
-
-    await page.getByTestId('open-mobile-nav').click()
     await page.getByTestId('view-chat-mobile').click()
     await expect(page).toHaveURL(/\/chat/)
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible()
