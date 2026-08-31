@@ -23,6 +23,7 @@ import {
 } from '../data/mock'
 import { useI18n } from '../i18n'
 import { Kbd, KbdGroup } from './Kbd'
+import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import type { RecordPropertyKey } from '../lib/databaseViews/types'
 
 interface TableViewProps {
@@ -370,30 +371,6 @@ function AssigneeDropdownCell({
 }
 
 const ROW_HEIGHT = 40
-const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)'
-
-function getIsMobileViewport() {
-  return typeof window !== 'undefined'
-    ? window.matchMedia(MOBILE_VIEWPORT_QUERY).matches
-    : false
-}
-
-function useIsMobileViewport() {
-  const [isMobile, setIsMobile] = useState(getIsMobileViewport)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const mediaQuery = window.matchMedia(MOBILE_VIEWPORT_QUERY)
-    const update = () => setIsMobile(mediaQuery.matches)
-
-    update()
-    mediaQuery.addEventListener('change', update)
-    return () => mediaQuery.removeEventListener('change', update)
-  }, [])
-
-  return isMobile
-}
 
 function MobileRecordCard({
   record,
@@ -679,11 +656,12 @@ export function TableView({
             placeholder={t('table.filterPlaceholder')}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="w-full rounded border border-border bg-surface py-1.5 pl-3 pr-24 text-sm text-foreground outline-none"
+            className="w-full rounded border border-border bg-surface py-1.5 pl-3 pr-3 text-sm text-foreground outline-none md:pr-24"
           />
-          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-1">
+          {/* Keyboard hints only mean something where there is a keyboard. */}
+          <div className="pointer-events-none absolute inset-y-0 right-2 hidden items-center gap-1 md:flex">
             <Kbd>/</Kbd>
-            <KbdGroup className="hidden sm:inline-flex">
+            <KbdGroup>
               <Kbd>{/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘' : 'Ctrl'}</Kbd>
               <Kbd>F</Kbd>
             </KbdGroup>

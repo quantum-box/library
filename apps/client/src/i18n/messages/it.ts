@@ -54,6 +54,8 @@ export const it: LocaleMessages = {
   'account.checkForUpdates': 'Cerca aggiornamenti',
   'account.signOut': 'Esci',
   'sidebar.navigationLabel': 'Navigazione di Library',
+  'sidebar.openNavigation': 'Apri la navigazione',
+  'sidebar.closeNavigation': 'Chiudi la navigazione',
   'sidebar.collapse': 'Riduci la barra laterale',
   'sidebar.expand': 'Espandi la barra laterale',
   'sidebar.workspaceHome': 'Home di {workspace}',

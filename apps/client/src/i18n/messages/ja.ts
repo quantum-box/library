@@ -57,6 +57,8 @@ export const ja: LocaleMessages = {
   'account.checkForUpdates': 'アップデートを確認',
   'account.signOut': 'サインアウト',
   'sidebar.navigationLabel': 'Library ナビゲーション',
+  'sidebar.openNavigation': 'ナビゲーションを開く',
+  'sidebar.closeNavigation': 'ナビゲーションを閉じる',
   'sidebar.collapse': 'サイドバーを折りたたむ',
   'sidebar.expand': 'サイドバーを開く',
   'sidebar.workspaceHome': '{workspace} のホーム',

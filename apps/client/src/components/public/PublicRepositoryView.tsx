@@ -8,10 +8,17 @@ import {
   type LibraryProperty,
 } from '../../lib/recordsApi'
 import { LibraryPropertyCell } from '../../lib/libraryTable/libraryPropertyCells'
+import {
+  getLibraryDataPropertyValue,
+  propertyValueDisplayText,
+} from '../../lib/libraryTable/libraryPropertyFormat'
 import { libraryRowSearchText } from '../../lib/libraryTable/libraryRowSearchText'
+import { useIsMobileViewport } from '../../lib/ui/useIsMobileViewport'
 import { PublicLoadingState, PublicRepositoryState } from './PublicRepositoryState'
 import { publicRepositoryErrorMessage, usePublicRepository } from './usePublicRepository'
 import { useI18n } from '../../i18n'
+
+const PUBLIC_CARD_PROPERTY_LIMIT = 4
 
 export function PublicRepositoryView({
   organization,
@@ -27,6 +34,7 @@ export function PublicRepositoryView({
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const isMobileViewport = useIsMobileViewport()
   const request = useRef(0)
 
   const loadData = useCallback(async () => {
@@ -146,7 +154,61 @@ export function PublicRepositoryView({
             </p>
           ) : null}
 
-          {!dataLoading && !dataError && rows.length > 0 ? (
+          {/* A shared link is opened on a phone as often as anywhere else, so the
+              table becomes a card list rather than something to pan sideways. */}
+          {!dataLoading && !dataError && rows.length > 0 && isMobileViewport ? (
+            <ul className="space-y-2">
+              {rows.map((item) => (
+                <li key={item.id} data-testid={`public-repository-card-${item.id}`}>
+                  <Link
+                    to="/public/$organization/$repository/$dataId"
+                    params={{ organization, repository, dataId: item.id }}
+                    className="block rounded-md border border-border bg-surface p-3 no-underline"
+                  >
+                    <span className="block text-sm font-medium text-foreground">
+                      {item.name || t('common.untitled')}
+                    </span>
+                    {/* Values are text here, not the table's typed cells: an
+                        Image cell renders its own anchor, and this card is
+                        already one link. Properties with no value are skipped
+                        before the limit, so a sparse schema still says
+                        something. */}
+                    {(() => {
+                      const shown = properties
+                        .map((property) => {
+                          const value = getLibraryDataPropertyValue(item, property.id)
+                          const text = value ? propertyValueDisplayText(property, value) : undefined
+                          return text?.trim() ? { property, text: text.trim() } : undefined
+                        })
+                        .filter(
+                          (entry): entry is { property: LibraryProperty; text: string } =>
+                            Boolean(entry)
+                        )
+                        .slice(0, PUBLIC_CARD_PROPERTY_LIMIT)
+                      if (shown.length === 0) return null
+                      return (
+                        <dl className="mt-2 space-y-1">
+                          {shown.map(({ property, text }) => (
+                            <div
+                              key={property.id}
+                              className="flex min-w-0 items-baseline gap-2 text-xs"
+                            >
+                              <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
+                              <dd className="min-w-0 flex-1 truncate text-right text-foreground">
+                                {text}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )
+                    })()}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {!dataLoading && !dataError && rows.length > 0 && !isMobileViewport ? (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[640px]">
                 <thead>

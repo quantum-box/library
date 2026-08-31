@@ -54,6 +54,8 @@ export const ko: LocaleMessages = {
   'account.checkForUpdates': '업데이트 확인',
   'account.signOut': '로그아웃',
   'sidebar.navigationLabel': 'Library 탐색',
+  'sidebar.openNavigation': '탐색 열기',
+  'sidebar.closeNavigation': '탐색 닫기',
   'sidebar.collapse': '사이드바 접기',
   'sidebar.expand': '사이드바 펼치기',
   'sidebar.workspaceHome': '{workspace} 홈',

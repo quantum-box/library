@@ -45,6 +45,7 @@ import {
   FolderGit2,
   Home,
   LogOut,
+  Menu,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -52,11 +53,13 @@ import {
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  Search,
   Sun,
   WifiOff,
+  X,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import libraryAppbarLogoDark from '../assets/brand/library-logo/library-logo-appbar-dark.png'
 import libraryAppbarLogo from '../assets/brand/library-logo/library-logo-appbar.png'
@@ -77,11 +80,12 @@ import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
-import { OPEN_CREATE_REPOSITORY_EVENT } from '../lib/ui/workspaceEvents'
+import { OPEN_CREATE_REPOSITORY_EVENT, openCommandPalette } from '../lib/ui/workspaceEvents'
 import { isDesktopApp, requestUpdateCheck } from '../lib/appUpdate'
 import { useI18n } from '../i18n'
 import type { MessageKey } from '../i18n'
 import { LanguageMenuSection } from './LanguageMenuSection'
+import { useDialogFocus } from './useDialogFocus'
 
 type WorkspaceLink = {
   id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
@@ -265,6 +269,8 @@ export function Sidebar() {
   const connectionStatus = useConnectionStatus()
   const { onlineCount } = useSyncPresence()
   const [expanded, setExpanded] = useState(true)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const mobileNavRef = useRef<HTMLDivElement>(null)
   const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
   const [createRepositoryOpen, setCreateRepositoryOpen] = useState(false)
   const [createRepositoryOrganizationId, setCreateRepositoryOrganizationId] = useState<string | null>(null)
@@ -328,6 +334,17 @@ export function Sidebar() {
     ],
     [organizations, t],
   )
+
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
+
+  // The drawer covers the screen on a phone, so it has to behave like the
+  // modal it claims to be: focus moves into it, Tab stays inside, Escape
+  // closes it, and focus returns to the button that opened it.
+  useDialogFocus({
+    open: mobileNavOpen,
+    dialogRef: mobileNavRef,
+    onClose: closeMobileNav,
+  })
 
   useEffect(() => {
     const openCreateRepository = (event: Event) => {
@@ -507,103 +524,260 @@ export function Sidebar() {
 
   return (
     <>
+      {/*
+        Phone shell: one app-bar row of chrome, with the workspace nav behind a
+        drawer. The stacked chip rows this replaced ate roughly a fifth of a
+        phone screen before any content was drawn.
+      */}
       <div className="shrink-0 border-b border-border bg-surface md:hidden">
-        <div className="flex h-11 items-center gap-2 px-3">
-          <img src={libraryAppIcon} alt="" className="size-4" />
-          <span className="text-sm font-semibold">Library</span>
-          <span data-testid="sync-presence-status-mobile" className="ml-1">
-            {connectionIndicator}
-          </span>
-          <div className="ml-auto">
-            <AccountMenu mobile />
-          </div>
-        </div>
-
-        <div className="flex gap-1 border-t border-border px-3 py-2">
-          {organizations.length > 0 && (
-            <div className="min-w-0 flex-1">
-              <Combobox
-                options={organizationOptions}
-                value={selectedOrganizationId ?? 'all'}
-                onValueChange={handleOrganizationSelect}
-                placeholder={t('sidebar.organizations.all')}
-                searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
-              />
-            </div>
-          )}
+        <div className="flex h-12 items-center gap-1.5 px-2">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={t('sidebar.organizations.add')}
-            onClick={() => setCreateOrganizationOpen(true)}
+            className="size-9"
+            data-testid="open-mobile-nav"
+            aria-label={t('sidebar.openNavigation')}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
           >
-            <Plus aria-hidden="true" />
+            <Menu aria-hidden="true" />
           </Button>
-        </div>
-
-        <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5">
-          {workspaceLinks.map((link) => {
-            const Icon = link.icon
-            const active = currentSection === link.id
-            return (
-              <Button
-                key={link.id}
-                data-testid={`view-${link.id}-mobile`}
-                variant="ghost"
-                size="sm"
-                className={active ? 'bg-selected text-foreground' : undefined}
-                onClick={() => {
-                  if (link.id === 'data') {
-                    handleDatabaseSelect(selectedDatabaseId ?? null)
-                  } else {
-                    void navigate({ to: link.to })
-                  }
-                }}
-              >
-                <Icon aria-hidden="true" />
-                {t(link.labelKey)}
-              </Button>
-            )
-          })}
-        </div>
-
-        <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setCreateRepositoryOrganizationId(selectedOrganizationId)
-              setCreateRepositoryOpen(true)
-            }}
-          >
-            <Plus aria-hidden="true" />
-            {t('sidebar.repositories.new')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={
-              pathname === '/repositories' ? 'bg-selected text-foreground' : undefined
-            }
-            onClick={() => void navigate({ to: '/repositories' })}
-          >
-            {t('sidebar.repositories.viewAll')}
-          </Button>
-          {visibleDatabases.map((database) => (
-            <Button
-              key={database.id}
-              variant="ghost"
-              size="sm"
-              className={selectedDatabaseId === database.id ? 'bg-selected text-foreground' : undefined}
-              onClick={() => handleRepositorySelect(database)}
-            >
-              <FolderGit2 aria-hidden="true" />
-              {database.repoUsername ?? database.label}
-            </Button>
-          ))}
+          <img src={libraryAppIcon} alt="" className="size-4 shrink-0" />
+          <span className="shrink-0 text-sm font-semibold">Library</span>
+          <span data-testid="sync-presence-status-mobile" className="ml-1 min-w-0 truncate">
+            {connectionIndicator}
+          </span>
+          <div className="ml-auto shrink-0">
+            <AccountMenu mobile />
+          </div>
         </div>
       </div>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-overlay"
+            aria-label={t('sidebar.closeNavigation')}
+            onClick={closeMobileNav}
+          />
+          <div
+            ref={mobileNavRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('sidebar.navigationLabel')}
+            data-testid="mobile-nav"
+            className="absolute inset-y-0 left-0 flex w-[min(19rem,86vw)] flex-col border-r border-border bg-surface pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)] shadow-modal"
+          >
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+              <img src={libraryAppIcon} alt="" className="size-4" />
+              <span className="text-sm font-semibold">Library</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-9"
+                data-testid="close-mobile-nav"
+                aria-label={t('sidebar.closeNavigation')}
+                onClick={closeMobileNav}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2">
+              {/* The palette is otherwise keyboard-only, which leaves a phone
+                  with no way into workspace search. */}
+              <button
+                type="button"
+                data-testid="open-command-palette-mobile"
+                className="mb-2 flex h-10 w-full items-center gap-2 rounded-md border border-border bg-background px-2 text-sm text-muted-foreground"
+                onClick={() => {
+                  closeMobileNav()
+                  openCommandPalette()
+                }}
+              >
+                <Search className="size-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t('palette.title')}</span>
+              </button>
+
+              {/* Only the picker is conditional. An account with no
+                  organizations yet still needs the control that creates its
+                  first one, and the desktop sidebar it would fall back to is
+                  hidden below `md`. */}
+              <div className="flex gap-1 pb-2">
+                {organizations.length > 0 && (
+                  <div className="min-w-0 flex-1">
+                    <Combobox
+                      options={organizationOptions}
+                      value={selectedOrganizationId ?? 'all'}
+                      onValueChange={(organizationId) => {
+                        handleOrganizationSelect(organizationId)
+                        closeMobileNav()
+                      }}
+                      placeholder={t('sidebar.organizations.all')}
+                      searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
+                    />
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={organizations.length > 0 ? 'size-9 shrink-0 p-0' : 'flex-1'}
+                  aria-label={t('sidebar.organizations.add')}
+                  onClick={() => {
+                    closeMobileNav()
+                    setCreateOrganizationOpen(true)
+                  }}
+                >
+                  <Plus aria-hidden="true" />
+                  {organizations.length === 0 && t('sidebar.organizations.add')}
+                </Button>
+              </div>
+
+              <nav className="flex flex-col gap-0.5" aria-label={t('sidebar.navigationLabel')}>
+                {workspaceLinks.map((link) => {
+                  const Icon = link.icon
+                  const active = currentSection === link.id
+                  return (
+                    <button
+                      key={link.id}
+                      type="button"
+                      data-testid={`view-${link.id}-mobile`}
+                      aria-current={active ? 'page' : undefined}
+                      className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm ${
+                        active ? 'bg-selected font-medium text-foreground' : 'text-muted-foreground'
+                      }`}
+                      onClick={() => {
+                        closeMobileNav()
+                        if (link.id === 'data') {
+                          handleDatabaseSelect(selectedDatabaseId ?? null)
+                        } else {
+                          void navigate({ to: link.to })
+                        }
+                      }}
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t(link.labelKey)}</span>
+                    </button>
+                  )
+                })}
+              </nav>
+
+              <div className="mt-3 flex items-center gap-1 px-2 text-2xs font-medium uppercase tracking-wide text-subtle-foreground">
+                <span>{t('sidebar.repositories.heading')}</span>
+                <span className="ml-auto">{visibleDatabases.length}</span>
+                <button
+                  type="button"
+                  className="ml-1 inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={t('sidebar.repositories.create')}
+                  onClick={() => {
+                    closeMobileNav()
+                    setCreateRepositoryOrganizationId(selectedOrganizationId)
+                    setCreateRepositoryOpen(true)
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="mt-1 flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  aria-current={pathname === '/repositories' ? 'page' : undefined}
+                  className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm ${
+                    pathname === '/repositories'
+                      ? 'bg-selected font-medium text-foreground'
+                      : 'text-muted-foreground'
+                  }`}
+                  onClick={() => {
+                    closeMobileNav()
+                    void navigate({ to: '/repositories' })
+                  }}
+                >
+                  <FolderGit2 className="size-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{t('sidebar.repositories.viewAll')}</span>
+                  <Badge variant="neutral" className="ml-auto">{databases.length}</Badge>
+                </button>
+
+                {repositoriesLoading && (
+                  <span className="flex h-10 items-center gap-2 px-2 text-sm text-subtle-foreground">
+                    <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                    {t('sidebar.repositories.loading')}
+                  </span>
+                )}
+
+                {!repositoriesLoading && repositoriesError && (
+                  <button
+                    type="button"
+                    className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm text-muted-foreground"
+                    onClick={() => void refreshRepositories()}
+                  >
+                    <AlertCircle className="size-4 text-destructive" aria-hidden="true" />
+                    {t('sidebar.repositories.retry')}
+                  </button>
+                )}
+
+                {!repositoriesLoading &&
+                  !repositoriesError &&
+                  visibleDatabases.map((database) => {
+                    const path = database.orgUsername && database.repoUsername
+                      ? `${database.orgUsername}/${database.repoUsername}`
+                      : database.label
+                    return (
+                      <button
+                        key={database.id}
+                        type="button"
+                        data-testid={`database-${database.id}-mobile`}
+                        aria-current={selectedDatabaseId === database.id ? 'page' : undefined}
+                        className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm ${
+                          selectedDatabaseId === database.id
+                            ? 'bg-selected font-medium text-foreground'
+                            : 'text-muted-foreground'
+                        }`}
+                        onClick={() => {
+                          closeMobileNav()
+                          handleRepositorySelect(database)
+                        }}
+                      >
+                        <FolderGit2 className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{path}</span>
+                        <span className="ml-auto text-2xs text-subtle-foreground">
+                          {recordCountByProject.get(database.label) ?? 0}
+                        </span>
+                      </button>
+                    )
+                  })}
+
+                {!repositoriesLoading && !repositoriesError && visibleDatabases.length === 0 && (
+                  <span className="flex h-10 items-center gap-2 px-2 text-sm text-subtle-foreground">
+                    <WifiOff className="size-4" aria-hidden="true" />
+                    {t('sidebar.repositories.empty')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-border p-2">
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  closeMobileNav()
+                  setCreateRepositoryOrganizationId(selectedOrganizationId)
+                  setCreateRepositoryOpen(true)
+                }}
+              >
+                <Plus aria-hidden="true" />
+                {t('sidebar.repositories.new')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NativeSidebar
         data-testid="side-nav"

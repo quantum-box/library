@@ -74,6 +74,8 @@ export const en = {
 
   // --------------------------------------------------------------- sidebar
   'sidebar.navigationLabel': 'Library navigation',
+  'sidebar.openNavigation': 'Open navigation',
+  'sidebar.closeNavigation': 'Close navigation',
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
   'sidebar.workspaceHome': '{workspace} home',

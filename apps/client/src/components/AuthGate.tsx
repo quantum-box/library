@@ -132,8 +132,11 @@ export function AuthGate({ children }: AuthGateProps) {
         </div>
       </section>
 
-      <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-8">
-        <div className="w-full max-w-[380px]">
+      {/* The shell pins the viewport, so this column owns its own scrolling:
+          `min-h-full` keeps the form centred when it fits and lets it scroll
+          when it does not — a phone in landscape, or a tall error message. */}
+      <section className="min-w-0 overflow-y-auto px-5 py-8 sm:px-8">
+        <div className="mx-auto flex min-h-full w-full max-w-[380px] flex-col justify-center">
           <div className="mb-8 lg:hidden">
             <span className="mb-4 flex size-9 items-center justify-center rounded-md border border-border bg-surface shadow-soft">
               <img src={libraryAppIcon} alt="" className="size-5" />

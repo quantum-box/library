@@ -36,6 +36,7 @@ import {
   subscribeWorkflowCanvases,
 } from '../lib/workflows/workflowSync'
 import { initialSyncReady } from '../lib/yjs/yjsProvider'
+import { getIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import { DetailPanel } from './DetailPanel'
 import { useI18n, type MessageKey } from '../i18n'
 
@@ -207,7 +208,10 @@ export function WorkflowView({
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] =
     useState<WorkflowTemplateId>('business-flow')
-  const [itemsPanelOpen, setItemsPanelOpen] = useState(true)
+  // The picker is a full-screen overlay on a phone, so opening it by default
+  // would hide the canvas the view exists to show. Desktop docks it beside the
+  // canvas and keeps it open.
+  const [itemsPanelOpen, setItemsPanelOpen] = useState(() => !getIsMobileViewport())
   const [nodes, setNodes] = useState<WorkflowRecordNode[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [reactFlowInstance, setReactFlowInstance] =
