@@ -21,6 +21,7 @@ import {
 } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { Kbd, KbdGroup } from './Kbd'
+import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import { useI18n, t as translate, collator } from '../i18n'
 
 const ROW_HEIGHT = 40
@@ -41,6 +42,97 @@ interface LibraryTableViewProps {
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
   return translate('libraryTable.loadFailed')
+}
+
+/**
+ * Phone rendering of one row. The desktop table is 900px+ wide before the
+ * repository's own properties are counted, so on a phone the same data is laid
+ * out as a card instead of something to be panned sideways. Values are
+ * read-only here: editing happens in the detail panel a tap opens.
+ */
+const MOBILE_CARD_PROPERTY_LIMIT = 4
+
+function LibraryDataCard({
+  item,
+  properties,
+  selected,
+  disabled,
+  onSelect,
+  onDelete,
+}: {
+  item: LibraryDataItem
+  properties: LibraryProperty[]
+  selected: boolean
+  disabled: boolean
+  onSelect: () => void
+  onDelete: () => void
+}) {
+  const { t, formatDate } = useI18n()
+
+  const shownProperties = properties
+    .map((property) => {
+      const value = getLibraryDataPropertyValue(item, property.id)
+      const text = value ? propertyValueText(property, value) : undefined
+      return text?.trim() ? { property, text: text.trim() } : undefined
+    })
+    .filter((entry): entry is { property: LibraryProperty; text: string } => Boolean(entry))
+    .slice(0, MOBILE_CARD_PROPERTY_LIMIT)
+
+  return (
+    <div
+      data-testid="library-table-card"
+      role="button"
+      tabIndex={0}
+      aria-current={selected ? 'true' : undefined}
+      className={`w-full rounded-md border p-3 text-left transition-colors ${
+        selected ? 'border-accent bg-surface-hover' : 'border-border bg-surface'
+      }`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
+          {item.name}
+        </span>
+        <button
+          type="button"
+          data-testid={`library-table-delete-${item.id}`}
+          className="-my-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded text-subtle hover:text-status-cancelled"
+          disabled={disabled}
+          aria-label={t('repoSettings.deleteNamed', { name: item.name })}
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete()
+          }}
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      {shownProperties.length > 0 && (
+        <dl className="mt-2 space-y-1">
+          {shownProperties.map(({ property, text }) => (
+            <div key={property.id} className="flex min-w-0 items-baseline gap-2 text-xs">
+              <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
+              <dd className="min-w-0 flex-1 truncate text-right text-foreground">{text}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {item.updatedAt && (
+        <div className="mt-2 text-2xs text-subtle-foreground">
+          {t('table.column.updated')} ·{' '}
+          {formatDate(item.updatedAt, { month: 'short', day: 'numeric' }) ?? item.updatedAt}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function LibraryTableView({
@@ -72,6 +164,7 @@ export function LibraryTableView({
   const setGlobalFilter = onGlobalFilterChange ?? setInternalGlobalFilter
   const parentRef = useRef<HTMLDivElement>(null)
   const newRowInputRef = useRef<HTMLInputElement>(null)
+  const isMobileViewport = useIsMobileViewport()
 
   const repoTarget = useMemo(
     () => ({ org, repo, operatorId, repoName: repoLabel }),
@@ -319,11 +412,12 @@ export function LibraryTableView({
             placeholder={t('libraryTable.searchPlaceholder')}
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
-            className="h-7 w-full bg-surface pl-8 pr-24 text-xs"
+            className="h-7 w-full bg-surface pl-8 pr-3 text-xs md:pr-24"
           />
-          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-1">
+          {/* Keyboard hints only mean something where there is a keyboard. */}
+          <div className="pointer-events-none absolute inset-y-0 right-2 hidden items-center gap-1 md:flex">
             <Kbd>/</Kbd>
-            <KbdGroup className="hidden sm:inline-flex">
+            <KbdGroup>
               <Kbd>{/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘' : 'Ctrl'}</Kbd>
               <Kbd>F</Kbd>
             </KbdGroup>
@@ -431,7 +525,28 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && (
+      {!loading && !error && rows.length > 0 && isMobileViewport && (
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <LibraryDataCard
+                key={row.id}
+                item={row.original}
+                properties={properties}
+                selected={row.original.id === selectedDataId}
+                disabled={saving}
+                onSelect={() => onSelectData(row.original)}
+                onDelete={() => {
+                  setPendingDelete(row.original)
+                  setDeleteError(null)
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && rows.length > 0 && !isMobileViewport && (
         <div ref={parentRef} className="flex-1 overflow-auto" style={{ minHeight: 240 }}>
           <table className="w-full" style={{ minWidth: `${Math.max(900, properties.length * 160 + 300)}px` }}>
             <thead className="sticky top-0 z-10">

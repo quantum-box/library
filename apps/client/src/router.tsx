@@ -352,7 +352,9 @@ function DatabaseHeader({
             >
               <Plus aria-hidden="true" />
               <span>{t('data.new')}</span>
-              <Kbd className="hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">C</Kbd>
+              <span className="hidden md:inline-flex">
+                <Kbd className="border-white/25 bg-white/15 text-white shadow-none">C</Kbd>
+              </span>
             </Button>
           )}
         </div>
@@ -696,10 +698,12 @@ function WorkspaceHydrationStatus() {
   if (!hydrationError && (!hydrationLoading || records.length > 0)) return null
 
   return (
+    /* On a phone the app bar owns the top of the screen, so this clears it
+       instead of covering the account menu and the drawer trigger. */
     <div
       role={hydrationError ? 'alert' : 'status'}
       aria-live={hydrationError ? 'assertive' : 'polite'}
-      className="fixed left-1/2 top-3 z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-sm shadow-overlay"
+      className="fixed left-1/2 top-[calc(3.5rem+env(safe-area-inset-top))] z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-sm shadow-overlay md:top-3"
     >
       {hydrationLoading ? (
         <RotateCcw className="mt-0.5 size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />

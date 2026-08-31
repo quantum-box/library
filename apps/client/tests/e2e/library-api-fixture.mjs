@@ -678,6 +678,14 @@ const server = createServer(async (request, response) => {
         return
       }
 
+      if (request.method === 'GET' && suffix === '') {
+        sendJson(response, 200, {
+          ...restRepository(),
+          is_public: state.repository.isPublic ?? false,
+        })
+        return
+      }
+
       if (request.method === 'GET' && suffix === 'properties') {
         sendJson(response, 200, state.properties.map((property) => ({
           id: property.id,

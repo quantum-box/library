@@ -14,8 +14,12 @@ import type {
   TimelineScale,
 } from '../lib/databaseViews/types'
 import { formatDateTime, useI18n, type Locale, type MessageKey } from '../i18n'
+import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 
 const LABEL_WIDTH = 236
+/* A phone gives the bars only what the name column leaves behind, and 236px of
+   375 leaves almost nothing. */
+const MOBILE_LABEL_WIDTH = 132
 const ROW_HEIGHT = 36
 const HEADER_HEIGHT = 32
 
@@ -142,6 +146,8 @@ export function TimelineView({
   visibleProperties,
   preserveOrder,
 }: TimelineViewProps) {
+  const isMobileViewport = useIsMobileViewport()
+  const labelWidth = isMobileViewport ? MOBILE_LABEL_WIDTH : LABEL_WIDTH
   const { t, locale } = useI18n()
   const layout = useMemo(
     () => buildTimelineLayout(records, settings, { chronological: !preserveOrder }),
@@ -207,7 +213,7 @@ export function TimelineView({
             >
               <div
                 className="sticky left-0 z-10 flex shrink-0 items-center border-r border-border bg-surface px-2 text-2xs font-medium uppercase tracking-wide text-subtle-foreground"
-                style={{ width: LABEL_WIDTH }}
+                style={{ width: labelWidth }}
               >
                 {t('timeline.axisLabel')}
               </div>
@@ -234,7 +240,7 @@ export function TimelineView({
                 data-testid="timeline-today"
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-0 z-10 w-px bg-accent"
-                style={{ left: LABEL_WIDTH + todayLeft, top: HEADER_HEIGHT }}
+                style={{ left: labelWidth + todayLeft, top: HEADER_HEIGHT }}
               />
             )}
 
@@ -257,7 +263,7 @@ export function TimelineView({
                     type="button"
                     onClick={() => onSelectRecord(record)}
                     className="sticky left-0 z-10 flex h-full shrink-0 items-center gap-1.5 border-r border-border bg-background px-2 text-left hover:bg-surface-hover"
-                    style={{ width: LABEL_WIDTH }}
+                    style={{ width: labelWidth }}
                   >
                     {isVisible('status') && (
                       <span style={{ color: status.color }} className="shrink-0 text-xs">
@@ -269,7 +275,9 @@ export function TimelineView({
                         {priority.icon}
                       </span>
                     )}
-                    {isVisible('identifier') && (
+                    {/* On a phone the narrow label column has room for one of
+                        the two, and the title is the readable one. */}
+                    {isVisible('identifier') && !isMobileViewport && (
                       <span className="shrink-0 font-mono text-2xs text-subtle">
                         {record.identifier}
                       </span>

@@ -319,7 +319,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           })}
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-2 font-mono text-2xs text-subtle-foreground">
+        {/* Keyboard hints for a surface a phone reaches by tapping. */}
+        <div className="hidden shrink-0 items-center gap-3 border-t border-border px-3 py-2 font-mono text-2xs text-subtle-foreground md:flex">
           <span>↑↓ {t('palette.hint.navigate')}</span>
           <span>↵ {t('palette.hint.open')}</span>
           <span>Esc {t('palette.hint.close')}</span>

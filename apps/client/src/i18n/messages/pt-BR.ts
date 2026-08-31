@@ -54,6 +54,8 @@ export const ptBR: LocaleMessages = {
   'account.checkForUpdates': 'Verificar atualizações',
   'account.signOut': 'Sair',
   'sidebar.navigationLabel': 'Navegação do Library',
+  'sidebar.openNavigation': 'Abrir a navegação',
+  'sidebar.closeNavigation': 'Fechar a navegação',
   'sidebar.collapse': 'Recolher a barra lateral',
   'sidebar.expand': 'Expandir a barra lateral',
   'sidebar.workspaceHome': 'Início de {workspace}',

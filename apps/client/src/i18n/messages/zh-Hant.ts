@@ -54,6 +54,8 @@ export const zhHant: LocaleMessages = {
   'account.checkForUpdates': '檢查更新',
   'account.signOut': '登出',
   'sidebar.navigationLabel': 'Library 導覽',
+  'sidebar.openNavigation': '開啟導覽',
+  'sidebar.closeNavigation': '關閉導覽',
   'sidebar.collapse': '收合側邊欄',
   'sidebar.expand': '展開側邊欄',
   'sidebar.workspaceHome': '{workspace} 首頁',

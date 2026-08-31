@@ -57,6 +57,8 @@ export const ru: LocaleMessages = {
   'account.checkForUpdates': 'Проверить обновления',
   'account.signOut': 'Выйти',
   'sidebar.navigationLabel': 'Навигация Library',
+  'sidebar.openNavigation': 'Открыть навигацию',
+  'sidebar.closeNavigation': 'Закрыть навигацию',
   'sidebar.collapse': 'Свернуть боковую панель',
   'sidebar.expand': 'Развернуть боковую панель',
   'sidebar.workspaceHome': 'Главная {workspace}',

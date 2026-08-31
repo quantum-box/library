@@ -54,6 +54,8 @@ export const zhHans: LocaleMessages = {
   'account.checkForUpdates': '检查更新',
   'account.signOut': '退出登录',
   'sidebar.navigationLabel': 'Library 导航',
+  'sidebar.openNavigation': '打开导航',
+  'sidebar.closeNavigation': '关闭导航',
   'sidebar.collapse': '折叠侧边栏',
   'sidebar.expand': '展开侧边栏',
   'sidebar.workspaceHome': '{workspace} 首页',
