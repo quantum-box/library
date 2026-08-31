@@ -3,20 +3,17 @@ import {
   Activity,
   BookOpen,
   FileKey2,
-  FileText,
   KeyRound,
   LayoutList,
   Settings,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { DataLink } from './DataLink'
-import { DocLink } from './DocLink'
 import { useI18n } from '../i18n'
 
 export type RepositoryTab =
   | 'overview'
   | 'data'
-  | 'docs'
   | 'properties'
   | 'api'
   | 'settings'
@@ -103,14 +100,6 @@ export function RepositoryTabs({
           <DataLink databaseId={databaseId} className={className}>
             {content}
           </DataLink>
-        )}
-      </Tab>
-
-      <Tab active={active === 'docs'} icon={FileText} label={t('sidebar.nav.documents')}>
-        {(className, content) => (
-          <DocLink databaseId={databaseId} className={className}>
-            {content}
-          </DocLink>
         )}
       </Tab>
 

@@ -91,15 +91,16 @@ export interface AppKitConfig {
       toolResultPath?: string
     }
   }
+  /**
+   * Only the data directory survives the removal of the Documents feature:
+   * `chatHistoryStorageKey` derives the chat history key from it, and
+   * changing it would orphan every stored conversation.
+   */
   docs: {
     pgliteDataDir: string
-    defaultTitle: string
-    yjsArrayName: string
   }
   engine: {
     pgliteDataDir: string
-    pushPath: string
-    pullPath: string
   }
   attachments: {
     yjsArrayName: string
@@ -450,7 +451,6 @@ export const appKitConfig: AppKitConfig = {
     initial: selectedTenantWorkspace.workspaceInitial,
     primaryNav: [
       { id: 'data', label: 'Data', icon: '▦' },
-      { id: 'docs', label: 'Docs', icon: '▤' },
       { id: 'sync', label: 'Sync', icon: '↻' },
     ],
     projects: [
@@ -545,13 +545,9 @@ export const appKitConfig: AppKitConfig = {
   },
   docs: {
     pgliteDataDir: namespacedDataDir('idb://library-docs', userStorageScope),
-    defaultTitle: 'Untitled doc',
-    yjsArrayName: 'blocks',
   },
   engine: {
     pgliteDataDir: namespacedDataDir('idb://library-engine', userStorageScope),
-    pushPath: '/api/engine/push',
-    pullPath: '/api/engine/pull',
   },
   attachments: {
     yjsArrayName: 'attachments',

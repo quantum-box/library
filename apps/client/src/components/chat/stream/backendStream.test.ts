@@ -121,13 +121,12 @@ describe('backend chat stream adapter', () => {
 
       if (url === '/api/agent/chat/stream') {
         expect(init?.method).toBe('POST')
+        // The document context this used to assert on is gone with the
+        // Documents feature; the prompt and messages are what the backend
+        // actually needs.
         expect(JSON.parse(String(init?.body))).toMatchObject({
-          context: {
-            document: {
-              docId: 'doc-1',
-              selectedText: 'Selected text',
-            },
-          },
+          prompt: 'list backend records',
+          messages: [{ role: 'user', content: 'list backend records' }],
         })
         return sseResponse([
           'event: message_delta\ndata: {"delta":"Looking up records. "}\n\n',
@@ -170,13 +169,6 @@ describe('backend chat stream adapter', () => {
           prompt: 'list backend records',
           messages: [{ role: 'user', content: 'list backend records' }],
           context: {
-            documentContext: {
-              docId: 'doc-1',
-              title: 'Spec doc',
-              url: '/documents/doc-1',
-              selectedText: 'Selected text',
-              relatedRecords: [],
-            },
             recordTools: {
               records: [],
               syncRecord: vi.fn(),

@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from '@tanstack/react-router'
 import { Button } from '@tachyon-sdk/native-ui'
 import { ArrowLeft, Database, RefreshCw, Trash2, X } from 'lucide-react'
 import {
@@ -11,8 +10,6 @@ import {
   priorityConfig,
   mockUsers,
 } from '../data/mock'
-import { listRecordDocLinks } from '../lib/docs/docsDb'
-import type { DocumentRecordLink } from '../lib/docs/types'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { toFileAttachment } from '../lib/attachments/presentation'
 import { appKitConfig } from '../app/kitConfig'
@@ -48,7 +45,6 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const { t, formatDate } = useI18n()
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [relatedDocs, setRelatedDocs] = useState<DocumentRecordLink[]>([])
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
@@ -57,18 +53,6 @@ export function DetailPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- A new selected record must not inherit the previous delete confirmation.
     setDeleteConfirm(false)
   }, [record?.id])
-
-  useEffect(() => {
-    if (!record) return
-
-    let cancelled = false
-    void listRecordDocLinks(record.id, record.identifier).then((links) => {
-      if (!cancelled) setRelatedDocs(links)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [record])
 
   if (!record) {
     return (
@@ -435,42 +419,6 @@ export function DetailPanel({
           )}
         </div>
 
-        <div
-          className="mt-5 border-t pt-4"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <h3
-            className="mb-2 text-xs font-medium uppercase tracking-wider"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            {t('detail.relatedDocs')}
-          </h3>
-          {relatedDocs.length > 0 ? (
-            <div className="space-y-2" data-testid="record-related-docs">
-              {relatedDocs.map((link) => (
-                <Link
-                  key={link.id}
-                  to="/documents/$documentId"
-                  params={{ documentId: link.docId }}
-                  className="block rounded border border-border bg-surface px-3 py-2 text-sm no-underline hover:bg-surface-hover"
-                >
-                  <div className="font-medium text-foreground">
-                    {link.docTitle ?? t('docs.untitled')}
-                  </div>
-                  {link.selectedText && (
-                    <div className="mt-1 line-clamp-2 text-xs text-subtle">
-                      {link.selectedText}
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {t('detail.relatedDocsEmpty')}
-            </p>
-          )}
-        </div>
       </div>
 
       {/* Delete confirmation dialog */}

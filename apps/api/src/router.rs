@@ -587,12 +587,6 @@ pub async fn router(
         axum::Router::new()
     };
 
-    // Photon Engine sync. Off unless LIBRARY_PHOTON_ENGINE_ENABLED is set;
-    // see `crate::photon_engine` for why, and for the authorization boundary
-    // these routes sit behind.
-    let engine_router =
-        crate::photon_engine::engine_router(&library_db).await?;
-
     // Webhook router
     let webhook_router =
         inbound_sync::adapter::create_webhook_router(webhook_handler_state);
@@ -669,7 +663,6 @@ pub async fn router(
         .merge(image_router)
         .merge(collab_router)
         .merge(mcp_sse_router)
-        .merge(engine_router)
         .merge(webhook_router)
         // Layer order matters: outermost (first in chain) to innermost
         // Layers are applied in reverse order of declaration:

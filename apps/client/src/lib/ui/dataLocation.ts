@@ -1,4 +1,5 @@
 import type { useNavigate } from '@tanstack/react-router'
+
 import type { Status } from '../../data/mock'
 
 export interface DataViewSearch {
@@ -45,39 +46,6 @@ export function isDataListPath(pathname: string): boolean {
 }
 
 type NavigateFn = ReturnType<typeof useNavigate>
-
-export function navigateToDocs(
-  navigate: NavigateFn,
-  database: string | undefined,
-  opts: { documentId?: string; replace?: boolean } = {}
-) {
-  const repo = splitRepoDatabaseId(database)
-  const { documentId, replace } = opts
-  if (repo && documentId) {
-    return navigate({
-      to: '/$organization/$repository/docs/$documentId',
-      params: { ...repo, documentId },
-      replace,
-    })
-  }
-  if (repo) {
-    return navigate({
-      to: '/$organization/$repository/docs',
-      params: repo,
-      search: {},
-      replace,
-    })
-  }
-  if (documentId) {
-    return navigate({
-      to: '/documents/$documentId',
-      params: { documentId },
-      search: database ? { database } : {},
-      replace,
-    })
-  }
-  return navigate({ to: '/docs', search: database ? { database } : {}, replace })
-}
 
 export function navigateToData(
   navigate: NavigateFn,

@@ -41,7 +41,6 @@ import {
   Cloud,
   Copy,
   Database,
-  FileText,
   FolderGit2,
   Home,
   LogOut,
@@ -88,17 +87,16 @@ import { LanguageMenuSection } from './LanguageMenuSection'
 import { useDialogFocus } from './useDialogFocus'
 
 type WorkspaceLink = {
-  id: 'home' | 'data' | 'docs' | 'chat' | 'sync'
+  id: 'home' | 'data' | 'chat' | 'sync'
   labelKey: MessageKey
   icon: LucideIcon
-  to: '/home' | '/databases' | '/docs' | '/chat' | '/sync'
+  to: '/home' | '/databases' | '/chat' | '/sync'
   shortcut?: string
 }
 
 const workspaceLinks: WorkspaceLink[] = [
   { id: 'home', labelKey: 'sidebar.nav.home', icon: Home, to: '/home', shortcut: 'H' },
   { id: 'data', labelKey: 'sidebar.nav.allData', icon: Database, to: '/databases', shortcut: 'D' },
-  { id: 'docs', labelKey: 'sidebar.nav.documents', icon: FileText, to: '/docs' },
   { id: 'chat', labelKey: 'sidebar.nav.askLibrary', icon: Bot, to: '/chat' },
   { id: 'sync', labelKey: 'sidebar.nav.syncStatus', icon: Cloud, to: '/sync' },
 ]
@@ -303,8 +301,6 @@ export function Sidebar() {
         ? 'repository'
         : pathname.startsWith('/databases')
           ? 'data'
-          : pathname.startsWith('/docs') || pathname.startsWith('/documents')
-            ? 'docs'
             : pathname.startsWith('/chat')
               ? 'chat'
               : pathname.startsWith('/sync')

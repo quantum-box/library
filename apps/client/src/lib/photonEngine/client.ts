@@ -14,7 +14,6 @@
  */
 
 import {
-  createEngineTransport,
   createPhotonClient,
   newId,
   type AckResult,
@@ -30,7 +29,6 @@ import { createPGliteStore } from '@quantum-box/photon/store-pglite'
 import { loadPhotonKernel } from '@quantum-box/photon/wasm'
 
 import { appKitConfig } from '../../app/kitConfig'
-import { getValidAuthTokens } from '../auth'
 import {
   LIBRARY_REPOSITORIES_COLLECTION,
   type LibraryRecordsRepository,
@@ -97,9 +95,6 @@ const engineActorId = `${appKitConfig.tenant.id}:${appKitConfig.workspace.id}:${
  */
 const engineDataDir = `${LEGACY_ENGINE_DATA_DIR}-v2`
 
-/** Timeout for one durable sync cycle, matching what `docsApi` expected. */
-const SYNC_TIMEOUT_MS = 5_000
-
 let clientPromise: Promise<PhotonClient> | null = null
 
 /**
@@ -164,22 +159,16 @@ async function build(): Promise<PhotonClient> {
     actorId: engineActorId,
     storage,
     kernel,
-    transport:
-      overrides?.transport ??
-      createEngineTransport({
-      baseUrl: appKitConfig.server.apiBaseUrl ?? '',
-      pushPath: appKitConfig.engine.pushPath,
-      pullPath: appKitConfig.engine.pullPath,
-      timeoutMs: SYNC_TIMEOUT_MS,
-      // The engine has no business knowing which identity provider this app
-      // uses; it asks for headers when it is about to send a request. The old
-      // implementation sent none, so every push was unauthenticated.
-      headers: async (): Promise<Record<string, string>> => {
-        const tokens = await getValidAuthTokens()
-        if (!tokens?.accessToken) return {}
-        return { authorization: `Bearer ${tokens.accessToken}` }
-      },
-      }),
+    // No engine transport: library-api no longer serves `/api/engine/*`.
+    //
+    // Only `attachments` is still an engine-native collection, and it has
+    // never had a server side worth reaching -- its upload half was never
+    // written, so the bytes have always stayed in the browser. Pointing a
+    // transport at a route that no longer exists would just 404 on a timer.
+    // Repository data is unaffected: `resolveLibraryCollection` marks it
+    // `rest-backed`, which keeps the durable log, the offline queue and
+    // rollback, and pushes through the app's own REST API.
+    transport: overrides?.transport,
     // Records are partitioned one collection per repository, and the set of
     // repositories is only known at runtime — so the collections cannot be
     // named when the client is built. The resolver is asked for each one as it

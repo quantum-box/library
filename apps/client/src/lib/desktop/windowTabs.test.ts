@@ -7,7 +7,6 @@ describe('tabTitleForPath', () => {
     expect(tabTitleForPath('/home')).toBe('Home')
     expect(tabTitleForPath('/repositories')).toBe('Repositories')
     expect(tabTitleForPath('/databases')).toBe('All data')
-    expect(tabTitleForPath('/docs')).toBe('Documents')
     expect(tabTitleForPath('/chat')).toBe('Ask Library')
     expect(tabTitleForPath('/sync')).toBe('Sync status')
   })
@@ -20,16 +19,13 @@ describe('tabTitleForPath', () => {
   it('scopes repository routes to organization/repository', () => {
     expect(tabTitleForPath('/acme/handbook')).toBe('acme/handbook')
     expect(tabTitleForPath('/acme/handbook/data')).toBe('acme/handbook · Data')
-    expect(tabTitleForPath('/acme/handbook/docs')).toBe('acme/handbook · Docs')
     expect(tabTitleForPath('/acme/handbook/settings')).toBe('acme/handbook · Settings')
     expect(tabTitleForPath('/acme/handbook/api')).toBe('acme/handbook · API keys')
   })
 
-  it('stays on the repository scope for a single record or document', () => {
+  it('stays on the repository scope for a single record', () => {
     expect(tabTitleForPath('/acme/handbook/data/rec-1')).toBe('acme/handbook · Data')
-    expect(tabTitleForPath('/acme/handbook/docs/doc-1')).toBe('acme/handbook · Docs')
     expect(tabTitleForPath('/databases/rec-1')).toBe('All data')
-    expect(tabTitleForPath('/documents/doc-1')).toBe('Documents')
   })
 
   it('handles the legacy and public route prefixes', () => {

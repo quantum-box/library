@@ -4,7 +4,6 @@ import {
   CalendarRange,
   Cloud,
   Database,
-  FileText,
   GitBranch,
   Home,
   KanbanSquare,
@@ -110,14 +109,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: CalendarRange,
         keywords: t('palette.nav.timeline.keywords'),
         run: databaseView('timeline'),
-      },
-      {
-        id: 'nav-docs',
-        label: t('palette.nav.docs.label'),
-        detail: t('palette.nav.docs.detail'),
-        icon: FileText,
-        keywords: t('palette.nav.docs.keywords'),
-        run: () => void navigate({ to: '/docs' }),
       },
       {
         id: 'nav-chat',
