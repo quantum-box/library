@@ -13,12 +13,6 @@ import { useWorkspaceDatabases } from '../../contexts/DatabasesContext'
 import { toFileAttachment } from '../../lib/attachments/presentation'
 import { useWorkspaceAttachments } from '../../lib/attachments/useWorkspaceAttachments'
 import type { AttachmentSurfaceRef, WorkspaceAttachment } from '../../lib/attachments/types'
-import { listDocRecordLinks } from '../../lib/docs/docsDb'
-import {
-  readStoredDocContext,
-  readStoredSelectedText,
-  type WorkspaceDocContext,
-} from '../../lib/docs/workspaceContext'
 import { extractFileContext } from '../../lib/attachments/extractFileContext'
 import {
   chatHistoryStorageKey,
@@ -97,7 +91,7 @@ interface ActiveChatRun {
 }
 
 export function ChatView() {
-  const { t, tPlural } = useI18n()
+  const { t } = useI18n()
   const { records, syncRecord, beginRecordsSnapshot, syncRecords } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
@@ -108,12 +102,10 @@ export function ChatView() {
   const [pendingFiles, setPendingFiles] = useState<FileAttachment[]>([])
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
-  const [documentContext, setDocumentContext] = useState<WorkspaceDocContext | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
   const [selectedRepositoryId, setSelectedRepositoryId] = useState('')
   const activeRunRef = useRef<ActiveChatRun | null>(null)
   const runGenerationRef = useRef(0)
-  const documentContextGenerationRef = useRef(0)
   const ownedObjectUrlsRef = useRef(new Set<string>())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -192,50 +184,11 @@ export function ChatView() {
     ownedObjectUrlsRef.current.delete(url)
   }, [])
 
-  const refreshDocumentContext = useCallback(() => {
-    const generation = ++documentContextGenerationRef.current
-    const stored = readStoredDocContext()
-    if (!stored) {
-      setDocumentContext(null)
-      return
-    }
-
-    void listDocRecordLinks(stored.docId)
-      .then((relatedRecords) => {
-        if (generation !== documentContextGenerationRef.current) return
-        setDocumentContext({
-          ...stored,
-          selectedText: readStoredSelectedText(stored.docId),
-          relatedRecords,
-        })
-      })
-      .catch((error: unknown) => {
-        if (generation === documentContextGenerationRef.current) {
-          console.warn('Failed to load current document context', error)
-        }
-      })
-  }, [])
-
-  useEffect(() => {
-    let mounted = true
-    const refreshWhileMounted = () => {
-      if (mounted) refreshDocumentContext()
-    }
-
-    queueMicrotask(refreshWhileMounted)
-    window.addEventListener('focus', refreshWhileMounted)
-    return () => {
-      mounted = false
-      window.removeEventListener('focus', refreshWhileMounted)
-    }
-  }, [refreshDocumentContext])
-
   useEffect(() => {
     saveChatHistory(CHAT_HISTORY_STORAGE_KEY, messages)
   }, [messages])
 
   useEffect(() => () => {
-    documentContextGenerationRef.current += 1
     const run = activeRunRef.current
     activeRunRef.current = null
     if (run) {
@@ -286,7 +239,6 @@ export function ChatView() {
             recordTools: { records, syncRecord, beginRecordsSnapshot, syncRecords },
             repositoryTargets,
             selectedRepositoryId: effectiveRepositoryId || undefined,
-            documentContext,
           },
         },
         {
@@ -362,7 +314,6 @@ export function ChatView() {
       finishRun(run)
     }
   }, [
-    documentContext,
     effectiveRepositoryId,
     finishRun,
     isCurrentRun,
@@ -408,9 +359,6 @@ export function ChatView() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     const surfaces: AttachmentSurfaceRef[] = [{ surfaceType: 'chat', surfaceId: CHAT_SURFACE_ID }]
-    if (documentContext) {
-      surfaces.push({ surfaceType: 'document', surfaceId: documentContext.docId })
-    }
 
     const attachmentResults = await Promise.all(
       capturedFiles.map(async (pendingFile) => {
@@ -462,7 +410,6 @@ export function ChatView() {
   }, [
     beginRun,
     createAttachment,
-    documentContext,
     input,
     isCurrentRun,
     messages,
@@ -770,31 +717,6 @@ export function ChatView() {
 
       {/* Input area */}
       <div className="border-t border-border px-1 py-2 md:px-4 md:py-3">
-        {documentContext && (
-          <div
-            data-testid="chat-document-context"
-            className="mb-2 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2 text-xs text-muted"
-          >
-            <span className="font-medium text-foreground">{documentContext.title}</span>
-            {documentContext.selectedText && (
-              <span className="max-w-xs truncate">
-                {t('chat.selectedText', { text: documentContext.selectedText })}
-              </span>
-            )}
-            {documentContext.relatedRecords.length > 0 && (
-              <span>
-                {tPlural('chat.relatedData', documentContext.relatedRecords.length)}
-              </span>
-            )}
-            <button
-              className="ml-auto rounded bg-surface-hover px-2 py-1 text-xs text-foreground"
-              onClick={refreshDocumentContext}
-            >
-              {t('common.refresh')}
-            </button>
-          </div>
-        )}
-
         {/* Pending file attachments */}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">

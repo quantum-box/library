@@ -301,8 +301,6 @@ export function Sidebar() {
         ? 'repository'
         : pathname.startsWith('/databases')
           ? 'data'
-          : pathname.startsWith('/docs') || pathname.startsWith('/documents')
-            ? 'docs'
             : pathname.startsWith('/chat')
               ? 'chat'
               : pathname.startsWith('/sync')

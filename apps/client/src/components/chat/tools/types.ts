@@ -4,7 +4,6 @@
 
 import type { DatabaseRecord } from '../../../data/mock'
 import type { RecordsSnapshotToken } from '../../../contexts/RecordsContext'
-import type { WorkspaceDocContext } from '../../../lib/docs/workspaceContext'
 
 export type ToolType =
   | 'web_search'
@@ -60,7 +59,6 @@ export interface ToolRuntimeContext {
   recordTools?: RecordToolRuntime
   repositoryTargets?: RecordToolRepositoryTarget[]
   selectedRepositoryId?: string
-  documentContext?: WorkspaceDocContext | null
 }
 
 // Web search specific types

@@ -23,14 +23,6 @@ csv_importer = { path = "../../packages/csv_importer" }
 
 github_provider = { path = "./packages/github_provider" }
 
-# Photon Engine, mounted at `/api/engine/*` (ADR-0006 / de-vendoring Stage 4).
-# `quantum-box/photon` is public but deliberately not on crates.io, so it is
-# pinned by rev rather than by version. Bump both together: `photon-axum`
-# resolves `photon-engine` through its own workspace, and two revs would give
-# us two incompatible `StorageAdapter` traits.
-photon-axum = { git = "https://github.com/quantum-box/photon", rev = "c364058cf5d2fcd617d49a4157e94917b94b89c1" }
-photon-engine = { git = "https://github.com/quantum-box/photon", rev = "c364058cf5d2fcd617d49a4157e94917b94b89c1", default-features = false, features = ["mysql"] }
-
 reqwest = { workspace = true }
 tachyon-sdk = { path = "../../sdk/rust", features = ["auth", "graphql"] }
 
@@ -84,10 +76,6 @@ sqlx = { workspace = true, features = [
     "runtime-tokio-rustls",
     "any",
     "postgres",
-    # `photon-axum`'s `AppState` holds a `SqlitePool` for Photon Live's Yjs
-    # rooms. We mount the Engine routes only, which never touch it, but the
-    # struct still has to be constructed -- see `photon_engine.rs`.
-    "sqlite",
 ] }
 
 yrs = "0.21"

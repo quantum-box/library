@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   createAttachment: vi.fn(),
   extractFileContext: vi.fn(),
   startChatStream: vi.fn(),
-  listDocRecordLinks: vi.fn(),
   callbacks: [] as ChatStreamCallbacks[],
   requests: [] as ChatStreamRequest[],
   controllers: [] as AbortController[],
@@ -42,15 +41,6 @@ vi.mock('../../lib/attachments/useWorkspaceAttachments', () => ({
 
 vi.mock('../../lib/attachments/extractFileContext', () => ({
   extractFileContext: mocks.extractFileContext,
-}))
-
-vi.mock('../../lib/docs/docsDb', () => ({
-  listDocRecordLinks: mocks.listDocRecordLinks,
-}))
-
-vi.mock('../../lib/docs/workspaceContext', () => ({
-  readStoredDocContext: () => null,
-  readStoredSelectedText: () => '',
 }))
 
 vi.mock('./stream/startChatStream', () => ({
@@ -122,7 +112,6 @@ describe('ChatView request lifecycle', () => {
       operatorId: 'org-1',
     }]
     mocks.extractFileContext.mockResolvedValue('file content')
-    mocks.listDocRecordLinks.mockResolvedValue([])
     mocks.createAttachment.mockImplementation(async ({ file }: { file: File }) => (
       storedAttachment(file.name)
     ))

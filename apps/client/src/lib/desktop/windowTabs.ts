@@ -65,8 +65,6 @@ const STATIC_TITLE_KEYS: Record<string, MessageKey> = {
   home: 'sidebar.nav.home',
   repositories: 'sidebar.repositories.heading',
   databases: 'sidebar.nav.allData',
-  docs: 'sidebar.nav.documents',
-  documents: 'sidebar.nav.documents',
   chat: 'sidebar.nav.askLibrary',
   sync: 'sidebar.nav.syncStatus',
   kanban: 'palette.nav.board.label',
@@ -74,7 +72,6 @@ const STATIC_TITLE_KEYS: Record<string, MessageKey> = {
 
 const REPOSITORY_SECTION_TITLE_KEYS: Record<string, MessageKey> = {
   data: 'repository.tab.data',
-  docs: 'shortcuts.docs',
   settings: 'common.settings',
   api: 'apiKeys.cardTitle',
 }
@@ -102,7 +99,6 @@ export function tabTitleForPath(pathname: string): string {
   if (first === 'databases' && second === 'board') return t('palette.nav.board.label')
   if (first === 'databases' && second === 'workflow') return t('palette.nav.workflow.label')
   if (segments.length === 1 && first in STATIC_TITLE_KEYS) return t(STATIC_TITLE_KEYS[first])
-  if (first === 'documents' || first === 'docs') return t('sidebar.nav.documents')
   if (first === 'databases') return t('sidebar.nav.allData')
 
   if (first === 'organizations' && second) return second

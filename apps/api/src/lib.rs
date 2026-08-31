@@ -12,7 +12,6 @@ pub mod handler;
 mod interface_adapter;
 pub mod migrations;
 pub mod oauth_bootstrap;
-mod photon_engine;
 mod router;
 pub mod sdk_auth;
 mod sentry_context;

@@ -65,9 +65,6 @@ describe('appKitConfig', () => {
     expect(appKitConfig.engine.pgliteDataDir).toBe(
       'idb://library-engine-tenant-library-workspace-library-default'
     )
-    expect(appKitConfig.engine.pushPath).toBe('/api/engine/push')
-    expect(appKitConfig.engine.pullPath).toBe('/api/engine/pull')
-    expect(appKitConfig.docs.yjsArrayName).toBe('blocks')
     expect(appKitConfig.attachments.yjsArrayName).toBe('attachments')
     expect(appKitConfig.attachments.webStorageProvider).toBe('web-object-storage')
     expect(appKitConfig.sync.roomParam).toBe('room')

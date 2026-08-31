@@ -24,7 +24,6 @@ import { priorityConfig, statusConfig, type DatabaseRecord, type Status } from '
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { useI18n, type I18nContextValue } from '../i18n'
 import { DataLink } from './DataLink'
-import { DocLink } from './DocLink'
 import { RepositoryTabs } from './RepositoryTabs'
 
 const statusOrder: Status[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled']
@@ -286,19 +285,6 @@ export function RepositoryOverview({
                           </span>
                         </DataLink>
                       ))}
-                      <DocLink
-                        databaseId={databaseId}
-                        className="group min-h-20 border-t border-border bg-background px-3 py-3 no-underline transition-colors duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:border-t-0"
-                      >
-                        <span className="flex items-center gap-2 text-sm font-medium">
-                          <FileText className="size-4 text-primary" aria-hidden="true" />
-                          {t('sidebar.nav.documents')}
-                          <ArrowRight className="ml-auto size-3.5 text-subtle-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100" aria-hidden="true" />
-                        </span>
-                        <span className="mt-1.5 block text-xs leading-5 text-muted-foreground">
-                          {t('repository.card.documentsDetail')}
-                        </span>
-                      </DocLink>
                     </div>
                   </div>
                 </section>
