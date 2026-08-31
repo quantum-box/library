@@ -80,6 +80,15 @@ async function seedCreatedFixtureProperties(
   expect(response.ok()).toBe(true)
 }
 
+/**
+ * Board, workflow and timeline views are opt-in, so a test that wants one adds
+ * it the way a user would — from the view options menu.
+ */
+async function addDatabaseView(page: Page, type: 'board' | 'workflow' | 'timeline') {
+  await page.getByTestId('view-options').click()
+  await page.getByTestId(`new-${type}-view`).click()
+}
+
 async function expectCreateRepository(page: Page) {
   await expect(page.getByTestId('create-record-repository')).toHaveValue(e2eRepositoryId)
 }
@@ -111,15 +120,19 @@ test.describe('Library shell', () => {
 
   test('switches between table, board, workflow, timeline, docs, and chat views', async ({ page }) => {
     await page.goto('/databases')
+    await addDatabaseView(page, 'board')
+    await addDatabaseView(page, 'workflow')
+    await addDatabaseView(page, 'timeline')
+
     await page.getByTestId('view-kanban').click()
 
-    await expect(page).toHaveURL(/view=.*board/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByText('drag to move')).toBeVisible()
 
     await page.getByTestId('view-workflow').click()
 
-    await expect(page).toHaveURL(/view=.*workflow/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
@@ -130,7 +143,7 @@ test.describe('Library shell', () => {
 
     await page.getByTestId('view-timeline').click()
 
-    await expect(page).toHaveURL(/view=.*timeline/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByTestId('timeline-view')).toBeVisible()
     await expect(page.getByTestId('timeline-scale-day')).toHaveAttribute('aria-pressed', 'true')
     await page.getByTestId('timeline-scale-month').click()
@@ -150,6 +163,10 @@ test.describe('Library shell', () => {
 
   test('supports global keyboard shortcuts for fast navigation and creation', async ({ page }) => {
     await page.goto('/databases')
+    // The board toggle switches to a board the user has added; without one
+    // there is nothing to toggle to.
+    await addDatabaseView(page, 'board')
+    await page.getByTestId('view-table').click()
 
     await expect(page.getByTestId('open-create-record').locator('kbd').filter({ hasText: 'C' })).toBeVisible()
     await expect(page.locator('kbd').filter({ hasText: '/' }).first()).toBeVisible()
@@ -159,7 +176,7 @@ test.describe('Library shell', () => {
 
     await page.keyboard.press('Escape')
     await page.keyboard.press('ControlOrMeta+B')
-    await expect(page).toHaveURL(/view=.*board/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByText('drag to move')).toBeVisible()
 
     await page.keyboard.press('g')
@@ -191,13 +208,14 @@ test.describe('Library shell', () => {
     const canvasDatabase = e2eRepositoryId
 
     await page.goto(`/databases/workflow?database=${encodeURIComponent(canvasDatabase)}`)
+    await addDatabaseView(page, 'workflow')
 
     await page.getByTestId('workflow-add-record').first().click()
     await page.getByTestId('workflow-template-kpi-tree').click()
     await page.getByTestId('workflow-add-record').nth(1).click()
 
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
-    await expect(page).toHaveURL(/view=workflow/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.getByText('KPI tree item')).toBeVisible()
@@ -331,10 +349,13 @@ test.describe('Library shell', () => {
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data$/)
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
+    await addDatabaseView(page, 'board')
+    await addDatabaseView(page, 'workflow')
+
     await page.getByTestId('view-kanban').click()
 
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
-    await expect(page).toHaveURL(/view=board/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByText('drag to move')).toBeVisible()
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
 
@@ -346,7 +367,7 @@ test.describe('Library shell', () => {
     await page.getByTestId('view-workflow').click()
 
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
-    await expect(page).toHaveURL(/view=workflow/)
+    await expect(page).toHaveURL(/view=/)
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('selected-database-pill')).toHaveText('Repository data')
   })
@@ -450,6 +471,32 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('repository-settings-page')).toBeVisible()
 
     await page.getByTestId('repository-settings-back').click()
+    await expect(page.getByTestId('repository-page')).toBeVisible()
+  })
+
+  test('keeps the repository tabs on the data screen alongside the view tabs', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/data')
+
+    const tabs = page.getByTestId('repository-tabs')
+    await expect(tabs).toBeVisible()
+    // The data screen is a repository section, not a replacement for the strip:
+    // Data reads as the current section while the rest stay reachable.
+    await expect(tabs.getByRole('link', { name: 'Data' })).toHaveCount(0)
+    await expect(tabs.getByText('Data', { exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(tabs.getByRole('link', { name: 'Overview' })).toBeVisible()
+    // Board, Workflow and Timeline are views inside Data, so the section strip
+    // never lists them — only the view tabs below it do.
+    await expect(tabs.getByText('Board', { exact: true })).toHaveCount(0)
+    await expect(tabs.getByText('Workflow', { exact: true })).toHaveCount(0)
+    await expect(tabs.getByText('Timeline', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('view-table')).toBeVisible()
+    // A fresh repository starts with the table alone; the rest are added here.
+    await expect(page.getByTestId('view-kanban')).toHaveCount(0)
+    await addDatabaseView(page, 'board')
+    await expect(page.getByTestId('view-kanban')).toBeVisible()
+    await expect(tabs.getByText('Board', { exact: true })).toHaveCount(0)
+
+    await tabs.getByRole('link', { name: 'Overview' }).click()
     await expect(page.getByTestId('repository-page')).toBeVisible()
   })
 

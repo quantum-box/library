@@ -46,17 +46,24 @@ const records: DatabaseRecord[] = [
   },
 ]
 
+/**
+ * Views a database seeded before board, workflow and timeline became opt-in:
+ * they carry the canonical ids, so the URL and id handling still has to work
+ * for them.
+ */
+function seededViews(databaseId: string) {
+  return (['board', 'workflow', 'timeline'] as const).map((type, index) => ({
+    ...createNewDatabaseView(databaseId, type, index + 1),
+    id: getDefaultDatabaseViewId(databaseId, type),
+  }))
+}
+
 describe('database view definitions', () => {
-  it('creates deterministic default views for a database scope', () => {
+  it('seeds a database scope with the table view only', () => {
     const views = getDefaultDatabaseViews('photon-core')
 
-    expect(views.map((view) => view.id)).toEqual([
-      'photon-core:table',
-      'photon-core:board',
-      'photon-core:workflow',
-      'photon-core:timeline',
-    ])
-    expect(views[2].workflowCanvasKey).toBe('photon-core')
+    expect(views.map((view) => view.id)).toEqual(['photon-core:table'])
+    expect(views[0].workflowCanvasKey).toBe('photon-core')
     expect(getDefaultDatabaseViewId(ALL_DATABASES_ID, 'board')).toBe('__all__:board')
   })
 
@@ -144,7 +151,7 @@ describe('database view definitions', () => {
 
 describe('database view URL params', () => {
   it('resolves short type names, legacy full ids, and custom suffixes', () => {
-    const views = getDefaultDatabaseViews('org/repo')
+    const views = [...getDefaultDatabaseViews('org/repo'), ...seededViews('org/repo')]
     const custom = createNewDatabaseView('org/repo', 'board', views.length, 'Sprint')
     const all = [...views, custom]
 
@@ -159,8 +166,20 @@ describe('database view URL params', () => {
     expect(resolveDatabaseViewFromParam(all, 'org/repo', 'missing')).toBeUndefined()
   })
 
+  it('falls back to the first view of a type when no view carries the seeded id', () => {
+    const views = [
+      ...getDefaultDatabaseViews('org/repo'),
+      createNewDatabaseView('org/repo', 'board', 1, 'Sprint'),
+      createNewDatabaseView('org/repo', 'board', 2, 'Triage'),
+    ]
+
+    expect(resolveDatabaseViewFromParam(views, 'org/repo', 'board')?.name).toBe('Sprint')
+    expect(resolveDatabaseViewFromParam(views, 'org/repo', 'workflow')).toBeUndefined()
+  })
+
   it('serializes default views to short params and custom views to suffixes', () => {
-    const [table, board, workflow, timeline] = getDefaultDatabaseViews(ALL_DATABASES_ID)
+    const [table] = getDefaultDatabaseViews(ALL_DATABASES_ID)
+    const [board, workflow, timeline] = seededViews(ALL_DATABASES_ID)
     expect(databaseViewUrlParam(table)).toBeUndefined()
     expect(databaseViewUrlParam(board)).toBe('board')
     expect(databaseViewUrlParam(workflow)).toBe('workflow')
