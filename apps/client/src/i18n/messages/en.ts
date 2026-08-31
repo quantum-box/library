@@ -755,8 +755,6 @@ export const en = {
   'libraryTable.doubleClickToEditName': 'Double-click to edit name',
   'libraryTable.empty': 'No data in this repository. Use "+ New data" to add a row.',
 
-  // ------------------------------------------------------------------ docs
-
   // --------------------------------------------------- engine diagnostics
   'sync.title': 'Engine diagnostics',
   'sync.subtitle': 'Client local queue to Edge proxy to Cloud Engine authority',
