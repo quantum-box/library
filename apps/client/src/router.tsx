@@ -24,6 +24,7 @@ import { KanbanView } from './components/KanbanView'
 import { WorkflowView } from './components/WorkflowView'
 import { TimelineView } from './components/TimelineView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
+import { RepositoryTabs } from './components/RepositoryTabs'
 import {
   DeleteDatabaseViewDialog,
   RenameDatabaseViewDialog,
@@ -356,7 +357,15 @@ function DatabaseHeader({
           )}
         </div>
       </header>
+      {organization && repository ? (
+        <RepositoryTabs
+          organization={organization}
+          repository={repository}
+          active="data"
+        />
+      ) : null}
       <DatabaseViewTabs
+        nested={Boolean(organization && repository)}
         views={views}
         selectedView={selectedView}
         dirty={dirty}

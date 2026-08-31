@@ -102,6 +102,12 @@ export function getDefaultWorkflowCanvasKey(databaseId: string): string {
   return databaseId === ALL_DATABASES_ID ? 'all' : databaseId
 }
 
+/**
+ * The views a database starts with. Only the table is seeded: a board, a
+ * workflow or a timeline is a choice about how to read the data, so the user
+ * adds the ones they want from the view tabs instead of finding four half-used
+ * views waiting for them.
+ */
 export function getDefaultDatabaseViews(databaseId: string): DatabaseViewDefinition[] {
   const now = '2026-01-01T00:00:00.000Z'
   return [
@@ -117,51 +123,6 @@ export function getDefaultDatabaseViews(databaseId: string): DatabaseViewDefinit
       timeline: { ...DEFAULT_TIMELINE },
       workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
       order: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: getDefaultDatabaseViewId(databaseId, 'board'),
-      databaseId,
-      name: 'Board',
-      type: 'board',
-      filters: { ...DEFAULT_FILTERS },
-      sorting: null,
-      visibleProperties: DEFAULT_BOARD_VISIBLE_PROPERTIES,
-      board: { ...DEFAULT_BOARD },
-      timeline: { ...DEFAULT_TIMELINE },
-      workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
-      order: 1,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: getDefaultDatabaseViewId(databaseId, 'workflow'),
-      databaseId,
-      name: 'Workflow',
-      type: 'workflow',
-      filters: { ...DEFAULT_FILTERS },
-      sorting: null,
-      visibleProperties: DEFAULT_VISIBLE_PROPERTIES,
-      board: { ...DEFAULT_BOARD },
-      timeline: { ...DEFAULT_TIMELINE },
-      workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
-      order: 2,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: getDefaultDatabaseViewId(databaseId, 'timeline'),
-      databaseId,
-      name: 'Timeline',
-      type: 'timeline',
-      filters: { ...DEFAULT_FILTERS },
-      sorting: null,
-      visibleProperties: DEFAULT_TIMELINE_VISIBLE_PROPERTIES,
-      board: { ...DEFAULT_BOARD },
-      timeline: { ...DEFAULT_TIMELINE },
-      workflowCanvasKey: getDefaultWorkflowCanvasKey(databaseId),
-      order: 3,
       createdAt: now,
       updatedAt: now,
     },
@@ -380,7 +341,13 @@ export function resolveDatabaseViewFromParam(
     return views.find((view) => view.id === getDefaultDatabaseViewId(scopeId, 'table'))
   }
   if (isDatabaseViewType(param)) {
-    return views.find((view) => view.id === getDefaultDatabaseViewId(scopeId, param))
+    // Only the table view is seeded, so a ?view=board link — a shortcut, a
+    // legacy URL, a bookmark — has to reach the board the user added rather
+    // than a canonical id that no longer exists.
+    return (
+      views.find((view) => view.id === getDefaultDatabaseViewId(scopeId, param)) ??
+      views.find((view) => view.type === param)
+    )
   }
   return (
     views.find((view) => view.id === param) ??
