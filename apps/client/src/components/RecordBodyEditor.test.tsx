@@ -78,6 +78,50 @@ describe('RecordBodyEditor', () => {
     expect(onCommit).toHaveBeenCalledWith('Original\n\n')
   })
 
+  it('waits for Japanese IME composition to finish before committing', async () => {
+    const onCommit = vi.fn()
+    const { getByTestId } = render(
+      <RecordBodyEditor value="Original" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+    vi.useFakeTimers()
+
+    fireEvent.compositionStart(getByTestId('block-note-view'))
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('にほん')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    act(() => vi.advanceTimersByTime(1_000))
+
+    expect(onCommit).not.toHaveBeenCalled()
+
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('日本')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    fireEvent.compositionEnd(getByTestId('block-note-view'))
+    act(() => vi.advanceTimersByTime(500))
+
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('日本')
+    vi.useRealTimers()
+  })
+
+  it('does not commit unconfirmed IME text when unmounted', async () => {
+    const onCommit = vi.fn()
+    const { getByTestId, unmount } = render(
+      <RecordBodyEditor value="Original" onCommit={onCommit} />,
+    )
+
+    await waitFor(() => expect(mocks.editor.replaceBlocks).toHaveBeenCalled())
+    await act(async () => Promise.resolve())
+
+    fireEvent.compositionStart(getByTestId('block-note-view'))
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('未確定')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    unmount()
+
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('follows the incoming value while read only', async () => {
     const onCommit = vi.fn()
     const { rerender } = render(

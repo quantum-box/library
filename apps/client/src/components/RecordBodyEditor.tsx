@@ -131,6 +131,7 @@ function BlockRecordBodyEditor({
   const lastCommitted = useRef(value)
   const loading = useRef(true)
   const seeded = useRef(false)
+  const composing = useRef(false)
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
@@ -154,7 +155,17 @@ function BlockRecordBodyEditor({
     onCommitRef.current(next)
   }, [])
 
+  const schedulePendingCommit = useCallback(() => {
+    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
+    commitTimer.current = window.setTimeout(commitPendingValue, 500)
+  }, [commitPendingValue])
+
   useEffect(() => () => {
+    if (composing.current) {
+      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
+      pendingValue.current = null
+      return
+    }
     commitPendingValue()
   }, [commitPendingValue])
 
@@ -181,8 +192,13 @@ function BlockRecordBodyEditor({
     if (loading.current || !editable) return
 
     pendingValue.current = serializeDocument(changedEditor, format)
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
-    commitTimer.current = window.setTimeout(commitPendingValue, 500)
+    // An IME can keep composition open while the user considers conversion
+    // candidates for longer than the normal save debounce. Committing then
+    // re-renders the parent around BlockNote's live composition DOM and can
+    // duplicate its unconfirmed text. Keep the newest document locally and
+    // wait until compositionend before allowing the save to reach the parent.
+    if (composing.current) return
+    schedulePendingCommit()
   }, editor)
 
   return (
@@ -190,6 +206,17 @@ function BlockRecordBodyEditor({
       className={surface === 'page'
         ? 'record-body-blocknote record-body-page min-h-[420px] bg-background py-2'
         : 'record-body-blocknote rounded border border-border bg-surface px-2 py-3'}
+      onCompositionStartCapture={() => {
+        composing.current = true
+        if (commitTimer.current !== null) {
+          window.clearTimeout(commitTimer.current)
+          commitTimer.current = null
+        }
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false
+        if (pendingValue.current !== null) schedulePendingCommit()
+      }}
     >
       <BlockNoteView
         editor={editor}
