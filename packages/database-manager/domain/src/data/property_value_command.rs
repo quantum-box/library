@@ -21,6 +21,7 @@ pub enum PropertyValueCommand {
     Date(String),
     Image(String),
     RichText(serde_json::Value),
+    Boolean(bool),
 }
 
 impl PropertyValueCommand {
@@ -67,6 +68,7 @@ impl PropertyValueCommand {
             PropertyDataValue::Date(value) => Self::Date(value),
             PropertyDataValue::Image(value) => Self::Image(value),
             PropertyDataValue::RichText(value) => Self::RichText(value),
+            PropertyDataValue::Boolean(value) => Self::Boolean(value),
         }
     }
 
@@ -114,6 +116,9 @@ impl PropertyValueCommand {
             }
             (PropertyType::RichText, Self::RichText(value)) => {
                 PropertyDataValue::RichText(value)
+            }
+            (PropertyType::Boolean, Self::Boolean(value)) => {
+                PropertyDataValue::Boolean(value)
             }
             _ => {
                 return Err(errors::Error::invalid(format!(

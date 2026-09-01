@@ -1449,6 +1449,28 @@ fn property_data_value(
                 .map_err(invalid_tool_arg)?;
             Ok(PropertyDataValueInputData::MultiSelect(values))
         }
+        "boolean" => {
+            let flag = match &value {
+                Value::Bool(flag) => *flag,
+                Value::String(text) => match text.trim() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(json_rpc_error(
+                            -32602,
+                            "boolean value must be true or false",
+                        ));
+                    }
+                },
+                _ => {
+                    return Err(json_rpc_error(
+                        -32602,
+                        "boolean value must be true or false",
+                    ));
+                }
+            };
+            Ok(PropertyDataValueInputData::Boolean(flag))
+        }
         "date" => Ok(PropertyDataValueInputData::Date(as_string(value)?)),
         "image" => Ok(PropertyDataValueInputData::Image(as_string(value)?)),
         "string" => {
@@ -1840,7 +1862,8 @@ fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
                                 "multi_select",
                                 "date",
                                 "image",
-                                "rich_text"
+                                "rich_text",
+                                "boolean"
                             ]
                         }
                     },

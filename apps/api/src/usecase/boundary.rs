@@ -449,6 +449,7 @@ pub enum PropertyDataValueInputData {
     Image(String),
     /// A block document, carried as JSON text.
     RichText(String),
+    Boolean(bool),
 }
 
 /// TODO: add English documentation

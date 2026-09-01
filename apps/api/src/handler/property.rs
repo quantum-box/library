@@ -50,6 +50,7 @@ fn property_type_from_request(
         "date" => Ok(PropertyType::Date),
         "image" => Ok(PropertyType::Image),
         "rich_text" => Ok(PropertyType::RichText),
+        "boolean" => Ok(PropertyType::Boolean),
         _ => Err(errors::Error::invalid("Invalid property type")),
     }
 }

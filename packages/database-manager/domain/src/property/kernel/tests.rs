@@ -247,13 +247,24 @@ fn fixtures() -> Vec<ContractFixture> {
                 },
             ])),
         },
+        ContractFixture {
+            expected_key: "boolean",
+            expected_legacy_key: "BOOLEAN",
+            expected_storage: StorageClass::Boolean,
+            expected_indexes: IndexCapabilities::scalar(
+                false, false, true, false,
+            ),
+            expected_references: vec![],
+            config: PropertyConfig::Boolean,
+            value: PropertyDataValue::Boolean(true),
+        },
     ]
 }
 
 #[test]
 fn all_builtin_v1_types_satisfy_the_same_contract() {
     let fixtures = fixtures();
-    assert_eq!(fixtures.len(), 12);
+    assert_eq!(fixtures.len(), 13);
 
     for fixture in fixtures {
         let handler = fixture.config.handler();

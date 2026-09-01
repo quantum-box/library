@@ -29,6 +29,10 @@ type ApiKeyResponse {
 	serviceAccount: ServiceAccount!
 }
 
+type BooleanValue {
+	boolean: Boolean!
+}
+
 """
 Input for bulk syncing ext_github property
 """
@@ -1664,7 +1668,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue | RichTextValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue | RichTextValue | BooleanValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -1681,6 +1685,7 @@ input PropertyDataValueInputData @oneOf {
 	A block document, carried as JSON text.
 	"""
 	richText: String
+	boolean: Boolean
 }
 
 input PropertyInput {
@@ -1749,6 +1754,7 @@ enum PropertyType {
 	DATE
 	IMAGE
 	RICH_TEXT
+	BOOLEAN
 }
 
 union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | JsonType

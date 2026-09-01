@@ -229,6 +229,7 @@ pub enum PropertyType {
     Date,
     Image,
     RichText,
+    Boolean,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -291,6 +292,7 @@ impl From<database_manager::domain::Property> for Property {
                 database_manager::domain::PropertyType::Date => None,
                 database_manager::domain::PropertyType::Image => None,
                 database_manager::domain::PropertyType::RichText => None,
+                database_manager::domain::PropertyType::Boolean => None,
             }
         };
 
@@ -335,6 +337,9 @@ impl From<database_manager::domain::PropertyType> for PropertyType {
             database_manager::domain::PropertyType::Image => Self::Image,
             database_manager::domain::PropertyType::RichText => {
                 Self::RichText
+            }
+            database_manager::domain::PropertyType::Boolean => {
+                Self::Boolean
             }
         }
     }
@@ -425,6 +430,7 @@ pub enum PropertyDataValue {
     Date(DateValue),
     Image(ImageValue),
     RichText(RichTextValue),
+    Boolean(BooleanValue),
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -506,6 +512,11 @@ pub struct DateValue {
 pub struct ImageValue {
     /// Image URL
     pub url: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct BooleanValue {
+    pub boolean: bool,
 }
 
 impl From<database_manager::domain::Data> for Data {
@@ -608,6 +619,9 @@ impl From<database_manager::domain::PropertyDataValue>
                 PropertyDataValue::Image(ImageValue {
                     url: url.to_string(),
                 })
+            }
+            database_manager::domain::PropertyDataValue::Boolean(flag) => {
+                PropertyDataValue::Boolean(BooleanValue { boolean: flag })
             }
             database_manager::domain::PropertyDataValue::RichText(
                 document,

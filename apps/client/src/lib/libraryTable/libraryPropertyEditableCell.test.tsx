@@ -10,6 +10,12 @@ const dateProperty: LibraryProperty = {
   typ: 'Date',
 }
 
+const booleanProperty: LibraryProperty = {
+  id: 'prop-done',
+  name: 'done',
+  typ: 'Boolean',
+}
+
 const item: LibraryDataItem = {
   id: 'data-1',
   name: 'Sample row',
@@ -65,5 +71,49 @@ describe('LibraryPropertyEditableCell', () => {
     expect(libraryPropertyValueToGraphqlInput(dateProperty, next.propertyData[0].value)).toEqual({
       date: '',
     })
+  })
+
+  it('toggles a Boolean straight from the cell, with no edit mode in between', () => {
+    const onCommit = vi.fn()
+    render(
+      <LibraryPropertyEditableCell
+        item={{ id: 'data-1', name: 'Sample row', propertyData: [] }}
+        property={booleanProperty}
+        onCommit={onCommit}
+      />,
+    )
+
+    const checkbox = screen.getByTestId('library-editable-input-prop-done')
+    expect(checkbox).not.toBeChecked()
+    fireEvent.click(checkbox)
+
+    const next = onCommit.mock.calls[0][0] as LibraryDataItem
+    expect(next.propertyData).toEqual([{ propertyId: 'prop-done', value: { boolean: true } }])
+    expect(libraryPropertyValueToGraphqlInput(booleanProperty, next.propertyData[0].value)).toEqual(
+      { boolean: true },
+    )
+  })
+
+  it('keeps false as a value rather than reading it as an empty cell', () => {
+    const onCommit = vi.fn()
+    render(
+      <LibraryPropertyEditableCell
+        item={{
+          id: 'data-1',
+          name: 'Sample row',
+          propertyData: [{ propertyId: 'prop-done', value: { boolean: true } }],
+        }}
+        property={booleanProperty}
+        onCommit={onCommit}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('library-editable-input-prop-done'))
+
+    const next = onCommit.mock.calls[0][0] as LibraryDataItem
+    expect(next.propertyData).toEqual([{ propertyId: 'prop-done', value: { boolean: false } }])
+    expect(libraryPropertyValueToGraphqlInput(booleanProperty, next.propertyData[0].value)).toEqual(
+      { boolean: false },
+    )
   })
 })

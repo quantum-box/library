@@ -231,7 +231,11 @@ export function LibraryTableView({
         columnHelper.display({
           id: `property:${property.id}`,
           header: property.name,
-          size: property.typ === 'Markdown' || property.typ === 'Html' || property.typ === 'RichText' ? 220 : 160,
+          size: property.typ === 'Markdown' || property.typ === 'Html' || property.typ === 'RichText'
+            ? 220
+            : property.typ === 'Boolean'
+              ? 96
+              : 160,
           cell: ({ row }) => (
             <LibraryPropertyEditableCell
               item={row.original}

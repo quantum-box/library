@@ -31,6 +31,7 @@ pub fn record_value_is_translatable_by_default(
         | PropertyType::Html => true,
 
         PropertyType::Integer
+        | PropertyType::Boolean
         | PropertyType::Date
         | PropertyType::Image
         | PropertyType::Id(_)

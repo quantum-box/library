@@ -26,6 +26,7 @@ pub enum PropertyType {
     Date,
     Image,
     RichText,
+    Boolean,
 }
 
 impl PropertyType {
@@ -69,6 +70,7 @@ impl From<&PropertyType> for PropertyConfig {
             PropertyType::Date => Self::Date,
             PropertyType::Image => Self::Image,
             PropertyType::RichText => Self::RichText,
+            PropertyType::Boolean => Self::Boolean,
         }
     }
 }
@@ -94,6 +96,7 @@ impl From<&PropertyConfig> for PropertyType {
             PropertyConfig::Date => Self::Date,
             PropertyConfig::Image => Self::Image,
             PropertyConfig::RichText => Self::RichText,
+            PropertyConfig::Boolean => Self::Boolean,
         }
     }
 }
@@ -163,6 +166,7 @@ mod tests {
     #[case(PropertyType::Date, "DATE")]
     #[case(PropertyType::Image, "IMAGE")]
     #[case(PropertyType::RichText, "RICH_TEXT")]
+    #[case(PropertyType::Boolean, "BOOLEAN")]
     fn test_property_type_to_string(
         #[case] property_type: PropertyType,
         #[case] expected: &str,

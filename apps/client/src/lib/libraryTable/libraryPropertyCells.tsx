@@ -45,11 +45,32 @@ function BadgeCell({ labels }: { labels: string[] }) {
   )
 }
 
+/**
+ * A Boolean reads as a checkbox even when nobody has set it: an unchecked box
+ * is the honest rendering of "not true", and a dash would make the column
+ * look broken next to the rows that do have a value.
+ */
+export function BooleanCell({ checked }: { checked: boolean }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      readOnly
+      tabIndex={-1}
+      aria-hidden="true"
+      className="pointer-events-none size-3.5 rounded border-input accent-primary"
+    />
+  )
+}
+
 function renderByTyp(
   property: LibraryProperty,
   value: LibraryPropertyDataValue | undefined
 ) {
   const typ = property.typ
+  if (typ === 'Boolean') {
+    return <BooleanCell checked={value?.boolean === true} />
+  }
   if (!value || isEmptyPropertyValue(value)) {
     return <span className="text-xs text-subtle">—</span>
   }

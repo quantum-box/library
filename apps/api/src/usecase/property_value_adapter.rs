@@ -114,6 +114,16 @@ pub(crate) fn property_value_command(
         (PropertyType::Image, PropertyDataValueInputData::Image(value)) => {
             string_or_clear(value, PropertyValueCommand::Image)
         }
+        (
+            PropertyType::Boolean,
+            PropertyDataValueInputData::Boolean(value),
+        ) => PropertyValueCommand::Boolean(*value),
+        // A checkbox that a client clears sends an empty string rather
+        // than a flag, and that has to mean "no value" instead of 400.
+        (
+            PropertyType::Boolean,
+            PropertyDataValueInputData::String(value),
+        ) if value.is_empty() => PropertyValueCommand::Clear,
         _ => {
             return Err(errors::Error::invalid(format!(
                 "property value input does not match Property {}",

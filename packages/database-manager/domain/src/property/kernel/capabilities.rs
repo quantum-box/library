@@ -6,6 +6,7 @@
 pub enum StorageClass {
     Text,
     Integer,
+    Boolean,
     Date,
     Location,
     Reference,

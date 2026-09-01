@@ -27,6 +27,7 @@ pub enum PropertyTypeArg {
     Date,
     Image,
     RichText,
+    Boolean,
 }
 
 impl PropertyTypeArg {
@@ -44,6 +45,7 @@ impl PropertyTypeArg {
             Self::Date => "date",
             Self::Image => "image",
             Self::RichText => "rich_text",
+            Self::Boolean => "boolean",
         }
     }
 }

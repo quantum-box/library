@@ -35,6 +35,12 @@ import {
   propertyTypeDetail,
   propertyTypeLabel,
 } from '../lib/repositoryPropertyTypes'
+import { PropertyOptionsEditor } from './PropertyOptionsEditor'
+import {
+  optionDraftsFromProperty,
+  optionDraftsToPayload,
+  type PropertyOptionDraft,
+} from '../lib/propertyOptionDrafts'
 import { useI18n, t as translate } from '../i18n'
 
 interface PropertyDialogState {
@@ -90,37 +96,6 @@ function errorMessage(error: unknown): string {
   return translate('repoSettings.updateFailed')
 }
 
-function optionsToText(property?: RepositoryPropertyDefinition): string {
-  return (property?.meta?.options ?? [])
-    .map((option) => `${option.key} = ${option.name}`)
-    .join('\n')
-}
-
-function parseOptions(value: string): RepositoryPropertyDraft['options'] {
-  const options = value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separator = line.indexOf('=')
-      if (separator < 1) {
-        throw new Error(translate('repoSettings.optionFormat'))
-      }
-      const identifier = line.slice(0, separator).trim()
-      const label = line.slice(separator + 1).trim()
-      if (!/^[a-z][a-zA-Z0-9]*$/.test(identifier)) {
-        throw new Error(translate('repoSettings.optionCamelCase', { identifier }))
-      }
-      if (!label) throw new Error(translate('repoSettings.optionNeedsLabel', { identifier }))
-      return { identifier, label }
-    })
-  const identifiers = new Set(options.map((option) => option.identifier))
-  if (identifiers.size !== options.length) {
-    throw new Error(translate('repoSettings.optionUnique'))
-  }
-  return options
-}
-
 function PropertyEditorDialog({
   state,
   busy,
@@ -140,7 +115,9 @@ function PropertyEditorDialog({
   const [type, setType] = useState<RepositoryPropertyType>(
     property && isEditablePropertyType(property.typ) ? property.typ : 'STRING',
   )
-  const [options, setOptions] = useState(optionsToText(property))
+  const [options, setOptions] = useState<PropertyOptionDraft[]>(
+    () => optionDraftsFromProperty(property),
+  )
   const [relationDatabaseId, setRelationDatabaseId] = useState(property?.meta?.databaseId ?? '')
   const [autoGenerateId, setAutoGenerateId] = useState(property?.meta?.autoGenerate ?? true)
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -155,7 +132,7 @@ function PropertyEditorDialog({
     }
     try {
       const parsedOptions = type === 'SELECT' || type === 'MULTI_SELECT'
-        ? parseOptions(options)
+        ? optionDraftsToPayload(options)
         : undefined
       const existingOptions = property && (
         property.typ === 'SELECT' || property.typ === 'MULTI_SELECT'
@@ -166,11 +143,11 @@ function PropertyEditorDialog({
         if (type !== property?.typ) {
           throw new Error(t('repoSettings.selectTypeLocked'))
         }
-        const submittedIdentifiers = new Set(
-          parsedOptions?.map((option) => option.identifier) ?? [],
+        const submittedIds = new Set(
+          parsedOptions?.map((option) => option.id).filter(Boolean) ?? [],
         )
         const removedOption = existingOptions.find(
-          (option) => !submittedIdentifiers.has(option.key),
+          (option) => option.id && !submittedIds.has(option.id),
         )
         if (removedOption) {
           throw new Error(
@@ -178,22 +155,11 @@ function PropertyEditorDialog({
           )
         }
       }
-      const existingOptionsByIdentifier = new Map(
-        existingOptions.map((option) => [option.key, option]),
-      )
       onSave({
         name: trimmedName,
         type,
         ...(type === 'SELECT' || type === 'MULTI_SELECT'
-          ? {
-              options: (parsedOptions ?? []).map((option) => {
-                const existingOption = existingOptionsByIdentifier.get(option.identifier)
-                return {
-                  ...option,
-                  ...(existingOption?.id ? { id: existingOption.id } : {}),
-                }
-              }),
-            }
+          ? { options: parsedOptions ?? [] }
           : {}),
         ...(type === 'RELATION' ? { relationDatabaseId: relationDatabaseId.trim() } : {}),
         ...(type === 'ID' ? { autoGenerateId } : {}),
@@ -257,20 +223,15 @@ function PropertyEditorDialog({
           </div>
 
           {(type === 'SELECT' || type === 'MULTI_SELECT') ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="repository-property-options">{t('repoSettings.optionsLabel')}</Label>
-              <textarea
-                id="repository-property-options"
-                value={options}
-                onChange={(event) => setOptions(event.target.value)}
-                placeholder={'todo = Todo\ninProgress = In progress\ndone = Done'}
+            <div className="space-y-1.5" role="group" aria-label={t('repoSettings.optionsLabel')}>
+              <span className="block text-sm font-medium">
+                {t('repoSettings.optionsLabel')}
+              </span>
+              <PropertyOptionsEditor
+                drafts={options}
                 disabled={busy}
-                rows={5}
-                className="w-full resize-y rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-50"
+                onChange={setOptions}
               />
-              <p className="text-2xs text-muted-foreground">
-                {t('repoSettings.optionsHelp')}
-              </p>
             </div>
           ) : null}
 
