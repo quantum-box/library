@@ -269,6 +269,7 @@ mod tests {
                 "date",
                 "image",
                 "rich_text",
+                "boolean",
             ]
         );
     }

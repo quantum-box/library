@@ -1898,7 +1898,8 @@ fn property_write_schema<const N: usize>(required: [&str; N]) -> Value {
                     "location",
                     "date",
                     "image",
-                    "rich_text"
+                    "rich_text",
+                    "boolean"
                 ]
             },
             "meta": {}
