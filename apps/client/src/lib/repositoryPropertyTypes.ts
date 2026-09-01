@@ -11,6 +11,7 @@ export const propertyTypeChoices: Array<{
   { value: 'HTML', labelKey: 'propertyType.html', detailKey: 'propertyType.html.detail' },
   { value: 'MARKDOWN', labelKey: 'propertyType.markdown', detailKey: 'propertyType.markdown.detail' },
   { value: 'INTEGER', labelKey: 'propertyType.integer', detailKey: 'propertyType.integer.detail' },
+  { value: 'BOOLEAN', labelKey: 'propertyType.boolean', detailKey: 'propertyType.boolean.detail' },
   { value: 'DATE', labelKey: 'propertyType.date', detailKey: 'propertyType.date.detail' },
   { value: 'SELECT', labelKey: 'propertyType.select', detailKey: 'propertyType.select.detail' },
   { value: 'MULTI_SELECT', labelKey: 'propertyType.multiSelect', detailKey: 'propertyType.multiSelect.detail' },

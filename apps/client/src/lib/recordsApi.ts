@@ -78,6 +78,7 @@ type LibraryPropertyType =
   | 'Date'
   | 'Image'
   | 'RichText'
+  | 'Boolean'
   | string
 
 export interface LibrarySelectOption {
@@ -114,6 +115,7 @@ const libraryPropertyTypeByWireValue: Record<string, LibraryPropertyType> = {
   DATE: 'Date',
   IMAGE: 'Image',
   RICH_TEXT: 'RichText',
+  BOOLEAN: 'Boolean',
 }
 
 export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
@@ -141,6 +143,7 @@ export interface LibraryPropertyDataValue {
   databaseId?: string
   latitude?: number
   longitude?: number
+  boolean?: boolean
 }
 
 export interface LibraryDataItem {
@@ -435,6 +438,7 @@ const libraryRepoDataQuery = `
               ... on RichTextValue { richText }
               ... on DateValue { date }
               ... on ImageValue { url }
+              ... on BooleanValue { boolean }
               ... on IdValue { id }
               ... on RelationValue { dataIds databaseId }
               ... on SelectValue { optionId }
@@ -593,6 +597,7 @@ const libraryDataDetailQuery = `
           ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
+          ... on BooleanValue { boolean }
           ... on IdValue { id }
           ... on RelationValue { dataIds databaseId }
           ... on SelectValue { optionId }
@@ -1566,11 +1571,13 @@ function restValueToLibraryPropertyDataValue(
   if (value == null) return {}
   if (typeof value === 'string') return { string: value }
   if (typeof value === 'number') return { number: String(value) }
+  if (typeof value === 'boolean') return { boolean: value }
   if (Array.isArray(value)) {
     return { optionIds: value.map((item) => String(item)) }
   }
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
+    if (typeof record.boolean === 'boolean') return { boolean: record.boolean }
     if (typeof record.string === 'string') return { string: record.string }
     if (typeof record.integer === 'string' || typeof record.integer === 'number') {
       return { number: String(record.integer) }

@@ -74,6 +74,7 @@ fn property_value_to_yaml(
         ),
         Some(V::Date(date)) => YamlValue::String(date.to_string()),
         Some(V::Image(url)) => YamlValue::String(url.clone()),
+        Some(V::Boolean(flag)) => YamlValue::Bool(*flag),
         None => YamlValue::Null,
     }
 }

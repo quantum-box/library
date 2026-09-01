@@ -56,6 +56,7 @@ const libraryAddDataMutation = `
           ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
+          ... on BooleanValue { boolean }
           ... on IdValue { id }
           ... on RelationValue { dataIds databaseId }
           ... on SelectValue { optionId }
@@ -84,6 +85,7 @@ const libraryUpdateDataMutation = `
           ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
+          ... on BooleanValue { boolean }
           ... on IdValue { id }
           ... on RelationValue { dataIds databaseId }
           ... on SelectValue { optionId }
@@ -202,9 +204,11 @@ function restValueToLibraryPropertyDataValue(
   if (value == null) return {}
   if (typeof value === 'string') return { string: value }
   if (typeof value === 'number') return { number: String(value) }
+  if (typeof value === 'boolean') return { boolean: value }
   if (Array.isArray(value)) return { optionIds: value.map(String) }
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
+    if (typeof record.boolean === 'boolean') return { boolean: record.boolean }
     if (typeof record.string === 'string') return { string: record.string }
     if (typeof record.integer === 'number' || typeof record.integer === 'string') {
       return { number: String(record.integer) }
@@ -293,6 +297,8 @@ function graphqlPropertyPayload(
       value = { date: entry.value.date }
     } else if (property.typ === 'Image' && entry.value.url !== undefined) {
       value = { image: entry.value.url }
+    } else if (property.typ === 'Boolean' && entry.value.boolean !== undefined) {
+      value = { boolean: entry.value.boolean }
     } else {
       value = libraryPropertyValueToGraphqlInput(property, entry.value)
     }
@@ -327,6 +333,9 @@ function restPropertyValue(property: LibraryProperty, value: LibraryPropertyData
       return { richText: value.richText ?? '' }
     case 'MultiSelect':
       return value.optionIds ?? []
+    case 'Boolean':
+      // A bare JSON boolean; the API reads it as a Boolean command.
+      return value.boolean ?? false
     default:
       throw new RecordApiError(
         `REST fallback cannot safely encode ${property.typ} Property "${property.name}"`,

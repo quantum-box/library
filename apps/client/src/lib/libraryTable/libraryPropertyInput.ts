@@ -49,6 +49,8 @@ export function libraryPropertyValueToGraphqlInput(
       return value.optionIds != null ? { multiSelect: value.optionIds } : null
     case 'Date':
       return value.date != null ? { date: value.date } : null
+    case 'Boolean':
+      return value.boolean != null ? { boolean: value.boolean } : null
     case 'Image':
       return value.url != null ? { image: value.url } : null
     case 'Relation':
@@ -76,6 +78,7 @@ function propertyValueTextFallback(value: LibraryPropertyDataValue): string | un
   if (typeof value.date === 'string') return value.date
   if (typeof value.url === 'string') return value.url
   if (typeof value.id === 'string') return value.id
+  if (typeof value.boolean === 'boolean') return String(value.boolean)
   return undefined
 }
 
@@ -114,6 +117,8 @@ export function libraryPropertyValueToRestValue(
       return value.optionIds ?? []
     case 'Date':
       return value.date ?? ''
+    case 'Boolean':
+      return value.boolean ?? false
     case 'Image':
       return value.url ?? ''
     case 'Relation':
@@ -149,6 +154,11 @@ export function parseEditablePropertyValue(
       return { number: trimmed }
     case 'Date':
       return trimmed ? { date: trimmed } : null
+    case 'Boolean':
+      // The checkbox commits `true`/`false`; anything else is a stray call.
+      return trimmed === 'true' || trimmed === 'false'
+        ? { boolean: trimmed === 'true' }
+        : null
     case 'Select': {
       if (!trimmed) return null
       const byId = property.meta?.options?.find((option) => option.id === trimmed)

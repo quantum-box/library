@@ -34,6 +34,7 @@ impl LegacyPropertyTypeReader {
             "DATE" => PropertyKind::Date,
             "IMAGE" => PropertyKind::Image,
             "RICH_TEXT" => PropertyKind::RichText,
+            "BOOLEAN" => PropertyKind::Boolean,
             _ => {
                 return Err(errors::Error::invalid(format!(
                     "unknown legacy property type {legacy_type}"
@@ -73,6 +74,7 @@ impl LegacyPropertyTypeReader {
             PropertyKind::Date => Ok(PropertyType::Date),
             PropertyKind::Image => Ok(PropertyType::Image),
             PropertyKind::RichText => Ok(PropertyType::RichText),
+            PropertyKind::Boolean => Ok(PropertyType::Boolean),
         }
     }
 
@@ -146,6 +148,7 @@ impl LegacyPropertyValueCodec {
             | PropertyDataValue::Date(value)
             | PropertyDataValue::Image(value) => value.clone(),
             PropertyDataValue::Integer(value) => value.to_string(),
+            PropertyDataValue::Boolean(value) => value.to_string(),
             PropertyDataValue::Relation(database_id, data_ids) => {
                 std::iter::once(database_id.to_string())
                     .chain(data_ids.iter().map(ToString::to_string))

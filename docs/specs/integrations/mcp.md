@@ -200,7 +200,7 @@ Data を作成する。認証必須。
 }
 ```
 
-`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `rich_text`, `relation`, `select`, `multi_select`, `date`, `image`。
+`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `rich_text`, `relation`, `select`, `multi_select`, `date`, `image`, `boolean`。
 
 ### Organization tools
 
@@ -224,7 +224,7 @@ Data を作成する。認証必須。
 - `update_property`: property を更新する。`name`, `property_type`, `meta` を指定可能。
 - `delete_property`: property を削除する。
 
-`property_type` は `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`。`html` は `rich_text` に置き換えられた旧型。
+`property_type` は `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`, `boolean`。`html` は `rich_text` に置き換えられた旧型。
 
 ### Source tools
 

@@ -54,6 +54,7 @@ impl BuiltinPropertyTypeHandler {
             PropertyKind::Select => StorageClass::Reference,
             PropertyKind::Location => StorageClass::Location,
             PropertyKind::Date => StorageClass::Date,
+            PropertyKind::Boolean => StorageClass::Boolean,
         }
     }
 
@@ -69,6 +70,10 @@ impl BuiltinPropertyTypeHandler {
             },
             PropertyKind::Integer | PropertyKind::Date => {
                 IndexCapabilities::scalar(true, false, true, true)
+            }
+            // Not unique: two rows are expected to share `true`.
+            PropertyKind::Boolean => {
+                IndexCapabilities::scalar(false, false, true, false)
             }
             PropertyKind::Html | PropertyKind::Markdown => {
                 IndexCapabilities::content()
@@ -164,6 +169,7 @@ impl BuiltinPropertyTypeHandler {
         match (config, value) {
             (PropertyConfig::String, PropertyDataValue::String(_))
             | (PropertyConfig::Integer, PropertyDataValue::Integer(_))
+            | (PropertyConfig::Boolean, PropertyDataValue::Boolean(_))
             | (PropertyConfig::Id(_), PropertyDataValue::Id(_)) => Ok(()),
             (PropertyConfig::Html, PropertyDataValue::Html(value)) => {
                 validate_max_bytes(value, 3_145_728, "HTML")
@@ -231,7 +237,8 @@ impl BuiltinPropertyTypeHandler {
             | PropertyConfig::Markdown
             | PropertyConfig::Date
             | PropertyConfig::Image
-            | PropertyConfig::RichText => Ok(Value::Null),
+            | PropertyConfig::RichText
+            | PropertyConfig::Boolean => Ok(Value::Null),
             PropertyConfig::Relation(value) => to_json(value),
             PropertyConfig::Select(value) => to_json(value),
             PropertyConfig::MultiSelect(value) => to_json(value),
@@ -284,6 +291,10 @@ impl BuiltinPropertyTypeHandler {
                 require_empty_config(&raw)?;
                 PropertyConfig::RichText
             }
+            PropertyKind::Boolean => {
+                require_empty_config(&raw)?;
+                PropertyConfig::Boolean
+            }
         };
         self.validate_config(&config)?;
         Ok(config)
@@ -303,6 +314,7 @@ impl BuiltinPropertyTypeHandler {
             | PropertyDataValue::Date(value)
             | PropertyDataValue::Image(value) => Ok(json!(value)),
             PropertyDataValue::Integer(value) => Ok(json!(value)),
+            PropertyDataValue::Boolean(value) => Ok(json!(value)),
             PropertyDataValue::Relation(database_id, data_ids) => {
                 to_json(&RelationValue {
                     database_id: database_id.clone(),
@@ -357,6 +369,9 @@ impl BuiltinPropertyTypeHandler {
                 PropertyDataValue::Image(from_json(raw)?)
             }
             PropertyKind::RichText => PropertyDataValue::RichText(raw),
+            PropertyKind::Boolean => {
+                PropertyDataValue::Boolean(from_json(raw)?)
+            }
         };
         self.validate_value(config, &value)?;
         Ok(value)
@@ -396,6 +411,10 @@ impl BuiltinPropertyTypeHandler {
             (
                 PropertyDataValue::Integer(left),
                 PropertyDataValue::Integer(right),
+            ) => left.cmp(right),
+            (
+                PropertyDataValue::Boolean(left),
+                PropertyDataValue::Boolean(right),
             ) => left.cmp(right),
             (
                 PropertyDataValue::Relation(left_database, left_ids),

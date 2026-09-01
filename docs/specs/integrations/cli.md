@@ -130,7 +130,7 @@ library org update acme --name '新しい名前' --description "$(library --json
 | `library property update <org/repo> <property-id> --name <name>` | property を rename |
 | `library property delete <org/repo> <property-id> [--yes]` | property を削除 |
 
-`--type` の値: `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`。`html` は API 側で `rich_text` に置き換えられた旧型。
+`--type` の値: `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`, `boolean`。`html` は API 側で `rich_text` に置き換えられた旧型。
 
 `--auto-generate` は `--type id` でのみ必須で、他の型に付けると拒否される。
 

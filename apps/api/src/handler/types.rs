@@ -77,6 +77,7 @@ pub enum PropertyDataValue {
     Image(String),
     /// A block document, carried as JSON text.
     RichText(String),
+    Boolean(bool),
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -243,6 +244,9 @@ pub fn convert_property_value(
         serde_json::Value::Number(n) => {
             PropertyDataValueInputData::Integer(n.to_string())
         }
+        serde_json::Value::Bool(flag) => {
+            PropertyDataValueInputData::Boolean(flag)
+        }
         serde_json::Value::Array(arr) => {
             if let Some(first) = arr.first() {
                 if first.is_string() {
@@ -354,6 +358,9 @@ impl From<database_manager::domain::PropertyDataValue>
             }
             database_manager::domain::PropertyDataValue::Image(url) => {
                 PropertyDataValue::Image(url)
+            }
+            database_manager::domain::PropertyDataValue::Boolean(flag) => {
+                PropertyDataValue::Boolean(flag)
             }
             database_manager::domain::PropertyDataValue::RichText(
                 document,

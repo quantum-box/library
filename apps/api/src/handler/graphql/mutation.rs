@@ -2552,6 +2552,10 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
                 property_type: PropertyType::RichText,
                 ..
             } => Ok(db::PropertyType::RichText),
+            PropertyInput {
+                property_type: PropertyType::Boolean,
+                ..
+            } => Ok(db::PropertyType::Boolean),
             _ => Err(errors::Error::invalid("invalid property type")),
         }
     }

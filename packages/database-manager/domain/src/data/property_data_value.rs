@@ -17,6 +17,7 @@ pub enum PropertyDataValue {
     Image(String), // Image URL
     /// A block document, stored as the editor's own JSON.
     RichText(serde_json::Value),
+    Boolean(bool),
 }
 
 impl PropertyDataValue {
@@ -84,6 +85,7 @@ impl PropertyDataValue {
             PropertyDataValue::Date(_) => PropertyType::Date,
             PropertyDataValue::Image(_) => PropertyType::Image,
             PropertyDataValue::RichText(_) => PropertyType::RichText,
+            PropertyDataValue::Boolean(_) => PropertyType::Boolean,
         }
     }
 
@@ -130,6 +132,9 @@ impl PropertyDataValue {
             PropertyDataValue::RichText(document) => {
                 crate::rich_text::plain_text(document)
             }
+            // Never empty, so a `false` survives the legacy "empty means
+            // cleared" normalization instead of erasing itself on write.
+            PropertyDataValue::Boolean(flag) => flag.to_string(),
         }
     }
 
@@ -152,7 +157,23 @@ impl PropertyDataValue {
             PropertyType::Date => Self::parse_date(text),
             PropertyType::Image => Self::parse_image(text),
             PropertyType::RichText => Self::parse_rich_text(text),
+            PropertyType::Boolean => Self::parse_boolean(text),
         }
+    }
+
+    /// Parse the canonical `true`/`false` text, plus the encodings a
+    /// spreadsheet or a legacy integer column realistically delivers.
+    fn parse_boolean(input: &str) -> errors::Result<PropertyDataValue> {
+        let flag = match input.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => true,
+            "false" | "0" | "no" | "off" => false,
+            _ => {
+                return Err(errors::Error::business_logic(
+                    "Boolean value must be true or false",
+                ));
+            }
+        };
+        Ok(PropertyDataValue::Boolean(flag))
     }
 
     fn parse_string(input: &str) -> errors::Result<PropertyDataValue> {

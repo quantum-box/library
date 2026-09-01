@@ -230,11 +230,16 @@ describe('RepositorySettingsView', () => {
 
     fireEvent.click(edit)
     const dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Options'), {
-      target: { value: 'todo = To do\ndone = Done' },
+    fireEvent.change(within(dialog).getByLabelText('Label of option 1'), {
+      target: { value: 'To do' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
+    // The identifier follows the label until someone types one, so the new
+    // option only needs its label.
+    fireEvent.change(within(dialog).getByLabelText('Label of option 2'), {
+      target: { value: 'Done' },
     })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
-
     await waitFor(() => expect(apiMocks.updateRepositoryProperty).toHaveBeenCalledWith(
       expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
       'property-status',
@@ -249,7 +254,7 @@ describe('RepositorySettingsView', () => {
     ))
   })
 
-  it('blocks removing or changing an existing Select option identifier', async () => {
+  it('locks the identifier and the remove button of an existing Select option', async () => {
     apiMocks.fetchRepositorySettings.mockResolvedValueOnce({
       ...settings,
       properties: [
@@ -269,14 +274,12 @@ describe('RepositorySettingsView', () => {
     await screen.findByTestId('repository-settings-body')
     fireEvent.click(screen.getByRole('button', { name: 'Edit Status' }))
     const dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Options'), {
-      target: { value: 'backlog = Backlog' },
-    })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
 
-    expect(within(dialog).getByRole('alert')).toHaveTextContent(
-      'Existing option identifier "todo" cannot be removed or changed',
-    )
+    // Records already reference the identifier, so the editor makes the
+    // unsafe edits unreachable instead of rejecting them on save.
+    expect(within(dialog).getByLabelText('Identifier of option 1')).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Remove option 1' })).toBeDisabled()
+    expect(within(dialog).getByLabelText('Label of option 1')).toBeEnabled()
     expect(apiMocks.updateRepositoryProperty).not.toHaveBeenCalled()
   })
 
@@ -287,6 +290,12 @@ describe('RepositorySettingsView', () => {
 
     expect(values).toContain('RICH_TEXT')
     expect(values).not.toContain('MARKDOWN')
+  })
+
+  it('offers Boolean when creating a Property', () => {
+    expect(availablePropertyTypeChoices(undefined).map((choice) => choice.value)).toContain(
+      'BOOLEAN',
+    )
   })
 
   it('keeps Markdown selectable on a Property that already uses it', () => {
@@ -340,7 +349,6 @@ describe('RepositorySettingsView', () => {
     dialog = screen.getByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Abstract' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
-
     await waitFor(() => expect(apiMocks.updateRepositoryProperty).toHaveBeenCalledWith(
       expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
       'property-summary',

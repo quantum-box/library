@@ -149,6 +149,32 @@ export function LibraryPropertyEditableCell({
   const [editing, setEditing] = useState(false)
   const currentValue = getLibraryDataPropertyValue(item, property.id)
 
+  // A checkbox has no edit mode worth entering: the click that would open an
+  // editor is the edit. It commits straight from the cell.
+  if (property.typ === 'Boolean') {
+    const checked = currentValue?.boolean === true
+    return (
+      <div className="min-w-0 px-1" data-testid={`library-editable-cell-${property.id}`}>
+        <input
+          type="checkbox"
+          data-testid={`library-editable-input-${property.id}`}
+          checked={checked}
+          disabled={disabled}
+          aria-label={t('common.editNamed', { name: property.name })}
+          className="size-3.5 rounded border-input accent-primary disabled:opacity-50"
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => {
+            onCommit(
+              mergeLibraryDataProperty(item, property.id, {
+                boolean: event.target.checked,
+              }),
+            )
+          }}
+        />
+      </div>
+    )
+  }
+
   if (!isInlineEditableProperty(property)) {
     return <LibraryPropertyCell item={item} property={property} />
   }

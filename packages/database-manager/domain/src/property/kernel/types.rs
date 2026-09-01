@@ -193,10 +193,12 @@ pub enum PropertyKind {
     /// versioned separately from the type, so a different representation
     /// becomes encoding v2 rather than a new property type.
     RichText,
+    /// A two-state flag. Stored canonically as a JSON boolean.
+    Boolean,
 }
 
 impl PropertyKind {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::String,
         Self::Integer,
         Self::Html,
@@ -209,6 +211,7 @@ impl PropertyKind {
         Self::Date,
         Self::Image,
         Self::RichText,
+        Self::Boolean,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -225,6 +228,7 @@ impl PropertyKind {
             Self::Date => "date",
             Self::Image => "image",
             Self::RichText => "rich_text",
+            Self::Boolean => "boolean",
         }
     }
 
@@ -254,6 +258,7 @@ pub enum PropertyConfig {
     Date,
     Image,
     RichText,
+    Boolean,
 }
 
 impl PropertyConfig {
@@ -271,6 +276,7 @@ impl PropertyConfig {
             Self::Date => PropertyKind::Date,
             Self::Image => PropertyKind::Image,
             Self::RichText => PropertyKind::RichText,
+            Self::Boolean => PropertyKind::Boolean,
         }
     }
 

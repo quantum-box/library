@@ -37,6 +37,7 @@ export function propertyValueText(
     return option?.name ?? option?.key ?? optionId
   }
 
+  if (typeof value.boolean === 'boolean') return String(value.boolean)
   if (typeof value.string === 'string') return value.string
   if (typeof value.number === 'string') return value.number
   if (typeof value.html === 'string') return value.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()

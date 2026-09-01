@@ -436,6 +436,9 @@ fn command_value(value: &PropertyValueCommand) -> serde_json::Value {
         PropertyValueCommand::Integer(value) => {
             serde_json::json!({"kind": "integer", "value": value})
         }
+        PropertyValueCommand::Boolean(value) => {
+            serde_json::json!({"kind": "boolean", "value": value})
+        }
         PropertyValueCommand::Html(value) => {
             serde_json::json!({"kind": "html", "value": value})
         }
