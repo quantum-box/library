@@ -687,6 +687,7 @@ export const ja: LocaleMessages = {
   'libraryTable.loading': 'リポジトリのデータを読み込み中…',
   'libraryTable.searchPlaceholder': 'データを検索',
   'libraryTable.refresh': 'データを更新',
+  'libraryTable.loadMore': 'さらに読み込む',
   'libraryTable.deleteRow': '行を削除',
   'libraryTable.doubleClickToEditName': 'ダブルクリックで名前を編集',
   'libraryTable.empty': 'このリポジトリにデータがありません。「＋ 新しいデータ」から行を追加してください。',

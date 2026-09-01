@@ -225,4 +225,50 @@ describe('libraryDataCrud', () => {
       { propertyId: 'known', value: { string: 'new' } },
     ])
   })
+
+  /**
+   * A row that came out of a listing holds a preview of its body, not the
+   * body. Sending it would save the preview over the document, so editing
+   * any other cell on that row would truncate it.
+   */
+  it('omits a listing preview from update patches instead of saving it', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        data: {
+          updateData: {
+            id: 'data-1',
+            name: 'Updated',
+            propertyData: [],
+          },
+        },
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateLibraryData(
+      { org: 'acme', repo: 'docs' },
+      [
+        { id: 'status', name: 'Status', typ: 'String' },
+        { id: 'body', name: 'Content', typ: 'RichText' },
+      ],
+      {
+        id: 'data-1',
+        name: 'Updated',
+        propertyData: [
+          { propertyId: 'status', value: { string: 'done' } },
+          {
+            propertyId: 'body',
+            value: { preview: { text: 'The opening line', truncated: true } },
+          },
+        ],
+      }
+    )
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      variables: { input: { propertyData: Array<{ propertyId: string }> } }
+    }
+    expect(request.variables.input.propertyData).toEqual([
+      { propertyId: 'status', value: { string: 'done' } },
+    ])
+  })
 })

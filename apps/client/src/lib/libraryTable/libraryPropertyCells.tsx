@@ -1,5 +1,9 @@
 import type { LibraryDataItem, LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
-import { getLibraryDataPropertyValue, propertyValueText } from './libraryPropertyFormat'
+import {
+  getLibraryDataPropertyValue,
+  propertyCellText,
+  propertyValueText,
+} from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
 import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
 
@@ -25,6 +29,31 @@ function PlainTextCell({ text }: { text: string }) {
       {text}
     </span>
   )
+}
+
+/**
+ * A cell for a value that can run to any length -- a body, mostly.
+ *
+ * The row is one line high, so the text is cut before it reaches the DOM
+ * rather than by `truncate` alone. Nothing goes on `title` either: a
+ * tooltip holding a whole document is worse than no tooltip.
+ */
+function BodyTextCell({ text, truncated }: { text: string; truncated: boolean }) {
+  return (
+    <span className="block truncate text-sm text-foreground">
+      {truncated ? `${text}…` : text}
+    </span>
+  )
+}
+
+/** A body cell, or the em dash when the value holds no text. */
+function bodyCell(
+  property: LibraryProperty,
+  value: LibraryPropertyDataValue
+) {
+  const cell = propertyCellText(property, value)
+  if (!cell?.text) return <span className="text-xs text-subtle">—</span>
+  return <BodyTextCell text={cell.text} truncated={cell.truncated} />
 }
 
 function BadgeCell({ labels }: { labels: string[] }) {
@@ -127,12 +156,8 @@ function renderByTyp(
     return <span className="font-mono text-xs text-subtle">{value.id}</span>
   }
 
-  if (typ === 'Html' && value.html) {
-    return <PlainTextCell text={propertyValueText(property, value) ?? value.html} />
-  }
-
-  if (typ === 'Markdown' && value.markdown) {
-    return <PlainTextCell text={value.markdown} />
+  if (typ === 'Html' || typ === 'Markdown' || typ === 'RichText') {
+    return bodyCell(property, value)
   }
 
   const text = propertyValueText(property, value)

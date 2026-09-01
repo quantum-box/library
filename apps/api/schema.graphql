@@ -2015,6 +2015,9 @@ input RevokeApiKeyInput {
 type RichTextValue {
 	"""
 	The block document as JSON. Authoritative.
+	
+	This is the whole body. Select it on a single record, not on a
+	listing.
 	"""
 	richText: String!
 	"""
@@ -2033,6 +2036,13 @@ type RichTextValue {
 	in a CMS page.
 	"""
 	html: String!
+	"""
+	The document's leading text, capped at `limit` characters.
+	
+	What a listing should select: it is bounded, and the walk that
+	produces it stops at the cap rather than reading the whole body.
+	"""
+	preview(limit: Int! = 200): TextPreview!
 }
 
 type SeedLibraryTenantPayload {
@@ -2209,6 +2219,20 @@ type TenantSeedCandidate {
 	"""
 	staffCount: Int
 	canImportToLibrary: Boolean!
+}
+
+"""
+A capped plain-text rendering of a body.
+"""
+type TextPreview {
+	"""
+	The leading text, at most the requested number of characters.
+	"""
+	text: String!
+	"""
+	Whether the body holds more text than `text` shows.
+	"""
+	truncated: Boolean!
 }
 
 """

@@ -11,7 +11,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { fetchLibraryRepoTableData, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
+import { fetchLibraryRepoTableData, libraryPageSize, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
   getLibraryDataPropertyValue,
@@ -161,7 +161,23 @@ export function LibraryTableView({
   const [items, setItems] = useState<LibraryDataItem[]>([])
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextPage, setNextPage] = useState<number | null>(null)
+  const [totalItems, setTotalItems] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * A later page's failure, kept apart from `error`.
+   *
+   * `error` replaces the table; a page that failed to append must not, or a
+   * timeout on page 2 would take away the rows the reader is reading.
+   */
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+  /**
+   * Which listing the component is showing. Switching repositories reuses
+   * this component, so an outstanding page from the previous repository
+   * would otherwise append its rows to the new one's table.
+   */
+  const listing = useRef(0)
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
@@ -184,21 +200,65 @@ export function LibraryTableView({
   )
 
   const reload = useCallback(async () => {
+    const token = ++listing.current
     setLoading(true)
     setError(null)
+    setLoadMoreError(null)
     try {
       const payload = await fetchLibraryRepoTableData(repoTarget)
+      if (token !== listing.current) return
       setItems(payload.items)
       setProperties(payload.properties)
+      setNextPage(payload.nextPage ?? null)
+      setTotalItems(payload.totalItems ?? null)
     } catch (loadError: unknown) {
+      if (token !== listing.current) return
       console.warn('Failed to load Library repository table data', loadError)
       setError(repositoryLoadErrorMessage(loadError))
       setItems([])
       setProperties([])
+      setNextPage(null)
+      setTotalItems(null)
     } finally {
-      setLoading(false)
+      if (token === listing.current) setLoading(false)
     }
   }, [repoTarget])
+
+  /**
+   * Append the next page.
+   *
+   * Sorting and filtering run over the rows in hand, so what is loaded is
+   * what they see -- which is why this is a button the reader presses
+   * rather than something that happens behind them.
+   */
+  const loadMore = useCallback(async () => {
+    if (nextPage === null) return
+    const token = listing.current
+    setLoadingMore(true)
+    setLoadMoreError(null)
+    try {
+      // Derived from what is loaded rather than from `nextPage`, because the
+      // listing is paged by offset: deleting a loaded row shifts every later
+      // record down one, so the stored page number would step over the first
+      // unseen one. `items.length` is that record's offset, and the append
+      // below drops whatever this re-reads.
+      const page = Math.floor(items.length / libraryPageSize()) + 1
+      const payload = await fetchLibraryRepoTableData(repoTarget, page)
+      if (token !== listing.current) return
+      setItems((current) => {
+        const seen = new Set(current.map((row) => row.id))
+        return [...current, ...payload.items.filter((row) => !seen.has(row.id))]
+      })
+      setNextPage(payload.nextPage ?? null)
+      setTotalItems(payload.totalItems ?? null)
+    } catch (loadError: unknown) {
+      if (token !== listing.current) return
+      console.warn('Failed to load more Library repository rows', loadError)
+      setLoadMoreError(repositoryLoadErrorMessage(loadError))
+    } finally {
+      if (token === listing.current) setLoadingMore(false)
+    }
+  }, [items.length, nextPage, repoTarget])
 
   useEffect(() => {
     void reload()
@@ -463,6 +523,9 @@ export function LibraryTableView({
         <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
           <Rows3 className="size-3.5" aria-hidden="true" />
           {loading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
+          {!loading && totalItems !== null && totalItems > items.length
+            ? ` / ${totalItems}`
+            : ''}
           {saving ? ` · ${t('common.saving')}` : ''}
         </span>
         <Button
@@ -637,6 +700,26 @@ export function LibraryTableView({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Outside the viewport branches on purpose: the card list and the
+          table are two renderings of one listing, and both need its next
+          page. */}
+      {!loading && !error && rows.length > 0 && nextPage !== null && (
+        <div className="flex flex-col items-center gap-2 border-t border-border px-4 py-3">
+          {loadMoreError && (
+            <p className="text-xs text-destructive" role="alert">{loadMoreError}</p>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="library-table-load-more"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore ? t('common.loading') : t('libraryTable.loadMore')}
+          </Button>
         </div>
       )}
     </div>

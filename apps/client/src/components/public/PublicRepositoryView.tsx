@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Badge, Input } from '@tachyon-sdk/native-ui'
+import { Badge, Button, Input } from '@tachyon-sdk/native-ui'
 import { Globe, Rows3, Search } from 'lucide-react'
 import {
   fetchLibraryRepoTableData,
@@ -35,6 +35,15 @@ export function PublicRepositoryView({
   const [dataError, setDataError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const isMobileViewport = useIsMobileViewport()
+  const [loadingMore, setLoadingMore] = useState(false)
+  /**
+   * A later page's failure, kept apart from `dataError`.
+   *
+   * Every result branch requires `!dataError`, so putting a page-2 timeout
+   * there would take away the page-1 rows the reader is already reading.
+   */
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+  const [nextPage, setNextPage] = useState<number | null>(null)
   const request = useRef(0)
 
   const loadData = useCallback(async () => {
@@ -50,15 +59,43 @@ export function PublicRepositoryView({
       if (token !== request.current) return
       setItems(table.items)
       setProperties(table.properties)
+      setNextPage(table.nextPage ?? null)
+      setLoadMoreError(null)
     } catch (loadError: unknown) {
       if (token !== request.current) return
       setItems([])
       setProperties([])
+      setNextPage(null)
       setDataError(publicRepositoryErrorMessage(loadError))
     } finally {
       if (token === request.current) setDataLoading(false)
     }
   }, [organization, repository])
+
+  /** Append the next page. The search box only sees what is loaded. */
+  const loadMore = useCallback(async () => {
+    if (nextPage === null) return
+    const token = request.current
+    setLoadingMore(true)
+    setLoadMoreError(null)
+    try {
+      const table = await fetchLibraryRepoTableData(
+        { org: organization, repo: repository, anonymous: true },
+        nextPage
+      )
+      if (token !== request.current) return
+      setItems((current) => {
+        const seen = new Set(current.map((row) => row.id))
+        return [...current, ...table.items.filter((row) => !seen.has(row.id))]
+      })
+      setNextPage(table.nextPage ?? null)
+    } catch (loadError: unknown) {
+      if (token !== request.current) return
+      setLoadMoreError(publicRepositoryErrorMessage(loadError))
+    } finally {
+      if (token === request.current) setLoadingMore(false)
+    }
+  }, [nextPage, organization, repository])
 
   useEffect(() => {
     if (status !== 'ready') return
@@ -251,6 +288,23 @@ export function PublicRepositoryView({
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+
+          {!dataLoading && !dataError && nextPage !== null ? (
+            <div className="flex flex-col items-center gap-2 py-4">
+              {loadMoreError ? (
+                <p className="text-xs text-destructive" role="alert">{loadMoreError}</p>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="public-repository-load-more"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? t('common.loading') : t('libraryTable.loadMore')}
+              </Button>
             </div>
           ) : null}
         </div>

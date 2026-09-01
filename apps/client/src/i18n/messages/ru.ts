@@ -705,6 +705,7 @@ export const ru: LocaleMessages = {
   'libraryTable.loading': 'Загрузка данных репозитория…',
   'libraryTable.searchPlaceholder': 'Поиск по данным',
   'libraryTable.refresh': 'Обновить данные',
+  'libraryTable.loadMore': 'Загрузить ещё',
   'libraryTable.deleteRow': 'Удалить строку',
   'libraryTable.doubleClickToEditName': 'Двойной щелчок, чтобы изменить имя',
   'libraryTable.empty': 'В этом репозитории нет данных. Нажмите «+ Новые данные», чтобы добавить строку.',

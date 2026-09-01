@@ -97,6 +97,14 @@ components:
       type: object
     DataPaginationQuery:
       properties:
+        include_body:
+          description: |-
+            Return rich text documents in full instead of as previews.
+
+            Off by default: a listing is a listing, and a page of full bodies
+            is a response no client asked for. Turn it on only when the caller
+            genuinely needs every document, such as an export.
+          type: boolean
         page:
           description: |-
             1-origin page number. The legacy `offset` alias is also interpreted as
@@ -409,6 +417,24 @@ components:
         required:
         - boolean
         type: object
+      - description: |-
+          A capped plain-text rendering of a block document.
+
+          What list endpoints return in place of `richText`, so that a page
+          of records does not carry every body in full. Ask for the
+          documents themselves with `?include_body=true`.
+        properties:
+          richTextPreview:
+            $ref: '#/components/schemas/TextPreviewResponse'
+            description: |-
+              A capped plain-text rendering of a block document.
+
+              What list endpoints return in place of `richText`, so that a page
+              of records does not carry every body in full. Ask for the
+              documents themselves with `?include_body=true`.
+        required:
+        - richTextPreview
+        type: object
     PropertyResponse:
       properties:
         auto_generate:
@@ -492,6 +518,13 @@ components:
       type: object
     SearchDataQuery:
       properties:
+        include_body:
+          description: |-
+            Return rich text documents in full instead of as previews.
+
+            Off by default, the same as `data-list`: search is a listing too,
+            and a page of full bodies is a response no client asked for.
+          type: boolean
         name:
           description: Data name to match exactly.
           type: string
@@ -599,6 +632,19 @@ components:
       - id
       - repo_id
       - name
+      type: object
+    TextPreviewResponse:
+      description: A capped plain-text rendering of a body.
+      properties:
+        text:
+          description: The leading text, at most `RICH_TEXT_PREVIEW_LIMIT` characters.
+          type: string
+        truncated:
+          description: Whether the body holds more text than `text` shows.
+          type: boolean
+      required:
+      - text
+      - truncated
       type: object
     TranslationOutcomeResponse:
       description: What one language's schema pass did.
@@ -1282,13 +1328,23 @@ paths:
           maximum: 100
           minimum: 1
           type: integer
+      - description: |-
+          Return rich text documents in full instead of as previews.
+
+          Off by default, the same as `data-list`: search is a listing too,
+          and a page of full bodies is a response no client asked for.
+        in: query
+        name: include_body
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataListResponse'
-          description: Data found
+          description: Data found. Rich text properties are returned as `richTextPreview` unless `include_body` is set
         '400':
           description: Invalid pagination request
         '404':
@@ -1362,13 +1418,24 @@ paths:
           maximum: 100
           minimum: 1
           type: integer
+      - description: |-
+          Return rich text documents in full instead of as previews.
+
+          Off by default: a listing is a listing, and a page of full bodies
+          is a response no client asked for. Turn it on only when the caller
+          genuinely needs every document, such as an export.
+        in: query
+        name: include_body
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataListResponse'
-          description: Data list found
+          description: Data list found. Rich text properties are returned as `richTextPreview` unless `include_body` is set
         '400':
           description: Invalid pagination request
         '404':

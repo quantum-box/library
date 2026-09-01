@@ -20,7 +20,10 @@ pub use kernel::*;
 /// dependency-light so it can be extracted as open source); this re-export
 /// preserves the `domain::rich_text::` paths.
 pub mod rich_text {
-    pub use blocknote::{from_markdown, plain_text, to_html, to_markdown};
+    pub use blocknote::{
+        TextPreview, from_markdown, plain_text, plain_text_preview,
+        to_html, to_markdown,
+    };
 }
 
 pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";

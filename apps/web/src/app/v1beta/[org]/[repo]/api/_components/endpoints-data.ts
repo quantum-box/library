@@ -30,7 +30,8 @@ export const getEndpointCategories = (): EndpointCategory[] => [
 			{
 				method: 'GET',
 				path: '/v1beta/repos/{org}/{repo}/data-list',
-				description: 'List all data entries',
+				description:
+					'List all data entries. Rich text properties come back as a capped preview (richTextPreview); add ?include_body=true for the documents themselves.',
 				getSnippets: ({ apiBaseUrl, org, repo }) => ({
 					curl: `curl -X GET "${apiBaseUrl}/v1beta/repos/${org}/${repo}/data-list" \\
   -H "Authorization: Bearer <LIBRARY_API_KEY>"`,

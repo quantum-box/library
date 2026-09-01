@@ -684,6 +684,7 @@ export const ptBR: LocaleMessages = {
   'libraryTable.loading': 'Carregando os dados do repositório…',
   'libraryTable.searchPlaceholder': 'Buscar dados',
   'libraryTable.refresh': 'Atualizar os dados',
+  'libraryTable.loadMore': 'Carregar mais',
   'libraryTable.deleteRow': 'Excluir a linha',
   'libraryTable.doubleClickToEditName': 'Clique duas vezes para editar o nome',
   'libraryTable.empty': 'Não há dados neste repositório. Use «+ Novos dados» para adicionar uma linha.',
