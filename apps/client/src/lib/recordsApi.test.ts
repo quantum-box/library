@@ -33,6 +33,7 @@ import {
   createServerRecord,
   deleteServerRecord,
   fetchLibraryOrganizations,
+  fetchAllLibraryRepoTableData,
   fetchLibraryRepoTableData,
   fetchLibraryRepositories,
   fetchServerRecords,
@@ -308,6 +309,40 @@ describe('recordsApi', () => {
    * query asks for a capped preview, and the document itself is left for
    * whoever opens the record.
    */
+  /**
+   * `list()` reports `complete: true`, which is what lets the cache delete
+   * records that are gone upstream. When the table view stopped paging, this
+   * helper had to keep doing it -- a one-page listing called complete would
+   * have every later record reconciled as deleted locally.
+   */
+  it('walks every page when the whole collection is asked for', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const page = (n: number) => ({
+      data: {
+        repo: {
+          id: 'repo-1',
+          name: 'Docs',
+          dataList: {
+            items: [{ id: `data-${n}`, name: `Item ${n}`, propertyData: [] }],
+            paginator: { currentPage: n, itemsPerPage: 1, totalItems: 3, totalPages: 3 },
+          },
+          properties: [],
+        },
+      },
+    })
+    let seen = 0
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => {
+      seen += 1
+      return Response.json(page(seen))
+    }))
+
+    const all = await fetchAllLibraryRepoTableData({ org: 'acme', repo: 'docs' })
+
+    expect(all.items.map((item) => item.id)).toEqual(['data-1', 'data-2', 'data-3'])
+    expect(all.hasMore).toBe(false)
+    expect(all.nextPage).toBeUndefined()
+  })
+
   it('asks a listing for a rich text preview rather than the document', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({

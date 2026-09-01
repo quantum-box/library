@@ -95,4 +95,26 @@ describe('propertyCellText', () => {
 
     expect(cell).toEqual({ text: 'Short', truncated: false })
   })
+
+  /**
+   * The API caps its preview by Rust `char`s. Measuring the same body with
+   * `String.length` counts UTF-16 units, so a 200-code-point value ending in
+   * an emoji read as over-limit and got sliced through its surrogate pair.
+   */
+  it('measures the cell limit in code points, not UTF-16 units', () => {
+    const property = { id: 'p', name: 'Body', typ: 'RichText' } as LibraryProperty
+    const body = `${'a'.repeat(199)}\u{1F600}`
+    const cell = propertyCellText(property, { string: body }, 200)
+    expect(Array.from(body)).toHaveLength(200)
+    expect(body.length).toBe(201)
+    expect(cell).toEqual({ text: body, truncated: false })
+  })
+
+  it('does not split a surrogate pair when it does truncate', () => {
+    const property = { id: 'p', name: 'Body', typ: 'RichText' } as LibraryProperty
+    const cell = propertyCellText(property, { string: '\u{1F600}\u{1F600}\u{1F600}' }, 2)
+    expect(cell?.truncated).toBe(true)
+    expect(cell?.text).toBe('\u{1F600}\u{1F600}')
+    expect(cell?.text).not.toContain('\uFFFD')
+  })
 })

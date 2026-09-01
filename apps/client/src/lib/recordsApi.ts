@@ -1245,6 +1245,16 @@ export async function uploadLibraryImage(
   return payload.url
 }
 
+/**
+ * How many records one listing page holds.
+ *
+ * Exported so a caller that has to place an offset -- a table continuing
+ * after rows were deleted, say -- can derive the page rather than guess it.
+ */
+export function libraryPageSize(): number {
+  return configuredLibraryPageSize()
+}
+
 function configuredLibraryPageSize(): number {
   const configured = Number(import.meta.env.VITE_LIBRARY_PAGE_SIZE ?? 100)
   if (!Number.isInteger(configured) || configured < 1) return 100
@@ -1318,6 +1328,32 @@ export async function fetchLibraryRepoTableData(
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestRepoTableData(target, page)
   }
+}
+
+/**
+ * Every record in a repository, paged until the paginator runs out.
+ *
+ * For the callers that need the whole collection rather than a screenful:
+ * a partial listing reported as complete lets the cache reconcile every
+ * record it did not see as deleted. A table view wants
+ * `fetchLibraryRepoTableData` instead -- this walks the entire repository.
+ */
+export async function fetchAllLibraryRepoTableData(
+  target: LibraryRepoTarget
+): Promise<LibraryRepoTableData> {
+  const first = await fetchLibraryRepoTableData(target)
+  const items = [...first.items]
+  let page = first.nextPage
+  // A page that reports itself as having more but hands back nothing would
+  // otherwise spin forever; stopping on an empty page keeps this bounded by
+  // the repository rather than by the server's honesty.
+  while (page !== undefined) {
+    const next = await fetchLibraryRepoTableData(target, page)
+    if (next.items.length === 0) break
+    items.push(...next.items)
+    page = next.nextPage
+  }
+  return { ...first, items, hasMore: false, nextPage: undefined }
 }
 
 export interface LibraryRepositoryProfile {
@@ -2230,7 +2266,7 @@ async function fetchRepositoryRecords(
 ): Promise<DatabaseRecord[]> {
   const fetched = await Promise.all(
     targets.map(async (target) => {
-      const table = await fetchLibraryRepoTableData(target)
+      const table = await fetchAllLibraryRepoTableData(target)
       const records = table.items.map((item) =>
         libraryDataToRecord(item, table.properties, table.repoName, {
           orgUsername: target.org,
@@ -2736,7 +2772,7 @@ export function createLibraryRecordsResource(
       // `complete` is what lets Photon delete records that are gone upstream,
       // so it may only be true for the whole collection. Both paths page until
       // the paginator runs out, so it is.
-      const table = await fetchLibraryRepoTableData(target)
+      const table = await fetchAllLibraryRepoTableData(target)
       return {
         items: table.items.map((item) =>
           libraryDataToRecord(item, table.properties, table.repoName, {

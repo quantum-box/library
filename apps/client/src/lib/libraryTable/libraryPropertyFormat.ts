@@ -120,10 +120,15 @@ export function propertyCellText(
 ): { text: string; truncated: boolean } | undefined {
   const text = propertyValueText(property, value)
   if (text === undefined) return undefined
-  if (text.length <= limit) {
+  // Code points, not UTF-16 units: the API's preview counts Rust `char`s,
+  // so measuring with `.length` would call a 200-character body that ends
+  // in an emoji over-limit, and `.slice()` would cut its surrogate pair in
+  // half and render a replacement character.
+  const points = Array.from(text)
+  if (points.length <= limit) {
     return { text, truncated: value.preview?.truncated ?? false }
   }
-  return { text: text.slice(0, limit).trimEnd(), truncated: true }
+  return { text: points.slice(0, limit).join('').trimEnd(), truncated: true }
 }
 
 interface RichTextInline {

@@ -36,6 +36,13 @@ export function PublicRepositoryView({
   const [query, setQuery] = useState('')
   const isMobileViewport = useIsMobileViewport()
   const [loadingMore, setLoadingMore] = useState(false)
+  /**
+   * A later page's failure, kept apart from `dataError`.
+   *
+   * Every result branch requires `!dataError`, so putting a page-2 timeout
+   * there would take away the page-1 rows the reader is already reading.
+   */
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
   const [nextPage, setNextPage] = useState<number | null>(null)
   const request = useRef(0)
 
@@ -53,6 +60,7 @@ export function PublicRepositoryView({
       setItems(table.items)
       setProperties(table.properties)
       setNextPage(table.nextPage ?? null)
+      setLoadMoreError(null)
     } catch (loadError: unknown) {
       if (token !== request.current) return
       setItems([])
@@ -69,6 +77,7 @@ export function PublicRepositoryView({
     if (nextPage === null) return
     const token = request.current
     setLoadingMore(true)
+    setLoadMoreError(null)
     try {
       const table = await fetchLibraryRepoTableData(
         { org: organization, repo: repository, anonymous: true },
@@ -82,7 +91,7 @@ export function PublicRepositoryView({
       setNextPage(table.nextPage ?? null)
     } catch (loadError: unknown) {
       if (token !== request.current) return
-      setDataError(publicRepositoryErrorMessage(loadError))
+      setLoadMoreError(publicRepositoryErrorMessage(loadError))
     } finally {
       if (token === request.current) setLoadingMore(false)
     }
@@ -283,7 +292,10 @@ export function PublicRepositoryView({
           ) : null}
 
           {!dataLoading && !dataError && nextPage !== null ? (
-            <div className="flex justify-center py-4">
+            <div className="flex flex-col items-center gap-2 py-4">
+              {loadMoreError ? (
+                <p className="text-xs text-destructive" role="alert">{loadMoreError}</p>
+              ) : null}
               <Button
                 variant="secondary"
                 size="sm"
