@@ -1,5 +1,12 @@
 import type { ComponentProps } from 'react'
 
+/*
+ * Both parts set their own `display`, and Tailwind orders utilities by
+ * definition rather than by the order they appear in `className` — so passing
+ * `hidden` in here does not hide anything. Wrap them in a plain element and
+ * put the responsive visibility utilities on that instead.
+ */
+
 type KbdProps = ComponentProps<'kbd'>
 type KbdGroupProps = ComponentProps<'span'>
 

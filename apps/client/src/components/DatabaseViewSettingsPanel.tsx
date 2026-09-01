@@ -126,7 +126,7 @@ export function DatabaseViewSettingsPanel({
         aria-modal={desktop ? undefined : 'true'}
         aria-labelledby="database-view-settings-title"
         tabIndex={desktop ? undefined : -1}
-        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] shrink-0 flex-col overflow-y-auto rounded-t-xl border-t border-border bg-panel p-3 shadow-overlay md:static md:z-auto md:w-72 md:rounded-none md:border-l md:border-t-0 md:shadow-none"
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78dvh] shrink-0 flex-col overflow-y-auto rounded-t-xl border-t border-border bg-panel p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-overlay md:static md:z-auto md:w-72 md:rounded-none md:border-l md:border-t-0 md:pb-3 md:shadow-none"
       >
         <div className="mb-3 flex items-center justify-between">
           <span

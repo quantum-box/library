@@ -98,9 +98,12 @@ describe('RepositorySettingsView', () => {
     expect(screen.getByTestId('repository-settings-loading')).toHaveTextContent(
       'Loading quantum-box/library settings',
     )
+    // The read only takes over the body: the section strip stays on screen so
+    // another tab is one click away while Settings is still loading.
+    expect(screen.getByTestId('repository-tabs')).toBeInTheDocument()
 
     resolveSettings?.(settings)
-    expect(await screen.findByTestId('repository-settings-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('repository-settings-body')).toBeInTheDocument()
     expect(screen.getByText('Knowledge workspace')).toBeInTheDocument()
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Summary')
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('ext_github')
@@ -124,13 +127,13 @@ describe('RepositorySettingsView', () => {
     expect(await screen.findByRole('heading', { name: 'Permission required' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
-    expect(await screen.findByTestId('repository-settings-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('repository-settings-body')).toBeInTheDocument()
     expect(apiMocks.fetchRepositorySettings).toHaveBeenCalledTimes(2)
   })
 
   it('updates description and visibility with one explicit save action', async () => {
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     fireEvent.change(screen.getByLabelText('Description'), {
       target: { value: 'Public knowledge workspace' },
@@ -154,7 +157,7 @@ describe('RepositorySettingsView', () => {
 
   it('blocks description removal because the current backend cannot represent it', async () => {
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
@@ -168,7 +171,7 @@ describe('RepositorySettingsView', () => {
 
   it('searches the schema ledger and distinguishes no matches from an empty repository', async () => {
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     fireEvent.change(screen.getByLabelText('Search Properties'), {
       target: { value: 'not-a-property' },
@@ -218,7 +221,7 @@ describe('RepositorySettingsView', () => {
     })
     renderView()
 
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     const edit = screen.getByRole('button', { name: 'Edit Status' })
     const editMultiSelect = screen.getByRole('button', { name: 'Edit Labels' })
@@ -268,7 +271,7 @@ describe('RepositorySettingsView', () => {
     })
     renderView()
 
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
     fireEvent.click(screen.getByRole('button', { name: 'Edit Status' }))
     const dialog = screen.getByRole('dialog')
 
@@ -312,7 +315,7 @@ describe('RepositorySettingsView', () => {
       ],
     })
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     expect(screen.getByText('Legacy · switch to Rich text')).toBeInTheDocument()
   })
@@ -328,7 +331,7 @@ describe('RepositorySettingsView', () => {
 
   it('adds, renames, and confirms deletion of Property definitions', async () => {
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Property' }))
     let dialog = screen.getByRole('dialog')
@@ -372,7 +375,7 @@ describe('RepositorySettingsView', () => {
       'permission',
     ))
     renderView()
-    await screen.findByTestId('repository-settings-page')
+    await screen.findByTestId('repository-settings-body')
 
     fireEvent.change(screen.getByLabelText('Description'), {
       target: { value: 'Changed' },

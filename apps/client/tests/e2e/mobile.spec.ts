@@ -9,7 +9,16 @@ test.describe('Library mobile shell', () => {
     await expect(page.getByTestId('sync-presence-status-mobile')).toBeVisible()
     await expect(page.getByTestId('side-nav')).toBeHidden()
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'photon-core' })).toBeVisible()
+
+    // The workspace nav lives behind the app bar's drawer on a phone.
+    await expect(page.getByTestId('mobile-nav')).toHaveCount(0)
+    await page.getByTestId('open-mobile-nav').click()
+    await expect(page.getByTestId('mobile-nav')).toBeVisible()
+    await expect(
+      page.getByTestId('mobile-nav').getByText('quantum-box/photon-core')
+    ).toBeVisible()
+    await page.getByTestId('close-mobile-nav').click()
+    await expect(page.getByTestId('mobile-nav')).toHaveCount(0)
 
     await page.getByTestId('open-create-record').click()
     await expect(page.getByTestId('create-record-repository')).toHaveValue('quantum-box/photon-core')
@@ -26,16 +35,64 @@ test.describe('Library mobile shell', () => {
     await page.getByTestId('detail-panel-close').click()
     await expect(page.getByTestId('detail-panel')).toHaveCount(0)
 
-    await page.getByTestId('view-docs-mobile').click()
-    await expect(page).toHaveURL(/\/docs/)
-    await expect(page.getByRole('heading', { name: 'Docs' })).toBeVisible()
-
+    await page.getByTestId('open-mobile-nav').click()
     await page.getByTestId('view-chat-mobile').click()
     await expect(page).toHaveURL(/\/chat/)
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible()
 
+    await page.getByTestId('open-mobile-nav').click()
     await page.getByTestId('view-sync-mobile').click()
     await expect(page).toHaveURL(/\/sync/)
     await expect(page.getByRole('heading', { name: 'Engine diagnostics' })).toBeVisible()
+  })
+
+  test('shows repository data as cards instead of a wide table', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/data')
+
+    const cards = page.getByTestId('library-table-card')
+    await expect(cards.first()).toBeVisible()
+    await expect(page.getByTestId('library-table-view').locator('table')).toHaveCount(0)
+
+    // The shell never pans sideways: every overflow is owned by a pane.
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+    expect(overflow).toBeLessThanOrEqual(0)
+
+    await cards.first().click()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\//)
+  })
+
+  test('shows a public repository as cards for a signed-out visitor', async ({ page, request }) => {
+    // The public route is what a shared link opens, so exercise it the way a
+    // visitor arrives: no session, phone viewport.
+    await request.post('http://127.0.0.1:50063/v1/graphql', {
+      data: {
+        query: 'mutation LibraryClientUpdateRepository { updateRepo { id } }',
+        variables: {
+          input: {
+            orgUsername: 'quantum-box',
+            repoUsername: 'photon-core',
+            isPublic: true,
+          },
+        },
+      },
+    })
+    await page.context().clearCookies()
+    await page.goto('/public/quantum-box/photon-core')
+    await page.evaluate(() => window.localStorage.clear())
+    await page.reload()
+
+    const cards = page.locator('[data-testid^="public-repository-card-"]')
+    await expect(cards.first()).toBeVisible()
+    await expect(page.locator('table')).toHaveCount(0)
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+    expect(overflow).toBeLessThanOrEqual(0)
+
+    await cards.first().click()
+    await expect(page).toHaveURL(/\/public\/quantum-box\/photon-core\/.+/)
   })
 })

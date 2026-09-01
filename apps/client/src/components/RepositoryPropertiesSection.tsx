@@ -434,20 +434,24 @@ export function RepositoryPropertiesSection({
       className="overflow-hidden rounded-lg border border-border bg-background shadow-soft"
       aria-labelledby="repository-properties-heading"
     >
-      <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3">
-        <span className="flex size-8 items-center justify-center rounded-md bg-selected text-primary">
-          <FileKey2 className="size-4" aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h2 id="repository-properties-heading" className="text-sm font-semibold">
-            {heading ?? t('repoSettings.schemaLedger')}
-          </h2>
-          <p className="text-2xs text-muted-foreground">
-            {detail ?? t('repoSettings.schemaLedgerSubtitle')}
-          </p>
+      {/* The button takes its own row on a phone rather than squeezing the
+          subtitle into a three-line column. */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-selected text-primary">
+            <FileKey2 className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="repository-properties-heading" className="text-sm font-semibold">
+              {heading ?? t('repoSettings.schemaLedger')}
+            </h2>
+            <p className="text-2xs text-muted-foreground">
+              {detail ?? t('repoSettings.schemaLedgerSubtitle')}
+            </p>
+          </div>
         </div>
         <Button
-          className="ml-auto"
+          className="w-full sm:ml-auto sm:w-auto"
           variant="primary"
           size="sm"
           disabled={readOnly}

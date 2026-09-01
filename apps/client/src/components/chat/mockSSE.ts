@@ -9,9 +9,6 @@
 import type { ToolCall, ToolRuntimeContext, ToolType } from './tools/types'
 import { executeTool, generateToolCallId } from './tools/toolExecutor'
 
-const DOCUMENT_CONTEXT_RESPONSE =
-  'I have the current document context available, including the active document, selected text, and related Library data. I can use that context when creating or searching data.'
-
 const LOCAL_DEMO_RESPONSE =
   'Library Chat is running in local demo mode, so no assistant backend is connected. I can search, list, open, create, and move Library data in this workspace without inventing external results.'
 
@@ -143,19 +140,14 @@ export function startMockSSE(
   const signal = controller.signal
 
   const detectedTools = detectToolTriggers(userMessage)
-  const wantsDocumentContext = context?.documentContext &&
-    /(?:context|document|doc|selected|selection|選択|ドキュメント)/i.test(userMessage)
-
   if (detectedTools.length > 0 && onToolCallStart && onToolCallUpdate) {
     // Execute tools first, then stream response
     executeToolsAndStream(detectedTools, signal, onChunk, onDone, onToolCallStart, onToolCallUpdate, context)
   } else {
     // Normal text-only response
-    const response = wantsDocumentContext
-      ? DOCUMENT_CONTEXT_RESPONSE
-      : userMessage.includes('[Attached file:')
-        ? LOCAL_FILE_RESPONSE
-        : LOCAL_DEMO_RESPONSE
+    const response = userMessage.includes('[Attached file:')
+      ? LOCAL_FILE_RESPONSE
+      : LOCAL_DEMO_RESPONSE
     streamText(response, signal, onChunk, onDone)
   }
 

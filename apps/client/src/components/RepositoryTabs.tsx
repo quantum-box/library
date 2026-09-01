@@ -2,27 +2,18 @@ import { Link } from '@tanstack/react-router'
 import {
   Activity,
   BookOpen,
-  CalendarRange,
-  Columns3,
   FileKey2,
-  FileText,
   KeyRound,
   LayoutList,
   Settings,
-  Workflow,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { DataLink } from './DataLink'
-import { DocLink } from './DocLink'
 import { useI18n } from '../i18n'
 
 export type RepositoryTab =
   | 'overview'
   | 'data'
-  | 'board'
-  | 'workflow'
-  | 'timeline'
-  | 'docs'
   | 'properties'
   | 'api'
   | 'settings'
@@ -99,26 +90,16 @@ export function RepositoryTabs({
         )}
       </Tab>
 
-      {([
-        ['data', 'repository.tab.data', LayoutList, undefined],
-        ['board', 'viewTabs.board', Columns3, 'board'],
-        ['workflow', 'viewTabs.workflow', Workflow, 'workflow'],
-        ['timeline', 'viewTabs.timeline', CalendarRange, 'timeline'],
-      ] as const).map(([tab, labelKey, icon, view]) => (
-        <Tab key={tab} active={active === tab} icon={icon} label={t(labelKey)}>
-          {(className, content) => (
-            <DataLink databaseId={databaseId} view={view} className={className}>
-              {content}
-            </DataLink>
-          )}
-        </Tab>
-      ))}
-
-      <Tab active={active === 'docs'} icon={FileText} label={t('sidebar.nav.documents')}>
+      {/*
+        Data is one section, not four: Board, Workflow and Timeline are views a
+        user adds inside it, so they belong to the view tabs on the data screen
+        rather than to this strip.
+      */}
+      <Tab active={active === 'data'} icon={LayoutList} label={t('repository.tab.data')}>
         {(className, content) => (
-          <DocLink databaseId={databaseId} className={className}>
+          <DataLink databaseId={databaseId} className={className}>
             {content}
-          </DocLink>
+          </DataLink>
         )}
       </Tab>
 

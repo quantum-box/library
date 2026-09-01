@@ -32,8 +32,6 @@ import {
 import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libraryTable/libraryPropertyFormat'
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
-import { listRecordDocLinks } from '../lib/docs/docsDb'
-import type { DocumentRecordLink } from '../lib/docs/types'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { toFileAttachment } from '../lib/attachments/presentation'
 import type { FileAttachment } from './files/types'
@@ -145,7 +143,6 @@ export function DataEditorPage({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [relatedDocs, setRelatedDocs] = useState<DocumentRecordLink[]>([])
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const itemRef = useRef<LibraryDataItem | null>(null)
   const propertiesRef = useRef<LibraryProperty[]>([])
@@ -184,19 +181,6 @@ export function DataEditorPage({
   useEffect(() => {
     void reload()
   }, [reload])
-
-  const selectedItemId = item?.id
-
-  useEffect(() => {
-    if (!selectedItemId) return
-    let cancelled = false
-    void listRecordDocLinks(selectedItemId, selectedItemId).then((links) => {
-      if (!cancelled) setRelatedDocs(links)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedItemId])
 
   const persistItem = useCallback((next: LibraryDataItem) => {
     const revision = ++revisionRef.current
@@ -444,35 +428,6 @@ export function DataEditorPage({
                   </div>
                 </div>
 
-                <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
-                    {t('detail.relatedDocs')}
-                  </span>
-                  <div className="min-h-6 min-w-0" data-testid="record-related-docs">
-                    {relatedDocs.length > 0 ? (
-                      <div className="space-y-1">
-                        {relatedDocs.map((doc) => (
-                          <Link
-                            key={doc.id}
-                            to="/documents/$documentId"
-                            params={{ documentId: doc.docId }}
-                            className="flex min-w-0 items-start gap-1.5 rounded px-1 py-0.5 text-sm text-foreground no-underline hover:bg-muted"
-                          >
-                            <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                            <span className="min-w-0">
-                              <span className="block truncate">{doc.docTitle ?? t('docs.untitled')}</span>
-                              {doc.selectedText ? (
-                                <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">{doc.selectedText}</span>
-                              ) : null}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">{t('dataEditor.noRelatedDocs')}</span>
-                    )}
-                  </div>
-                </div>
               </div>
             </section>
 

@@ -13,11 +13,22 @@ const viewTypeMeta: Record<
   timeline: { icon: CalendarRange, labelKey: 'viewTabs.timeline' },
 }
 
-function legacyTestId(view: DatabaseViewDefinition) {
-  if (view.id.endsWith(':table')) return 'view-table'
-  if (view.id.endsWith(':board')) return 'view-kanban'
-  if (view.id.endsWith(':workflow')) return 'view-workflow'
-  if (view.id.endsWith(':timeline')) return 'view-timeline'
+const legacyTestIdByType: Record<DatabaseViewType, string> = {
+  table: 'view-table',
+  board: 'view-kanban',
+  workflow: 'view-workflow',
+  timeline: 'view-timeline',
+}
+
+/**
+ * The first view of each type keeps the stable id the rest of the app and the
+ * E2E suite address it by. Views are user-added now, so the id can no longer
+ * be derived from a seeded view id — later views of the same type fall back to
+ * their own id to keep every test id unique.
+ */
+function viewTestId(view: DatabaseViewDefinition, views: DatabaseViewDefinition[]) {
+  const first = views.find((candidate) => candidate.type === view.type)
+  if (first?.id === view.id) return legacyTestIdByType[view.type]
   return `database-view-tab-${view.id}`
 }
 
@@ -32,6 +43,7 @@ export function DatabaseViewTabs({
   onDeleteView,
   onSaveView,
   onDiscardChanges,
+  nested = false,
 }: {
   views: DatabaseViewDefinition[]
   selectedView: DatabaseViewDefinition
@@ -43,12 +55,22 @@ export function DatabaseViewTabs({
   onDeleteView: (view: DatabaseViewDefinition) => void
   onSaveView: () => void
   onDiscardChanges: () => void
+  /**
+   * True when a repository section strip sits directly above: the outer strip
+   * owns the tinted row, so this one drops back to the page surface instead of
+   * stacking two identical-looking tab bars.
+   */
+  nested?: boolean
 }) {
   const { t } = useI18n()
   const [optionsOpen, setOptionsOpen] = useState(false)
 
   return (
-    <div className="flex h-9 shrink-0 items-end gap-1 border-b border-border bg-surface px-2 pt-1 md:px-3">
+    <div
+      className={`flex h-9 shrink-0 items-end gap-1 border-b border-border px-2 pt-1 md:px-3 ${
+        nested ? 'bg-background' : 'bg-surface'
+      }`}
+    >
       <nav
         className="flex min-w-0 flex-1 overflow-x-auto"
         aria-label={t('viewTabs.navLabel')}
@@ -60,7 +82,7 @@ export function DatabaseViewTabs({
           return (
             <button
               key={view.id}
-              data-testid={legacyTestId(view)}
+              data-testid={viewTestId(view, views)}
               className={`relative flex h-8 min-w-20 shrink-0 items-center justify-center gap-1.5 rounded-t-md border px-2.5 text-xs font-medium transition-colors ${
                 selected
                   ? 'border-border border-b-background bg-background text-foreground'

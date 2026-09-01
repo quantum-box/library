@@ -175,12 +175,6 @@ export function LibraryHome() {
               <p className="mt-1 text-sm text-muted-foreground">{t('home.subtitle')}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" asChild>
-                <Link to="/docs" search={{ create: true }}>
-                  <FileText aria-hidden="true" />
-                  {t('docs.new')}
-                </Link>
-              </Button>
               <Button variant="primary" size="sm" onClick={openCreateData}>
                 <Plus aria-hidden="true" />
                 {t('data.new')}

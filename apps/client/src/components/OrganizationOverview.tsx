@@ -234,9 +234,11 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
           {t('sidebar.repositories.new')}
         </Button>
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/databases" search={allDataSearch}>
+          <Link to="/databases" search={allDataSearch} aria-label={t('organization.openAllData')}>
             <Database aria-hidden="true" />
-            {t('organization.openAllData')}
+            {/* Two labelled buttons leave a phone header no room for the
+                organization name, so the secondary one goes icon-only. */}
+            <span className="hidden sm:inline">{t('organization.openAllData')}</span>
           </Link>
         </Button>
       </header>

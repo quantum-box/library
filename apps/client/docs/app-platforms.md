@@ -51,6 +51,19 @@ Mobile release candidates must also pass the phone-viewport browser smoke:
 npm run test:e2e:mobile
 ```
 
+The phone shell is an app frame rather than a document, and two rules keep it
+that way. `index.html` pins the viewport (`maximum-scale=1, user-scalable=no,
+viewport-fit=cover`) so a focused input cannot zoom the layout out from under
+the user, and `src/index.css` fixes `body` to the layout viewport with
+`overscroll-behavior: none`. Nothing outside a pane may scroll: a screen that
+makes the document itself overflow is a bug, and `mobile.spec.ts` asserts it.
+
+On a phone the workspace navigation lives in a drawer behind the app bar rather
+than in the sidebar, and views that cannot reflow — the repository data table
+and its public counterpart, above all — swap to a card layout through
+`useIsMobileViewport`. Anything a phone can only reach by tapping has to have a
+tap target: the command palette is opened from the drawer, not just by `⌘K`.
+
 CI runs an Android APK smoke build for `aarch64` so the Tauri mobile wrapper,
 Rust command bridge, WASM frontend build, and generated Android project stay in
 sync with the shared app shell.

@@ -4,7 +4,6 @@ import {
   CalendarRange,
   Cloud,
   Database,
-  FileText,
   GitBranch,
   Home,
   KanbanSquare,
@@ -110,14 +109,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: CalendarRange,
         keywords: t('palette.nav.timeline.keywords'),
         run: databaseView('timeline'),
-      },
-      {
-        id: 'nav-docs',
-        label: t('palette.nav.docs.label'),
-        detail: t('palette.nav.docs.detail'),
-        icon: FileText,
-        keywords: t('palette.nav.docs.keywords'),
-        run: () => void navigate({ to: '/docs' }),
       },
       {
         id: 'nav-chat',
@@ -319,7 +310,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           })}
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-2 font-mono text-2xs text-subtle-foreground">
+        {/* Keyboard hints for a surface a phone reaches by tapping. */}
+        <div className="hidden shrink-0 items-center gap-3 border-t border-border px-3 py-2 font-mono text-2xs text-subtle-foreground md:flex">
           <span>↑↓ {t('palette.hint.navigate')}</span>
           <span>↵ {t('palette.hint.open')}</span>
           <span>Esc {t('palette.hint.close')}</span>

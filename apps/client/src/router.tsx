@@ -24,6 +24,7 @@ import { KanbanView } from './components/KanbanView'
 import { WorkflowView } from './components/WorkflowView'
 import { TimelineView } from './components/TimelineView'
 import { DatabaseViewTabs } from './components/DatabaseViewTabs'
+import { RepositoryTabs } from './components/RepositoryTabs'
 import {
   DeleteDatabaseViewDialog,
   RenameDatabaseViewDialog,
@@ -40,7 +41,6 @@ import { RepositorySettingsView } from './components/RepositorySettingsView'
 import { RepositoryPropertiesView } from './components/RepositoryPropertiesView'
 import { Kbd, KbdGroup } from './components/Kbd'
 import { ChatView } from './components/chat/ChatView'
-import { DocsView } from './components/docs/DocsView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
 import { CommandPalette } from './components/CommandPalette'
 import { WindowTabStrip } from './components/desktop/WindowTabStrip'
@@ -74,7 +74,6 @@ import {
   type DataViewSearch,
 } from './lib/ui/dataLocation'
 import { RepositoriesPage } from './components/RepositoriesPage'
-import { DocRedirect } from './components/DocLink'
 import {
   clearDatabaseViewDraft,
   loadDatabaseViewDraft,
@@ -120,7 +119,7 @@ function isEditableShortcutTarget(target: EventTarget | null) {
 }
 
 function shortcutViewLabelKey(
-  view: DatabaseViewType | 'docs' | 'chat' | 'sync'
+  view: DatabaseViewType | 'chat' | 'sync'
 ): MessageKey {
   switch (view) {
     case 'table':
@@ -131,8 +130,6 @@ function shortcutViewLabelKey(
       return 'viewTabs.workflow'
     case 'timeline':
       return 'viewTabs.timeline'
-    case 'docs':
-      return 'shortcuts.docs'
     case 'chat':
       return 'shortcuts.chat'
     case 'sync':
@@ -140,14 +137,13 @@ function shortcutViewLabelKey(
   }
 }
 
-type ShortcutAction = DatabaseViewType | 'docs' | 'chat' | 'sync'
+type ShortcutAction = DatabaseViewType | 'chat' | 'sync'
 
 const goShortcutActions: Record<string, ShortcutAction> = {
   t: 'table',
   b: 'board',
   w: 'workflow',
   l: 'timeline',
-  d: 'docs',
   c: 'chat',
   s: 'sync',
 }
@@ -351,12 +347,22 @@ function DatabaseHeader({
             >
               <Plus aria-hidden="true" />
               <span>{t('data.new')}</span>
-              <Kbd className="hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">C</Kbd>
+              <span className="hidden md:inline-flex">
+                <Kbd className="border-white/25 bg-white/15 text-white shadow-none">C</Kbd>
+              </span>
             </Button>
           )}
         </div>
       </header>
+      {organization && repository ? (
+        <RepositoryTabs
+          organization={organization}
+          repository={repository}
+          active="data"
+        />
+      ) : null}
       <DatabaseViewTabs
+        nested={Boolean(organization && repository)}
         views={views}
         selectedView={selectedView}
         dirty={dirty}
@@ -425,7 +431,6 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
     { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
     { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
-    { keys: renderShortcutSequence(['G', 'D']), label: t(shortcutViewLabelKey('docs')) },
     { keys: renderShortcutSequence(['G', 'C']), label: t(shortcutViewLabelKey('chat')) },
     { keys: renderShortcutSequence(['G', 'S']), label: t(shortcutViewLabelKey('sync')) },
     { keys: renderShortcutKeys(['?']), label: t('shortcuts.showShortcuts') },
@@ -501,9 +506,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
   const runShortcutAction = useCallback(
     (target: ShortcutAction) => {
-      if (target === 'docs') {
-        void navigate({ to: '/docs' })
-      } else if (target === 'chat') {
+      if (target === 'chat') {
         void navigate({ to: '/chat' })
       } else if (target === 'sync') {
         void navigate({ to: '/sync' })
@@ -687,10 +690,12 @@ function WorkspaceHydrationStatus() {
   if (!hydrationError && (!hydrationLoading || records.length > 0)) return null
 
   return (
+    /* On a phone the app bar owns the top of the screen, so this clears it
+       instead of covering the account menu and the drawer trigger. */
     <div
       role={hydrationError ? 'alert' : 'status'}
       aria-live={hydrationError ? 'assertive' : 'polite'}
-      className="fixed left-1/2 top-3 z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-sm shadow-overlay"
+      className="fixed left-1/2 top-[calc(3.5rem+env(safe-area-inset-top))] z-[80] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-sm shadow-overlay md:top-3"
     >
       {hydrationLoading ? (
         <RotateCcw className="mt-0.5 size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
@@ -1841,67 +1846,6 @@ const syncRoute = createRoute({
   component: EngineSyncDashboard,
 })
 
-// ── Documents Route (/docs, /documents/$documentId) ───────────
-
-const docsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: 'docs',
-  validateSearch: (search: Record<string, unknown>): { create?: boolean; database?: string } => ({
-    create: search.create === true || search.create === 'true' ? true : undefined,
-    database: typeof search.database === 'string' ? search.database : undefined,
-  }),
-  component: DocsPage,
-})
-
-const documentDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: 'documents/$documentId',
-  validateSearch: (search: Record<string, unknown>): { database?: string } => ({
-    database: typeof search.database === 'string' ? search.database : undefined,
-  }),
-  component: DocsPage,
-})
-
-// ── Repository Docs Routes (/$org/$repo/docs) ─────────────────
-
-const repoDocsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '$organization/$repository/docs',
-  validateSearch: (search: Record<string, unknown>): { create?: boolean } => ({
-    create: search.create === true || search.create === 'true' ? true : undefined,
-  }),
-  component: RepoDocsListPage,
-})
-
-function RepoDocsListPage() {
-  const { organization, repository } = repoDocsRoute.useParams()
-  const { create } = repoDocsRoute.useSearch()
-  return (
-    <DocsView
-      selectedDocId={null}
-      createOnOpen={create === true}
-      initialDatabaseId={`${organization}/${repository}`}
-    />
-  )
-}
-
-const repoDocumentDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '$organization/$repository/docs/$documentId',
-  component: RepoDocumentDetailPage,
-})
-
-function RepoDocumentDetailPage() {
-  const { organization, repository, documentId } = repoDocumentDetailRoute.useParams()
-  return (
-    <DocsView
-      selectedDocId={documentId}
-      createOnOpen={false}
-      initialDatabaseId={`${organization}/${repository}`}
-    />
-  )
-}
-
 // ── Legacy Route Redirects ────────────────────────────────────
 
 const legacyKanbanRoute = createRoute({
@@ -1922,34 +1866,6 @@ const legacyKanbanRoute = createRoute({
     })
   },
 })
-
-function DocsPage() {
-  const location = useRouterState({ select: (state) => state.location })
-  const detailMatch = useMatch({
-    from: documentDetailRoute.id,
-    shouldThrow: false,
-  })
-  const selectedDocId = (detailMatch?.params as { documentId?: string })?.documentId ?? null
-
-  const createOnOpen = location.pathname === '/docs' && (
-    (location.search as { create?: boolean }).create === true
-  )
-  const initialDatabaseId = (location.search as { database?: string }).database
-
-  // Legacy URLs scoped docs via ?database=org/repo — forward them to the
-  // path-based /$org/$repo/docs form.
-  if (splitRepoDatabaseId(initialDatabaseId)) {
-    return <DocRedirect databaseId={initialDatabaseId} documentId={selectedDocId ?? undefined} />
-  }
-
-  return (
-    <DocsView
-      selectedDocId={selectedDocId}
-      createOnOpen={createOnOpen}
-      initialDatabaseId={initialDatabaseId}
-    />
-  )
-}
 
 // ── Public Read-only Routes (/public/$org/$repo) ──────────────
 
@@ -2001,10 +1917,6 @@ const routeTree = rootRoute.addChildren([
   legacyKanbanRoute,
   chatRoute,
   syncRoute,
-  docsRoute,
-  documentDetailRoute,
-  repoDocsRoute,
-  repoDocumentDetailRoute,
   publicRepositoryRoute,
   publicDataRoute,
 ])

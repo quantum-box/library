@@ -41,11 +41,25 @@ GA 正式提供は CMS / Document OS の作成、編集、公開、権限、検�
 
 ## 3.2 Photon Engine sync の扱い
 
-`POST /api/engine/push` / `POST /api/engine/pull` / `GET /api/engine/debug` は Non-GA / experimental とする。標準環境では router に登録せず、`LIBRARY_PHOTON_ENGINE_ENABLED=true` を明示した環境でのみ有効化する。`LIBRARY_PHOTON_ENGINE_TENANT`（既定 `library`）が、その deployment の受け付ける唯一の Photon tenant を決める。
+**撤去済み（ADR-0009）。** `POST /api/engine/push` / `POST /api/engine/pull` /
+`GET /api/engine/debug` は存在しない。`LIBRARY_PHOTON_ENGINE_ENABLED` /
+`LIBRARY_PHOTON_ENGINE_TENANT` も廃止されている。GA 判定の対象外である。
 
-これらの route は upstream の `photon_axum::engine_routes()` をそのまま mount したもので、remote sequence の採番は storage 層（`StorageAdapter::append_authoritative_operation`）が行う。library-api は Lambda であり複数インスタンスが 1 つの TiDB を共有するため、プロセスローカルな採番器を持ち込んではならない。
+durable な同期は Library 自身の REST / GraphQL で行う。Photon はコレクション
+ごとに送り先を切り替えられ、repository の data は `rest-backed` — 耐久性のある
+operation log、オフラインキュー、ロールバックはそのまま働き、送り先が
+`/api/engine/*` ではなく Library API になるだけである。ローカルファーストの
+挙動は撤去の影響を受けない。
 
-GA 判定に入れるには、少なくとも次が未解決である。`.env.production` は `VITE_LIBRARY_TENANT_ID` / `VITE_LIBRARY_WORKSPACE_ID` を設定しないため、本番のクライアントはすべて同一の `tenant:library:workspace:library-default` を解決する。したがって現状の Engine は「サインイン済みユーザー全員で 1 つの document 集合を共有する」意味になり、ユーザーごとの分離にはならない。Live WebSocket (`/ws`) は Lambda では動かせないため Cloudflare Durable Object 側に残す。
+`engine-native`（= `/api/engine/*` を要するモード）だったのは `documents` と
+`attachments` の 2 つだけで、どちらも org / repo に属さない workspace 単位の
+概念であり、本番で成立したことが一度もなかった。`documents` は削除され、
+ドキュメントの実体は data レコードに一本化された（`handler/docs.rs` が
+`/docs/:org/:repo/:data_id` で配信する）。`attachments` は明示的にローカル
+専用として残っている。
+
+Live WebSocket (`/ws`) は Lambda では動かせないため Cloudflare Durable Object
+側に残る。これは撤去の対象ではない。
 
 ## 4. GA 入り判定基準
 

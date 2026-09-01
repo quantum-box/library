@@ -11,7 +11,6 @@ pub mod error;
 pub mod handler;
 mod interface_adapter;
 mod oauth_bootstrap;
-mod photon_engine;
 mod router;
 pub mod sdk_auth;
 mod sentry_context;

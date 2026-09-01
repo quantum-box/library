@@ -307,18 +307,36 @@
     transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
 
+  /*
+    The shell is an app frame, not a document: every scroll happens inside a
+    pane. Pinning the body to the layout viewport keeps mobile browsers from
+    rubber-banding the whole app, resizing it as the URL bar hides, or panning
+    it sideways when a pane overflows. `position: fixed` sizes against the
+    layout viewport, so this height does not move with browser chrome.
+  */
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     font-family: var(--nui-font-sans);
     background: var(--bg-primary);
     color: var(--text-primary);
+    position: fixed;
+    inset: 0;
     overflow: hidden;
-    height: 100vh;
-    height: 100dvh;
+    overscroll-behavior: none;
+    /* Skip the 300ms double-tap-to-zoom wait on taps. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
+  /* `100%` of the padding box, so the safe-area insets below do not push the
+     app past the bottom of the screen the way a viewport unit would. */
   #root {
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
   }
 
   @supports (padding: max(0px)) {
@@ -336,6 +354,16 @@
     --detail-width: 100vw;
   }
 
+  /* Radix centres its dialog content with `position: fixed`, which escapes the
+     safe-area padding on `body`. Cap the height at the usable area so a long
+     dialog scrolls inside the notch and home indicator instead of under them.
+     `[data-state]` keeps this off the shell's own nav drawer. */
+  [role="dialog"][data-state] {
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  /* Fixed positioning resolves against the viewport, so this panel escapes the
+     safe-area padding on `body` and has to re-apply the insets itself. */
   .detail-panel {
     position: fixed;
     inset: 0;
@@ -344,6 +372,7 @@
     width: 100dvw !important;
     min-width: 0 !important;
     border-left: 0;
+    padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
