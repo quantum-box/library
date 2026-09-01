@@ -30,7 +30,8 @@ use crate::app::LibraryApp;
 use crate::handler::library_executor_extractor::LibraryExecutor;
 use crate::handler::types::{
     convert_property_value, AddDataRequest, DataPaginationQuery,
-    DataResponse, SearchDataQuery, UpdateDataRequest, UpsertDataRequest,
+    DataResponse, PropertyDataValue as PropertyDataValueResponse,
+    SearchDataQuery, UpdateDataRequest, UpsertDataRequest,
 };
 use crate::usecase::library_client_url::data_url;
 use crate::usecase::markdown_composer::compose_markdown_with_ui_url;
@@ -180,7 +181,7 @@ pub async fn view_data_markdown(
         DataPaginationQuery
     ),
     responses(
-        (status = 200, description = "Data list found", body = DataListResponse),
+        (status = 200, description = "Data list found. Rich text properties are returned as `richTextPreview` unless `include_body` is set", body = DataListResponse),
         (status = 400, description = "Invalid pagination request"),
         (status = 404, description = "Repository not found")
     )
@@ -204,6 +205,7 @@ pub async fn view_data_list(
 
     let result = library_app.view_data_list.execute(&input).await?;
     let (data_list, properties, paginator) = result;
+    let include_body = query.include_body;
     let response: Vec<DataResponse> = data_list
         .into_iter()
         .map(|data| DataResponse {
@@ -222,7 +224,13 @@ pub async fn view_data_list(
                         .unwrap()
                         .name()
                         .to_string(),
-                    value: p.value().clone().map(|v| v.into()),
+                    value: p.value().clone().map(|v| {
+                        if include_body {
+                            v.into()
+                        } else {
+                            PropertyDataValueResponse::for_list(v)
+                        }
+                    }),
                 })
                 .collect(),
         })
@@ -491,7 +499,8 @@ pub async fn delete_data(
         SearchDataQuery
     ),
     responses(
-        (status = 200, description = "Data found", body = DataListResponse),
+        (status = 200, description = "Data found. Rich text properties \
+are returned as `richTextPreview` unless `include_body` is set", body = DataListResponse),
         (status = 400, description = "Invalid pagination request"),
         (status = 404, description = "Repository not found")
     )
@@ -516,6 +525,7 @@ pub async fn search_data(
 
     let result = library_app.search_data.execute(&input).await?;
     let (data_list, properties, paginator) = result;
+    let include_body = query.include_body;
     let response: Vec<DataResponse> = data_list
         .into_iter()
         .map(|data| DataResponse {
@@ -534,7 +544,13 @@ pub async fn search_data(
                         .unwrap()
                         .name()
                         .to_string(),
-                    value: p.value().clone().map(|v| v.into()),
+                    value: p.value().clone().map(|v| {
+                        if include_body {
+                            v.into()
+                        } else {
+                            PropertyDataValueResponse::for_list(v)
+                        }
+                    }),
                 })
                 .collect(),
         })

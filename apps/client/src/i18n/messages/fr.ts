@@ -684,6 +684,7 @@ export const fr: LocaleMessages = {
   'libraryTable.loading': 'Chargement des données du dépôt…',
   'libraryTable.searchPlaceholder': 'Rechercher des données',
   'libraryTable.refresh': 'Actualiser les données',
+  'libraryTable.loadMore': 'Charger plus',
   'libraryTable.deleteRow': 'Supprimer la ligne',
   'libraryTable.doubleClickToEditName': 'Double-cliquez pour modifier le nom',
   'libraryTable.empty': 'Aucune donnée dans ce dépôt. Utilisez « + Nouvelles données » pour ajouter une ligne.',

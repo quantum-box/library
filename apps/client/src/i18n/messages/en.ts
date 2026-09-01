@@ -764,6 +764,7 @@ export const en = {
   'libraryTable.loading': 'Loading repository data…',
   'libraryTable.searchPlaceholder': 'Search data',
   'libraryTable.refresh': 'Refresh data',
+  'libraryTable.loadMore': 'Load more',
   'libraryTable.deleteRow': 'Delete row',
   'libraryTable.doubleClickToEditName': 'Double-click to edit name',
   'libraryTable.empty': 'No data in this repository. Use "+ New data" to add a row.',

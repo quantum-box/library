@@ -684,6 +684,7 @@ export const ko: LocaleMessages = {
   'libraryTable.loading': '리포지터리 데이터를 불러오는 중…',
   'libraryTable.searchPlaceholder': '데이터 검색',
   'libraryTable.refresh': '데이터 새로 고침',
+  'libraryTable.loadMore': '더 불러오기',
   'libraryTable.deleteRow': '행 삭제',
   'libraryTable.doubleClickToEditName': '더블클릭하여 이름 편집',
   'libraryTable.empty': '이 리포지터리에 데이터가 없습니다. "＋ 새 데이터"로 행을 추가하세요.',

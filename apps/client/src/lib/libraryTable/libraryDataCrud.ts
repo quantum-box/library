@@ -275,7 +275,21 @@ function knownPropertyData(
   }
   // UpdateData is a patch boundary. Omitting a Property definition that this
   // client cannot interpret preserves its existing server value.
-  return propertyData.filter((entry) => propertyIds.has(entry.propertyId))
+  return propertyData
+    .filter((entry) => propertyIds.has(entry.propertyId))
+    .filter((entry) => !isPreviewOnlyValue(entry.value))
+}
+
+/**
+ * Whether a value is a listing's preview of a body rather than the body.
+ *
+ * Rows come out of a listing holding `preview` and no `richText`, and a
+ * write built from one would send the preview as the new document. Since
+ * update is a patch, dropping the entry is what leaves the stored document
+ * alone -- so editing a Select cell on a row cannot truncate its body.
+ */
+function isPreviewOnlyValue(value: LibraryPropertyDataValue): boolean {
+  return value.preview !== undefined && value.richText === undefined
 }
 
 function graphqlPropertyPayload(

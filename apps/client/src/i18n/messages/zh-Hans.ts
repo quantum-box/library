@@ -684,6 +684,7 @@ export const zhHans: LocaleMessages = {
   'libraryTable.loading': '正在加载仓库数据…',
   'libraryTable.searchPlaceholder': '搜索数据',
   'libraryTable.refresh': '刷新数据',
+  'libraryTable.loadMore': '加载更多',
   'libraryTable.deleteRow': '删除行',
   'libraryTable.doubleClickToEditName': '双击编辑名称',
   'libraryTable.empty': '该仓库中没有数据。请用「＋ 新建数据」添加一行。',

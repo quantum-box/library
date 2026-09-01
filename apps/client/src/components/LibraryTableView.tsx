@@ -161,6 +161,9 @@ export function LibraryTableView({
   const [items, setItems] = useState<LibraryDataItem[]>([])
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextPage, setNextPage] = useState<number | null>(null)
+  const [totalItems, setTotalItems] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -190,15 +193,46 @@ export function LibraryTableView({
       const payload = await fetchLibraryRepoTableData(repoTarget)
       setItems(payload.items)
       setProperties(payload.properties)
+      setNextPage(payload.nextPage ?? null)
+      setTotalItems(payload.totalItems ?? null)
     } catch (loadError: unknown) {
       console.warn('Failed to load Library repository table data', loadError)
       setError(repositoryLoadErrorMessage(loadError))
       setItems([])
       setProperties([])
+      setNextPage(null)
+      setTotalItems(null)
     } finally {
       setLoading(false)
     }
   }, [repoTarget])
+
+  /**
+   * Append the next page.
+   *
+   * Sorting and filtering run over the rows in hand, so what is loaded is
+   * what they see -- which is why this is a button the reader presses
+   * rather than something that happens behind them.
+   */
+  const loadMore = useCallback(async () => {
+    if (nextPage === null) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const payload = await fetchLibraryRepoTableData(repoTarget, nextPage)
+      setItems((current) => {
+        const seen = new Set(current.map((row) => row.id))
+        return [...current, ...payload.items.filter((row) => !seen.has(row.id))]
+      })
+      setNextPage(payload.nextPage ?? null)
+      setTotalItems(payload.totalItems ?? null)
+    } catch (loadError: unknown) {
+      console.warn('Failed to load more Library repository rows', loadError)
+      setError(repositoryLoadErrorMessage(loadError))
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextPage, repoTarget])
 
   useEffect(() => {
     void reload()
@@ -463,6 +497,9 @@ export function LibraryTableView({
         <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
           <Rows3 className="size-3.5" aria-hidden="true" />
           {loading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
+          {!loading && totalItems !== null && totalItems > items.length
+            ? ` / ${totalItems}`
+            : ''}
           {saving ? ` · ${t('common.saving')}` : ''}
         </span>
         <Button
@@ -637,6 +674,19 @@ export function LibraryTableView({
               })}
             </tbody>
           </table>
+          {nextPage !== null && (
+            <div className="flex justify-center border-t border-border px-4 py-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="library-table-load-more"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? t('common.loading') : t('libraryTable.loadMore')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

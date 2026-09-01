@@ -83,12 +83,19 @@
 | --- | --- | --- | --- | --- | --- |
 | GET | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | Path: `org`,`repo`,`data_id` | `DataResponse` | 1件取得 |
 | GET | `/v1beta/repos/{org}/{repo}/data/{data_id}/md` | 必要 | Path: `org`,`repo`,`data_id` | Markdown text | 文字列応答 |
-| GET | `/v1beta/repos/{org}/{repo}/data-list` | 必要 | Path: `org`,`repo` | `DataListResponse` | 実装上 offset/limit 参照 |
+| GET | `/v1beta/repos/{org}/{repo}/data-list` | 必要 | Path: `org`,`repo` / Query: `include_body` | `DataListResponse` | 実装上 offset/limit 参照。RichText は既定で preview |
 | GET | `/v1beta/repos/{org}/{repo}/data` | 必要 | Query: `name`, `page`, `page_size` | `DataListResponse` | 条件検索 |
 | POST | `/v1beta/repos/{org}/{repo}/data` | 必要 | `AddDataRequest` | `DataResponse` | create 系 |
 | PUT | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | `UpdateDataRequest` | `DataResponse` | 更新 |
 | DELETE | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | Path: `org`,`repo`,`data_id` | 空 | 204 |
 | GET | `/v1beta/repos/{org}/{repo}/data/parquet` | 必要 | Path: `org`,`repo` | `ParquetResponse` | `presigned_url` |
+
+一覧系（`data-list` / `data`）は RichText プロパティの本文を返さない。
+`{"richTextPreview": {"text": ..., "truncated": ...}}` という先頭 200 文字の
+プレーンテキストに畳んで返す。一覧は 1 ページ最大 100 件なので、本文をそのまま
+載せると 1 レスポンスが際限なく膨らむため。ドキュメント本体が要るときは
+1 件取得（`/data/{data_id}`）を使うか、`?include_body=true` を付ける。
+後者はエクスポートのように本当に全件の本文が要る用途のためにある。
 
 `DataResponse.recordVersion` は Database BC の 1-origin record revision を
 10進文字列で返す。BIGINT を JavaScript number に変換してはならない。この

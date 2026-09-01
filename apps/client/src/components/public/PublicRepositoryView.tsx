@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Badge, Input } from '@tachyon-sdk/native-ui'
+import { Badge, Button, Input } from '@tachyon-sdk/native-ui'
 import { Globe, Rows3, Search } from 'lucide-react'
 import {
   fetchLibraryRepoTableData,
@@ -35,6 +35,8 @@ export function PublicRepositoryView({
   const [dataError, setDataError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const isMobileViewport = useIsMobileViewport()
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextPage, setNextPage] = useState<number | null>(null)
   const request = useRef(0)
 
   const loadData = useCallback(async () => {
@@ -50,15 +52,41 @@ export function PublicRepositoryView({
       if (token !== request.current) return
       setItems(table.items)
       setProperties(table.properties)
+      setNextPage(table.nextPage ?? null)
     } catch (loadError: unknown) {
       if (token !== request.current) return
       setItems([])
       setProperties([])
+      setNextPage(null)
       setDataError(publicRepositoryErrorMessage(loadError))
     } finally {
       if (token === request.current) setDataLoading(false)
     }
   }, [organization, repository])
+
+  /** Append the next page. The search box only sees what is loaded. */
+  const loadMore = useCallback(async () => {
+    if (nextPage === null) return
+    const token = request.current
+    setLoadingMore(true)
+    try {
+      const table = await fetchLibraryRepoTableData(
+        { org: organization, repo: repository, anonymous: true },
+        nextPage
+      )
+      if (token !== request.current) return
+      setItems((current) => {
+        const seen = new Set(current.map((row) => row.id))
+        return [...current, ...table.items.filter((row) => !seen.has(row.id))]
+      })
+      setNextPage(table.nextPage ?? null)
+    } catch (loadError: unknown) {
+      if (token !== request.current) return
+      setDataError(publicRepositoryErrorMessage(loadError))
+    } finally {
+      if (token === request.current) setLoadingMore(false)
+    }
+  }, [nextPage, organization, repository])
 
   useEffect(() => {
     if (status !== 'ready') return
@@ -251,6 +279,20 @@ export function PublicRepositoryView({
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+
+          {!dataLoading && !dataError && nextPage !== null ? (
+            <div className="flex justify-center py-4">
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="public-repository-load-more"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? t('common.loading') : t('libraryTable.loadMore')}
+              </Button>
             </div>
           ) : null}
         </div>

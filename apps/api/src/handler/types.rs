@@ -78,6 +78,53 @@ pub enum PropertyDataValue {
     /// A block document, carried as JSON text.
     RichText(String),
     Boolean(bool),
+    /// A capped plain-text rendering of a block document.
+    ///
+    /// What list endpoints return in place of `richText`, so that a page
+    /// of records does not carry every body in full. Ask for the
+    /// documents themselves with `?include_body=true`.
+    RichTextPreview(TextPreviewResponse),
+}
+
+/// A capped plain-text rendering of a body.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TextPreviewResponse {
+    /// The leading text, at most `RICH_TEXT_PREVIEW_LIMIT` characters.
+    pub text: String,
+    /// Whether the body holds more text than `text` shows.
+    pub truncated: bool,
+}
+
+/// How many characters a list endpoint's rich text preview holds.
+pub const RICH_TEXT_PREVIEW_LIMIT: usize = 200;
+
+impl PropertyDataValue {
+    /// Convert a stored value for a list response.
+    ///
+    /// Identical to `From` except that a rich text document becomes a
+    /// capped preview: the renderings a listing would otherwise carry are
+    /// unbounded, and a page of a hundred records multiplies them.
+    pub fn for_list(
+        value: database_manager::domain::PropertyDataValue,
+    ) -> Self {
+        match value {
+            database_manager::domain::PropertyDataValue::RichText(
+                document,
+            ) => {
+                let preview =
+                    database_manager::domain::rich_text::plain_text_preview(
+                        &document,
+                        RICH_TEXT_PREVIEW_LIMIT,
+                    );
+                Self::RichTextPreview(TextPreviewResponse {
+                    text: preview.text,
+                    truncated: preview.truncated,
+                })
+            }
+            other => other.into(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -213,6 +260,12 @@ pub struct SearchDataQuery {
     #[param(minimum = 1, maximum = 100)]
     #[schema(minimum = 1, maximum = 100)]
     pub page_size: Option<u32>,
+    /// Return rich text documents in full instead of as previews.
+    ///
+    /// Off by default, the same as `data-list`: search is a listing too,
+    /// and a page of full bodies is a response no client asked for.
+    #[serde(default)]
+    pub include_body: bool,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, IntoParams)]
@@ -229,6 +282,13 @@ pub struct DataPaginationQuery {
     #[param(minimum = 1, maximum = 100)]
     #[schema(minimum = 1, maximum = 100)]
     pub page_size: Option<u32>,
+    /// Return rich text documents in full instead of as previews.
+    ///
+    /// Off by default: a listing is a listing, and a page of full bodies
+    /// is a response no client asked for. Turn it on only when the caller
+    /// genuinely needs every document, such as an export.
+    #[serde(default)]
+    pub include_body: bool,
 }
 
 // TODO: add English comment
@@ -429,5 +489,63 @@ mod tests {
             convert_property_value(json!(["opt-1", "opt-2"])),
             PropertyDataValueInputData::MultiSelect(_)
         ));
+    }
+
+    fn document(text: &str) -> database_manager::domain::PropertyDataValue {
+        database_manager::domain::PropertyDataValue::RichText(json!([{
+            "type": "paragraph",
+            "content": [{ "type": "text", "text": text }],
+        }]))
+    }
+
+    #[test]
+    fn a_list_value_carries_a_preview_instead_of_the_document() {
+        let long = "x".repeat(RICH_TEXT_PREVIEW_LIMIT + 100);
+
+        let value = PropertyDataValue::for_list(document(&long));
+
+        let PropertyDataValue::RichTextPreview(preview) = value else {
+            panic!("a listing must not carry the document");
+        };
+        assert_eq!(preview.text.chars().count(), RICH_TEXT_PREVIEW_LIMIT);
+        assert!(preview.truncated);
+    }
+
+    #[test]
+    fn a_short_body_is_not_reported_as_truncated() {
+        let value = PropertyDataValue::for_list(document("Hello"));
+
+        let PropertyDataValue::RichTextPreview(preview) = value else {
+            panic!("a listing must not carry the document");
+        };
+        assert_eq!(preview.text, "Hello");
+        assert!(!preview.truncated);
+    }
+
+    /// The preview is serialized under its own key, so a client reading
+    /// `richText` sees the field is absent rather than a shortened body.
+    #[test]
+    fn a_preview_serializes_under_its_own_key() {
+        let value = PropertyDataValue::for_list(document("Hello"));
+
+        let json = serde_json::to_value(&value).expect("serializable");
+
+        assert_eq!(
+            json,
+            json!({ "richTextPreview": { "text": "Hello", "truncated": false } })
+        );
+    }
+
+    #[test]
+    fn every_other_type_is_carried_through_unchanged() {
+        let value = PropertyDataValue::for_list(
+            database_manager::domain::PropertyDataValue::String(
+                "Alpha".to_string(),
+            ),
+        );
+
+        assert!(
+            matches!(value, PropertyDataValue::String(text) if text == "Alpha")
+        );
     }
 }

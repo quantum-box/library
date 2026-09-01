@@ -684,6 +684,7 @@ export const zhHant: LocaleMessages = {
   'libraryTable.loading': '載入儲存庫資料中…',
   'libraryTable.searchPlaceholder': '搜尋資料',
   'libraryTable.refresh': '重新整理資料',
+  'libraryTable.loadMore': '載入更多',
   'libraryTable.deleteRow': '刪除列',
   'libraryTable.doubleClickToEditName': '按兩下編輯名稱',
   'libraryTable.empty': '此儲存庫沒有資料。請用「＋ 新增資料」加入一列。',

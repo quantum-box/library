@@ -126,14 +126,31 @@ function normalizeLibraryProperty(property: LibraryProperty): LibraryProperty {
   return { ...property, typ: normalizeLibraryPropertyType(property.typ) }
 }
 
+/** A capped rendering of a body, in place of the body itself. */
+export interface LibraryTextPreview {
+  text: string
+  truncated: boolean
+}
+
 export interface LibraryPropertyDataValue {
   __typename?: string
   string?: string
   number?: string
   html?: string
   markdown?: string
-  /** The block document as JSON text. Authoritative for RichText. */
+  /**
+   * The block document as JSON text. Authoritative for RichText.
+   *
+   * Listings do not carry it -- they carry `preview` instead -- so anything
+   * that edits a document must load the record on its own rather than take
+   * the row it was listed in.
+   */
   richText?: string
+  /**
+   * What a listing carries in place of a RichText body: enough text for a
+   * cell, and never the whole document.
+   */
+  preview?: LibraryTextPreview
   date?: string
   url?: string
   id?: string
@@ -355,6 +372,12 @@ export interface LibraryRepoTableData {
    * asks for it on a request of its own, which is allowed to fail.
    */
   repoId?: string
+  /** Whether the repository holds records beyond the ones returned. */
+  hasMore: boolean
+  /** The page to ask for next, when `hasMore`. */
+  nextPage?: number
+  /** Total records in the repository, when the response reported it. */
+  totalItems?: number
 }
 
 export interface ServerCreateRecordData {
@@ -417,6 +440,15 @@ const priorityAliases: Record<string, Priority> = {
   none: 'none',
 }
 
+/**
+ * How much of a RichText body a listing carries.
+ *
+ * A table cell shows one line; the API walks only this far into the
+ * document, so a repository of long records costs the same as a repository
+ * of short ones.
+ */
+const RICH_TEXT_PREVIEW_LIMIT = 200
+
 const libraryRepoDataQuery = `
   query LibraryClientRepoData($org: String!, $repo: String!, $pageSize: Int, $page: Int) {
     repo(orgUsername: $org, repoUsername: $repo) {
@@ -435,7 +467,9 @@ const libraryRepoDataQuery = `
               ... on IntegerValue { number }
               ... on HtmlValue { html }
               ... on MarkdownValue { markdown }
-              ... on RichTextValue { richText }
+              ... on RichTextValue {
+                preview(limit: ${RICH_TEXT_PREVIEW_LIMIT}) { text truncated }
+              }
               ... on DateValue { date }
               ... on ImageValue { url }
               ... on BooleanValue { boolean }
@@ -1218,51 +1252,71 @@ function configuredLibraryPageSize(): number {
 }
 
 async function fetchLibraryGraphqlRepoTableData(
-  target: LibraryRepoTarget
+  target: LibraryRepoTarget,
+  page: number
 ): Promise<LibraryRepoTableData> {
-  const items: LibraryDataItem[] = []
-  let properties: LibraryProperty[] = []
-  let repoName = target.repoName ?? target.repo
-  let repoId = target.databaseId
-  let page = 1
-  let totalPages = 1
-
-  do {
-    const payload = await requestLibraryGraphQL<LibraryRepoDataResponse>(
-      libraryRepoDataQuery,
-      {
-        org: target.org,
-        repo: target.repo,
-        pageSize: configuredLibraryPageSize(),
-        page,
-      },
-      { operatorId: target.operatorId, anonymous: target.anonymous }
-    )
-    const repoData = payload.repo
-    if (!repoData) {
-      return { items: [], properties: [], repoName }
-    }
-    if (page === 1) {
-      properties = repoData.properties.map(normalizeLibraryProperty)
-      repoName = target.repoName ?? repoData.name
-      repoId = repoData.id || repoId
-    }
-    items.push(...repoData.dataList.items)
-    totalPages = Math.max(page, repoData.dataList.paginator?.totalPages ?? page)
-    page += 1
-  } while (page <= totalPages)
-
-  return { items, properties, repoName, ...(repoId ? { repoId } : {}) }
+  const repoName = target.repoName ?? target.repo
+  const payload = await requestLibraryGraphQL<LibraryRepoDataResponse>(
+    libraryRepoDataQuery,
+    {
+      org: target.org,
+      repo: target.repo,
+      pageSize: configuredLibraryPageSize(),
+      page,
+    },
+    { operatorId: target.operatorId, anonymous: target.anonymous }
+  )
+  const repoData = payload.repo
+  if (!repoData) {
+    return { items: [], properties: [], repoName, hasMore: false }
+  }
+  const repoId = repoData.id || target.databaseId
+  const paginator = repoData.dataList.paginator
+  return {
+    items: repoData.dataList.items,
+    properties: repoData.properties.map(normalizeLibraryProperty),
+    repoName: target.repoName ?? repoData.name,
+    ...(repoId ? { repoId } : {}),
+    ...paginationTail(page, paginator?.totalPages, paginator?.totalItems),
+  }
 }
 
+/**
+ * The part of a listing result that says whether more is waiting.
+ *
+ * Kept in one place because the GraphQL and REST paths name the same two
+ * numbers differently and would otherwise disagree about `hasMore`.
+ */
+function paginationTail(
+  page: number,
+  totalPages: number | undefined,
+  totalItems: number | undefined
+): Pick<LibraryRepoTableData, 'hasMore' | 'nextPage' | 'totalItems'> {
+  const hasMore = totalPages != null && page < totalPages
+  return {
+    hasMore,
+    ...(hasMore ? { nextPage: page + 1 } : {}),
+    ...(totalItems != null ? { totalItems } : {}),
+  }
+}
+
+/**
+ * One page of a repository's records.
+ *
+ * One page, not all of them: this used to loop until the paginator ran
+ * out, so opening a table downloaded every record in the repository before
+ * drawing a single row. The caller asks for the next page when the reader
+ * asks for it.
+ */
 export async function fetchLibraryRepoTableData(
-  target: LibraryRepoTarget
+  target: LibraryRepoTarget,
+  page = 1
 ): Promise<LibraryRepoTableData> {
   try {
-    return await fetchLibraryGraphqlRepoTableData(target)
+    return await fetchLibraryGraphqlRepoTableData(target, page)
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
-    return fetchLibraryRestRepoTableData(target)
+    return fetchLibraryRestRepoTableData(target, page)
   }
 }
 
@@ -1589,6 +1643,19 @@ function restValueToLibraryPropertyDataValue(
     if (typeof record.markdown === 'string') return { markdown: record.markdown }
     if (typeof record.richText === 'string') return { richText: record.richText }
     if (typeof record.rich_text === 'string') return { richText: record.rich_text }
+    // What a list response carries in place of the document. Deliberately
+    // not mapped onto `richText`: an editor seeded with a preview would
+    // save the preview over the body.
+    const preview = record.richTextPreview ?? record.rich_text_preview
+    if (preview && typeof preview === 'object') {
+      const shape = preview as { text?: unknown; truncated?: unknown }
+      return {
+        preview: {
+          text: typeof shape.text === 'string' ? shape.text : '',
+          truncated: shape.truncated === true,
+        },
+      }
+    }
     if (typeof record.date === 'string') return { date: record.date }
     if (typeof record.image === 'string') return { url: record.image }
     if (typeof record.url === 'string') return { url: record.url }
@@ -1700,7 +1767,8 @@ export async function fetchLibraryRepoProperties(
 }
 
 async function fetchLibraryRestRepoTableData(
-  target: LibraryRepoTarget
+  target: LibraryRepoTarget,
+  page: number
 ): Promise<LibraryRepoTableData> {
   const pageSize = configuredLibraryPageSize()
   const headers = await libraryRestHeaders(target.operatorId, { anonymous: target.anonymous })
@@ -1717,22 +1785,15 @@ async function fetchLibraryRestRepoTableData(
     ? null
     : fetch(`${baseUrl}/v1beta/repos/${target.org}/${target.repo}`, { headers })
         .catch(() => null)
-  const items: LibraryDataItem[] = []
-  let page = 1
-  let totalPages = 1
-  do {
-    const dataResponse = await fetch(
-      `${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?page=${page}&page_size=${pageSize}`,
-      { headers }
-    )
-    if (!dataResponse.ok) {
-      throw new RecordApiError(`Library REST data list failed: ${dataResponse.status}`, dataResponse.status)
-    }
-    const dataPayload = await dataResponse.json() as LibraryRestDataListResponse
-    items.push(...(dataPayload.data ?? []).map(restDataToLibraryDataItem))
-    totalPages = Math.max(page, dataPayload.paginator?.total_pages ?? page)
-    page += 1
-  } while (page <= totalPages)
+  const dataResponse = await fetch(
+    `${baseUrl}/v1beta/repos/${target.org}/${target.repo}/data-list?page=${page}&page_size=${pageSize}`,
+    { headers }
+  )
+  if (!dataResponse.ok) {
+    throw new RecordApiError(`Library REST data list failed: ${dataResponse.status}`, dataResponse.status)
+  }
+  const dataPayload = await dataResponse.json() as LibraryRestDataListResponse
+  const items = (dataPayload.data ?? []).map(restDataToLibraryDataItem)
 
   const propertiesResponse = await propertiesResponsePromise
   let properties: LibraryProperty[] = []
@@ -1746,6 +1807,11 @@ async function fetchLibraryRestRepoTableData(
     properties,
     repoName: target.repoName ?? target.repo,
     ...(repoId ? { repoId } : {}),
+    ...paginationTail(
+      page,
+      dataPayload.paginator?.total_pages,
+      dataPayload.paginator?.total_items
+    ),
   }
 }
 

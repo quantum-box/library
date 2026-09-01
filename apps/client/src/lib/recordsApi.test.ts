@@ -214,6 +214,7 @@ describe('recordsApi', () => {
       // The repository's canonical id comes back with the table: it is what
       // names the collection these rows are cached in.
       repoId: 'repo-1',
+      hasMore: false,
     })
   })
 
@@ -252,7 +253,12 @@ describe('recordsApi', () => {
     ])
   })
 
-  it('loads every GraphQL data-list page using the documented paginator', async () => {
+  /**
+   * This used to loop until the paginator ran out, so opening a table
+   * downloaded every record in the repository before drawing a row. One
+   * page per call, and the caller says which.
+   */
+  it('loads one data-list page per call and reports the next one', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as {
@@ -281,13 +287,59 @@ describe('recordsApi', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchLibraryRepoTableData({ org: 'acme', repo: 'docs' })).resolves.toMatchObject({
-      items: [
-        { id: 'data-1', name: 'Page 1' },
-        { id: 'data-2', name: 'Page 2' },
-      ],
+      items: [{ id: 'data-1', name: 'Page 1' }],
+      hasMore: true,
+      nextPage: 2,
+      totalItems: 2,
     })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await expect(
+      fetchLibraryRepoTableData({ org: 'acme', repo: 'docs' }, 2)
+    ).resolves.toMatchObject({
+      items: [{ id: 'data-2', name: 'Page 2' }],
+      hasMore: false,
+    })
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).variables.page).toBe(2)
+  })
+
+  /**
+   * The whole point of the change: a listing must not carry bodies. The
+   * query asks for a capped preview, and the document itself is left for
+   * whoever opens the record.
+   */
+  it('asks a listing for a rich text preview rather than the document', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
+      data: {
+        repo: {
+          id: 'repo-1',
+          name: 'Docs',
+          dataList: {
+            items: [{
+              id: 'data-1',
+              name: 'Long one',
+              propertyData: [{
+                propertyId: 'prop-body',
+                value: { preview: { text: 'The opening line', truncated: true } },
+              }],
+            }],
+            paginator: { currentPage: 1, itemsPerPage: 100, totalItems: 1, totalPages: 1 },
+          },
+          properties: [{ id: 'prop-body', name: 'content', typ: 'RICH_TEXT', meta: null }],
+        },
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const payload = await fetchLibraryRepoTableData({ org: 'acme', repo: 'docs' })
+
+    const query = String(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).query)
+    expect(query).toContain('preview(limit: 200) { text truncated }')
+    expect(query).not.toMatch(/RichTextValue \{ richText \}/)
+    expect(payload.items[0]?.propertyData[0]?.value).toEqual({
+      preview: { text: 'The opening line', truncated: true },
+    })
   })
 
   /**

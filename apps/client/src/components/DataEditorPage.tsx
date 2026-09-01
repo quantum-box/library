@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import { appKitConfig } from '../app/kitConfig'
 import {
+  RecordApiError,
+  fetchLibraryDataDetail,
   fetchLibraryRepoTableData,
   libraryDataToRecord,
   type LibraryDataItem,
@@ -155,20 +157,60 @@ export function DataEditorPage({
     [operatorId, org, repo, repoLabel],
   )
 
+  /**
+   * Find a record by the identifier a route carries.
+   *
+   * Routes predate record ids, so `dataId` is sometimes an identifier the
+   * detail query cannot resolve. Pages of the listing are walked until it
+   * turns up, and the record is then loaded properly -- the row it was
+   * found in holds a preview of the body, not the body.
+   */
+  const loadDetailByIdentifier = useCallback(async (): Promise<{
+    item: LibraryDataItem | null
+    properties: LibraryProperty[]
+  }> => {
+    let page = 1
+    for (;;) {
+      const payload = await fetchLibraryRepoTableData(repoTarget, page)
+      const match = payload.items.find(
+        (candidate) =>
+          candidate.id === dataId ||
+          libraryDataToRecord(candidate, payload.properties, payload.repoName)
+            .identifier === dataId
+      )
+      if (match) return await fetchLibraryDataDetail(match.id, repoTarget)
+      if (!payload.nextPage) return { item: null, properties: payload.properties }
+      page = payload.nextPage
+    }
+  }, [dataId, repoTarget])
+
   const reload = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
     try {
-      const payload = await fetchLibraryRepoTableData(repoTarget)
-      const next = payload.items.find((candidate) => {
-        if (candidate.id === dataId) return true
-        return libraryDataToRecord(candidate, payload.properties, payload.repoName).identifier === dataId
-      }) ?? null
+      // The record itself, not the row it appears in. The listing carries a
+      // preview of a rich text body rather than the body, so an editor fed
+      // from it would save the preview over the document -- and reading the
+      // whole repository to display one record was never worth it either.
+      const payload = await fetchLibraryDataDetail(dataId, repoTarget).catch(
+        (error: unknown) => {
+          // Only "no such record" sends us looking, which is also what an
+          // identifier looks like to a query expecting an id. An expired
+          // session or an API that is down is the answer, and walking the
+          // listing behind it would turn one failed request into a page of
+          // them.
+          const missed =
+            error instanceof RecordApiError &&
+            (error.status === 404 || error.status === 400)
+          if (missed) return loadDetailByIdentifier()
+          throw error
+        }
+      )
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
-      setItem(next)
-      itemRef.current = next
-      if (!next) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
+      setItem(payload.item)
+      itemRef.current = payload.item
+      if (!payload.item) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
     } catch (error: unknown) {
       setLoadError(error instanceof Error ? error.message : translate('route.recordLoadFailed'))
       setItem(null)
@@ -176,7 +218,7 @@ export function DataEditorPage({
     } finally {
       setLoading(false)
     }
-  }, [dataId, org, repo, repoTarget])
+  }, [dataId, loadDetailByIdentifier, org, repo, repoTarget])
 
   useEffect(() => {
     void reload()

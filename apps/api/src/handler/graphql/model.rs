@@ -2,7 +2,7 @@ use crate::domain;
 
 mod global_id_mapping;
 mod source;
-use async_graphql::{Enum, SimpleObject, Union};
+use async_graphql::{Enum, Object, SimpleObject, Union};
 use chrono::{DateTime, Utc};
 pub use global_id_mapping::GlobalIdMapping;
 pub use source::Source;
@@ -453,22 +453,93 @@ pub struct MarkdownValue {
     pub markdown: String,
 }
 
-#[derive(SimpleObject, Debug, Clone)]
+/// A block document, rendered on demand.
+///
+/// Every rendering is produced inside its own resolver rather than up
+/// front. A listing that asks only for `preview` therefore never pays to
+/// serialize, Markdown-render or HTML-render the bodies it is not showing
+/// -- which, over a page of records, is the difference between a table
+/// and an outage.
+#[derive(Debug, Clone)]
 pub struct RichTextValue {
+    document: serde_json::Value,
+}
+
+impl RichTextValue {
+    pub fn new(document: serde_json::Value) -> Self {
+        Self { document }
+    }
+}
+
+/// How many characters `RichTextValue.preview` returns when the caller
+/// does not say. Enough for a table cell, far short of a body.
+const DEFAULT_RICH_TEXT_PREVIEW_LIMIT: u32 = 200;
+
+#[Object]
+impl RichTextValue {
     /// The block document as JSON. Authoritative.
-    pub rich_text: String,
+    ///
+    /// This is the whole body. Select it on a single record, not on a
+    /// listing.
+    async fn rich_text(&self) -> String {
+        self.document.to_string()
+    }
+
     /// A rendering for consumers that cannot interpret the block document.
     ///
     /// Read-only and lossy -- an empty paragraph has no Markdown form.
     /// Writing back this string would discard whatever it could not
     /// represent, so clients that edit must round-trip `richText`.
-    pub markdown: String,
+    async fn markdown(&self) -> String {
+        database_manager::domain::rich_text::to_markdown(&self.document)
+    }
+
     /// An HTML rendering, walked directly from the block tree.
     ///
     /// Read-only. Unlike `markdown` it keeps the empty paragraph
     /// (`<p><br></p>`) and underline, which makes it the view to embed
     /// in a CMS page.
-    pub html: String,
+    async fn html(&self) -> String {
+        database_manager::domain::rich_text::to_html(&self.document)
+    }
+
+    /// The document's leading text, capped at `limit` characters.
+    ///
+    /// What a listing should select: it is bounded, and the walk that
+    /// produces it stops at the cap rather than reading the whole body.
+    async fn preview(
+        &self,
+        #[graphql(default_with = "DEFAULT_RICH_TEXT_PREVIEW_LIMIT")]
+        limit: u32,
+    ) -> TextPreview {
+        database_manager::domain::rich_text::plain_text_preview(
+            &self.document,
+            limit as usize,
+        )
+        .into()
+    }
+}
+
+/// A capped plain-text rendering of a body.
+#[derive(SimpleObject, Debug, Clone)]
+pub struct TextPreview {
+    /// The leading text, at most the requested number of characters.
+    pub text: String,
+    /// Whether the body holds more text than `text` shows.
+    pub truncated: bool,
+}
+
+impl From<database_manager::domain::rich_text::TextPreview>
+    for TextPreview
+{
+    fn from(
+        preview: database_manager::domain::rich_text::TextPreview,
+    ) -> Self {
+        Self {
+            text: preview.text,
+            truncated: preview.truncated,
+        }
+    }
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -626,19 +697,10 @@ impl From<database_manager::domain::PropertyDataValue>
             database_manager::domain::PropertyDataValue::RichText(
                 document,
             ) => {
-                // The renderings are produced here so that every
-                // existing consumer keeps working without learning the
-                // block format.
-                PropertyDataValue::RichText(RichTextValue {
-                    markdown:
-                        database_manager::domain::rich_text::to_markdown(
-                            &document,
-                        ),
-                    html: database_manager::domain::rich_text::to_html(
-                        &document,
-                    ),
-                    rich_text: document.to_string(),
-                })
+                // The document is carried through unrendered. Each
+                // rendering is a resolver on `RichTextValue`, so only the
+                // ones the query selects are ever produced.
+                PropertyDataValue::RichText(RichTextValue::new(document))
             }
         }
     }
@@ -1067,4 +1129,76 @@ pub struct LinearIssue {
     pub assignee_name: Option<String>,
     /// Issue URL
     pub url: Option<String>,
+}
+
+#[cfg(test)]
+mod rich_text_value_tests {
+    use super::*;
+    use async_graphql::{value, EmptyMutation, EmptySubscription, Schema};
+
+    struct TestQuery;
+
+    #[Object]
+    impl TestQuery {
+        async fn body(&self) -> RichTextValue {
+            RichTextValue::new(serde_json::json!([{
+                "type": "paragraph",
+                "content": [{ "type": "text", "text": "Hello there" }],
+            }]))
+        }
+    }
+
+    fn schema() -> Schema<TestQuery, EmptyMutation, EmptySubscription> {
+        Schema::build(TestQuery, EmptyMutation, EmptySubscription).finish()
+    }
+
+    /// What a listing asks for. The document must not come back with it --
+    /// a page of records carrying their bodies is the whole problem this
+    /// field exists to solve.
+    #[tokio::test]
+    async fn a_preview_selection_returns_no_document() {
+        let response = schema()
+            .execute("{ body { preview(limit: 5) { text truncated } } }")
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(
+            response.data,
+            value!({ "body": { "preview": { "text": "Hello", "truncated": true } } })
+        );
+    }
+
+    #[tokio::test]
+    async fn the_preview_limit_defaults_to_a_cell_worth_of_text() {
+        let response = schema()
+            .execute("{ body { preview { text truncated } } }")
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(
+            response.data,
+            value!({
+                "body": { "preview": { "text": "Hello there", "truncated": false } }
+            })
+        );
+    }
+
+    /// A single record still gets everything, and each rendering is still
+    /// produced -- lazily now, but produced.
+    #[tokio::test]
+    async fn the_document_and_its_renderings_are_still_available() {
+        let response = schema()
+            .execute("{ body { richText markdown html } }")
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        let data = response.data.into_json().expect("json");
+        let body = &data["body"];
+        assert!(body["richText"]
+            .as_str()
+            .expect("richText")
+            .contains("paragraph"));
+        assert_eq!(body["markdown"], "Hello there");
+        assert_eq!(body["html"], "<p>Hello there</p>");
+    }
 }

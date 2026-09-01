@@ -684,6 +684,7 @@ export const de: LocaleMessages = {
   'libraryTable.loading': 'Repository-Daten werden geladen…',
   'libraryTable.searchPlaceholder': 'Daten durchsuchen',
   'libraryTable.refresh': 'Daten aktualisieren',
+  'libraryTable.loadMore': 'Mehr laden',
   'libraryTable.deleteRow': 'Zeile löschen',
   'libraryTable.doubleClickToEditName': 'Zum Bearbeiten des Namens doppelklicken',
   'libraryTable.empty': 'In diesem Repository gibt es keine Daten. Nutze „+ Neue Daten“, um eine Zeile anzulegen.',

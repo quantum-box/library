@@ -5,6 +5,15 @@ import type {
 } from '../recordsApi'
 import { formatDateTime, getActiveLocale } from '../../i18n'
 
+/**
+ * How much text a table cell shows.
+ *
+ * The cell is one truncated line either way, so anything past this is text
+ * nobody reads -- but it still sits in the DOM, and on a `title` it becomes
+ * a tooltip the size of the document.
+ */
+export const CELL_TEXT_LIMIT = 200
+
 export function getLibraryDataPropertyValue(
   item: LibraryDataItem,
   propertyId: string
@@ -43,6 +52,7 @@ export function propertyValueText(
   if (typeof value.html === 'string') return value.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
   if (typeof value.markdown === 'string') return value.markdown
   if (typeof value.richText === 'string') return richTextPlainText(value.richText)
+  if (value.preview) return value.preview.text
   if (typeof value.date === 'string') return value.date
   if (typeof value.url === 'string') return value.url
   if (typeof value.id === 'string') return value.id
@@ -90,7 +100,30 @@ export function propertyValueEditText(
   // The raw document JSON: lossless, and what an editor must round-trip.
   if (typeof value.richText === 'string') return value.richText
   if (typeof value.html === 'string') return value.html
+  // A listing carries a preview instead of the document. Handing it to an
+  // editor would stage the preview as the new body, so the caller has to
+  // load the record itself before it can edit one.
+  if (value.preview) return undefined
   return propertyValueText(property, value)
+}
+
+/**
+ * The text of a cell, and whether it stands for more.
+ *
+ * A listing's rich text arrives already capped; a value read from a single
+ * record does not, which is why the cap is applied here as well.
+ */
+export function propertyCellText(
+  property: LibraryProperty,
+  value: LibraryPropertyDataValue,
+  limit: number = CELL_TEXT_LIMIT
+): { text: string; truncated: boolean } | undefined {
+  const text = propertyValueText(property, value)
+  if (text === undefined) return undefined
+  if (text.length <= limit) {
+    return { text, truncated: value.preview?.truncated ?? false }
+  }
+  return { text: text.slice(0, limit).trimEnd(), truncated: true }
 }
 
 interface RichTextInline {

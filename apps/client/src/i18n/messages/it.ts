@@ -684,6 +684,7 @@ export const it: LocaleMessages = {
   'libraryTable.loading': 'Caricamento dei dati del repository…',
   'libraryTable.searchPlaceholder': 'Cerca nei dati',
   'libraryTable.refresh': 'Aggiorna i dati',
+  'libraryTable.loadMore': 'Carica altri',
   'libraryTable.deleteRow': 'Elimina la riga',
   'libraryTable.doubleClickToEditName': 'Fai doppio clic per modificare il nome',
   'libraryTable.empty': 'Nessun dato in questo repository. Usa «+ Nuovi dati» per aggiungere una riga.',
