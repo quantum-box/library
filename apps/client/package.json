@@ -43,6 +43,7 @@
     "dev": "vite",
     "dev:cf-sync": "VITE_PHOTON_SYNC_WS_URL=ws://127.0.0.1:8787/ws vite",
     "build": "tsc -b && vite build",
+    "build:preview": "node scripts/build-preview.mjs",
     "build:cloud": "npm run build:package && tsc -b && vite build",
     "build:package": "tsc -p tsconfig.package.json && tsc -p tsconfig.package.worker.json",
     "lint": "eslint .",
