@@ -34,5 +34,8 @@ PR に記録する。ローカル Photon Worker + fixture Library API の2ブラ
 - [x] 実 Photon Durable Object に接続した2ブラウザ検証（Live 5件、保存完了の追加確認2件）
 - [x] Rust API の型チェック / format
 - [ ] Rust unit tests / 実DBの認可・checkpoint検証（ローカルでは未実行、CI / rolloutで確認）
-- [ ] Ready PR / CI
+- [x] Ready PR #301 / 初回実装のCI全項目成功
+- [x] 隔離Previewの画面・API・Worker公開、配信URL/CORS/未認証拒否の検証
+- [x] Preview migration gate局所テスト8件成功
+- [ ] 公開Previewの認証済み共同編集・保存・再読込（サインイン待ち）
 - [ ] DB rollout条件の確認と本番有効化

@@ -63,8 +63,12 @@ migration gateでPR専用DB名を検証し、migration後の `data` が0件で�
 DB側のCOUNTで確認する。既存レコードがある環境では候補の昇格を拒否する。
 この空DBチェックは既存データのbackfill/parity検証を代替しない。
 
-APIのLive設定・dual-write設定とクライアントのAPI/Live/Sync URLは、Tachyonの
+APIのLive設定・dual-write設定は、Tachyonの
 `--target preview --branch feature/plt-4204-data-editor-photon-live` に限定する。
+クライアントはmanifestの既定API/Sync URLがbranch環境変数を上書きしたため、
+明示envで `npm run build:cloud` し、生成物を検証してから
+`wrangler pages deploy dist --project-name library-client --branch plt-4204-isolated-live`
+で専用Previewへ配信する。通常のPR自動ビルドはLive無効のままにする。
 検証データを残した後の再デプロイでは空DBチェックが失敗するため、継続利用前に
 通常のbackfill/parity運用へ移行する。チェックのために既存データを削除しない。
 
@@ -107,3 +111,21 @@ DB migration / backfill、Worker の公開、本番設定変更はローカル�
 - 実DB / 本番有効化と、実macOS日本語IME候補ウィンドウの手動検証は未実施。
 
 ![RichText の共同編集と保存完了](screenshots/plt-4204/richtext-collaboration.png)
+
+## 公開Previewの検証状況（2026-09-05）
+
+- 画面: https://plt-4204-isolated-live.library-client.pages.dev
+  （immutable deployment: https://3c78d79e.library-client.pages.dev）
+- API: https://6knp6yiisl46n42i5v25e7xjju0lqhgy.lambda-url.ap-northeast-1.on.aws
+  PR301 / `bdb2c93` / build `bld_01m1r974nj65v2a3xhggyh2s0y` /
+  deployment `dep_01m1r9wska0xa8bc9w340rzz2g` がactive。
+- Worker: `library-client-live-pr301`、version
+  `00819c92-297d-434c-9d23-ad5a450e3662`。許可Originは上記の2つだけ。
+- 配信JavaScript内のAPI / Live / Sync URLがすべて専用接続先であることを確認。
+- 公開Worker: 最終PreviewのCORS 204、以前のPreview Origin 403、
+  正しい形式の未認証session要求401を確認。
+- 初回実装のCIは全項目成功。追加migration gateテスト8件、型チェック、fmt成功。
+- DB空チェックを有効にしたAPIデプロイは成功。CloudWatchでの件数ログの
+  直接取得はAWSセッション期限切れのため未実施。
+- 公開画面のログイン表示まで確認。実アカウントでの共同編集・checkpoint・
+  再読込はサインイン待ちで未確認。本番のLiveは有効化していない。
