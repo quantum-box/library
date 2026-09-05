@@ -66,6 +66,12 @@ spec:
                     path: /
             timeoutSeconds: 900
       environments:
+        production:
+          envVars:
+            - name: PROPERTY_VALUE_STORAGE_MODE
+              value: dual_write_legacy_read
+            - name: LIBRARY_PHOTON_LIVE_ENABLED
+              value: "true"
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
@@ -222,6 +228,10 @@ spec:
         outputDirectory: dist
         nodeVersion: "22"
       environments:
+        production:
+          envVars:
+            - name: VITE_LIBRARY_DATA_LIVE_URL
+              value: https://library-client-sync.quantum-box.workers.dev
         preview:
           build:
             command: npm run build:preview
