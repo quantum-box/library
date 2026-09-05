@@ -65,10 +65,11 @@ DB側のCOUNTで確認する。既存レコードがある環境では候補の�
 
 APIのLive設定・dual-write設定は、Tachyonの
 `--target preview --branch feature/plt-4204-data-editor-photon-live` に限定する。
-クライアントはmanifestの既定API/Sync URLがbranch環境変数を上書きしたため、
-明示envで `npm run build:cloud` し、生成物を検証してから
-`wrangler pages deploy dist --project-name library-client --branch plt-4204-isolated-live`
-で専用Previewへ配信する。通常のPR自動ビルドはLive無効のままにする。
+クライアントはPreview専用の `npm run build:preview` を使う。branch限定の
+`LIBRARY_PREVIEW_API_BASE_URL` / `LIBRARY_PREVIEW_SYNC_WS_URL` /
+`LIBRARY_PREVIEW_DATA_LIVE_URL` を最後にVite設定へ適用し、manifestの本番URLによる
+上書きを防ぐ。3つをまとめて指定し、本番APIや異なるLive/Sync hostは拒否する。
+未設定のPRではLiveを無効にする。
 検証データを残した後の再デプロイでは空DBチェックが失敗するため、継続利用前に
 通常のbackfill/parity運用へ移行する。チェックのために既存データを削除しない。
 
@@ -129,3 +130,12 @@ DB migration / backfill、Worker の公開、本番設定変更はローカル�
   直接取得はAWSセッション期限切れのため未実施。
 - 公開画面のログイン表示まで確認。実アカウントでの共同編集・checkpoint・
   再読込はサインイン待ちで未確認。本番のLiveは有効化していない。
+
+### txcloud Preview対応
+
+https://pr301--library-client.txcloud.app でもLiveを有効化済み。
+`897c20b` / build `bld_01m1raf9jcqdxt1t2cdhjbkg9a` /
+deployment `dep_01m1rahqj55x1b3s9kmj557xan` の公開成功を確認。
+配信JavaScriptの専用API・Live・Sync URLとtxcloud OriginのCORS 204を確認。
+Worker version: `59e28936-4b7d-4bfb-af78-a9b1d578a982`。
+ブラウザはサインイン画面まで確認。認証後の共同編集・保存確認は未実施。
