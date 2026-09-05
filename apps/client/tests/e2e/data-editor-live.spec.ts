@@ -34,6 +34,7 @@ test('the Live edge rejects missing credentials, forbidden origins and non-body 
 
 for (const format of ['markdown', 'richText'] as const) {
   test(`two independent browsers merge ${format} and checkpoint without duplicating the seed`, async ({ browser, page }) => {
+    await page.request.post(`${api}/__e2e/live-delay`, { data: { checkpointMs: 1000, authorizeMs: 750 } })
     if (format === 'richText') {
       const property = await page.request.post(`${api}/v1/graphql`, {
         data: {
@@ -63,6 +64,14 @@ for (const format of ['markdown', 'richText'] as const) {
     const otherContext = await browser.newContext({ storageState: otherAuthState })
     const other = await otherContext.newPage()
     try {
+      const liveErrors: string[] = []
+      for (const participant of [page, other]) {
+        participant.on('websocket', (socket) => socket.on('framereceived', ({ payload }) => {
+          if (typeof payload === 'string' && payload.includes('live-error') && !payload.includes('CHECKPOINT_STALE')) {
+            liveErrors.push(payload)
+          }
+        }))
+      }
       await Promise.all([page.goto(route), other.goto(route)])
       const firstEditor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
       const secondEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
@@ -70,6 +79,14 @@ for (const format of ['markdown', 'richText'] as const) {
       await expect(secondEditor).toContainText(seed)
       expect((await firstEditor.innerText()).split(seed)).toHaveLength(2)
       expect((await secondEditor.innerText()).split(seed)).toHaveLength(2)
+
+      await firstEditor.click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.insertText(' First sequential edit.')
+      await expect(secondEditor).toContainText('First sequential edit.')
+      for (const participant of [page, other]) {
+        await expect(participant.getByTestId('data-editor-live-status'), JSON.stringify(liveErrors)).toHaveText('Shared body saved')
+      }
 
       await firstEditor.click()
       await page.keyboard.press('ControlOrMeta+End')
@@ -135,7 +152,10 @@ for (const format of ['markdown', 'richText'] as const) {
         return state.data.find((item: { id: string }) => item.id === 'seed-data-201')
           .propertyData.find((entry: { propertyId: string }) => entry.propertyId === 'prop-description').value[format] as string
       }).toContain('Reconnected contribution.')
-      await expect(page.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+      for (const participant of [page, other]) {
+        await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+      }
+      expect(liveErrors).toEqual([])
       await page.screenshot({ path: `test-results/data-editor-live-${format}.png`, fullPage: true })
     } finally {
       try {

@@ -281,7 +281,9 @@ function BlockRecordBodyEditor({
 
     const next = pendingValue.current
     pendingValue.current = null
-    if (next === null || next === lastCommitted.current) return
+    // A Yjs transaction can advance the room without changing the serialized
+    // text. Live still needs this fresh generation after a stale checkpoint.
+    if (next === null || (!collaboration && next === lastCommitted.current)) return
 
     lastCommitted.current = next
     if (collaboration) collaboration.queueCheckpoint(next)
