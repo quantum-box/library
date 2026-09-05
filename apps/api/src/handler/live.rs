@@ -404,8 +404,7 @@ async fn load_live_scope(
     // may only be used for service-owned work and must never grant a public
     // reader a Live editing room.
     let caller_auth = executor.caller_auth_app(base_sdk)?.auth_app();
-    let resource_trn =
-        repo_resource_trn(&repo_output.repo.id().to_string());
+    let resource_trn = repo_resource_trn(repo_output.repo.id().as_ref());
     caller_auth
         .check_policy_for_resource(&CheckPolicyForResourceInput {
             executor,
