@@ -23,6 +23,8 @@ interface LiveReadyMessage {
   initialized?: boolean
   version?: number
   record_version?: string | number
+  /** Stable Durable Object generation. Legacy workers may omit this field. */
+  room_generation?: string
 }
 
 interface LiveSavedMessage {
@@ -167,7 +169,11 @@ function errorForStatus(
   // A configured endpoint returning 503 can be a transient ticket-store or
   // API outage. Only an explicit feature-disabled response may enable the
   // ordinary editor fallback, otherwise the body remains read-only.
-  if (status === 503 && isExplicitlyDisabled(payload)) {
+  // The edge worker uses 404 for a feature that is deliberately absent from
+  // the deployment. Keep the code check strict so an ordinary missing record
+  // still remains a read-only Live failure instead of enabling the legacy
+  // editor fallback.
+  if ((status === 404 || status === 503) && isExplicitlyDisabled(payload)) {
     return new PhotonLiveError(
       message ?? 'Photon Live is disabled',
       'disabled',
@@ -337,6 +343,9 @@ interface LiveAttempt {
   initialized: boolean
   initializationSent: boolean
   initializationEchoed: boolean
+  roomGenerationValidated: boolean
+  bufferedUpdates: Uint8Array[]
+  applyingBufferedUpdates: boolean
 }
 
 interface PendingCheckpoint {
@@ -384,6 +393,10 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private backoff = INITIAL_BACKOFF_MS
   private disposed = false
   private reconnecting = false
+  /** The server rejected this generation after an external canonical body change. */
+  private reconnectSuppressed = false
+  /** Generation identity learned from the first modern Live-ready frame. */
+  private roomGeneration: string | null = null
   private offline = typeof navigator !== 'undefined' && navigator.onLine === false
 
   constructor(options: PhotonLiveProviderOptions) {
@@ -421,7 +434,8 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       hasUnackedChanges: this.hasUnackedChanges,
       canEdit: this.initialized &&
         this.connectionStatus === 'connected' &&
-        this.saveStatus !== 'conflict',
+        this.saveStatus !== 'conflict' &&
+        !this.reconnectSuppressed,
     }
   }
 
@@ -438,7 +452,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   }
 
   queueCheckpoint(body: string): void {
-    if (this.disposed || !this.initialized) return
+    if (this.disposed || !this.initialized || this.reconnectSuppressed) return
     // Coalesce only a body that is still waiting to be sent. A body queued
     // while another checkpoint is in flight is a new idempotency operation;
     // reusing that key would make the worker reject a valid later body.
@@ -536,7 +550,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   }
 
   private async authorizeAndConnect(initial: boolean): Promise<void> {
-    if (this.disposed || this.reconnecting) return
+    if (this.disposed || this.reconnecting || this.reconnectSuppressed) return
     this.reconnecting = true
     this.setConnectionStatus('authorizing', initial ? null : undefined)
     try {
@@ -568,14 +582,19 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
           true,
         )
       this.setConnectionStatus('failed', liveError)
-      if (!initial && liveError.retryable) this.scheduleReconnect()
+      // The first authorization request can fail before a WebSocket exists
+      // (for example while the worker or ticket store is restarting). Retry
+      // transient failures from the initial attempt too. Permanent policy and
+      // feature states are represented by retryable=false and therefore stay
+      // failed until the caller changes the scope or the feature config.
+      if (liveError.retryable && !this.offline) this.scheduleReconnect()
     } finally {
       this.reconnecting = false
     }
   }
 
   private connectSocket(ticket: string): void {
-    if (this.disposed) return
+    if (this.disposed || this.reconnectSuppressed) return
     if (this.socket && (
       this.socket.readyState === WebSocket.OPEN ||
       this.socket.readyState === WebSocket.CONNECTING
@@ -602,6 +621,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       initialized: false,
       initializationSent: false,
       initializationEchoed: false,
+      roomGenerationValidated: false,
+      bufferedUpdates: [],
+      applyingBufferedUpdates: false,
     }
     this.setConnectionStatus('connecting', null)
     this.handshakeTimer = globalThis.setTimeout(() => {
@@ -627,10 +649,14 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       if (this.socket !== socket || this.disposed) return
       void this.handleSocketMessage(socket, event.data)
     })
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
       if (this.socket !== socket || this.disposed) return
       this.socket = null
       this.clearHandshakeTimer()
+      if (event.code === 4410) {
+        this.handleCanonicalBodyChanged()
+        return
+      }
       this.handleSocketFailure(new PhotonLiveError(
         'Photon Live connection closed',
         'transport',
@@ -674,18 +700,48 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private handleBinaryMessage(update: Uint8Array): void {
     const attempt = this.attempt
     if (!attempt) return
-    try {
-      Y.applyUpdate(this.doc, update, DOC_REMOTE_ORIGIN)
-    } catch {
-      this.handleProtocolFailure('Photon Live sent an invalid Yjs snapshot')
-      return
-    }
     if (!attempt.receivedSnapshot) {
       attempt.receivedSnapshot = true
     } else if (attempt.initializationSent) {
       attempt.initializationEchoed = true
     }
+
+    // The server's first binary frame is a snapshot whose generation is only
+    // known from the following live-ready message. Buffer it until that
+    // identity has been checked so a rotated room can never merge its body
+    // into the retained Y.Doc. Initialization echoes are buffered for the same
+    // reason and applied together only after the final ready frame.
+    if (!attempt.receivedReady || !attempt.roomGenerationValidated) {
+      attempt.bufferedUpdates.push(update)
+      this.finishReadyIfPossible()
+      return
+    }
+
+    if (!this.applyRemoteUpdate(update)) return
     this.finishReadyIfPossible()
+  }
+
+  private applyRemoteUpdate(update: Uint8Array): boolean {
+    try {
+      Y.applyUpdate(this.doc, update, DOC_REMOTE_ORIGIN)
+    } catch {
+      this.handleProtocolFailure('Photon Live sent an invalid Yjs snapshot')
+      return false
+    }
+    return true
+  }
+
+  private applyBufferedUpdates(attempt: LiveAttempt): boolean {
+    attempt.applyingBufferedUpdates = true
+    try {
+      for (const update of attempt.bufferedUpdates) {
+        if (!this.applyRemoteUpdate(update)) return false
+      }
+      attempt.bufferedUpdates = []
+      return true
+    } finally {
+      attempt.applyingBufferedUpdates = false
+    }
   }
 
   private handleTextMessage(socket: WebSocket, raw: LiveTextMessage): void {
@@ -740,6 +796,11 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       this.handleProtocolFailure('Photon Live sent live-ready before its snapshot')
       return
     }
+    if (!this.validateRoomGeneration(message.room_generation)) {
+      this.handleRoomGenerationConflict(socket)
+      return
+    }
+    attempt.roomGenerationValidated = true
     this.updateVersion(message.version)
     if (message.record_version !== undefined) this.updateRecordVersion(message.record_version)
 
@@ -777,7 +838,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (!attempt || !socket || socket.readyState !== WebSocket.OPEN) return
     if (attempt.initialized && this.initialized && this.connectionStatus === 'connected') return
     if (!attempt.receivedSnapshot || !attempt.receivedReady) return
+    if (!attempt.roomGenerationValidated) return
     if (attempt.initializationSent && !attempt.initializationEchoed) return
+    if (!this.applyBufferedUpdates(attempt)) return
     this.clearHandshakeTimer()
     this.initialized = true
     this.setConnectionStatus('connected', null)
@@ -857,8 +920,11 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
     if (this.disposed) return
-    this.docGeneration += 1
+    const applyingBufferedSnapshot = origin === DOC_REMOTE_ORIGIN &&
+      this.attempt?.applyingBufferedUpdates === true
+    if (!applyingBufferedSnapshot) this.docGeneration += 1
     if (origin === DOC_REMOTE_ORIGIN) {
+      if (applyingBufferedSnapshot) return
       // A peer's update changes the body that the next durable checkpoint
       // must represent. Invalidate a body captured before this merge so a
       // debounce cannot send stale text with the newer room version.
@@ -898,7 +964,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   }
 
   private handleOffline = (): void => {
-    if (this.disposed || this.offline) return
+    if (this.disposed || this.offline || this.reconnectSuppressed) return
     this.offline = true
     const socket = this.socket
     this.socket = null
@@ -912,7 +978,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   }
 
   private handleOnline = (): void => {
-    if (this.disposed || !this.offline) return
+    if (this.disposed || !this.offline || this.reconnectSuppressed) return
     this.offline = false
     if (this.reconnectTimer !== null) {
       globalThis.clearTimeout(this.reconnectTimer)
@@ -999,17 +1065,54 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     this.handleSocketFailure(error)
   }
 
+  private handleCanonicalBodyChanged(): void {
+    this.reconnectSuppressed = true
+    this.clearHandshakeTimer()
+    if (this.attempt) this.attempt.bufferedUpdates = []
+    if (this.reconnectTimer !== null) globalThis.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    const error = new PhotonLiveError(
+      'Photon Live canonical body changed; reload required before reconnecting',
+      'conflict',
+      409,
+    )
+    this.setConnectionStatus('failed', error)
+    this.setSaveStatus('conflict', error)
+  }
+
+  private handleRoomGenerationConflict(socket: WebSocket): void {
+    if (this.socket === socket) {
+      this.socket = null
+      this.clearHandshakeTimer()
+      try {
+        socket.close()
+      } catch {
+        // Ignore a socket that has already closed.
+      }
+    }
+    this.handleCanonicalBodyChanged()
+  }
+
+  private validateRoomGeneration(value: unknown): boolean {
+    const generation = typeof value === 'string' && value.trim() ? value.trim() : null
+    if (this.roomGeneration !== null) return generation === this.roomGeneration
+    if (generation !== null) this.roomGeneration = generation
+    // A missing generation is accepted only until a modern worker gives us a
+    // stable identity. Once remembered, every reconnect must carry it.
+    return true
+  }
+
   private handleSocketFailure(error: PhotonLiveError): void {
     if (this.disposed) return
     this.clearHandshakeTimer()
     this.socket = null
     this.setConnectionStatus('disconnected', error)
     if (this.initialized) this.hasUnackedChanges = this.hasUnackedChanges || Boolean(this.inFlight || this.pendingCheckpoint)
-    if (!this.offline) this.scheduleReconnect()
+    if (!this.offline && !this.reconnectSuppressed) this.scheduleReconnect()
   }
 
   private scheduleReconnect(): void {
-    if (this.disposed || this.offline || this.reconnectTimer !== null) return
+    if (this.disposed || this.offline || this.reconnectSuppressed || this.reconnectTimer !== null) return
     this.reconnectTimer = globalThis.setTimeout(() => {
       this.reconnectTimer = null
       void this.authorizeAndConnect(false)

@@ -35,20 +35,32 @@ export interface Env {
 
 const LIVE_SESSION_PATH = '/live/session'
 const LIVE_WEBSOCKET_PATH = '/live/ws'
+const LIVE_INTERNAL_POINTER_PATH = '/live/internal-pointer'
 const LIVE_AUTHORIZE_SUFFIX = 'live/authorize'
 const LIVE_CHECKPOINT_SUFFIX = 'live/checkpoint'
 const LIVE_TICKET_STORE_NAME = 'live-ticket-store'
 const LIVE_TICKET_KEY_PREFIX = 'live:ticket:'
 const LIVE_SESSION_KEY_PREFIX = 'live:session:'
+const LIVE_TICKET_CLEANUP_CURSOR_PREFIX = 'live:cleanup:cursor:'
+const LIVE_TICKET_CLEANUP_LIMIT = 128
+const LIVE_TICKET_CLEANUP_INTERVAL_MS = 1_000
 const LIVE_TICKET_TTL_MS = 60_000
 const LIVE_ROOM_META_KEY = 'live:room:meta:v1'
+const LIVE_ROOM_POINTER_KEY = 'live:room:current-generation:v1'
 const LIVE_PENDING_INIT_KEY = 'live:room:init-pending:v1'
 const LIVE_PENDING_CHECKPOINT_KEY = 'live:checkpoint:pending:v1'
 const LIVE_PENDING_CHECKPOINT_BODY_PREFIX = 'live:checkpoint:pending:body:'
 const LIVE_CHECKPOINT_RESULT_PREFIX = 'live:checkpoint:result:'
+const LIVE_CHECKPOINT_RESULT_INDEX_KEY = 'live:checkpoint:result-index:v1'
+const LIVE_CHECKPOINT_RESULT_CLEANUP_CURSOR_KEY = 'live:checkpoint:result-cleanup-cursor:v1'
+const LIVE_CHECKPOINT_RESULT_TTL_MS = 15 * 60_000
+const LIVE_CHECKPOINT_RESULT_MAX_ENTRIES = 128
 const LIVE_SESSION_HEADER = 'x-photon-live-session'
 const LIVE_INTERNAL_HEADER = 'x-photon-live-internal'
 const LIVE_INTERNAL_HEADER_VALUE = '1'
+const LIVE_ROOM_TARGET_HEADER = 'x-photon-live-target'
+const LIVE_ROOM_GENERATION_HEADER = 'x-photon-live-generation'
+const LIVE_ROOM_GENERATION_PREFIX = 'live-generation:'
 const MAX_SESSION_BODY_BYTES = 64 * 1024
 const MAX_API_RESPONSE_BYTES = 8 * 1024 * 1024
 const MAX_FIELD_BYTES = 512
@@ -94,6 +106,10 @@ interface LiveTicketSession extends LiveRoomIdentity {
   operatorId?: string
 }
 
+type LiveSessionReference = Omit<LiveTicketSession, 'authorization' | 'sessionId'> & {
+  sessionId: string
+}
+
 interface StoredLiveTicket extends LiveTicketSession {
   sessionId: string
 }
@@ -102,7 +118,15 @@ interface LiveRoomMetadata extends LiveRoomIdentity {
   initialized: boolean
   version: number
   recordVersion?: string
+  /** Latest working Yjs version included in an accepted checkpoint. */
+  savedVersion?: number
   bodyHash: string
+}
+
+interface LiveRoomPointer {
+  roomId: string
+  bodyHash: string
+  recordVersion: string
 }
 
 interface LivePendingInitialization {
@@ -126,6 +150,13 @@ interface LiveCheckpointResult {
   recordVersion: string
   bodyHash: string
   fingerprint: string
+  expiresAt: number
+}
+
+interface LiveCheckpointResultIndexEntry {
+  operationId: string
+  resultKey: string
+  expiresAt: number
 }
 
 interface LiveSocketAttachment {
@@ -146,6 +177,27 @@ type CheckpointResult =
   | { kind: 'saved'; recordVersion: string }
   | { kind: 'conflict' }
   | { kind: 'error' }
+
+interface CheckpointExecution {
+  metadata: LiveRoomMetadata
+  pending: LivePendingCheckpoint
+  body: string
+  fingerprint: string
+}
+
+interface CheckpointState {
+  metadata: LiveRoomMetadata | null
+  pending: LivePendingCheckpoint | null | undefined
+  priorResult: LiveCheckpointResult | null
+}
+
+type CheckpointPreparation =
+  | { kind: 'execute'; execution: CheckpointExecution }
+  | { kind: 'replay'; result: LiveCheckpointResult }
+  | { kind: 'done' }
+  | { kind: 'retry' }
+  | { kind: 'error'; message: string }
+  | { kind: 'conflict' }
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -273,16 +325,18 @@ function base64Decode(value: string, maxBytes: number): Uint8Array | null {
 }
 
 function encodeSessionHeader(session: LiveTicketSession): string {
-  return base64Encode(new TextEncoder().encode(JSON.stringify(session)))
+  const { authorization: _authorization, ...reference } = session
+  void _authorization
+  return base64Encode(new TextEncoder().encode(JSON.stringify(reference)))
 }
 
-function decodeSessionHeader(value: string | null): LiveTicketSession | null {
+function decodeSessionHeader(value: string | null): LiveSessionReference | null {
   if (!value || byteLength(value) > MAX_TICKET_HEADER_BYTES) return null
   const bytes = base64Decode(value, MAX_TICKET_HEADER_BYTES)
   if (!bytes) return null
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown
-    return isLiveTicketSession(parsed) ? parsed : null
+    return isLiveSessionReference(parsed) ? parsed : null
   } catch {
     return null
   }
@@ -323,6 +377,36 @@ function isLiveTicketSession(value: unknown): value is LiveTicketSession {
   )
 }
 
+function isLiveSessionReference(value: unknown): value is LiveSessionReference {
+  if (!isLiveRoomIdentity(value) || !isRecord(value)) return false
+  return (
+    boundedString(value.actorId) !== null &&
+    boundedString(value.recordVersion) !== null &&
+    boundedString(value.bodyHash, MAX_BODY_HASH_BYTES) !== null &&
+    boundedString(value.org) !== null &&
+    boundedString(value.repo) !== null &&
+    boundedString(value.sessionId) !== null &&
+    typeof value.expiresAt === 'number' &&
+    Number.isSafeInteger(value.expiresAt) &&
+    value.expiresAt > 0 &&
+    (value.platformId === undefined || boundedString(value.platformId) !== null) &&
+    (value.operatorId === undefined || boundedString(value.operatorId) !== null)
+  )
+}
+
+function sameSessionReference(session: LiveTicketSession, reference: LiveSessionReference): boolean {
+  return sameRoomIdentity(session, reference) &&
+    session.actorId === reference.actorId &&
+    session.recordVersion === reference.recordVersion &&
+    session.bodyHash === reference.bodyHash &&
+    session.org === reference.org &&
+    session.repo === reference.repo &&
+    session.sessionId === reference.sessionId &&
+    session.expiresAt === reference.expiresAt &&
+    session.platformId === reference.platformId &&
+    session.operatorId === reference.operatorId
+}
+
 function isLiveRoomMetadata(value: unknown): value is LiveRoomMetadata {
   if (!isLiveRoomIdentity(value) || !isRecord(value)) return false
   return (
@@ -330,6 +414,11 @@ function isLiveRoomMetadata(value: unknown): value is LiveRoomMetadata {
     typeof value.version === 'number' &&
     Number.isSafeInteger(value.version) &&
     value.version >= 0 &&
+    (value.savedVersion === undefined ||
+      (typeof value.savedVersion === 'number' &&
+        Number.isSafeInteger(value.savedVersion) &&
+        value.savedVersion >= 0 &&
+        value.savedVersion <= value.version)) &&
     boundedString(value.bodyHash, MAX_BODY_HASH_BYTES) !== null &&
     (value.recordVersion === undefined || boundedString(value.recordVersion) !== null)
   )
@@ -354,7 +443,31 @@ function isPendingCheckpoint(value: unknown): value is LivePendingCheckpoint {
   )
 }
 
+function samePendingCheckpoint(left: LivePendingCheckpoint, right: LivePendingCheckpoint): boolean {
+  return left.version === right.version &&
+    left.operationId === right.operationId &&
+    left.expectedRecordVersion === right.expectedRecordVersion &&
+    left.bodyHash === right.bodyHash &&
+    left.fingerprint === right.fingerprint &&
+    left.bodyByteLength === right.bodyByteLength &&
+    left.chunkCount === right.chunkCount
+}
+
 function isCheckpointResult(value: unknown): value is LiveCheckpointResult {
+  if (!isRecord(value)) return false
+  return (
+    integerField(value.version) !== null &&
+    boundedString(value.operationId) !== null &&
+    boundedString(value.recordVersion) !== null &&
+    boundedString(value.bodyHash, MAX_BODY_HASH_BYTES) !== null &&
+    boundedString(value.fingerprint) !== null &&
+    typeof value.expiresAt === 'number' &&
+    Number.isSafeInteger(value.expiresAt) &&
+    value.expiresAt > 0
+  )
+}
+
+function isLegacyCheckpointResult(value: unknown): value is Omit<LiveCheckpointResult, 'expiresAt'> {
   if (!isRecord(value)) return false
   return (
     integerField(value.version) !== null &&
@@ -363,6 +476,53 @@ function isCheckpointResult(value: unknown): value is LiveCheckpointResult {
     boundedString(value.bodyHash, MAX_BODY_HASH_BYTES) !== null &&
     boundedString(value.fingerprint) !== null
   )
+}
+
+function isCheckpointResultIndexEntry(value: unknown): value is LiveCheckpointResultIndexEntry {
+  if (!isRecord(value)) return false
+  return (
+    boundedString(value.operationId) !== null &&
+    boundedString(value.resultKey, MAX_FIELD_BYTES * 2) !== null &&
+    typeof value.expiresAt === 'number' &&
+    Number.isSafeInteger(value.expiresAt) &&
+    value.expiresAt > 0
+  )
+}
+
+function roomSavedVersion(metadata: LiveRoomMetadata): number {
+  // Metadata written before savedVersion was introduced is treated as dirty
+  // once it has working updates. A clean version-zero room remains eligible
+  // for a safe generation switch.
+  return metadata.savedVersion ?? (metadata.version === 0 ? 0 : 0)
+}
+
+function roomIsDirty(metadata: LiveRoomMetadata): boolean {
+  return roomSavedVersion(metadata) < metadata.version
+}
+
+function normalizedRoomMetadata(metadata: LiveRoomMetadata): LiveRoomMetadata {
+  const savedVersion = Math.min(roomSavedVersion(metadata), metadata.version)
+  return metadata.savedVersion === savedVersion ? metadata : { ...metadata, savedVersion }
+}
+
+function isLiveRoomPointer(value: unknown): value is LiveRoomPointer {
+  return isRecord(value) &&
+    isSafeRoomId(value.roomId) &&
+    boundedString(value.bodyHash, MAX_BODY_HASH_BYTES) !== null &&
+    boundedString(value.recordVersion) !== null
+}
+
+function generatedRoomId(roomId: string, bodyHash: string, recordVersion: string): string {
+  return `${LIVE_ROOM_GENERATION_PREFIX}${base64Encode(
+    new TextEncoder().encode(`${roomId}\u0000${recordVersion}\u0000${bodyHash}`),
+  )}`
+}
+
+function isGeneratedRoomId(value: string | null): value is string {
+  return value !== null &&
+    value.startsWith(LIVE_ROOM_GENERATION_PREFIX) &&
+    isSafeRoomId(value) &&
+    base64Decode(value.slice(LIVE_ROOM_GENERATION_PREFIX.length), 1024) !== null
 }
 
 function sameRoomIdentity(left: LiveRoomIdentity, right: LiveRoomIdentity): boolean {
@@ -588,18 +748,28 @@ async function openLiveWebSocket(request: Request, env: Env): Promise<Response> 
     return liveJsonResponse(request, env, { error: 'Invalid or expired Live ticket' }, { status: 401 })
   }
 
-  const roomId = env.PHOTON_LIVE_ROOMS.idFromName(session.roomId)
   const internalUrl = new URL(request.url)
   internalUrl.pathname = '/live/internal-ws'
   internalUrl.search = ''
   const internalHeaders = new Headers(request.headers)
   internalHeaders.set(LIVE_INTERNAL_HEADER, LIVE_INTERNAL_HEADER_VALUE)
   internalHeaders.set(LIVE_SESSION_HEADER, encodeSessionHeader(session))
-  const internalRequest = new Request(internalUrl, {
-    method: 'GET',
-    headers: internalHeaders,
-  })
-  return env.PHOTON_LIVE_ROOMS.get(roomId).fetch(internalRequest)
+  let roomName = session.roomId
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    internalHeaders.set(LIVE_ROOM_TARGET_HEADER, roomName)
+    const internalRequest = new Request(internalUrl, {
+      method: 'GET',
+      headers: internalHeaders,
+    })
+    const roomId = env.PHOTON_LIVE_ROOMS.idFromName(roomName)
+    const response = await env.PHOTON_LIVE_ROOMS.get(roomId).fetch(internalRequest)
+    const generation = response.status === 409
+      ? response.headers.get(LIVE_ROOM_GENERATION_HEADER)
+      : null
+    if (!isGeneratedRoomId(generation) || generation === roomName) return response
+    roomName = generation
+  }
+  return new Response('Live room generation limit reached', { status: 409 })
 }
 
 function sendJsonFrame(socket: WebSocket, payload: JsonObject): void {
@@ -739,13 +909,14 @@ export class PhotonLiveTicketStore extends DurableObject<Env> {
       expiresAt: Date.now() + LIVE_TICKET_TTL_MS,
     }
     await this.ctx.storage.put(`${LIVE_TICKET_KEY_PREFIX}${ticket}`, stored)
+    await this.scheduleExpiry(stored.expiresAt)
     return { ticket, sessionId }
   }
 
   async consume(ticket: string): Promise<LiveTicketSession | null> {
     if (!/^[A-Za-z0-9_-]{40,64}$/.test(ticket)) return null
     const key = `${LIVE_TICKET_KEY_PREFIX}${ticket}`
-    return this.ctx.storage.transaction(async (transaction) => {
+    const session = await this.ctx.storage.transaction(async (transaction) => {
       const stored = await transaction.get<StoredLiveTicket>(key)
       if (!stored || stored.expiresAt <= Date.now() || !isLiveTicketSession(stored)) {
         if (stored) await transaction.delete(key)
@@ -756,12 +927,14 @@ export class PhotonLiveTicketStore extends DurableObject<Env> {
       await transaction.put(`${LIVE_SESSION_KEY_PREFIX}${stored.sessionId}`, stored)
       return stored
     })
+    if (session) await this.scheduleExpiry(session.expiresAt)
+    return session
   }
 
   async getSession(sessionId: string): Promise<LiveTicketSession | null> {
     if (!/^[A-Za-z0-9_-]{20,64}$/.test(sessionId)) return null
     const key = `${LIVE_SESSION_KEY_PREFIX}${sessionId}`
-    return this.ctx.storage.transaction(async (transaction) => {
+    const session = await this.ctx.storage.transaction(async (transaction) => {
       const stored = await transaction.get<StoredLiveTicket>(key)
       if (!stored || stored.expiresAt <= Date.now() || !isLiveTicketSession(stored)) {
         if (stored) await transaction.delete(key)
@@ -769,42 +942,189 @@ export class PhotonLiveTicketStore extends DurableObject<Env> {
       }
       return stored
     })
+    if (session) await this.scheduleExpiry(session.expiresAt)
+    return session
   }
 
   async deleteSession(sessionId: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{20,64}$/.test(sessionId)) return
     await this.ctx.storage.delete(`${LIVE_SESSION_KEY_PREFIX}${sessionId}`)
   }
+
+  async alarm(): Promise<void> {
+    const now = Date.now()
+    const ticketCleanup = await this.cleanupPrefix(
+      LIVE_TICKET_KEY_PREFIX,
+      `${LIVE_TICKET_CLEANUP_CURSOR_PREFIX}ticket`,
+      now,
+    )
+    const sessionCleanup = await this.cleanupPrefix(
+      LIVE_SESSION_KEY_PREFIX,
+      `${LIVE_TICKET_CLEANUP_CURSOR_PREFIX}session`,
+      now,
+    )
+    let nextExpiry: number | null = null
+    for (const expiry of [ticketCleanup.nextExpiry, sessionCleanup.nextExpiry]) {
+      if (expiry !== null) nextExpiry = nextExpiry === null ? expiry : Math.min(nextExpiry, expiry)
+    }
+    if (ticketCleanup.hasMore || sessionCleanup.hasMore) {
+      const cleanupAgain = now + LIVE_TICKET_CLEANUP_INTERVAL_MS
+      nextExpiry = nextExpiry === null ? cleanupAgain : Math.min(nextExpiry, cleanupAgain)
+    }
+    if (nextExpiry === null) {
+      await this.ctx.storage.deleteAlarm()
+    } else {
+      await this.ctx.storage.setAlarm(nextExpiry)
+    }
+  }
+
+  private async scheduleExpiry(expiresAt: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm()
+    if (current === null || expiresAt < current) await this.ctx.storage.setAlarm(expiresAt)
+  }
+
+  private async cleanupPrefix(
+    prefix: string,
+    cursorKey: string,
+    now: number,
+  ): Promise<{ nextExpiry: number | null; hasMore: boolean }> {
+    const cursor = await this.ctx.storage.get<string>(cursorKey)
+    const entries = await this.ctx.storage.list<StoredLiveTicket>({
+      prefix,
+      ...(cursor ? { startAfter: cursor } : {}),
+      limit: LIVE_TICKET_CLEANUP_LIMIT,
+    })
+    let nextExpiry: number | null = null
+    for (const [key, stored] of entries) {
+      if (!isLiveTicketSession(stored) || stored.expiresAt <= now) {
+        await this.ctx.storage.delete(key)
+        continue
+      }
+      nextExpiry = nextExpiry === null ? stored.expiresAt : Math.min(nextExpiry, stored.expiresAt)
+    }
+    const lastKey = Array.from(entries.keys()).at(-1)
+    if (entries.size >= LIVE_TICKET_CLEANUP_LIMIT && lastKey) {
+      await this.ctx.storage.put(cursorKey, lastKey)
+      return { nextExpiry, hasMore: true }
+    }
+    if (cursor) {
+      // The cursor reached the end. Run one bounded pass from the beginning
+      // on the next alarm so keys issued before the cursor are also covered.
+      await this.ctx.storage.delete(cursorKey)
+      return { nextExpiry, hasMore: true }
+    }
+    return { nextExpiry, hasMore: false }
+  }
 }
 
 export class PhotonLiveRoom extends PhotonSyncRoomBase {
   private readonly liveEnv: Env
   private readonly sessions = new WeakMap<WebSocket, LiveTicketSession>()
+  private readonly roomGeneration: string
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.liveEnv = env
+    const durableObjectId = (ctx as unknown as { id?: { toString(): string } }).id
+    this.roomGeneration = durableObjectId ? durableObjectId.toString() : 'live-room'
   }
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get(LIVE_INTERNAL_HEADER) !== LIVE_INTERNAL_HEADER_VALUE) {
       return new Response('Not found', { status: 404 })
     }
+
+    const reference = decodeSessionHeader(request.headers.get(LIVE_SESSION_HEADER))
+    if (!reference || reference.expiresAt <= Date.now()) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+    const session = await this.resolveSessionReference(reference)
+    if (!session || !session.sessionId || session.expiresAt <= Date.now()) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+    if (new URL(request.url).pathname === LIVE_INTERNAL_POINTER_PATH) {
+      if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+      let payload: unknown
+      try {
+        payload = await readJsonBody(request, MAX_SESSION_BODY_BYTES)
+      } catch {
+        return new Response('Invalid room pointer', { status: 400 })
+      }
+      const requestedRoomId = boundedString(payload && isRecord(payload) ? payload.room_id : null, MAX_ROOM_ID_BYTES)
+      const requestedBodyHash = boundedString(payload && isRecord(payload) ? payload.body_hash : null, MAX_BODY_HASH_BYTES)
+      const requestedRecordVersion = boundedString(
+        payload && isRecord(payload) ? payload.record_version : null,
+      )
+      if (!isGeneratedRoomId(requestedRoomId) || requestedBodyHash !== session.bodyHash ||
+        requestedRecordVersion !== session.recordVersion) {
+        return new Response('Invalid room pointer', { status: 400 })
+      }
+      const accepted = await this.ctx.storage.transaction(async (transaction) => {
+        const existing = await transaction.get<unknown>(LIVE_ROOM_POINTER_KEY)
+        if (isLiveRoomPointer(existing) &&
+          !isRecordVersionNewer(session.recordVersion, existing.recordVersion) &&
+          (session.recordVersion !== existing.recordVersion || existing.bodyHash !== requestedBodyHash)) {
+          return existing
+        }
+        const candidate = {
+          roomId: requestedRoomId,
+          bodyHash: requestedBodyHash,
+          recordVersion: requestedRecordVersion,
+        } satisfies LiveRoomPointer
+        await transaction.put(LIVE_ROOM_POINTER_KEY, candidate)
+        return candidate
+      })
+      return new Response(JSON.stringify(accepted), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected WebSocket upgrade', { status: 426 })
     }
-
-    const session = decodeSessionHeader(request.headers.get(LIVE_SESSION_HEADER))
-    if (!session || !session.sessionId || session.expiresAt <= Date.now()) {
-      return new Response('Unauthorized', { status: 401 })
+    const targetRoomName = boundedString(request.headers.get(LIVE_ROOM_TARGET_HEADER), MAX_ROOM_ID_BYTES) ?? session.roomId
+    if (targetRoomName === session.roomId) {
+      const pointerValue = await this.ctx.storage.get<unknown>(LIVE_ROOM_POINTER_KEY)
+      if (isLiveRoomPointer(pointerValue) && pointerValue.roomId !== session.roomId) {
+        const headers = new Headers()
+        headers.set(LIVE_ROOM_GENERATION_HEADER, pointerValue.roomId)
+        return new Response('Live room generation changed', { status: 409, headers })
+      }
     }
     let roomMetadata = await this.ensureRoomMetadata(session)
     if (!roomMetadata) return new Response('Forbidden', { status: 403 })
     if (roomMetadata.bodyHash !== session.bodyHash) {
       // A fresh authorization with a different canonical body means the
       // durable room no longer represents the record the caller opened.
-      // Never send that stale snapshot to the browser.
-      return new Response('Live body changed', { status: 409 })
+      // Never send that stale snapshot to the browser. A clean room may be
+      // moved to a body/version-specific generation, while a dirty room
+      // remains explicitly conflicted so its unsaved state is preserved.
+      if (roomIsDirty(roomMetadata)) return new Response('Live body changed', { status: 409 })
+      // A delayed ticket must never rotate a clean room back to an older
+      // canonical body. Rotation is allowed only after a strictly newer API
+      // record version proves that this session is the current authorization.
+      if (!roomMetadata.recordVersion ||
+        !isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion)) {
+        return new Response('Live body changed', { status: 409 })
+      }
+      for (const socket of this.ctx.getWebSockets()) {
+        try {
+          socket.close(4410, 'Live canonical body changed; reconnect required')
+        } catch {
+          // Ignore a socket that has already closed.
+        }
+      }
+      const generation = generatedRoomId(session.roomId, session.bodyHash, session.recordVersion)
+      const acceptedGeneration = await this.setCurrentGenerationPointer(session, generation, targetRoomName)
+      if (!acceptedGeneration) {
+        // A generation must never advertise itself until the base pointer has
+        // durably accepted it. Keeping the old target would create a split
+        // brain after a transient inter-DO failure.
+        return new Response('Live room generation unavailable', { status: 503 })
+      }
+      const headers = new Headers()
+      headers.set(LIVE_ROOM_GENERATION_HEADER, acceptedGeneration)
+      return new Response('Live body changed', { status: 409, headers })
     }
     if (
       roomMetadata.initialized &&
@@ -843,7 +1163,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     }
     await this.scheduleSessionExpiry(session.expiresAt)
     const current = (await this.ctx.storage.get<LiveRoomMetadata>(LIVE_ROOM_META_KEY)) ?? recoveredMetadata
-    sendJsonFrame(socket, roomReadyFrame(current, session))
+    sendJsonFrame(socket, this.readyFrame(current, session))
     return response
   }
 
@@ -876,6 +1196,11 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
   async alarm(): Promise<void> {
     const now = Date.now()
     let nextExpiry: number | null = null
+    // Result index read/modify/write must be serialized with checkpoint
+    // reservation/apply transactions. This lock only performs bounded storage
+    // work; no authorization or checkpoint network request runs here.
+    const resultCleanup = await this.ctx.blockConcurrencyWhile(() => this.cleanupCheckpointResults(now))
+    if (resultCleanup.nextExpiry !== null) nextExpiry = resultCleanup.nextExpiry
     for (const socket of this.ctx.getWebSockets()) {
       let attachment: LiveSocketAttachment | null = null
       try {
@@ -907,6 +1232,10 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         continue
       }
       nextExpiry = nextExpiry === null ? expiresAt : Math.min(nextExpiry, expiresAt)
+    }
+    if (resultCleanup.hasMore) {
+      const cleanupAgain = now + LIVE_TICKET_CLEANUP_INTERVAL_MS
+      nextExpiry = nextExpiry === null ? cleanupAgain : Math.min(nextExpiry, cleanupAgain)
     }
     if (nextExpiry === null) {
       await this.ctx.storage.deleteAlarm()
@@ -952,11 +1281,92 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     }
   }
 
+  private async resolveSessionReference(reference: LiveSessionReference): Promise<LiveTicketSession | null> {
+    try {
+      const session = await ticketStore(this.liveEnv).getSession(reference.sessionId)
+      return session && sameSessionReference(session, reference) ? session : null
+    } catch {
+      return null
+    }
+  }
+
+  private readyFrame(metadata: LiveRoomMetadata, session: LiveTicketSession): JsonObject {
+    return {
+      ...roomReadyFrame(metadata, session),
+      room_generation: this.roomGeneration,
+    }
+  }
+
+  private async setCurrentGenerationPointer(
+    session: LiveTicketSession,
+    generation: string,
+    targetRoomName: string,
+  ): Promise<string | null> {
+    if (targetRoomName === session.roomId) {
+      const accepted = await this.ctx.storage.transaction(async (transaction) => {
+        const existing = await transaction.get<unknown>(LIVE_ROOM_POINTER_KEY)
+        if (isLiveRoomPointer(existing) &&
+          !isRecordVersionNewer(session.recordVersion, existing.recordVersion) &&
+          (session.recordVersion !== existing.recordVersion || existing.bodyHash !== session.bodyHash)) {
+          return existing
+        }
+        const candidate = {
+          roomId: generation,
+          bodyHash: session.bodyHash,
+          recordVersion: session.recordVersion,
+        } satisfies LiveRoomPointer
+        await transaction.put(LIVE_ROOM_POINTER_KEY, candidate)
+        return candidate
+      })
+      return isLiveRoomPointer(accepted) ? accepted.roomId : null
+    }
+
+    // A generation DO cannot rename itself. Keep the base room's pointer
+    // current so future sessions reach the same room after reconnecting. This
+    // is a local DO call, deliberately outside every blockConcurrencyWhile
+    // section used for checkpoint/API coordination.
+    const baseId = this.liveEnv.PHOTON_LIVE_ROOMS.idFromName(session.roomId)
+    const url = new URL('https://photon-live.internal/live/internal-pointer')
+    const headers = new Headers({
+      [LIVE_INTERNAL_HEADER]: LIVE_INTERNAL_HEADER_VALUE,
+      [LIVE_SESSION_HEADER]: encodeSessionHeader(session),
+      'content-type': 'application/json',
+    })
+    try {
+      const response = await this.liveEnv.PHOTON_LIVE_ROOMS.get(baseId).fetch(new Request(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          room_id: generation,
+          body_hash: session.bodyHash,
+          record_version: session.recordVersion,
+        }),
+      }))
+      if (response.status === 200) {
+        try {
+          const accepted = await response.json()
+          if (isLiveRoomPointer(accepted)) return accepted.roomId
+        } catch {
+          // Treat a malformed response as an uncommitted pointer update.
+        }
+      }
+    } catch {
+      // Do not advertise an uncommitted generation. The caller returns a
+      // retryable response so the old room remains the only reachable state.
+    }
+    return null
+  }
+
   private async ensureRoomMetadata(session: LiveTicketSession): Promise<LiveRoomMetadata | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const current = await this.ctx.storage.get<LiveRoomMetadata>(LIVE_ROOM_META_KEY)
       if (current) {
-        return isLiveRoomMetadata(current) && sameRoomIdentity(current, session) ? current : null
+        if (!isLiveRoomMetadata(current) || !sameRoomIdentity(current, session)) return null
+        const normalized = normalizedRoomMetadata(current)
+        if (normalized.savedVersion !== current.savedVersion) {
+          await this.ctx.storage.put(LIVE_ROOM_META_KEY, normalized)
+        }
+        return normalized
       }
       const initial: LiveRoomMetadata = {
         roomId: session.roomId,
@@ -967,6 +1377,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         format: session.format,
         initialized: false,
         version: 0,
+        savedVersion: 0,
         bodyHash: session.bodyHash,
       }
       await this.ctx.storage.put(LIVE_ROOM_META_KEY, initial)
@@ -976,7 +1387,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
 
   private async currentRoomMetadata(): Promise<LiveRoomMetadata | null> {
     const metadata = await this.ctx.storage.get<LiveRoomMetadata>(LIVE_ROOM_META_KEY)
-    return metadata && isLiveRoomMetadata(metadata) ? metadata : null
+    return metadata && isLiveRoomMetadata(metadata) ? normalizedRoomMetadata(metadata) : null
   }
 
   /**
@@ -1016,6 +1427,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         ...metadata,
         initialized: true,
         version: 0,
+        savedVersion: 0,
         recordVersion: pending.recordVersion,
       }
       await this.ctx.storage.put(LIVE_ROOM_META_KEY, initialized)
@@ -1088,7 +1500,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       if (metadata.initialized) {
         // A losing initializer must not be applied a second time. Its socket
         // already received the winning update through the normal broadcast.
-        sendJsonFrame(sender, roomReadyFrame(metadata, session))
+        sendJsonFrame(sender, this.readyFrame(metadata, session))
         return
       }
 
@@ -1107,6 +1519,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         ...metadata,
         initialized: true,
         version: 0,
+        savedVersion: 0,
         recordVersion: session.recordVersion,
       }
       await this.ctx.storage.put(LIVE_ROOM_META_KEY, initialized)
@@ -1118,7 +1531,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       } catch {
         // The room state is still initialized for the remaining sockets.
       }
-      this.broadcast(roomReadyFrame(initialized, session))
+      this.broadcast(this.readyFrame(initialized, session))
     })
   }
 
@@ -1194,24 +1607,205 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     })
   }
 
-  private async deletePendingCheckpoint(): Promise<void> {
-    await this.ctx.storage.transaction(async (transaction) => {
-      const pending = await transaction.get<LivePendingCheckpoint>(LIVE_PENDING_CHECKPOINT_KEY)
-      if (pending && isPendingCheckpoint(pending)) {
-        const keys = Array.from({ length: pending.chunkCount }, (_, index) => checkpointBodyKey(index))
-        if (keys.length > 0) await transaction.delete(keys)
-      }
+  private async deletePendingCheckpointIf(expected: LivePendingCheckpoint): Promise<boolean> {
+    return this.ctx.storage.transaction(async (transaction) => {
+      const current = await transaction.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      if (!isPendingCheckpoint(current) || !samePendingCheckpoint(current, expected)) return false
+      const keys = Array.from({ length: current.chunkCount }, (_, index) => checkpointBodyKey(index))
+      if (keys.length > 0) await transaction.delete(keys)
       await transaction.delete(LIVE_PENDING_CHECKPOINT_KEY)
+      return true
     })
   }
 
   private async readCheckpointResult(operationId: string): Promise<LiveCheckpointResult | null> {
-    const result = await this.ctx.storage.get<LiveCheckpointResult>(checkpointResultKey(operationId))
-    return result && isCheckpointResult(result) ? result : null
+    const key = checkpointResultKey(operationId)
+    const value = await this.ctx.storage.get<unknown>(key)
+    if (!value) return null
+
+    const now = Date.now()
+    let result: LiveCheckpointResult | null = null
+    if (isCheckpointResult(value)) {
+      result = value
+    } else if (isLegacyCheckpointResult(value)) {
+      // Result keys predate the bounded index. Migrate a result when it is
+      // replayed so an ACK-loss recovery remains idempotent while the next
+      // alarm can collect the old unindexed key.
+      result = { ...value, expiresAt: now + LIVE_CHECKPOINT_RESULT_TTL_MS }
+      await this.saveCheckpointResult(result)
+    } else {
+      await this.deleteCheckpointResult(operationId)
+      return null
+    }
+
+    if (result.expiresAt > now) return result
+
+    // A result written before pending cleanup must remain available to finish
+    // an exact retry. Extend it while its durable pending marker still names
+    // this operation; otherwise expiry is allowed to release the replay key.
+    const pending = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+    if (isPendingCheckpoint(pending) && pending.operationId === operationId) {
+      const extended = { ...result, expiresAt: now + LIVE_CHECKPOINT_RESULT_TTL_MS }
+      await this.saveCheckpointResult(extended)
+      return extended
+    }
+    await this.deleteCheckpointResult(operationId)
+    return null
   }
 
   private async saveCheckpointResult(result: LiveCheckpointResult): Promise<void> {
-    await this.ctx.storage.put(checkpointResultKey(result.operationId), result)
+    const now = Date.now()
+    const storedResult = {
+      ...result,
+      expiresAt: result.expiresAt > now ? result.expiresAt : now + LIVE_CHECKPOINT_RESULT_TTL_MS,
+    }
+    const resultKey = checkpointResultKey(result.operationId)
+    await this.ctx.storage.transaction(async (transaction) => {
+      const indexValue = await transaction.get<unknown>(LIVE_CHECKPOINT_RESULT_INDEX_KEY)
+      const pendingValue = await transaction.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      const pendingOperationId = isPendingCheckpoint(pendingValue) ? pendingValue.operationId : null
+      const entries = Array.isArray(indexValue)
+        ? indexValue.filter(isCheckpointResultIndexEntry)
+        : []
+      const retained: LiveCheckpointResultIndexEntry[] = []
+      const removeKeys = new Set<string>()
+      for (const entry of entries) {
+        if (entry.resultKey === resultKey || entry.operationId === result.operationId) continue
+        if (entry.expiresAt <= now && entry.operationId !== pendingOperationId) {
+          removeKeys.add(entry.resultKey)
+          continue
+        }
+        retained.push(entry)
+      }
+      retained.push({
+        operationId: result.operationId,
+        resultKey,
+        expiresAt: storedResult.expiresAt,
+      })
+
+      // Keep the pending operation even if it is older than the normal replay
+      // window. All other entries are bounded by age and FIFO count.
+      while (retained.length > LIVE_CHECKPOINT_RESULT_MAX_ENTRIES) {
+        const index = retained.findIndex((entry) => entry.operationId !== pendingOperationId)
+        if (index < 0) break
+        const [removed] = retained.splice(index, 1)
+        if (removed && removed.resultKey !== resultKey) removeKeys.add(removed.resultKey)
+      }
+      for (const key of removeKeys) await transaction.delete(key)
+      await transaction.put(resultKey, storedResult)
+      await transaction.put(LIVE_CHECKPOINT_RESULT_INDEX_KEY, retained)
+    })
+  }
+
+  private async deleteCheckpointResult(operationId: string): Promise<void> {
+    const resultKey = checkpointResultKey(operationId)
+    await this.ctx.storage.transaction(async (transaction) => {
+      await transaction.delete(resultKey)
+      const indexValue = await transaction.get<unknown>(LIVE_CHECKPOINT_RESULT_INDEX_KEY)
+      if (!Array.isArray(indexValue)) return
+      const entries = indexValue.filter(isCheckpointResultIndexEntry)
+        .filter((entry) => entry.operationId !== operationId && entry.resultKey !== resultKey)
+      await transaction.put(LIVE_CHECKPOINT_RESULT_INDEX_KEY, entries)
+    })
+  }
+
+  /**
+   * Collect replay results in bounded batches. The index bounds normal new
+   * writes; the prefix cursor also migrates and removes result keys written by
+   * the pre-index implementation, so old Preview rooms cannot grow forever.
+   */
+  private async cleanupCheckpointResults(
+    now = Date.now(),
+  ): Promise<{ nextExpiry: number | null; hasMore: boolean }> {
+    const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+    const pendingOperationId = isPendingCheckpoint(pendingValue) ? pendingValue.operationId : null
+    const indexValue = await this.ctx.storage.get<unknown>(LIVE_CHECKPOINT_RESULT_INDEX_KEY)
+    const indexed = Array.isArray(indexValue) ? indexValue.filter(isCheckpointResultIndexEntry) : []
+    const indexByKey = new Map(indexed.map((entry) => [entry.resultKey, entry]))
+    const cursor = await this.ctx.storage.get<string>(LIVE_CHECKPOINT_RESULT_CLEANUP_CURSOR_KEY)
+    const scanned = await this.ctx.storage.list<unknown>({
+      prefix: LIVE_CHECKPOINT_RESULT_PREFIX,
+      ...(cursor ? { startAfter: cursor } : {}),
+      limit: LIVE_TICKET_CLEANUP_LIMIT,
+    })
+    const nextEntries = [...indexed]
+    const removeKeys = new Set<string>()
+    let nextExpiry: number | null = null
+    for (const [key, value] of scanned) {
+      if (key === LIVE_CHECKPOINT_RESULT_INDEX_KEY) continue
+      let result: LiveCheckpointResult | null = null
+      if (isCheckpointResult(value)) {
+        result = value
+      } else if (isLegacyCheckpointResult(value)) {
+        result = { ...value, expiresAt: now + LIVE_CHECKPOINT_RESULT_TTL_MS }
+        await this.ctx.storage.put(key, result)
+      } else {
+        removeKeys.add(key)
+        continue
+      }
+      const entry = {
+        operationId: result.operationId,
+        resultKey: key,
+        expiresAt: result.expiresAt,
+      } satisfies LiveCheckpointResultIndexEntry
+      if (result.expiresAt <= now && result.operationId === pendingOperationId) {
+        result = { ...result, expiresAt: now + LIVE_CHECKPOINT_RESULT_TTL_MS }
+        await this.ctx.storage.put(key, result)
+        entry.expiresAt = result.expiresAt
+      }
+      const existing = indexByKey.get(key)
+      if (!existing) nextEntries.push(entry)
+      else if (existing.expiresAt !== result.expiresAt) {
+        const index = nextEntries.findIndex((candidate) => candidate.resultKey === key)
+        if (index >= 0) nextEntries[index] = entry
+      }
+      if (result.expiresAt <= now && result.operationId !== pendingOperationId) {
+        removeKeys.add(key)
+        continue
+      }
+      nextExpiry = nextExpiry === null ? result.expiresAt : Math.min(nextExpiry, result.expiresAt)
+    }
+
+    const scannedLastKey = Array.from(scanned.keys()).at(-1)
+    const hasMore = scanned.size >= LIVE_TICKET_CLEANUP_LIMIT && scannedLastKey !== undefined
+    if (hasMore && scannedLastKey) await this.ctx.storage.put(LIVE_CHECKPOINT_RESULT_CLEANUP_CURSOR_KEY, scannedLastKey)
+    else if (cursor) await this.ctx.storage.delete(LIVE_CHECKPOINT_RESULT_CLEANUP_CURSOR_KEY)
+
+    const retained: LiveCheckpointResultIndexEntry[] = []
+    for (const entry of nextEntries) {
+      if (removeKeys.has(entry.resultKey)) continue
+      if (entry.expiresAt <= now && entry.operationId === pendingOperationId) {
+        entry.expiresAt = now + LIVE_CHECKPOINT_RESULT_TTL_MS
+        const value = await this.ctx.storage.get<unknown>(entry.resultKey)
+        if (isCheckpointResult(value) || isLegacyCheckpointResult(value)) {
+          await this.ctx.storage.put(entry.resultKey, { ...value, expiresAt: entry.expiresAt })
+        }
+      }
+      if (entry.expiresAt <= now && entry.operationId !== pendingOperationId) {
+        removeKeys.add(entry.resultKey)
+        continue
+      }
+      retained.push(entry)
+    }
+    nextExpiry = null
+    for (const entry of retained) {
+      nextExpiry = nextExpiry === null ? entry.expiresAt : Math.min(nextExpiry, entry.expiresAt)
+    }
+    while (retained.length > LIVE_CHECKPOINT_RESULT_MAX_ENTRIES) {
+      const index = retained.findIndex((entry) => entry.operationId !== pendingOperationId)
+      if (index < 0) break
+      const [removed] = retained.splice(index, 1)
+      if (removed) removeKeys.add(removed.resultKey)
+    }
+    await this.ctx.storage.transaction(async (transaction) => {
+      for (const key of removeKeys) await transaction.delete(key)
+      await transaction.put(LIVE_CHECKPOINT_RESULT_INDEX_KEY, retained)
+    })
+    if (hasMore) {
+      const cleanupAgain = now + LIVE_TICKET_CLEANUP_INTERVAL_MS
+      nextExpiry = nextExpiry === null ? cleanupAgain : Math.min(nextExpiry, cleanupAgain)
+    }
+    return { nextExpiry, hasMore }
   }
 
   /**
@@ -1240,6 +1834,440 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     }
   }
 
+  private async readCheckpointState(operationId: string): Promise<CheckpointState> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      const pending = pendingValue === undefined
+        ? null
+        : isPendingCheckpoint(pendingValue)
+          ? pendingValue
+          : undefined
+      const priorResult = await this.readCheckpointResult(operationId)
+      return { metadata, pending, priorResult }
+    })
+  }
+
+  private async replayCheckpoint(
+    sender: WebSocket,
+    session: LiveTicketSession,
+    version: number,
+    bodyFingerprint: string,
+    operationId: string,
+  ): Promise<'done' | 'retry'> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      if (!metadata || !sameRoomIdentity(metadata, session)) {
+        sendSocketError(sender, 'Live room identity mismatch', operationId)
+        return 'done'
+      }
+      const result = await this.readCheckpointResult(operationId)
+      if (!result) return 'retry'
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      const pending = pendingValue === undefined
+        ? null
+        : isPendingCheckpoint(pendingValue)
+          ? pendingValue
+          : undefined
+      if (
+        pending === undefined ||
+        result.fingerprint !== bodyFingerprint ||
+        result.version !== version ||
+        (pending && pending.operationId === operationId && pending.fingerprint !== bodyFingerprint)
+      ) {
+        sendSocketError(sender, 'Checkpoint operation was reused', operationId)
+        return 'done'
+      }
+
+      // A replay may repair metadata after an ACK loss, but it must never
+      // overwrite a later accepted body/version. Only a strictly newer result
+      // can update the canonical baseline; equal versions require the same
+      // body hash and therefore need no write.
+      let nextMetadata = metadata
+      if (isRecordVersionNewer(result.recordVersion, metadata.recordVersion)) {
+        nextMetadata = {
+          ...metadata,
+          recordVersion: result.recordVersion,
+          bodyHash: result.bodyHash,
+          savedVersion: Math.max(
+            roomSavedVersion(metadata),
+            Math.min(result.version, metadata.version),
+          ),
+        }
+      }
+      if (nextMetadata !== metadata) await this.ctx.storage.put(LIVE_ROOM_META_KEY, nextMetadata)
+      if (pending?.operationId === operationId) await this.deletePendingCheckpointIf(pending)
+      sendJsonFrame(sender, {
+        type: 'live-saved',
+        version: result.version,
+        record_version: result.recordVersion,
+        operation_id: operationId,
+      })
+      return 'done'
+    })
+  }
+
+  private async reserveFreshCheckpoint(
+    sender: WebSocket,
+    session: LiveTicketSession,
+    version: number,
+    body: string,
+    bodyFingerprint: string,
+    bodyHash: string,
+    operationId: string,
+    authorized: LiveAuthorization,
+    authorizedBodyHash: string,
+  ): Promise<CheckpointPreparation> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      if (!metadata || !sameRoomIdentity(metadata, session)) {
+        return { kind: 'error', message: 'Live room identity mismatch' }
+      }
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      if (pendingValue !== undefined) {
+        return isPendingCheckpoint(pendingValue)
+          ? { kind: 'retry' }
+          : { kind: 'error', message: 'Live checkpoint recovery failed' }
+      }
+      const priorResult = await this.readCheckpointResult(operationId)
+      if (priorResult) return { kind: 'replay', result: priorResult }
+      if (!metadata.initialized || !metadata.recordVersion) {
+        return { kind: 'error', message: 'Live document is not initialized' }
+      }
+      if (!sameRoomIdentity(authorized, session) || authorizedBodyHash !== metadata.bodyHash) {
+        return { kind: 'conflict' }
+      }
+
+      const effectiveRecordVersion = isRecordVersionNewer(authorized.recordVersion, metadata.recordVersion)
+        ? authorized.recordVersion
+        : metadata.recordVersion
+      let current = metadata
+      if (current.recordVersion !== effectiveRecordVersion || current.bodyHash !== authorizedBodyHash) {
+        current = {
+          ...current,
+          recordVersion: effectiveRecordVersion,
+          bodyHash: authorizedBodyHash,
+        }
+        await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
+      }
+      if (version !== current.version) {
+        return { kind: 'error', message: 'Checkpoint is behind the working version' }
+      }
+
+      // The requested body is already canonical. This is a metadata refresh,
+      // not a database mutation: avoid an unnecessary CAS/outbox increment.
+      if (bodyHash === authorizedBodyHash) {
+        const saved: LiveRoomMetadata = {
+          ...current,
+          savedVersion: current.version,
+        }
+        await this.ctx.storage.put(LIVE_ROOM_META_KEY, saved)
+        await this.saveCheckpointResult({
+          version: current.version,
+          operationId,
+          recordVersion: effectiveRecordVersion,
+          bodyHash: authorizedBodyHash,
+          fingerprint: bodyFingerprint,
+          expiresAt: Date.now() + LIVE_CHECKPOINT_RESULT_TTL_MS,
+        })
+        sendJsonFrame(sender, {
+          type: 'live-saved',
+          version: current.version,
+          record_version: effectiveRecordVersion,
+          operation_id: operationId,
+        })
+        return { kind: 'done' }
+      }
+
+      const bytes = new TextEncoder().encode(body)
+      const pending: LivePendingCheckpoint = {
+        version,
+        operationId,
+        expectedRecordVersion: effectiveRecordVersion,
+        bodyHash,
+        fingerprint: bodyFingerprint,
+        bodyByteLength: bytes.byteLength,
+        chunkCount: Math.ceil(bytes.byteLength / CHECKPOINT_BODY_CHUNK_BYTES),
+      }
+      await this.savePendingCheckpoint(pending, body)
+      return {
+        kind: 'execute',
+        execution: { metadata: current, pending, body, fingerprint: bodyFingerprint },
+      }
+    })
+  }
+
+  private async prepareExactPending(
+    session: LiveTicketSession,
+    version: number,
+    bodyFingerprint: string,
+    operationId: string,
+  ): Promise<CheckpointPreparation> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      if (!metadata || !sameRoomIdentity(metadata, session)) {
+        return { kind: 'error', message: 'Live room identity mismatch' }
+      }
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      if (!isPendingCheckpoint(pendingValue)) return { kind: 'retry' }
+      const pending = pendingValue
+      if (pending.operationId !== operationId || pending.fingerprint !== bodyFingerprint) {
+        return { kind: 'error', message: 'Another checkpoint is pending' }
+      }
+      if (pending.version !== version) {
+        return { kind: 'error', message: 'Checkpoint operation was reused' }
+      }
+      const pendingBody = await this.readPendingCheckpointBody(pending)
+      if (pendingBody === null || await fingerprintBody(pendingBody) !== pending.fingerprint) {
+        return { kind: 'error', message: 'Live checkpoint recovery failed' }
+      }
+      return {
+        kind: 'execute',
+        execution: {
+          metadata: {
+            ...metadata,
+            version: pending.version,
+            recordVersion: pending.expectedRecordVersion,
+          },
+          pending,
+          body: pendingBody,
+          fingerprint: bodyFingerprint,
+        },
+      }
+    })
+  }
+
+  private async preparePendingReplacement(
+    sender: WebSocket,
+    session: LiveTicketSession,
+    version: number,
+    body: string,
+    bodyFingerprint: string,
+    bodyHash: string,
+    operationId: string,
+    authorized: LiveAuthorization,
+    authorizedBodyHash: string,
+  ): Promise<CheckpointPreparation> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      if (!metadata || !sameRoomIdentity(metadata, session)) {
+        return { kind: 'error', message: 'Live room identity mismatch' }
+      }
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      if (!isPendingCheckpoint(pendingValue)) return { kind: 'retry' }
+      const pending = pendingValue
+      if (pending.operationId === operationId) {
+        if (pending.fingerprint !== bodyFingerprint) {
+          return { kind: 'error', message: 'Checkpoint operation was reused' }
+        }
+        const pendingBody = await this.readPendingCheckpointBody(pending)
+        if (pendingBody === null || await fingerprintBody(pendingBody) !== pending.fingerprint) {
+          return { kind: 'error', message: 'Live checkpoint recovery failed' }
+        }
+        return {
+          kind: 'execute',
+          execution: {
+            metadata: { ...metadata, version: pending.version, recordVersion: pending.expectedRecordVersion },
+            pending,
+            body: pendingBody,
+            fingerprint: bodyFingerprint,
+          },
+        }
+      }
+      // A different operation may replace a pending marker only for the
+      // current working version. A stale retry must leave the existing marker
+      // and its body untouched while it reports the version mismatch.
+      if (version !== metadata.version) {
+        return { kind: 'error', message: 'Checkpoint is behind the working version' }
+      }
+      if (!sameRoomIdentity(authorized, session)) {
+        return { kind: 'error', message: 'Live checkpoint recovery failed' }
+      }
+
+      if (authorized.recordVersion === pending.expectedRecordVersion) {
+        // The old request is unresolved. Compare the fresh canonical body to
+        // the accepted baseline, never to the old proposed body.
+        if (authorizedBodyHash !== metadata.bodyHash) {
+          await this.deletePendingCheckpointIf(pending)
+          return { kind: 'conflict' }
+        }
+        await this.deletePendingCheckpointIf(pending)
+        const effective = metadata.recordVersion &&
+          isRecordVersionNewer(metadata.recordVersion, authorized.recordVersion)
+          ? metadata.recordVersion
+          : authorized.recordVersion
+        const current = {
+          ...metadata,
+          recordVersion: effective,
+          bodyHash: authorizedBodyHash,
+        }
+        await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
+        if (version !== current.version) return { kind: 'error', message: 'Checkpoint is behind the working version' }
+        return this.reserveBodyLocked(
+          sender,
+          current,
+          version,
+          body,
+          bodyFingerprint,
+          bodyHash,
+          operationId,
+        )
+      }
+
+      if (!isRecordVersionNewer(authorized.recordVersion, pending.expectedRecordVersion)) {
+        await this.deletePendingCheckpointIf(pending)
+        return { kind: 'conflict' }
+      }
+      // A newer canonical version may be the exact result of the old pending
+      // request. Any other body is an external edit and must stop the room.
+      if (authorizedBodyHash !== pending.bodyHash) {
+        await this.deletePendingCheckpointIf(pending)
+        return { kind: 'conflict' }
+      }
+      await this.deletePendingCheckpointIf(pending)
+      const current = {
+        ...metadata,
+        recordVersion: authorized.recordVersion,
+        bodyHash: authorizedBodyHash,
+        savedVersion: Math.max(roomSavedVersion(metadata), Math.min(pending.version, metadata.version)),
+      }
+      await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
+      if (version !== current.version) return { kind: 'error', message: 'Checkpoint is behind the working version' }
+      return this.reserveBodyLocked(
+        sender,
+        current,
+        version,
+        body,
+        bodyFingerprint,
+        bodyHash,
+        operationId,
+      )
+    })
+  }
+
+  private async reserveBodyLocked(
+    sender: WebSocket,
+    metadata: LiveRoomMetadata,
+    version: number,
+    body: string,
+    bodyFingerprint: string,
+    bodyHash: string,
+    operationId: string,
+  ): Promise<CheckpointPreparation> {
+    if (version !== metadata.version || !metadata.recordVersion) {
+      return { kind: 'error', message: 'Checkpoint is behind the working version' }
+    }
+    if (bodyHash === metadata.bodyHash) {
+      const saved: LiveRoomMetadata = { ...metadata, savedVersion: metadata.version }
+      await this.ctx.storage.put(LIVE_ROOM_META_KEY, saved)
+      await this.saveCheckpointResult({
+        version: metadata.version,
+        operationId,
+        recordVersion: metadata.recordVersion,
+        bodyHash: metadata.bodyHash,
+        fingerprint: bodyFingerprint,
+        expiresAt: Date.now() + LIVE_CHECKPOINT_RESULT_TTL_MS,
+      })
+      sendJsonFrame(sender, {
+        type: 'live-saved',
+        version: metadata.version,
+        record_version: metadata.recordVersion,
+        operation_id: operationId,
+      })
+      return { kind: 'done' }
+    }
+    const bytes = new TextEncoder().encode(body)
+    const pending: LivePendingCheckpoint = {
+      version,
+      operationId,
+      expectedRecordVersion: metadata.recordVersion,
+      bodyHash,
+      fingerprint: bodyFingerprint,
+      bodyByteLength: bytes.byteLength,
+      chunkCount: Math.ceil(bytes.byteLength / CHECKPOINT_BODY_CHUNK_BYTES),
+    }
+    await this.savePendingCheckpoint(pending, body)
+    return { kind: 'execute', execution: { metadata, pending, body, fingerprint: bodyFingerprint } }
+  }
+
+  private async applyCheckpointResult(
+    sender: WebSocket,
+    session: LiveTicketSession,
+    execution: CheckpointExecution,
+    result: CheckpointResult,
+  ): Promise<void> {
+    if (result.kind === 'error') {
+      sendSocketError(sender, 'Live checkpoint failed', execution.pending.operationId)
+      return
+    }
+    if (result.kind === 'conflict') {
+      await this.ctx.blockConcurrencyWhile(async () => {
+        const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+        if (isPendingCheckpoint(pendingValue) && samePendingCheckpoint(pendingValue, execution.pending)) {
+          await this.deletePendingCheckpointIf(execution.pending)
+        }
+      })
+      this.broadcast({ type: 'live-conflict', operation_id: execution.pending.operationId })
+      return
+    }
+
+    const checkpointBodyHash = await normalizeBodyHash(execution.metadata.format, execution.body)
+    const resultRecord: LiveCheckpointResult = {
+      version: execution.pending.version,
+      operationId: execution.pending.operationId,
+      recordVersion: result.recordVersion,
+      bodyHash: checkpointBodyHash,
+      fingerprint: execution.fingerprint,
+      expiresAt: Date.now() + LIVE_CHECKPOINT_RESULT_TTL_MS,
+    }
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const metadata = await this.currentRoomMetadata()
+      if (!metadata || !sameRoomIdentity(metadata, session)) return
+      const pendingValue = await this.ctx.storage.get<unknown>(LIVE_PENDING_CHECKPOINT_KEY)
+      const pending = isPendingCheckpoint(pendingValue) ? pendingValue : null
+      await this.saveCheckpointResult(resultRecord)
+
+      // The API response may arrive after another operation has reserved or
+      // completed. Never remove that newer marker or overwrite its body. An
+      // accepted result can still monotonically advance the canonical version
+      // for the next CAS request while preserving the current working version.
+      let nextMetadata = metadata
+      if (!metadata.recordVersion || isRecordVersionNewer(result.recordVersion, metadata.recordVersion)) {
+        nextMetadata = {
+          ...metadata,
+          recordVersion: result.recordVersion,
+          bodyHash: checkpointBodyHash,
+        }
+      } else if (
+        pending &&
+        samePendingCheckpoint(pending, execution.pending) &&
+        result.recordVersion === metadata.recordVersion
+      ) {
+        nextMetadata = {
+          ...metadata,
+          bodyHash: checkpointBodyHash,
+        }
+      }
+      if (pending && samePendingCheckpoint(pending, execution.pending)) {
+        nextMetadata = {
+          ...nextMetadata,
+          savedVersion: Math.max(
+            roomSavedVersion(nextMetadata),
+            Math.min(execution.pending.version, nextMetadata.version),
+          ),
+        }
+        await this.deletePendingCheckpointIf(execution.pending)
+      }
+      if (nextMetadata !== metadata) await this.ctx.storage.put(LIVE_ROOM_META_KEY, nextMetadata)
+      this.broadcast({
+        type: 'live-saved',
+        version: resultRecord.version,
+        record_version: resultRecord.recordVersion,
+        operation_id: resultRecord.operationId,
+      })
+    })
+  }
+
   private async handleCheckpoint(
     sender: WebSocket,
     session: LiveTicketSession,
@@ -1255,239 +2283,156 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       return
     }
 
-    await this.ctx.blockConcurrencyWhile(async () => {
-      let metadata = await this.currentRoomMetadata()
-      if (!metadata || !sameRoomIdentity(metadata, session)) {
+    const fingerprint = await fingerprintBody(body)
+    const bodyHashCache = new Map<string, string>()
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const state = await this.readCheckpointState(operationId)
+      if (!state.metadata || !sameRoomIdentity(state.metadata, session)) {
         sendSocketError(sender, 'Live room identity mismatch', operationId)
         return
       }
-      if (!metadata.initialized) {
+      if (!state.metadata.initialized) {
         sendSocketError(sender, 'Live document is not initialized', operationId)
         return
       }
-
-      const fingerprint = await fingerprintBody(body)
-      const pendingValue = await this.ctx.storage.get<LivePendingCheckpoint>(LIVE_PENDING_CHECKPOINT_KEY)
-      let pending = pendingValue === undefined
-        ? null
-        : isPendingCheckpoint(pendingValue)
-          ? pendingValue
-          : undefined
-      if (pending === undefined) {
+      if (state.pending === undefined) {
         sendSocketError(sender, 'Live checkpoint recovery failed', operationId)
         return
       }
-      let refreshedAuthorization: LiveAuthorization | null = null
+      if (state.priorResult) {
+        const replay = await this.replayCheckpoint(sender, session, version, fingerprint, operationId)
+        if (replay === 'retry') continue
+        return
+      }
 
-      // If an earlier API call completed while its WebSocket ACK was lost,
-      // replay the durable result without changing the expected CAS version.
-      const priorResult = await this.readCheckpointResult(operationId)
-      if (priorResult) {
-        if (
-          priorResult.fingerprint !== fingerprint ||
-          priorResult.version !== version ||
-          (pending && (pending.operationId !== operationId || pending.fingerprint !== fingerprint))
-        ) {
-          sendSocketError(sender, 'Checkpoint operation was reused', operationId)
+      if (state.pending && state.pending.operationId === operationId) {
+        const prepared = await this.prepareExactPending(session, version, fingerprint, operationId)
+        if (prepared.kind === 'retry') continue
+        if (prepared.kind === 'error') {
+          sendSocketError(sender, prepared.message, operationId)
           return
         }
-        if (isRecordVersionNewer(priorResult.recordVersion, metadata.recordVersion)) {
-          await this.ctx.storage.put(LIVE_ROOM_META_KEY, {
-            ...metadata,
-            recordVersion: priorResult.recordVersion,
-            bodyHash: priorResult.bodyHash,
-          } satisfies LiveRoomMetadata)
+        if (prepared.kind === 'conflict') {
+          this.broadcast({ type: 'live-conflict', operation_id: operationId })
+          return
         }
-        if (pending) await this.deletePendingCheckpoint()
-        sendJsonFrame(sender, {
-          type: 'live-saved',
-          // This ACK describes the operation being replayed. The room may
-          // already have a newer working version, which must not be reported
-          // as saved by this old operation.
-          version: priorResult.version,
-          record_version: priorResult.recordVersion,
-          operation_id: operationId,
-        })
+        if (prepared.kind === 'replay') {
+          const replay = await this.replayCheckpoint(sender, session, version, fingerprint, operationId)
+          if (replay === 'retry') continue
+          return
+        }
+        if (prepared.kind === 'done') return
+        await this.applyCheckpointResult(
+          sender,
+          session,
+          prepared.execution,
+          await this.persistCheckpoint(
+            session,
+            prepared.execution.metadata,
+            prepared.execution.body,
+            operationId,
+          ),
+        )
         return
       }
 
-      if (pending && pending.operationId === operationId && pending.fingerprint !== fingerprint) {
-        sendSocketError(sender, 'Checkpoint operation was reused', operationId)
-        return
-      }
-
-      if (pending && pending.operationId !== operationId) {
-        // The original page may have disappeared after the pending marker was
-        // written. Re-authorize with the new caller before releasing the gate:
-        // CAS decides any race with the old API request, while the canonical
-        // body check prevents silently adopting an external body change.
+      if (state.pending) {
         const authorized = await this.authorizeCurrentSession(session)
         if (!authorized) {
           sendSocketError(sender, 'Live checkpoint recovery failed', operationId)
           return
         }
-        refreshedAuthorization = authorized
         const authorizedBodyHash = await normalizeBodyHash(authorized.format, authorized.body)
-        if (authorized.recordVersion === pending.expectedRecordVersion) {
-          // The pending body is a proposed update, so it is expected to differ
-          // from the canonical body while the old API request is unresolved.
-          // Compare against the room's accepted baseline before replacing the
-          // marker with the new operation.
-          if (authorizedBodyHash !== metadata.bodyHash) {
-            await this.deletePendingCheckpoint()
-            this.broadcast({ type: 'live-conflict', operation_id: operationId })
-            return
-          }
-          await this.deletePendingCheckpoint()
-          metadata = {
-            ...metadata,
-            recordVersion: authorized.recordVersion,
-            bodyHash: authorizedBodyHash,
-          }
-          await this.ctx.storage.put(LIVE_ROOM_META_KEY, metadata)
-          pending = null
-        } else if (isRecordVersionNewer(authorized.recordVersion, pending.expectedRecordVersion)) {
-          if (authorizedBodyHash !== pending.bodyHash) {
-            await this.deletePendingCheckpoint()
-            this.broadcast({ type: 'live-conflict', operation_id: operationId })
-            return
-          }
-          metadata = {
-            ...metadata,
-            recordVersion: authorized.recordVersion,
-            bodyHash: authorizedBodyHash,
-          }
-          await this.ctx.storage.put(LIVE_ROOM_META_KEY, metadata)
-          await this.deletePendingCheckpoint()
-          pending = null
-
-          const authorizedRequestBodyHash = await normalizeBodyHash(metadata.format, body)
-          if (version === metadata.version && authorizedRequestBodyHash === authorizedBodyHash) {
-            // The old operation already advanced the canonical record. Treat
-            // an equivalent new request as an idempotent saved acknowledgement
-            // and persist that alias for another reconnect.
-            await this.saveCheckpointResult({
-              version: metadata.version,
-              operationId,
-              recordVersion: authorized.recordVersion,
-              bodyHash: authorizedBodyHash,
-              fingerprint,
-            })
-            this.broadcast({
-              type: 'live-saved',
-              version: metadata.version,
-              record_version: authorized.recordVersion,
-              operation_id: operationId,
-            })
-            return
-          }
-        } else {
-          await this.deletePendingCheckpoint()
-          this.broadcast({ type: 'live-conflict', operation_id: operationId })
-          return
-        }
-      }
-
-      let checkpointMetadata = metadata
-      let checkpointBody = body
-      if (pending) {
-        // A pending checkpoint gates all other checkpoints until its exact
-        // operation is retried. This protects the API CAS boundary after a
-        // transient network failure or a DO eviction.
-        if (
-          pending.operationId !== operationId ||
-          pending.fingerprint !== fingerprint
-        ) {
-          sendSocketError(sender, 'Another checkpoint is pending', operationId)
-          return
-        }
-        const pendingBody = await this.readPendingCheckpointBody(pending)
-        if (pendingBody === null || await fingerprintBody(pendingBody) !== pending.fingerprint) {
-          sendSocketError(sender, 'Live checkpoint recovery failed', operationId)
-          return
-        }
-        checkpointBody = pendingBody
-        checkpointMetadata = {
-          ...metadata,
-          version: pending.version,
-          recordVersion: pending.expectedRecordVersion,
-        }
-      } else {
-        if (!metadata.recordVersion) {
-          sendSocketError(sender, 'Live document is not initialized', operationId)
-          return
-        }
-        const expectedRecordVersion = metadata.recordVersion
-        const authorized = refreshedAuthorization ?? await this.authorizeCurrentSession(session)
-        if (!authorized) {
-          sendSocketError(sender, 'Live checkpoint recovery failed', operationId)
-          return
-        }
-        const authorizedBodyHash = await normalizeBodyHash(authorized.format, authorized.body)
-        if (authorizedBodyHash !== metadata.bodyHash) {
-          this.broadcast({ type: 'live-conflict', operation_id: operationId })
-          return
-        }
-        if (isRecordVersionNewer(authorized.recordVersion, metadata.recordVersion)) {
-          metadata = {
-            ...metadata,
-            recordVersion: authorized.recordVersion,
-          }
-          await this.ctx.storage.put(LIVE_ROOM_META_KEY, metadata)
-        }
-        checkpointMetadata = metadata
-        // Only the current working version may cross the CAS boundary. A
-        // stale checkpoint is retained by the client and never sent to API.
-        if (version !== metadata.version) {
-          sendSocketError(sender, 'Checkpoint is behind the working version', operationId)
-          return
-        }
-        const bytes = new TextEncoder().encode(body)
-        const pendingCheckpoint: LivePendingCheckpoint = {
+        const bodyHash = bodyHashCache.get(state.metadata.format) ?? await normalizeBodyHash(state.metadata.format, body)
+        bodyHashCache.set(state.metadata.format, bodyHash)
+        const prepared = await this.preparePendingReplacement(
+          sender,
+          session,
           version,
-          operationId,
-          expectedRecordVersion,
-          bodyHash: await normalizeBodyHash(metadata.format, body),
+          body,
           fingerprint,
-          bodyByteLength: bytes.byteLength,
-          chunkCount: Math.ceil(bytes.byteLength / CHECKPOINT_BODY_CHUNK_BYTES),
+          bodyHash,
+          operationId,
+          authorized,
+          authorizedBodyHash,
+        )
+        if (prepared.kind === 'retry') continue
+        if (prepared.kind === 'error') {
+          sendSocketError(sender, prepared.message, operationId)
+          return
         }
-        await this.savePendingCheckpoint(pendingCheckpoint, body)
+        if (prepared.kind === 'conflict') {
+          this.broadcast({ type: 'live-conflict', operation_id: operationId })
+          return
+        }
+        if (prepared.kind === 'replay') {
+          const replay = await this.replayCheckpoint(sender, session, version, fingerprint, operationId)
+          if (replay === 'retry') continue
+          return
+        }
+        if (prepared.kind === 'done') return
+        await this.applyCheckpointResult(
+          sender,
+          session,
+          prepared.execution,
+          await this.persistCheckpoint(
+            session,
+            prepared.execution.metadata,
+            prepared.execution.body,
+            operationId,
+          ),
+        )
+        return
       }
 
-      const result = await this.persistCheckpoint(session, checkpointMetadata, checkpointBody, operationId)
-      if (result.kind === 'conflict') {
-        await this.deletePendingCheckpoint()
+      const authorized = await this.authorizeCurrentSession(session)
+      if (!authorized) {
+        sendSocketError(sender, 'Live checkpoint recovery failed', operationId)
+        return
+      }
+      const authorizedBodyHash = await normalizeBodyHash(authorized.format, authorized.body)
+      const bodyHash = bodyHashCache.get(state.metadata.format) ?? await normalizeBodyHash(state.metadata.format, body)
+      bodyHashCache.set(state.metadata.format, bodyHash)
+      const prepared = await this.reserveFreshCheckpoint(
+        sender,
+        session,
+        version,
+        body,
+        fingerprint,
+        bodyHash,
+        operationId,
+        authorized,
+        authorizedBodyHash,
+      )
+      if (prepared.kind === 'retry') continue
+      if (prepared.kind === 'error') {
+        sendSocketError(sender, prepared.message, operationId)
+        return
+      }
+      if (prepared.kind === 'conflict') {
         this.broadcast({ type: 'live-conflict', operation_id: operationId })
         return
       }
-      if (result.kind === 'error') {
-        sendSocketError(sender, 'Live checkpoint failed', operationId)
+      if (prepared.kind === 'replay') {
+        const replay = await this.replayCheckpoint(sender, session, version, fingerprint, operationId)
+        if (replay === 'retry') continue
         return
       }
-
-      const checkpointBodyHash = await normalizeBodyHash(checkpointMetadata.format, checkpointBody)
-      await this.saveCheckpointResult({
-        version: checkpointMetadata.version,
-        operationId,
-        recordVersion: result.recordVersion,
-        bodyHash: checkpointBodyHash,
-        fingerprint,
-      })
-      const saved: LiveRoomMetadata = {
-        ...metadata,
-        recordVersion: result.recordVersion,
-        bodyHash: checkpointBodyHash,
-      }
-      await this.ctx.storage.put(LIVE_ROOM_META_KEY, saved)
-      await this.deletePendingCheckpoint()
-      this.broadcast({
-        type: 'live-saved',
-        version: saved.version,
-        record_version: saved.recordVersion,
-        operation_id: operationId,
-      })
-    })
+      if (prepared.kind === 'done') return
+      await this.applyCheckpointResult(
+        sender,
+        session,
+        prepared.execution,
+        await this.persistCheckpoint(
+          session,
+          prepared.execution.metadata,
+          prepared.execution.body,
+          operationId,
+        ),
+      )
+      return
+    }
+    sendSocketError(sender, 'Live checkpoint changed while preparing', operationId)
   }
 
   private async persistCheckpoint(

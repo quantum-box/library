@@ -24,7 +24,7 @@ use database_manager::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tachyon_sdk::auth::{
-    CheckPolicyInput, ExecutorAction, MultiTenancyAction,
+    CheckPolicyForResourceInput, ExecutorAction, MultiTenancyAction,
 };
 use utoipa::ToSchema;
 use value_object::TenantId;
@@ -35,6 +35,17 @@ use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::{LibraryOrg, ViewDataInputData, ViewRepoInputData};
 
 const UPDATE_REPO_ACTION: &str = "library:UpdateRepo";
+
+/// Keep this in sync with the Live worker's maximum body snapshot. The HTTP
+/// request carries that snapshot as a JSON string, so the route limit below
+/// accounts for the worst-case six-byte JSON escape for a one-byte control
+/// character as well as the request envelope.
+pub const LIVE_CHECKPOINT_BODY_MAX_BYTES: usize = 4 * 1024 * 1024;
+const JSON_STRING_ESCAPE_MAX_MULTIPLIER: usize = 6;
+const LIVE_CHECKPOINT_REQUEST_ENVELOPE_MAX_BYTES: usize = 64 * 1024;
+pub const LIVE_CHECKPOINT_REQUEST_MAX_BYTES: usize =
+    LIVE_CHECKPOINT_BODY_MAX_BYTES * JSON_STRING_ESCAPE_MAX_MULTIPLIER
+        + LIVE_CHECKPOINT_REQUEST_ENVELOPE_MAX_BYTES;
 
 /// The two Property types that Photon Live can open as a document.
 #[derive(
@@ -393,11 +404,14 @@ async fn load_live_scope(
     // may only be used for service-owned work and must never grant a public
     // reader a Live editing room.
     let caller_auth = executor.caller_auth_app(base_sdk)?.auth_app();
+    let resource_trn =
+        repo_resource_trn(&repo_output.repo.id().to_string());
     caller_auth
-        .check_policy(&CheckPolicyInput {
+        .check_policy_for_resource(&CheckPolicyForResourceInput {
             executor,
             multi_tenancy: library_org,
             action: UPDATE_REPO_ACTION,
+            resource_trn: &resource_trn,
         })
         .await?;
 
@@ -451,6 +465,12 @@ fn command_for_body(
     format: LiveBodyFormat,
     body: &str,
 ) -> errors::Result<PropertyValueCommand> {
+    if body.len() > LIVE_CHECKPOINT_BODY_MAX_BYTES {
+        return Err(errors::Error::invalid(
+            "Live checkpoint body exceeds the 4 MiB limit",
+        ));
+    }
+
     match (format, property.property_type()) {
         (LiveBodyFormat::RichText, PropertyType::RichText) => {
             let body = serde_json::from_str(body).map_err(|_| {
@@ -476,6 +496,10 @@ fn parse_record_version(value: &str) -> errors::Result<RecordVersion> {
         )
     })?;
     RecordVersion::new(number)
+}
+
+fn repo_resource_trn(repo_id: &str) -> String {
+    format!("trn:library:repo:{repo_id}")
 }
 
 fn decision_record_version(decision: &Value, fallback: String) -> String {
@@ -567,6 +591,18 @@ mod tests {
         .is_ok());
         assert!(command_for_body(
             &property,
+            LiveBodyFormat::Markdown,
+            &"x".repeat(LIVE_CHECKPOINT_BODY_MAX_BYTES),
+        )
+        .is_ok());
+        assert!(command_for_body(
+            &property,
+            LiveBodyFormat::Markdown,
+            &"x".repeat(LIVE_CHECKPOINT_BODY_MAX_BYTES + 1),
+        )
+        .is_err());
+        assert!(command_for_body(
+            &property,
             LiveBodyFormat::RichText,
             "[]",
         )
@@ -595,5 +631,27 @@ mod tests {
             .writes_canonical());
         assert!(PropertyValueStorageMode::DualWriteCanonicalRead
             .writes_canonical());
+    }
+
+    #[test]
+    fn repo_policy_scope_uses_the_canonical_repo_id() {
+        assert_eq!(
+            repo_resource_trn("rp_01hmp05xtq6fs5mmk8fg125cy7"),
+            "trn:library:repo:rp_01hmp05xtq6fs5mmk8fg125cy7"
+        );
+    }
+
+    #[test]
+    fn request_limit_covers_escaped_worker_body_and_envelope() {
+        assert_eq!(
+            LIVE_CHECKPOINT_REQUEST_MAX_BYTES,
+            LIVE_CHECKPOINT_BODY_MAX_BYTES
+                * JSON_STRING_ESCAPE_MAX_MULTIPLIER
+                + LIVE_CHECKPOINT_REQUEST_ENVELOPE_MAX_BYTES
+        );
+        assert!(
+            LIVE_CHECKPOINT_REQUEST_MAX_BYTES
+                > LIVE_CHECKPOINT_BODY_MAX_BYTES
+        );
     }
 }

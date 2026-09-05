@@ -1,8 +1,12 @@
 use std::fs;
 use std::path::Path;
 
+use axum::extract::DefaultBodyLimit;
 use utoipa::OpenApi;
-use utoipa_axum::{router::OpenApiRouter, routes};
+use utoipa_axum::{
+    router::{OpenApiRouter, UtoipaMethodRouterExt},
+    routes,
+};
 use utoipa_rapidoc::RapiDoc;
 use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
@@ -157,7 +161,13 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(get_glossary))
         .routes(routes!(set_glossary))
         .routes(routes!(authorize_live))
-        .routes(routes!(checkpoint_live))
+        .routes(
+            routes!(checkpoint_live).layer(checkpoint_live_body_limit()),
+        )
+}
+
+fn checkpoint_live_body_limit() -> DefaultBodyLimit {
+    DefaultBodyLimit::max(LIVE_CHECKPOINT_REQUEST_MAX_BYTES)
 }
 
 pub fn create_router() -> axum::Router {
@@ -204,6 +214,13 @@ pub fn codegen() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::post,
+        Json, Router,
+    };
+    use tower::util::ServiceExt;
 
     /// The upsert route has to survive two conversions that silently drop it:
     /// `routes!` must find a `#[utoipa::path]` for it, and utoipa-axum must
@@ -228,5 +245,51 @@ mod tests {
         // this also proves `/data/:data_id/upsert` and the `/md` sibling can
         // coexist.
         let _ = create_router();
+    }
+
+    #[tokio::test]
+    async fn checkpoint_body_limit_accepts_worker_payload_and_rejects_larger_request(
+    ) {
+        async fn probe(
+            Json(_payload): Json<serde_json::Value>,
+        ) -> StatusCode {
+            StatusCode::NO_CONTENT
+        }
+
+        let router = Router::new().route(
+            "/checkpoint",
+            post(probe).layer(checkpoint_live_body_limit()),
+        );
+        let payload = serde_json::json!({
+            "property_id": "prop_01hmp05xtq6fs5mmk8fg125cy7",
+            "operation_id": "live-test",
+            "expected_record_version": "1",
+            "format": "markdown",
+            "body": "x".repeat(LIVE_CHECKPOINT_BODY_MAX_BYTES),
+        });
+        let payload = serde_json::to_vec(&payload).unwrap();
+        let response = router
+            .clone()
+            .oneshot(
+                Request::post("/checkpoint")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let oversized = vec![b'0'; LIVE_CHECKPOINT_REQUEST_MAX_BYTES + 1];
+        let response = router
+            .oneshot(
+                Request::post("/checkpoint")
+                    .header("content-type", "application/json")
+                    .body(Body::from(oversized))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

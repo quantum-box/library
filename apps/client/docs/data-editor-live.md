@@ -70,8 +70,10 @@ APIのLive設定・dual-write設定は、Tachyonの
 `LIBRARY_PREVIEW_DATA_LIVE_URL` を最後にVite設定へ適用し、manifestの本番URLによる
 上書きを防ぐ。3つをまとめて指定し、本番APIや異なるLive/Sync hostは拒否する。
 未設定のPRではLiveを無効にする。
-検証データを残した後の再デプロイでは空DBチェックが失敗するため、継続利用前に
-通常のbackfill/parity運用へ移行する。チェックのために既存データを削除しない。
+初回の空DB確認からdual-writeを維持し、その状態で作成した検証データを
+継続利用する場合は、初期化用の空DBチェックを解除する。PR301では初回の候補昇格後、
+全検証データを通常のdual-write作成経路で追加し、Live保存を実確認してから解除した。
+既存データを持つ別環境のbackfill/parityを省略する用途には使わない。
 
 ## ローカル検証
 
@@ -94,48 +96,26 @@ APIのLive設定・dual-write設定は、Tachyonの
 DB migration / backfill、Worker の公開、本番設定変更はローカル検証の成功から
 推測しない。
 
-## 2026-09-05 の検証結果
+## 公開Previewと検証結果（2026-09-05）
 
-- Client: Vitest 489件成功、production / package build成功、lintエラーなし
-  （既存のTableViewにReact Compiler警告1件）。
-- Worker: 型チェック成功、認可境界・初期化競合・保存再送等の14件成功。
-- Live E2E: 実 Photon Worker + fixture API で5件成功。Markdown / RichText の
-  2ブラウザ同時入力、canonical保存、再読込、切断・復帰、別データの分離、
-  通常 Property 編集後の本文保存を確認。
-- 復帰後の最後の入力についても、canonical保存と「Shared body saved」表示まで
-  追加で確認した（2件成功）。
-- Live無効時の既存ブラウザテストも、デスクトップ22件・モバイル3件成功。
-- Rust API: nightly-2026-06-04で`cargo check -p library-api`と
-  `cargo check -p library-api --tests`、`cargo fmt --all --check`成功。
-  テストコードの型チェックは一度容量不足で失敗したが、空き容量回復後の再実行で成功。
-  Rust unit tests本体の実行結果はまだない（CIで確認する）。
-- 実DB / 本番有効化と、実macOS日本語IME候補ウィンドウの手動検証は未実施。
+- 画面: https://pr301--library-client.txcloud.app
+- API: https://pr301--library-api.txcloud.app
+- Worker: `library-client-live-pr301`（本番と別のDurable Object）
+- 検証データ: [共同編集テスト](https://pr301--library-client.txcloud.app/test-org/photon-live-check/data/data_01m1rbpv6tt0efg6zhfyhk0sx4)
+
+初回の空DB確認付きAPI候補を昇格後、test-orgをPreviewへ取り込み、非公開の
+`photon-live-check` リポジトリを作成。初期データ2件と共同編集テスト1件を表示した。
+配信JavaScriptのAPI / Live / Sync URL、許可OriginのCORS 204、未認証401、
+許可外Origin403を確認済み。同一アカウントの2タブで本文の双方向反映と
+「本文を共同保存しました」表示、片方を閉じて再読み込み後の本文保持を確認し、
+利用者からも共同編集できることを確認いただいた。
+
+初回実装のCIは全項目成功。client 489件、Worker 14件、実Photon Worker + fixture
+APIのLive E2E 5件、既存E2E desktop 22件 / mobile 3件が成功した。
+Preview migration gateの局所テスト8件も成功。
+レビュー修正後の最終検証はPR #301の検証欄を参照する。
+
+別アカウント間と実macOS日本語IME候補ウィンドウの手動検証は未実施。
+本番のLiveは無効で、既存本番データのbackfill/parityは別途必要。
 
 ![RichText の共同編集と保存完了](screenshots/plt-4204/richtext-collaboration.png)
-
-## 公開Previewの検証状況（2026-09-05）
-
-- 画面: https://plt-4204-isolated-live.library-client.pages.dev
-  （immutable deployment: https://3c78d79e.library-client.pages.dev）
-- API: https://6knp6yiisl46n42i5v25e7xjju0lqhgy.lambda-url.ap-northeast-1.on.aws
-  PR301 / `bdb2c93` / build `bld_01m1r974nj65v2a3xhggyh2s0y` /
-  deployment `dep_01m1r9wska0xa8bc9w340rzz2g` がactive。
-- Worker: `library-client-live-pr301`、version
-  `00819c92-297d-434c-9d23-ad5a450e3662`。許可Originは上記の2つだけ。
-- 配信JavaScript内のAPI / Live / Sync URLがすべて専用接続先であることを確認。
-- 公開Worker: 最終PreviewのCORS 204、以前のPreview Origin 403、
-  正しい形式の未認証session要求401を確認。
-- 初回実装のCIは全項目成功。追加migration gateテスト8件、型チェック、fmt成功。
-- DB空チェックを有効にしたAPIデプロイは成功。CloudWatchでの件数ログの
-  直接取得はAWSセッション期限切れのため未実施。
-- 公開画面のログイン表示まで確認。実アカウントでの共同編集・checkpoint・
-  再読込はサインイン待ちで未確認。本番のLiveは有効化していない。
-
-### txcloud Preview対応
-
-https://pr301--library-client.txcloud.app でもLiveを有効化済み。
-`897c20b` / build `bld_01m1raf9jcqdxt1t2cdhjbkg9a` /
-deployment `dep_01m1rahqj55x1b3s9kmj557xan` の公開成功を確認。
-配信JavaScriptの専用API・Live・Sync URLとtxcloud OriginのCORS 204を確認。
-Worker version: `59e28936-4b7d-4bfb-af78-a9b1d578a982`。
-ブラウザはサインイン画面まで確認。認証後の共同編集・保存確認は未実施。
