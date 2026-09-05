@@ -15,6 +15,9 @@ use crate::database_layout::{
 /// again without refreshing this constant.
 const UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM: &str = "ad8c3fffc2061424884916a14a1e11b5b8191af96291eab12ef0bfda077692cbb641b3224fc47bf167c744fbd7f65ae1";
 
+const PREVIEW_EMPTY_GATE_ENV: &str =
+    "LIBRARY_PHOTON_LIVE_PREVIEW_REQUIRE_EMPTY";
+
 /// Resolves the production admin database URL from the runtime environment.
 ///
 /// `PROD_DATABASE_URL` is used by the CLI migrate binary. Lambda and txcloud
@@ -56,18 +59,45 @@ pub async fn run_migration_gate(
     // Refuse combinations the runtime itself would refuse -- production
     // pointed at a per-PR database, above all -- before any DDL runs.
     crate::DatabaseLayout::resolve(&database_url, environment.as_deref())?;
+    let require_empty_preview = preview_empty_gate_enabled();
 
     let result = if is_preview_environment(environment.as_deref()) {
-        // The preview migrator owns the rest of the check: it accepts only a
-        // database the platform provisioned for this PR, because it rewrites
-        // schema and must never reach a shared one.
-        library_api_preview_migrate::run_preview_migrations(
-            environment.as_deref(),
-            raw_database_url,
-            "DATABASE_URL",
-        )
-        .await
-        .map_err(errors::Error::internal_server_error)
+        let scope_result = if require_empty_preview {
+            require_preview_empty_gate_scope(
+                &database_url,
+                environment.as_deref(),
+            )
+        } else {
+            Ok(())
+        };
+
+        match scope_result {
+            Err(error) => Err(error),
+            Ok(()) => {
+                // The preview migrator owns the rest of the check: it accepts
+                // only a database the platform provisioned for this PR,
+                // because it rewrites schema and must never reach a shared
+                // one.
+                let migration_result =
+                    library_api_preview_migrate::run_preview_migrations(
+                        environment.as_deref(),
+                        raw_database_url,
+                        "DATABASE_URL",
+                    )
+                    .await
+                    .map_err(errors::Error::internal_server_error);
+
+                if migration_result.is_ok() && require_empty_preview {
+                    require_preview_database_empty(&database_url).await
+                } else {
+                    migration_result
+                }
+            }
+        }
+    } else if require_empty_preview {
+        Err(errors::Error::bad_request(format!(
+            "{PREVIEW_EMPTY_GATE_ENV} requires TACHYON_ENV=preview"
+        )))
     } else {
         run_library_migrations(&database_url).await
     };
@@ -93,6 +123,92 @@ fn is_preview_environment(tachyon_environment: Option<&str>) -> bool {
         .is_some_and(|environment| {
             environment.eq_ignore_ascii_case("preview")
         })
+}
+
+fn preview_empty_gate_enabled() -> bool {
+    preview_empty_gate_enabled_from(
+        std::env::var(PREVIEW_EMPTY_GATE_ENV).ok().as_deref(),
+    )
+}
+
+fn preview_empty_gate_enabled_from(value: Option<&str>) -> bool {
+    matches!(value, Some("true"))
+}
+
+/// Keep the empty-data safety check restricted to the platform's isolated
+/// per-PR database. A typo in the environment or database name must stop the
+/// candidate before the preview migrator runs against a shared database.
+fn require_preview_empty_gate_scope(
+    database_url: &DatabaseUrl,
+    environment: Option<&str>,
+) -> errors::Result<()> {
+    if !is_preview_environment(environment) {
+        return Err(errors::Error::bad_request(format!(
+            "{PREVIEW_EMPTY_GATE_ENV} requires TACHYON_ENV=preview"
+        )));
+    }
+
+    let is_pr_scoped = database_url.database().as_deref().is_some_and(
+        library_api_preview_migrate::is_pr_scoped_database_name,
+    );
+    if !is_pr_scoped {
+        return Err(errors::Error::bad_request(format!(
+            "{PREVIEW_EMPTY_GATE_ENV} requires a PR-scoped DATABASE_URL"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Verify that a fresh preview has no records before enabling the Live
+/// writer. This is intentionally a count-only check: it does not inspect,
+/// copy, or delete any Property values.
+async fn require_preview_database_empty(
+    database_url: &DatabaseUrl,
+) -> errors::Result<()> {
+    let database_url = database_url.to_string();
+    let pool = MySqlPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .map_err(|_| {
+            errors::Error::internal_server_error(
+                "Photon Live preview empty-data gate could not connect",
+            )
+        })?;
+
+    let data_count = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM data",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| {
+        errors::Error::internal_server_error(
+            "Photon Live preview empty-data gate could not count data",
+        )
+    });
+
+    pool.close().await;
+    let data_count = data_count?;
+    let passed = data_count == 0;
+    tracing::info!(
+        data_count,
+        passed,
+        "Photon Live preview empty-data gate"
+    );
+    ensure_preview_data_count_is_empty(data_count)
+}
+
+fn ensure_preview_data_count_is_empty(
+    data_count: i64,
+) -> errors::Result<()> {
+    if data_count == 0 {
+        return Ok(());
+    }
+
+    Err(errors::Error::internal_server_error(
+        "Photon Live preview empty-data gate rejected a non-empty database",
+    ))
 }
 
 /// Ensures schemas required by library-api exist and applies pending migrations.
@@ -244,6 +360,77 @@ mod tests {
         assert!(is_preview_environment(Some(" Preview ")));
         assert!(!is_preview_environment(Some("production")));
         assert!(!is_preview_environment(None));
+    }
+
+    #[test]
+    fn preview_empty_gate_is_opt_in_and_exactly_true() {
+        assert!(preview_empty_gate_enabled_from(Some("true")));
+        assert!(!preview_empty_gate_enabled_from(Some("false")));
+        assert!(!preview_empty_gate_enabled_from(Some("TRUE")));
+        assert!(!preview_empty_gate_enabled_from(None));
+    }
+
+    #[test]
+    fn preview_empty_gate_accepts_a_pr_scoped_preview_database() {
+        let database_url: DatabaseUrl =
+            "mysql://app:password@tidb.example:4000/\
+             library_api_pr301_k6cypbws3q3j"
+                .parse()
+                .unwrap();
+
+        assert!(require_preview_empty_gate_scope(
+            &database_url,
+            Some("preview")
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn preview_empty_gate_rejects_production() {
+        let database_url: DatabaseUrl =
+            "mysql://app:password@tidb.example:4000/library"
+                .parse()
+                .unwrap();
+
+        let error = require_preview_empty_gate_scope(
+            &database_url,
+            Some("production"),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("requires TACHYON_ENV=preview"));
+    }
+
+    #[test]
+    fn preview_empty_gate_rejects_a_shared_preview_database() {
+        let database_url: DatabaseUrl =
+            "mysql://app:password@tidb.example:4000/shared_preview"
+                .parse()
+                .unwrap();
+
+        let error = require_preview_empty_gate_scope(
+            &database_url,
+            Some("preview"),
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("requires a PR-scoped DATABASE_URL"));
+    }
+
+    #[test]
+    fn preview_empty_gate_rejects_non_empty_data_count() {
+        let error = ensure_preview_data_count_is_empty(1).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("rejected a non-empty database"));
+    }
+
+    #[test]
+    fn preview_empty_gate_accepts_zero_data_count() {
+        assert!(ensure_preview_data_count_is_empty(0).is_ok());
     }
 
     /// The pin only works while it names the file sqlx actually embeds.

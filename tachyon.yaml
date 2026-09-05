@@ -221,6 +221,10 @@ spec:
         command: npm run build:cloud
         outputDirectory: dist
         nodeVersion: "22"
+      environments:
+        preview:
+          build:
+            command: npm run build:preview
       envVars:
         - name: VITE_LIBRARY_DEPLOYMENT_MODE
           value: cloud

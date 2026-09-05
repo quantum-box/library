@@ -9,6 +9,7 @@ import {
   resolveAppServerBackend,
   resolveChatStreamMode,
   resolveChatStreamTransport,
+  resolveDataLiveBaseUrl,
   resolveDeploymentMode,
   resolveFrontendWorkerRuntime,
   resolveBrowserSyncWebsocketUrl,
@@ -133,6 +134,18 @@ describe('appKitConfig', () => {
   it('configures record defaults without hardcoding them in UI components', () => {
     expect(appKitConfig.records.identifierPrefix).toMatch(/^[A-Z]+$/)
     expect(appKitConfig.records.defaultProject).toBeTruthy()
+  })
+
+  it('keeps Photon Live opt-in and names its protocol paths centrally', () => {
+    expect(appKitConfig.dataLive.baseUrl).toBeUndefined()
+    expect(appKitConfig.dataLive.sessionPath).toBe('/live/session')
+    expect(appKitConfig.dataLive.websocketPath).toBe('/live/ws')
+    expect(appKitConfig.dataLive.fragmentName).toBe('prosemirror')
+    expect(resolveDataLiveBaseUrl(' https://live.example.test/// ')).toBe(
+      'https://live.example.test',
+    )
+    expect(resolveDataLiveBaseUrl('ws://live.example.test')).toBeUndefined()
+    expect(resolveDataLiveBaseUrl('/live')).toBeUndefined()
   })
 
   it('defines a configurable business workflow for records', () => {

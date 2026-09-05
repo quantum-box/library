@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BlockNoteEditor, filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import { blocksToYDoc } from '@blocknote/core/yjs'
 import {
   SuggestionMenuController,
   getDefaultReactSlashMenuItems,
@@ -18,6 +19,18 @@ import {
   withImageWidthFragments,
 } from './blocknote/imageWidthFragments'
 import { t } from '../i18n'
+import { appKitConfig } from '../app/kitConfig'
+import {
+  PhotonLiveStatus,
+} from './PhotonLiveStatus'
+import { usePhotonLiveRecord } from '../lib/photonLive/usePhotonLiveRecord'
+import type {
+  PhotonLiveFormat,
+  PhotonLiveProvider,
+  PhotonLiveRecordTarget,
+  PhotonLiveState,
+} from '../lib/photonLive'
+import * as Y from 'yjs'
 
 export type RecordBodyFormat = 'markdown' | 'richText' | 'html'
 
@@ -28,7 +41,13 @@ export interface RecordBodyImageTarget {
   operatorId?: string
 }
 
-interface RecordBodyEditorProps {
+export type RecordBodyLivePolicy =
+  | 'normal'
+  | 'live'
+  | 'fallback-editable'
+  | 'fallback-readonly'
+
+export interface RecordBodyEditorProps {
   value: string
   /**
    * How `value` is encoded and what onCommit receives.
@@ -54,6 +73,14 @@ interface RecordBodyEditorProps {
    * hides the upload tab.
    */
   imageTarget?: RecordBodyImageTarget
+  /** The record/property scope used by the opt-in Photon Live adapter. */
+  liveTarget?: PhotonLiveRecordTarget
+  /**
+   * Reports whether this body is protected by Live or has fallen back to the
+   * ordinary durable editor. Data Editor uses this to keep a title/property
+   * save from echoing a stale Live body back through the REST API.
+   */
+  onLivePolicyChange?: (policy: RecordBodyLivePolicy, state: PhotonLiveState | null) => void
 }
 
 export function RecordBodyEditor(props: RecordBodyEditorProps) {
@@ -72,7 +99,99 @@ export function RecordBodyEditor(props: RecordBodyEditorProps) {
       />
     )
   }
+
+  const liveFormat = props.format === 'markdown' || props.format === 'richText'
+    ? props.format
+    : undefined
+  if (props.liveTarget && liveFormat && appKitConfig.dataLive.baseUrl) {
+    return <PhotonLiveRecordBodyEditor {...props} format={liveFormat} />
+  }
   return <BlockRecordBodyEditor {...props} />
+}
+
+/**
+ * Wait for an authorized Live room before mounting BlockNote. The normal
+ * editor must not mount first: doing so would seed the room's Y.Doc from the
+ * API value and race the first server snapshot. A disabled 503 is the one
+ * supported editable fallback; authorization and protocol failures remain
+ * read-only so they cannot overwrite a body owned by the room.
+ */
+function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
+  format: PhotonLiveFormat
+}) {
+  const { liveTarget, format, onLivePolicyChange } = props
+  const seedUpdate = useCallback((body: string, seedFormat: PhotonLiveFormat) => {
+    const seedEditor = BlockNoteEditor.create({ schema: recordBodySchema })
+    const seedDoc = blocksToYDoc(
+      seedEditor,
+      seedBlocks(seedEditor, body, seedFormat),
+      appKitConfig.dataLive.fragmentName,
+    )
+    try {
+      return Y.encodeStateAsUpdate(seedDoc)
+    } finally {
+      // This temporary document is intentionally separate from the provider
+      // doc. Applying its update locally would make every client look seeded
+      // before the server has selected the initialization winner.
+      seedDoc.destroy()
+    }
+  }, [])
+  const options = useMemo(() => ({
+    target: liveTarget!,
+    format,
+    seedUpdate,
+  }), [format, liveTarget, seedUpdate])
+  const { provider, state, mounted, initialError } = usePhotonLiveRecord(options)
+
+  useEffect(() => {
+    if (!onLivePolicyChange) return
+    if (!state) {
+      onLivePolicyChange('live', null)
+      return
+    }
+    if (state.status === 'failed' && state.error?.kind === 'disabled') {
+      onLivePolicyChange('fallback-editable', state)
+      return
+    }
+    if (state.status === 'failed') {
+      onLivePolicyChange('fallback-readonly', state)
+      return
+    }
+    onLivePolicyChange('live', state)
+  }, [onLivePolicyChange, state])
+
+  const fallbackEditable = initialError?.kind === 'disabled'
+  const status = <PhotonLiveStatus state={state} initialError={initialError} />
+
+  if (!mounted || !provider || !state) {
+    if (initialError) {
+      return (
+        <>
+          {status}
+          <BlockRecordBodyEditor
+            {...props}
+            editable={fallbackEditable && (props.editable ?? true)}
+            liveTarget={undefined}
+            onLivePolicyChange={undefined}
+          />
+        </>
+      )
+    }
+    return <>{status}<div className="min-h-[420px]" aria-hidden="true" /></>
+  }
+
+  return (
+    <>
+      {status}
+      <BlockRecordBodyEditor
+        {...props}
+        collaboration={provider}
+        editable={(props.editable ?? true) && state.canEdit}
+        liveTarget={undefined}
+        onLivePolicyChange={undefined}
+      />
+    </>
+  )
 }
 
 /**
@@ -97,7 +216,10 @@ function isArtifactHtml(value: string): boolean {
  * on the first render, because BlockNote reads `uploadFile` when it builds
  * the editor and only offers the upload tab when it is set.
  */
-function useBodyEditor(imageTarget: RecordBodyImageTarget | undefined) {
+function useBodyEditor(
+  imageTarget: RecordBodyImageTarget | undefined,
+  collaboration?: PhotonLiveProvider,
+) {
   const imageTargetRef = useRef(imageTarget)
   const [uploads] = useState(() => imageTarget !== undefined)
 
@@ -107,6 +229,14 @@ function useBodyEditor(imageTarget: RecordBodyImageTarget | undefined) {
 
   return useCreateBlockNote({
     schema: recordBodySchema,
+    collaboration: collaboration
+      ? {
+        fragment: collaboration.fragment,
+        provider: { awareness: collaboration.awareness },
+        user: collaboration.user,
+        showCursorLabels: 'activity',
+      }
+      : undefined,
     uploadFile: uploads
       ? async (file: File) => {
         const target = imageTargetRef.current
@@ -114,7 +244,7 @@ function useBodyEditor(imageTarget: RecordBodyImageTarget | undefined) {
         return uploadLibraryImage(target, file)
       }
       : undefined,
-  })
+  }, [collaboration])
 }
 type BodyEditor = ReturnType<typeof useBodyEditor>
 /** A partial block in the record body schema — what replaceBlocks accepts. */
@@ -127,7 +257,8 @@ function BlockRecordBodyEditor({
   editable = true,
   surface = 'panel',
   imageTarget,
-}: RecordBodyEditorProps) {
+  collaboration,
+}: RecordBodyEditorProps & { collaboration?: PhotonLiveProvider }) {
   const lastCommitted = useRef(value)
   const loading = useRef(true)
   const seeded = useRef(false)
@@ -136,7 +267,7 @@ function BlockRecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
-  const editor = useBodyEditor(imageTarget)
+  const editor = useBodyEditor(imageTarget, collaboration)
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -153,8 +284,9 @@ function BlockRecordBodyEditor({
     if (next === null || next === lastCommitted.current) return
 
     lastCommitted.current = next
-    onCommitRef.current(next)
-  }, [])
+    if (collaboration) collaboration.queueCheckpoint(next)
+    else onCommitRef.current(next)
+  }, [collaboration])
 
   const schedulePendingCommit = useCallback(() => {
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
@@ -168,10 +300,12 @@ function BlockRecordBodyEditor({
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
       commitPendingValue()
+      collaboration?.flushCheckpoint()
       return
     }
     commitPendingValue()
-  }, [commitPendingValue])
+    collaboration?.flushCheckpoint()
+  }, [collaboration, commitPendingValue])
 
   useEffect(() => {
     // Local first: once seeded, the editor document is the source of truth.
@@ -180,6 +314,14 @@ function BlockRecordBodyEditor({
     // round trip was in flight. Callers key this component by record id, so a
     // different record mounts a fresh editor. Read-only views still follow the
     // incoming value because nothing can be typed into them.
+    if (collaboration) {
+      // Collaboration owns the initial content. Even when the HTTP response
+      // contains a body, never replace the provider fragment from React props.
+      seeded.current = true
+      loading.current = false
+      lastCommitted.current = value
+      return
+    }
     if (seeded.current && editable) return
     if (seeded.current && value === lastCommitted.current) return
 
@@ -190,7 +332,7 @@ function BlockRecordBodyEditor({
     queueMicrotask(() => {
       loading.current = false
     })
-  }, [editable, editor, format, value])
+  }, [collaboration, editable, editor, format, value])
 
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return

@@ -40,7 +40,7 @@ import type { FileAttachment } from './files/types'
 import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
-import { RecordBodyEditor } from './RecordBodyEditor'
+import { RecordBodyEditor, type RecordBodyLivePolicy } from './RecordBodyEditor'
 import { useI18n, t as translate, type I18nContextValue } from '../i18n'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
@@ -150,6 +150,7 @@ export function DataEditorPage({
   const propertiesRef = useRef<LibraryProperty[]>([])
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const revisionRef = useRef(0)
+  const liveBodyPolicyRef = useRef<RecordBodyLivePolicy>('normal')
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
   const repoTarget = useMemo<LibraryRepoTarget>(
@@ -208,6 +209,11 @@ export function DataEditorPage({
       )
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
+      const body = getBodyProperty(payload.properties)
+      liveBodyPolicyRef.current = appKitConfig.dataLive.baseUrl && body &&
+        (body.typ === 'Markdown' || body.typ === 'RichText')
+        ? 'live'
+        : 'normal'
       setItem(payload.item)
       itemRef.current = payload.item
       if (!payload.item) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
@@ -225,6 +231,27 @@ export function DataEditorPage({
   }, [reload])
 
   const persistItem = useCallback((next: LibraryDataItem) => {
+    const bodyProperty = getBodyProperty(propertiesRef.current)
+    const liveBodyConfigured = Boolean(
+      appKitConfig.dataLive.baseUrl &&
+      bodyProperty &&
+      (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText'),
+    )
+    const protectsLiveBody = liveBodyConfigured && (
+      liveBodyPolicyRef.current === 'live' ||
+      liveBodyPolicyRef.current === 'fallback-readonly'
+    )
+    // The body is checkpointed through the room. Keeping it in the item sent
+    // to updateData would let a title/property save replay the API's stale
+    // body over a newer Y.Doc, especially after another collaborator edits.
+    const durableNext = protectsLiveBody && bodyProperty
+      ? {
+        ...next,
+        propertyData: next.propertyData.filter(
+          (entry) => entry.propertyId !== bodyProperty.id,
+        ),
+      }
+      : next
     const revision = ++revisionRef.current
     itemRef.current = next
     setItem(next)
@@ -234,10 +261,21 @@ export function DataEditorPage({
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        const saved = await updateLibraryData(repoTarget, propertiesRef.current, next)
+        const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext)
         if (revision !== revisionRef.current) return
-        itemRef.current = saved
-        setItem(saved)
+        // A patch response may omit the body field. Preserve the local value
+        // for the page state while the Live editor remains the source of truth.
+        const nextBody = next.propertyData.find(
+          (entry) => entry.propertyId === bodyProperty?.id,
+        )
+        const savedHasBody = bodyProperty && saved.propertyData.some(
+          (entry) => entry.propertyId === bodyProperty.id,
+        )
+        const savedWithBody = nextBody && !savedHasBody
+          ? { ...saved, propertyData: [...saved.propertyData, nextBody] }
+          : saved
+        itemRef.current = savedWithBody
+        setItem(savedWithBody)
         setSaveState('saved')
       })
       .catch((error: unknown) => {
@@ -315,6 +353,11 @@ export function DataEditorPage({
   }
 
   const bodyProperty = getBodyProperty(properties)
+  const liveBodyConfigured = Boolean(
+    appKitConfig.dataLive.baseUrl &&
+    bodyProperty &&
+    (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText'),
+  )
   const bodyValue = bodyProperty
     ? propertyValueEditText(bodyProperty, getLibraryDataPropertyValue(item, bodyProperty.id) ?? {}) ?? ''
     : ''
@@ -382,7 +425,9 @@ export function DataEditorPage({
               ? t('workflow.saving')
               : saveState === 'failed'
                 ? t('dataEditor.saveFailedShort')
-                : t('common.saved')}
+                : saveState === 'saved' || !liveBodyConfigured
+                  ? t('common.saved')
+                  : null}
           </span>
           <Button
             variant="ghost"
@@ -482,6 +527,15 @@ export function DataEditorPage({
                   format={bodyPropertyFormat(bodyProperty)}
                   surface="page"
                   imageTarget={{ org, repo, operatorId }}
+                  liveTarget={
+                    appKitConfig.dataLive.baseUrl &&
+                    (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText')
+                      ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
+                      : undefined
+                  }
+                  onLivePolicyChange={(policy) => {
+                    liveBodyPolicyRef.current = policy
+                  }}
                   onCommit={(value) => {
                     const current = itemRef.current
                     if (!current) return

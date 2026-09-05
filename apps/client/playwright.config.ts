@@ -20,7 +20,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: /mobile\.spec\.ts/,
+      testIgnore: /(?:mobile|data-editor-live)\.spec\.ts/,
     },
     {
       name: 'mobile-chrome',

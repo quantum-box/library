@@ -49,6 +49,21 @@ export interface TenantWorkspaceOption {
   workspaceInitial: string
 }
 
+/**
+ * The record-body Photon Live adapter is opt-in.  Its URL is deliberately
+ * separate from the workspace sync URL: Live sessions are authorized for one
+ * data/property pair and the ticket is scoped to the room returned by the
+ * Library API.
+ */
+export interface DataLiveConfig {
+  baseUrl?: string
+  sessionPath: string
+  websocketPath: string
+  fragmentName: string
+  requestTimeoutMs: number
+  checkpointDebounceMs: number
+}
+
 export interface AppKitConfig {
   app: {
     id: string
@@ -73,6 +88,7 @@ export interface AppKitConfig {
     users: string[]
   }
   records: RecordDefaultsConfig
+  dataLive: DataLiveConfig
   workflows: {
     defaultWorkflowId: string
     pgliteDataDir: string
@@ -204,6 +220,20 @@ export function resolveChatStreamMode(
 
 export function resolveChatStreamTransport(value: string | undefined): ChatStreamTransport {
   return isChatStreamTransport(value) ? value : 'sse'
+}
+
+/** Only absolute HTTP(S) origins are accepted for the opt-in Live adapter. */
+export function resolveDataLiveBaseUrl(value: string | undefined): string | undefined {
+  const raw = value?.trim()
+  if (!raw) return undefined
+
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined
+    return raw.replace(/\/+$/, '')
+  } catch {
+    return undefined
+  }
 }
 
 export function namespacedKey(namespace: string, suffix: string): string {
@@ -431,6 +461,7 @@ const recordsRoomId = buildRoomId(workspaceScope, 'records')
 const recordsPersistenceKey = buildRoomId(userStorageScope, 'records')
 const syncWebsocketPath = appendRoomQuery('/ws', recordsRoomId)
 const websocketBaseUrl = viteEnv.VITE_LIBRARY_SYNC_WS_URL ?? viteEnv.VITE_PHOTON_SYNC_WS_URL
+const dataLiveBaseUrl = resolveDataLiveBaseUrl(viteEnv.VITE_LIBRARY_DATA_LIVE_URL)
 const chatStreamEndpoint =
   viteEnv.VITE_LIBRARY_AGENT_STREAM_URL ?? viteEnv.VITE_PHOTON_AGENT_STREAM_URL ?? '/api/agent/chat/stream'
 
@@ -464,6 +495,14 @@ export const appKitConfig: AppKitConfig = {
   records: {
     identifierPrefix: 'DATA',
     defaultProject: 'Documents',
+  },
+  dataLive: {
+    baseUrl: dataLiveBaseUrl,
+    sessionPath: '/live/session',
+    websocketPath: '/live/ws',
+    fragmentName: 'prosemirror',
+    requestTimeoutMs: 10_000,
+    checkpointDebounceMs: 500,
   },
   workflows: {
     defaultWorkflowId: 'default-data-workflow',
