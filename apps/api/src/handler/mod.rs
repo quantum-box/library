@@ -6,6 +6,7 @@ pub mod graphql;
 pub mod image;
 pub mod library_executor_extractor;
 pub mod library_org_extractor;
+pub mod live;
 pub mod mcp;
 pub mod mcp_sse;
 pub mod openapi;

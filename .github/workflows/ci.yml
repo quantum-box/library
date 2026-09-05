@@ -219,8 +219,12 @@ jobs:
         run: npm run lint
       - name: Test client
         run: npm run test
+      - name: Test Photon Live Worker
+        run: npm run test:worker
       - name: Type check client
         run: npm run type-check
+      - name: Type check client Worker
+        run: npm run type-check:worker
       - name: Build client
         timeout-minutes: 15
         run: npm run build
@@ -234,8 +238,12 @@ jobs:
         id: client_e2e
         timeout-minutes: 20
         run: npm run test:e2e
+      - name: Run Photon Live E2E
+        id: client_live_e2e
+        timeout-minutes: 10
+        run: npm run test:e2e:live
       - name: Upload client Playwright diagnostics
-        if: ${{ always() && steps.client_e2e.outcome == 'failure' }}
+        if: ${{ always() && (steps.client_e2e.outcome == 'failure' || steps.client_live_e2e.outcome == 'failure') }}
         uses: actions/upload-artifact@v4
         with:
           name: client-playwright-report

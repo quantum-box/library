@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { WebSocket, WebSocketServer } from 'ws'
 import * as Y from 'yjs'
 
@@ -109,6 +110,10 @@ const rooms = new Map()
 let engineOperations = []
 let engineOperationSequences = new Map()
 let nextEngineSequence = 1
+// The real Photon Worker runs separately in the Live browser suite. Only its
+// Library authorization and canonical checkpoint boundary are fixtures here.
+let liveEpoch = ''
+let liveDecisions = new Map()
 
 function roomFor(roomId) {
   const existing = rooms.get(roomId)
@@ -229,12 +234,16 @@ function pullEngineOperations(payload = {}) {
 }
 
 function resetState() {
+  liveEpoch = randomUUID()
+  liveDecisions = new Map()
   state = {
     repository: clone(repositoryTemplate),
     properties: clone(propertyTemplates),
     data: seedData(),
     nextDataNumber: 103,
     nextPropertyNumber: 1,
+    liveCheckpoints: [],
+    dataWrites: [],
   }
   resetEngineState()
 }
@@ -296,6 +305,7 @@ const isClearedPropertyValue = (value) =>
 function updateData(input = {}) {
   const data = findData(input.dataId ?? input.id)
   if (!data) return null
+  state.dataWrites.push(clone(input))
   if (input.dataName ?? input.name) data.name = String(input.dataName ?? input.name)
   const inputPropertyData = input.propertyData ?? input.property_data
   if (inputPropertyData !== undefined) {
@@ -314,6 +324,7 @@ function updateData(input = {}) {
     }
   }
   data.updatedAt = new Date().toISOString()
+  data.record_version = String(BigInt(data.record_version ?? '1') + 1n)
   return data
 }
 
@@ -665,6 +676,72 @@ const server = createServer(async (request, response) => {
         return
       }
       sendJson(response, 200, { data })
+      return
+    }
+
+    const liveMatch = url.pathname.match(/^\/v1beta\/repos\/([^/]+)\/([^/]+)\/data\/([^/]+)\/live\/(authorize|checkpoint)$/)
+    if (request.method === 'POST' && liveMatch) {
+      const [, org, repo, dataId, action] = liveMatch
+      const actorId = request.headers.authorization === 'Bearer dev:local'
+        ? 'library-e2e-user'
+        : request.headers.authorization === 'Bearer dev:ren' ? 'library-e2e-ren' : null
+      if (!actorId) {
+        sendJson(response, 403, { message: 'Live editing is not authorized' })
+        return
+      }
+      const data = findData(dataId)
+      if (!repositoryExists(org, repo) || !data) {
+        sendJson(response, 404, { message: 'Data not found' })
+        return
+      }
+      const input = await readJson(request)
+      const property = state.properties.find((entry) => entry.id === input.property_id)
+      if (!property || !['Markdown', 'RichText'].includes(property.typ)) {
+        sendJson(response, 404, { message: 'Live document Property not found' })
+        return
+      }
+      const format = property.typ === 'RichText' ? 'richText' : 'markdown'
+      const body = data.propertyData.find((entry) => entry.propertyId === property.id)?.value[format] ?? ''
+      const recordVersion = data.record_version ?? '1'
+      if (action === 'authorize') {
+        sendJson(response, 200, {
+          tenant_id: platformId,
+          database_id: `fixture-database-${liveEpoch}`,
+          data_id: data.id,
+          property_id: property.id,
+          actor_id: actorId,
+          room_id: `${platformId}:fixture-database-${liveEpoch}:${data.id}:${property.id}`,
+          format,
+          body,
+          record_version: recordVersion,
+        })
+        return
+      }
+      if (input.format !== format || typeof input.body !== 'string' || typeof input.expected_record_version !== 'string') {
+        state.liveCheckpoints.push({ ...input, status: 422 })
+        sendJson(response, 422, { message: 'Invalid Live checkpoint payload' })
+        return
+      }
+      const fingerprint = JSON.stringify({ dataId, ...input })
+      const prior = liveDecisions.get(input.operation_id)
+      if (prior) {
+        sendJson(response, prior.fingerprint === fingerprint ? prior.status : 409,
+          prior.fingerprint === fingerprint ? prior.result : { message: 'Operation id reused' })
+        return
+      }
+      if (input.expected_record_version !== recordVersion) {
+        state.liveCheckpoints.push({ ...input, status: 409, current_version: recordVersion })
+        sendJson(response, 409, { message: 'Record changed', record_version: recordVersion })
+        return
+      }
+      updateData({
+        dataId,
+        propertyData: [{ propertyId: property.id, value: { [format]: input.body } }],
+      })
+      const result = { record_version: data.record_version }
+      state.liveCheckpoints.push({ ...input, status: 200, record_version: data.record_version })
+      liveDecisions.set(input.operation_id, { fingerprint, status: 200, result })
+      sendJson(response, 200, result)
       return
     }
 

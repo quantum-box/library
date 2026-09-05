@@ -8,7 +8,7 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, docs::*, global_id_mapping::*, image::*,
+    auth::*, data::*, docs::*, global_id_mapping::*, image::*, live::*,
     organization::*, property::*, repository::*, source::*, translation::*,
 };
 
@@ -58,6 +58,8 @@ use crate::handler::{
         get_global_id_mapping,
         upload_image,
         view_image,
+        authorize_live,
+        checkpoint_live,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -95,6 +97,11 @@ use crate::handler::{
         crate::handler::types::UpdateSourceRequest,
         crate::handler::global_id_mapping::GlobalIdMappingResponse,
         crate::handler::image::ImageResponse,
+        crate::handler::live::LiveAuthorizeRequest,
+        crate::handler::live::LiveAuthorizationResponse,
+        crate::handler::live::LiveBodyFormat,
+        crate::handler::live::LiveCheckpointRequest,
+        crate::handler::live::LiveCheckpointResponse,
     ))
 )]
 pub struct ApiDoc;
@@ -149,6 +156,8 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(run_translations))
         .routes(routes!(get_glossary))
         .routes(routes!(set_glossary))
+        .routes(routes!(authorize_live))
+        .routes(routes!(checkpoint_live))
 }
 
 pub fn create_router() -> axum::Router {

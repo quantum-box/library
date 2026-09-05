@@ -12,7 +12,12 @@
     // browser posts to directly -- `kitConfig`'s engine transport is built on
     // `server.apiBaseUrl`, not on the Live origin -- so the two must name the
     // same Engine or a push through the edge would land somewhere else.
-    "PHOTON_CLOUD_ENGINE_BASE_URL": "https://library-api.txcloud.app"
+    "PHOTON_CLOUD_ENGINE_BASE_URL": "https://library-api.txcloud.app",
+    // Photon Live is an explicit opt-in. A deployment must provide an exact
+    // origin allowlist before enabling browser data-editor collaboration.
+    "PHOTON_LIVE_ENABLED": "false",
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "",
+    "PHOTON_LIVE_API_BASE_URL": "https://library-api.txcloud.app"
   },
   "observability": {
     "enabled": true
@@ -22,6 +27,14 @@
       {
         "name": "PHOTON_SYNC_ROOMS",
         "class_name": "PhotonSyncRoom"
+      },
+      {
+        "name": "PHOTON_LIVE_ROOMS",
+        "class_name": "PhotonLiveRoom"
+      },
+      {
+        "name": "PHOTON_LIVE_TICKETS",
+        "class_name": "PhotonLiveTicketStore"
       }
     ]
   },
@@ -29,6 +42,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["PhotonSyncRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["PhotonLiveRoom", "PhotonLiveTicketStore"]
     }
   ]
 }

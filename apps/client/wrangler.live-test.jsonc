@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "library-data-live-e2e",
+  "main": "workers/sync/index.ts",
+  "compatibility_date": "2026-05-05",
+  "vars": {
+    "PHOTON_LIVE_ENABLED": "true",
+    "PHOTON_LIVE_API_BASE_URL": "http://127.0.0.1:50063",
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "http://127.0.0.1:5187"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PHOTON_SYNC_ROOMS", "class_name": "PhotonSyncRoom" },
+      { "name": "PHOTON_LIVE_ROOMS", "class_name": "PhotonLiveRoom" },
+      { "name": "PHOTON_LIVE_TICKETS", "class_name": "PhotonLiveTicketStore" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PhotonSyncRoom", "PhotonLiveRoom", "PhotonLiveTicketStore"]
+    }
+  ]
+}

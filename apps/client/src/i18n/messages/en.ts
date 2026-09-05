@@ -758,6 +758,16 @@ export const en = {
   'dataEditor.deleteData': 'Delete data',
   'dataEditor.noBodyProperty': 'Add a Rich text property to this repository to start writing a page body.',
   'dataEditor.noProperties': 'No properties yet.',
+  'dataEditor.liveConnecting': 'Connecting shared editor…',
+  'dataEditor.liveInitializing': 'Preparing shared editor…',
+  'dataEditor.liveConnected': 'Shared editing connected',
+  'dataEditor.liveOffline': 'Shared editing paused while offline',
+  'dataEditor.liveSaving': 'Saving shared body…',
+  'dataEditor.liveSaved': 'Shared body saved',
+  'dataEditor.liveConflict': 'Shared body conflicts with a newer saved version',
+  'dataEditor.liveError': 'Shared editing error',
+  'dataEditor.liveUnauthorized': 'Shared editing is not authorized',
+  'dataEditor.liveDisabled': 'Shared editing unavailable; using local editor',
 
   // ----------------------------------------------------------- library table
   'libraryTable.loadFailed': 'Failed to load repository data',
