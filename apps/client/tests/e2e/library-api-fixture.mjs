@@ -114,6 +114,8 @@ let nextEngineSequence = 1
 // Library authorization and canonical checkpoint boundary are fixtures here.
 let liveEpoch = ''
 let liveDecisions = new Map()
+let liveCheckpointDelayMs = 0
+let liveAuthorizeDelayMs = 0
 
 function roomFor(roomId) {
   const existing = rooms.get(roomId)
@@ -632,9 +634,19 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && url.pathname === '/__e2e/reset') {
+      liveCheckpointDelayMs = 0
+      liveAuthorizeDelayMs = 0
       resetRealtimeState()
       resetState()
       sendJson(response, 200, { service: 'library-e2e-api', status: 'reset' })
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/__e2e/live-delay') {
+      const input = await readJson(request)
+      liveCheckpointDelayMs = Math.min(5000, Math.max(0, Number(input.checkpointMs) || 0))
+      liveAuthorizeDelayMs = Math.min(5000, Math.max(0, Number(input.authorizeMs) || 0))
+      sendJson(response, 200, { checkpointMs: liveCheckpointDelayMs })
       return
     }
 
@@ -695,6 +707,9 @@ const server = createServer(async (request, response) => {
         return
       }
       const input = await readJson(request)
+      if (action === 'checkpoint' && liveCheckpointDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, liveCheckpointDelayMs))
+      }
       const property = state.properties.find((entry) => entry.id === input.property_id)
       if (!property || !['Markdown', 'RichText'].includes(property.typ)) {
         sendJson(response, 404, { message: 'Live document Property not found' })
@@ -704,6 +719,7 @@ const server = createServer(async (request, response) => {
       const body = data.propertyData.find((entry) => entry.propertyId === property.id)?.value[format] ?? ''
       const recordVersion = data.record_version ?? '1'
       if (action === 'authorize') {
+        if (liveAuthorizeDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, liveAuthorizeDelayMs))
         sendJson(response, 200, {
           tenant_id: platformId,
           database_id: `fixture-database-${liveEpoch}`,

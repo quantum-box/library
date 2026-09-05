@@ -608,6 +608,7 @@ describe('PhotonLiveRoom coordination', () => {
     expect(JSON.parse(String(socket.frames.at(-1)))).toEqual({
       type: 'live-error',
       message: 'Checkpoint is behind the working version',
+      code: 'CHECKPOINT_STALE',
       operation_id: 'old-op',
     })
     expect(await storage.get<{ operationId: string; version: number }>('live:checkpoint:pending:v1'))
@@ -667,6 +668,53 @@ describe('PhotonLiveRoom coordination', () => {
     resolveCheckpoint(new Response(JSON.stringify({ record_version: '8' }), { status: 200 }))
     await checkpointPromise
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets two callers save the same body without replacing an active checkpoint', async () => {
+    let canonicalBody = 'original'
+    let canonicalVersion = '7'
+    const bodyHash = await normalizeBodyHash('markdown', canonicalBody)
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { bodyHash })
+    const first = new FakeSocket()
+    const second = new FakeSocket()
+    const room = new PhotonLiveRoom(roomContext(storage, [first, second]) as never, liveRoomEnvironment())
+    const session = { ...liveSession, bodyHash }
+    const sessions = (room as unknown as { sessions: WeakMap<WebSocket, typeof session> }).sessions
+    sessions.set(first as unknown as WebSocket, session)
+    sessions.set(second as unknown as WebSocket, session)
+    let finishWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => { finishWrite = resolve })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/authorize')) {
+        return new Response(JSON.stringify({
+          tenant_id: 'tenant', database_id: 'database', data_id: 'data', property_id: 'property',
+          actor_id: 'actor', room_id: 'room', format: 'markdown',
+          body: canonicalBody, record_version: canonicalVersion,
+        }), { status: 200 })
+      }
+      await writeGate
+      canonicalBody = 'shared edit'
+      canonicalVersion = '8'
+      return new Response(JSON.stringify({ record_version: canonicalVersion }), { status: 200 })
+    })
+    const checkpoint = (operationId: string) => JSON.stringify({
+      type: 'live-checkpoint', version: 0, body: 'shared edit', operation_id: operationId,
+    })
+    const firstSave = room.webSocketMessage(first as unknown as WebSocket, checkpoint('first-save'))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const secondSave = room.webSocketMessage(second as unknown as WebSocket, checkpoint('second-save'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    finishWrite()
+    await Promise.all([firstSave, secondSave])
+    expect(fetchMock).toHaveBeenCalledTimes(3) // Two authorizations, one durable write.
+    for (const [socket, operationId] of [[first, 'first-save'], [second, 'second-save']] as const) {
+      const messages = socket.frames.filter((frame) => typeof frame === 'string').map((frame) => JSON.parse(String(frame)))
+      expect(messages).toContainEqual(expect.objectContaining({ type: 'live-saved', operation_id: operationId }))
+      expect(messages.some((message) => ['live-error', 'live-conflict'].includes(message.type))).toBe(false)
+    }
+    expect(await storage.get('live:checkpoint:pending:v1')).toBeUndefined()
   })
 
   it('bounds checkpoint replay records and migrates a legacy result key', async () => {
