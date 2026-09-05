@@ -49,6 +49,25 @@ Worker の Live用 Durable Object binding は `PHOTON_LIVE_ROOMS` と
 `PHOTON_LIVE_TICKETS`。許可Originは実際に使うWeb / Tauriシェルに合わせる。
 利用者Bearerを固定のサービス権限に置き換えない。
 
+## PR301 の隔離Preview
+
+`wrangler.preview.jsonc` は `library-client-live-pr301` 専用で、本番とは別の
+Durable Object namespace を作る。既定では無効。公開時に CLI の `--var` で
+`PHOTON_LIVE_ENABLED:true`、`PHOTON_LIVE_API_BASE_URL:<PR専用API origin>`、
+`PHOTON_CLOUD_ENGINE_BASE_URL:<同じAPI origin>`、
+`PHOTON_LIVE_ALLOWED_ORIGINS:<実際のPages Preview origin>` を明示する。
+先に `wrangler deploy --config wrangler.preview.jsonc --dry-run` を確認する。
+
+APIの `LIBRARY_PHOTON_LIVE_PREVIEW_REQUIRE_EMPTY=true` は、候補Lambdaの
+migration gateでPR専用DB名を検証し、migration後の `data` が0件であることを
+DB側のCOUNTで確認する。既存レコードがある環境では候補の昇格を拒否する。
+この空DBチェックは既存データのbackfill/parity検証を代替しない。
+
+APIのLive設定・dual-write設定とクライアントのAPI/Live/Sync URLは、Tachyonの
+`--target preview --branch feature/plt-4204-data-editor-photon-live` に限定する。
+検証データを残した後の再デプロイでは空DBチェックが失敗するため、継続利用前に
+通常のbackfill/parity運用へ移行する。チェックのために既存データを削除しない。
+
 ## ローカル検証
 
 `apps/client` で `npm run test:e2e:live` を実行する。
