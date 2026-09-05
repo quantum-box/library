@@ -13,10 +13,10 @@
     // `server.apiBaseUrl`, not on the Live origin -- so the two must name the
     // same Engine or a push through the edge would land somewhere else.
     "PHOTON_CLOUD_ENGINE_BASE_URL": "https://library-api.txcloud.app",
-    // Photon Live is an explicit opt-in. A deployment must provide an exact
-    // origin allowlist before enabling browser data-editor collaboration.
-    "PHOTON_LIVE_ENABLED": "false",
-    "PHOTON_LIVE_ALLOWED_ORIGINS": "",
+    // Production rollout and PropertyValue parity verified on 2026-09-05.
+    // Preview deployments use their separate, opt-in configuration.
+    "PHOTON_LIVE_ENABLED": "true",
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "https://planetlibrary.txcloud.app,https://library-client.txcloud.app",
     "PHOTON_LIVE_API_BASE_URL": "https://library-api.txcloud.app"
   },
   "observability": {

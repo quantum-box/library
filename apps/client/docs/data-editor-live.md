@@ -32,7 +32,7 @@ WebSocket URL には短命の ticket のみを入れる。再接続時にも認�
 
 ## 有効化前の条件
 
-この変更だけで本番の Live を有効にしない。まず
+新しい環境で有効にするときは、まず
 [Record patch decision UoW の導入条件](../../../docs/specs/operations/record-patch-decision-uow.md)
 に従って PropertyValue backfill / parity と dual-write の準備を完了させる。
 `legacy_only` のまま CAS mutation port を公開しない。
@@ -116,6 +116,48 @@ Preview migration gateの局所テスト8件も成功。
 レビュー修正後の最終検証はPR #301の検証欄を参照する。
 
 別アカウント間と実macOS日本語IME候補ウィンドウの手動検証は未実施。
-本番のLiveは無効で、既存本番データのbackfill/parityは別途必要。
+このPreview検証時点では本番のLiveは無効だった。本番の移行結果は次節を参照。
 
 ![RichText の共同編集と保存完了](screenshots/plt-4204/richtext-collaboration.png)
+
+## 本番有効化（2026-09-05）
+
+- 画面: https://planetlibrary.txcloud.app（https://library-client.txcloud.app も許可）
+- API: https://library-api.txcloud.app
+- Worker: https://library-client-sync.quantum-box.workers.dev
+- API: `PROPERTY_VALUE_STORAGE_MODE=dual_write_legacy_read` と
+  `LIBRARY_PHOTON_LIVE_ENABLED=true` を production のみに設定。
+- Client: `VITE_LIBRARY_DATA_LIVE_URL` を production のみに設定。
+  Previewは引き続き専用の設定・DBを使う。
+
+本番の8スコープ、21レコードを対象に既存のPropertyValue backfill実装を実行した。
+同一の悲観的トランザクションでdatabase ID順に親objectをロックし、全件dry-run、
+48値の書き込み、全件parity検証を行い、すべて成功した場合だけcommitした。
+commit後の独立した全件dry-runでも matched=48、missing=0、opaque=0、追加書き込み=0。
+両検証のchecksumは `00041e760bda5b018b513cda4b39fa2acfab9be3fe4f2619b324209b3f224d97`。
+件数は移行時点の値であり、その後の通常更新・検証データ作成は含めない。
+
+承認を得て作成した非公開の一時Lambdaで移行し、検証後に削除した。
+古い本番DB共有のPreview 10 aliasと無修飾API/dev Function URLは、
+利用状況とPRの終了を確認してAWS_IAMに切り替えた。prod URLは維持している。
+旧writerを戻すとparityを壊すため、復旧時にもlegacy-onlyで本番DBへ接続させない。
+
+API build `bld_01m1rx8vxnsecvw9hmpcf5wch9` とClient build
+`bld_01m1ry5xwbdj3br0wbxzqxr8w6` が成功した。
+本番配信JavaScriptのAPI/Live URLと、許可Originのpreflight 204、未認証401、
+許可外Origin 403を確認。
+
+認証済みの同一アカウント2タブで、非公開の
+`quantumbox/photon-live-production-check` の検証データ
+`data_01m1ryepyxpnpnxada925f3spc` を編集した。AからB、BからAの反映、
+編集したタブでの「本文を共同保存しました」、片方を閉じて再読み込み後の
+両方の本文保持を確認した。別アカウント間・実macOS IMEの検証は未実施。
+
+残件 [PLT-4267](https://linear.app/issue/PLT-4267): 相手側の編集を受信したタブに
+「共同編集でエラーが発生しました」が残る。
+そのタブから次の編集を行うと保存成功へ戻り、再読み込みでも本文は保持された。
+保存成功の証拠と、この受信側のcheckpoint/表示問題は区別する。
+
+緊急停止はClient/Worker/APIのLiveフラグを無効化して行う。
+`PROPERTY_VALUE_STORAGE_MODE` はdual-writeを維持し、旧writerを再公開しない。
+再有効化前に全件parityとcheckpointの保存を確認する。

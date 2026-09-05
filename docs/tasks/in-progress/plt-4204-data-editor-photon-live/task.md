@@ -39,4 +39,7 @@ PR に記録する。ローカル Photon Worker + fixture Library API の2ブラ
 - [x] 隔離Previewの画面・API・Worker公開、配信URL/CORS/未認証拒否の検証
 - [x] Preview migration gate局所テスト8件成功
 - [x] 公開Previewの認証済み共同編集・保存・再読込（同一アカウントの2タブ、利用者確認済み）
-- [ ] DB rollout条件の確認と本番有効化
+- [x] DB rollout条件の確認と本番有効化（21レコード/48値のparity、本番2タブで保存・再読込を確認）
+
+本番有効化の設定・証跡はclient runbook参照。
+受信側タブにエラー表示が残る問題は、本文保存の成功とは区別して追跡する。
