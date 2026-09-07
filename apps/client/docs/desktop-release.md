@@ -73,6 +73,10 @@ Actions. A successful source merge or PR CI alone is not release completion.
 - Retries reuse the existing tag and draft. If already published, packaging is
   skipped and the public manifest is checked again. Published assets are never
   replaced by a retry. A conflicting tag fails rather than being overwritten.
+- Draft creation passes the returned release ID directly to packaging. The
+  REST release-by-tag endpoint only returns published releases, so it must not
+  be used to retrieve a newly created draft. Existing drafts are found through
+  the authenticated, paginated release list.
 - Verify all release jobs, the published `library-v<version>` assets and public
   `latest.json`, then Check for Updates in an installed app. App installation and
   the original application error remain separate checks.

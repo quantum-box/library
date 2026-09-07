@@ -67,6 +67,19 @@ export function validateManifest(manifest, release, version, repository) {
   return result
 }
 
+export function ensureRelease(repository, tag, version, runGh = gh) {
+  // Listing must succeed: a network/auth failure must never mean "not found".
+  const releases = JSON.parse(runGh('api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`)).flat()
+  const existing = releases.find((item) => item.tag_name === tag)
+  if (existing) return existing
+
+  // The tag endpoint only returns published releases. Keep the creation response
+  // so a new draft's ID can go straight to the packaging jobs.
+  return JSON.parse(runGh('api', '--method', 'POST', `repos/${repository}/releases`,
+    '-f', `tag_name=${tag}`, '-f', `name=Library ${version}`,
+    '-F', 'draft=true', '-F', 'generate_release_notes=true'))
+}
+
 function prepare() {
   const source = process.env.SOURCE_SHA
   if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('Source must be a full commit SHA')
@@ -89,13 +102,7 @@ function prepare() {
     git('tag', plan.tag, source)
     git('push', 'origin', `refs/tags/${plan.tag}`)
   }
-  // Listing must succeed: a network/auth failure must never mean "not found".
-  const releases = JSON.parse(gh('api', '--paginate', '--slurp', `repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`)).flat()
-  let release = releases.find((item) => item.tag_name === plan.tag)
-  if (!release) {
-    gh('release', 'create', plan.tag, '--verify-tag', '--draft', '--generate-notes', '--title', `Library ${plan.version}`)
-    release = JSON.parse(gh('api', `repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${plan.tag}`))
-  }
+  const release = ensureRelease(process.env.GITHUB_REPOSITORY, plan.tag, plan.version)
   output('release_id', release.id)
   output('tag', plan.tag)
   output('version', plan.version)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareVersions, validateVersion, validateManifest } from './release.mjs'
+import { compareVersions, validateVersion, validateManifest, ensureRelease } from './release.mjs'
 
 function versions(version) { return [{ version }, { version, packages: { '': { version } } }] }
 test('PR version must exceed current base, including after another PR merged', () => {
@@ -26,6 +26,46 @@ test('compare versions numerically to prevent older retries moving the feed back
   assert.throws(() => compareVersions('broken', '0.1.9'))
 })
 const repository = 'quantum-box/library'
+test('new draft uses the creation response without a published-tag lookup', () => {
+  const draft = { id: 123, tag_name: 'library-v0.1.15', draft: true }
+  let calls = 0
+  const release = ensureRelease(repository, draft.tag_name, '0.1.15', (...args) => {
+    calls++
+    if (calls === 1) {
+      assert.deepEqual(args, ['api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`])
+      return '[[]]'
+    }
+    assert.equal(calls, 2, 'draft must not be fetched by tag after creation')
+    assert.deepEqual(args, ['api', '--method', 'POST', `repos/${repository}/releases`,
+      '-f', `tag_name=${draft.tag_name}`, '-f', 'name=Library 0.1.15',
+      '-F', 'draft=true', '-F', 'generate_release_notes=true'])
+    return JSON.stringify(draft)
+  })
+  assert.deepEqual(release, draft)
+  assert.equal(calls, 2)
+})
+test('retries reuse draft and published releases across paginated results', () => {
+  for (const draft of [true, false]) {
+    const existing = { id: 456, tag_name: 'library-v0.1.15', draft }
+    let calls = 0
+    const release = ensureRelease(repository, existing.tag_name, '0.1.15', () => {
+      assert.equal(++calls, 1, 'an existing release must not be recreated')
+      return JSON.stringify([[{ id: 999, tag_name: 'library-v0.1.16' }], [existing]])
+    })
+    assert.deepEqual(release, existing)
+  }
+})
+test('release lookup and creation failures propagate instead of continuing packaging', () => {
+  for (const failAt of [1, 2]) {
+    let calls = 0
+    const error = new Error('GitHub unavailable')
+    assert.throws(() => ensureRelease(repository, 'library-v0.1.15', '0.1.15', () => {
+      if (++calls === failAt) throw error
+      return '[[]]'
+    }), (actual) => actual === error)
+    assert.equal(calls, failAt)
+  }
+})
 const platforms = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64']
 function fixture() {
   return {

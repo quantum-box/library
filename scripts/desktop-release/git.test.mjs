@@ -40,12 +40,23 @@ const mode = fs.readFileSync(process.env.RELEASE_STATE, 'utf8');
 const release = {id: 1, tag_name: 'library-v0.1.8', draft: mode !== 'published'};
 if(args[0] === 'api' && args.includes('--paginate')) console.log(JSON.stringify([mode === 'missing' ? [] : [release]]));
 else if(args[0] === 'release' && args[1] === 'create') fs.writeFileSync(process.env.RELEASE_STATE, 'draft');
-else if(args[0] === 'api') console.log(JSON.stringify(release));
+else if(args[0] === 'api' && args.includes('POST')) {
+  if(mode !== 'missing') process.exit(1);
+  fs.writeFileSync(process.env.RELEASE_STATE, 'draft');
+  console.log(JSON.stringify(release));
+}
+else if(args.some(arg => arg.includes('/releases/tags/'))) {
+  console.error('Not Found (HTTP 404): draft releases cannot be retrieved by tag');
+  process.exit(1);
+}
 else process.exit(1);
 `, { mode: 0o755 })
   const run = () => spawnSync(process.execPath, [script, 'prepare'], { cwd: repo, encoding: 'utf8', env: { ...env, PATH: `${bin}:${env.PATH}`, GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'quantum-box/library', SOURCE_SHA: source, SOURCE_BASE_SHA: anchor, RELEASE_STATE: state } })
   let result = run()
   assert.equal(result.status, 0, result.stderr)
+  assert.equal(readFileSync(state, 'utf8'), 'draft')
+  assert.match(readFileSync(output, 'utf8'), /release_id=1\n/)
+  assert.ok(readFileSync(output, 'utf8').endsWith('build=true\n'))
   const tag = git('rev-parse', 'library-v0.1.8')
   assert.equal(tag, source)
   assert.equal(JSON.parse(git('show', `${tag}:apps/client/package.json`)).version, '0.1.8')
