@@ -47,7 +47,8 @@ The macOS desktop shell runs its tabs as child WebViews of a single window; see
 
 The desktop shell has no address bar, so `⌘L` (`Ctrl+L` on Windows and Linux)
 copies the address of the current route instead
-(`src/lib/desktop/useCopyPageUrl.ts`). The shell serves the app from
+(`src/lib/desktop/useCopyPageUrl.ts`). It is bound at the root layout, so the
+public reader and the sign-in gate answer it as well as the workspace. The shell serves the app from
 `tauri://localhost`, which no one outside the app can open, so
 `src/lib/shareUrl.ts` rewrites that origin onto the client deployment
 (`https://planetlibrary.txcloud.app`, overridable with

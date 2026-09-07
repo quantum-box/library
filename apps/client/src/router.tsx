@@ -576,9 +576,6 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     return () => window.removeEventListener(OPEN_CREATE_DATA_EVENT, openCreateDataAtDatabaseIndex)
   }, [openCreateDataAtDatabaseIndex])
 
-  // The desktop shell has no address bar; ⌘L stands in for it.
-  const copyLinkStatus = useCopyPageUrlShortcut()
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Search and view shortcuts accept either primary modifier.
@@ -672,7 +669,6 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     closeShortcuts: () => setShortcutsOpen(false),
     commandPaletteOpen,
     closeCommandPalette: () => setCommandPaletteOpen(false),
-    copyLinkStatus,
   }
 }
 
@@ -685,7 +681,6 @@ function AuthenticatedWorkspaceRoot() {
     closeShortcuts,
     commandPaletteOpen,
     closeCommandPalette,
-    copyLinkStatus,
   } = useGlobalKeyboardShortcuts(setCreateModalOpen)
 
   return (
@@ -701,7 +696,6 @@ function AuthenticatedWorkspaceRoot() {
               <WorkspaceHydrationStatus />
               <WorkspaceMutationError />
               <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
-              <CopyLinkToast status={copyLinkStatus} />
               <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
             </CreateModalContext.Provider>
           </AttachmentsProvider>
@@ -845,11 +839,16 @@ const rootRoute = createRootRoute({
       select: (state) => isPublicRoutePathname(state.location.pathname),
     })
 
+    // Every route of the desktop shell answers ⌘L, including the public
+    // reader and the sign-in gate, none of which show their address anywhere.
+    const copyLinkStatus = useCopyPageUrlShortcut()
+
     // The tab strip is the window titlebar on macOS desktop, so it sits above
     // both the public shell and the sign-in gate. It renders nothing elsewhere.
     return (
       <div className="flex h-full min-h-0 flex-col">
         <WindowTabStrip />
+        <CopyLinkToast status={copyLinkStatus} />
         <div className="min-h-0 flex-1">
           {publicRoute ? (
             <PublicShell>
