@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -81,6 +81,17 @@ function DocsReader({
   const [nextPage, setNextPage] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const focusAfterNavigation = useRef(false)
+  const closeNavigation = () => {
+    focusAfterNavigation.current = menuOpen
+    setMenuOpen(false)
+    requestAnimationFrame(() => {
+      if (focusAfterNavigation.current) {
+        readerRef.current?.querySelector<HTMLElement>('main')?.focus()
+        focusAfterNavigation.current = false
+      }
+    })
+  }
   const searchRef = useRef<HTMLInputElement>(null)
   const readerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -157,7 +168,7 @@ function DocsReader({
       params={{ ...params, dataId: item.id }}
       className={className}
       aria-current={item.id === dataId ? 'page' : undefined}
-      onClick={() => setMenuOpen(false)}
+      onClick={closeNavigation}
     >
       <FileText size={16} aria-hidden="true" />
       <span>{item.name || t('common.untitled')}</span>
@@ -195,7 +206,7 @@ function DocsReader({
           <button
             className="docs-backdrop"
             aria-label={t('common.close')}
-            onClick={() => setMenuOpen(false)}
+            onClick={closeNavigation}
           />
         )}
         <aside
@@ -211,7 +222,13 @@ function DocsReader({
               placeholder={t('docs.search')}
               aria-label={t('docs.search')}
             />
-            <kbd>⌘ K</kbd>
+            <kbd>
+              {t('docs.searchShortcut', {
+                modifier: /Mac|iPhone|iPad/.test(navigator.platform)
+                  ? '⌘'
+                  : 'Ctrl',
+              })}
+            </kbd>
           </label>
           <nav aria-label={t('docs.articles')}>
             <Link
@@ -220,7 +237,7 @@ function DocsReader({
               activeOptions={{ exact: true }}
               className={!dataId ? 'active' : ''}
               aria-current={!dataId ? 'page' : undefined}
-              onClick={() => setMenuOpen(false)}
+              onClick={closeNavigation}
             >
               <BookOpen size={16} />
               <span>{t('docs.overview')}</span>
@@ -282,7 +299,7 @@ function DocsReader({
             profile={profile}
           />
         ) : (
-          <main className="docs-content docs-overview">
+          <main className="docs-content docs-overview" tabIndex={-1}>
             <div className="docs-breadcrumb">
               {profile.orgUsername}
               <ChevronRight size={12} />
@@ -300,6 +317,17 @@ function DocsReader({
               </div>
             </div>
             <h2>{t('docs.articles')}</h2>
+            {error && (
+              <div role="alert" className="docs-error">
+                <p>{error}</p>
+                <button
+                  className="docs-button"
+                  onClick={() => void load(nextPage ?? undefined)}
+                >
+                  {t('common.tryAgain')}
+                </button>
+              </div>
+            )}
             <div className="docs-cards">
               {rows.map((item) => articleLink(item, 'docs-card'))}
             </div>
@@ -342,6 +370,7 @@ function DocsArticle({
     { id: string; text: string; level: number }[]
   >([])
   const bodyRef = useRef<HTMLDivElement>(null)
+  const htmlFrameRef = useRef<HTMLIFrameElement>(null)
   const contentRef = useRef<HTMLElement>(null)
   const { org, repo } = target
   useEffect(() => {
@@ -362,11 +391,12 @@ function DocsArticle({
   }, [dataId, org, repo, attempt])
   useEffect(() => {
     const previous = document.title
-    if (detail) document.title = `${detail.item.name} · ${profile.name}`
+    if (detail)
+      document.title = `${detail.item.name || t('common.untitled')} · ${profile.name || profile.username}`
     return () => {
       document.title = previous
     }
-  }, [detail, profile.name])
+  }, [detail, profile.name, profile.username, t])
   useEffect(() => {
     const body = bodyRef.current
     if (!body) return
@@ -403,6 +433,37 @@ function DocsArticle({
           getLibraryDataPropertyValue(detail.item, bodyProperty.id) ?? {},
         ) ?? '')
       : ''
+  const htmlDocument = useMemo(() => {
+    if (
+      !bodyProperty ||
+      bodyPropertyFormat(bodyProperty) !== 'html' ||
+      !/^\s*</.test(value)
+    )
+      return null
+    const document = new DOMParser().parseFromString(value, 'text/html')
+    const outline = Array.from(document.querySelectorAll('h1,h2,h3')).map(
+      (heading, index) => {
+        const id = `docs-section-${index}`
+        heading.id = id
+        return {
+          id,
+          text: heading.textContent ?? '',
+          level: Number(heading.tagName.slice(1)),
+        }
+      },
+    )
+    const bridge = document.createElement('script')
+    bridge.textContent = `window.addEventListener('message', (event) => {
+      if (event.source !== parent || event.data?.type !== 'library-docs-scroll') return;
+      if (typeof event.data.id !== 'string' || !/^docs-section-[0-9]+$/.test(event.data.id)) return;
+      document.getElementById(event.data.id)?.scrollIntoView({block: 'start'});
+    });`
+    document.head.prepend(bridge)
+    return {
+      source: '<!doctype html>' + document.documentElement.outerHTML,
+      headings: outline,
+    }
+  }, [bodyProperty, value])
   const index = items.findIndex((item) => item.id === dataId)
   const previous = index > 0 ? items[index - 1] : null
   const next = index >= 0 ? items[index + 1] : null
@@ -448,7 +509,15 @@ function DocsArticle({
           <>
             <h1>{detail.item.name || t('common.untitled')}</h1>
             <div ref={bodyRef} className="docs-body">
-              {bodyProperty && value ? (
+              {htmlDocument ? (
+                <iframe
+                  ref={htmlFrameRef}
+                  sandbox="allow-scripts"
+                  srcDoc={htmlDocument.source}
+                  title={t('editor.htmlPreviewFrameTitle')}
+                  className="h-[560px] w-full border-0 bg-white"
+                />
+              ) : bodyProperty && value ? (
                 <RecordBodyEditor
                   key={`${dataId}:${bodyProperty.id}`}
                   value={value}
@@ -493,13 +562,20 @@ function DocsArticle({
       <aside className="docs-toc">
         <nav aria-label={t('docs.onThisPage')}>
           <h2>{t('docs.onThisPage')}</h2>
-          {headings.map((heading) => (
+          {(htmlDocument?.headings ?? headings).map((heading) => (
             <a
               key={heading.id}
               href={`#${heading.id}`}
               className={heading.level > 2 ? 'docs-toc-nested' : undefined}
               onClick={(e) => {
                 e.preventDefault()
+                if (htmlDocument) {
+                  htmlFrameRef.current?.contentWindow?.postMessage(
+                    { type: 'library-docs-scroll', id: heading.id },
+                    '*',
+                  )
+                  return
+                }
                 bodyRef.current
                   ?.querySelector(`#${heading.id}`)
                   ?.scrollIntoView({ block: 'start', behavior: 'auto' })

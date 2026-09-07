@@ -7,6 +7,7 @@ export const ko: LocaleMessages = {
   'docs.copyFailed': "URL을 복사하지 못했습니다",
   'docs.guide': "사용 가이드",
   'docs.menu': "문서 메뉴 열기",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "문서 검색",
   'docs.articles': "문서 목록",
   'docs.overview': "개요",

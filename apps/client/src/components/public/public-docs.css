@@ -5,12 +5,14 @@
   color: #253047;
   background: #fff;
   height: 100%;
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   font-family:
     Inter,
     -apple-system,
     BlinkMacSystemFont,
-    'Hiragino Kaku Gothic ProN',
+    "Hiragino Kaku Gothic ProN",
     sans-serif;
   color-scheme: light;
 }
@@ -194,7 +196,7 @@
   overflow-wrap: anywhere;
 }
 .docs-content > h1,
-.docs-content > div[role='alert'] > h1 {
+.docs-content > div[role="alert"] > h1 {
   font-size: 34px;
   letter-spacing: -1.1px;
   font-weight: 700;
@@ -436,9 +438,12 @@
   .docs-sidebar {
     display: none;
     position: fixed;
-    top: 64px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
     left: 0;
-    height: calc(100dvh - 64px);
+    height: calc(
+      100dvh - 64px - env(safe-area-inset-top, 0px) -
+        env(safe-area-inset-bottom, 0px)
+    );
     width: min(285px, 85vw);
     z-index: 10;
   }
@@ -448,7 +453,8 @@
   .docs-backdrop {
     display: block;
     position: fixed;
-    inset: 64px 0 0;
+    inset: calc(64px + env(safe-area-inset-top, 0px)) 0
+      env(safe-area-inset-bottom, 0px);
     background: #17243b55;
     border: 0;
     z-index: 9;
@@ -479,9 +485,26 @@
   }
 }
 
-.public-docs .docs-body .record-body-page { min-height: 0; }
-.public-docs .docs-body .bn-editor h1 { font-size: 26px; line-height: 1.5; }
-.public-docs .docs-body .bn-editor h2 { font-size: 20px; line-height: 1.6; }
-.public-docs .docs-body .bn-editor h3 { font-size: 16px; line-height: 1.7; }
-.public-docs .docs-body .bn-editor { font-size: 14px; line-height: 1.95; }
-.public-docs .docs-body .bn-block-content[data-content-type='heading'] { margin-top: 22px; margin-bottom: 10px; }
+.public-docs .docs-body .record-body-page {
+  min-height: 0;
+}
+.public-docs .docs-body .bn-editor h1 {
+  font-size: 26px;
+  line-height: 1.5;
+}
+.public-docs .docs-body .bn-editor h2 {
+  font-size: 20px;
+  line-height: 1.6;
+}
+.public-docs .docs-body .bn-editor h3 {
+  font-size: 16px;
+  line-height: 1.7;
+}
+.public-docs .docs-body .bn-editor {
+  font-size: 14px;
+  line-height: 1.95;
+}
+.public-docs .docs-body .bn-block-content[data-content-type="heading"] {
+  margin-top: 22px;
+  margin-bottom: 10px;
+}

@@ -7,6 +7,7 @@ export const zhHant: LocaleMessages = {
   'docs.copyFailed': "無法複製連結",
   'docs.guide': "使用指南",
   'docs.menu': "開啟文章選單",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "搜尋文章",
   'docs.articles': "文章列表",
   'docs.overview': "概覽",

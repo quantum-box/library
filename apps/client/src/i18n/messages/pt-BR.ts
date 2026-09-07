@@ -7,6 +7,7 @@ export const ptBR: LocaleMessages = {
   'docs.copyFailed': "Não foi possível copiar a URL",
   'docs.guide': "Documentação",
   'docs.menu': "Abrir menu de artigos",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "Pesquisar artigos",
   'docs.articles': "Artigos",
   'docs.overview': "Visão geral",

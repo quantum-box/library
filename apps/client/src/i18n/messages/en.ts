@@ -19,6 +19,7 @@ export const en = {
   'docs.copyFailed': "Could not copy URL",
   'docs.guide': "Documentation",
   'docs.menu': "Open article menu",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "Search articles",
   'docs.articles': "Articles",
   'docs.overview': "Overview",

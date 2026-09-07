@@ -10,6 +10,7 @@ export const ru: LocaleMessages = {
   'docs.copyFailed': "Не удалось скопировать URL",
   'docs.guide': "Документация",
   'docs.menu': "Открыть меню статей",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "Поиск статей",
   'docs.articles': "Статьи",
   'docs.overview': "Обзор",

@@ -7,6 +7,7 @@ export const es: LocaleMessages = {
   'docs.copyFailed': "No se pudo copiar la URL",
   'docs.guide': "Documentación",
   'docs.menu': "Abrir menú de artículos",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "Buscar artículos",
   'docs.articles': "Artículos",
   'docs.overview': "Resumen",

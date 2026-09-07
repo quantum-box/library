@@ -7,6 +7,7 @@ export const zhHans: LocaleMessages = {
   'docs.copyFailed': "无法复制链接",
   'docs.guide': "使用指南",
   'docs.menu': "打开文章菜单",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "搜索文章",
   'docs.articles': "文章列表",
   'docs.overview': "概览",

@@ -10,6 +10,7 @@ export const ja: LocaleMessages = {
   'docs.copyFailed': "URLをコピーできませんでした",
   'docs.guide': "利用ガイド",
   'docs.menu': "記事メニューを開く",
+  'docs.searchShortcut': '{modifier} K',
   'docs.search': "記事を検索",
   'docs.articles': "記事一覧",
   'docs.overview': "ガイドのトップ",

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
@@ -142,5 +142,53 @@ describe('public docs reader', () => {
     )
     await open('unknown')
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy()
+  })
+  it('shows list failures and a working retry in the overview', async () => {
+    mocks.fetchLibraryRepoTableData.mockRejectedValueOnce(new Error('offline'))
+    await open()
+    const main = within(screen.getByRole('main'))
+    expect(main.getByRole('alert')).toBeTruthy()
+    await act(async () => {
+      fireEvent.click(main.getByRole('button', { name: 'Try again' }))
+    })
+    expect(main.queryByRole('alert')).toBeNull()
+    expect(main.getByRole('link', { name: 'First article' })).toBeTruthy()
+  })
+  it('keeps legacy HTML sandboxed and navigates its source headings', async () => {
+    mocks.fetchLibraryDataDetail.mockResolvedValue({
+      item: {
+        ...item,
+        propertyData: [
+          {
+            propertyId: 'body',
+            value: { html: '<h2>Legacy section</h2><p>Body</p>' },
+          },
+        ],
+      },
+      properties: [{ ...properties[0], typ: 'Html' }],
+    })
+    const view = await open('first')
+    const frame = view.container.querySelector('iframe')!
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.srcdoc).toContain('id="docs-section-0"')
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    fireEvent.click(screen.getByRole('link', { name: 'Legacy section' }))
+    expect(post).toHaveBeenCalledWith(
+      { type: 'library-docs-scroll', id: 'docs-section-0' },
+      '*',
+    )
+    expect(mocks.editor).not.toHaveBeenCalled()
+  })
+  it('uses the visible fallbacks in the browser title', async () => {
+    mocks.fetchLibraryRepositoryProfile.mockResolvedValue({
+      ...profile,
+      name: '',
+    })
+    mocks.fetchLibraryDataDetail.mockResolvedValue({
+      item: { ...item, name: '' },
+      properties,
+    })
+    await open('first')
+    expect(document.title).toBe('Untitled · docs')
   })
 })
