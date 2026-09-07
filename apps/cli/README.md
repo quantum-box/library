@@ -59,7 +59,7 @@ repository を取る引数はすべて `org/repo` の形で指定します。
 | `auth` | `login` `status` `logout` |
 | `org` | `get` `create` `update` |
 | `repo` | `list` `search` `get` `create` `update` `rename` `delete` |
-| `data` | `list` `search` `get` `create` `update` `delete` |
+| `data` | `list` `search` `get` `create` `update` `upsert` `delete` |
 | `property` | `list` `get` `create` `update` `delete` |
 | `source` | `list` `get` `create` `update` `delete` |
 | `mcp` | `info` `tools` `call` `config` |
@@ -70,18 +70,21 @@ repository を取る引数はすべて `org/repo` の形で指定します。
 
 `data update` は PATCH ではなく置換です。指定しなかった property は空になるため、残したい値はすべて送り直す必要があります。
 
+`data upsert <org/repo> <data-id>` は呼び出し側が決めた ID に record を作成し、既にあれば更新します。同じ ID で再実行しても record と URL は変わらないので、生成したページを何度も公開し直す用途（Claude artifact の代わりに Library を使う流れ）に向いています。ID は `data_` に小文字を続けた形式で、通常は `data_` + 小文字の ULID にします。`update` と違い、指定しなかった property は保持されます。text 出力では先頭に `created` / `updated` を表示します。
+
 ### 削除の確認
 
 `delete` は取り消せないため確認を求めます。非対話環境 (CI / agent) には答える端末が無いので、prompt を黙って通すのではなく `--yes` が無ければ失敗します。
 
 ## プロパティ値の指定
 
-`data create` / `data update` は property を 3 種類のフラグで埋めます。
+`data create` / `data update` / `data upsert` は property を 4 種類のフラグで埋めます。
 
 | フラグ | 解釈 |
 | --- | --- |
 | `--set <PROPERTY>=<VALUE>` | プレーン文字列 |
 | `--set-markdown <PROPERTY>=<VALUE>` | Markdown |
+| `--set-html <PROPERTY>=<VALUE>` | HTML ドキュメント。Html property に入れると v2 client がサンドボックス iframe で描画します |
 | `--set-json <PROPERTY>=<JSON>` | 生 JSON。数値・真偽値・配列・relation 用 |
 
 `<PROPERTY>` には **property 名と property id のどちらでも書けます。** CLI が repo の property 一覧を引いて名前を id に解決し、どちらにも一致しなければ既知の property 名を添えて失敗します。
@@ -104,6 +107,14 @@ library data create acme/docs \
 
 ```bash
 git log --oneline -20 | library data create acme/docs --name 'Recent commits' --set body=@-
+```
+
+HTML ファイルをそのまま artifact として公開し、同じ ID で更新し続ける例です。`body` は `property_type: html` の property で、repo にはそれ以外の本文系 property（RichText / Markdown）が無い前提です。
+
+```bash
+library data upsert acme/artifacts data_01k4qz3v8m2x7h9d1c5n6p8r0t \
+  --name 'Weekly report' \
+  --set-html body=@report.html
 ```
 
 ## MCP

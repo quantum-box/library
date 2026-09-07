@@ -116,9 +116,12 @@ library org update acme --name '新しい名前' --description "$(library --json
 | `library data get <org/repo> <data-id>` | record 詳細 |
 | `library data create <org/repo> --name <name> [--set ...]` | record を作成 |
 | `library data update <org/repo> <data-id> --name <name> [--set ...]` | record を置換 |
+| `library data upsert <org/repo> <data-id> --name <name> [--set ...]` | 呼び出し側が決めた ID に record を作成、既にあれば更新。`PUT /v1beta/repos/{org}/{repo}/data/{data_id}/upsert` |
 | `library data delete <org/repo> <data-id> [--yes]` | record を削除 |
 
 `data update` は PATCH ではなく置換である。指定しなかった property は空になるため、残したい値はすべて送り直す必要がある。
+
+`data upsert` は同じ ID で再実行しても record と URL が変わらない。ID は `data_` に小文字を続けた形式（通常は `data_` + 小文字 ULID）。`update` と違い、指定しなかった property は保持される（API の upsert usecase が patch として扱うため）。text 出力では `201` / `200` に応じて先頭に `created` / `updated` を表示し、`--json` は response をそのまま流す。
 
 ### `property`
 
@@ -150,12 +153,13 @@ library org update acme --name '新しい名前' --description "$(library --json
 
 ## 5. プロパティ値の指定
 
-`data create` / `data update` は property を 3 種類のフラグで埋める。
+`data create` / `data update` / `data upsert` は property を 4 種類のフラグで埋める。
 
 | フラグ | 解釈 |
 | --- | --- |
 | `--set <PROPERTY>=<VALUE>` | プレーン文字列 |
-| `--set-markdown <PROPERTY>=<VALUE>` | Markdown |
+| `--set-markdown <PROPERTY>=<VALUE>` | Markdown（`{"markdown": …}`） |
+| `--set-html <PROPERTY>=<VALUE>` | HTML ドキュメント（`{"html": …}`）。Html property に入れると v2 client がサンドボックス iframe で描画する |
 | `--set-json <PROPERTY>=<JSON>` | 生 JSON。数値・真偽値・配列・relation 用 |
 
 `<PROPERTY>` には **property 名と property id のどちらでも書ける**。CLI が repo の property 一覧を引いて名前を id に解決し、どちらにも一致しなければ既知の property 名を添えて失敗する。

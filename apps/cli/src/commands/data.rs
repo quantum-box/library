@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
+use reqwest::StatusCode;
 use serde_json::{json, Map, Value};
 
 use crate::client::LibraryClient;
@@ -62,6 +63,20 @@ pub enum DataCommand {
         #[command(flatten)]
         values: PropertyValueArgs,
     },
+    /// Create the record at a caller-chosen id, or update the one already
+    /// there. Re-running with the same id keeps the same record and URL.
+    Upsert {
+        /// Repository as `org/repo`
+        repo: String,
+        /// Record id chosen by the caller: `data_` followed by lowercase
+        /// characters, e.g. `data_01k4qz3v8m2x7h9d1c5n6p8r0t`
+        data_id: String,
+        /// Record name
+        #[arg(long)]
+        name: String,
+        #[command(flatten)]
+        values: PropertyValueArgs,
+    },
     /// Delete a record
     Delete {
         /// Repository as `org/repo`
@@ -90,6 +105,10 @@ pub struct PropertyValueArgs {
     #[arg(long = "set-markdown", value_name = "PROPERTY=VALUE")]
     pub set_markdown: Vec<String>,
 
+    /// Set a property to an HTML document: `--set-html body=@report.html`
+    #[arg(long = "set-html", value_name = "PROPERTY=VALUE")]
+    pub set_html: Vec<String>,
+
     /// Set a property to raw JSON, for numbers, lists, and relations:
     /// `--set-json count=42`
     #[arg(long = "set-json", value_name = "PROPERTY=JSON")]
@@ -100,6 +119,7 @@ impl PropertyValueArgs {
     fn is_empty(&self) -> bool {
         self.set.is_empty()
             && self.set_markdown.is_empty()
+            && self.set_html.is_empty()
             && self.set_json.is_empty()
     }
 }
@@ -216,6 +236,32 @@ pub async fn run(
             render_data(&response, format);
             Ok(())
         }
+        DataCommand::Upsert {
+            repo,
+            data_id,
+            name,
+            values,
+        } => {
+            let (org, repo) = parse_repo_ref(&repo)?;
+            let property_data =
+                build_property_data(client, &org, &repo, &values).await?;
+            let (status, response) = client
+                .put_with_status(
+                    &format!(
+                        "/v1beta/repos/{org}/{repo}/data/{data_id}/upsert"
+                    ),
+                    json!({
+                        "name": name,
+                        "property_data": property_data,
+                    }),
+                )
+                .await?;
+            if format == Format::Text {
+                println!("{}", upsert_outcome(status));
+            }
+            render_data(&response, format);
+            Ok(())
+        }
         DataCommand::Delete { repo, data_id, yes } => {
             let (org, repo) = parse_repo_ref(&repo)?;
             crate::commands::confirm(
@@ -252,7 +298,25 @@ async fn build_property_data(
         .get(&format!("/v1beta/repos/{org}/{repo}/properties"), &[])
         .await?;
     let index = PropertyIndex::from_response(&properties);
+    property_entries(&index, values)
+}
 
+/// The API answers an upsert with `201` when it created the record and
+/// `200` when it updated the one already there.
+fn upsert_outcome(status: StatusCode) -> &'static str {
+    if status == StatusCode::CREATED {
+        "created"
+    } else {
+        "updated"
+    }
+}
+
+/// Encode each flag's value the way the API infers property kinds: a bare
+/// string is plain text, and the text families are tagged by their key.
+fn property_entries(
+    index: &PropertyIndex,
+    values: &PropertyValueArgs,
+) -> Result<Vec<Value>> {
     let mut entries: Vec<Value> = Vec::new();
     for raw in &values.set {
         let (key, value) = parse_pair(raw)?;
@@ -268,6 +332,15 @@ async fn build_property_data(
             // The API reads `{"markdown": …}` as a Markdown value; a bare
             // string would land as plain text instead.
             "value": json!({ "markdown": read_possible_file(&value)? }),
+        }));
+    }
+    for raw in &values.set_html {
+        let (key, value) = parse_pair(raw)?;
+        entries.push(json!({
+            "property_id": index.resolve(&key)?,
+            // `{"html": …}` lands in an Html Property as the document
+            // itself, which the client renders as a sandboxed artifact.
+            "value": json!({ "html": read_possible_file(&value)? }),
         }));
     }
     for raw in &values.set_json {
@@ -424,6 +497,32 @@ mod tests {
         assert!(error.contains("Missing"));
         assert!(error.contains("Body"));
         assert!(error.contains("Title"));
+    }
+
+    #[test]
+    fn text_flags_are_tagged_by_kind_and_json_is_passed_through() {
+        let values = PropertyValueArgs {
+            set: vec!["Title=hello".to_string()],
+            set_markdown: vec!["prop_1=# Notes".to_string()],
+            set_html: vec!["Body=<!doctype html><p>hi</p>".to_string()],
+            set_json: vec!["prop_2=42".to_string()],
+        };
+        let entries = property_entries(&index(), &values).unwrap();
+        assert_eq!(
+            entries,
+            vec![
+                json!({ "property_id": "prop_2", "value": "hello" }),
+                json!({ "property_id": "prop_1", "value": { "markdown": "# Notes" } }),
+                json!({ "property_id": "prop_1", "value": { "html": "<!doctype html><p>hi</p>" } }),
+                json!({ "property_id": "prop_2", "value": 42 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_upsert_reports_whether_the_record_was_created() {
+        assert_eq!(upsert_outcome(StatusCode::CREATED), "created");
+        assert_eq!(upsert_outcome(StatusCode::OK), "updated");
     }
 
     #[test]
