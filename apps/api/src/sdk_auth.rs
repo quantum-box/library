@@ -665,7 +665,8 @@ impl SdkAuthApp {
         let mut headers = reqwest::header::HeaderMap::new();
         // `get_user_id` is not the test here: it succeeds for a system
         // executor too, whose id is the literal "system".
-        let bearer = if executor.is_user() {
+        let bearer = if executor.is_user() || executor.is_service_account()
+        {
             request_caller_token()
                 .unwrap_or_else(|| self.auth_token.clone())
         } else {
@@ -4065,6 +4066,23 @@ mod caller_token_scope_tests {
             authorization_for_check_policy(&auth::Executor::SystemUser)
                 .await,
             Some("Bearer process-level-token".to_string()),
+        );
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_a_service_account_send_the_caller_token() {
+        let executor = auth::Executor::ServiceAccount(Box::new(
+            auth::ServiceAccount {
+                id: Default::default(),
+                tenant_id: TEST_TENANT_ID.parse().unwrap(),
+                name: "MCP test key".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ));
+        assert_eq!(
+            authorization_for_check_policy(&executor).await,
+            Some("Bearer caller-jwt".to_string()),
+            "API-key policies must not be evaluated using the service's fallback credential",
         );
     }
 

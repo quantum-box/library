@@ -2,64 +2,74 @@ name: Desktop Release
 
 on:
   push:
-    tags:
-      - 'library-v*'
+    branches: [main]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to release (e.g. library-v0.1.5). Created if missing.'
-        required: true
+      source_sha:
+        description: 'Full main commit SHA to release/retry; empty releases current main.'
+        required: false
 
+permissions:
+  contents: read
+
+# Preserve successive merges instead of replacing the pending release.
+# Serializing the whole workflow also prevents an older retry racing promotion.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: library-desktop-release
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare-release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
       tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      source: ${{ steps.release.outputs.source }}
+      build: ${{ steps.release.outputs.build }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Prepare GitHub Release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tag merged version and prepare draft
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ inputs.tag || github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          SOURCE_BASE_SHA: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: node scripts/desktop-release/release.mjs prepare
 
-          version="$(node -p "require('./apps/client/package.json').version")"
-          if [ "$TAG_NAME" != "library-v${version}" ]; then
-            echo "Tag ${TAG_NAME} does not match apps/client/package.json version ${version}." >&2
-            exit 1
-          fi
-
-          if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
-            git tag "$TAG_NAME" "$SHA"
-            git push origin "refs/tags/${TAG_NAME}"
-          fi
-
-          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release create "$TAG_NAME" \
-              --target "$SHA" \
-              --draft \
-              --generate-notes \
-              --title "Library ${version}"
-          fi
-
-          echo "release_id=$(gh release view "$TAG_NAME" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+  verify-client:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run type-check
+      - run: npm run build
 
   build-tauri:
-    needs: prepare-release
+    needs: [prepare-release, verify-client]
     permissions:
       contents: write
     strategy:
@@ -134,17 +144,21 @@ jobs:
 
   publish-release:
     needs: [prepare-release, build-tauri]
+    if: >-
+      always() && needs.prepare-release.result == 'success' &&
+      (needs.build-tauri.result == 'success' || needs.prepare-release.outputs.build == 'false')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Publish release
-        uses: actions/github-script@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          script: |
-            await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: ${{ needs.prepare-release.outputs.release_id }},
-              draft: false,
-            });
+          node-version: 22
+      - name: Validate complete updater feed and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare-release.outputs.source }}
+        run: node scripts/desktop-release/release.mjs publish
