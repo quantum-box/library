@@ -485,6 +485,7 @@ export const en = {
   'shortcuts.focusSearch': 'Focus data search',
   'shortcuts.toggleTableBoard': 'Toggle table or board',
   'shortcuts.openCommandMenu': 'Open command menu',
+  'shortcuts.copyPageUrl': 'Copy page URL',
   'shortcuts.showShortcuts': 'Show shortcuts',
   'shortcuts.chat': 'Chat',
   'shortcuts.sync': 'Sync',

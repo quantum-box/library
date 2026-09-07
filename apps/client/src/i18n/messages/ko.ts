@@ -425,6 +425,7 @@ export const ko: LocaleMessages = {
   'shortcuts.focusSearch': '데이터 검색으로 포커스',
   'shortcuts.toggleTableBoard': '테이블/보드 전환',
   'shortcuts.openCommandMenu': '명령 메뉴 열기',
+  'shortcuts.copyPageUrl': '페이지 URL 복사',
   'shortcuts.showShortcuts': '단축키 표시',
   'shortcuts.chat': '채팅',
   'shortcuts.sync': '동기화',

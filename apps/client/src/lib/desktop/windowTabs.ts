@@ -28,6 +28,15 @@ export async function fetchTargetOs(): Promise<string | null> {
   return invoke<string>('app_target_os')
 }
 
+/**
+ * The shell is Tauri on mobile too, so `isTauriRuntime` alone cannot tell a
+ * desktop window from a phone. Anything the desktop owns -- the tab strip,
+ * the menu bar, the window shortcuts -- has to ask the target OS.
+ */
+export function isDesktopTargetOs(target: string | null) {
+  return target === 'macos' || target === 'windows' || target === 'linux'
+}
+
 export function listWindowTabs() {
   return invoke<WindowTab[]>('list_window_tabs')
 }

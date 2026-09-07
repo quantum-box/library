@@ -438,6 +438,7 @@ export const ru: LocaleMessages = {
   'shortcuts.focusSearch': 'Перейти к поиску данных',
   'shortcuts.toggleTableBoard': 'Переключить таблицу и доску',
   'shortcuts.openCommandMenu': 'Открыть меню команд',
+  'shortcuts.copyPageUrl': 'Скопировать URL страницы',
   'shortcuts.showShortcuts': 'Показать сочетания клавиш',
   'shortcuts.chat': 'Чат',
   'shortcuts.sync': 'Синхронизация',

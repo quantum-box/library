@@ -43,6 +43,8 @@ import { ChatView } from './components/chat/ChatView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
 import { CommandPalette } from './components/CommandPalette'
 import { WindowTabStrip } from './components/desktop/WindowTabStrip'
+import { useDesktopShell } from './lib/desktop/useDesktopShell'
+import { useCopyPageUrlShortcut, type CopyLinkStatus } from './lib/desktop/useCopyPageUrl'
 import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
 import {
@@ -411,8 +413,26 @@ function SignedInLibraryDashboard({
   )
 }
 
+/** Confirms the ⌘L copy, which has no other visible effect. */
+function CopyLinkToast({ status }: { status: CopyLinkStatus }) {
+  const { t } = useI18n()
+  if (!status) return null
+
+  return (
+    <div
+      data-testid="copy-link-toast"
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[80] -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground shadow-overlay"
+    >
+      {status === 'copied' ? t('common.copied') : t('docs.copyFailed')}
+    </div>
+  )
+}
+
 function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n()
+  const desktop = useDesktopShell()
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useDialogFocus({ open, dialogRef, initialFocusRef: closeButtonRef, onClose })
@@ -426,6 +446,10 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
     { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
     { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
+    // Only the desktop shell hides the address of the current route.
+    ...(desktop
+      ? [{ keys: renderShortcutKeys([modifier, 'L']), label: t('shortcuts.copyPageUrl') }]
+      : []),
     { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
     { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
     { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
@@ -816,11 +840,16 @@ const rootRoute = createRootRoute({
       select: (state) => isPublicRoutePathname(state.location.pathname),
     })
 
+    // Every route of the desktop shell answers ⌘L, including the public
+    // reader and the sign-in gate, none of which show their address anywhere.
+    const copyLinkStatus = useCopyPageUrlShortcut()
+
     // The tab strip is the window titlebar on macOS desktop, so it sits above
     // both the public shell and the sign-in gate. It renders nothing elsewhere.
     return (
       <div className="flex h-full min-h-0 flex-col">
         <WindowTabStrip />
+        <CopyLinkToast status={copyLinkStatus} />
         <div className="min-h-0 flex-1">
           {publicRoute ? (
             <PublicShell>

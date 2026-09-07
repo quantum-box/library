@@ -425,6 +425,7 @@ export const de: LocaleMessages = {
   'shortcuts.focusSearch': 'Fokus auf die Datensuche',
   'shortcuts.toggleTableBoard': 'Zwischen Tabelle und Board wechseln',
   'shortcuts.openCommandMenu': 'Befehlsmenü öffnen',
+  'shortcuts.copyPageUrl': 'Seiten-URL kopieren',
   'shortcuts.showShortcuts': 'Tastenkürzel anzeigen',
   'shortcuts.chat': 'Chat',
   'shortcuts.sync': 'Sync',

@@ -425,6 +425,7 @@ export const ptBR: LocaleMessages = {
   'shortcuts.focusSearch': 'Focar a busca de dados',
   'shortcuts.toggleTableBoard': 'Alternar entre tabela e quadro',
   'shortcuts.openCommandMenu': 'Abrir o menu de comandos',
+  'shortcuts.copyPageUrl': 'Copiar a URL da página',
   'shortcuts.showShortcuts': 'Mostrar os atalhos',
   'shortcuts.chat': 'Chat',
   'shortcuts.sync': 'Sincronização',
