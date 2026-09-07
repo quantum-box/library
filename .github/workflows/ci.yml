@@ -14,6 +14,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  desktop-version:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require implementation PR to bump desktop version
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: node scripts/desktop-release/release.mjs check-version
+
+  desktop-release-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/desktop-release/*.test.mjs
+
   rust-fmt:
     runs-on: ubuntu-latest
     timeout-minutes: 15
