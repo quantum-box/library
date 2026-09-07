@@ -42,7 +42,7 @@ codex plugin add library@library
 
 接続先は `https://library-api.txcloud.app/mcp`（HTTP）です。公開データは匿名で読めます。更新操作には Library アカウントの認証と対象への権限が必要です。Claude Code では `/mcp` から Library を選んで認証し、Codex ではプラグインの認証導線に従ってください。認証後に接続・ツール一覧を再読み込みします。パスワードやトークンをチャットやこのリポジトリに貼り付ける必要はありません。
 
-`0.2.0` は `get_me` / `list_orgs` / `list_repos` / `rename_repo` / `upsert_data` に対応したサーバーで使用します。認証済みのData読み取りには実際のorg IDと利用者の認証情報を渡し、既存のread権限を評価します。`get_data` はMarkdownに加えて、編集に使える型付き `property_data`、正規URL、`record_version` を返します。`upsert_data` は指定したData IDを再利用するため、再試行で別のレコードを作りません。ただし更新によるrevision増加や同時更新の競合は防ぎません。
+`0.2.0` は `get_me` / `list_orgs` / `list_repos` / `rename_repo` / `upsert_data` に対応したサーバーで使用します。認証済みのData読み取りには実際のorg IDと利用者の認証情報を渡し、既存のread権限を評価します。`get_data` はMarkdownに加えて、編集に使える型付き `property_data`、正規URL、`record_version` を返します。`upsert_data` は指定したData IDを再利用するため、再試行で別のレコードを作りません。ただし再書き込みや同時更新の競合は防ぎません。現行MCP CRUDは`record_version`を増加させないため、この番号を更新検知・競合確認に使わず、変更内容を再取得して確認します。
 
 ツールが見つからない場合は、接続先APIのデプロイとツール一覧の再読み込みを確認してください。プラグインの更新だけではAPI側のツールは増えません。詳しい対応範囲は [MCP機能監査](https://github.com/quantum-box/library/blob/main/docs/specs/integrations/mcp-coverage.md) にあります。
 

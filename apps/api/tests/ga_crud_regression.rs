@@ -206,7 +206,9 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
         "org":org,"repo":repo,"data_id":data_id,"name":"MCP test record",
         "property_data":[{"property_id":body_id,"value_type":"markdown","value":"# Updated"}]
     })).await?;
-    assert_eq!(updated["data"]["record_version"], "2");
+    // Legacy CRUD does not advance the versioned mutation counter. MCP
+    // exposes the stored value, not a concurrency token for these writes.
+    assert_eq!(updated["data"]["record_version"], "1");
     let read = mcp_call(
         &client,
         &server,
@@ -215,6 +217,10 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
     )
     .await?;
     assert!(read["data"]["url"].as_str().unwrap().contains(data_id));
+    assert_eq!(
+        read["data"]["record_version"],
+        updated["data"]["record_version"]
+    );
     let values = read["data"]["property_data"].as_array().unwrap();
     assert_eq!(
         values.iter().find(|v| v["property_id"] == flag_id).unwrap()

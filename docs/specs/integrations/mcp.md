@@ -214,8 +214,8 @@ Data を作成する。認証必須。
 ### Data update / upsert
 
 - `update_data`: 必須`org`, `repo`, `data_id`, `name`。`property_data`に指定したPropertyだけを更新し、他の値は保持する。
-- `upsert_data`: 同じ引数で、指定した有効な`data_id`のレコードを作成または更新する。戻り値の`outcome`は`created` / `updated`。同じIDへの再試行で別レコードを作らないが、revision増加や同時更新を防ぐものではない。
-- write後のData結果にも型付き値・URL・revisionを含む。`record_version`は比較用の情報であり、現在のwrite toolには条件付き更新の引数はない。
+- `upsert_data`: 同じ引数で、指定した有効な`data_id`のレコードを作成または更新する。戻り値の`outcome`は`created` / `updated`。同じIDへの再試行で別レコードを作らないが、再書き込みや同時更新の競合を防ぐものではない。
+- write後のData結果にも型付き値・URL・revisionを含む。`record_version`は保存済みの版番号を参考情報として返す。現行MCP CRUDはlegacy経路で、この番号を増加させない。変更の検知・競合確認には使えず、条件付き更新の引数もない。変更内容は再取得して確認する。
 
 ### Organization tools
 

@@ -2044,7 +2044,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         }),
         json!({
             "name": "get_data",
-            "description": "Get a record as Markdown and typed property_data with its canonical URL and record_version. Private records require read permission.",
+            "description": "Get a record as Markdown and typed property_data with its canonical URL and informational record_version (current MCP CRUD does not advance this counter). Private records require read permission.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

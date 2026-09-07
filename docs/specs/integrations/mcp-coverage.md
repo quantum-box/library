@@ -16,7 +16,7 @@ PLT-4345では、Claude Code / Codexから「所属先を探す → repository�
 | Data一覧・検索・取得 | `list_data`, `search_data`, `get_data` | 認証済みexecutorと実org IDを渡すよう修正。private repoの既存read権限を評価 |
 | 型付きData読み取り | `get_data` | Markdownを維持したまま、`property_data`, `url`, `record_version` を追加。型付き編集に利用可能 |
 | Data作成・編集・削除 | `create_data`, `update_data`, `delete_data` | 既存。write結果にもURL・型付き値・revisionを追加。`update_data`は指定Propertyだけをpatch |
-| 指定IDへのData保存 | `upsert_data` | RESTのupsert usecaseを公開。ID再利用で重複作成を防ぐ。revision増加・同時更新は別問題 |
+| 指定IDへのData保存 | `upsert_data` | RESTのupsert usecaseを公開。ID再利用で重複作成を防ぐ。同時更新の競合は防がない |
 | Property CRUD | `list_properties`, `get_property`, `create_property`, `update_property`, `delete_property` | 既存。Dataの入力にも欠けていた`id` / `location`を追加 |
 | Source CRUD | `list_sources`, `get_source`, `create_source`, `update_source`, `delete_source` | 既存。URL省略と明示nullが区別されず解除できなかった不具合を修正 |
 
@@ -31,6 +31,7 @@ PLT-4345では、Claude Code / Codexから「所属先を探す → repository�
 - MCP HTTPとSSEで検証済みcaller tokenを同じように引き継ぐ。API keyのpolicy評価も呼び出し元のcredentialを使う。内部SystemUserの処理は従来のservice credentialを維持する。
 - `page`は1以上、`page_size`は1〜100。無効値は`-32602`。結果のないページは空配列と要求したページ番号を返す。
 - `search_data`は現行のDB queryに合わせた **Data名の完全一致**。空queryなら一覧になる。以前のtool説明にあった「indexed content検索」は実装と一致しないため訂正した。全文検索やorg横断検索は提供しない。
+- `record_version`は保存済みの版番号の参考情報。現行MCP CRUDが使うlegacy経路はこの番号を増加させないため、更新検知や競合防止には使えない。変更内容は再取得で確認する。
 - `upsert_data`は有効なData IDが必要。固定IDを再利用できるが、compare-and-swapや副作用を含めたexactly-once処理を提供するものではない。
 - Property値は読み取りと書き込みで同じ`property_id` / `value_type` / `value`形式を使う。relationは対象Data IDの配列、locationは`latitude` / `longitude`、rich_textはJSON。自動生成Idは変更しない。
 - nullableな文字列系Propertyは明示nullでクリアできる。booleanのnullもクリア、relationのnullは空配列、multi_selectのnullは選択解除。locationのnullクリアは現行usecaseにないため未対応であり、無効入力として拒否する。
