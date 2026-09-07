@@ -10,7 +10,6 @@ import {
   FolderGit2,
   Plus,
   RefreshCw,
-  Rows3,
 } from 'lucide-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import {
@@ -242,30 +241,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
           </Link>
         </Button>
       </header>
-
-      <nav
-        aria-label={t('organization.sections')}
-        className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1 md:px-3"
-      >
-        <span className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
-          <Rows3 className="size-3.5" aria-hidden="true" />
-          {t('repository.overview')}
-        </span>
-        <a
-          href="#repositories"
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <FolderGit2 className="size-3.5" aria-hidden="true" />
-          {t('sidebar.repositories.heading')}
-        </a>
-        <a
-          href="#activity"
-          className="flex h-7 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground no-underline hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <Activity className="size-3.5" aria-hidden="true" />
-          {t('repository.activity')}
-        </a>
-      </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-background">
         <section className="flex items-start gap-3 border-b border-border px-4 py-4 md:px-5">

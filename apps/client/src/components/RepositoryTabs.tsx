@@ -1,6 +1,5 @@
 import { Link } from '@tanstack/react-router'
 import {
-  Activity,
   BookOpen,
   FileKey2,
   KeyRound,
@@ -103,13 +102,6 @@ export function RepositoryTabs({
           </DataLink>
         )}
       </Tab>
-
-      {active === 'overview' ? (
-        <a href="#activity" className={tabClassName}>
-          <Activity className="size-3.5" aria-hidden="true" />
-          {t('repository.activity')}
-        </a>
-      ) : null}
 
       <Tab active={active === 'properties'} icon={FileKey2} label={t('viewSettings.properties')}>
         {(className, content) => (
