@@ -63,7 +63,7 @@ test.describe('Library mobile shell', () => {
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\//)
   })
 
-  test('shows a public repository as cards for a signed-out visitor', async ({ page, request }) => {
+  test('reads public documentation without signing in on mobile', async ({ page, request }) => {
     // The public route is what a shared link opens, so exercise it the way a
     // visitor arrives: no session, phone viewport.
     await request.post('http://127.0.0.1:50063/v1/graphql', {
@@ -83,7 +83,7 @@ test.describe('Library mobile shell', () => {
     await page.evaluate(() => window.localStorage.clear())
     await page.reload()
 
-    const cards = page.locator('[data-testid^="public-repository-card-"]')
+    const cards = page.getByRole('main').getByRole('link', { name: 'Prepare release notes', exact: true })
     await expect(cards.first()).toBeVisible()
     await expect(page.locator('table')).toHaveCount(0)
 
@@ -94,5 +94,10 @@ test.describe('Library mobile shell', () => {
 
     await cards.first().click()
     await expect(page).toHaveURL(/\/public\/quantum-box\/photon-core\/.+/)
+    await expect(page.getByRole('heading', { name: 'Prepare release notes', exact: true })).toBeVisible()
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Open article menu' }).click()
+    await page.getByRole('navigation', { name: 'Articles', exact: true }).getByRole('link', { name: 'Review content schema', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Review content schema', exact: true })).toBeVisible()
   })
 })
