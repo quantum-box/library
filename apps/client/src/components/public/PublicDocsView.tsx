@@ -198,7 +198,6 @@ function DocsReader({
           </span>
           <strong>{profile.name || profile.username}</strong>
         </Link>
-        <span className="docs-header-label">{t('docs.guide')}</span>
         <span className="docs-readonly">{t('public.readOnly')}</span>
       </header>
       <div className="docs-layout">
@@ -303,7 +302,7 @@ function DocsReader({
             <div className="docs-breadcrumb">
               {profile.orgUsername}
               <ChevronRight size={12} />
-              {t('docs.guide')}
+              {profile.name || profile.username}
             </div>
             <h1>{profile.name || profile.username}</h1>
             {profile.description && (
@@ -475,7 +474,7 @@ function DocsArticle({
             to="/public/$organization/$repository"
             params={{ organization: org, repository: repo }}
           >
-            {t('docs.guide')}
+            {profile.name || profile.username}
           </Link>
           <ChevronRight size={12} />
           <span>{detail?.item.name}</span>

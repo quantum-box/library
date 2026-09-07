@@ -42,6 +42,7 @@
 - [ADR-0006: Library の Bounded Context と Photon 連携境界](decisions/ADR-0006-library-photon-bounded-contexts.md)
 - [ADR-0007: primary client を `apps/client` とし、Photon を published package から使う](decisions/ADR-0007-primary-client-apps-client.md)
 - [ADR-0008: Library migration は candidate Lambda を production 昇格前に実行する](decisions/ADR-0008-library-candidate-migration-gate.md)
+- [ADR-0010: 公開ドキュメントの本文と表示構成](decisions/ADR-0010-public-docs-information-architecture.md)
 - [テスト戦略](testing/test-strategy.md)
 - [新規登録 / 認証フローのテストカバレッジ](testing/auth-registration-tests.md)
 
