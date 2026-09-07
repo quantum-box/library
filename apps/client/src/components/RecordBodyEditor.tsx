@@ -67,6 +67,8 @@ export interface RecordBodyEditorProps {
   onCommit: (value: string) => void
   editable?: boolean
   surface?: 'panel' | 'page'
+  /** Pin the read-only public reader independently of the OS theme. */
+  theme?: 'light' | 'dark'
   /**
    * Where to store pasted and dropped images. Without it the editor still
    * embeds images by URL, but has nowhere to put a local file, so BlockNote
@@ -256,6 +258,7 @@ function BlockRecordBodyEditor({
   onCommit,
   editable = true,
   surface = 'panel',
+  theme,
   imageTarget,
   collaboration,
 }: RecordBodyEditorProps & { collaboration?: PhotonLiveProvider }) {
@@ -377,6 +380,7 @@ function BlockRecordBodyEditor({
     >
       <BlockNoteView
         editor={editor}
+        theme={theme}
         editable={editable}
         className="photon-blocknote"
         data-theming-css-variables-demo

@@ -96,7 +96,7 @@ describe('public docs reader', () => {
   it('locks the body and builds a heading navigation from rendered content', async () => {
     await open('first')
     expect(mocks.editor).toHaveBeenCalledWith(
-      expect.objectContaining({ editable: false, value: 'Hello reader' }),
+      expect.objectContaining({ editable: false, theme: 'light', value: 'Hello reader' }),
     )
     expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledWith('first', {
       org: 'acme',

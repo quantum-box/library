@@ -37,6 +37,12 @@ import {
   usePublicRepository,
 } from './usePublicRepository'
 import './public-docs.css'
+import { PublicSeo } from './PublicSeo'
+import {
+  publicBodyText,
+  publicDescription,
+  publicDocsPath,
+} from './publicSeoMetadata'
 
 type Props = { organization: string; repository: string; dataId?: string }
 
@@ -57,13 +63,36 @@ function RepositoryGate(props: Props) {
     return <PublicLoadingState label={t('public.openingRepository')} />
   if (state.status !== 'ready' || !state.profile)
     return (
-      <PublicRepositoryState
-        status={state.status === 'ready' ? 'failed' : state.status}
-        organization={props.organization}
-        repository={props.repository}
-        error={state.error}
-        onRetry={state.reload}
-      />
+      <>
+        <PublicSeo
+          title={t(
+            state.status === 'missing'
+              ? 'public.pageNotFound'
+              : 'public.pageLoadFailed',
+          )}
+          site={props.repository}
+          description=""
+          url={
+            new URL(
+              publicDocsPath(
+                props.organization,
+                props.repository,
+                props.dataId,
+              ),
+              window.location.origin,
+            ).href
+          }
+          article={Boolean(props.dataId)}
+          indexable={false}
+        />
+        <PublicRepositoryState
+          status={state.status === 'ready' ? 'failed' : state.status}
+          organization={props.organization}
+          repository={props.repository}
+          error={state.error}
+          onRetry={state.reload}
+        />
+      </>
     )
   return <DocsReader {...props} profile={state.profile} />
 }
@@ -177,6 +206,20 @@ function DocsReader({
   )
   return (
     <div className="public-docs" data-testid="public-docs" ref={readerRef}>
+      {!dataId && (
+        <PublicSeo
+          title={profile.name || profile.username}
+          site={profile.name || profile.username}
+          description={publicDescription(profile.description || '')}
+          url={
+            new URL(
+              publicDocsPath(organization, repository),
+              window.location.origin,
+            ).href
+          }
+          article={false}
+        />
+      )}
       <header className="docs-header">
         <button
           ref={menuRef}
@@ -389,14 +432,6 @@ function DocsArticle({
     }
   }, [dataId, org, repo, attempt])
   useEffect(() => {
-    const previous = document.title
-    if (detail)
-      document.title = `${detail.item.name || t('common.untitled')} · ${profile.name || profile.username}`
-    return () => {
-      document.title = previous
-    }
-  }, [detail, profile.name, profile.username, t])
-  useEffect(() => {
     const body = bodyRef.current
     if (!body) return
     const collect = () => {
@@ -468,6 +503,32 @@ function DocsArticle({
   const next = index >= 0 ? items[index + 1] : null
   return (
     <>
+      {(detail || failure) && (
+        <PublicSeo
+          title={
+            detail
+              ? detail.item.name || t('common.untitled')
+              : t(
+                  failure === 'missing'
+                    ? 'public.pageNotFound'
+                    : 'public.pageLoadFailed',
+                )
+          }
+          site={profile.name || profile.username}
+          description={publicDescription(
+            detail && bodyProperty
+              ? publicBodyText(value, bodyPropertyFormat(bodyProperty))
+              : '',
+            profile.description || '',
+          )}
+          url={
+            new URL(publicDocsPath(org, repo, dataId), window.location.origin)
+              .href
+          }
+          article={true}
+          indexable={Boolean(detail) && !failure}
+        />
+      )}
       <main ref={contentRef} className="docs-content" tabIndex={-1}>
         <div className="docs-breadcrumb">
           <Link
@@ -523,6 +584,7 @@ function DocsArticle({
                   format={bodyPropertyFormat(bodyProperty)}
                   surface="page"
                   editable={false}
+                  theme="light"
                   onCommit={() => {}}
                 />
               ) : (

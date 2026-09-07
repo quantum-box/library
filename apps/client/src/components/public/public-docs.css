@@ -1,4 +1,31 @@
 .public-docs {
+  /* Local theme boundary: shared editor utilities read these tokens, not
+     --background. Never change the signed-in application's saved theme. */
+  --nui-background: 0 0% 100%;
+  --nui-surface: 210 40% 98%;
+  --nui-foreground: 221 31% 21%;
+  --nui-muted: 210 40% 96%;
+  --nui-muted-foreground: 219 16% 47%;
+  --nui-subtle-foreground: 219 16% 52%;
+  --nui-border: 214 32% 91%;
+  --nui-border-strong: 214 32% 85%;
+  --nui-popover: 0 0% 100%;
+  --nui-popover-foreground: 221 31% 21%;
+  --bg-primary: #fff;
+  --bg-surface: #fff;
+  --bg-hover: #f1f5f9;
+  --bg-code: #f8fafc;
+  --text-primary: #253047;
+  --text-secondary: #65738a;
+  --text-muted: #748094;
+  --text-code: #334155;
+  --border-color: #e2e8f0;
+  --accent: #315fdd;
+  --accent-foreground: #fff;
+  --ring-color: #87aaff;
+  --color-background: #fff;
+  --color-surface: #fff;
+
   --docs-blue: #315fdd;
   --docs-line: #e8ecf2;
   --docs-muted: #65738a;
@@ -497,4 +524,14 @@
 .public-docs .docs-body .bn-block-content[data-content-type="heading"] {
   margin-top: 22px;
   margin-bottom: 10px;
+}
+
+/* Read-only documents have content height, not the editing canvas height. */
+.public-docs .docs-body .bn-editor {
+  min-height: 0;
+}
+.public-docs .docs-body a {
+  color: var(--docs-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

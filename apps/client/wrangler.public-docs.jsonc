@@ -1,0 +1,7 @@
+{
+  "name": "library-client",
+  "pages_build_output_dir": "dist",
+  // Match the existing sync Worker and the locked workerd used by local/CI tests.
+  "compatibility_date": "2026-05-05",
+  "compatibility_flags": ["nodejs_compat"]
+}
