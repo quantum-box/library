@@ -2,6 +2,10 @@
 
 対象: Library の org / repo / Data / Property / Source を MCP client から読み書きするための JSON-RPC endpoint。
 
+Claude Code / Codex 向けの接続設定とスキルは [Library plugin](../../../plugins/library/README.md) として同梱している。
+
+現行実装の注意: `list_data` / `search_data` / `get_data` は token の有無に関わらず匿名の実行者を使用するため、private repo の Data は取得できない。認証を参照するメタデータ取得と write tools の権限制御とは区別する。
+
 ## 1. Endpoint
 
 2 種類の transport を提供する。どちらも同じ tool set・同じ認証規則で動く。

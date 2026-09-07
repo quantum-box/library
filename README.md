@@ -67,6 +67,10 @@ library --json repo list <org>
 
 詳細は [apps/cli/README.md](apps/cli/README.md)。
 
+## Claude Code / Codex プラグイン
+
+公開データの検索・要約や認証済みの更新操作を、HTTP MCPと共通スキルで利用できます。このリポジトリに両クライアントのmarketplace定義を同梱しています。インストール、認証、現行APIの制限は [Library plugin](plugins/library/README.md) を参照してください。
+
 ## 開発
 
 ローカルでは変更した package に絞って確認し、workspace 全体は CI に任せます。

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "library": {
+      "type": "http",
+      "url": "https://library-api.txcloud.app/mcp"
+    }
+  }
+}
