@@ -5,6 +5,23 @@ import type { LocaleMessages } from '../translate'
  * text differs. `src/i18n/catalogs.test.ts` fails if the two drift apart.
  */
 export const ja: LocaleMessages = {
+  'docs.openPublic': "公開ドキュメントを開く",
+  'docs.copyUrl': "URLをコピー",
+  'docs.copyFailed': "URLをコピーできませんでした",
+  'docs.guide': "利用ガイド",
+  'docs.menu': "記事メニューを開く",
+  'docs.search': "記事を検索",
+  'docs.articles': "記事一覧",
+  'docs.overview': "ガイドのトップ",
+  'docs.loadedOnly': "検索対象は読み込み済みの記事です。さらに探すには追加で読み込んでください。",
+  'docs.powered': "Published with",
+  'docs.welcome': "知りたいことを、ここから。",
+  'docs.browse': "記事一覧や検索から、必要な情報を見つけましょう。",
+  'docs.noBody': "このページには本文がありません。",
+  'docs.pagination': "前後の記事",
+  'docs.previous': "前の記事",
+  'docs.next': "次の記事",
+  'docs.onThisPage': "このページの内容",
   'common.cancel': 'キャンセル',
   'common.close': '閉じる',
   'common.save': '保存',

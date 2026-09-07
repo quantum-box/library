@@ -2,6 +2,23 @@ import type { LocaleMessages } from '../translate'
 
 /** Brazilian Portuguese catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const ptBR: LocaleMessages = {
+  'docs.openPublic': "Abrir documentação pública",
+  'docs.copyUrl': "Copiar URL",
+  'docs.copyFailed': "Não foi possível copiar a URL",
+  'docs.guide': "Documentação",
+  'docs.menu': "Abrir menu de artigos",
+  'docs.search': "Pesquisar artigos",
+  'docs.articles': "Artigos",
+  'docs.overview': "Visão geral",
+  'docs.loadedOnly': "A busca inclui os artigos carregados. Carregue mais para ampliar a busca.",
+  'docs.powered': "Publicado com",
+  'docs.welcome': "Encontre o próximo passo",
+  'docs.browse': "Explore os artigos ou pesquise o que precisa.",
+  'docs.noBody': "Esta página não tem conteúdo.",
+  'docs.pagination': "Artigos anterior e seguinte",
+  'docs.previous': "Anterior",
+  'docs.next': "Seguinte",
+  'docs.onThisPage': "Nesta página",
   'common.cancel': 'Cancelar',
   'common.close': 'Fechar',
   'common.save': 'Salvar',

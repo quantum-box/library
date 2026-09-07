@@ -16,8 +16,7 @@ import { useMemo, useCallback, useState, createContext, useContext, useEffect, u
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { PublicShell } from './components/public/PublicShell'
-import { PublicRepositoryView } from './components/public/PublicRepositoryView'
-import { PublicDataView } from './components/public/PublicDataView'
+import { PublicDocsView } from './components/public/PublicDocsView'
 import { TableView } from './components/TableView'
 import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
@@ -1876,7 +1875,7 @@ const publicRepositoryRoute = createRoute({
 
 function PublicRepositoryPage() {
   const { organization, repository } = publicRepositoryRoute.useParams()
-  return <PublicRepositoryView organization={organization} repository={repository} />
+  return <PublicDocsView organization={organization} repository={repository} />
 }
 
 const publicDataRoute = createRoute({
@@ -1888,7 +1887,7 @@ const publicDataRoute = createRoute({
 function PublicDataPage() {
   const { organization, repository, dataId } = publicDataRoute.useParams()
   return (
-    <PublicDataView
+    <PublicDocsView
       organization={organization}
       repository={repository}
       dataId={dataId}

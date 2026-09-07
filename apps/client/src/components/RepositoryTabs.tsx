@@ -8,6 +8,7 @@ import {
   Settings,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
+import { PublicDocsActions } from './public/PublicDocsActions'
 import { DataLink } from './DataLink'
 import { useI18n } from '../i18n'
 
@@ -145,6 +146,7 @@ export function RepositoryTabs({
           </Link>
         )}
       </Tab>
+      <PublicDocsActions organization={organization} repository={repository} />
     </nav>
   )
 }

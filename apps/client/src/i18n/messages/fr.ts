@@ -2,6 +2,23 @@ import type { LocaleMessages } from '../translate'
 
 /** French catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const fr: LocaleMessages = {
+  'docs.openPublic': "Ouvrir la documentation publique",
+  'docs.copyUrl': "Copier l’URL",
+  'docs.copyFailed': "Impossible de copier l’URL",
+  'docs.guide': "Documentation",
+  'docs.menu': "Ouvrir le menu des articles",
+  'docs.search': "Rechercher des articles",
+  'docs.articles': "Articles",
+  'docs.overview': "Présentation",
+  'docs.loadedOnly': "La recherche couvre les articles chargés. Chargez-en davantage pour élargir la recherche.",
+  'docs.powered': "Publié avec",
+  'docs.welcome': "Trouvez la prochaine étape",
+  'docs.browse': "Parcourez les articles ou recherchez une information.",
+  'docs.noBody': "Cette page ne contient aucun texte.",
+  'docs.pagination': "Articles précédent et suivant",
+  'docs.previous': "Précédent",
+  'docs.next': "Suivant",
+  'docs.onThisPage': "Sur cette page",
   'common.cancel': 'Annuler',
   'common.close': 'Fermer',
   'common.save': 'Enregistrer',

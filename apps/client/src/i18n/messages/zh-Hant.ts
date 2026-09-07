@@ -2,6 +2,23 @@ import type { LocaleMessages } from '../translate'
 
 /** Traditional Chinese catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const zhHant: LocaleMessages = {
+  'docs.openPublic': "開啟公開文件",
+  'docs.copyUrl': "複製連結",
+  'docs.copyFailed': "無法複製連結",
+  'docs.guide': "使用指南",
+  'docs.menu': "開啟文章選單",
+  'docs.search': "搜尋文章",
+  'docs.articles': "文章列表",
+  'docs.overview': "概覽",
+  'docs.loadedOnly': "僅搜尋已載入的文章。載入更多以擴大搜尋範圍。",
+  'docs.powered': "發佈工具",
+  'docs.welcome': "找到下一步",
+  'docs.browse': "瀏覽文章或搜尋您需要的資訊。",
+  'docs.noBody': "此頁面暫無正文。",
+  'docs.pagination': "上一篇與下一篇",
+  'docs.previous': "上一篇",
+  'docs.next': "下一篇",
+  'docs.onThisPage': "本頁內容",
   'common.cancel': '取消',
   'common.close': '關閉',
   'common.save': '儲存',

@@ -5,6 +5,23 @@ import type { LocaleMessages } from '../translate'
  * and `many` plural categories Russian needs and English has no form for.
  */
 export const ru: LocaleMessages = {
+  'docs.openPublic': "Открыть публичную документацию",
+  'docs.copyUrl': "Копировать URL",
+  'docs.copyFailed': "Не удалось скопировать URL",
+  'docs.guide': "Документация",
+  'docs.menu': "Открыть меню статей",
+  'docs.search': "Поиск статей",
+  'docs.articles': "Статьи",
+  'docs.overview': "Обзор",
+  'docs.loadedOnly': "Поиск по загруженным статьям. Загрузите больше для расширения поиска.",
+  'docs.powered': "Опубликовано с помощью",
+  'docs.welcome': "Найдите следующий шаг",
+  'docs.browse': "Просмотрите статьи или найдите нужную информацию.",
+  'docs.noBody': "У этой страницы нет содержимого.",
+  'docs.pagination': "Предыдущая и следующая статьи",
+  'docs.previous': "Назад",
+  'docs.next': "Далее",
+  'docs.onThisPage': "На этой странице",
   'common.cancel': 'Отмена',
   'common.close': 'Закрыть',
   'common.save': 'Сохранить',

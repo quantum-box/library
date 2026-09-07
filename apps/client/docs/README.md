@@ -9,6 +9,7 @@
 | [`macos-window-tabs.md`](./macos-window-tabs.md) | macOS のウィンドウタブ（単一ウィンドウの子 WebView として実装） |
 | [`library-api-production.md`](./library-api-production.md) | 本番 Library API への接続 |
 | [`data-editor-live.md`](./data-editor-live.md) | data editor の共同編集と Library 側の認可・保存条件 |
+| [`public-docs.md`](./public-docs.md) | public repo の閲覧専用ドキュメント表示・匿名取得・検証範囲 |
 
 ## Photon Engine / Photon Live の設計
 
