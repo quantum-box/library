@@ -1,6 +1,6 @@
 {
   "name": "library",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Search Library data and manage repositories, properties, and sources through MCP.",
   "author": {
     "name": "Quantum Box, Inc.",

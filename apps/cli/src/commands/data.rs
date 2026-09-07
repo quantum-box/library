@@ -50,8 +50,7 @@ pub enum DataCommand {
         #[command(flatten)]
         values: PropertyValueArgs,
     },
-    /// Replace a record. Properties left unset are cleared, so send every
-    /// value the record should keep.
+    /// Update a record name and the supplied properties, preserving other values.
     Update {
         /// Repository as `org/repo`
         repo: String,

@@ -1,6 +1,6 @@
 {
   "name": "library",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Search Library data and manage repositories, properties, and sources through MCP.",
   "author": {
     "name": "Quantum Box, Inc.",
@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "Library",
     "shortDescription": "Search and manage Library data.",
-    "longDescription": "Connect to Library over HTTP MCP to read public data, cite source records, and perform authorized writes with your Library account.",
+    "longDescription": "Connect to Library over HTTP MCP to discover your organizations, read authorized data, cite source records, and perform authorized writes with your Library account.",
     "developerName": "Quantum Box, Inc.",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
