@@ -1,6 +1,6 @@
 # Library plugin
 
-Claude Code と Codex から Library の公開データの検索・要約と、認証済みユーザーに許可された更新操作を行うプラグインです。HTTP MCP の接続設定と、両クライアントで共有する `library` スキルを含みます。ローカルの MCP サーバーや Library CLI のインストールは不要です。
+Claude Code と Codex から Library の所属orgの一覧取得、公開・許可された非公開データの検索・要約、認証済みユーザーに許可された更新操作を行うプラグインです。HTTP MCP の接続設定と、両クライアントで共有する `library` スキルを含みます。ローカルの MCP サーバーや Library CLI のインストールは不要です。
 
 ## インストール
 
@@ -30,19 +30,21 @@ codex plugin add library@library
 
 ## 使い方
 
-organization / repository の slug を添えて依頼します。以下の `example-org` / `handbook` は架空の値なので、自分の対象に置き換えてください。
+まず「Libraryのorg一覧を取得して」と依頼できます。ログイン後、`get_me` → `list_orgs` → `list_repos` で対象を選べます。organization / repository の slug が分かる場合は添えて依頼します。以下の `example-org` / `handbook` は架空の値なので、自分の対象に置き換えてください。
 
 - 「Libraryの `example-org/handbook` からオンボーディングに関するデータを探し、Data IDを添えて要約して」
 - 「Libraryの `example-org/handbook` のプロパティとソースを確認して」
 - 「このメモをLibraryの `example-org/handbook` に新しいデータとして保存して」
 
-検索はリポジトリ内のデータ名に対する検索です。本文の全文検索ではありません。スキルは選択したデータを取得してから要約し、根拠のIDや取得できたURLを残します。
+`search_data` はリポジトリ内のデータ名の完全一致検索です。本文の全文検索ではありません。名前が分からない場合は `list_data` のページをたどって候補を確認します。スキルは選択したデータを取得してから要約し、根拠のIDや取得できたURLを残します。
 
 ## 接続と認証
 
 接続先は `https://library-api.txcloud.app/mcp`（HTTP）です。公開データは匿名で読めます。更新操作には Library アカウントの認証と対象への権限が必要です。Claude Code では `/mcp` から Library を選んで認証し、Codex ではプラグインの認証導線に従ってください。認証後に接続・ツール一覧を再読み込みします。パスワードやトークンをチャットやこのリポジトリに貼り付ける必要はありません。
 
-**現行APIの制限:** `list_data` / `search_data` / `get_data` は認証後も匿名の実行者を使うため、非公開リポジトリのData本文は読めません。認証により利用できるのは許可されたwrite toolsや、認証を参照するメタデータ取得です。非公開Dataの取得には認証済みのLibrary CLI / APIを使用してください。プラグインはAPIの権限やこの制限を変更しません。
+`0.2.0` は `get_me` / `list_orgs` / `list_repos` / `rename_repo` / `upsert_data` に対応したサーバーで使用します。認証済みのData読み取りには実際のorg IDと利用者の認証情報を渡し、既存のread権限を評価します。`get_data` はMarkdownに加えて、編集に使える型付き `property_data`、正規URL、`record_version` を返します。`upsert_data` は指定したData IDを再利用するため、再試行で別のレコードを作りません。ただし再書き込みや同時更新の競合は防ぎません。現行MCP CRUDは`record_version`を増加させないため、この番号を更新検知・競合確認に使わず、変更内容を再取得して確認します。
+
+ツールが見つからない場合は、接続先APIのデプロイとツール一覧の再読み込みを確認してください。プラグインの更新だけではAPI側のツールは増えません。詳しい対応範囲は [MCP機能監査](https://github.com/quantum-box/library/blob/main/docs/specs/integrations/mcp-coverage.md) にあります。
 
 API key を使う場合は、利用者側のMCPクライアント設定で `Authorization: Bearer <API key>` を設定します。`pk_` キーでは引数にorgがない初期接続・ツール一覧取得にも認証を適用するため、`x-operator-id` にそのキーの **Library organization ID** が必要です。slugや別サービスのtenant IDを使わないでください。秘密値を `.mcp.json` にコミットせず、クライアントの秘密情報管理・環境変数参照を使ってください。CLIでの認証手順は [Library CLI](https://github.com/quantum-box/library/tree/main/apps/cli) にあります。
 
@@ -89,7 +91,7 @@ claude plugin validate --strict ./.claude-plugin/marketplace.json
 ```bash
 curl --fail-with-body https://library-api.txcloud.app/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"library-plugin-check","version":"0.1.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"library-plugin-check","version":"0.2.0"}}}'
 
 curl --fail-with-body https://library-api.txcloud.app/mcp \
   -H 'Content-Type: application/json' \

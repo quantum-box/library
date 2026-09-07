@@ -4,7 +4,7 @@
 
 Claude Code / Codex 向けの接続設定とスキルは [Library plugin](../../../plugins/library/README.md) として同梱している。
 
-現行実装の注意: `list_data` / `search_data` / `get_data` は token の有無に関わらず匿名の実行者を使用するため、private repo の Data は取得できない。認証を参照するメタデータ取得と write tools の権限制御とは区別する。
+基本ワークフローの対応範囲と監査結果は [MCPツール対応範囲](mcp-coverage.md) を参照。所属org discovery、private Dataの認可、型付き編集を同じ接続で扱う。
 
 ## 1. Endpoint
 
@@ -102,9 +102,12 @@ MCP server 情報と tools capability を返す。
 
 ### `tools/list`
 
-匿名でも利用できる tools:
+匿名接続のカタログにも表示されるread tools（`get_me` / `list_orgs` / `search_repos`の実行は認証必須）:
 
+- `get_me`
+- `list_orgs`
 - `get_org`
+- `list_repos`
 - `search_repos`
 - `get_repo`
 - `list_data`
@@ -121,9 +124,11 @@ MCP server 情報と tools capability を返す。
 - `update_org`
 - `create_repo`
 - `update_repo`
+- `rename_repo`
 - `delete_repo`
 - `create_data`
 - `update_data`
+- `upsert_data`
 - `delete_data`
 - `create_property`
 - `update_property`
@@ -140,7 +145,7 @@ MCP server 情報と tools capability を返す。
 
 ### `list_data`
 
-public repo の Data 一覧を返す。
+public repo、または呼び出し元にread権限があるprivate repoのData一覧を返す。
 
 入力:
 
@@ -155,7 +160,7 @@ public repo の Data 一覧を返す。
 
 ### `search_data`
 
-public repo 内の Data を検索する。
+read権限のあるrepo内でData名の完全一致検索を行う。空の`query`は一覧取得。全文検索ではない。
 
 入力:
 
@@ -171,7 +176,7 @@ public repo 内の Data を検索する。
 
 ### `get_data`
 
-Data を Markdown として取得する。
+read権限のあるDataをMarkdownと型付き`property_data`で取得する。`url`と文字列`record_version`も返す。既存の`id` / `title` / `markdown`は維持する。
 
 入力:
 
@@ -204,20 +209,30 @@ Data を作成する。認証必須。
 }
 ```
 
-`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `rich_text`, `relation`, `select`, `multi_select`, `date`, `image`, `boolean`。
+`value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `rich_text`, `relation`, `select`, `multi_select`, `date`, `image`, `boolean`, `id`, `location`。locationは`{"latitude":35.0,"longitude":139.0}`形式。自動生成Idは変更不可。
+
+### Data update / upsert
+
+- `update_data`: 必須`org`, `repo`, `data_id`, `name`。`property_data`に指定したPropertyだけを更新し、他の値は保持する。
+- `upsert_data`: 同じ引数で、指定した有効な`data_id`のレコードを作成または更新する。戻り値の`outcome`は`created` / `updated`。同じIDへの再試行で別レコードを作らないが、再書き込みや同時更新の競合を防ぐものではない。
+- write後のData結果にも型付き値・URL・revisionを含む。`record_version`は保存済みの版番号を参考情報として返す。現行MCP CRUDはlegacy経路で、この番号を増加させない。変更の検知・競合確認には使えず、条件付き更新の引数もない。変更内容は再取得して確認する。
 
 ### Organization tools
 
-- `get_org`: organization と配下 repo を取得する。必須 `org`。
+- `get_me`: 認証されたuser / service accountのID・種別・名前。引数不要。認証必須。
+- `list_orgs`: 検証済み所属先のうちLibraryに登録済みのorg一覧。任意`page` / `page_size`。API keyは発行orgのみ。認証必須。
+- `get_org`: organization と配下repoを取得する。必須`org`。匿名・非メンバーには公開repoのみ。
 - `create_org`: organization を作成する。必須 `name`, `username`。任意 `description`, `website`。
-- `update_org`: organization を更新する。必須 `org`, `name`。`description` / `website` は省略すると空になるので、残す値は毎回送る。
+- `update_org`: organizationをpatchする。必須`org`。省略した`name` / `description` / `website`は保持する。説明・URLの明示nullはクリア。
 
 ### Repository tools
 
-- `search_repos`: repo を検索する。`org`, `query`, `limit` を指定可能。
+- `list_repos`: orgのrepo一覧。必須`org`、任意`page` / `page_size`。匿名・非メンバーには公開repoのみ。
+- `search_repos`: 所属org内でrepo名を部分一致検索する。認証と`org`必須。任意`query`, `limit`（1〜100）。
 - `get_repo`: `org`, `repo` で repo 詳細を取得する。
 - `create_repo`: repo を作成する。`org`, `name`, `username`, `is_public`, `description`, `skip_sample_data`。
 - `update_repo`: repo 設定を更新する。`name`, `description`, `is_public`, `tags` を変更可能。
+- `rename_repo`: repoのslugを変更する。必須`org`, `repo`, `new_username`。
 - `delete_repo`: repo を削除する。
 
 ### Property tools

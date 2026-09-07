@@ -41,7 +41,12 @@ impl ViewOrganizationInputPort for ViewOrganization {
             .ok_or(errors::not_found!("organization is not found"))?;
         let repos = self.repo_repo.find_all(org.id()).await?;
 
-        if input.executor.is_none() {
+        // A signed-in caller is not automatically a member of this org.
+        // Keep private repository metadata out of cross-org discovery.
+        if input.executor.is_none()
+            || (!input.executor.is_system_user()
+                && !input.executor.has_tenant_id(org.id()))
+        {
             return Ok(ViewOrgOutputData {
                 organization: org,
                 repos: repos

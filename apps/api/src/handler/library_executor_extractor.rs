@@ -195,12 +195,14 @@ impl ExecutorAction for LibraryExecutorKind {
             LibraryExecutorKind::ServiceAccount(sa) => {
                 sa.tenant_id() == tenant_id
             }
-            LibraryExecutorKind::None => true,
+            LibraryExecutorKind::None => false,
         }
     }
 
     fn is_system_user(&self) -> bool {
-        matches!(self, LibraryExecutorKind::None)
+        // This extractor represents external callers only. An anonymous
+        // request must never inherit the internal SystemUser privileges.
+        false
     }
 
     fn is_user(&self) -> bool {

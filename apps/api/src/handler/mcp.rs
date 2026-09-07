@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tachyon_sdk::auth::{ExecutorAction, OperatorId};
+use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction, OperatorId};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -27,20 +27,24 @@ use crate::handler::library_executor_extractor::{
     CallerAuthApp, LibraryExecutor, LibraryExecutorKind,
 };
 use crate::sdk_auth::SdkAuthApp;
+use crate::usecase::library_client_url::data_url;
 use crate::usecase::markdown_composer::compose_markdown;
 use crate::usecase::{
-    AddDataInputData, AddPropertyInputData, CreateOrganizationInputData,
-    CreateRepoInputData, CreateSourceInputData, DeleteDataInputData,
-    DeletePropertyInputData, DeleteRepoInputData, DeleteSourceInputData,
-    FindSourcesInputData, GetPropertiesInputData, GetSourceInputData,
-    LibraryOrg, PropertyDataInputData, PropertyDataValueInputData,
-    SearchDataInputData, SearchRepoInputData, UpdateDataInputData,
-    UpdateOrganizationInputData, UpdatePropertyInputData,
-    UpdateRepoInputData, UpdateSourceInputData, ViewDataInputData,
-    ViewDataListInputData, ViewOrgInputData, ViewRepoInputData,
+    AddDataInputData, AddPropertyInputData, ChangeRepoUsernameInputData,
+    CreateOrganizationInputData, CreateRepoInputData,
+    CreateSourceInputData, DeleteDataInputData, DeletePropertyInputData,
+    DeleteRepoInputData, DeleteSourceInputData, FindSourcesInputData,
+    GetPropertiesInputData, GetSourceInputData, LibraryOrg,
+    PropertyDataInputData, PropertyDataValueInputData, SearchDataInputData,
+    SearchRepoInputData, UpdateDataInputData, UpdateOrganizationInputData,
+    UpdatePropertyInputData, UpdateRepoInputData, UpdateSourceInputData,
+    UpsertDataInputData, ViewDataInputData, ViewDataListInputData,
+    ViewOrgInputData, ViewRepoInputData,
 };
-use database_manager::domain::{Property, PropertyType};
-use value_object::{LongText, Text, Url};
+use database_manager::domain::{
+    Data, Property, PropertyDataValue, PropertyType,
+};
+use value_object::{LongText, OffsetPage, OffsetPaginator, Text, Url};
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
@@ -77,6 +81,26 @@ struct OrgArgs {
     org: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct PaginationArgs {
+    page: Option<u32>,
+    page_size: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListReposArgs {
+    org: String,
+    #[serde(flatten)]
+    pagination: PaginationArgs,
+}
+
+#[derive(Debug, Deserialize)]
+struct RenameRepoArgs {
+    org: String,
+    repo: String,
+    new_username: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct CreateOrgArgs {
     name: String,
@@ -88,9 +112,11 @@ struct CreateOrgArgs {
 #[derive(Debug, Deserialize)]
 struct UpdateOrgArgs {
     org: String,
-    name: String,
-    description: Option<String>,
-    website: Option<String>,
+    name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_nullable")]
+    description: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_nullable")]
+    website: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,7 +128,7 @@ struct GetPropertyArgs {
 
 #[derive(Debug, Deserialize)]
 struct SearchReposArgs {
-    org: Option<String>,
+    org: String,
     query: Option<String>,
     limit: Option<i64>,
 }
@@ -235,7 +261,19 @@ struct UpdateSourceArgs {
     repo: String,
     source_id: String,
     name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_nullable")]
     url: Option<Option<String>>,
+}
+
+/// Preserve the difference between an omitted patch field and explicit null.
+fn deserialize_nullable<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -360,6 +398,7 @@ struct CognitoErrorResponse {
 struct McpDataSummary {
     id: String,
     title: String,
+    url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -367,6 +406,16 @@ struct McpData {
     id: String,
     title: String,
     markdown: String,
+    url: String,
+    record_version: String,
+    property_data: Vec<McpPropertyData>,
+}
+
+#[derive(Debug, Serialize)]
+struct McpPropertyData {
+    property_id: String,
+    value_type: String,
+    value: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -447,12 +496,34 @@ pub(crate) async fn dispatch_rpc(
         org_hint.as_deref(),
     )
     .await;
-    if mcp_auth_required() && !auth.is_authenticated() {
+    if (bearer_token(headers).is_some() || mcp_auth_required())
+        && !auth.is_authenticated()
+    {
+        return Err(auth_challenge_response());
+    }
+    if request_requires_auth(&request) && auth.executor.is_none() {
         return Err(auth_challenge_response());
     }
 
     let is_notification = request.id.is_none();
-    let response = handle_rpc(library_app, auth, request).await;
+    let was_authenticated = auth.executor.is_some();
+    // The SSE transport can supply credentials from its session rather than
+    // the POST header. Scope the verified token for every downstream policy
+    // evaluation, on both transports.
+    let caller_token = auth
+        .executor
+        .as_ref()
+        .and_then(|executor| executor.original_token.clone());
+    let response = crate::sdk_auth::caller_token_scope(
+        caller_token,
+        handle_rpc(library_app, auth, request),
+    )
+    .await;
+    // Public tools can also address private resources. Let a client begin
+    // OAuth when an anonymous read reaches a protected resource.
+    if !was_authenticated && response["error"]["code"] == -32001 {
+        return Err(auth_challenge_response());
+    }
     if is_notification {
         return Ok(None);
     }
@@ -512,6 +583,27 @@ async fn call_tool(
     .map_err(|err| json_rpc_error(-32602, err.to_string()))?;
 
     match params.name.as_str() {
+        "get_me" => Ok(tool_text_result(get_me(auth)?)),
+        "list_orgs" => {
+            let args: PaginationArgs = parse_tool_args(params.arguments)?;
+            let output = list_orgs(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "list_repos" => {
+            let args: ListReposArgs = parse_tool_args(params.arguments)?;
+            let output = list_repos(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "rename_repo" => {
+            let args: RenameRepoArgs = parse_tool_args(params.arguments)?;
+            let output = rename_repo(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "upsert_data" => {
+            let args: UpdateDataArgs = parse_tool_args(params.arguments)?;
+            let output = upsert_data(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
         "get_org" => {
             let args: OrgArgs = parse_tool_args(params.arguments)?;
             let output = get_org(library_app, auth, args).await?;
@@ -544,17 +636,17 @@ async fn call_tool(
         }
         "list_data" => {
             let args: ListDataArgs = parse_tool_args(params.arguments)?;
-            let output = list_data(library_app, args).await?;
+            let output = list_data(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         "search_data" => {
             let args: SearchDataArgs = parse_tool_args(params.arguments)?;
-            let output = search_data(library_app, args).await?;
+            let output = search_data(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         "get_data" => {
             let args: GetDataArgs = parse_tool_args(params.arguments)?;
-            let output = get_data(library_app, args).await?;
+            let output = get_data(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
         "list_properties" => {
@@ -641,17 +733,188 @@ async fn call_tool(
     }
 }
 
+fn get_me(auth: McpAuthContext) -> Result<Value, Value> {
+    let executor = require_executor(auth, "get_me")?;
+    match executor.inner {
+        LibraryExecutorKind::User(user) => Ok(json!({
+            "id": user.id(), "type": "user", "name": user.name(),
+            "username": user.username(),
+        })),
+        LibraryExecutorKind::ServiceAccount(account) => Ok(json!({
+            "id": account.id(), "type": "service_account", "name": account.name(),
+        })),
+        LibraryExecutorKind::None => Err(json_rpc_error(
+            -32001,
+            "Authentication required for get_me",
+        )),
+    }
+}
+
+async fn member_organizations(
+    repository: &dyn crate::domain::OrganizationRepository,
+    executor: &LibraryExecutor,
+) -> Result<Vec<McpOrganization>, Value> {
+    // Enumerate only verified memberships. Never use find_all(): a Tachyon
+    // account may belong to other products' tenants as well as Library.
+    let tenants: BTreeSet<String> = match &executor.inner {
+        LibraryExecutorKind::User(user) => {
+            user.tenants().iter().map(ToString::to_string).collect()
+        }
+        LibraryExecutorKind::ServiceAccount(account) => {
+            BTreeSet::from([account.tenant_id().to_string()])
+        }
+        LibraryExecutorKind::None => {
+            return Err(json_rpc_error(
+                -32001,
+                "Authentication required for list_orgs",
+            ))
+        }
+    };
+    let mut organizations = Vec::new();
+    for tenant in tenants {
+        if let Some(organization) = repository
+            .get_by_id(&tenant.parse().map_err(invalid_tool_arg)?)
+            .await
+            .map_err(tool_execution_error)?
+        {
+            organizations.push(organization_to_mcp(&organization));
+        }
+    }
+    organizations.sort_by(|a, b| {
+        a.username.cmp(&b.username).then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(organizations)
+}
+
+fn paginate<T>(
+    items: Vec<T>,
+    page: OffsetPage,
+) -> (Vec<T>, OffsetPaginator) {
+    let paginator = OffsetPaginator::new(page, items.len() as u32);
+    let items = items
+        .into_iter()
+        .skip(page.offset() as usize)
+        .take(page.items_per_page() as usize)
+        .collect();
+    (items, paginator)
+}
+
+async fn list_orgs(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: PaginationArgs,
+) -> Result<Value, Value> {
+    let page = OffsetPage::from_options(args.page, args.page_size)
+        .map_err(invalid_tool_arg)?;
+    let executor = require_executor(auth, "list_orgs")?;
+    let organizations = member_organizations(
+        library_app.organization_repo.as_ref(),
+        &executor,
+    )
+    .await?;
+    let (organizations, paginator) = paginate(organizations, page);
+    Ok(json!({ "organizations": organizations, "paginator": paginator }))
+}
+
+async fn list_repos(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: ListReposArgs,
+) -> Result<Value, Value> {
+    let page = OffsetPage::from_options(
+        args.pagination.page,
+        args.pagination.page_size,
+    )
+    .map_err(invalid_tool_arg)?;
+    let executor = read_executor(&auth);
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let output = library_app
+        .view_org
+        .execute(&ViewOrgInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            organization_username: args.org,
+        })
+        .await
+        .map_err(tool_execution_error)?;
+    let repos = output.repos.iter().map(repo_to_mcp).collect();
+    let (repos, paginator) = paginate(repos, page);
+    Ok(json!({ "repos": repos, "paginator": paginator }))
+}
+
+async fn rename_repo(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: RenameRepoArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "rename_repo")?;
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let repo = library_app
+        .change_repo_username
+        .execute(ChangeRepoUsernameInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            org_username: args.org,
+            old_repo_username: args.repo,
+            new_repo_username: args.new_username,
+        })
+        .await
+        .map_err(tool_execution_error)?;
+    Ok(json!({ "repo": repo_to_mcp(&repo) }))
+}
+
+async fn upsert_data(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: UpdateDataArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "upsert_data")?;
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let (data, properties, outcome) = library_app
+        .upsert_data
+        .execute(UpsertDataInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            actor: executor.get_id(),
+            org_username: &args.org,
+            repo_username: &args.repo,
+            data_id: &args.data_id,
+            data_name: &args.name,
+            property_data: property_data_from_args(args.property_data)?,
+        })
+        .await
+        .map_err(tool_execution_error)?;
+    let outcome = match outcome {
+        database_manager::usecase::UpsertOutcome::Created => "created",
+        database_manager::usecase::UpsertOutcome::Updated => "updated",
+    };
+    Ok(
+        json!({ "data": data_to_mcp(&data, &properties, &args.org, &args.repo), "outcome": outcome }),
+    )
+}
+
 async fn list_data(
     library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
     args: ListDataArgs,
 ) -> Result<Value, Value> {
-    let executor = anonymous_executor();
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    OffsetPage::from_options(args.page, args.page_size)
+        .map_err(invalid_tool_arg)?;
+    let executor = read_executor(&auth);
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = ViewDataListInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: args.org,
-        repo_username: args.repo,
+        org_username: args.org.clone(),
+        repo_username: args.repo.clone(),
         page: Some(args.page.unwrap_or(1)),
         page_size: Some(args.page_size.unwrap_or(20)),
     };
@@ -667,6 +930,7 @@ async fn list_data(
         .map(|data| McpDataSummary {
             id: data.id().to_string(),
             title: data.name().to_string(),
+            url: data_url(&args.org, &args.repo, data.id().as_str()),
         })
         .collect::<Vec<_>>();
 
@@ -682,7 +946,9 @@ async fn get_org(
     args: OrgArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = ViewOrgInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -736,16 +1002,26 @@ async fn update_org(
     args: UpdateOrgArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "update_org")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
+    let current = library_app
+        .organization_repo
+        .get_by_username(&args.org.parse().map_err(invalid_tool_arg)?)
+        .await
+        .map_err(tool_execution_error)?
+        .ok_or_else(|| json_rpc_error(-32000, "Organization not found"))?;
     let input = UpdateOrganizationInputData {
         executor: &executor,
         multi_tenancy: &library_org,
         username: args.org,
-        name: args.name,
-        description: args.description,
-        website: args.website,
+        name: args.name.unwrap_or_else(|| current.name().to_string()),
+        description: args.description.unwrap_or_else(|| {
+            current.description().as_ref().map(ToString::to_string)
+        }),
+        website: args.website.unwrap_or_else(|| {
+            current.website().as_ref().map(ToString::to_string)
+        }),
     };
     let output = library_app
         .update_organization
@@ -764,7 +1040,9 @@ async fn get_property(
     args: GetPropertyArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = GetPropertiesInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -795,17 +1073,18 @@ async fn search_repos(
     args: SearchReposArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = args
-        .org
-        .clone()
-        .map(LibraryOrg::with_org)
-        .unwrap_or_default();
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    if args.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
+        return Err(invalid_tool_arg("limit must be between 1 and 100"));
+    }
     let input = SearchRepoInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: args.org,
+        org_username: Some(args.org),
         name: args.query,
-        limit: Some(args.limit.unwrap_or(20).clamp(1, 100)),
+        limit: Some(args.limit.unwrap_or(20)),
     };
     let repos = library_app
         .search_repo
@@ -823,7 +1102,9 @@ async fn get_repo(
     args: OrgRepoArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = ViewRepoInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -841,10 +1122,15 @@ async fn get_repo(
 
 async fn search_data(
     library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
     args: SearchDataArgs,
 ) -> Result<Value, Value> {
-    let executor = anonymous_executor();
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    OffsetPage::from_options(args.page, args.page_size)
+        .map_err(invalid_tool_arg)?;
+    let executor = read_executor(&auth);
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = SearchDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -866,6 +1152,7 @@ async fn search_data(
         .map(|data| McpDataSummary {
             id: data.id().to_string(),
             title: data.name().to_string(),
+            url: data_url(&args.org, &args.repo, data.id().as_str()),
         })
         .collect::<Vec<_>>();
 
@@ -877,15 +1164,18 @@ async fn search_data(
 
 async fn get_data(
     library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
     args: GetDataArgs,
 ) -> Result<Value, Value> {
-    let executor = anonymous_executor();
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let executor = read_executor(&auth);
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = ViewDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
-        org_username: args.org,
-        repo_username: args.repo,
+        org_username: args.org.clone(),
+        repo_username: args.repo.clone(),
         data_id: args.data_id,
     };
 
@@ -894,11 +1184,7 @@ async fn get_data(
         .execute(&input)
         .await
         .map_err(tool_execution_error)?;
-    let data = McpData {
-        id: data.id().to_string(),
-        title: data.name().to_string(),
-        markdown: compose_markdown(&data, &properties),
-    };
+    let data = data_to_mcp(&data, &properties, &args.org, &args.repo);
 
     Ok(json!({ "data": data }))
 }
@@ -909,7 +1195,9 @@ async fn list_properties(
     args: OrgRepoArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let input = GetPropertiesInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -933,7 +1221,9 @@ async fn list_sources(
     args: OrgRepoArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let repo = library_app
         .view_repo
         .execute(&ViewRepoInputData {
@@ -968,7 +1258,9 @@ async fn get_source(
     args: GetSourceArgs,
 ) -> Result<Value, Value> {
     let executor = read_executor(&auth);
-    let library_org = LibraryOrg::with_org(args.org.clone());
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
     let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
     let input = GetSourceInputData {
         executor: &executor,
@@ -1003,7 +1295,7 @@ async fn create_repo(
         })?
         .auth_app();
     let executor = require_executor(auth, "create_repo")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let input = CreateRepoInputData {
@@ -1034,7 +1326,7 @@ async fn update_repo(
     args: UpdateRepoArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "update_repo")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let name = parse_optional::<Text>(args.name)?;
@@ -1072,7 +1364,7 @@ async fn delete_repo(
     args: OrgRepoArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "delete_repo")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let input = DeleteRepoInputData {
@@ -1096,7 +1388,7 @@ async fn create_data(
     args: CreateDataArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "create_data")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let property_data = property_data_from_args(args.property_data)?;
@@ -1117,13 +1409,15 @@ async fn create_data(
         .await
         .map_err(tool_execution_error)?;
 
-    Ok(json!({
-        "data": {
-            "id": data.id().to_string(),
-            "title": data.name().to_string(),
-            "property_count": properties.len()
-        }
-    }))
+    let mut response = serde_json::to_value(data_to_mcp(
+        &data,
+        &properties,
+        &args.org,
+        &args.repo,
+    ))
+    .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
+    response["property_count"] = json!(properties.len());
+    Ok(json!({ "data": response }))
 }
 
 async fn update_data(
@@ -1132,7 +1426,7 @@ async fn update_data(
     args: UpdateDataArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "update_data")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let property_data = property_data_from_args(args.property_data)?;
@@ -1152,13 +1446,15 @@ async fn update_data(
         .await
         .map_err(tool_execution_error)?;
 
-    Ok(json!({
-        "data": {
-            "id": data.id().to_string(),
-            "title": data.name().to_string(),
-            "property_count": properties.len()
-        }
-    }))
+    let mut response = serde_json::to_value(data_to_mcp(
+        &data,
+        &properties,
+        &args.org,
+        &args.repo,
+    ))
+    .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
+    response["property_count"] = json!(properties.len());
+    Ok(json!({ "data": response }))
 }
 
 async fn delete_data(
@@ -1167,7 +1463,7 @@ async fn delete_data(
     args: DeleteDataArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "delete_data")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let input = DeleteDataInputData {
@@ -1193,7 +1489,7 @@ async fn create_property(
     args: CreatePropertyArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "create_property")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let property_type =
@@ -1221,7 +1517,7 @@ async fn update_property(
     args: UpdatePropertyArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "update_property")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let property_type = args
@@ -1271,7 +1567,7 @@ async fn delete_property(
     args: DeletePropertyArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "delete_property")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let input = DeletePropertyInputData {
@@ -1296,7 +1592,7 @@ async fn create_source(
     args: CreateSourceArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "create_source")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let name = args.name.parse::<Text>().map_err(invalid_tool_arg)?;
@@ -1324,7 +1620,7 @@ async fn update_source(
     args: UpdateSourceArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "update_source")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
@@ -1362,7 +1658,7 @@ async fn delete_source(
     args: DeleteSourceArgs,
 ) -> Result<Value, Value> {
     let executor = require_executor(auth, "delete_source")?;
-    let library_org = authenticated_library_org(&library_app, &args.org)
+    let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
     let source_id = args.source_id.parse().map_err(invalid_tool_arg)?;
@@ -1422,6 +1718,7 @@ fn property_data_value(
     let as_string = |value: Value| -> Result<String, Value> {
         match value {
             Value::String(value) => Ok(value),
+            Value::Null => Ok(String::new()),
             value => Ok(value.to_string()),
         }
     };
@@ -1437,7 +1734,12 @@ fn property_data_value(
             Ok(PropertyDataValueInputData::RichText(as_string(value)?))
         }
         "relation" => {
-            let values = serde_json::from_value::<Vec<String>>(value)
+            let values =
+                serde_json::from_value::<Vec<String>>(if value.is_null() {
+                    json!([])
+                } else {
+                    value
+                })
                 .map_err(invalid_tool_arg)?;
             Ok(PropertyDataValueInputData::Relation(values))
         }
@@ -1445,11 +1747,21 @@ fn property_data_value(
             Ok(PropertyDataValueInputData::Select(as_string(value)?))
         }
         "multi_select" => {
-            let values = serde_json::from_value::<Vec<String>>(value)
+            let values =
+                serde_json::from_value::<Vec<String>>(if value.is_null() {
+                    json!([])
+                } else {
+                    value
+                })
                 .map_err(invalid_tool_arg)?;
             Ok(PropertyDataValueInputData::MultiSelect(values))
         }
         "boolean" => {
+            if value.is_null() {
+                return Ok(PropertyDataValueInputData::String(
+                    String::new(),
+                ));
+            }
             let flag = match &value {
                 Value::Bool(flag) => *flag,
                 Value::String(text) => match text.trim() {
@@ -1473,7 +1785,17 @@ fn property_data_value(
         }
         "date" => Ok(PropertyDataValueInputData::Date(as_string(value)?)),
         "image" => Ok(PropertyDataValueInputData::Image(as_string(value)?)),
-        "string" => {
+        "location" => {
+            let location: value_object::Location =
+                serde_json::from_value(value).map_err(invalid_tool_arg)?;
+            let location = value_object::Location::new(
+                location.latitude(),
+                location.longitude(),
+            )
+            .map_err(invalid_tool_arg)?;
+            Ok(PropertyDataValueInputData::Location(location))
+        }
+        "string" | "id" => {
             Ok(PropertyDataValueInputData::String(as_string(value)?))
         }
         other => Err(json_rpc_error(
@@ -1481,6 +1803,73 @@ fn property_data_value(
             format!("Unsupported property value_type: {other}"),
         )),
     }
+}
+
+fn data_to_mcp(
+    data: &Data,
+    properties: &[Property],
+    org: &str,
+    repo: &str,
+) -> McpData {
+    let property_data = data
+        .property_data()
+        .iter()
+        .map(|property| {
+            let (value_type, value) = match property.value() {
+                Some(value) => property_value_to_mcp(value),
+                None => (
+                    properties
+                        .iter()
+                        .find(|p| p.id() == property.property_id())
+                        .map(|p| {
+                            p.property_type()
+                                .to_string()
+                                .to_ascii_lowercase()
+                        })
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    Value::Null,
+                ),
+            };
+            McpPropertyData {
+                property_id: property.property_id().to_string(),
+                value_type,
+                value,
+            }
+        })
+        .collect();
+    McpData {
+        id: data.id().to_string(),
+        title: data.name().to_string(),
+        markdown: compose_markdown(data, properties),
+        url: data_url(org, repo, data.id().as_str()),
+        record_version: data.record_version().to_string(),
+        property_data,
+    }
+}
+
+fn property_value_to_mcp(value: &PropertyDataValue) -> (String, Value) {
+    let (typ, value) = match value {
+        PropertyDataValue::String(v) => ("string", json!(v)),
+        PropertyDataValue::Integer(v) => ("integer", json!(v)),
+        PropertyDataValue::Html(v) => ("html", json!(v)),
+        PropertyDataValue::Markdown(v) => ("markdown", json!(v)),
+        PropertyDataValue::Relation(_, ids) => (
+            "relation",
+            json!(ids.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        ),
+        PropertyDataValue::Id(v) => ("id", json!(v)),
+        PropertyDataValue::Location(v) => ("location", json!(v)),
+        PropertyDataValue::Select(v) => ("select", json!(v.to_string())),
+        PropertyDataValue::MultiSelect(v) => (
+            "multi_select",
+            json!(v.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        ),
+        PropertyDataValue::Date(v) => ("date", json!(v)),
+        PropertyDataValue::Image(v) => ("image", json!(v)),
+        PropertyDataValue::RichText(v) => ("rich_text", v.clone()),
+        PropertyDataValue::Boolean(v) => ("boolean", json!(v)),
+    };
+    (typ.to_string(), value)
 }
 
 fn property_type_from_value(
@@ -1565,6 +1954,29 @@ fn initialize_result() -> Value {
 fn tools_list_result(is_authenticated: bool) -> Value {
     let mut tools = vec![
         json!({
+            "name": "get_me",
+            "description": "Identify the signed-in Library user or API-key service account. Requires authentication.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "list_orgs",
+            "description": "List Library organizations belonging to the signed-in user, or the API key's organization. Requires authentication; no org slug is needed.",
+            "inputSchema": pagination_schema()
+        }),
+        json!({
+            "name": "list_repos",
+            "description": "List repositories in an organization. Anonymous callers and non-members see only public repositories.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org": { "type": "string" },
+                    "page": { "type": "integer", "minimum": 1 },
+                    "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+                },
+                "required": ["org"]
+            }
+        }),
+        json!({
             "name": "get_org",
             "description": "Get one Library organization and the repositories it owns.",
             "inputSchema": {
@@ -1577,7 +1989,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         }),
         json!({
             "name": "search_repos",
-            "description": "Search Library repositories within one organization you belong to.",
+            "description": "Search Library repositories within one organization you belong to. Requires authentication.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1595,7 +2007,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         }),
         json!({
             "name": "list_data",
-            "description": "List data records in a public Library repository.",
+            "description": "List data records in a public repository or a private repository the caller is authorized to read.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1613,7 +2025,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         }),
         json!({
             "name": "search_data",
-            "description": "Search data records by name or indexed content in a public Library repository.",
+            "description": "Find data records by exact name in a repository the caller is authorized to read. An empty query lists records; this is not full-text search.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1632,7 +2044,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         }),
         json!({
             "name": "get_data",
-            "description": "Get one public Library data record as composed Markdown.",
+            "description": "Get a record as Markdown and typed property_data with its canonical URL and informational record_version (current MCP CRUD does not advance this counter). Private records require read permission.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1684,6 +2096,24 @@ fn tools_list_result(is_authenticated: bool) -> Value {
     if is_authenticated {
         tools.extend([
             json!({
+                "name": "rename_repo",
+                "description": "Change a repository's username (slug), preserving its identity and content.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "new_username": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "new_username"]
+                }
+            }),
+            json!({
+                "name": "upsert_data",
+                "description": "Create or update a record at a caller-supplied valid data_id. Reusing the same id avoids duplicate records on retry; this is not a compare-and-swap operation.",
+                "inputSchema": data_write_schema(["org", "repo", "data_id", "name"])
+            }),
+            json!({
                 "name": "create_org",
                 "description": "Create a Library organization.",
                 "inputSchema": {
@@ -1699,16 +2129,16 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             }),
             json!({
                 "name": "update_org",
-                "description": "Update a Library organization. `name` is required; omitting `description` or `website` clears it.",
+                "description": "Patch a Library organization. Omitted fields are preserved; null description or website clears that field.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "org": { "type": "string" },
                         "name": { "type": "string" },
-                        "description": { "type": "string" },
-                        "website": { "type": "string" }
+                        "description": { "type": ["string", "null"] },
+                        "website": { "type": ["string", "null"] }
                     },
-                    "required": ["org", "name"]
+                    "required": ["org"]
                 }
             }),
             json!({
@@ -1820,7 +2250,38 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         ]);
     }
 
+    for tool in &mut tools {
+        let name = tool["name"].as_str().unwrap_or_default();
+        let read_only = matches!(
+            name,
+            "get_me"
+                | "list_orgs"
+                | "get_org"
+                | "list_repos"
+                | "search_repos"
+                | "get_repo"
+                | "list_data"
+                | "search_data"
+                | "get_data"
+                | "list_properties"
+                | "get_property"
+                | "list_sources"
+                | "get_source"
+        );
+        tool["annotations"] = json!({
+            "readOnlyHint": read_only,
+            "destructiveHint": !read_only,
+            "openWorldHint": true,
+        });
+    }
     json!({ "tools": tools })
+}
+
+fn pagination_schema() -> Value {
+    json!({ "type": "object", "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+    } })
 }
 
 fn org_repo_schema() -> Value {
@@ -1863,7 +2324,9 @@ fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
                                 "date",
                                 "image",
                                 "rich_text",
-                                "boolean"
+                                "boolean",
+                                "id",
+                                "location"
                             ]
                         }
                     },
@@ -1927,8 +2390,12 @@ fn parse_tool_args<T>(arguments: Value) -> Result<T, Value>
 where
     T: for<'de> Deserialize<'de>,
 {
-    serde_json::from_value(arguments)
-        .map_err(|err| json_rpc_error(-32602, err.to_string()))
+    serde_json::from_value(if arguments.is_null() {
+        json!({})
+    } else {
+        arguments
+    })
+    .map_err(|err| json_rpc_error(-32602, err.to_string()))
 }
 
 fn tool_text_result(value: Value) -> Value {
@@ -1944,7 +2411,13 @@ fn tool_text_result(value: Value) -> Value {
 }
 
 fn tool_execution_error(err: errors::Error) -> Value {
-    json_rpc_error(-32000, err.to_string())
+    let code = match &err {
+        errors::Error::Unauthorized { .. }
+        | errors::Error::Forbidden { .. } => -32001,
+        errors::Error::BadRequest { .. } => -32602,
+        _ => -32000,
+    };
+    json_rpc_error(code, err.to_string())
 }
 
 fn invalid_tool_arg(err: impl std::fmt::Display) -> Value {
@@ -2044,18 +2517,12 @@ async fn resolve_auth_context(
         // allow. With neither, there is nothing to verify the key
         // against and the request stays anonymous.
         let operator_id = match org_username {
-            Some(org_username) => library_app
-                .view_org
-                .execute(&ViewOrgInputData {
-                    executor: &tachyon_sdk::auth::Executor::SystemUser,
-                    multi_tenancy: &LibraryOrg::with_org(
-                        org_username.to_string(),
-                    ),
-                    organization_username: org_username.to_string(),
-                })
-                .await
-                .ok()
-                .map(|org| org.organization.id().clone()),
+            Some(org_username) => {
+                resolve_library_org(&library_app, org_username)
+                    .await
+                    .ok()
+                    .and_then(|org| org.operator_id())
+            }
             None => operator_id_header(headers),
         };
 
@@ -2099,22 +2566,18 @@ async fn resolve_auth_context(
     }
 }
 
-async fn authenticated_library_org(
+async fn resolve_library_org(
     library_app: &LibraryApp,
     org_username: &str,
 ) -> errors::Result<LibraryOrg> {
-    let temp_library_org = LibraryOrg::with_org(org_username.to_string());
     let org = library_app
-        .view_org
-        .execute(&ViewOrgInputData {
-            executor: &tachyon_sdk::auth::Executor::SystemUser,
-            multi_tenancy: &temp_library_org,
-            organization_username: org_username.to_string(),
-        })
-        .await?;
+        .organization_repo
+        .get_by_username(&org_username.parse()?)
+        .await?
+        .ok_or_else(|| errors::Error::not_found("organization"))?;
     Ok(LibraryOrg::with_org_and_operator(
         org_username.to_string(),
-        org.organization.id().clone(),
+        org.id().clone(),
     ))
 }
 
@@ -2127,6 +2590,10 @@ fn should_challenge(headers: &HeaderMap, request: &JsonRpcRequest) -> bool {
         return true;
     }
 
+    request_requires_auth(request)
+}
+
+fn request_requires_auth(request: &JsonRpcRequest) -> bool {
     request.method == "tools/call"
         && request
             .params
@@ -2139,7 +2606,28 @@ fn should_challenge(headers: &HeaderMap, request: &JsonRpcRequest) -> bool {
 }
 
 fn requires_auth_tool(name: &str) -> bool {
-    matches!(name, "create_data")
+    matches!(
+        name,
+        "get_me"
+            | "list_orgs"
+            | "search_repos"
+            | "create_org"
+            | "update_org"
+            | "create_repo"
+            | "update_repo"
+            | "rename_repo"
+            | "delete_repo"
+            | "create_data"
+            | "update_data"
+            | "upsert_data"
+            | "delete_data"
+            | "create_property"
+            | "update_property"
+            | "delete_property"
+            | "create_source"
+            | "update_source"
+            | "delete_source"
+    )
 }
 
 fn request_org_hint(request: &JsonRpcRequest) -> Option<String> {
@@ -2174,13 +2662,13 @@ fn operator_id_header(headers: &HeaderMap) -> Option<OperatorId> {
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
+    let (scheme, token) = value.split_once(char::is_whitespace)?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
 }
 
 fn mcp_auth_required() -> bool {
@@ -2867,3 +3355,7 @@ mod tests {
             .contains("\"ok\": true"));
     }
 }
+
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod workflow_tests;

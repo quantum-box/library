@@ -13,6 +13,7 @@
 - [外部連携 readiness](integrations/readiness.md)
 - [コラボレーション WebSocket 仕様](integrations/collaboration-ws.md)
 - [MCP 連携仕様](integrations/mcp.md)
+- [MCPツール対応範囲](integrations/mcp-coverage.md)
 - [Library CLI 仕様](integrations/cli.md)
 - [運用手順 / トラブル対応](integrations/operations.md)
 - [Library GA env / secrets Runbook](operations/library-ga-env-secrets-runbook.md)

@@ -58,7 +58,7 @@ struct McpSseSession {
 
 #[derive(Debug, Deserialize)]
 pub struct MessagesQuery {
-    #[serde(alias = "session_id")]
+    #[serde(rename = "sessionId", alias = "session_id")]
     session_id: String,
 }
 
@@ -233,6 +233,20 @@ impl Drop for SessionGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_query_accepts_the_announced_endpoint_and_legacy_name() {
+        for endpoint in [
+            append_session_id(DEFAULT_SSE_MESSAGE_ENDPOINT, "abc"),
+            "/messages?session_id=abc".to_string(),
+        ] {
+            let Query(query) = Query::<MessagesQuery>::try_from_uri(
+                &endpoint.parse().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(query.session_id, "abc");
+        }
+    }
 
     /// Read the first chunk the SSE response emits. The stream stays
     /// open afterwards, so buffering the whole body would never return.

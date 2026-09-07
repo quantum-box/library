@@ -19,8 +19,453 @@ use value_object::{DatabaseUrl, TenantId};
 
 const TOKEN: &str = "caller-user-token";
 const BASE_AUTH_TOKEN: &str = "base-service-token";
+const DENIED_TOKEN: &str = "mcp-denied-token";
+const OUTSIDER_TOKEN: &str = "mcp-outsider-token";
 const USER_ID: &str = "us_01hs2yepy5hw4rz8pdq2wywnwt";
 const LIBRARY_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
+
+/// Exercise the same HTTP transport a plugin uses, including authentication,
+/// tenant discovery, private reads, structured patches and retries.
+#[tokio::test]
+async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
+    std::env::set_var("LIBRARY_MCP_SSE_ENABLED", "true");
+    let (server, shutdown, auth_state) = setup_test_server().await?;
+    std::env::remove_var("LIBRARY_MCP_SSE_ENABLED");
+    let client = create_test_client();
+    let suffix = unique_suffix();
+    let org = format!("ga-mcp-org-{suffix}");
+    let repo = format!("ga-mcp-repo-{suffix}");
+
+    let catalog: Value =
+        mcp_rpc(&client, &server, Some(TOKEN), "tools/list", json!({}))
+            .await?
+            .json()
+            .await?;
+    for tool in catalog["result"]["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        if tool["annotations"]["readOnlyHint"] == false
+            || ["get_me", "list_orgs", "search_repos"].contains(&name)
+        {
+            let response = mcp_rpc(
+                &client,
+                &server,
+                None,
+                "tools/call",
+                json!({"name":name,"arguments":{}}),
+            )
+            .await?;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "auth challenge for {name}"
+            );
+            assert!(response
+                .headers()
+                .get("www-authenticate")
+                .unwrap()
+                .to_str()?
+                .contains("resource_metadata="));
+        }
+    }
+    let expired = mcp_rpc(
+        &client,
+        &server,
+        Some("invalid-token"),
+        "tools/list",
+        json!({}),
+    )
+    .await?;
+    assert_eq!(expired.status(), StatusCode::UNAUTHORIZED);
+
+    let me = mcp_call(&client, &server, "get_me", json!({})).await?;
+    assert_eq!(me["id"], USER_ID);
+    assert_eq!(me["type"], "user");
+    let created_org = mcp_call(&client, &server, "create_org", json!({
+        "name":"MCP test organization", "username":org, "description":"keep this", "website":"https://example.com/mcp"
+    })).await?;
+    let org_id = created_org["organization"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let orgs = mcp_call(&client, &server, "list_orgs", Value::Null).await?;
+    assert!(orgs["organizations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == org_id));
+
+    let changed_org = mcp_call(
+        &client,
+        &server,
+        "update_org",
+        json!({"org":org,"name":"Renamed org"}),
+    )
+    .await?;
+    assert_eq!(changed_org["organization"]["description"], "keep this");
+    assert_eq!(
+        changed_org["organization"]["website"],
+        "https://example.com/mcp"
+    );
+    let cleared_org = mcp_call(
+        &client,
+        &server,
+        "update_org",
+        json!({"org":org,"website":null}),
+    )
+    .await?;
+    assert_eq!(cleared_org["organization"]["name"], "Renamed org");
+    assert!(cleared_org["organization"]["website"].is_null());
+
+    mcp_call(&client, &server, "create_repo", json!({
+        "org":org,"name":"MCP private repository","username":repo,"is_public":false,"skip_sample_data":true
+    })).await?;
+    let repos =
+        mcp_call(&client, &server, "list_repos", json!({"org":org}))
+            .await?;
+    assert_eq!(repos["repos"].as_array().unwrap().len(), 1);
+    for token in [None, Some(OUTSIDER_TOKEN)] {
+        let response: Value = mcp_rpc(
+            &client,
+            &server,
+            token,
+            "tools/call",
+            json!({"name":"get_org","arguments":{"org":org}}),
+        )
+        .await?
+        .json()
+        .await?;
+        let content: Value = serde_json::from_str(
+            response["result"]["content"][0]["text"].as_str().unwrap(),
+        )?;
+        assert!(
+            content["repos"].as_array().unwrap().is_empty(),
+            "private repo metadata must not leak"
+        );
+    }
+    let search = mcp_call(
+        &client,
+        &server,
+        "search_repos",
+        json!({"org":org,"query":"MCP"}),
+    )
+    .await?;
+    assert_eq!(search["repos"].as_array().unwrap().len(), 1);
+
+    let body = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"body","property_type":"markdown"})).await?;
+    let body_id = body["property"]["id"].as_str().unwrap();
+    let flag = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"published","property_type":"boolean"})).await?;
+    let flag_id = flag["property"]["id"].as_str().unwrap();
+    let location = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"place","property_type":"location","meta":{}})).await?;
+    let location_id = location["property"]["id"].as_str().unwrap();
+    let created = mcp_call(&client, &server, "create_data", json!({
+        "org":org,"repo":repo,"name":"MCP test record","property_data":[
+            {"property_id":body_id,"value_type":"markdown","value":"# Original"},
+            {"property_id":flag_id,"value_type":"boolean","value":false},
+            {"property_id":location_id,"value_type":"location","value":{"latitude":35.0,"longitude":139.0}}
+        ]
+    })).await?;
+    let data_id = created["data"]["id"].as_str().unwrap();
+    assert_eq!(created["data"]["record_version"], "1");
+
+    for name in ["get_data", "list_data", "search_data"] {
+        let arguments = json!({"org":org,"repo":repo,"data_id":data_id,"query":"MCP test record"});
+        let anonymous = mcp_rpc(
+            &client,
+            &server,
+            None,
+            "tools/call",
+            json!({"name":name,"arguments":arguments}),
+        )
+        .await?;
+        assert_eq!(
+            anonymous.status(),
+            StatusCode::UNAUTHORIZED,
+            "anonymous private {name}"
+        );
+        let denied: Value = mcp_rpc(
+            &client,
+            &server,
+            Some(DENIED_TOKEN),
+            "tools/call",
+            json!({"name":name,"arguments":arguments}),
+        )
+        .await?
+        .json()
+        .await?;
+        assert_eq!(
+            denied["error"]["code"], -32001,
+            "denied private {name}: {denied}"
+        );
+        let allowed = mcp_call(&client, &server, name, arguments).await?;
+        assert!(
+            allowed["data"].is_object()
+                || !allowed["data"].as_array().unwrap().is_empty()
+        );
+    }
+    let updated = mcp_call(&client, &server, "update_data", json!({
+        "org":org,"repo":repo,"data_id":data_id,"name":"MCP test record",
+        "property_data":[{"property_id":body_id,"value_type":"markdown","value":"# Updated"}]
+    })).await?;
+    // Legacy CRUD does not advance the versioned mutation counter. MCP
+    // exposes the stored value, not a concurrency token for these writes.
+    assert_eq!(updated["data"]["record_version"], "1");
+    let read = mcp_call(
+        &client,
+        &server,
+        "get_data",
+        json!({"org":org,"repo":repo,"data_id":data_id}),
+    )
+    .await?;
+    assert!(read["data"]["url"].as_str().unwrap().contains(data_id));
+    assert_eq!(
+        read["data"]["record_version"],
+        updated["data"]["record_version"]
+    );
+    let values = read["data"]["property_data"].as_array().unwrap();
+    assert_eq!(
+        values.iter().find(|v| v["property_id"] == flag_id).unwrap()
+            ["value"],
+        false
+    );
+    assert_eq!(
+        values
+            .iter()
+            .find(|v| v["property_id"] == location_id)
+            .unwrap()["value"],
+        json!({"latitude":35.0,"longitude":139.0})
+    );
+    assert_eq!(
+        values.iter().find(|v| v["property_id"] == body_id).unwrap()
+            ["value"],
+        "# Updated"
+    );
+
+    // Older clients authenticate on the GET stream and omit credentials on
+    // POST /messages. Private reads must still use that caller's token.
+    let mut stream = client
+        .get(format!("{server}/sse"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await?;
+    assert_eq!(stream.status(), StatusCode::OK);
+    let endpoint_event = read_sse_event(&mut stream).await?;
+    let endpoint = endpoint_event
+        .lines()
+        .find_map(|line| line.strip_prefix("data: "))
+        .ok_or_else(|| anyhow::anyhow!("missing SSE endpoint"))?;
+    let posted = client
+        .post(format!("{server}{endpoint}"))
+        .json(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+            "name":"get_data","arguments":{"org":org,"repo":repo,"data_id":data_id}
+        }}))
+        .send()
+        .await?;
+    assert_eq!(posted.status(), StatusCode::ACCEPTED);
+    let event = read_sse_event(&mut stream).await?;
+    let response: Value = serde_json::from_str(
+        event
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .ok_or_else(|| anyhow::anyhow!("missing SSE result"))?,
+    )?;
+    assert!(response.get("error").is_none(), "{response}");
+    let content: Value = serde_json::from_str(
+        response["result"]["content"][0]["text"].as_str().unwrap(),
+    )?;
+    assert_eq!(content["data"]["id"], data_id);
+    drop(stream);
+
+    let source = mcp_call(&client, &server, "create_source", json!({"org":org,"repo":repo,"name":"Reference","url":"https://example.com/source"})).await?;
+    let source_id = source["source"]["id"].as_str().unwrap();
+    let retained = mcp_call(&client, &server, "update_source", json!({"org":org,"repo":repo,"source_id":source_id,"name":"Renamed reference"})).await?;
+    assert_eq!(retained["source"]["url"], "https://example.com/source");
+    let cleared = mcp_call(
+        &client,
+        &server,
+        "update_source",
+        json!({"org":org,"repo":repo,"source_id":source_id,"url":null}),
+    )
+    .await?;
+    assert!(cleared["source"]["url"].is_null());
+
+    let stable_id = database_manager::domain::DataId::default().to_string();
+    let upsert_args = json!({"org":org,"repo":repo,"data_id":stable_id,"name":"Stable record","property_data":[]});
+    let first =
+        mcp_call(&client, &server, "upsert_data", upsert_args.clone())
+            .await?;
+    let retried =
+        mcp_call(&client, &server, "upsert_data", upsert_args).await?;
+    assert_eq!(first["outcome"], "created");
+    assert_eq!(retried["outcome"], "updated");
+    assert_eq!(first["data"]["id"], retried["data"]["id"]);
+    let listed = mcp_call(
+        &client,
+        &server,
+        "list_data",
+        json!({"org":org,"repo":repo}),
+    )
+    .await?;
+    assert_eq!(listed["paginator"]["total_items"], 2);
+
+    for args in [
+        json!({"org":org,"repo":repo,"page":0}),
+        json!({"org":org,"repo":repo,"page_size":101}),
+    ] {
+        let invalid: Value = mcp_rpc(
+            &client,
+            &server,
+            Some(TOKEN),
+            "tools/call",
+            json!({"name":"list_data","arguments":args}),
+        )
+        .await?
+        .json()
+        .await?;
+        assert_eq!(invalid["error"]["code"], -32602);
+    }
+    let renamed_repo = format!("ga-mcp-renamed-{suffix}");
+    let renamed = mcp_call(
+        &client,
+        &server,
+        "rename_repo",
+        json!({"org":org,"repo":repo,"new_username":renamed_repo}),
+    )
+    .await?;
+    assert_eq!(renamed["repo"]["username"], renamed_repo);
+    let after_rename = mcp_call(
+        &client,
+        &server,
+        "get_data",
+        json!({"org":org,"repo":renamed_repo,"data_id":data_id}),
+    )
+    .await?;
+    assert_eq!(after_rename["data"]["id"], data_id);
+
+    // The actual HTTP middleware must forward the caller credential and the
+    // resolved org id to the permission service, not a synthetic tenant id.
+    let checks = auth_state.policy_checks.lock().unwrap();
+    let private_reads: Vec<_> = checks
+        .iter()
+        .filter(|check| {
+            check
+                .actions
+                .iter()
+                .any(|action| action == "library:ViewRepo")
+        })
+        .collect();
+    assert!(!private_reads.is_empty());
+    assert!(private_reads
+        .iter()
+        .any(|check| check.authorization.as_deref()
+            == Some("Bearer mcp-denied-token")));
+    assert!(
+        private_reads
+            .iter()
+            .all(|check| check.operator_id.as_deref()
+                == Some(org_id.as_str()))
+    );
+    assert!(private_reads
+        .iter()
+        .all(|check| check.authorization.as_deref()
+            != Some("Bearer base-service-token")));
+    drop(checks);
+
+    mcp_call(
+        &client,
+        &server,
+        "update_repo",
+        json!({
+            "org":org,"repo":renamed_repo,"is_public":true
+        }),
+    )
+    .await?;
+    let public: Value = mcp_rpc(
+        &client, &server, None, "tools/call",
+        json!({"name":"get_data","arguments":{"org":org,"repo":renamed_repo,"data_id":data_id}}),
+    ).await?.json().await?;
+    assert!(public.get("error").is_none(), "{public}");
+    let public_data: Value = serde_json::from_str(
+        public["result"]["content"][0]["text"].as_str().unwrap(),
+    )?;
+    assert_eq!(public_data["data"]["id"], data_id);
+    for id in [data_id, stable_id.as_str()] {
+        mcp_call(
+            &client,
+            &server,
+            "delete_data",
+            json!({"org":org,"repo":renamed_repo,"data_id":id}),
+        )
+        .await?;
+    }
+    mcp_call(
+        &client,
+        &server,
+        "delete_repo",
+        json!({"org":org,"repo":renamed_repo}),
+    )
+    .await?;
+    shutdown.send(()).ok();
+    Ok(())
+}
+
+async fn mcp_rpc(
+    client: &Client,
+    server: &str,
+    token: Option<&str>,
+    method: &str,
+    params: Value,
+) -> anyhow::Result<reqwest::Response> {
+    let mut request = client.post(format!("{server}/mcp")).json(
+        &json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}),
+    );
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    Ok(request.send().await?)
+}
+
+async fn read_sse_event(
+    response: &mut reqwest::Response,
+) -> anyhow::Result<String> {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            bytes.extend_from_slice(&chunk);
+            if bytes.windows(2).any(|window| window == b"\n\n") {
+                return Ok(String::from_utf8(bytes)?);
+            }
+        }
+        anyhow::bail!("SSE stream ended before an event")
+    })
+    .await?
+}
+
+async fn mcp_call(
+    client: &Client,
+    server: &str,
+    name: &str,
+    arguments: Value,
+) -> anyhow::Result<Value> {
+    let response = mcp_rpc(
+        client,
+        server,
+        Some(TOKEN),
+        "tools/call",
+        json!({"name":name,"arguments":arguments}),
+    )
+    .await?;
+    let status = response.status();
+    let value: Value = response.json().await?;
+    anyhow::ensure!(
+        status == StatusCode::OK && value.get("error").is_none(),
+        "MCP {name} failed ({status}): {value}"
+    );
+    Ok(serde_json::from_str(
+        value["result"]["content"][0]["text"].as_str().ok_or_else(
+            || anyhow::anyhow!("MCP {name} has no text result"),
+        )?,
+    )?)
+}
 
 #[tokio::test]
 async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
@@ -1138,6 +1583,10 @@ async fn fake_check_policy(
             .map(ToOwned::to_owned),
         actions: actions.clone(),
     });
+    let allowed = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        != Some("Bearer mcp-denied-token");
     let results = body["actions"]
         .as_array()
         .cloned()
@@ -1146,27 +1595,65 @@ async fn fake_check_policy(
         .map(|action| {
             json!({
                 "action": action.as_str().unwrap_or_default(),
-                "allowed": true
+                "allowed": allowed
             })
         })
         .collect::<Vec<_>>();
     Json(json!({ "results": results }))
 }
 
-async fn fake_check_policy_for_resource() -> Json<Value> {
-    Json(json!({ "allowed": true }))
+async fn fake_check_policy_for_resource(
+    State(state): State<FakeAuthState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let allowed =
+        authorization.as_deref() != Some("Bearer mcp-denied-token");
+    state.policy_checks.lock().unwrap().push(PolicyCheck {
+        authorization,
+        operator_id: headers
+            .get("x-operator-id")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned),
+        actions: vec![body["action"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()],
+    });
+    Json(json!({ "allowed": allowed }))
 }
 
-async fn fake_verify() -> Json<Value> {
-    Json(json!({
-        "user": {
-            "id": USER_ID,
-            "email": "ga-crud@example.com",
-            "name": "GA CRUD Test User",
-            "role": "General",
-            "tenants": [LIBRARY_TENANT_ID]
-        }
-    }))
+async fn fake_verify(
+    State(state): State<FakeAuthState>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    let token = body["token"].as_str().unwrap_or_default();
+    if ![TOKEN, DENIED_TOKEN, OUTSIDER_TOKEN].contains(&token) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid test token"})),
+        );
+    }
+    let mut tenants = vec![LIBRARY_TENANT_ID.to_string()];
+    if token != OUTSIDER_TOKEN {
+        tenants.extend(state.operators.lock().unwrap().values().cloned());
+    }
+    (
+        StatusCode::OK,
+        Json(json!({
+            "user": {
+                "id": USER_ID,
+                "email": "ga-crud@example.com",
+                "name": "GA CRUD Test User",
+                "role": "General",
+                "tenants": tenants
+            }
+        })),
+    )
 }
 
 async fn fake_create_operator(
