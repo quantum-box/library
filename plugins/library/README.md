@@ -39,9 +39,9 @@ codex plugin add library@library
 
 ### HTML アーティファクト
 
-Library が接続されていれば、レポート・ページ・ダッシュボード・プロトタイプなど、通常は Claude の artifact になる成果物を Library の Data として保存し、その URL を返します。Data は `property_type: html` の Property を 1 つ持つ repository に置きます。指定がなければ所属 org の `artifacts` という slug の repository を提案し、確認してから作成します。同じページの更新では同じ Data ID を再利用するため URL は変わりません。
+Library が接続されていれば、レポート・ページ・ダッシュボード・プロトタイプなど、通常は Claude の artifact になる成果物を Library の Data として保存し、その URL を返します。Data は `property_type: html` の Property を 1 つ持つ repository に置きます。指定がなければ所属 org の `artifacts` という slug の repository を提案し、公開範囲（`is_public`）を確認してから作成します。作成時に付く RichText の `content` property は削除し、Html property だけを持たせます（client は RichText を優先して本文に選ぶため）。同じページの更新では同じ Data ID を再利用するため URL は変わりません。
 
-Library v2 は Html Property を `allow-scripts` のみのサンドボックス iframe で描画します。CSS と JS はインラインにし、画像は data URI にした自己完結の HTML にしてください。`window.claude.*` のような artifact 固有のランタイムは使えません。版履歴と閲覧用共有リンクは未対応で、上書き保存になります。
+Library v2 は Html Property を `allow-scripts` のみのサンドボックス iframe で描画します。CSS と JS はインラインにし、画像は data URI にした自己完結の HTML にしてください。`window.claude.*` のような artifact 固有のランタイムは使えません。`POST /mcp` は 1 リクエスト約 2 MiB、Html 値は 3 MiB が上限なので、大きな画像の data URI 埋め込みは失敗します。版履歴と閲覧用共有リンクは未対応で、上書き保存になります。
 
 `search_data` はリポジトリ内のデータ名の完全一致検索です。本文の全文検索ではありません。名前が分からない場合は `list_data` のページをたどって候補を確認します。スキルは選択したデータを取得してから要約し、根拠のIDや取得できたURLを残します。
 
