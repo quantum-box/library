@@ -8,18 +8,6 @@ const json = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const writeJson = (file, value) => writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
 const output = (key, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`)
 
-export function versionForDistance(base, distance) {
-  if (!/^\d+\.\d+\.\d+$/.test(base) || !Number.isSafeInteger(distance) || distance < 1) {
-    throw new Error('Release requires a stable base version and a commit after the anchor')
-  }
-  const [major, minor, patch] = base.split('.').map(Number)
-  // MSI accepts major/minor <= 255 and patch <= 65535.
-  if (major > 255 || minor > 255 || patch + distance > 65535) {
-    throw new Error('Version exceeds Windows MSI limits; establish a new release anchor')
-  }
-  return `${major}.${minor}.${patch + distance}`
-}
-
 export function compareVersions(a, b) {
   if (![a, b].every((v) => /^\d+\.\d+\.\d+$/.test(v))) throw new Error('Invalid stable version')
   const left = a.split('.').map(Number)
@@ -28,21 +16,28 @@ export function compareVersions(a, b) {
   return 0
 }
 
-export function releasePlan(config, source, firstParentHistory) {
-  const index = firstParentHistory.indexOf(source)
-  const anchorIndex = firstParentHistory.indexOf(config.anchor)
-  if (index < 0 || anchorIndex < 0 || index >= anchorIndex) {
-    throw new Error('Source must be on main first-parent history after the release anchor')
+export function validateVersion(pkg, lock, baseVersion) {
+  const version = pkg.version
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version ?? '')) {
+    throw new Error('Desktop version must be stable major.minor.patch')
   }
-  const version = versionForDistance(config.version, anchorIndex - index)
-  return { source, version, tag: `library-v${version}` }
+  const [major, minor, patch] = version.split('.').map(Number)
+  if (major > 255 || minor > 255 || patch > 65535) throw new Error('Version exceeds Windows MSI limits')
+  if (lock.version !== version || lock.packages?.['']?.version !== version) {
+    throw new Error('package.json and package-lock.json versions must match')
+  }
+  if (baseVersion !== undefined && compareVersions(version, baseVersion) <= 0) {
+    throw new Error(`Bump desktop version above ${baseVersion} during implementation, before opening the PR`)
+  }
+  return version
 }
 
-export function setPackageVersion(pkg, lock, version) {
-  pkg.version = version
-  lock.version = version
-  lock.packages[''].version = version
-  return { pkg, lock }
+function checkVersion() {
+  const base = process.env.BASE_REF
+  if (!base || !/^[a-zA-Z0-9_./-]+$/.test(base) || base.startsWith('-')) throw new Error('BASE_REF is required')
+  const baseVersion = JSON.parse(git('show', `${base}:apps/client/package.json`)).version
+  const version = validateVersion(json('apps/client/package.json'), json('apps/client/package-lock.json'), baseVersion)
+  console.log(`Desktop version: ${baseVersion} -> ${version}`)
 }
 
 export function validateManifest(manifest, release, version, repository) {
@@ -73,29 +68,25 @@ export function validateManifest(manifest, release, version, repository) {
 }
 
 function prepare() {
-  const config = json('scripts/desktop-release/config.json')
   const source = process.env.SOURCE_SHA
   if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('Source must be a full commit SHA')
   const history = git('rev-list', '--first-parent', 'origin/main').split('\n')
-  const plan = releasePlan(config, source, history)
+  if (!history.includes(source)) throw new Error('Source must be on main first-parent history')
+  const pkg = JSON.parse(git('show', `${source}:apps/client/package.json`))
+  const lock = JSON.parse(git('show', `${source}:apps/client/package-lock.json`))
+  const base = process.env.SOURCE_BASE_SHA
+  if (base && !/^[a-f0-9]{40}$/.test(base)) throw new Error('Invalid source base SHA')
+  const baseVersion = base ? JSON.parse(git('show', `${base}:apps/client/package.json`)).version : undefined
+  const version = validateVersion(pkg, lock, baseVersion)
+  const plan = { source, version, tag: `library-v${version}` }
   let existing
   try { existing = git('rev-parse', '--verify', `refs/tags/${plan.tag}^{commit}`) } catch { /* first run */ }
   if (existing) {
-    const metadata = JSON.parse(git('show', `${existing}:desktop-release.json`))
-    if (metadata.source !== source || metadata.version !== plan.version || git('rev-parse', `${existing}^`) !== source) {
+    if (existing !== source) {
       throw new Error(`Tag ${plan.tag} belongs to a different source; refusing to overwrite`)
     }
   } else {
-    git('checkout', '--detach', source)
-    const { pkg, lock } = setPackageVersion(json('apps/client/package.json'), json('apps/client/package-lock.json'), plan.version)
-    writeJson('apps/client/package.json', pkg)
-    writeJson('apps/client/package-lock.json', lock)
-    writeJson('desktop-release.json', plan)
-    git('config', 'user.name', 'github-actions[bot]')
-    git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
-    git('add', 'apps/client/package.json', 'apps/client/package-lock.json', 'desktop-release.json')
-    git('commit', '-m', `chore: release Library ${plan.version}`)
-    git('tag', plan.tag)
+    git('tag', plan.tag, source)
     git('push', 'origin', `refs/tags/${plan.tag}`)
   }
   // Listing must succeed: a network/auth failure must never mean "not found".
@@ -140,5 +131,6 @@ function publish() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv[2] === 'prepare') prepare()
   else if (process.argv[2] === 'publish') publish()
-  else throw new Error('Expected prepare or publish')
+  else if (process.argv[2] === 'check-version') checkVersion()
+  else throw new Error('Expected prepare, publish or check-version')
 }

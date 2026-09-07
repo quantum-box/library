@@ -38,11 +38,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Prepare versioned release commit and draft
+      - name: Tag merged version and prepare draft
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          SOURCE_BASE_SHA: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: node scripts/desktop-release/release.mjs prepare
 
   verify-client:

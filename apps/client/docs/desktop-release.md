@@ -27,21 +27,29 @@ It creates a draft first and publishes only after all four platform builds pass
 and the updater manifest has every platform, a signature, and a nonempty matching
 release asset. Failed builds keep the previous public feed intact.
 
-Version allocation is automatic. `scripts/desktop-release/config.json` fixes the
-last pre-automation main commit and version `0.1.7`. Each subsequent first-parent
-main commit increments the patch: the first merge ships `0.1.8`, the next `0.1.9`,
-and so on. First-parent counting handles merge and squash commits; a rebase merge
-with multiple commits can leave gaps, but its final push still releases once.
-The mapping is stable across retries and execution order. Do not edit this anchor
-or manually mint `library-v*` tags during normal release work.
+## Bump the version during implementation
 
-The workflow creates a child commit of the exact merged source, synchronizes
-`apps/client/package.json` and its npm lockfile, records source/version/tag in
-`desktop-release.json`, and pushes only `library-v<version>`. All binaries build
-from that tag. Main's package version remains a development placeholder; the
-release tag, bundled app, and updater manifest carry the definitive version.
-This requires no direct writes to protected main, no version-only PRs, and no PAT.
-Tauri reads the package version; the Rust crate version is not the app version.
+Every implementation PR must include a desktop version bump before it is opened
+Ready, including API-only and documentation PRs. From `apps/client`, run:
+
+```sh
+npm version patch --no-git-tag-version
+```
+
+Commit both `apps/client/package.json` and `apps/client/package-lock.json` with
+the implementation. Use an explicit minor/major version when appropriate. The
+`desktop-version` PR CI job compares against the fetched target branch and rejects
+an unchanged/lower version, mismatched npm lock metadata, prerelease versions, or
+versions outside MSI limits. If another PR merges with the same version, refresh
+main and bump again before merging. Keeping the PR up to date is necessary to
+re-run the check against the new base; this change does not modify branch rules.
+
+After merge, the release job reads that committed version and tags the exact main
+commit as `library-v<version>`. It checks the version also increased from the
+push's previous main SHA. It never changes package files or creates a version
+commit. The reviewed PR, main source, release tag, bundled app, and updater feed
+therefore use the same version. Tauri reads the package version; the Rust crate
+version is not the app version. No long-lived PAT or main write-back is needed.
 
 The entire release workflow uses a shared concurrency group with `queue: max`
 and `cancel-in-progress: false`. Successive merges wait instead of replacing the
@@ -61,15 +69,15 @@ Actions. A successful source merge or PR CI alone is not release completion.
 
 - Rerun a failed Desktop Release run, or dispatch it on **main** with the full
   original main commit SHA in `source_sha`. Empty input releases the dispatch's
-  main SHA. Branch commits and commits at/before the anchor are rejected.
+  main SHA. Commits outside main first-parent history are rejected.
 - Retries reuse the existing tag and draft. If already published, packaging is
   skipped and the public manifest is checked again. Published assets are never
   replaced by a retry. A conflicting tag fails rather than being overwritten.
 - Verify all release jobs, the published `library-v<version>` assets and public
   `latest.json`, then Check for Updates in an installed app. App installation and
   the original application error remain separate checks.
-- For a major/minor reset or MSI patch-limit rollover (65535), deliberately choose
-  a new anchor/base above all previously published versions in a reviewed change.
+- For MSI patch-limit rollover (65535), bump the minor or major version in the
+  implementation PR. Do not manually create or move release tags.
 
 The automation uses the workflow's short-lived `GITHUB_TOKEN` with `contents:
 write` only for release preparation, asset upload, and publication. Repository

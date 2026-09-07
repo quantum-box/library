@@ -60,3 +60,17 @@ For pull requests, include a summary, linked ticket or PLT ID, verification comm
 ## Security & Configuration Tips
 
 Do not commit generated data such as `dist/`, `target/`, local SQLite files, Playwright reports, or secrets. Keep ports and API endpoints explicit so frontend, backend, mobile, and desktop clients share runtime assumptions.
+
+## Desktop version and release
+
+- Bump the desktop app version during implementation, before opening every Ready PR.
+  Include both `apps/client/package.json` and `apps/client/package-lock.json` in
+  the implementation commit (`npm version patch --no-git-tag-version` in this
+  directory). This also applies to API-only and documentation PRs because every
+  main merge releases the desktop app.
+- The version must exceed current main. If another PR takes the same version,
+  update the branch and bump again before merge. `desktop-version` CI checks this.
+- Merge triggers packaging/publication of the committed version. Do not defer
+  version changes to release automation or create release-only version commits.
+- Verify release jobs and the public updater feed separately from PR CI; see
+  `docs/desktop-release.md` for retry and installed-app checks.
