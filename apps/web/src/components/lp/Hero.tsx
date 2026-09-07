@@ -1,6 +1,6 @@
 import type { LpLanguage } from '@/app/lp'
+import { LIBRARY_APP_URL } from './links'
 import { ArrowRight } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
 import { fadeInAnimation } from './animations'
 import { KnowledgeGlobe } from './KnowledgeGlobe'
 
@@ -75,13 +75,13 @@ export function Hero({ lang }: { lang: LpLanguage }) {
 						{t.description}
 					</p>
 					<div className='mt-8 flex flex-col gap-3 sm:flex-row'>
-						<Link
-							to='/sign_up'
+						<a
+							href={LIBRARY_APP_URL}
 							className='inline-flex items-center justify-center gap-2 rounded-md bg-blue-700 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-800'
 						>
 							{t.primaryCta}
 							<ArrowRight className='h-4 w-4' />
-						</Link>
+						</a>
 						<a
 							href='#features'
 							className='inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-6 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900'
