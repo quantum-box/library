@@ -18,22 +18,62 @@ whole repository — so any other component that starts publishing releases here
 would hijack the update feed. Keep this repository's releases to the desktop
 client, or move the feed to an explicit tag URL.
 
-## Cutting a release
+## Automatic releases after merge
 
-1. Bump `version` in `apps/client/package.json`. `src-tauri/tauri.conf.json` reads
-   its version from that file, so the bundled app version and the release tag stay
-   in sync.
-2. Push a `library-v<version>` tag, or run the workflow manually with that tag. The
-   workflow refuses to build if the tag and `package.json` disagree.
+Every push to `main` (including each merged PR) starts Desktop Release. There are
+no path filters: API-only and documentation PRs also produce desktop releases.
+The workflow runs the client lint, tests, type check, and build before packaging.
+It creates a draft first and publishes only after all four platform builds pass
+and the updater manifest has every platform, a signature, and a nonempty matching
+release asset. Failed builds keep the previous public feed intact.
 
-The four platform builds run one at a time (`max-parallel: 1`). They all rewrite
-the release's shared `latest.json`, and tauri-action deletes the old asset before
-uploading its replacement, so overlapping legs race on that delete and the loser
-fails with a 404. A whole release therefore takes roughly 35 minutes.
+Version allocation is automatic. `scripts/desktop-release/config.json` fixes the
+last pre-automation main commit and version `0.1.7`. Each subsequent first-parent
+main commit increments the patch: the first merge ships `0.1.8`, the next `0.1.9`,
+and so on. First-parent counting handles merge and squash commits; a rebase merge
+with multiple commits can leave gaps, but its final push still releases once.
+The mapping is stable across retries and execution order. Do not edit this anchor
+or manually mint `library-v*` tags during normal release work.
 
-The workflow creates the release as a draft and only publishes it once every leg
-has uploaded, so a failed build leaves an unpublished draft rather than a broken
-feed — `library-v0.1.5` was left that way by exactly the race above.
+The workflow creates a child commit of the exact merged source, synchronizes
+`apps/client/package.json` and its npm lockfile, records source/version/tag in
+`desktop-release.json`, and pushes only `library-v<version>`. All binaries build
+from that tag. Main's package version remains a development placeholder; the
+release tag, bundled app, and updater manifest carry the definitive version.
+This requires no direct writes to protected main, no version-only PRs, and no PAT.
+Tauri reads the package version; the Rust crate version is not the app version.
+
+The entire release workflow uses a shared concurrency group with `queue: max`
+and `cancel-in-progress: false`. Successive merges wait instead of replacing the
+pending run. GitHub supports at most 100 waiting runs in this queue; overflow is
+canceled and must be retried. Within a release, platform builds remain serial
+because tauri-action updates the same `latest.json` asset. A release takes about
+35 minutes plus validation and queue time.
+
+The published manifest uses tag-specific download URLs, so fetching a manifest
+just before another release cannot pair an old signature with a newer binary.
+An older retried version is published with `make_latest: false` when a newer
+stable Library release already exists. After publishing, the workflow downloads
+and validates the public version-specific manifest; failure stays visible in
+Actions. A successful source merge or PR CI alone is not release completion.
+
+## Retry and verify
+
+- Rerun a failed Desktop Release run, or dispatch it on **main** with the full
+  original main commit SHA in `source_sha`. Empty input releases the dispatch's
+  main SHA. Branch commits and commits at/before the anchor are rejected.
+- Retries reuse the existing tag and draft. If already published, packaging is
+  skipped and the public manifest is checked again. Published assets are never
+  replaced by a retry. A conflicting tag fails rather than being overwritten.
+- Verify all release jobs, the published `library-v<version>` assets and public
+  `latest.json`, then Check for Updates in an installed app. App installation and
+  the original application error remain separate checks.
+- For a major/minor reset or MSI patch-limit rollover (65535), deliberately choose
+  a new anchor/base above all previously published versions in a reviewed change.
+
+The automation uses the workflow's short-lived `GITHUB_TOKEN` with `contents:
+write` only for release preparation, asset upload, and publication. Repository
+settings, permissions and signing-key changes remain governance Terraform work.
 
 ## The pinned Windows upgrade code
 
