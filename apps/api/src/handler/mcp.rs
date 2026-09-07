@@ -46,6 +46,8 @@ use database_manager::domain::{
 };
 use value_object::{LongText, OffsetPage, OffsetPaginator, Text, Url};
 
+mod oauth_resource;
+
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
 type HmacSha256 = Hmac<Sha256>;
@@ -505,6 +507,10 @@ pub(crate) async fn dispatch_rpc(
         return Err(auth_challenge_response());
     }
 
+    if let Some(scope) = missing_oauth_scope(&auth, &request) {
+        return Err(insufficient_scope_response(scope));
+    }
+
     let is_notification = request.id.is_none();
     let was_authenticated = auth.executor.is_some();
     // The SSE transport can supply credentials from its session rather than
@@ -550,7 +556,7 @@ async fn handle_rpc(
     let result = match request.method.as_str() {
         "initialize" => Ok(initialize_result()),
         "notifications/initialized" => Ok(json!({})),
-        "tools/list" => Ok(tools_list_result(auth.can_use_write_tools())),
+        "tools/list" => Ok(scoped_tools_list(&auth)),
         "tools/call" => call_tool(library_app, auth, request.params).await,
         _ => Err(json_rpc_error(
             -32601,
@@ -582,6 +588,9 @@ async fn call_tool(
     )
     .map_err(|err| json_rpc_error(-32602, err.to_string()))?;
 
+    if !auth.allows_tool(&params.name) {
+        return Err(json_rpc_error(-32001, "Insufficient OAuth scope"));
+    }
     match params.name.as_str() {
         "get_me" => Ok(tool_text_result(get_me(auth)?)),
         "list_orgs" => {
@@ -1951,6 +1960,16 @@ fn initialize_result() -> Value {
     })
 }
 
+fn scoped_tools_list(auth: &McpAuthContext) -> Value {
+    let mut result = tools_list_result(auth.can_use_write_tools());
+    if let Some(tools) = result["tools"].as_array_mut() {
+        tools.retain(|tool| {
+            auth.allows_tool(tool["name"].as_str().unwrap_or_default())
+        });
+    }
+    result
+}
+
 fn tools_list_result(is_authenticated: bool) -> Value {
     let mut tools = vec![
         json!({
@@ -2252,22 +2271,7 @@ fn tools_list_result(is_authenticated: bool) -> Value {
 
     for tool in &mut tools {
         let name = tool["name"].as_str().unwrap_or_default();
-        let read_only = matches!(
-            name,
-            "get_me"
-                | "list_orgs"
-                | "get_org"
-                | "list_repos"
-                | "search_repos"
-                | "get_repo"
-                | "list_data"
-                | "search_data"
-                | "get_data"
-                | "list_properties"
-                | "get_property"
-                | "list_sources"
-                | "get_source"
-        );
+        let read_only = is_read_tool(name);
         tool["annotations"] = json!({
             "readOnlyHint": read_only,
             "destructiveHint": !read_only,
@@ -2275,6 +2279,56 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         });
     }
     json!({ "tools": tools })
+}
+
+fn is_read_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "get_me"
+            | "list_orgs"
+            | "get_org"
+            | "list_repos"
+            | "search_repos"
+            | "get_repo"
+            | "list_data"
+            | "search_data"
+            | "get_data"
+            | "list_properties"
+            | "get_property"
+            | "list_sources"
+            | "get_source"
+    )
+}
+
+fn missing_oauth_scope(
+    auth: &McpAuthContext,
+    request: &JsonRpcRequest,
+) -> Option<&'static str> {
+    let scopes = auth.oauth_scopes?;
+    if request.method != "tools/call" {
+        return None;
+    }
+    let name = request.params.as_ref()?.get("name")?.as_str()?;
+    let read_only = is_read_tool(name);
+    if scopes.allows(read_only) {
+        None
+    } else if read_only {
+        Some("mcp:read")
+    } else {
+        Some("mcp:write")
+    }
+}
+
+fn insufficient_scope_response(scope: &str) -> Response {
+    let mut response =
+        (StatusCode::FORBIDDEN, "Insufficient OAuth scope").into_response();
+    if let Ok(header) = HeaderValue::from_str(&format!(
+        "Bearer error=\"insufficient_scope\", scope=\"{scope}\", resource_metadata=\"{}\"",
+        mcp_resource_metadata_url()
+    )) {
+        response.headers_mut().insert(WWW_AUTHENTICATE, header);
+    }
+    response
 }
 
 fn pagination_schema() -> Value {
@@ -2444,6 +2498,7 @@ struct McpAuthContext {
     caller_auth: Option<CallerAuthApp>,
     accepted_credentials: bool,
     write_tools_available: bool,
+    oauth_scopes: Option<oauth_resource::Scopes>,
 }
 
 impl McpAuthContext {
@@ -2453,6 +2508,7 @@ impl McpAuthContext {
             caller_auth: None,
             accepted_credentials: false,
             write_tools_available: false,
+            oauth_scopes: None,
         }
     }
 
@@ -2465,6 +2521,7 @@ impl McpAuthContext {
             caller_auth: Some(caller_auth),
             accepted_credentials: true,
             write_tools_available: true,
+            oauth_scopes: None,
         }
     }
 
@@ -2474,6 +2531,7 @@ impl McpAuthContext {
             caller_auth: None,
             accepted_credentials: true,
             write_tools_available,
+            oauth_scopes: None,
         }
     }
 
@@ -2482,10 +2540,13 @@ impl McpAuthContext {
     }
 
     fn can_use_write_tools(&self) -> bool {
-        self.executor
-            .as_ref()
-            .is_some_and(|executor| !executor.is_none())
-            || self.write_tools_available
+        self.write_tools_available
+            && self.oauth_scopes.is_none_or(|scopes| scopes.write)
+    }
+
+    fn allows_tool(&self, name: &str) -> bool {
+        self.oauth_scopes
+            .is_none_or(|scopes| scopes.allows(is_read_tool(name)))
     }
 }
 
@@ -2548,8 +2609,36 @@ async fn resolve_auth_context(
         return McpAuthContext::anonymous();
     }
 
+    let oauth_token = if oauth_resource::enabled() {
+        let config = match oauth_resource::Config::from_env() {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::warn!(error, "Invalid MCP OAuth configuration");
+                return McpAuthContext::anonymous();
+            }
+        };
+        match config.verify(&token).await {
+            Ok(verified) => Some(verified),
+            Err(error) => {
+                tracing::warn!(
+                    error,
+                    "MCP OAuth token verification failed"
+                );
+                return McpAuthContext::anonymous();
+            }
+        }
+    } else {
+        None
+    };
+
     match sdk.verify_token(&token).await {
         Ok(user) => {
+            if oauth_token
+                .as_ref()
+                .is_some_and(|verified| user.id != verified.subject)
+            {
+                return McpAuthContext::anonymous();
+            }
             let executor = LibraryExecutor {
                 inner: LibraryExecutorKind::User(Box::new(user)),
                 original_token: Some(token),
@@ -2557,7 +2646,10 @@ async fn resolve_auth_context(
             let caller_auth = executor
                 .caller_auth_app(&sdk)
                 .expect("authenticated MCP executor has a token");
-            McpAuthContext::authenticated(executor, caller_auth)
+            let mut auth =
+                McpAuthContext::authenticated(executor, caller_auth);
+            auth.oauth_scopes = oauth_token.map(|verified| verified.scopes);
+            auth
         }
         Err(error) => {
             tracing::warn!("MCP bearer token verification failed: {error}");
@@ -2709,27 +2801,47 @@ fn auth_challenge_response() -> Response {
         .into_response()
 }
 
-pub async fn protected_resource_metadata() -> Json<Value> {
-    let authorization_servers = std::env::var("MCP_AUTHORIZATION_SERVERS")
-        .or_else(|_| std::env::var("MCP_AUTHORIZATION_SERVER"))
-        .unwrap_or_else(|_| mcp_oauth_issuer())
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
-    let scopes_supported = mcp_scopes_supported();
-
+pub async fn protected_resource_metadata() -> Response {
+    let (resource, authorization_servers) = if oauth_resource::enabled() {
+        match oauth_resource::Config::from_env() {
+            Ok(config) => (config.resource, vec![config.issuer]),
+            Err(error) => {
+                tracing::warn!(error, "Invalid MCP OAuth configuration");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "MCP OAuth is not configured",
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        (mcp_resource_url(), vec![mcp_oauth_issuer()])
+    };
     Json(json!({
-        "resource": mcp_resource_url(),
+        "resource": resource,
         "authorization_servers": authorization_servers,
-        "scopes_supported": scopes_supported,
+        "scopes_supported": mcp_scopes_supported(),
         "bearer_methods_supported": ["header"],
         "resource_name": "Library MCP"
     }))
+    .into_response()
 }
 
-pub async fn mcp_oauth_authorization_server_metadata() -> Json<Value> {
+fn retired_oauth_response() -> Response {
+    (
+        StatusCode::GONE,
+        Json(json!({
+            "error": "authorization_server_moved",
+            "resource_metadata": mcp_resource_metadata_url()
+        })),
+    )
+        .into_response()
+}
+
+pub async fn mcp_oauth_authorization_server_metadata() -> Response {
+    if oauth_resource::enabled() {
+        return retired_oauth_response();
+    }
     let issuer = mcp_oauth_issuer();
     let scopes_supported = mcp_scopes_supported();
 
@@ -2744,11 +2856,15 @@ pub async fn mcp_oauth_authorization_server_metadata() -> Json<Value> {
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": scopes_supported
     }))
+    .into_response()
 }
 
 pub async fn mcp_oauth_register(
     Json(request): Json<McpOAuthClientRegistrationRequest>,
 ) -> Response {
+    if oauth_resource::enabled() {
+        return retired_oauth_response();
+    }
     if request.redirect_uris.is_empty() {
         return oauth_error_response(
             StatusCode::BAD_REQUEST,
@@ -2808,6 +2924,9 @@ pub async fn mcp_oauth_register(
 pub async fn mcp_oauth_authorize(
     Query(query): Query<McpOAuthAuthorizeQuery>,
 ) -> Response {
+    if oauth_resource::enabled() {
+        return retired_oauth_response();
+    }
     if let Err(message) = validate_authorize_request(&query).await {
         return Html(render_login_page(&query, Some(&message)))
             .into_response();
@@ -2819,6 +2938,9 @@ pub async fn mcp_oauth_authorize(
 pub async fn mcp_oauth_authorize_submit(
     Form(form): Form<McpOAuthAuthorizeForm>,
 ) -> Response {
+    if oauth_resource::enabled() {
+        return retired_oauth_response();
+    }
     let query = McpOAuthAuthorizeQuery {
         response_type: form.response_type.clone(),
         client_id: form.client_id.clone(),
@@ -2881,6 +3003,9 @@ pub async fn mcp_oauth_authorize_submit(
 pub async fn mcp_oauth_token(
     Form(request): Form<McpOAuthTokenRequest>,
 ) -> Response {
+    if oauth_resource::enabled() {
+        return retired_oauth_response();
+    }
     if request.grant_type != "authorization_code" {
         return oauth_error_response(
             StatusCode::BAD_REQUEST,
@@ -2968,6 +3093,9 @@ fn mcp_oauth_issuer() -> String {
 }
 
 fn mcp_scopes_supported() -> Vec<String> {
+    if oauth_resource::enabled() {
+        return vec!["mcp:read".into(), "mcp:write".into()];
+    }
     std::env::var("MCP_SCOPES_SUPPORTED")
         .ok()
         .map(|value| csv_env(&value))
@@ -3264,6 +3392,177 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_read_scope_hides_writes_and_rejects_direct_write_calls() {
+        let mut auth = McpAuthContext::accepted_without_executor(true);
+        auth.oauth_scopes = Some(oauth_resource::Scopes {
+            read: true,
+            write: false,
+        });
+        assert!(!auth.can_use_write_tools());
+        let list = scoped_tools_list(&auth);
+        let names = list["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"get_data"));
+        assert!(!names.contains(&"create_data"));
+        for tool in tools_list_result(true)["tools"].as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            let request = JsonRpcRequest {
+                jsonrpc: Some("2.0".into()),
+                id: Some(json!(1)),
+                method: "tools/call".into(),
+                params: Some(json!({"name":name})),
+            };
+            assert_eq!(
+                auth.allows_tool(name),
+                tool["annotations"]["readOnlyHint"] == true,
+                "{name}"
+            );
+            assert_eq!(
+                missing_oauth_scope(&auth, &request),
+                if is_read_tool(name) {
+                    None
+                } else {
+                    Some("mcp:write")
+                },
+                "{name}"
+            );
+        }
+        let response = insufficient_scope_response("mcp:write");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response.headers()[WWW_AUTHENTICATE]
+            .to_str()
+            .unwrap()
+            .contains("insufficient_scope"));
+        assert!(McpAuthContext::accepted_without_executor(true)
+            .can_use_write_tools());
+    }
+
+    #[test]
+    fn oauth_write_scope_does_not_grant_read_access() {
+        let mut auth = McpAuthContext::accepted_without_executor(true);
+        auth.oauth_scopes = Some(oauth_resource::Scopes {
+            read: false,
+            write: true,
+        });
+        assert!(auth.can_use_write_tools());
+        assert!(!auth.allows_tool("get_data"));
+        assert!(!auth.allows_tool("get_me"));
+        assert!(auth.allows_tool("create_data"));
+        assert!(!McpAuthContext::anonymous().can_use_write_tools());
+    }
+
+    // Run environment-dependent handlers in a subprocess so parallel tests
+    // never observe a temporary production-like OAuth configuration.
+    #[test]
+    fn external_oauth_http_contract_subprocess() {
+        let result =
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "handler::mcp::tests::external_oauth_http_contract",
+                    "--nocapture",
+                ])
+                .env("PLT4366_HTTP_TEST", "1")
+                .env_remove("MCP_AUTHORIZATION_SERVERS")
+                .env(
+                    "MCP_AUTHORIZATION_SERVER",
+                    "https://issuer.example.test",
+                )
+                .env(
+                    "MCP_OAUTH_JWKS_URL",
+                    "https://issuer.example.test/oauth2/jwks",
+                )
+                .env("MCP_RESOURCE_URL", "https://library.example.test/mcp")
+                .output()
+                .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[tokio::test]
+    async fn external_oauth_http_contract() {
+        if std::env::var("PLT4366_HTTP_TEST").as_deref() != Ok("1") {
+            return;
+        }
+        use axum::{
+            body::{to_bytes, Body},
+            http::Request,
+            routing::{get, post},
+            Router,
+        };
+        use tower::ServiceExt;
+        let router = Router::new()
+            .route("/metadata", get(protected_resource_metadata))
+            .route(
+                "/discovery",
+                get(mcp_oauth_authorization_server_metadata),
+            )
+            .route("/register", post(mcp_oauth_register))
+            .route(
+                "/authorize",
+                get(mcp_oauth_authorize).post(mcp_oauth_authorize_submit),
+            )
+            .route("/token", post(mcp_oauth_token));
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/metadata")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let metadata: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), 8192).await.unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            metadata["authorization_servers"],
+            json!(["https://issuer.example.test"])
+        );
+        assert_eq!(
+            metadata["resource"],
+            "https://library.example.test/mcp"
+        );
+        assert_eq!(
+            metadata["scopes_supported"],
+            json!(["mcp:read", "mcp:write"])
+        );
+        let query = "response_type=code&client_id=test&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&code_challenge=test&code_challenge_method=S256";
+        for (method, uri, content_type, body) in [
+            ("GET", "/discovery".to_string(), "application/json", String::new()),
+            ("POST", "/register".to_string(), "application/json", "{\"redirect_uris\":[\"https://client.example.test/callback\"]}".to_string()),
+            ("GET", format!("/authorize?{query}"), "application/json", String::new()),
+            ("POST", "/authorize".to_string(), "application/x-www-form-urlencoded", format!("{query}&username=test&password=test")),
+            ("POST", "/token".to_string(), "application/x-www-form-urlencoded", "grant_type=authorization_code&code=test".to_string()),
+        ] {
+            let response = router.clone().oneshot(Request::builder().method(method).uri(&uri).header("content-type", content_type).body(Body::from(body)).unwrap()).await.unwrap();
+            assert_eq!(response.status(), StatusCode::GONE, "{method} {uri}");
+        }
+        std::env::set_var("MCP_AUTHORIZATION_SERVER", "");
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/metadata")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 
     /// A `pk_` key is verified against the organization that issued it,
     /// and only `tools/call` names one in its arguments. Without this

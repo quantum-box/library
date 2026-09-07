@@ -82,15 +82,34 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_AUTH_REQUIRED` | `true` / `1` の場合、`initialize` / `tools/list` を含む MCP endpoint 全体で認証を要求する |
 | `MCP_RESOURCE_URL` | protected resource metadata の `resource`。未指定時は `{LIBRARY_API_BASE_URL}/mcp` |
 | `MCP_RESOURCE_METADATA_URL` | `WWW-Authenticate` に載せる metadata URL。未指定時は `{LIBRARY_API_BASE_URL}/.well-known/oauth-protected-resource` |
-| `MCP_AUTHORIZATION_SERVER` | OAuth authorization server issuer。未指定時は Library MCP OAuth facade (`{LIBRARY_API_BASE_URL}/mcp/oauth`) |
-| `MCP_AUTHORIZATION_SERVERS` | 複数 issuer を comma-separated で指定する場合 |
-| `MCP_SCOPES_SUPPORTED` | protected resource metadata / authorization server metadata に載せる scopes。未指定時は `openid,email,profile` |
+| `MCP_AUTHORIZATION_SERVER` | 設定するとTachyon OAuth検証を有効化する。信頼するHTTPS issuerを一つ指定。未設定時は従来のLibrary OAuth facade |
+| `MCP_AUTHORIZATION_SERVERS` | 上記の別名（優先）。現在は一つのissuerのみ対応。複数・空値は認証を拒否する |
+| `MCP_OAUTH_JWKS_URL` | 外部モードで必須。信頼するTachyon discoveryの `jwks_uri` を管理者が確認して指定するHTTPS URL |
+| `MCP_SCOPES_SUPPORTED` | 旧モードのscopes。外部モードは実際に検証する `mcp:read,mcp:write` を固定で案内する |
 | `MCP_OAUTH_ISSUER` | Library MCP OAuth facade の issuer。未指定時は `{LIBRARY_API_BASE_URL}/mcp/oauth` |
 | `MCP_COGNITO_CLIENT_ID` | MCP OAuth facade が Cognito `USER_PASSWORD_AUTH` に使う client id。`COGNITO_CLIENT_ID` / `VITE_COGNITO_CLIENT_ID` も fallback として読む |
 | `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` も fallback として読む。frontend に公開される `VITE_*` からは読まない |
 | `MCP_COGNITO_REGION` | Cognito region。未指定時は `ap-northeast-1` |
 | `LIBRARY_MCP_SSE_ENABLED` | `true` の場合のみ SSE transport の route を登録する。既定 off |
 | `MCP_SSE_MESSAGE_ENDPOINT` | SSE transport の `endpoint` event が返す post 先。未指定時は相対パス `/messages` |
+
+### Tachyonへの切替
+
+外部モードではTachyon発行access tokenのRS256署名、kid、issuer、exp、nbf、Libraryのresource URLと一致するaudienceを検証する。同じtokenをSDKでも検証し、返されたユーザーIDとsubが一致することを確認する。その後は従来の組織所属とデータアクセス権を適用する。APIキーの組織指定・ポリシー検証は維持する。
+
+`mcp:read` は読取ツール、`mcp:write` は変更ツールに対応する。一方のscopeからもう一方を推定しない。scope不足のツールは一覧から除外し、直接呼出しは `403` と `insufficient_scope` challengeを返す。
+
+JWKSは最大5分キャッシュする。未知のkidや期限切れキャッシュの取得失敗は認証を拒否するため、鍵ローテーション時は新しい公開鍵を5分以上前に公開する。tokenヘッダーのjku/x5uやJWKS HTTPリダイレクトは使用しない。
+
+切替手順:
+
+1. Tachyonのform/public client対応をデプロイし、Library resource向けaudienceの発行・refresh時の維持を実装・検証する。現在確認済みのTachyonコードはaudにclient_idを設定しており、そのtokenはLibraryの外部モードでは拒否される。
+2. Previewで `MCP_AUTHORIZATION_SERVER`、`MCP_OAUTH_JWKS_URL`、正規の `MCP_RESOURCE_URL` とmetadata URLを設定する。issuer/JWKS/resourceはHTTPSを必須とする。
+3. 実MCPクライアントで再登録・再認可し、読取・変更・scope不足・別resource・権限外組織の動作を確認する。Tachyon側の複数インスタンスをまたぐ認可コード・callback/consent replay防止も別途確認する。
+4. 本番設定を切り替える。外部モードではLibraryの旧discoveryと `/mcp/oauth/register`・`authorize`・`token` は410になる。旧Cognito tokenは新しい検証条件を満たさず拒否されるため、再認可が必要。
+5. 本番の接続確認後に旧OAuth実装を削除する。切戻しは外部モードの環境変数を解除するが、旧プロセス内登録情報は復元されないため再登録する。
+
+以下は未切替環境にのみ残す従来経路である。
 
 Library MCP OAuth facade は Dynamic Client Registration を受け付け、`/mcp/oauth/authorize` で Library login form を出す。入力された credential は Cognito `USER_PASSWORD_AUTH` で検証し、token endpoint は Cognito の実 access token を MCP client に返す。
 
