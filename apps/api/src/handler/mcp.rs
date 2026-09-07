@@ -1,6 +1,5 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Instant;
 
 use axum::{
     extract::{Extension, Form, Query},
@@ -14,12 +13,10 @@ use axum::{
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use hmac::{Hmac, Mac};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction, OperatorId};
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::app::LibraryApp;
@@ -50,8 +47,9 @@ const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
 type HmacSha256 = Hmac<Sha256>;
 
-static MCP_OAUTH_STORE: Lazy<Mutex<McpOAuthStore>> =
-    Lazy::new(|| Mutex::new(McpOAuthStore::default()));
+mod oauth_store;
+pub use oauth_store::McpOAuthStore;
+use oauth_store::{McpOAuthClient, McpOAuthCode};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -344,31 +342,6 @@ pub struct McpOAuthTokenRequest {
     redirect_uri: Option<String>,
     #[serde(default)]
     client_id: Option<String>,
-}
-
-#[derive(Debug, Default)]
-struct McpOAuthStore {
-    clients: HashMap<String, McpOAuthClient>,
-    codes: HashMap<String, McpOAuthCode>,
-}
-
-#[derive(Debug, Clone)]
-struct McpOAuthClient {
-    redirect_uris: Vec<String>,
-    token_endpoint_auth_method: String,
-    grant_types: Vec<String>,
-    response_types: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-struct McpOAuthCode {
-    client_id: String,
-    redirect_uri: String,
-    code_challenge: String,
-    scope: Option<String>,
-    access_token: String,
-    expires_in: i64,
-    created_at: Instant,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2747,6 +2720,7 @@ pub async fn mcp_oauth_authorization_server_metadata() -> Json<Value> {
 }
 
 pub async fn mcp_oauth_register(
+    Extension(store): Extension<McpOAuthStore>,
     Json(request): Json<McpOAuthClientRegistrationRequest>,
 ) -> Response {
     if request.redirect_uris.is_empty() {
@@ -2785,19 +2759,17 @@ pub async fn mcp_oauth_register(
         },
     };
 
-    MCP_OAUTH_STORE
-        .lock()
-        .await
-        .clients
-        .insert(client_id.clone(), client);
+    if store.register(&client_id, &client).await.is_err() {
+        return oauth_storage_error();
+    }
 
     Json(json!({
         "client_id": client_id,
         "client_id_issued_at": chrono::Utc::now().timestamp(),
         "redirect_uris": request.redirect_uris,
         "token_endpoint_auth_method": "none",
-        "grant_types": request.grant_types,
-        "response_types": request.response_types,
+        "grant_types": client.grant_types,
+        "response_types": client.response_types,
         "client_name": request.client_name,
         "client_uri": request.client_uri,
         "scope": request.scope
@@ -2806,9 +2778,10 @@ pub async fn mcp_oauth_register(
 }
 
 pub async fn mcp_oauth_authorize(
+    Extension(store): Extension<McpOAuthStore>,
     Query(query): Query<McpOAuthAuthorizeQuery>,
 ) -> Response {
-    if let Err(message) = validate_authorize_request(&query).await {
+    if let Err(message) = validate_authorize_request(&store, &query).await {
         return Html(render_login_page(&query, Some(&message)))
             .into_response();
     }
@@ -2817,6 +2790,7 @@ pub async fn mcp_oauth_authorize(
 }
 
 pub async fn mcp_oauth_authorize_submit(
+    Extension(store): Extension<McpOAuthStore>,
     Form(form): Form<McpOAuthAuthorizeForm>,
 ) -> Response {
     let query = McpOAuthAuthorizeQuery {
@@ -2830,7 +2804,7 @@ pub async fn mcp_oauth_authorize_submit(
         resource: form.resource.clone(),
     };
 
-    if let Err(message) = validate_authorize_request(&query).await {
+    if let Err(message) = validate_authorize_request(&store, &query).await {
         return Html(render_login_page(&query, Some(&message)))
             .into_response();
     }
@@ -2846,21 +2820,29 @@ pub async fn mcp_oauth_authorize_submit(
             }
         };
 
-    let code = format!("mcp_code_{}", Uuid::new_v4().simple());
-    MCP_OAUTH_STORE.lock().await.codes.insert(
-        code.clone(),
-        McpOAuthCode {
-            client_id: form.client_id,
-            redirect_uri: form.redirect_uri.clone(),
-            code_challenge: form.code_challenge,
-            scope: form.scope.clone(),
-            access_token: auth
-                .access_token
-                .expect("cognito auth checked access token"),
-            expires_in: auth.expires_in.unwrap_or(3600),
-            created_at: Instant::now(),
-        },
+    let code = format!(
+        "mcp_code_{}",
+        URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
     );
+    if store
+        .issue(
+            &code,
+            &McpOAuthCode {
+                client_id: form.client_id,
+                redirect_uri: form.redirect_uri.clone(),
+                code_challenge: form.code_challenge,
+                scope: form.scope.clone(),
+                access_token: auth
+                    .access_token
+                    .expect("cognito auth checked access token"),
+                expires_in: auth.expires_in.unwrap_or(3600),
+            },
+        )
+        .await
+        .is_err()
+    {
+        return oauth_storage_error();
+    }
 
     match redirect_with_code(
         &form.redirect_uri,
@@ -2879,6 +2861,7 @@ pub async fn mcp_oauth_authorize_submit(
 }
 
 pub async fn mcp_oauth_token(
+    Extension(store): Extension<McpOAuthStore>,
     Form(request): Form<McpOAuthTokenRequest>,
 ) -> Response {
     if request.grant_type != "authorization_code" {
@@ -2904,51 +2887,28 @@ pub async fn mcp_oauth_token(
         );
     };
 
-    let stored = MCP_OAUTH_STORE.lock().await.codes.remove(&code);
-    let Some(stored) = stored else {
+    let (Some(client_id), Some(redirect_uri)) = (
+        request.client_id.as_deref(),
+        request.redirect_uri.as_deref(),
+    ) else {
         return oauth_error_response(
             StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "Authorization code is invalid or already used",
+            "invalid_request",
+            "client_id and redirect_uri are required",
         );
     };
-
-    if stored.created_at.elapsed().as_secs() > 600 {
-        return oauth_error_response(
+    let exchange = store
+        .redeem(&code, client_id, redirect_uri, &code_verifier)
+        .await;
+    let stored = match exchange {
+        Ok(Some(stored)) => stored,
+        Ok(None) => return oauth_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
-            "Authorization code expired",
-        );
-    }
-    if request
-        .client_id
-        .as_deref()
-        .is_some_and(|client_id| client_id != stored.client_id)
-    {
-        return oauth_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "client_id does not match authorization code",
-        );
-    }
-    if request
-        .redirect_uri
-        .as_deref()
-        .is_some_and(|redirect_uri| redirect_uri != stored.redirect_uri)
-    {
-        return oauth_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "redirect_uri does not match authorization code",
-        );
-    }
-    if !verify_pkce(&code_verifier, &stored.code_challenge) {
-        return oauth_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "PKCE verification failed",
-        );
-    }
+            "Authorization code is invalid, expired, already used, or does not match this request",
+        ),
+        Err(_) => return oauth_storage_error(),
+    };
 
     Json(json!({
         "access_token": stored.access_token,
@@ -2990,6 +2950,7 @@ fn csv_env(value: &str) -> Vec<String> {
 }
 
 async fn validate_authorize_request(
+    store: &McpOAuthStore,
     request: &McpOAuthAuthorizeQuery,
 ) -> Result<(), String> {
     if request.response_type != "code" {
@@ -2999,10 +2960,12 @@ async fn validate_authorize_request(
         return Err("Only PKCE S256 is supported.".to_string());
     }
 
-    let store = MCP_OAUTH_STORE.lock().await;
     let client = store
-        .clients
-        .get(&request.client_id)
+        .client(&request.client_id)
+        .await
+        .map_err(|_| {
+            "OAuth storage is temporarily unavailable.".to_string()
+        })?
         .ok_or_else(|| "OAuth client is not registered.".to_string())?;
     if !client.redirect_uris.contains(&request.redirect_uri) {
         return Err(
@@ -3159,6 +3122,16 @@ fn redirect_with_code(
         url.query_pairs_mut().append_pair("state", state);
     }
     Ok(url.to_string())
+}
+
+fn oauth_storage_error() -> Response {
+    // Do not log database errors or payloads: they may contain credentials.
+    tracing::error!("MCP OAuth storage operation failed");
+    oauth_error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "temporarily_unavailable",
+        "OAuth storage is temporarily unavailable",
+    )
 }
 
 fn oauth_error_response(

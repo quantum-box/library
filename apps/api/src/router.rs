@@ -692,6 +692,9 @@ pub async fn router(
             crate::sdk_auth::caller_token_middleware,
         ))
         .layer(create_request_id_layer())
+        .layer(Extension(handler::mcp::McpOAuthStore::new(
+            library_db.pool(),
+        )))
         .layer(Extension(sdk))
         .layer(Extension(library_app))
         .layer(Extension(database_app))
