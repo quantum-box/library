@@ -141,7 +141,11 @@ for (const format of ['markdown', 'richText'] as const) {
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Aoi contribution.')
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Ren contribution.')
       await otherContext.setOffline(true)
-      await expect(other.locator('.record-body-blocknote [contenteditable="true"]')).toHaveCount(0)
+      await expect(other.getByTestId('data-editor-live-status')).toHaveText('Shared editing paused while offline')
+      await secondEditor.click()
+      await other.keyboard.press('ControlOrMeta+End')
+      await other.keyboard.insertText(' Offline contribution.')
+      await expect(secondEditor).toContainText('Offline contribution.')
       await firstEditor.click()
       await page.keyboard.press('ControlOrMeta+End')
       await page.keyboard.insertText(' Reconnected contribution.')
@@ -155,6 +159,13 @@ for (const format of ['markdown', 'richText'] as const) {
       for (const participant of [page, other]) {
         await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
       }
+      for (const editor of [firstEditor, secondEditor]) {
+        await expect(editor).toContainText('Offline contribution.')
+        await expect(editor).toContainText('Reconnected contribution.')
+      }
+      await other.reload()
+      await expect(secondEditor).toContainText('Offline contribution.')
+      await expect(secondEditor).toContainText('Reconnected contribution.')
       expect(liveErrors).toEqual([])
       await page.screenshot({ path: `test-results/data-editor-live-${format}.png`, fullPage: true })
     } finally {
@@ -377,6 +388,10 @@ test('does not merge a retained offline document into a replacement room', async
     await expect.poll(canonicalBody).toContain(initialText.trim())
     await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
     await oldContext.setOffline(true)
+    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared editing paused while offline')
+    await oldEditor.click()
+    await oldPage.keyboard.press('ControlOrMeta+End')
+    await oldPage.keyboard.insertText(' Retained offline draft.')
 
     const update = await page.request.post(`${api}/v1/graphql`, {
       data: {
@@ -395,6 +410,7 @@ test('does not merge a retained offline document into a replacement room', async
     await oldContext.setOffline(false)
     await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared body conflicts with a newer saved version')
     await expect(oldPage.locator('.record-body-blocknote')).toContainText(initialText.trim())
+    await expect(oldPage.locator('.record-body-blocknote')).toContainText('Retained offline draft.')
     await expect(oldPage.locator('.record-body-blocknote')).not.toContainText(externalText)
     await expect(oldPage.locator('.record-body-blocknote [contenteditable="true"]')).toHaveCount(0)
     await freshEditor.click()

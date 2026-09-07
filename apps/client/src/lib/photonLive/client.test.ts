@@ -339,7 +339,7 @@ describe('Photon Live provider', () => {
     }
   })
 
-  it('marks the editor read only offline and reauthorizes on reconnect', async () => {
+  it('keeps offline edits and sends them only after the reconnect handshake', async () => {
     const fixture = createFixture()
     await waitFor(() => expect(fixture.getSocket()).toBeDefined())
     const firstSocket = fixture.getSocket()!
@@ -350,19 +350,62 @@ describe('Photon Live provider', () => {
     await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
 
     window.dispatchEvent(new Event('offline'))
-    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(false))
+    expect(fixture.provider.getState()).toMatchObject({ status: 'disconnected', canEdit: true })
     expect(firstSocket.readyState).toBe(FakeWebSocket.CLOSED)
+    appendText(fixture.provider, 'Offline contribution')
+    fixture.provider.queueCheckpoint('Offline contribution')
+    fixture.provider.flushCheckpoint()
+    expect(fixture.provider.getState().hasUnackedChanges).toBe(true)
 
     window.dispatchEvent(new Event('online'))
     await waitFor(() => expect(fixture.fetchMock).toHaveBeenCalledTimes(2))
     const secondSocket = fixture.getSocket()!
     expect(secondSocket).not.toBe(firstSocket)
     secondSocket.open()
+    expect(fixture.provider.getState().canEdit).toBe(true)
+    appendText(fixture.provider, ' while reconnecting')
+    fixture.provider.queueCheckpoint('Offline contribution while reconnecting')
+    fixture.provider.flushCheckpoint()
+    expect(secondSocket.sent).toHaveLength(0)
     secondSocket.message(Y.encodeStateAsUpdate(new Y.Doc()))
     await new Promise((resolve) => setTimeout(resolve, 0))
     secondSocket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
     await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    fixture.provider.flushCheckpoint()
+    const replay = new Y.Doc()
+    for (const frame of secondSocket.sent) {
+      if (frame instanceof Uint8Array) Y.applyUpdate(replay, frame)
+    }
+    expect(replay.getXmlFragment(config.fragmentName).toJSON()).toContain('Offline contribution')
+    const checkpoint = sentJson(secondSocket).find((frame) => frame.type === 'live-checkpoint')!
+    expect(checkpoint.body).toBe('Offline contribution while reconnecting')
+    secondSocket.message(jsonFrame({ type: 'live-saved', operation_id: checkpoint.operation_id, version: 2, record_version: '2' }))
+    expect(fixture.provider.getState()).toMatchObject({ saveStatus: 'saved', hasUnackedChanges: false })
+    replay.destroy()
     fixture.provider.destroy()
+  })
+
+  it('stops local editing when reconnect authorization is denied', async () => {
+    const fixture = createFixture()
+    try {
+      await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+      const socket = fixture.getSocket()!
+      socket.open()
+      socket.message(snapshotWithText('Authorized document'))
+      await flushMicrotasks()
+      socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+      expect(fixture.provider.getState().canEdit).toBe(true)
+      window.dispatchEvent(new Event('offline'))
+      appendText(fixture.provider, ' Offline draft')
+      fixture.fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }))
+      window.dispatchEvent(new Event('online'))
+      await waitFor(() => expect(fixture.provider.getState()).toMatchObject({
+        canEdit: false, status: 'failed', error: { kind: 'unauthorized' },
+      }))
+      expect(fixture.provider.fragment.toJSON()).toContain('Offline draft')
+    } finally {
+      fixture.provider.destroy()
+    }
   })
 
   it('recognizes the worker 404 LIVE_DISABLED response without treating generic 404 as disabled', async () => {
@@ -554,7 +597,7 @@ describe('Photon Live provider', () => {
     const retainedBody = fixture.provider.fragment.toJSON()
 
     window.dispatchEvent(new Event('offline'))
-    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(false))
+    expect(fixture.provider.getState()).toMatchObject({ status: 'disconnected', canEdit: true })
     window.dispatchEvent(new Event('online'))
     await waitFor(() => expect(fixture.fetchMock).toHaveBeenCalledTimes(2))
     const secondSocket = fixture.getSocket()!
@@ -605,7 +648,7 @@ describe('Photon Live provider', () => {
     appendText(fixture.provider, 'retained local text')
 
     window.dispatchEvent(new Event('offline'))
-    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(false))
+    expect(fixture.provider.getState()).toMatchObject({ status: 'disconnected', canEdit: true })
     window.dispatchEvent(new Event('online'))
     await waitFor(() => expect(fixture.fetchMock).toHaveBeenCalledTimes(2))
     const secondSocket = fixture.getSocket()!
