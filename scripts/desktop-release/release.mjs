@@ -67,6 +67,15 @@ export function validateManifest(manifest, release, version, repository) {
   return result
 }
 
+function listReleases() {
+  return JSON.parse(gh('api', '--paginate', '--slurp', `repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`)).flat()
+}
+
+/** Drafts are listed alongside published releases, so match on the tag only. */
+export function findRelease(releases, tag) {
+  return releases.find((item) => item.tag_name === tag)
+}
+
 function prepare() {
   const source = process.env.SOURCE_SHA
   if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('Source must be a full commit SHA')
@@ -90,11 +99,14 @@ function prepare() {
     git('push', 'origin', `refs/tags/${plan.tag}`)
   }
   // Listing must succeed: a network/auth failure must never mean "not found".
-  const releases = JSON.parse(gh('api', '--paginate', '--slurp', `repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`)).flat()
-  let release = releases.find((item) => item.tag_name === plan.tag)
+  let release = findRelease(listReleases(), plan.tag)
   if (!release) {
     gh('release', 'create', plan.tag, '--verify-tag', '--draft', '--generate-notes', '--title', `Library ${plan.version}`)
-    release = JSON.parse(gh('api', `repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${plan.tag}`))
+    // The draft only appears in the listing: `releases/tags/<tag>` serves
+    // published releases and returns 404 for a draft, which is what stalled
+    // every release after the flow was introduced.
+    release = findRelease(listReleases(), plan.tag)
+    if (!release) throw new Error(`Draft release ${plan.tag} was created but is not listed`)
   }
   output('release_id', release.id)
   output('tag', plan.tag)

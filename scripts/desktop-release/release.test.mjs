@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareVersions, validateVersion, validateManifest } from './release.mjs'
+import { compareVersions, findRelease, validateVersion, validateManifest } from './release.mjs'
 
 function versions(version) { return [{ version }, { version, packages: { '': { version } } }] }
 test('PR version must exceed current base, including after another PR merged', () => {
@@ -55,4 +55,12 @@ test('refuse partial builds, missing signatures/assets, wrong versions and exter
     mutate(value)
     assert.throws(() => validateManifest(value.manifest, value.release, '0.1.8', repository))
   }
+})
+test('a freshly created draft is found through the release listing', () => {
+  const releases = [
+    { id: 1, tag_name: 'library-v0.1.7', draft: false },
+    { id: 2, tag_name: 'library-v0.1.8', draft: true },
+  ]
+  assert.equal(findRelease(releases, 'library-v0.1.8').id, 2)
+  assert.equal(findRelease(releases, 'library-v0.1.9'), undefined)
 })
