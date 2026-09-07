@@ -2,6 +2,7 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LpLanguage } from '@/app/lp'
+import { LIBRARY_APP_URL } from './links'
 
 const copy = {
 	en: {
@@ -185,18 +186,18 @@ export function Header({ lang }: { lang: LpLanguage }) {
 						))}
 					</div>
 					<span className='h-4 w-px bg-slate-200' />
-					<Link
-						to='/sign_in'
+					<a
+						href={LIBRARY_APP_URL}
 						className='text-sm text-slate-600 transition-colors hover:text-slate-900'
 					>
 						{t.login}
-					</Link>
-					<Link
-						to='/sign_up'
+					</a>
+					<a
+						href={LIBRARY_APP_URL}
 						className='rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-slate-700'
 					>
 						{t.signup}
-					</Link>
+					</a>
 				</div>
 
 				<button
@@ -249,18 +250,18 @@ export function Header({ lang }: { lang: LpLanguage }) {
 								</button>
 							))}
 						</div>
-						<Link
-							to='/sign_in'
+						<a
+							href={LIBRARY_APP_URL}
 							className='mt-2 rounded-md border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-50'
 						>
 							{t.login}
-						</Link>
-						<Link
-							to='/sign_up'
+						</a>
+						<a
+							href={LIBRARY_APP_URL}
 							className='mt-2 rounded-md bg-slate-900 px-3 py-2 text-center text-sm font-medium text-white transition hover:bg-slate-700'
 						>
 							{t.signup}
-						</Link>
+						</a>
 					</nav>
 				</div>
 			)}

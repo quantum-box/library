@@ -1,4 +1,5 @@
 import type { LpLanguage } from '@/app/lp'
+import { LIBRARY_APP_URL } from './links'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { PlanetMark } from './PlanetMark'
@@ -170,13 +171,13 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 							{t.primaryBody}
 						</p>
 						<div className='mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row'>
-							<Link
-								to='/sign_up'
+							<a
+								href={LIBRARY_APP_URL}
 								className='inline-flex items-center justify-center gap-2 rounded-md bg-white px-6 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-200'
 							>
 								{t.primaryCta}
 								<ArrowRight className='h-4 w-4' />
-							</Link>
+							</a>
 							<a
 								href='https://www.quantum-box.com/contact'
 								target='_blank'
