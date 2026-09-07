@@ -31,10 +31,7 @@ fn property_type_from_request(
     match payload.property_type.as_str() {
         "string" => Ok(PropertyType::String),
         "integer" => Ok(PropertyType::Integer),
-        "html" => {
-            tracing::warn!("{}", HTML_DEPRECATION_MESSAGE);
-            Ok(PropertyType::Html)
-        }
+        "html" => Ok(PropertyType::Html),
         "markdown" => Ok(PropertyType::Markdown),
         "relation" => Ok(PropertyType::Relation(Default::default())),
         "select" => Ok(PropertyType::Select(Default::default())),
@@ -308,27 +305,14 @@ pub async fn update_property(
     let response = to_property_response(&property);
     Ok(Json(response))
 }
-const HTML_DEPRECATION_MESSAGE: &str =
-    "HTML property type is deprecated. Please migrate to MARKDOWN.";
-
-fn property_deprecation(property_type: &str) -> Option<String> {
-    if property_type.eq_ignore_ascii_case("html") {
-        Some(HTML_DEPRECATION_MESSAGE.to_string())
-    } else {
-        None
-    }
-}
-
 fn to_property_response(property: &DomainProperty) -> PropertyResponse {
-    let property_type = property.property_type().to_string();
     PropertyResponse {
         id: property.id().to_string(),
         name: property.name().to_string(),
-        property_type: property_type.clone(),
+        property_type: property.property_type().to_string(),
         auto_generate: match property.property_type() {
             PropertyType::Id(type_id) => Some(type_id.auto_generate),
             _ => None,
         },
-        deprecation: property_deprecation(&property_type),
     }
 }

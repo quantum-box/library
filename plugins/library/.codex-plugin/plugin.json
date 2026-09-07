@@ -1,7 +1,7 @@
 {
   "name": "library",
-  "version": "0.2.0",
-  "description": "Search Library data and manage repositories, properties, and sources through MCP.",
+  "version": "0.3.0",
+  "description": "Search Library data, manage repositories, properties, and sources, and publish HTML artifacts through MCP.",
   "author": {
     "name": "Quantum Box, Inc.",
     "url": "https://github.com/quantum-box"
@@ -9,17 +9,17 @@
   "homepage": "https://github.com/quantum-box/library/tree/main/plugins/library",
   "repository": "https://github.com/quantum-box/library",
   "license": "MIT",
-  "keywords": ["library", "mcp", "knowledge", "documents"],
+  "keywords": ["library", "mcp", "knowledge", "documents", "artifacts"],
   "skills": "./skills/",
   "interface": {
     "displayName": "Library",
-    "shortDescription": "Search and manage Library data.",
-    "longDescription": "Connect to Library over HTTP MCP to discover your organizations, read authorized data, cite source records, and perform authorized writes with your Library account.",
+    "shortDescription": "Search and manage Library data, and publish HTML artifacts.",
+    "longDescription": "Connect to Library over HTTP MCP to discover your organizations, read authorized data, cite source records, perform authorized writes with your Library account, and publish HTML reports and pages as Library Data.",
     "developerName": "Quantum Box, Inc.",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "websiteURL": "https://github.com/quantum-box/library",
-    "defaultPrompt": ["Libraryの公開データを検索して、出典付きで要約して。", "Libraryのリポジトリのプロパティとソースを確認して。", "このメモを指定したLibraryリポジトリに保存して。"]
+    "defaultPrompt": ["Libraryの公開データを検索して、出典付きで要約して。", "Libraryのリポジトリのプロパティとソースを確認して。", "このメモを指定したLibraryリポジトリに保存して。", "このレポートをHTMLページにしてLibraryに置いて。"]
   },
   "mcpServers": "./.mcp.json"
 }

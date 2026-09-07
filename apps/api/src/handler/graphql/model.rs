@@ -218,7 +218,7 @@ pub struct Repo {
 pub enum PropertyType {
     String,
     Integer,
-    #[graphql(deprecation = "Use MARKDOWN instead of HTML.")]
+    /// A whole HTML document rendered as a sandboxed artifact.
     Html,
     Markdown,
     Relation,
@@ -238,8 +238,8 @@ pub struct Property {
     pub tenant_id: String,
     pub database_id: String,
     pub name: String,
-    /// TODO: add English documentation
-    /// STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT
+    /// STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT, ID,
+    /// LOCATION, DATE, IMAGE, RICH_TEXT, BOOLEAN
     pub typ: PropertyType,
     /// TODO: add English documentation
     pub meta: Option<PropertyTypeMeta>,

@@ -1416,8 +1416,8 @@ export type Property = {
   propertyNum: Scalars['Int']['output'];
   tenantId: Scalars['String']['output'];
   /**
-   * TODO: add English documentation
-   * STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT
+   * STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT, ID,
+   * LOCATION, DATE, IMAGE, RICH_TEXT, BOOLEAN
    */
   typ: PropertyType;
 };
@@ -1483,7 +1483,7 @@ export type PropertyMetaInput =
 
 export enum PropertyType {
   Date = 'DATE',
-  /** @deprecated Use MARKDOWN instead of HTML. */
+  /** A whole HTML document rendered as a sandboxed artifact. */
   Html = 'HTML',
   Id = 'ID',
   Image = 'IMAGE',

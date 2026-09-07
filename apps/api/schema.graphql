@@ -1646,8 +1646,8 @@ type Property {
 	databaseId: String!
 	name: String!
 	"""
-	TODO: add English documentation
-	STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT
+	STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT, ID,
+	LOCATION, DATE, IMAGE, RICH_TEXT, BOOLEAN
 	"""
 	typ: PropertyType!
 	"""
@@ -1744,7 +1744,10 @@ input PropertyMetaInput @oneOf {
 enum PropertyType {
 	STRING
 	INTEGER
-	HTML @deprecated(reason: "Use MARKDOWN instead of HTML.")
+	"""
+	A whole HTML document rendered as a sandboxed artifact.
+	"""
+	HTML
 	MARKDOWN
 	RELATION
 	SELECT
@@ -2353,10 +2356,6 @@ type User {
 	organizations: [Operator!]!
 }
 
-"""
-Marks an element of a GraphQL schema as no longer supported.
-"""
-directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

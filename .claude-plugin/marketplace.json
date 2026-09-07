@@ -11,7 +11,7 @@
     {
       "name": "library",
       "source": "./plugins/library",
-      "description": "Search Library data and manage repositories, properties, and sources through MCP.",
+      "description": "Search Library data, manage repositories, properties, and sources, and publish HTML artifacts through MCP.",
       "category": "productivity"
     }
   ]

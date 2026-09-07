@@ -441,10 +441,6 @@ components:
           type:
           - boolean
           - 'null'
-        deprecation:
-          type:
-          - string
-          - 'null'
         id:
           type: string
         name:
