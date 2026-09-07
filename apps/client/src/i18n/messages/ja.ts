@@ -13,7 +13,7 @@ export const ja: LocaleMessages = {
   'docs.searchShortcut': '{modifier} K',
   'docs.search': "記事を検索",
   'docs.articles': "記事一覧",
-  'docs.overview': "ガイドのトップ",
+  'docs.overview': "トップ",
   'docs.loadedOnly': "検索対象は読み込み済みの記事です。さらに探すには追加で読み込んでください。",
   'docs.powered': "Published with",
   'docs.welcome': "知りたいことを、ここから。",
