@@ -426,7 +426,7 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
     { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
     { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
-    { keys: renderShortcutKeys([modifier, 'K']), label: t('shortcuts.openCommandMenu') },
+    { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
     { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
     { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
     { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
@@ -556,9 +556,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Browser automation, remote desktops, and user-agent overrides can report
-      // a platform that differs from the physical keyboard. Accept either
-      // primary modifier while keeping the displayed hint platform-specific.
+      // Search and view shortcuts accept either primary modifier.
       const usesShortcutModifier = event.metaKey || event.ctrlKey
 
       if (!isEditableShortcutTarget(event.target) && (event.key === '?' || (event.key === '/' && event.shiftKey))) {
@@ -604,6 +602,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
       const key = event.key.toLowerCase()
 
       if (key === 'k') {
+        if (!event.metaKey || event.ctrlKey || event.shiftKey) return
         event.preventDefault()
         setShortcutsOpen(false)
         setCommandPaletteOpen(true)
