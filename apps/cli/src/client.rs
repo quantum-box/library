@@ -46,6 +46,21 @@ impl LibraryClient {
         query: &[(&str, String)],
         body: Option<Value>,
     ) -> Result<Value> {
+        let (_, value) =
+            self.request_with_status(method, path, query, body).await?;
+        Ok(value)
+    }
+
+    /// Like `request`, but also returns the status code, for the endpoints
+    /// where the code carries meaning of its own — `201` versus `200` on an
+    /// upsert says whether the record was created or updated.
+    pub async fn request_with_status(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<Value>,
+    ) -> Result<(StatusCode, Value)> {
         let url = format!("{}{path}", self.config.api_base_url);
         let mut request = self.http.request(method.clone(), &url);
 
@@ -73,12 +88,13 @@ impl LibraryClient {
             bail!(describe_failure(method, &url, status, &text));
         }
         if status == StatusCode::NO_CONTENT || text.trim().is_empty() {
-            return Ok(Value::Null);
+            return Ok((status, Value::Null));
         }
 
-        serde_json::from_str(&text).with_context(|| {
+        let value = serde_json::from_str(&text).with_context(|| {
             format!("{method} {url} returned a body that is not JSON")
-        })
+        })?;
+        Ok((status, value))
     }
 
     pub async fn get(
@@ -121,6 +137,15 @@ impl LibraryClient {
 
     pub async fn put(&self, path: &str, body: Value) -> Result<Value> {
         self.request(Method::PUT, path, &[], Some(body)).await
+    }
+
+    pub async fn put_with_status(
+        &self,
+        path: &str,
+        body: Value,
+    ) -> Result<(StatusCode, Value)> {
+        self.request_with_status(Method::PUT, path, &[], Some(body))
+            .await
     }
 
     pub async fn delete(&self, path: &str) -> Result<Value> {

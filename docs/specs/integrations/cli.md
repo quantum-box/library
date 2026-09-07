@@ -81,9 +81,9 @@ repository を取る引数はすべて `org/repo` の形で指定する。
 | --- | --- |
 | `library org get <username>` | organization と配下 repo を表示 |
 | `library org create <username> [--name --description --website]` | organization を作成 |
-| `library org update <username> --name <name> [--description --website]` | organization を更新。`data update` と同じく**置換**で、渡さなかった `--description` / `--website` は消える |
+| `library org update <username> --name <name> [--description --website]` | organization を更新。**置換**で、渡さなかった `--description` / `--website` は消える |
 
-`org update` は `data update` と同じ置換である。`PUT /v1beta/orgs/{org}` は受け取った payload から organization を組み直して保存するため ([apps/api/src/usecase/update_organization.rs](../../../apps/api/src/usecase/update_organization.rs))、名前だけ変えたつもりで description と website が NULL になる。残したい値は毎回渡し直すこと。
+`org update` は置換である。`PUT /v1beta/orgs/{org}` は受け取った payload から organization を組み直して保存するため ([apps/api/src/usecase/update_organization.rs](../../../apps/api/src/usecase/update_organization.rs))、名前だけ変えたつもりで description と website が NULL になる。残したい値は毎回渡し直すこと。
 
 ```bash
 # description が消える
@@ -115,10 +115,13 @@ library org update acme --name '新しい名前' --description "$(library --json
 | `library data search <org/repo> <query> [--page --page-size]` | record を名前で検索 |
 | `library data get <org/repo> <data-id>` | record 詳細 |
 | `library data create <org/repo> --name <name> [--set ...]` | record を作成 |
-| `library data update <org/repo> <data-id> --name <name> [--set ...]` | record を置換 |
+| `library data update <org/repo> <data-id> --name <name> [--set ...]` | record の名前と指定した property を更新（patch）。無ければ 404 |
+| `library data upsert <org/repo> <data-id> --name <name> [--set ...]` | 呼び出し側が決めた ID に record を作成、既にあれば更新。`PUT /v1beta/repos/{org}/{repo}/data/{data_id}/upsert` |
 | `library data delete <org/repo> <data-id> [--yes]` | record を削除 |
 
-`data update` は PATCH ではなく置換である。指定しなかった property は空になるため、残したい値はすべて送り直す必要がある。
+`data update` は指定した property だけを書き換える patch で、指定しなかった property は保持される（`update_data` usecase は渡された property だけを `patch_atomically` で確定する）。record が無ければ 404 で失敗する。
+
+`data upsert` は record が無ければ作成し、あれば `update` と同じ patch で更新する。違いは create-when-missing だけであり、既存 record に対する意味は同じ。同じ ID で再実行しても record と URL が変わらない。ID は `data_` に小文字を続けた形式（通常は `data_` + 小文字 ULID）。text 出力では `201` / `200` に応じて先頭に `created` / `updated` を表示し、`--json` は response をそのまま流す。
 
 ### `property`
 
@@ -150,12 +153,13 @@ library org update acme --name '新しい名前' --description "$(library --json
 
 ## 5. プロパティ値の指定
 
-`data create` / `data update` は property を 3 種類のフラグで埋める。
+`data create` / `data update` / `data upsert` は property を 4 種類のフラグで埋める。
 
 | フラグ | 解釈 |
 | --- | --- |
 | `--set <PROPERTY>=<VALUE>` | プレーン文字列 |
-| `--set-markdown <PROPERTY>=<VALUE>` | Markdown |
+| `--set-markdown <PROPERTY>=<VALUE>` | Markdown（`{"markdown": …}`） |
+| `--set-html <PROPERTY>=<VALUE>` | HTML ドキュメント（`{"html": …}`）。Html property に入れると v2 client がサンドボックス iframe で描画する |
 | `--set-json <PROPERTY>=<JSON>` | 生 JSON。数値・真偽値・配列・relation 用 |
 
 `<PROPERTY>` には **property 名と property id のどちらでも書ける**。CLI が repo の property 一覧を引いて名前を id に解決し、どちらにも一致しなければ既知の property 名を添えて失敗する。
@@ -253,7 +257,7 @@ library --json data list acme/docs --page-size 50
 ## 8. 既知の制約
 
 - `library repo rename` は MCP tool には出していない（CLI / REST / GraphQL のみ）。認可の欠落は解消済みで、`PUT /v1beta/repos/{org}/{repo}/change-username` は `library:UpdateRepo` の resource-level チェックを通す（[apps/api/src/usecase/change_repo_username.rs](../../../apps/api/src/usecase/change_repo_username.rs)）。repo の owner / writer 以外は 403 になる。
-- `data update` と `org update` は置換であり、部分更新の口は無い。`repo update` / `property update` / `source update` は渡した項目だけを送る。
+- `org update` は置換であり、部分更新の口は無い。`data update` / `data upsert` は指定した property だけの patch。`repo update` / `property update` / `source update` は渡した項目だけを送る。
 - Library client が発行する API key は service account に紐づくが、その service account に policy を付ける経路が無いため、現状どの key でも書き込みが 403 / 401 になる。§7 の agent / CI 手順は本番では成立しない。追跡は [PLT-4037](https://linear.app/issue/PLT-4037)。
 - `repo search` は tenant 全体のディレクトリにはならない。executor が所属しない organization を `--org` に渡した場合も、認証なしで呼んだ場合も、エラーではなく空の一覧が返る ([apps/api/src/usecase/search_repo.rs](../../../apps/api/src/usecase/search_repo.rs))。公開 repo を名前で引く用途には使えないので、`library repo list <org>` や `library org get <org>` を使う。
 - 表出力は互換性を保証しない。
