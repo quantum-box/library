@@ -272,6 +272,73 @@ describe('Photon Live provider', () => {
     fixture.provider.destroy()
   })
 
+  it('resumes the latest queued body after an older checkpoint becomes stale during authorization', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    try {
+      fixture.provider.queueCheckpoint('old body')
+      fixture.provider.flushCheckpoint()
+      const first = sentJson(socket).find((frame) => frame.type === 'live-checkpoint')!
+      appendText(fixture.provider, 'peer edit')
+      fixture.provider.queueCheckpoint('merged body')
+      // Its debounce fires while the old request is still in flight.
+      fixture.provider.flushCheckpoint()
+      socket.message(jsonFrame({ type: 'live-version', version: 3 }))
+      socket.message(jsonFrame({
+        type: 'live-error', code: 'CHECKPOINT_STALE',
+        message: 'Checkpoint is behind the working version', operation_id: first.operation_id,
+      }))
+      await waitFor(() => expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(2))
+      const latest = sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')[1]!
+      expect(latest).toMatchObject({ body: 'merged body', version: 3 })
+      expect(latest.operation_id).not.toBe(first.operation_id)
+      expect(fixture.provider.getState().hasUnackedChanges).toBe(true)
+      socket.message(jsonFrame({ type: 'live-saved', version: 3, record_version: '2', operation_id: latest.operation_id }))
+      await waitFor(() => expect(fixture.provider.getState().saveStatus).toBe('saved'))
+    } finally {
+      fixture.provider.destroy()
+    }
+  })
+
+  it('waits for a fresh serialization instead of retrying a pre-merge body', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    try {
+      fixture.provider.queueCheckpoint('pre-merge body')
+      fixture.provider.flushCheckpoint()
+      const first = sentJson(socket).find((frame) => frame.type === 'live-checkpoint')!
+      appendText(fixture.provider, 'merged change')
+      socket.message(jsonFrame({ type: 'live-version', version: 3 }))
+      socket.message(jsonFrame({ type: 'live-error', code: 'CHECKPOINT_STALE', operation_id: first.operation_id }))
+      fixture.provider.flushCheckpoint()
+      expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1)
+      expect(fixture.provider.getState()).toMatchObject({ saveStatus: 'saving', hasUnackedChanges: true })
+      fixture.provider.queueCheckpoint('fresh merged body')
+      fixture.provider.flushCheckpoint()
+      const latest = sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')[1]!
+      expect(latest).toMatchObject({ body: 'fresh merged body', version: 3 })
+      expect(latest.operation_id).not.toBe(first.operation_id)
+      socket.message(jsonFrame({ type: 'live-conflict', operation_id: latest.operation_id }))
+      expect(fixture.provider.getState().saveStatus).toBe('conflict')
+      fixture.provider.flushCheckpoint()
+      expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(2)
+    } finally {
+      fixture.provider.destroy()
+    }
+  })
+
   it('marks the editor read only offline and reauthorizes on reconnect', async () => {
     const fixture = createFixture()
     await waitFor(() => expect(fixture.getSocket()).toBeDefined())

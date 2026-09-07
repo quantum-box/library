@@ -158,6 +158,22 @@ API build `bld_01m1rx8vxnsecvw9hmpcf5wch9` とClient build
 そのタブから次の編集を行うと保存成功へ戻り、再読み込みでも本文は保持された。
 保存成功の証拠と、この受信側のcheckpoint/表示問題は区別する。
 
+### PLT-4267の修正
+
+認可応答中に作業バージョンが進んだ場合、WorkerはDB書き込み前の拒否を
+`live-error`の`code: CHECKPOINT_STALE`で返す。Clientは待機中の最新本文を
+送信し直す。シリアライズ前の古い本文を新しい作業バージョンへ付け替えず、
+保存済み本文との`live-conflict`は停止を維持する。
+
+Worker内ではcheckpointだけを直列化し、実行中の保存要求を別参加者が
+復旧対象として置き換える競合を防ぐ。Yjs更新とAwarenessはその待機対象にしない。
+ローカルの実Workerでは認可750ms・保存1000msの遅延を加え、Markdown/RichTextの
+両タブで保存完了することを確認した。本番反映はWorkerを先、Clientを後に行う。
+
+PR #302マージ後のrunner契約バージョン不一致は、2026-09-06の再実行で解消した。
+Client `bld_01m1s2n1d6hg7k3jfx6mbkk7cm`、API `bld_01m1s2qy6wrw8g1bywn1ng6k9n`
+はいずれもmain `98d3d770227ff3d9aa917ee1d487fe0481a84bfd` の本番デプロイに成功。
+
 緊急停止はClient/Worker/APIのLiveフラグを無効化して行う。
 `PROPERTY_VALUE_STORAGE_MODE` はdual-writeを維持し、旧writerを再公開しない。
 再有効化前に全件parityとcheckpointの保存を確認する。

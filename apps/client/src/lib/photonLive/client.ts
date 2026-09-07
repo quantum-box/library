@@ -49,6 +49,7 @@ interface LiveConflictMessage {
 
 interface LiveErrorMessage {
   type: 'live-error'
+  code?: string
   message?: string
   operation_id?: string
 }
@@ -465,7 +466,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       generation: this.docGeneration,
     }
     this.hasUnackedChanges = true
-    this.saveStatus = 'saving'
+    if (this.saveStatus !== 'conflict') this.saveStatus = 'saving'
     this.emit()
     this.scheduleCheckpoint()
   }
@@ -913,6 +914,24 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       message.operation_id !== undefined &&
       message.operation_id !== this.inFlight.operationId
     )) return
+    if (message.code === 'CHECKPOINT_STALE' && message.operation_id === this.inFlight.operationId) {
+      // The worker rejected this operation before reserving/writing it. The
+      // working document advanced while authorization was in flight; this is
+      // not an external canonical conflict. Resume the newest serialization,
+      // never stamp a pre-merge body with the newer room version.
+      const stale = this.inFlight
+      this.inFlight = null
+      if (!this.pendingCheckpoint && stale.generation === this.docGeneration) {
+        this.pendingCheckpoint = {
+          body: stale.body,
+          generation: stale.generation,
+          operationId: randomOperationId(),
+        }
+      }
+      this.setSaveStatus('saving', null)
+      if (this.pendingCheckpoint) this.scheduleCheckpoint()
+      return
+    }
     if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
     this.inFlight = null
     this.setSaveStatus('error', error)
@@ -1019,6 +1038,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       !this.initialized ||
       !socket ||
       socket.readyState !== WebSocket.OPEN ||
+      this.saveStatus === 'conflict' ||
       this.inFlight ||
       !this.pendingCheckpoint
     ) return

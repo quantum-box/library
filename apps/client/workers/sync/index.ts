@@ -196,8 +196,18 @@ type CheckpointPreparation =
   | { kind: 'replay'; result: LiveCheckpointResult }
   | { kind: 'done' }
   | { kind: 'retry' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; code?: 'CHECKPOINT_STALE' }
   | { kind: 'conflict' }
+
+function checkpointVersionError(version: number, workingVersion: number): CheckpointPreparation {
+  return {
+    kind: 'error',
+    message: 'Checkpoint is behind the working version',
+    // Only an older working version is safe to reserialize. A future version
+    // is a malformed request, not a reason to retry indefinitely.
+    ...(version < workingVersion ? { code: 'CHECKPOINT_STALE' as const } : {}),
+  }
+}
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -780,11 +790,12 @@ function sendJsonFrame(socket: WebSocket, payload: JsonObject): void {
   }
 }
 
-function sendSocketError(socket: WebSocket, message: string, operationId?: string): void {
+function sendSocketError(socket: WebSocket, message: string, operationId?: string, code?: string): void {
   sendJsonFrame(socket, {
     type: 'live-error',
     message,
     ...(operationId ? { operation_id: operationId } : {}),
+    ...(code ? { code } : {}),
   })
 }
 
@@ -1018,6 +1029,10 @@ export class PhotonLiveTicketStore extends DurableObject<Env> {
 }
 
 export class PhotonLiveRoom extends PhotonSyncRoomBase {
+  // Serialize durable saves, not Yjs updates or awareness. A second caller
+  // must not mistake an actively executing checkpoint for an abandoned
+  // pending marker and replace it with a competing CAS at the same version.
+  private checkpointTail: Promise<void> = Promise.resolve()
   private readonly liveEnv: Env
   private readonly sessions = new WeakMap<WebSocket, LiveTicketSession>()
   private readonly roomGeneration: string
@@ -1482,7 +1497,9 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     }
 
     if (frame.type === 'live-checkpoint') {
-      await this.handleCheckpoint(sender, session, frame)
+      const checkpoint = this.checkpointTail.then(() => this.handleCheckpoint(sender, session, frame))
+      this.checkpointTail = checkpoint.catch(() => undefined)
+      await checkpoint
     }
   }
 
@@ -1951,7 +1968,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
       }
       if (version !== current.version) {
-        return { kind: 'error', message: 'Checkpoint is behind the working version' }
+        return checkpointVersionError(version, current.version)
       }
 
       // The requested body is already canonical. This is a metadata refresh,
@@ -2078,7 +2095,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       // current working version. A stale retry must leave the existing marker
       // and its body untouched while it reports the version mismatch.
       if (version !== metadata.version) {
-        return { kind: 'error', message: 'Checkpoint is behind the working version' }
+        return checkpointVersionError(version, metadata.version)
       }
       if (!sameRoomIdentity(authorized, session)) {
         return { kind: 'error', message: 'Live checkpoint recovery failed' }
@@ -2102,7 +2119,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
           bodyHash: authorizedBodyHash,
         }
         await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
-        if (version !== current.version) return { kind: 'error', message: 'Checkpoint is behind the working version' }
+        if (version !== current.version) return checkpointVersionError(version, current.version)
         return this.reserveBodyLocked(
           sender,
           current,
@@ -2132,7 +2149,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         savedVersion: Math.max(roomSavedVersion(metadata), Math.min(pending.version, metadata.version)),
       }
       await this.ctx.storage.put(LIVE_ROOM_META_KEY, current)
-      if (version !== current.version) return { kind: 'error', message: 'Checkpoint is behind the working version' }
+      if (version !== current.version) return checkpointVersionError(version, current.version)
       return this.reserveBodyLocked(
         sender,
         current,
@@ -2154,8 +2171,9 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
     bodyHash: string,
     operationId: string,
   ): Promise<CheckpointPreparation> {
-    if (version !== metadata.version || !metadata.recordVersion) {
-      return { kind: 'error', message: 'Checkpoint is behind the working version' }
+    if (!metadata.recordVersion) return { kind: 'error', message: 'Live document is not initialized' }
+    if (version !== metadata.version) {
+      return checkpointVersionError(version, metadata.version)
     }
     if (bodyHash === metadata.bodyHash) {
       const saved: LiveRoomMetadata = { ...metadata, savedVersion: metadata.version }
@@ -2309,7 +2327,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         const prepared = await this.prepareExactPending(session, version, fingerprint, operationId)
         if (prepared.kind === 'retry') continue
         if (prepared.kind === 'error') {
-          sendSocketError(sender, prepared.message, operationId)
+          sendSocketError(sender, prepared.message, operationId, prepared.code)
           return
         }
         if (prepared.kind === 'conflict') {
@@ -2358,7 +2376,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         )
         if (prepared.kind === 'retry') continue
         if (prepared.kind === 'error') {
-          sendSocketError(sender, prepared.message, operationId)
+          sendSocketError(sender, prepared.message, operationId, prepared.code)
           return
         }
         if (prepared.kind === 'conflict') {
@@ -2406,7 +2424,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       )
       if (prepared.kind === 'retry') continue
       if (prepared.kind === 'error') {
-        sendSocketError(sender, prepared.message, operationId)
+        sendSocketError(sender, prepared.message, operationId, prepared.code)
         return
       }
       if (prepared.kind === 'conflict') {
