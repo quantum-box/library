@@ -43,8 +43,9 @@ impl ViewOrganizationInputPort for ViewOrganization {
 
         // A signed-in caller is not automatically a member of this org.
         // Keep private repository metadata out of cross-org discovery.
-        if !input.executor.is_system_user()
-            && !input.executor.has_tenant_id(org.id())
+        if input.executor.is_none()
+            || (!input.executor.is_system_user()
+                && !input.executor.has_tenant_id(org.id()))
         {
             return Ok(ViewOrgOutputData {
                 organization: org,

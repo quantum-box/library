@@ -69,6 +69,15 @@ fn organization(slug: &str) -> Organization {
     )
 }
 
+#[test]
+fn anonymous_library_callers_have_no_system_or_tenant_privileges() {
+    let executor = anonymous_executor();
+    assert!(executor.is_none());
+    assert!(!executor.is_system_user());
+    assert!(!executor.has_tenant_id(&TenantId::default()));
+    assert!(tachyon_sdk::auth::Executor::SystemUser.is_system_user());
+}
+
 #[tokio::test]
 async fn org_discovery_intersects_verified_memberships_with_library_orgs() {
     let alpha = organization("alpha");
