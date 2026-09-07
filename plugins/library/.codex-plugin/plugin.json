@@ -1,0 +1,25 @@
+{
+  "name": "library",
+  "version": "0.1.0",
+  "description": "Search Library data and manage repositories, properties, and sources through MCP.",
+  "author": {
+    "name": "Quantum Box, Inc.",
+    "url": "https://github.com/quantum-box"
+  },
+  "homepage": "https://github.com/quantum-box/library/tree/main/plugins/library",
+  "repository": "https://github.com/quantum-box/library",
+  "license": "MIT",
+  "keywords": ["library", "mcp", "knowledge", "documents"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Library",
+    "shortDescription": "Search and manage Library data.",
+    "longDescription": "Connect to Library over HTTP MCP to read public data, cite source records, and perform authorized writes with your Library account.",
+    "developerName": "Quantum Box, Inc.",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/quantum-box/library",
+    "defaultPrompt": ["Libraryの公開データを検索して、出典付きで要約して。", "Libraryのリポジトリのプロパティとソースを確認して。", "このメモを指定したLibraryリポジトリに保存して。"]
+  },
+  "mcpServers": "./.mcp.json"
+}

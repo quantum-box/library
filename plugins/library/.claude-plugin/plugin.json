@@ -1,0 +1,13 @@
+{
+  "name": "library",
+  "version": "0.1.0",
+  "description": "Search Library data and manage repositories, properties, and sources through MCP.",
+  "author": {
+    "name": "Quantum Box, Inc.",
+    "url": "https://github.com/quantum-box"
+  },
+  "homepage": "https://github.com/quantum-box/library/tree/main/plugins/library",
+  "repository": "https://github.com/quantum-box/library",
+  "license": "MIT",
+  "keywords": ["library", "mcp", "knowledge", "documents"]
+}
