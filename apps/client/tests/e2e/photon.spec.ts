@@ -161,7 +161,7 @@ test.describe('Library shell', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('create-record-modal')).toHaveCount(0)
 
-    await page.keyboard.press('ControlOrMeta+K')
+    await page.keyboard.press('Meta+K')
     await expect(page.getByRole('dialog').getByRole('combobox', { name: 'Search Library' })).toBeVisible()
     await expect(page.getByTestId('keyboard-shortcuts-panel')).toHaveCount(0)
     await page.keyboard.press('Escape')
