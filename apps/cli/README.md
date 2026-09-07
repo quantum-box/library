@@ -68,9 +68,9 @@ repository を取る引数はすべて `org/repo` の形で指定します。
 
 `--json` の出力は API の response をそのまま流します。表形式は人間向けの整形であり、列や幅は互換性を保証しません。**スクリプトと agent は必ず `--json` を使ってください。**
 
-`data update` は PATCH ではなく置換です。指定しなかった property は空になるため、残したい値はすべて送り直す必要があります。
+`data update` は指定した property だけを書き換える patch で、指定しなかった property は保持されます。record が無ければ 404 で失敗します。
 
-`data upsert <org/repo> <data-id>` は呼び出し側が決めた ID に record を作成し、既にあれば更新します。同じ ID で再実行しても record と URL は変わらないので、生成したページを何度も公開し直す用途（Claude artifact の代わりに Library を使う流れ）に向いています。ID は `data_` に小文字を続けた形式で、通常は `data_` + 小文字の ULID にします。`update` と違い、指定しなかった property は保持されます。text 出力では先頭に `created` / `updated` を表示します。
+`data upsert <org/repo> <data-id>` は呼び出し側が決めた ID に record を作成し、既にあれば `update` と同じ patch で更新します。違いは record が無いときに作成する点だけです。同じ ID で再実行しても record と URL は変わらないので、生成したページを何度も公開し直す用途（Claude artifact の代わりに Library を使う流れ）に向いています。ID は `data_` に小文字を続けた形式で、通常は `data_` + 小文字の ULID にします。text 出力では先頭に `created` / `updated` を表示します。
 
 ### 削除の確認
 
