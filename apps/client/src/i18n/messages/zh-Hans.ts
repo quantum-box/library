@@ -427,6 +427,7 @@ export const zhHans: LocaleMessages = {
   'shortcuts.focusSearch': '聚焦数据搜索',
   'shortcuts.toggleTableBoard': '切换表格与看板',
   'shortcuts.openCommandMenu': '打开命令菜单',
+  'shortcuts.copyPageUrl': '复制页面链接',
   'shortcuts.showShortcuts': '显示快捷键',
   'shortcuts.chat': '聊天',
   'shortcuts.sync': '同步',

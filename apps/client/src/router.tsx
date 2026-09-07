@@ -43,6 +43,8 @@ import { ChatView } from './components/chat/ChatView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
 import { CommandPalette } from './components/CommandPalette'
 import { WindowTabStrip } from './components/desktop/WindowTabStrip'
+import { isTauriRuntime } from './lib/desktop/windowTabs'
+import { useCopyPageUrlShortcut, type CopyLinkStatus } from './lib/desktop/useCopyPageUrl'
 import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
 import {
@@ -411,6 +413,23 @@ function SignedInLibraryDashboard({
   )
 }
 
+/** Confirms the ⌘L copy, which has no other visible effect. */
+function CopyLinkToast({ status }: { status: CopyLinkStatus }) {
+  const { t } = useI18n()
+  if (!status) return null
+
+  return (
+    <div
+      data-testid="copy-link-toast"
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[80] -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground shadow-overlay"
+    >
+      {status === 'copied' ? t('common.copied') : t('docs.copyFailed')}
+    </div>
+  )
+}
+
 function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -426,6 +445,10 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
     { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
     { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
+    // Only the desktop shell hides the address of the current route.
+    ...(isTauriRuntime()
+      ? [{ keys: renderShortcutKeys([modifier, 'L']), label: t('shortcuts.copyPageUrl') }]
+      : []),
     { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
     { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
     { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
@@ -553,6 +576,9 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     return () => window.removeEventListener(OPEN_CREATE_DATA_EVENT, openCreateDataAtDatabaseIndex)
   }, [openCreateDataAtDatabaseIndex])
 
+  // The desktop shell has no address bar; ⌘L stands in for it.
+  const copyLinkStatus = useCopyPageUrlShortcut()
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Search and view shortcuts accept either primary modifier.
@@ -646,6 +672,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     closeShortcuts: () => setShortcutsOpen(false),
     commandPaletteOpen,
     closeCommandPalette: () => setCommandPaletteOpen(false),
+    copyLinkStatus,
   }
 }
 
@@ -658,6 +685,7 @@ function AuthenticatedWorkspaceRoot() {
     closeShortcuts,
     commandPaletteOpen,
     closeCommandPalette,
+    copyLinkStatus,
   } = useGlobalKeyboardShortcuts(setCreateModalOpen)
 
   return (
@@ -673,6 +701,7 @@ function AuthenticatedWorkspaceRoot() {
               <WorkspaceHydrationStatus />
               <WorkspaceMutationError />
               <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
+              <CopyLinkToast status={copyLinkStatus} />
               <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
             </CreateModalContext.Provider>
           </AttachmentsProvider>

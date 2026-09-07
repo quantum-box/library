@@ -430,6 +430,7 @@ export const ja: LocaleMessages = {
   'shortcuts.focusSearch': 'データ検索にフォーカス',
   'shortcuts.toggleTableBoard': 'テーブルとボードを切り替え',
   'shortcuts.openCommandMenu': 'コマンドメニューを開く',
+  'shortcuts.copyPageUrl': 'ページのURLをコピー',
   'shortcuts.showShortcuts': 'ショートカットを表示',
   'shortcuts.chat': 'チャット',
   'shortcuts.sync': '同期',

@@ -427,6 +427,7 @@ export const fr: LocaleMessages = {
   'shortcuts.focusSearch': 'Placer le focus sur la recherche',
   'shortcuts.toggleTableBoard': 'Basculer entre tableau et kanban',
   'shortcuts.openCommandMenu': 'Ouvrir le menu de commandes',
+  'shortcuts.copyPageUrl': "Copier l'URL de la page",
   'shortcuts.showShortcuts': 'Afficher les raccourcis',
   'shortcuts.chat': 'Chat',
   'shortcuts.sync': 'Synchro',

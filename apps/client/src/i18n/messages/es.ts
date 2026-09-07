@@ -427,6 +427,7 @@ export const es: LocaleMessages = {
   'shortcuts.focusSearch': 'Enfocar la búsqueda de datos',
   'shortcuts.toggleTableBoard': 'Alternar entre tabla y tablero',
   'shortcuts.openCommandMenu': 'Abrir el menú de comandos',
+  'shortcuts.copyPageUrl': 'Copiar la URL de la página',
   'shortcuts.showShortcuts': 'Mostrar los atajos',
   'shortcuts.chat': 'Chat',
   'shortcuts.sync': 'Sincronización',

@@ -45,6 +45,16 @@ attachment metadata must not contain absolute local filesystem paths.
 The macOS desktop shell runs its tabs as child WebViews of a single window; see
 [`macos-window-tabs.md`](./macos-window-tabs.md).
 
+The desktop shell has no address bar, so `⌘L` (`Ctrl+L` on Windows and Linux)
+copies the address of the current route instead
+(`src/lib/desktop/useCopyPageUrl.ts`). The shell serves the app from
+`tauri://localhost`, which no one outside the app can open, so
+`src/lib/shareUrl.ts` rewrites that origin onto the client deployment
+(`https://planetlibrary.txcloud.app`, overridable with
+`VITE_LIBRARY_CLIENT_ORIGIN`). A hosted or dev-server origin is copied as it
+stands. Web builds leave the key to the browser, which already shows and copies
+the same URL.
+
 Mobile release candidates must also pass the phone-viewport browser smoke:
 
 ```bash
