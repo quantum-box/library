@@ -155,7 +155,7 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
     let body_id = body["property"]["id"].as_str().unwrap();
     let flag = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"published","property_type":"boolean"})).await?;
     let flag_id = flag["property"]["id"].as_str().unwrap();
-    let location = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"place","property_type":"location"})).await?;
+    let location = mcp_call(&client, &server, "create_property", json!({"org":org,"repo":repo,"name":"place","property_type":"location","meta":{}})).await?;
     let location_id = location["property"]["id"].as_str().unwrap();
     let created = mcp_call(&client, &server, "create_data", json!({
         "org":org,"repo":repo,"name":"MCP test record","property_data":[
