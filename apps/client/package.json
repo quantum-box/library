@@ -1,7 +1,7 @@
 {
   "name": "@quantum-box/library-client",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "engines": {
     "node": ">=22.12.0 <23"
@@ -44,14 +44,14 @@
     "dev:cf-sync": "VITE_PHOTON_SYNC_WS_URL=ws://127.0.0.1:8787/ws vite",
     "build": "tsc -b && vite build",
     "build:preview": "node scripts/build-preview.mjs",
-    "build:cloud": "npm run build:package && tsc -b && vite build",
+    "build:cloud": "npm run build:package && tsc -b && vite build && npm run build:public-docs",
     "build:package": "tsc -p tsconfig.package.json && tsc -p tsconfig.package.worker.json",
     "lint": "eslint .",
     "prepare": "npm run build:package",
     "type-check": "tsc -b --noEmit",
-    "type-check:worker": "tsc -p tsconfig.worker.json",
+    "type-check:worker": "tsc -p tsconfig.worker.json && npm run type-check:public-docs",
     "test": "vitest run",
-    "test:worker": "vitest run --config vitest.worker.config.ts",
+    "test:worker": "vitest run --config vitest.worker.config.ts && npm run test:public-docs-worker",
     "fixtures:blocknote": "UPDATE_FIXTURES=1 vitest run src/test/blocknoteFixtures.test.ts",
     "test-storybook": "vitest --config vitest.storybook.config.ts --project=storybook",
     "test:e2e": "playwright test",
@@ -74,10 +74,13 @@
     "tauri:ios:build:sim": "tauri ios build --target aarch64-sim",
     "server:engine:smoke": "node scripts/smoke-engine-api.mjs",
     "library:api:verify": "node scripts/verify-library-api-connection.mjs",
-    "pages:build": "npm run build",
+    "pages:build": "npm run build:cloud",
     "pages:deploy": "npm run pages:build && cd dist && wrangler pages deploy . --project-name library-client --branch main --commit-dirty=true",
     "worker:dev": "wrangler dev --config wrangler.jsonc --port 8787",
-    "worker:deploy": "wrangler deploy --config wrangler.jsonc"
+    "worker:deploy": "wrangler deploy --config wrangler.jsonc",
+    "build:public-docs": "vite build --config vite.public-docs.config.ts",
+    "type-check:public-docs": "tsc -p tsconfig.public-docs.json",
+    "test:public-docs-worker": "node --test scripts/test-public-docs-worker.mjs"
   },
   "dependencies": {
     "@blocknote/code-block": "^0.50.0",
@@ -135,6 +138,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^29.0.1",
+    "miniflare": "4.20260430.0",
     "storybook": "^10.3.6",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.9.3",

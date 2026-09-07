@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types", "vite/client"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["workers/public-docs/**/*.ts", "src/components/public/publicSeoMetadata.ts"]
+}
