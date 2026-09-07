@@ -203,13 +203,12 @@ fn render_properties(response: &Value, format: Format) {
     }
 
     let properties = response.as_array().cloned().unwrap_or_default();
-    let mut table = Table::new(&["ID", "NAME", "TYPE", "DEPRECATION"]);
+    let mut table = Table::new(&["ID", "NAME", "TYPE"]);
     for property in &properties {
         table.push(vec![
             field(property, "id"),
             field(property, "name"),
             field(property, "property_type"),
-            field(property, "deprecation"),
         ]);
     }
     table.print();
@@ -225,7 +224,6 @@ fn render_property(response: &Value, format: Format) {
     println!("  id:            {}", field(response, "id"));
     println!("  type:          {}", field(response, "property_type"));
     println!("  auto_generate: {}", field(response, "auto_generate"));
-    println!("  deprecation:   {}", field(response, "deprecation"));
 }
 
 #[cfg(test)]

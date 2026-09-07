@@ -1,6 +1,6 @@
 ---
 name: library
-description: Search, read, summarize, and create or update data in the Library CMS through its MCP server. Use for Library organizations, repositories, data, properties, and sources; not for generic programming libraries.
+description: Search, read, summarize, and create or update data in the Library CMS through its MCP server, and publish HTML artifacts (reports, pages, dashboards, prototypes) as Library Data instead of Claude artifacts when Library is connected. Use for Library organizations, repositories, data, properties, and sources; not for generic programming libraries.
 ---
 
 # Library
@@ -26,6 +26,24 @@ The bundled endpoint is `https://library-api.txcloud.app/mcp` over HTTP. Public 
 Private Data reads use the authenticated caller and require the server's normal read permission. Anonymous reads of protected content return an OAuth challenge; authentication alone does not grant access. If `list_orgs`, `list_repos`, or the typed Data fields are missing, the server is older than this skill: report the deployment/tool-refresh mismatch rather than inventing tools or treating the missing capability as an empty result.
 
 For API-key or self-hosted setup, read the plugin's [README](../../README.md). A `pk_` API key needs its Library organization ID in `x-operator-id` for `initialize` / `tools/list`, which have no `org` argument. Never copy credentials into the public plugin files.
+
+## Publish HTML artifacts to Library
+
+When Library is connected and the user asks for a deliverable that would otherwise become a Claude artifact — a report, a page, a dashboard, a prototype, a diagram page — save it as Library Data and hand back the Library URL. Use the client's own artifact tool only when the user explicitly asks for a Claude artifact, or when the page needs an artifact-only runtime (`window.claude.*` data, viewer identity, stored files). Library renders an Html Property in a sandboxed `iframe` (`allow-scripts`, no same-origin), so pages must be self-contained client-side HTML: inline CSS and JS, assets as data URIs, no server calls.
+
+Destination and record identity:
+
+- Use the organization and repository the user names. When none is given, pick the organization from `list_orgs`, prefer a repository whose slug is `artifacts`, and confirm the destination once per session. Create that repository only after confirming; it is a write in its own right.
+- `create_repo` requires `is_public`. Ask whether the artifacts should be readable anonymously; when the user only needs team access, use `false`. Pass `skip_sample_data: true`. The tool still adds a RichText Property named `content`; delete it with `delete_property` before adding the Html Property, because the client picks the page body by type and RichText and Markdown outrank Html.
+- The repository needs exactly one body-shaped Property, of `property_type: html`. Check `list_properties`; create one named `body` only when no Html Property exists, and never add a Markdown or RichText Property to an artifacts repository.
+- A Data ID must start with `data_` and be lowercase; mint `data_` followed by a lowercase ULID for a new artifact. Reuse the ID from the returned URL or from the user's message when updating, and keep the same ID for every republish of the same page so the URL stays stable.
+
+Writing and reporting:
+
+- Call `upsert_data` with `name` as the page title and one `property_data` entry `{ "property_id": <Html Property id>, "value_type": "html", "value": <full document> }`. Start the document with `<!doctype html>` and a `<title>`; a value that does not begin with `<` opens in the block editor rather than the artifact frame.
+- Write the whole document on every republish. `upsert_data` replaces the value and does not merge, version, or detect concurrent edits; re-read with `get_data` when the record may have been edited elsewhere.
+- Keep the document small. `POST /mcp` accepts about 2 MiB per request and an Html value is capped at 3 MiB, so a large image embedded as a data URI is rejected. Prefer inline SVG, CSS, and small assets; leave large media out or link to it by URL.
+- Report the returned `url` and Data ID. Private repositories are readable by organization members after signing in; a public repository serves the same page anonymously under `/public/<org>/<repo>/<data_id>`.
 
 ## Write data
 

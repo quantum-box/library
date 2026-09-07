@@ -134,8 +134,6 @@ pub struct PropertyResponse {
     pub property_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_generate: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deprecation: Option<String>,
 }
 
 // TODO: add English comment

@@ -7,7 +7,9 @@ import type { LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
  * Type only. A name match used to outrank every type, which is how a Property
  * named "content" became the body no matter what it held — and how Markdown
  * written by the body editor ended up stored in Html Properties. Rich text is
- * the body type; Markdown and Html are legacy and only score at all so a
+ * the body type for prose. Html is the artifact type: a whole HTML document
+ * shown in a sandboxed frame, so a repository whose only body-shaped Property
+ * is Html opens that document. Markdown is legacy and only scores so a
  * repository created before Rich text existed still opens its body.
  */
 function bodyPropertyScore(property: LibraryProperty): number {

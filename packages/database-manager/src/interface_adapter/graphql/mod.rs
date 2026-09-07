@@ -133,7 +133,6 @@ pub struct AddPropertyInput {
 pub enum PropertyType {
     String,
     Integer,
-    #[graphql(deprecation = "Use MARKDOWN instead of HTML.")]
     Html,
     Markdown,
     Relation,
