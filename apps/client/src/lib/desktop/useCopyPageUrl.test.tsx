@@ -1,6 +1,12 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useCopyPageUrlShortcut } from './useCopyPageUrl'
+
+const invoke = vi.fn()
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => invoke(...args),
+}))
 
 function Harness() {
   const status = useCopyPageUrlShortcut()
@@ -9,8 +15,21 @@ function Harness() {
 
 type ShellGlobal = typeof globalThis & { __TAURI_INTERNALS__?: unknown }
 
-function runInDesktopShell() {
+/** The shell reports its target OS; only the three desktop ones bind the key. */
+function runInShell(targetOs: string) {
   ;(globalThis as ShellGlobal).__TAURI_INTERNALS__ = {}
+  invoke.mockImplementation((command: string) =>
+    command === 'app_target_os' ? Promise.resolve(targetOs) : Promise.resolve(),
+  )
+}
+
+/** Lets the target-OS answer land, and be acted on, before the key is pressed. */
+async function renderHarness() {
+  render(<Harness />)
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('app_target_os'))
+  await act(async () => {
+    await Promise.resolve()
+  })
 }
 
 function pressCopyShortcut(init: KeyboardEventInit = { key: 'l', metaKey: true }) {
@@ -32,16 +51,16 @@ function stubClipboard(writeText: () => Promise<void>) {
 
 afterEach(() => {
   delete (globalThis as ShellGlobal).__TAURI_INTERNALS__
-  vi.useRealTimers()
+  invoke.mockReset()
   vi.restoreAllMocks()
 })
 
 describe('useCopyPageUrlShortcut', () => {
   it('copies the current route and confirms it', async () => {
-    runInDesktopShell()
+    runInShell('macos')
     const writeText = stubClipboard(() => Promise.resolve())
     window.history.pushState({}, '', '/acme/handbook/data/rec-1')
-    render(<Harness />)
+    await renderHarness()
 
     const event = pressCopyShortcut()
     expect(event.defaultPrevented).toBe(true)
@@ -51,16 +70,16 @@ describe('useCopyPageUrlShortcut', () => {
   })
 
   it('reports a clipboard failure instead of claiming success', async () => {
-    runInDesktopShell()
+    runInShell('windows')
     stubClipboard(() => Promise.reject(new Error('denied')))
-    render(<Harness />)
+    await renderHarness()
 
     pressCopyShortcut({ key: 'l', ctrlKey: true })
 
     expect(await screen.findByText('failed')).toBeTruthy()
   })
 
-  it('leaves the key alone outside the desktop shell', () => {
+  it('leaves the key alone in a browser', () => {
     const writeText = stubClipboard(() => Promise.resolve())
     render(<Harness />)
 
@@ -71,10 +90,22 @@ describe('useCopyPageUrlShortcut', () => {
     expect(screen.getByTestId('status').textContent).toBe('idle')
   })
 
-  it('ignores the modified variants of the key', () => {
-    runInDesktopShell()
+  it('leaves the key alone in the mobile shells, which are Tauri too', async () => {
+    runInShell('ios')
     const writeText = stubClipboard(() => Promise.resolve())
-    render(<Harness />)
+    await renderHarness()
+
+    const event = pressCopyShortcut()
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(writeText).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('idle')
+  })
+
+  it('ignores the modified variants of the key', async () => {
+    runInShell('macos')
+    const writeText = stubClipboard(() => Promise.resolve())
+    await renderHarness()
 
     pressCopyShortcut({ key: 'l' })
     pressCopyShortcut({ key: 'l', metaKey: true, shiftKey: true })

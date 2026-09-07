@@ -1,19 +1,15 @@
-import { publicDocsOrigin } from '../components/public/publicSeoMetadata'
+import { appKitConfig } from '../app/kitConfig'
 
 /**
  * Turns the address the shell happens to be running on into one that can be
  * pasted somewhere else.
  *
- * The desktop shell serves the app from a custom protocol (`tauri://localhost`
- * on macOS, `http://tauri.localhost` elsewhere), so the location bar equivalent
- * is meaningless outside the app. Links out of Library point at the client
- * deployment instead; `apps/web` (v1) is being retired and never receives them.
+ * The desktop and mobile shells serve the app from a custom protocol
+ * (`tauri://localhost` on macOS, `http://tauri.localhost` elsewhere), so the
+ * location bar equivalent is meaningless outside the app. Links out of Library
+ * point at the client deployment instead, which `kitConfig` owns; `apps/web`
+ * (v1) is being retired and never receives them.
  */
-export function configuredClientOrigin(): string {
-  return (
-    import.meta.env.VITE_LIBRARY_CLIENT_ORIGIN ?? publicDocsOrigin
-  ).replace(/\/+$/, '')
-}
 
 /** Hosts that only exist inside a Tauri WebView. */
 function isShellOnlyHost(hostname: string) {
@@ -22,10 +18,10 @@ function isShellOnlyHost(hostname: string) {
 
 /**
  * A hosted build already sits on a shareable origin, including a dev server,
- * where copying the production address would point away from what is on
+ * where copying the deployment address would point away from what is on
  * screen. Only the shell's own origins are rewritten.
  */
-export function shareableUrl(href: string, clientOrigin = configuredClientOrigin()): string {
+export function shareableUrl(href: string, clientOrigin = appKitConfig.app.publicOrigin): string {
   const current = new URL(href)
   const isWebOrigin =
     (current.protocol === 'http:' || current.protocol === 'https:') &&

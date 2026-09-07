@@ -43,7 +43,7 @@ import { ChatView } from './components/chat/ChatView'
 import { EngineSyncDashboard } from './components/sync/EngineSyncDashboard'
 import { CommandPalette } from './components/CommandPalette'
 import { WindowTabStrip } from './components/desktop/WindowTabStrip'
-import { isTauriRuntime } from './lib/desktop/windowTabs'
+import { useDesktopShell } from './lib/desktop/useDesktopShell'
 import { useCopyPageUrlShortcut, type CopyLinkStatus } from './lib/desktop/useCopyPageUrl'
 import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
@@ -432,6 +432,7 @@ function CopyLinkToast({ status }: { status: CopyLinkStatus }) {
 
 function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n()
+  const desktop = useDesktopShell()
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useDialogFocus({ open, dialogRef, initialFocusRef: closeButtonRef, onClose })
@@ -446,7 +447,7 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
     { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
     { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
     // Only the desktop shell hides the address of the current route.
-    ...(isTauriRuntime()
+    ...(desktop
       ? [{ keys: renderShortcutKeys([modifier, 'L']), label: t('shortcuts.copyPageUrl') }]
       : []),
     { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },

@@ -69,6 +69,13 @@ export interface AppKitConfig {
     id: string
     displayName: string
     storageNamespace: string
+    /**
+     * Where this deployment answers from, for links handed to someone else.
+     * The desktop and mobile shells serve the app from `tauri://localhost`,
+     * which no one outside the app can open, so a link out of them is built
+     * on this instead.
+     */
+    publicOrigin: string
   }
   tenant: {
     id: string
@@ -421,6 +428,9 @@ const appProfile = {
   id: 'library-client',
   displayName: 'Library',
   storageNamespace: 'library-client',
+  publicOrigin: (
+    viteEnv.VITE_LIBRARY_CLIENT_ORIGIN ?? 'https://planetlibrary.txcloud.app'
+  ).replace(/\/+$/, ''),
 } as const
 const DEFAULT_TENANT_ID = 'library'
 const DEFAULT_WORKSPACE_ID = 'library-default'

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isCopyUrlShortcut, shareableUrl } from '../shareUrl'
-import { isTauriRuntime } from './windowTabs'
+import { useDesktopShell } from './useDesktopShell'
 
 export type CopyLinkStatus = 'copied' | 'failed' | null
 
@@ -12,7 +12,9 @@ const STATUS_DURATION = 2400
  *
  * Only the desktop shell binds it. A browser gives the same key to its address
  * bar, which already shows and copies the URL, and taking it over there would
- * remove a way to leave the app.
+ * remove a way to leave the app. The mobile shells are Tauri as well, and a
+ * hardware keyboard on one of them has no window to address either, so they
+ * are left out too.
  */
 export function useCopyPageUrlShortcut(): CopyLinkStatus {
   const [status, setStatus] = useState<CopyLinkStatus>(null)
@@ -27,8 +29,10 @@ export function useCopyPageUrlShortcut(): CopyLinkStatus {
     }, STATUS_DURATION)
   }, [])
 
+  const desktop = useDesktopShell()
+
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    if (!desktop) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isCopyUrlShortcut(event)) return
@@ -43,7 +47,7 @@ export function useCopyPageUrlShortcut(): CopyLinkStatus {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [showStatus])
+  }, [desktop, showStatus])
 
   useEffect(
     () => () => {
