@@ -24,7 +24,7 @@ export interface PhotonLiveRecordState {
 /**
  * Creates one room-scoped Live provider for the lifetime of a record body.
  * The provider keeps its Y.Doc when a socket reconnects so an unsent edit is
- * still available while the editor is temporarily read-only.
+ * still editable offline and can be merged after reconnecting.
  */
 export function usePhotonLiveRecord(
   options: UsePhotonLiveRecordOptions | null,

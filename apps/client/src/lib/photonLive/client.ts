@@ -433,8 +433,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       version: this.version,
       recordVersion: this.recordVersion,
       hasUnackedChanges: this.hasUnackedChanges,
-      canEdit: this.initialized &&
-        this.connectionStatus === 'connected' &&
+      // Retain local editing while a transient failure is being recovered.
+      canEdit: !this.disposed && this.initialized &&
+        (this.connectionStatus === 'connected' || !this.currentError || this.currentError.retryable) &&
         this.saveStatus !== 'conflict' &&
         !this.reconnectSuppressed,
     }
@@ -964,7 +965,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       this.pendingCheckpoint = null
     }
     const socket = this.socket
-    if (this.initialized && socket?.readyState === WebSocket.OPEN) {
+    if (this.connectionStatus === 'connected' && socket?.readyState === WebSocket.OPEN) {
       socket.send(update)
     }
     this.emit()
@@ -1013,7 +1014,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private sendAwarenessUpdate(clientIds: number[]): void {
     const socket = this.socket
-    if (!clientIds.length || !this.initialized || socket?.readyState !== WebSocket.OPEN) return
+    if (!clientIds.length || this.connectionStatus !== 'connected' || socket?.readyState !== WebSocket.OPEN) return
     this.sendJson(socket, {
       type: 'awareness',
       update: bytesToBase64(encodeAwarenessUpdate(this.awareness, clientIds)),
@@ -1035,7 +1036,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private sendPendingCheckpoint(): void {
     const socket = this.socket
     if (
-      !this.initialized ||
+      this.connectionStatus !== 'connected' ||
       !socket ||
       socket.readyState !== WebSocket.OPEN ||
       this.saveStatus === 'conflict' ||
@@ -1059,7 +1060,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private sendCheckpoint(checkpoint: PendingCheckpoint): void {
     const socket = this.socket
     if (
-      !this.initialized ||
+      this.connectionStatus !== 'connected' ||
       !socket ||
       socket.readyState !== WebSocket.OPEN
     ) return
