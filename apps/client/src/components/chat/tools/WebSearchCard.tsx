@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { ToolCall, WebSearchResponse, WebSearchResult } from './types'
 import { useI18n } from '../../../i18n'
+import { handleExternalLinkClick } from '../../../lib/desktop/openExternalUrl'
 
 function SearchResultItem({ result }: { result: WebSearchResult }) {
   // Extract domain from URL for display
@@ -16,6 +17,7 @@ function SearchResultItem({ result }: { result: WebSearchResult }) {
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={handleExternalLinkClick}
       className="block px-3 py-2.5 transition-colors rounded-lg hover:bg-surface-hover"
     >
       <div className="flex items-center gap-2 mb-1">

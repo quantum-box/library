@@ -16,22 +16,26 @@ fn app_target_os() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().setup(|app| {
-        #[cfg(desktop)]
-        {
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())?;
-            app.handle().plugin(tauri_plugin_process::init())?;
-        }
-        if cfg!(debug_assertions) {
-            app.handle().plugin(
-                tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Info)
-                    .build(),
-            )?;
-        }
-        Ok(())
-    });
+    // The WebView has no browser chrome, so `target="_blank"` is inert there;
+    // external links go through this plugin to the OS default browser instead.
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            Ok(())
+        });
 
     #[cfg(target_os = "macos")]
     let builder = builder

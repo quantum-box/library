@@ -6,6 +6,7 @@ import {
   propertyValueText,
 } from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
+import { handleExternalLinkClick } from '../desktop/openExternalUrl'
 import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
 
 /**
@@ -144,7 +145,10 @@ function renderByTyp(
         target="_blank"
         rel="noreferrer"
         className="inline-flex max-w-full items-center gap-2 truncate text-xs text-primary hover:underline"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          handleExternalLinkClick(event)
+        }}
       >
         <img src={value.url} alt="" className="size-6 rounded border border-border object-cover" />
         <span className="truncate">{t('propertyType.image')}</span>

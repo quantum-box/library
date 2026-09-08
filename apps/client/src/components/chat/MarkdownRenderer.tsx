@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Components } from 'react-markdown'
 import { useTheme } from '../../contexts/ThemeContext'
+import { handleExternalLinkClick } from '../../lib/desktop/openExternalUrl'
 
 function useMarkdownComponents(): Components {
   const { resolved } = useTheme()
@@ -107,6 +108,7 @@ function useMarkdownComponents(): Components {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleExternalLinkClick}
         className="underline underline-offset-2 hover:opacity-80 transition-opacity text-accent"
       >
         {children}
