@@ -1118,16 +1118,20 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       // A delayed ticket must never rotate a clean room back to an older
       // canonical body. Rotation is allowed only after a strictly newer API
       // record version proves that this session is the current authorization.
-      // A room that never finished its handshake is exempt: it was created by
-      // the upgrade itself and holds no document, so there is nothing to rewind
-      // and no canonical version of its own to compare against. Refusing it
-      // would let a page closed mid-handshake leave a room that every later
-      // session with a changed body is turned away from, forever.
-      if (roomMetadata.initialized &&
-        (!roomMetadata.recordVersion ||
-          !isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion))) {
+      // Every room now records the version it was opened for -- including one
+      // the upgrade created and whose page left before live-initialize -- so a
+      // stale ticket is turned away whether or not the handshake finished.
+      if (roomMetadata.recordVersion) {
+        if (!isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion)) {
+          return new Response('Live body changed', { status: 409 })
+        }
+      } else if (roomMetadata.initialized) {
         return new Response('Live body changed', { status: 409 })
       }
+      // Otherwise: metadata written before rooms recorded their version, for a
+      // room that never finished its handshake. It holds no document, so
+      // rotating it is exactly what happens for a room that does not exist at
+      // all -- and refusing would leave the record's Live unreachable forever.
       for (const socket of this.ctx.getWebSockets()) {
         try {
           socket.close(4410, 'Live canonical body changed; reconnect required')
@@ -1148,13 +1152,16 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       return new Response('Live body changed', { status: 409, headers })
     }
     if (
-      roomMetadata.initialized &&
       roomMetadata.recordVersion &&
       roomMetadata.recordVersion !== session.recordVersion
     ) {
       // Title/other-property edits can advance RecordVersion while this body
       // remains unchanged. Move the room's canonical version forward in that
       // case, while accepting an older session without ever moving backward.
+      // A room still waiting for its handshake is included: it now carries the
+      // version it was opened for, and the ready frame reports that version, so
+      // leaving it behind would hand a later joiner a stale one to checkpoint
+      // against.
       if (isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion)) {
         roomMetadata = {
           ...roomMetadata,
@@ -1399,6 +1406,12 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
         initialized: false,
         version: 0,
         savedVersion: 0,
+        // The upgrade itself creates this room, so record the canonical
+        // version it was opened for. A page that leaves before it can send
+        // live-initialize would otherwise leave a room with no version to
+        // compare a later session against: too stale a ticket could not be
+        // refused, and a current one could not rotate it.
+        recordVersion: session.recordVersion,
         bodyHash: session.bodyHash,
       }
       await this.ctx.storage.put(LIVE_ROOM_META_KEY, initial)
