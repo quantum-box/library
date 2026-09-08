@@ -668,4 +668,88 @@ describe('Photon Live provider', () => {
     expect(fixture.provider.fragment.toJSON()).toContain('remote generation text')
     fixture.provider.destroy()
   })
+
+  it('takes its cursor out of the room before the socket goes away', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+
+    // What BlockNote's collaboration option does once the editor mounts.
+    fixture.provider.awareness.setLocalState({ user: { name: 'Aoi', color: '#000' } })
+    await waitFor(() => expect(sentJson(socket).filter((frame) => frame.type === 'awareness').length)
+      .toBeGreaterThan(0))
+    const beforeLeaving = sentJson(socket).filter((frame) => frame.type === 'awareness').length
+
+    fixture.provider.destroy()
+
+    // The removal has to travel while the socket is still open: nothing else
+    // tells peers this cursor is gone before their own 30s timeout.
+    expect(sentJson(socket).filter((frame) => frame.type === 'awareness').length)
+      .toBe(beforeLeaving + 1)
+    expect(fixture.provider.awareness.getLocalState()).toBeNull()
+  })
+
+  it('parks and restores its cursor across a frozen page', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const firstSocket = fixture.getSocket()!
+    firstSocket.open()
+    firstSocket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    firstSocket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    fixture.provider.awareness.setLocalState({ user: { name: 'Aoi', color: '#000' } })
+
+    const pageHide = new Event('pagehide') as Event & { persisted?: boolean }
+    Object.defineProperty(pageHide, 'persisted', { value: true })
+    window.dispatchEvent(pageHide)
+
+    expect(fixture.provider.awareness.getLocalState()).toBeNull()
+    expect(firstSocket.readyState).toBe(3)
+
+    const pageShow = new Event('pageshow') as Event & { persisted?: boolean }
+    Object.defineProperty(pageShow, 'persisted', { value: true })
+    window.dispatchEvent(pageShow)
+    await waitFor(() => expect(fixture.fetchMock).toHaveBeenCalledTimes(2))
+    const secondSocket = fixture.getSocket()!
+    secondSocket.open()
+    secondSocket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    secondSocket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+
+    await waitFor(() => expect(fixture.provider.awareness.getLocalState()).toEqual({
+      user: { name: 'Aoi', color: '#000' },
+    }))
+    fixture.provider.destroy()
+  })
+
+  it('refuses to blank a body no local edit emptied', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+
+    // A room whose content never arrived serializes exactly like a cleared
+    // page. The canonical body was '# Canonical', so this is not a save.
+    fixture.provider.queueCheckpoint('')
+    fixture.provider.flushCheckpoint()
+    await flushMicrotasks()
+    expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(0)
+
+    // Once the person has actually typed, clearing the page is theirs to do.
+    appendText(fixture.provider, 'typed')
+    fixture.provider.queueCheckpoint('')
+    fixture.provider.flushCheckpoint()
+    await waitFor(() => expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1))
+    fixture.provider.destroy()
+  })
 })

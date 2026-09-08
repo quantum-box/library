@@ -237,10 +237,7 @@ export function DataEditorPage({
       bodyProperty &&
       (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText'),
     )
-    const protectsLiveBody = liveBodyConfigured && (
-      liveBodyPolicyRef.current === 'live' ||
-      liveBodyPolicyRef.current === 'fallback-readonly'
-    )
+    const protectsLiveBody = liveBodyConfigured && liveBodyPolicyRef.current === 'live'
     // The body is checkpointed through the room. Keeping it in the item sent
     // to updateData would let a title/property save replay the API's stale
     // body over a newer Y.Doc, especially after another collaborator edits.
