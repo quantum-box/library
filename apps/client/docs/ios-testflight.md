@@ -123,6 +123,13 @@ sends it down the manual-signing path and it dies in `security import`.
   rejection arrives by email, not in the workflow log.
 - **Signing asks for a device-provisioning profile** — the export method
   defaulted away from `app-store-connect`; check the build step's flags.
+- **`Undefined symbols ... __swift_FORCE_LOAD_$_swiftCompatibility56`** — the
+  linker looked for Swift's compatibility libraries under the Metal toolchain
+  instead of `XcodeDefault.xctoolchain`. The runner has a Metal toolchain
+  mounted and a laptop usually does not, so this fails only in CI. Tauri CLI
+  2.11.0 and later generate the explicit `$(DEVELOPER_DIR)/Toolchains/
+  XcodeDefault.xctoolchain` search path; do not go back below it
+  ([tauri#14864](https://github.com/tauri-apps/tauri/issues/14864)).
 
 ## Local reproduction
 
