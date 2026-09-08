@@ -152,6 +152,10 @@ for (const format of ['markdown', 'richText'] as const) {
       unrelatedDoc.destroy()
 
       await other.reload()
+      // This page types again below, so it has to be back in the room first:
+      // a keystroke before the handshake keeps the ordinary editor for the
+      // rest of the mount and nothing shared would reach it.
+      await liveRoomAttached(other)
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Aoi contribution.')
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Ren contribution.')
       await otherContext.setOffline(true)
