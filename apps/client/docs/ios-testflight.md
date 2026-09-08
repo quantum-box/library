@@ -7,8 +7,9 @@ build number.
 
 ## What the workflow does
 
-1. Generates the Xcode project with `tauri ios init`. The project is not
-   committed — `src-tauri/gen/` is ignored — so the App Store build comes out of
+1. Generates the Xcode project with `tauri ios init`, then copies the app icon
+   in with `npm run tauri:ios:icon`. The project is not committed —
+   `src-tauri/gen/` is ignored — so the App Store build comes out of
    `src-tauri/tauri.conf.json` plus `src-tauri/tauri.ios.conf.json` exactly like
    a local one does.
 2. Builds with `tauri ios build --export-method app-store-connect` and
@@ -34,6 +35,38 @@ manual run if a specific commit has to reach TestFlight.
 
 The IPA is also attached to the run as an artifact for 14 days, so a build that
 uploaded but failed processing can still be inspected.
+
+## App icon
+
+`tauri ios init` renders the asset catalog from the CLI's own template, which
+ships Tauri's placeholder AppIcon, and nothing in the CLI copies
+`src-tauri/icons/ios` into it — `tauri icon` writes into the generated catalog
+directly, and only when the project already exists. From a clean checkout, which
+is every CI run, that means the placeholder unless something puts the real icons
+there. `scripts/sync-ios-app-icon.mjs` (`npm run tauri:ios:icon`) does, copying
+`src-tauri/icons/ios/*.png` over the generated
+`src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset`. It runs after every
+`tauri ios init`, including inside `npm run tauri:ios:init`, and fails if the
+catalog wants a filename the icons directory does not have rather than leaving
+that one slot as Tauri's.
+
+The 1024×1024 `AppIcon-512@2x.png` must stay opaque; App Store Connect rejects
+an app icon with an alpha channel during processing, after the upload has
+already succeeded.
+
+## Export compliance
+
+`src-tauri/Info.ios.plist` sets `ITSAppUsesNonExemptEncryption` to `false`, and
+Tauri merges it into the generated `Info.plist` on every iOS build. Answering in
+the build is what keeps TestFlight builds from parking in *Missing Compliance*
+until a human answers the questionnaire in App Store Connect.
+
+`false` is the truthful answer today: the app ships no cryptography of its own,
+and its only encryption is HTTPS/WSS through the operating system's TLS, exempt
+under the standard categories. The desktop updater's signature check is not on
+iOS at all — `tauri-plugin-updater` is behind a `cfg(not(target_os = "ios"))` in
+`src-tauri/Cargo.toml`. If the app ever encrypts data itself, this has to become
+`true` and the app needs the matching compliance documentation.
 
 ## Current state
 
@@ -123,8 +156,13 @@ sends it down the manual-signing path and it dies in `security import`.
   something reintroduced `--build-number`, or the bundle version grew past three
   components. It must stay a bare integer.
 - **Upload succeeds, build never appears** — App Store Connect processing
-  failed, usually on missing export compliance or an invalid icon. The
-  rejection arrives by email, not in the workflow log.
+  failed, usually on an invalid icon. The rejection arrives by email, not in the
+  workflow log. A build stuck in *Missing Compliance* rather than rejected means
+  `ITSAppUsesNonExemptEncryption` did not reach the bundle; check that
+  `src-tauri/Info.ios.plist` is still there.
+- **TestFlight shows the Tauri logo** — the icon copy did not run. `tauri ios
+  build` on a project generated without it keeps the placeholder; re-run
+  `npm run tauri:ios:icon` and rebuild.
 - **`exportArchive Cloud signing permission error`** followed by `No profiles
   for 'com.quantumbox.library' were found` — the API key is not an Admin key.
   The archive builds and signs first, so this looks like a late failure rather
@@ -148,7 +186,7 @@ sends it down the manual-signing path and it dies in `security import`.
 ```bash
 cd apps/client
 npm ci
-npm run tauri -- ios init
+npm run tauri:ios:init
 npm run tauri -- ios build --export-method app-store-connect \
   -c '{"bundle":{"iOS":{"bundleVersion":"1"}}}'
 ```
