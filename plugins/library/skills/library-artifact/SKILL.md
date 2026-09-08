@@ -20,10 +20,30 @@ Library renders the value in `<iframe sandbox="allow-scripts">` with no `allow-s
 - **Scripts may not run at all.** A `srcdoc` document inherits the embedding page's CSP, and the desktop shell sets a strict `script-src`. Write the content into the HTML and use JavaScript only to enhance it — sorting, filtering, toggles. A page that renders nothing without JS is empty in the desktop app.
 - **The frame paints white and fills its region.** Give `body` an explicit background and text color rather than borrowing one. Define the full palette on `:root`; add `prefers-color-scheme: dark` overrides only on top of it, never as the only definition of a color.
 
-## Building the page
+## Design the page
 
-- Start the document with `<!doctype html>` and give it a `<title>` — a short, specific name, the same one used as the record name. Set `<html lang>` to the language the page is actually written in, not the language of the request. A value that does not begin with `<` is stored as block-editor content and never opens in the artifact frame.
-- Size the design to the job: a status page or a set of numbers wants a plain, well-set document; a landing page or a pitch earns real art direction. Either way, write the actual content — no placeholder text, no invented figures.
+Sketch a plan before writing code — four to six named colors, two or three type roles, a sentence of layout — and derive every decision from it.
+
+- **Read the request for treatment, not for effort.** A memo, a status page, or a plan wants a polished utilitarian document: real hierarchy, considered spacing, a chosen palette, no hero. A landing page, a pitch, or something the reader will keep and revisit earns an editorial treatment and one deliberate risk. Both get the same care.
+- **Follow what already exists.** The user's own words first, then the organization's tokens and conventions, then your choices.
+- **Ground it in the subject.** Carry at least one detail only this subject would have — its real units, its document conventions, its terms of art — as content rather than ornament. Write the real content: no lorem, no invented figures.
+- **Type without a font host.** A stylesheet from `fonts.googleapis.com` is blocked by the desktop shell's CSP, so it cannot be relied on. Use a system stack, or inline the face as a `@font-face` data URI inside the size budget. Keep running text near 65 characters wide, set a type scale and stay on it, and give headings `text-wrap: balance`.
+- **No libraries.** cdnjs and every other CDN are out for the same reason scripts are — React, a charting package, a syntax highlighter are all unavailable. Draw charts as inline SVG by hand: one scale places marks, ticks, and labels; leave room in the `viewBox` for the outermost labels; give every shape an explicit fill; take chart text color from the tokens.
+- **Pick the neutrals.** A pure mid-grey reads as unconsidered — bias it slightly toward the accent. White and near-black are fine grounds when they are chosen rather than inherited.
+- **Both themes, through tokens.** The frame carries no theme stamp, so `prefers-color-scheme` is the only signal available. Define the complete light palette on bare `:root`, redefine only tokens inside the dark media query, and style components through the tokens. A page that deliberately commits to one look may skip the dark block, but it still paints every color and its own background explicitly.
+- **Let layout do the spacing.** Flex or grid with `gap` rather than per-element margins that collapse or double. `font-variant-numeric: tabular-nums` wherever digits line up in a column. Repeated things — cards in a row, label/value pairs, badges — share edges, baselines, and inner padding.
+- **Not everything is a card.** Border, fill, radius, and shadow each say "separate object". Spend them on the one thing that needs lifting instead of stamping the same radius and shadow on every block, which flattens the hierarchy.
+- **Structure should be true.** Numbered markers claim the content is a sequence; eyebrows and dividers claim sections. Use them only when the content actually is that.
+- **Show the page at rest.** Everything meant to be read is visible on load — nothing parked at `opacity: 0` waiting for an observer, which in a shell that blocks scripts is a blank page. Size an opener to what it holds, not to `100vh`. A tool or dashboard opens in a realistic working state, with example rows plainly marked as examples.
+- **Write the copy from the reader's side.** Name things as people recognize them, use active voice, and let a control say exactly what happens. Specific beats clever.
+- **Build cleanly.** Close every non-void element, quote attributes, give keyboard focus a visible state, respect `prefers-reduced-motion`, and watch selector specificity so spacing rules do not cancel each other out.
+- **Skip the house style of generated pages.** Warm cream with a serif display and a terracotta accent, near-black with one acid-green pop, a purple-to-blue gradient hero, Inter or Space Grotesk as the safe face, emoji as section markers, everything centered and uniformly rounded. When the user names a direction, follow it exactly — their words win, including when they ask for one of these.
+
+There is no preview loop here: nothing renders the page back to you before it is published. Write it carefully, publish once, and fix what the user reports.
+
+## Write the document
+
+- Start the document with `<!doctype html>` and give it a `<title>` — a real name for the page, a short noun phrase specific to its subject, and the same one used as the record name; not a category label, and not a name with an explainer appended after a dash. Set `<html lang>` to the language the page is actually written in, not the language of the request. A value that does not begin with `<` is stored as block-editor content and never opens in the artifact frame.
 - Use relative units and a single readable column (`max-width` around 60rem); the body must never scroll horizontally. Put wide tables, code blocks, and diagrams in their own `overflow-x: auto` container.
 - Keep it small. `POST /mcp` accepts roughly 2 MiB per request and the Html value is capped at 3 MiB, so a photo embedded as a data URI is rejected while inline SVG and small assets are fine. Link large media by URL instead.
 - Do not publish a page that impersonates a real person or organization, or that presents fabricated records as genuine.
