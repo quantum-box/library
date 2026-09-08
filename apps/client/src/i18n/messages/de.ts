@@ -803,6 +803,7 @@ export const de: LocaleMessages = {
   'share.revoke': 'Widerrufen',
   'share.loadFailed': 'Freigabelinks konnten nicht geladen werden',
   'share.createFailed': 'Freigabelink konnte nicht erstellt werden',
+  'share.publicRepository': 'Dieses Repository ist öffentlich. Teile seine öffentliche Seite statt eines Links.',
   'share.revokeFailed': 'Freigabelink konnte nicht widerrufen werden',
   'share.shareData': 'Diese Seite teilen',
   'shared.opening': 'Freigegebene Seite wird geöffnet…',

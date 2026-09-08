@@ -824,6 +824,7 @@ export const ru: LocaleMessages = {
   'share.revoke': 'Отозвать',
   'share.loadFailed': 'Не удалось загрузить ссылки для доступа',
   'share.createFailed': 'Не удалось создать ссылку для доступа',
+  'share.publicRepository': 'Этот репозиторий публичный. Поделитесь адресом его публичной страницы, а не ссылкой.',
   'share.revokeFailed': 'Не удалось отозвать ссылку для доступа',
   'share.shareData': 'Поделиться этой страницей',
   'shared.opening': 'Открытие страницы по ссылке…',

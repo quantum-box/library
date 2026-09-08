@@ -806,6 +806,7 @@ export const ja: LocaleMessages = {
   'share.revoke': '無効化',
   'share.loadFailed': '共有リンクを読み込めませんでした',
   'share.createFailed': '共有リンクを作成できませんでした',
+  'share.publicRepository': 'この repository は公開されています。共有リンクではなく公開ページの URL を渡してください。',
   'share.revokeFailed': '共有リンクを無効化できませんでした',
   'share.shareData': 'このページを共有',
   'shared.opening': '共有ページを開いています…',

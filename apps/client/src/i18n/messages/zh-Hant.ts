@@ -803,6 +803,7 @@ export const zhHant: LocaleMessages = {
   'share.revoke': '撤銷',
   'share.loadFailed': '無法載入共用連結',
   'share.createFailed': '無法建立共用連結',
+  'share.publicRepository': '此儲存庫是公開的。請分享其公開頁面的網址，而不是共用連結。',
   'share.revokeFailed': '無法撤銷共用連結',
   'share.shareData': '共用此頁面',
   'shared.opening': '正在開啟共用頁面…',

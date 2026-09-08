@@ -803,6 +803,7 @@ export const it: LocaleMessages = {
   'share.revoke': 'Revoca',
   'share.loadFailed': 'Impossibile caricare i link di condivisione',
   'share.createFailed': 'Impossibile creare il link di condivisione',
+  'share.publicRepository': 'Questo repository è pubblico. Condividi la sua pagina pubblica invece di un link.',
   'share.revokeFailed': 'Impossibile revocare il link di condivisione',
   'share.shareData': 'Condividi questa pagina',
   'shared.opening': 'Apertura della pagina condivisa…',

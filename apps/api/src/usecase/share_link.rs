@@ -61,11 +61,11 @@ pub struct CreatedShareLink {
 
 /// Everything a viewer page needs, resolved from the token alone.
 ///
-/// The link itself is not here: it decided this read is allowed and has
-/// nothing further to say to the page, and leaving it out keeps the
-/// share link's own id off a response a stranger receives.
+/// Neither the link nor the repository is here. The link decided this
+/// read is allowed and has nothing further to say to the page; the
+/// repository was only how the document was found, and its username is
+/// part of what a private repository keeps private.
 pub struct SharedData {
-    pub repo: Repo,
     pub data: Data,
     pub properties: Vec<Property>,
 }
@@ -94,6 +94,21 @@ pub trait ViewSharedDataInputPort: std::fmt::Debug + Send + Sync {
     /// resolve to a live link -- an unknown token and a revoked one are
     /// deliberately indistinguishable to whoever holds the URL.
     async fn execute(&self, token: &str) -> errors::Result<SharedData>;
+}
+
+/// The single answer every failed redemption gives.
+fn share_link_not_found() -> errors::Error {
+    errors::Error::not_found("share link not found")
+}
+
+/// Collapse a downstream "not found" into that answer, and let anything
+/// else through -- a database outage is not a missing link, and saying
+/// so is what makes the 404 mean something.
+fn hide_missing_target(error: errors::Error) -> errors::Error {
+    if error.is_not_found() {
+        return share_link_not_found();
+    }
+    error
 }
 
 #[derive(Debug)]
@@ -173,6 +188,19 @@ impl ManageShareLinksInputPort for ShareLinks {
         input: &CreateShareLinkInputData<'a>,
     ) -> errors::Result<CreatedShareLink> {
         let repo = self.authorized_repo(&input.target).await?;
+
+        // A public repository already serves this document anonymously
+        // at `/public/<org>/<repo>/<data_id>`, so a token would add no
+        // access -- but it would outlive the repository being made
+        // private again, quietly keeping open the one thing that change
+        // was meant to close. Refuse here rather than leaving it to
+        // callers to remember.
+        if *repo.is_public() {
+            return Err(errors::Error::invalid(
+                "Share links are for private repositories; a public \
+                 repository already serves this document anonymously",
+            ));
+        }
 
         // Minting a link to a document that is not in this repo would
         // produce a URL that 404s later, with nothing at creation time
@@ -269,14 +297,20 @@ impl ViewSharedDataInputPort for ShareLinks {
             .find_by_token_hash(&hash_share_token(token))
             .await?
             .filter(|link| !link.is_revoked())
-            .ok_or(errors::not_found!("share link not found"))?;
+            .ok_or_else(share_link_not_found)?;
 
+        // From here on, every "it is not there" becomes the same answer
+        // the unknown and revoked tokens got. A deleted document, a
+        // deleted repository and a revoked link must be one outcome to
+        // whoever holds the URL, or the 404 text tells them which.
         let repo = self
             .repo_repository
             .get_by_id(&LIBRARY_TENANT, link.repo_id())
-            .await?
-            .ok_or(errors::not_found!("repo not found"))?;
-        let database_id = Self::database_id(&repo)?;
+            .await
+            .map_err(hide_missing_target)?
+            .ok_or_else(share_link_not_found)?;
+        let database_id =
+            Self::database_id(&repo).map_err(hide_missing_target)?;
 
         // `SystemExecutor` rather than the anonymous caller: the token
         // has already decided this read is allowed, and the layer below
@@ -296,7 +330,8 @@ impl ViewSharedDataInputPort for ShareLinks {
                 tenant_id: repo.organization_id().clone(),
                 database_id: database_id.clone(),
             })
-            .await?;
+            .await
+            .map_err(hide_missing_target)?;
         let data = self
             .database
             .get_data_usecase()
@@ -305,14 +340,45 @@ impl ViewSharedDataInputPort for ShareLinks {
                 multi_tenancy: &multi_tenancy,
                 tenant_id: repo.organization_id(),
                 database_id: &database_id,
-                data_id: &link.data_id().parse()?,
+                data_id: &link
+                    .data_id()
+                    .parse()
+                    .map_err(|_| share_link_not_found())?,
             })
-            .await?;
+            .await
+            .map_err(hide_missing_target)?;
 
-        Ok(SharedData {
-            repo,
-            data,
-            properties,
-        })
+        Ok(SharedData { data, properties })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A deleted document, a deleted repository and a revoked link have
+    /// to be one outcome to whoever holds the URL. Letting the
+    /// downstream text through ("resource not found") would tell them
+    /// which of the three they are holding.
+    #[test]
+    fn every_missing_target_answers_as_a_missing_link() {
+        let downstream = errors::Error::not_found("resource not found");
+        let hidden = hide_missing_target(downstream);
+
+        assert!(hidden.is_not_found());
+        assert_eq!(hidden.to_string(), share_link_not_found().to_string());
+    }
+
+    /// A database outage is not a missing link. Collapsing it into 404
+    /// would tell the holder their link is gone and hide the incident
+    /// from everyone else.
+    #[test]
+    fn a_failure_that_is_not_a_miss_survives() {
+        let outage =
+            errors::Error::internal_server_error("connection reset");
+        let passed = hide_missing_target(outage);
+
+        assert!(!passed.is_not_found());
+        assert!(passed.to_string().contains("connection reset"));
     }
 }

@@ -887,6 +887,7 @@ export const en = {
   'share.revoke': 'Revoke',
   'share.loadFailed': 'Could not load share links',
   'share.createFailed': 'Could not create the share link',
+  'share.publicRepository': 'This repository is public. Share its public page instead of a link.',
   'share.revokeFailed': 'Could not revoke the share link',
   'share.shareData': 'Share this page',
   'shared.opening': 'Opening shared page…',

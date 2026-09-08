@@ -11,17 +11,19 @@ import { Check, Copy, Link2, RefreshCw, TriangleAlert } from 'lucide-react'
 import {
   createLibraryShareLink,
   fetchLibraryShareLinks,
+  RecordApiError,
   revokeLibraryShareLink,
   type LibraryShareLink,
 } from '../lib/recordsApi'
 import { useI18n } from '../i18n'
 
-function actionErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message.trim() ? error.message : fallback
-}
-
 /**
  * Create, copy and revoke read-only links to one document.
+ *
+ * Every failure reports through the message catalog rather than the
+ * error it caught: `RecordApiError` always carries a hard-coded English
+ * sentence ("Library share link creation failed: 403"), so surfacing it
+ * would show implementation text to every reader, in every locale.
  *
  * The secret is shown exactly once, in the response that mints it: the
  * API stores only its SHA-256. `justCreated` is what holds that one
@@ -55,8 +57,8 @@ export function ShareLinkDialog({
     setError(null)
     try {
       setLinks(await fetchLibraryShareLinks(dataId, { org, repo, operatorId }))
-    } catch (loadError) {
-      setError(actionErrorMessage(loadError, t('share.loadFailed')))
+    } catch {
+      setError(t('share.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -89,7 +91,14 @@ export function ShareLinkDialog({
       await copy(created.url)
       await load()
     } catch (createError) {
-      setError(actionErrorMessage(createError, t('share.createFailed')))
+      // The API refuses a link for a public repository, and a generic
+      // failure would leave the user clicking a button that can never
+      // work. Everything else stays generic on purpose; see above.
+      setError(
+        createError instanceof RecordApiError && createError.status === 400
+          ? t('share.publicRepository')
+          : t('share.createFailed')
+      )
     } finally {
       setBusy(false)
     }
@@ -103,8 +112,8 @@ export function ShareLinkDialog({
       await revokeLibraryShareLink(id, target)
       if (justCreated?.id === id) setJustCreated(null)
       await load()
-    } catch (revokeError) {
-      setError(actionErrorMessage(revokeError, t('share.revokeFailed')))
+    } catch {
+      setError(t('share.revokeFailed'))
     } finally {
       setBusy(false)
     }

@@ -13,6 +13,7 @@ vi.mock('../lib/recordsApi', async (importOriginal) => ({
   ...apiMocks,
 }))
 
+import { RecordApiError } from '../lib/recordsApi'
 import { ShareLinkDialog } from './ShareLinkDialog'
 
 const target = { org: 'quantum-box', repo: 'artifacts', operatorId: undefined }
@@ -106,6 +107,37 @@ describe('ShareLinkDialog', () => {
     expect(apiMocks.revokeLibraryShareLink).toHaveBeenCalledWith('sl_01k', target)
     expect(screen.getByTestId('share-link-list')).toHaveTextContent('Revoked')
     expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull()
+  })
+
+  /**
+   * `RecordApiError` always carries a hard-coded English sentence, so a
+   * dialog that surfaced it would show implementation text in every
+   * locale. The refusal for a public repository is the one failure that
+   * gets its own message, because it is the one the user can act on.
+   */
+  it('reports failures through the catalog, and names the public-repo refusal', async () => {
+    apiMocks.fetchLibraryShareLinks.mockResolvedValue([])
+    apiMocks.createLibraryShareLink.mockRejectedValueOnce(
+      new RecordApiError('Library share link creation failed: 400', 400)
+    )
+
+    await renderSettled(dialog())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This repository is public. Share its public page instead of a link.'
+    )
+
+    apiMocks.createLibraryShareLink.mockRejectedValueOnce(
+      new RecordApiError('Library share link creation failed: 403', 403)
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    })
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Could not create the share link')
+    expect(alert.textContent).not.toContain('403')
   })
 
   /**

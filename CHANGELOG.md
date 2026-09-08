@@ -18,8 +18,18 @@
 - client に `/s/<token>` の閲覧ページと、data 画面の共有ダイアログを追加。
   閲覧ページは repo へのリンクを一切持たない。受け取った人はサインイン壁に
   当たるだけで、org と repo の名前自体も token が隠しているもののうち。
+  `GET /v1beta/share/{token}` の応答も org / repo / repo 名を含まない。
 - リンクの発行・失効は `library:UpdateRepo` を要求する。読めることと
   外に渡してよいことは別なので、read の関門を使い回さない。
+- public repo へのリンク発行は拒否する。`/public/<org>/<repo>/<data_id>` が
+  既に匿名で同じページを出しており token は access を足さないのに、後で
+  private に戻したときだけ生き残って、その変更が閉じたかったものを開けたまま
+  にするため。
+- 不明な token・失効した token・消えた document・消えた repo は、すべて同じ
+  404 本文を返す。どれを持っているかを保持者に見分けさせないため。
+- REST の `PropertyResponse` に `options` を追加した。Select / MultiSelect の
+  値は option の id だけを持つので、これが無いと読み手は `op_...` しか描け
+  ない。`GET /properties` にも同じ穴があったので一緒に塞がる。
 
 ## 2026-08-30 - Library CLI と MCP tool の追加
 

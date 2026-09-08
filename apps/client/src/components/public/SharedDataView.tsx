@@ -119,7 +119,9 @@ export function SharedDataView({ token }: { token: string }) {
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         <Link2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
-        <span className="truncate text-sm text-muted-foreground">{shared.repoName}</span>
+        {/* Nothing here names the repository. The recipient was given one
+            document, and the collection it came from is part of what the
+            private repository keeps private. */}
         <Badge variant="outline" className="ml-auto shrink-0">
           {t('shared.badge')}
         </Badge>

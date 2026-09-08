@@ -384,6 +384,7 @@ interface LibraryRestPropertyResponse {
   id: string
   name: string
   property_type: string
+  options?: LibrarySelectOption[]
 }
 
 export interface LibraryRepoTableData {
@@ -1781,7 +1782,10 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
     id: property.id,
     name: property.name,
     typ: normalizeLibraryPropertyType(property.property_type),
-    meta: null,
+    // A Select value stores its option id, so without these the cell has
+    // nothing to render but `op_...`. The GraphQL path already carries
+    // them; REST readers were seeing raw ids.
+    meta: property.options ? { options: property.options } : null,
   }
 }
 
@@ -2129,11 +2133,14 @@ export interface CreatedLibraryShareLink extends LibraryShareLink {
   url: string
 }
 
-/** What a share token resolves to: exactly one document, and nothing else. */
+/**
+ * What a share token resolves to: exactly one document, and nothing else.
+ *
+ * No organization or repository name: those belong to the private
+ * repository the document lives in, and the token shared the document,
+ * not the collection.
+ */
 export interface SharedLibraryData {
-  org: string
-  repo: string
-  repoName: string
   item: LibraryDataItem
   properties: LibraryProperty[]
 }
@@ -2259,16 +2266,10 @@ export async function fetchSharedLibraryData(
     )
   }
   const payload = await response.json() as {
-    org: string
-    repo: string
-    repoName: string
     data: LibraryRestDataResponse
     properties: LibraryRestPropertyResponse[]
   }
   return {
-    org: payload.org,
-    repo: payload.repo,
-    repoName: payload.repoName,
     item: restDataToLibraryDataItem(payload.data),
     properties: (payload.properties ?? []).map(restPropertyToLibraryProperty),
   }

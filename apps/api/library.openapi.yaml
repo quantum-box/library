@@ -588,12 +588,38 @@ components:
           type: string
         name:
           type: string
+        options:
+          description: |-
+            Choices of a `SELECT` or `MULTI_SELECT` property.
+
+            A stored value carries the option's id, not its label, so a client
+            without this list has nothing to render but `op_...`. Absent for
+            every other property type.
+          items:
+            $ref: '#/components/schemas/PropertySelectOptionResponse'
+          type:
+          - array
+          - 'null'
         property_type:
           type: string
       required:
       - id
       - name
       - property_type
+      type: object
+    PropertySelectOptionResponse:
+      description: One choice of a `SELECT` or `MULTI_SELECT` property.
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+      required:
+      - id
+      - key
+      - name
       type: object
     PublishedLanguagesResponse:
       description: The languages a repo is published in.
@@ -773,28 +799,22 @@ components:
       type: object
     SharedDataResponse:
       description: |-
-        What a share token resolves to.
+        What a share token resolves to: one document, and the property
+        definitions needed to render it.
 
-        Names the org and repo so the viewer page can say where the document
-        came from and can resolve the image URLs its body references. It
-        carries no listing and no sibling ids: a token is one document.
+        It names neither the organization nor the repository. A recipient
+        holding the token can read this JSON, and those usernames are part of
+        what a private repository keeps private -- the document is what was
+        shared, not the collection it came from. Nothing in the client needs
+        them either: image values carry absolute URLs of their own.
       properties:
         data:
           $ref: '#/components/schemas/DataResponse'
-        org:
-          type: string
         properties:
           items:
             $ref: '#/components/schemas/PropertyResponse'
           type: array
-        repo:
-          type: string
-        repoName:
-          type: string
       required:
-      - org
-      - repo
-      - repoName
       - data
       - properties
       type: object

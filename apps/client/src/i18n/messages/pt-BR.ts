@@ -803,6 +803,7 @@ export const ptBR: LocaleMessages = {
   'share.revoke': 'Revogar',
   'share.loadFailed': 'Não foi possível carregar os links de compartilhamento',
   'share.createFailed': 'Não foi possível criar o link de compartilhamento',
+  'share.publicRepository': 'Este repositório é público. Compartilhe a página pública dele em vez de um link.',
   'share.revokeFailed': 'Não foi possível revogar o link de compartilhamento',
   'share.shareData': 'Compartilhar esta página',
   'shared.opening': 'Abrindo a página compartilhada…',

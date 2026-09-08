@@ -803,6 +803,7 @@ export const zhHans: LocaleMessages = {
   'share.revoke': '撤销',
   'share.loadFailed': '无法加载共享链接',
   'share.createFailed': '无法创建共享链接',
+  'share.publicRepository': '此仓库是公开的。请分享其公开页面的地址，而不是共享链接。',
   'share.revokeFailed': '无法撤销共享链接',
   'share.shareData': '共享此页面',
   'shared.opening': '正在打开共享页面…',

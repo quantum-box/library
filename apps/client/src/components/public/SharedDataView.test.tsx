@@ -27,19 +27,21 @@ import { RecordApiError } from '../../lib/recordsApi'
 import { SharedDataView } from './SharedDataView'
 
 const shared = {
-  org: 'quantum-box',
-  repo: 'artifacts',
-  repoName: 'Artifacts',
   item: {
     id: 'data_01k',
     name: 'Quarterly report',
     propertyData: [
-      { propertyId: 'property-status', value: { string: 'Draft' } },
+      { propertyId: 'property-status', value: { optionId: 'op_draft' } },
       { propertyId: 'property-body', value: { html: '<h1>Hello</h1>' } },
     ],
   },
   properties: [
-    { id: 'property-status', name: 'Status', typ: 'String' as const, meta: null },
+    {
+      id: 'property-status',
+      name: 'Status',
+      typ: 'Select' as const,
+      meta: { options: [{ id: 'op_draft', key: 'draft', name: 'Draft' }] },
+    },
     { id: 'property-body', name: 'Body', typ: 'Html' as const, meta: null },
   ],
 }
@@ -60,6 +62,8 @@ describe('SharedDataView', () => {
     await renderSettled(<SharedDataView token="shr_abc" />)
 
     expect(screen.getByTestId('shared-data-title')).toHaveTextContent('Quarterly report')
+    // The label, not the `op_...` id the record actually stores: the
+    // response carries the Select options so the page can resolve it.
     expect(screen.getByText('Draft')).toBeTruthy()
     expect(apiMocks.fetchSharedLibraryData).toHaveBeenCalledWith('shr_abc')
     expect(bodyEditorMock).toHaveBeenCalledWith(
@@ -68,9 +72,10 @@ describe('SharedDataView', () => {
   })
 
   /**
-   * The page must never name the repository's own route. A recipient has
-   * no session, so any link outward lands on a sign-in wall, and the org
-   * and repo usernames are themselves part of what the token hides.
+   * The page must never name the repository, nor link to its own route.
+   * A recipient has no session, so any link outward lands on a sign-in
+   * wall, and the org and repo names are themselves part of what a
+   * private repository keeps private.
    */
   it('offers no way out of the shared document', async () => {
     apiMocks.fetchSharedLibraryData.mockResolvedValue(shared)
@@ -79,7 +84,9 @@ describe('SharedDataView', () => {
     await act(async () => {})
 
     expect(container.querySelectorAll('a')).toHaveLength(0)
-    expect(screen.queryByText('quantum-box/artifacts')).toBeNull()
+    for (const name of ['quantum-box', 'artifacts', 'Artifacts']) {
+      expect(container.textContent).not.toContain(name)
+    }
   })
 
   /**

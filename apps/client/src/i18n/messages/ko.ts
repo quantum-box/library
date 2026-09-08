@@ -803,6 +803,7 @@ export const ko: LocaleMessages = {
   'share.revoke': '해지',
   'share.loadFailed': '공유 링크를 불러오지 못했습니다',
   'share.createFailed': '공유 링크를 만들지 못했습니다',
+  'share.publicRepository': '이 리포지토리는 공개되어 있습니다. 공유 링크 대신 공개 페이지 주소를 전달하세요.',
   'share.revokeFailed': '공유 링크를 해지하지 못했습니다',
   'share.shareData': '이 페이지 공유',
   'shared.opening': '공유 페이지를 여는 중…',

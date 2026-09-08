@@ -19,7 +19,8 @@ use crate::app::LibraryApp;
 use crate::domain::ShareLink;
 use crate::handler::library_executor_extractor::LibraryExecutor;
 use crate::handler::types::{
-    DataResponse, PropertyDataResponse, PropertyResponse,
+    property_select_options, DataResponse, PropertyDataResponse,
+    PropertyResponse,
 };
 use crate::usecase::{
     library_client_url::share_url, CreateShareLinkInputData, LibraryOrg,
@@ -85,17 +86,17 @@ pub struct ShareLinkListResponse {
     pub share_links: Vec<ShareLinkResponse>,
 }
 
-/// What a share token resolves to.
+/// What a share token resolves to: one document, and the property
+/// definitions needed to render it.
 ///
-/// Names the org and repo so the viewer page can say where the document
-/// came from and can resolve the image URLs its body references. It
-/// carries no listing and no sibling ids: a token is one document.
+/// It names neither the organization nor the repository. A recipient
+/// holding the token can read this JSON, and those usernames are part of
+/// what a private repository keeps private -- the document is what was
+/// shared, not the collection it came from. Nothing in the client needs
+/// them either: image values carry absolute URLs of their own.
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedDataResponse {
-    pub org: String,
-    pub repo: String,
-    pub repo_name: String,
     pub data: DataResponse,
     pub properties: Vec<PropertyResponse>,
 }
@@ -257,11 +258,8 @@ pub async fn view_shared_data(
     AxumPath(token): AxumPath<String>,
     Extension(library_app): Extension<Arc<LibraryApp>>,
 ) -> errors::Result<Json<SharedDataResponse>> {
-    let SharedData {
-        repo,
-        data,
-        properties,
-    } = library_app.view_shared_data.execute(&token).await?;
+    let SharedData { data, properties } =
+        library_app.view_shared_data.execute(&token).await?;
 
     let items = data
         .property_data()
@@ -283,9 +281,6 @@ pub async fn view_shared_data(
         .collect();
 
     Ok(Json(SharedDataResponse {
-        org: repo.org_username().to_string(),
-        repo: repo.username().to_string(),
-        repo_name: repo.name().to_string(),
         data: DataResponse {
             id: data.id().to_string(),
             name: data.name().to_string(),
@@ -303,6 +298,10 @@ pub async fn view_shared_data(
                 name: property.name().to_string(),
                 property_type: property.property_type().to_string(),
                 auto_generate: None,
+                // Without these a Select value renders as the raw
+                // `op_...` id, which is not the document the owner
+                // shared.
+                options: property_select_options(property.property_type()),
             })
             .collect(),
     }))

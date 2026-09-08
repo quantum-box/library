@@ -51,7 +51,7 @@ Sharing a page from a private repository:
 - The token is shown once. Nothing stores it in recoverable form, so record the `url` in the reply that mints it; a link that is lost can only be replaced by a new one.
 - One link is one record. Sharing a second page means a second link, and neither reaches anything else in the repository.
 - Reuse the link a page already has instead of minting one per message: `list_share_links` returns them, without their tokens. `revoke_share_link` stops one working.
-- Do not mint a link for a public repository. `/public/<org>/<repo>/<data_id>` is already anonymous there, and it is the address that survives the repository being shared more widely.
+- A public repository is refused: `/public/<org>/<repo>/<data_id>` is already anonymous there, and it is the address to hand out.
 
 ## Write data
 

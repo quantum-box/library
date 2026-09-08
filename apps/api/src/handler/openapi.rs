@@ -92,6 +92,7 @@ use crate::handler::{
         crate::handler::types::DataPaginationQuery,
         value_object::OffsetPaginator,
         crate::handler::types::PropertyResponse,
+        crate::handler::types::PropertySelectOptionResponse,
         crate::handler::types::AddPropertyRequest,
         crate::handler::types::UpdatePropertyRequest,
         crate::handler::translation::PublishedLanguagesResponse,
