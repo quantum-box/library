@@ -4,6 +4,7 @@ import worker, {
   normalizeBodyHash,
   PhotonLiveRoom,
   PhotonLiveTicketStore,
+  PhotonSyncRoom,
   YjsRoomDocumentStore,
 } from './index'
 
@@ -1427,6 +1428,32 @@ describe('YjsRoomDocumentStore', () => {
       expect(await pendingUpdateKeys(storage)).toEqual([])
       expect(await store(storage).hydrate().then((reloaded) => reloaded.getText('body').toString()))
         .toBe(body)
+    })
+
+    it('wakes itself until the log is drained, without waiting for a request', async () => {
+      // A socket that answered its handshake has no reason to keep sending, so
+      // the room has to carry itself the rest of the way.
+      const storage = new MemoryStorage()
+      const { body } = await seedBacklog(storage, 150)
+      const socket = new FakeSocket()
+      const context = roomContext(storage, [socket])
+      const room = new PhotonSyncRoom(context as never, env())
+
+      await room.alarm()
+      expect(await storage.getAlarm()).not.toBeNull()
+
+      let passes = 1
+      while (await storage.getAlarm()) {
+        await storage.deleteAlarm()
+        await room.alarm()
+        passes += 1
+        expect(passes).toBeLessThan(20)
+      }
+
+      expect(await pendingUpdateKeys(storage)).toEqual([])
+      expect(socket.frames.length).toBeGreaterThan(0)
+      const reloaded = await store(storage).hydrate()
+      expect(reloaded.getText('body').toString()).toBe(body)
     })
 
     it('keeps the updates it has not replayed yet when a client writes', async () => {

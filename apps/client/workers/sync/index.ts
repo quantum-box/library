@@ -109,6 +109,13 @@ const SYNC_CATCHUP_FOLD_BATCHES = 8
 /** Storage keys written or deleted in one call. The platform caps this. */
 const SYNC_STORAGE_KEYS_PER_CALL = 96
 /**
+ * How soon a room that is behind wakes itself to replay the next batch.
+ * Requests alone cannot carry it: a socket that connected has no reason to
+ * keep sending, so an idle or read-only client would otherwise leave the room
+ * on a partial document indefinitely.
+ */
+const SYNC_CATCHUP_ALARM_MS = 1_000
+/**
  * How long one request may spend catching a room up. A room that is behind
  * serves what it has and resumes on the next request rather than replaying an
  * unbounded log in one invocation.
@@ -1467,6 +1474,17 @@ export class PhotonSyncRoom extends DurableObject<Env> {
   }
 
   /**
+   * Keep replaying a room that is behind when nothing else arrives. The
+   * clients of a room that answered their handshake have no reason to send
+   * anything more, so requests alone cannot be what carries it forward.
+   */
+  async alarm(): Promise<void> {
+    const doc = await this.ensureDoc()
+    if (this.store.behind && await this.store.catchUp(doc)) this.broadcastState(doc)
+    await this.scheduleCatchUp()
+  }
+
+  /**
    * The document, carried one batch further when the room is still replaying
    * its log. Every request that arrives at a room which is behind moves it
    * along, and the sockets already attached are told what arrived.
@@ -1474,11 +1492,19 @@ export class PhotonSyncRoom extends DurableObject<Env> {
   private async advance(): Promise<Y.Doc> {
     const doc = await this.ensureDoc()
     if (!this.store.behind) return doc
-    if (await this.store.catchUp(doc)) {
-      const state = Y.encodeStateAsUpdate(doc)
-      for (const socket of this.ctx.getWebSockets()) socket.send(state)
-    }
+    if (await this.store.catchUp(doc)) this.broadcastState(doc)
+    await this.scheduleCatchUp()
     return doc
+  }
+
+  private broadcastState(doc: Y.Doc): void {
+    const state = Y.encodeStateAsUpdate(doc)
+    for (const socket of this.ctx.getWebSockets()) socket.send(state)
+  }
+
+  private async scheduleCatchUp(): Promise<void> {
+    if (!this.store.behind) return
+    await this.ctx.storage.setAlarm(Date.now() + SYNC_CATCHUP_ALARM_MS)
   }
 
   private relayTextFrame(sender: WebSocket, message: string): void {
