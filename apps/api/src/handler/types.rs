@@ -134,6 +134,54 @@ pub struct PropertyResponse {
     pub property_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_generate: Option<bool>,
+    /// Choices of a `SELECT` or `MULTI_SELECT` property.
+    ///
+    /// A stored value carries the option's id, not its label, so a client
+    /// without this list has nothing to render but `op_...`. Absent for
+    /// every other property type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<PropertySelectOptionResponse>>,
+}
+
+/// One choice of a `SELECT` or `MULTI_SELECT` property.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct PropertySelectOptionResponse {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+}
+
+impl From<&database_manager::domain::SelectItem>
+    for PropertySelectOptionResponse
+{
+    fn from(item: &database_manager::domain::SelectItem) -> Self {
+        Self {
+            id: item.id().to_string(),
+            key: item.key().to_string(),
+            name: item.name().to_string(),
+        }
+    }
+}
+
+/// The choices a property offers, or `None` when it offers none.
+pub fn property_select_options(
+    property_type: &database_manager::domain::PropertyType,
+) -> Option<Vec<PropertySelectOptionResponse>> {
+    let items = match property_type {
+        database_manager::domain::PropertyType::Select(select) => {
+            &select.items
+        }
+        database_manager::domain::PropertyType::MultiSelect(select) => {
+            &select.items
+        }
+        _ => return None,
+    };
+    Some(
+        items
+            .iter()
+            .map(PropertySelectOptionResponse::from)
+            .collect(),
+    )
 }
 
 // TODO: add English comment

@@ -174,15 +174,21 @@ impl RepoRepository for RepoRepositoryImpl {
         _tenant_id: &TenantId,
         id: &RepoId,
     ) -> errors::Result<Option<Repo>> {
-        let row = sqlx::query_as!(
+        // `fetch_optional`, not `fetch_one`: the signature promises an
+        // `Option`, and a caller asking for a repo that is not there
+        // deserves its own 404 rather than a 500 from `RowNotFound`.
+        let Some(row) = sqlx::query_as!(
             RepoRow,
             "SELECT id, org_id, org_username, name, username, description, is_public FROM repos WHERE platform_id = ? AND id = ?",
             crate::domain::LIBRARY_TENANT.to_string(),
             id.to_string()
         )
-        .fetch_one(self.db.pool().as_ref())
+        .fetch_optional(self.db.pool().as_ref())
         .await
-        .map_err(errors::Error::internal_server_error)?;
+        .map_err(errors::Error::internal_server_error)?
+        else {
+            return Ok(None);
+        };
 
         let databases = sqlx::query!(
             "SELECT id, database_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",

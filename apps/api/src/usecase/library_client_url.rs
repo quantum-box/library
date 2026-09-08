@@ -33,6 +33,15 @@ pub fn data_url(org: &str, repo: &str, data_id: &str) -> String {
     format!("{}/{org}/{repo}/data/{data_id}", library_client_base_url())
 }
 
+/// URL that opens a shared document in the Library client.
+///
+/// Mirrors the client's `/s/$token` route. Deliberately carries no org,
+/// repo or record id: the point of a share link is that the URL reveals
+/// nothing about the private repo behind it.
+pub fn share_url(token: &str) -> String {
+    format!("{}/s/{token}", library_client_base_url())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,6 +70,18 @@ mod tests {
             assert_eq!(
                 data_url("quantum-box", "corporate", "data_123"),
                 "https://planetlibrary.example/quantum-box/corporate/data/data_123"
+            );
+        });
+    }
+
+    /// A share URL must carry the token and nothing else: leaking the
+    /// org or repo name in it would undo the reason the route exists.
+    #[test]
+    fn share_url_names_only_the_token() {
+        with_base_url(Some("https://planetlibrary.example"), || {
+            assert_eq!(
+                share_url("shr_deadbeef"),
+                "https://planetlibrary.example/s/shr_deadbeef"
             );
         });
     }

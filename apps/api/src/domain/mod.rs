@@ -3,6 +3,7 @@ mod organization;
 pub mod policy;
 pub mod repo;
 mod role;
+pub mod share_link;
 // Not glob re-exported: `source_hash` and `LanguageTag` are generic
 // enough that pulling them into `domain::*` would be confusing.
 pub mod translation;
@@ -12,6 +13,7 @@ pub use organization::*;
 pub use policy::*;
 pub use repo::*;
 pub use role::*;
+pub use share_link::*;
 
 use once_cell::sync::Lazy;
 use value_object::TenantId;

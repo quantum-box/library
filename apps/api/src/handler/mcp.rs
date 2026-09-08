@@ -27,16 +27,18 @@ use crate::handler::library_executor_extractor::{
     CallerAuthApp, LibraryExecutor, LibraryExecutorKind,
 };
 use crate::sdk_auth::SdkAuthApp;
-use crate::usecase::library_client_url::data_url;
+use crate::usecase::library_client_url::{data_url, share_url};
 use crate::usecase::markdown_composer::compose_markdown;
 use crate::usecase::{
     AddDataInputData, AddPropertyInputData, ChangeRepoUsernameInputData,
     CreateOrganizationInputData, CreateRepoInputData,
-    CreateSourceInputData, DeleteDataInputData, DeletePropertyInputData,
-    DeleteRepoInputData, DeleteSourceInputData, FindSourcesInputData,
-    GetPropertiesInputData, GetSourceInputData, LibraryOrg,
-    PropertyDataInputData, PropertyDataValueInputData, SearchDataInputData,
-    SearchRepoInputData, UpdateDataInputData, UpdateOrganizationInputData,
+    CreateShareLinkInputData, CreateSourceInputData, DeleteDataInputData,
+    DeletePropertyInputData, DeleteRepoInputData, DeleteSourceInputData,
+    FindSourcesInputData, GetPropertiesInputData, GetSourceInputData,
+    LibraryOrg, ListShareLinksInputData, PropertyDataInputData,
+    PropertyDataValueInputData, RevokeShareLinkInputData,
+    SearchDataInputData, SearchRepoInputData, ShareLinkRepoTarget,
+    UpdateDataInputData, UpdateOrganizationInputData,
     UpdatePropertyInputData, UpdateRepoInputData, UpdateSourceInputData,
     UpsertDataInputData, ViewDataInputData, ViewDataListInputData,
     ViewOrgInputData, ViewRepoInputData,
@@ -212,6 +214,21 @@ struct DeleteDataArgs {
     org: String,
     repo: String,
     data_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateShareLinkArgs {
+    org: String,
+    repo: String,
+    data_id: String,
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RevokeShareLinkArgs {
+    org: String,
+    repo: String,
+    share_link_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -613,6 +630,23 @@ async fn call_tool(
             let output = upsert_data(library_app, auth, args).await?;
             Ok(tool_text_result(output))
         }
+        "create_share_link" => {
+            let args: CreateShareLinkArgs =
+                parse_tool_args(params.arguments)?;
+            let output = create_share_link(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "list_share_links" => {
+            let args: DeleteDataArgs = parse_tool_args(params.arguments)?;
+            let output = list_share_links(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "revoke_share_link" => {
+            let args: RevokeShareLinkArgs =
+                parse_tool_args(params.arguments)?;
+            let output = revoke_share_link(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
         "get_org" => {
             let args: OrgArgs = parse_tool_args(params.arguments)?;
             let output = get_org(library_app, auth, args).await?;
@@ -906,6 +940,110 @@ async fn upsert_data(
     Ok(
         json!({ "data": data_to_mcp(&data, &properties, &args.org, &args.repo), "outcome": outcome }),
     )
+}
+
+/// The one place a share token is ever visible.
+///
+/// library-api stores only its SHA-256, so a caller that loses this
+/// response cannot recover the link -- it has to mint another and revoke
+/// this one.
+async fn create_share_link(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: CreateShareLinkArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "create_share_link")?;
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let created = library_app
+        .share_links
+        .create(&CreateShareLinkInputData {
+            target: ShareLinkRepoTarget {
+                executor: &executor,
+                multi_tenancy: &library_org,
+                org_username: &args.org,
+                repo_username: &args.repo,
+            },
+            data_id: &args.data_id,
+            name: args.name.as_deref(),
+        })
+        .await
+        .map_err(tool_execution_error)?;
+
+    let token = created.token.as_str();
+    Ok(json!({
+        "share_link": share_link_to_mcp(&created.link),
+        "url": share_url(token),
+        "token": token,
+    }))
+}
+
+async fn list_share_links(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: DeleteDataArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "list_share_links")?;
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let links = library_app
+        .share_links
+        .list(&ListShareLinksInputData {
+            target: ShareLinkRepoTarget {
+                executor: &executor,
+                multi_tenancy: &library_org,
+                org_username: &args.org,
+                repo_username: &args.repo,
+            },
+            data_id: &args.data_id,
+        })
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({
+        "share_links": links.iter().map(share_link_to_mcp).collect::<Vec<_>>(),
+    }))
+}
+
+async fn revoke_share_link(
+    library_app: Arc<LibraryApp>,
+    auth: McpAuthContext,
+    args: RevokeShareLinkArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "revoke_share_link")?;
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let link = library_app
+        .share_links
+        .revoke(&RevokeShareLinkInputData {
+            target: ShareLinkRepoTarget {
+                executor: &executor,
+                multi_tenancy: &library_org,
+                org_username: &args.org,
+                repo_username: &args.repo,
+            },
+            share_link_id: &args.share_link_id,
+        })
+        .await
+        .map_err(tool_execution_error)?;
+
+    Ok(json!({ "share_link": share_link_to_mcp(&link) }))
+}
+
+/// A link without its secret -- the shape every response but the create
+/// one can carry.
+fn share_link_to_mcp(link: &crate::domain::ShareLink) -> Value {
+    json!({
+        "id": link.id().to_string(),
+        "name": link.name().as_ref().map(|name| name.to_string()),
+        "data_id": link.data_id(),
+        "created_at": link.created_at().to_rfc3339(),
+        "revoked_at": link.revoked_at().map(|at| at.to_rfc3339()),
+        "active": !link.is_revoked(),
+    })
 }
 
 async fn list_data(
@@ -2133,6 +2271,46 @@ fn tools_list_result(is_authenticated: bool) -> Value {
                 "inputSchema": data_write_schema(["org", "repo", "data_id", "name"])
             }),
             json!({
+                "name": "create_share_link",
+                "description": "Mint a read-only link to one record, openable without a Library account. Made for handing a document in a private repository to someone outside the tenant. The token is returned once and cannot be shown again; reuse the returned url rather than minting a link per message.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "data_id": { "type": "string" },
+                        "name": { "type": "string", "description": "Label shown beside the link in the owner's list." }
+                    },
+                    "required": ["org", "repo", "data_id"]
+                }
+            }),
+            json!({
+                "name": "list_share_links",
+                "description": "List the share links a record has, without their tokens. Use it to find the link to revoke.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "data_id": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "data_id"]
+                }
+            }),
+            json!({
+                "name": "revoke_share_link",
+                "description": "Stop a share link from opening its record. The link stays listed, marked inactive.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "share_link_id": { "type": "string" }
+                    },
+                    "required": ["org", "repo", "share_link_id"]
+                }
+            }),
+            json!({
                 "name": "create_org",
                 "description": "Create a Library organization.",
                 "inputSchema": {
@@ -2713,6 +2891,9 @@ fn requires_auth_tool(name: &str) -> bool {
             | "update_data"
             | "upsert_data"
             | "delete_data"
+            | "create_share_link"
+            | "list_share_links"
+            | "revoke_share_link"
             | "create_property"
             | "update_property"
             | "delete_property"

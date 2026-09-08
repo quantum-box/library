@@ -384,6 +384,7 @@ interface LibraryRestPropertyResponse {
   id: string
   name: string
   property_type: string
+  options?: LibrarySelectOption[]
 }
 
 export interface LibraryRepoTableData {
@@ -1781,7 +1782,10 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
     id: property.id,
     name: property.name,
     typ: normalizeLibraryPropertyType(property.property_type),
-    meta: null,
+    // A Select value stores its option id, so without these the cell has
+    // nothing to render but `op_...`. The GraphQL path already carries
+    // them; REST readers were seeing raw ids.
+    meta: property.options ? { options: property.options } : null,
   }
 }
 
@@ -2102,6 +2106,172 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestDataDetail(dataId, resolvedTarget)
+  }
+}
+
+/**
+ * One read-only share link, as its owner sees it.
+ *
+ * There is no token here on purpose: library-api stores only the token's
+ * SHA-256, so a link's secret exists exactly once, in the response that
+ * created it. Losing it means minting a new link and revoking this one.
+ */
+export interface LibraryShareLink {
+  id: string
+  name: string | null
+  dataId: string
+  createdBy: string | null
+  createdAt: string
+  revokedAt: string | null
+  /** Whether the link still opens the document. */
+  active: boolean
+}
+
+export interface CreatedLibraryShareLink extends LibraryShareLink {
+  token: string
+  /** The address to hand out. Points at this client's `/s/$token` route. */
+  url: string
+}
+
+/**
+ * What a share token resolves to: exactly one document, and nothing else.
+ *
+ * No organization or repository name: those belong to the private
+ * repository the document lives in, and the token shared the document,
+ * not the collection.
+ */
+export interface SharedLibraryData {
+  item: LibraryDataItem
+  properties: LibraryProperty[]
+}
+
+interface LibraryRestShareLinkResponse {
+  id: string
+  name?: string | null
+  dataId: string
+  createdBy?: string | null
+  createdAt: string
+  revokedAt?: string | null
+  active: boolean
+}
+
+function restShareLinkToLibraryShareLink(
+  link: LibraryRestShareLinkResponse
+): LibraryShareLink {
+  return {
+    id: link.id,
+    name: link.name ?? null,
+    dataId: link.dataId,
+    createdBy: link.createdBy ?? null,
+    createdAt: link.createdAt,
+    revokedAt: link.revokedAt ?? null,
+    active: link.active,
+  }
+}
+
+/**
+ * Mint a read-only link to one document.
+ *
+ * REST only: sharing is not in the GraphQL schema, and adding a fallback
+ * would mean two authorization paths for the one operation that hands a
+ * private document to people outside the tenant.
+ */
+export async function createLibraryShareLink(
+  dataId: string,
+  target: LibraryRepoTarget,
+  name?: string
+): Promise<CreatedLibraryShareLink> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}/share-links`,
+    {
+      method: 'POST',
+      headers: await libraryRestHeaders(target.operatorId),
+      body: JSON.stringify({ name: name ?? null }),
+    }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library share link creation failed: ${response.status}`,
+      response.status
+    )
+  }
+  const payload = await response.json() as LibraryRestShareLinkResponse & {
+    token: string
+    url: string
+  }
+  return {
+    ...restShareLinkToLibraryShareLink(payload),
+    token: payload.token,
+    url: payload.url,
+  }
+}
+
+export async function fetchLibraryShareLinks(
+  dataId: string,
+  target: LibraryRepoTarget
+): Promise<LibraryShareLink[]> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${dataId}/share-links`,
+    { headers: await libraryRestHeaders(target.operatorId) }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library share link listing failed: ${response.status}`,
+      response.status
+    )
+  }
+  const payload = await response.json() as {
+    share_links?: LibraryRestShareLinkResponse[]
+  }
+  return (payload.share_links ?? []).map(restShareLinkToLibraryShareLink)
+}
+
+export async function revokeLibraryShareLink(
+  shareLinkId: string,
+  target: LibraryRepoTarget
+): Promise<LibraryShareLink> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/share-links/${shareLinkId}`,
+    { method: 'DELETE', headers: await libraryRestHeaders(target.operatorId) }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library share link revocation failed: ${response.status}`,
+      response.status
+    )
+  }
+  return restShareLinkToLibraryShareLink(
+    await response.json() as LibraryRestShareLinkResponse
+  )
+}
+
+/**
+ * Redeem a share token.
+ *
+ * Sent with no Authorization, no operator and no platform header: the token
+ * is the whole credential, and a signed-in owner opening their own link has
+ * to see what the recipient sees rather than their privileged read.
+ */
+export async function fetchSharedLibraryData(
+  token: string
+): Promise<SharedLibraryData> {
+  const response = await fetch(
+    `${configuredLibraryApiBaseUrl()}/v1beta/share/${encodeURIComponent(token)}`,
+    { headers: { accept: 'application/json' } }
+  )
+  if (!response.ok) {
+    throw new RecordApiError(
+      `Library shared document request failed: ${response.status}`,
+      response.status
+    )
+  }
+  const payload = await response.json() as {
+    data: LibraryRestDataResponse
+    properties: LibraryRestPropertyResponse[]
+  }
+  return {
+    item: restDataToLibraryDataItem(payload.data),
+    properties: (payload.properties ?? []).map(restPropertyToLibraryProperty),
   }
 }
 

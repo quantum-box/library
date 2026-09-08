@@ -314,5 +314,8 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
             PropertyType::Id(type_id) => Some(type_id.auto_generate),
             _ => None,
         },
+        options: crate::handler::types::property_select_options(
+            property.property_type(),
+        ),
     }
 }

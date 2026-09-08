@@ -45,6 +45,14 @@ Writing and reporting:
 - Keep the document small. `POST /mcp` accepts about 2 MiB per request and an Html value is capped at 3 MiB, so a large image embedded as a data URI is rejected. Prefer inline SVG, CSS, and small assets; leave large media out or link to it by URL.
 - Report the returned `url` and Data ID. Private repositories are readable by organization members after signing in; a public repository serves the same page anonymously under `/public/<org>/<repo>/<data_id>`.
 
+Sharing a page from a private repository:
+
+- When the reader has no Library account — a client, a reviewer outside the tenant — call `create_share_link` with the `org`, `repo` and `data_id`, and hand back the returned `url`. It opens that one record, read-only, without signing in.
+- The token is shown once. Nothing stores it in recoverable form, so record the `url` in the reply that mints it; a link that is lost can only be replaced by a new one.
+- One link is one record. Sharing a second page means a second link, and neither reaches anything else in the repository.
+- Reuse the link a page already has instead of minting one per message: `list_share_links` returns them, without their tokens. `revoke_share_link` stops one working.
+- A public repository is refused: `/public/<org>/<repo>/<data_id>` is already anonymous there, and it is the address to hand out.
+
 ## Write data
 
 - Work within the user's requested target and changes. Use the live tool input schema as the authority.
