@@ -2518,6 +2518,16 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
 
+    // The platform probes the deployment root to decide whether a build is
+    // serving. Upstream answers 404 there, which reads as a dead deployment
+    // and leaves a preview URL unverified and its deployment recorded failed.
+    if (url.pathname === '/') {
+      return new Response(
+        JSON.stringify({ status: 'ok', service: 'library-client-sync' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+
     if (url.pathname === LIVE_SESSION_PATH || url.pathname === LIVE_WEBSOCKET_PATH) {
       const denied = liveAccessFailure(request, env)
       if (denied) return denied

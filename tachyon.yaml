@@ -268,6 +268,45 @@ spec:
           value: ap-northeast-1
         - name: VITE_LIBRARY_DOCS_URL
           value: https://library-user-guide.txcloud.app
+    # 画面 (library-client) と対になる realtime Worker。`/ws` の records sync と
+    # data editor の Photon Live room を持つ。
+    #
+    # 以前は `npm run worker:deploy` の手動デプロイだけだった。Pages 側だけが main に
+    # 追従して Worker が取り残され、2026-09-08 には 09-05 版が本番に残ったまま
+    # Live が全 record で 409 を返し続けた（クライアントは WebSocket handshake の
+    # 応答コードを読めないため「オフライン中」のまま再接続を繰り返す）。
+    # 画面と同じ経路で main から出るようにする。
+    - name: library-client-sync
+      repository:
+        url: https://github.com/quantum-box/library
+        owner: quantum-box
+        name: library
+        defaultBranch: main
+      rootDirectory: apps/client
+      # 画面 (library-client) は apps/client/** 全体を見る。Worker はバンドルに
+      # 入るものだけに絞り、UI だけの変更で本番 Worker を差し替えない。
+      watchPaths:
+        - apps/client/workers/**
+        - apps/client/wrangler.jsonc
+        - apps/client/package.json
+        - apps/client/package-lock.json
+        - tachyon.yaml
+      framework: worker
+      deploymentTarget: cloudflare_workers
+      build:
+        runnerBackend: kubernetes_kata
+        # wrangler が workers/sync/index.ts を直接バンドルするので build 成果物は無い。
+        # 依存 (@quantum-box/photon/worker, yjs, y-protocols, wrangler 自体) の
+        # install だけが要る。apps/client は yarn workspace ではなく npm 管理。
+        installCommand: npm ci --ignore-scripts
+        nodeVersion: "22"
+      # `/` は 404 を返す。明示しないと serving smoke が落ちてデプロイが failed に
+      # 記録され、txcloud.app URL が発行されない (SOL-431)。
+      readinessProof:
+        path: /api/health
+      # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
+      # cloudflare_workers ターゲットは repo の wrangler 設定をそのまま使うため、
+      # ここで envVars や worker.generateConfig を宣言すると二重管理になる。
 ---
 # Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
 # (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が
