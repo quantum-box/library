@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-09 - content Property を UI から消せるようにする
+
+- Repository 設定のプロパティ一覧で、名前が `content` のプロパティだけ削除
+  ボタンが常に disabled だった。保護リストに名前がハードコードされていて、
+  型に関係なく効いていたため。API 側は削除を許しており、UI だけの制限。
+- `create_repo` は必ず RichText の `content` を作る。一方 client は本文に
+  RichText を Html より優先するので、Html アーティファクト用の repo では
+  `content` を消さないと artifact が本文にならない。UI からその repo を
+  仕上げる経路が無く、MCP か CLI に降りるしかなかった。
+- 保護するのはレコードのキーとタイムスタンプ (`id` / `name` / `createdat` /
+  `updatedat`) だけにした。`ext_` のシステム Property と、client が型を
+  知らない Property の読み取り専用扱いは従来どおり。
+
 ## 2026-09-08 - HTML アーティファクトの全画面表示
 
 - Html Property のプレビューに全画面ボタンを足した。artifact は 1 ページ丸ごと
