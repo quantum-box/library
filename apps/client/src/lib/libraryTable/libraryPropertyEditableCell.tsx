@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 import type { LibraryDataItem, LibraryProperty } from '../recordsApi'
 import { getLibraryDataPropertyValue, propertyValueEditText } from './libraryPropertyFormat'
 import {
@@ -9,11 +10,11 @@ import {
   mergeLibraryDataProperty,
   parseEditablePropertyValue,
 } from './libraryPropertyInput'
-import { LibraryPropertyCell } from './libraryPropertyCells'
+import { LibraryPropertyCell, checkboxClassName } from './libraryPropertyCells'
 import { t } from '../../i18n'
 
 const editableFieldClassName =
-  'w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none'
+  'w-full rounded-md border border-primary bg-background px-1.5 py-1 text-sm text-foreground outline-none ring-2 ring-ring/30'
 
 function EditableTextInput({
   value,
@@ -111,7 +112,7 @@ function EditableSelect({
       ref={selectRef}
       data-testid={testId}
       defaultValue={value}
-      className="w-full rounded border border-accent bg-canvas px-1 py-0.5 text-sm text-foreground outline-none"
+      className="w-full rounded-md border border-primary bg-background px-1.5 py-1 text-sm text-foreground outline-none ring-2 ring-ring/30"
       onClick={(event) => event.stopPropagation()}
       onBlur={onCancel}
       onChange={(event) => {
@@ -154,23 +155,29 @@ export function LibraryPropertyEditableCell({
   if (property.typ === 'Boolean') {
     const checked = currentValue?.boolean === true
     return (
-      <div className="min-w-0 px-1" data-testid={`library-editable-cell-${property.id}`}>
-        <input
-          type="checkbox"
-          data-testid={`library-editable-input-${property.id}`}
-          checked={checked}
-          disabled={disabled}
-          aria-label={t('common.editNamed', { name: property.name })}
-          className="size-3.5 rounded border-input accent-primary disabled:opacity-50"
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) => {
-            onCommit(
-              mergeLibraryDataProperty(item, property.id, {
-                boolean: event.target.checked,
-              }),
-            )
-          }}
-        />
+      <div className="min-w-0" data-testid={`library-editable-cell-${property.id}`}>
+        <span className="relative inline-flex">
+          <input
+            type="checkbox"
+            data-testid={`library-editable-input-${property.id}`}
+            checked={checked}
+            disabled={disabled}
+            aria-label={t('common.editNamed', { name: property.name })}
+            className={`${checkboxClassName} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50`}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              onCommit(
+                mergeLibraryDataProperty(item, property.id, {
+                  boolean: event.target.checked,
+                }),
+              )
+            }}
+          />
+          <Check
+            className="pointer-events-none absolute inset-0 m-auto size-3 text-primary-foreground opacity-0 peer-checked:opacity-100"
+            aria-hidden="true"
+          />
+        </span>
       </div>
     )
   }
@@ -231,7 +238,7 @@ export function LibraryPropertyEditableCell({
 
   return (
     <div
-      className={`min-w-0 rounded px-1 ${disabled ? '' : 'cursor-text'} ${singleClick ? 'hover:bg-muted/60' : ''}`}
+      className={`-mx-1 min-w-0 rounded px-1 ${disabled ? '' : 'cursor-text'} ${singleClick ? 'transition-colors hover:bg-muted/60' : ''}`}
       data-testid={`library-editable-cell-${property.id}`}
       title={disabled
         ? undefined

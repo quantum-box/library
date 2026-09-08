@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import type { LibraryDataItem, LibraryProperty, LibraryPropertyDataValue } from '../recordsApi'
 import {
   getLibraryDataPropertyValue,
@@ -6,6 +7,16 @@ import {
 } from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
 import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
+
+/**
+ * One checkbox look for the whole table.
+ *
+ * The platform control is drawn over rather than accented: a native checkbox
+ * renders as a filled grey square when it is unset, which on a dark table
+ * reads as a value rather than as an empty box.
+ */
+export const checkboxClassName =
+  'peer size-4 shrink-0 appearance-none rounded-[4px] border border-border-strong bg-transparent transition-colors checked:border-primary checked:bg-primary'
 
 function optionLabel(property: LibraryProperty, optionId: string | undefined) {
   if (!optionId) return undefined
@@ -52,20 +63,20 @@ function bodyCell(
   value: LibraryPropertyDataValue
 ) {
   const cell = propertyCellText(property, value)
-  if (!cell?.text) return <span className="text-xs text-subtle">—</span>
+  if (!cell?.text) return <span className="text-xs text-subtle-foreground">—</span>
   return <BodyTextCell text={cell.text} truncated={cell.truncated} />
 }
 
 function BadgeCell({ labels }: { labels: string[] }) {
   if (labels.length === 0) {
-    return <span className="text-xs text-subtle">—</span>
+    return <span className="text-xs text-subtle-foreground">—</span>
   }
   return (
     <div className="flex flex-wrap gap-1">
       {labels.map((label) => (
         <span
           key={label}
-          className="rounded bg-surface-hover px-1.5 py-0.5 text-xs text-muted"
+          className="inline-flex max-w-full items-center truncate rounded-full border border-border bg-surface px-2 py-0.5 text-2xs font-medium text-muted-foreground"
         >
           {label}
         </span>
@@ -81,14 +92,20 @@ function BadgeCell({ labels }: { labels: string[] }) {
  */
 export function BooleanCell({ checked }: { checked: boolean }) {
   return (
-    <input
-      type="checkbox"
-      checked={checked}
-      readOnly
-      tabIndex={-1}
-      aria-hidden="true"
-      className="pointer-events-none size-3.5 rounded border-input accent-primary"
-    />
+    <span className="relative inline-flex">
+      <input
+        type="checkbox"
+        checked={checked}
+        readOnly
+        tabIndex={-1}
+        aria-hidden="true"
+        className={checkboxClassName}
+      />
+      <Check
+        className="pointer-events-none absolute inset-0 m-auto size-3 text-primary-foreground opacity-0 peer-checked:opacity-100"
+        aria-hidden="true"
+      />
+    </span>
   )
 }
 
@@ -101,7 +118,7 @@ function renderByTyp(
     return <BooleanCell checked={value?.boolean === true} />
   }
   if (!value || isEmptyPropertyValue(value)) {
-    return <span className="text-xs text-subtle">—</span>
+    return <span className="text-xs text-subtle-foreground">—</span>
   }
 
   if (typ === 'Select') {
@@ -126,10 +143,10 @@ function renderByTyp(
         href={value.url}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex max-w-full items-center gap-2 truncate text-xs text-accent"
+        className="inline-flex max-w-full items-center gap-2 truncate text-xs text-primary hover:underline"
         onClick={(event) => event.stopPropagation()}
       >
-        <img src={value.url} alt="" className="h-6 w-6 rounded object-cover" />
+        <img src={value.url} alt="" className="size-6 rounded border border-border object-cover" />
         <span className="truncate">{t('propertyType.image')}</span>
       </a>
     )
@@ -153,7 +170,11 @@ function renderByTyp(
   }
 
   if (typ === 'Id' && value.id) {
-    return <span className="font-mono text-xs text-subtle">{value.id}</span>
+    return (
+      <span className="block truncate font-mono text-2xs text-subtle-foreground" title={value.id}>
+        {value.id}
+      </span>
+    )
   }
 
   if (typ === 'Html' || typ === 'Markdown' || typ === 'RichText') {
@@ -161,7 +182,7 @@ function renderByTyp(
   }
 
   const text = propertyValueText(property, value)
-  return text ? <PlainTextCell text={text} /> : <span className="text-xs text-subtle">—</span>
+  return text ? <PlainTextCell text={text} /> : <span className="text-xs text-subtle-foreground">—</span>
 }
 
 export function LibraryPropertyCell({
@@ -173,7 +194,7 @@ export function LibraryPropertyCell({
 }) {
   const value = getLibraryDataPropertyValue(item, property.id)
   return (
-    <div data-testid={`library-cell-${property.id}`} className="min-w-0 px-1">
+    <div data-testid={`library-cell-${property.id}`} className="min-w-0">
       {renderByTyp(property, value)}
     </div>
   )

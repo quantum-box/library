@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
+import { en } from '../../i18n/messages/en'
 import { FileChip } from './FileChip'
 
 const meta = {
@@ -50,7 +51,11 @@ export const Spreadsheet: Story = {
     await expect(canvas.getByText(/XLSX\s+·\s+1\.1 MB/)).toBeVisible()
 
     await userEvent.hover(canvas.getByText('release-matrix.xlsx'))
-    await userEvent.click(canvas.getByRole('button'))
+    await userEvent.click(
+      canvas.getByRole('button', {
+        name: en['files.removeNamed'].replace('{name}', 'release-matrix.xlsx'),
+      })
+    )
     await expect(args.onRemove).toHaveBeenCalledWith('file-xlsx')
     await expect(args.onPreview).not.toHaveBeenCalled()
   },

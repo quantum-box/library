@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { mockDatabaseRecords } from '../data/mock'
+import { en } from '../i18n/messages/en'
 import { TableView } from './TableView'
 
 const tableRecords = mockDatabaseRecords.slice(0, 24)
@@ -56,7 +57,10 @@ export const CreateInline: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: /new data/i }))
-    await userEvent.type(canvas.getByPlaceholderText('Data name を入力して Enter...'), 'Storybook database record{Enter}')
+    await userEvent.type(
+      canvas.getByPlaceholderText(en['table.newRecordPlaceholder']),
+      'Storybook database record{Enter}'
+    )
     await expect(args.onCreateRecord).toHaveBeenCalledWith({
       title: 'Storybook database record',
     })

@@ -12,6 +12,10 @@
 /* ─── Library Design Tokens ────────────────────────────────────── */
 
 :root {
+  /* Native controls -- checkboxes, selects, date pickers, scrollbars -- draw
+     themselves from this. Without it a dark screen renders them on white. */
+  color-scheme: light;
+
   /* Layout */
   --sidebar-width: 188px;
   --detail-width: 380px;
@@ -70,6 +74,7 @@
 
 /* Light theme */
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #ffffff;
   --bg-sidebar: #f8fafc;
   --bg-surface: #ffffff;
@@ -118,6 +123,7 @@
 
 /* Dark theme */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg-primary: #020817;
   --bg-sidebar: #0f172a;
   --bg-surface: #020817;

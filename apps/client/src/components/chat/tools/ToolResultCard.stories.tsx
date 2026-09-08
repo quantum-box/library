@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
+import { en } from '../../../i18n/messages/en'
 import { ToolResultCard } from './ToolResultCard'
 
 const meta = {
@@ -76,7 +77,7 @@ export const DatabaseSearchEmpty: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Database Search')).toBeVisible()
     await expect(canvas.getByText(/0 records matched/)).toBeVisible()
-    await expect(canvas.getByText('No matching records.')).toBeVisible()
+    await expect(canvas.getByText(en['tool.noMatchingData'])).toBeVisible()
   },
 }
 
@@ -94,7 +95,7 @@ export const Running: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Create Record')).toBeVisible()
     await expect(canvas.getByText('Updating...')).toBeVisible()
-    await expect(canvas.getByText('Reading the database record store...')).toBeVisible()
+    await expect(canvas.getByText(en['tool.readingLibraryData'])).toBeVisible()
   },
 }
 

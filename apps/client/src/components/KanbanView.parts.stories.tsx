@@ -138,7 +138,7 @@ export const EmptyStatusColumn: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('In Review')).toBeVisible()
-    await expect(canvas.getByText('No records')).toBeVisible()
+    await expect(canvas.getByText('No data')).toBeVisible()
   },
 }
 

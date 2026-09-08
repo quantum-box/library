@@ -122,6 +122,22 @@ export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
   return libraryPropertyTypeByWireValue[typ.toUpperCase()] ?? typ
 }
 
+/**
+ * The wire spelling of a Property type, for the mutations that write one back.
+ *
+ * A listing hands types over normalized to PascalCase, and the Property
+ * mutations take the API's own SCREAMING_SNAKE, so anything that edits a
+ * Property it read from a listing has to travel back through here.
+ */
+export function libraryPropertyTypeWireValue(typ: string): string {
+  const upper = typ.toUpperCase()
+  if (libraryPropertyTypeByWireValue[upper]) return upper
+  const match = Object.entries(libraryPropertyTypeByWireValue).find(
+    ([, pascal]) => pascal === typ,
+  )
+  return match ? match[0] : upper
+}
+
 function normalizeLibraryProperty(property: LibraryProperty): LibraryProperty {
   return { ...property, typ: normalizeLibraryPropertyType(property.typ) }
 }

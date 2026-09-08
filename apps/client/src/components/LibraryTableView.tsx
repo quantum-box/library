@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input } from '@tachyon-sdk/native-ui'
-import { Plus, RefreshCw, Rows3, Search, Trash2 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  ArrowUpRight,
+  Inbox,
+  Plus,
+  RefreshCw,
+  Rows3,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import {
   createColumnHelper,
   flexRender,
@@ -11,7 +28,19 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { fetchLibraryRepoTableData, libraryPageSize, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
+import {
+  fetchLibraryRepoTableData,
+  libraryPageSize,
+  normalizeLibraryPropertyType,
+  type LibraryDataItem,
+  type LibraryProperty,
+} from '../lib/recordsApi'
+import {
+  createRepositoryProperty,
+  deleteRepositoryProperty,
+  updateRepositoryProperty,
+  type RepositoryPropertyType,
+} from '../lib/repositorySettingsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
   getLibraryDataPropertyValue,
@@ -23,12 +52,39 @@ import {
   LibraryNameEditableCell,
   LibraryPropertyEditableCell,
 } from '../lib/libraryTable/libraryPropertyEditableCell'
+import { newPropertyDraft, propertyRenameDraft } from '../lib/libraryTable/propertyDrafts'
+import {
+  emptyTableLayout,
+  loadTableLayout,
+  orderedProperties,
+  reorderProperties,
+  resetTableLayout,
+  saveTableLayout,
+  setColumnWidth,
+  togglePropertyHidden,
+  visibleProperties,
+  type LibraryTableLayout,
+} from '../lib/libraryTable/tableLayout'
+import { LibraryTableColumnHeader } from './libraryTable/LibraryTableColumnHeader'
+import { AddPropertyMenu } from './libraryTable/AddPropertyMenu'
+import { ColumnVisibilityMenu } from './libraryTable/ColumnVisibilityMenu'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { Kbd, KbdGroup } from './Kbd'
 import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import { useI18n, t as translate, collator } from '../i18n'
 
-const ROW_HEIGHT = 40
+const ROW_HEIGHT = 44
+const ACTIONS_COLUMN_WIDTH = 44
+const ADD_COLUMN_WIDTH = 44
+const MIN_COLUMN_WIDTH = 80
+
+/** What a column is worth before anyone drags its edge. */
+function defaultColumnWidth(property: LibraryProperty): number {
+  if (property.typ === 'Markdown' || property.typ === 'Html' || property.typ === 'RichText') return 260
+  if (property.typ === 'Boolean') return 96
+  if (property.typ === 'Id') return 200
+  return 160
+}
 /* A card is taller than a table row and its height varies with how many
    properties carry a value, so this is only the first guess the virtualizer
    corrects by measuring. */
@@ -92,8 +148,8 @@ function LibraryDataCard({
       role="button"
       tabIndex={0}
       aria-current={selected ? 'true' : undefined}
-      className={`w-full rounded-md border p-3 text-left transition-colors ${
-        selected ? 'border-accent bg-surface-hover' : 'border-border bg-surface'
+      className={`w-full rounded-lg border p-3.5 text-left shadow-soft transition-colors ${
+        selected ? 'border-primary bg-selected' : 'border-border bg-surface'
       }`}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -113,7 +169,7 @@ function LibraryDataCard({
         <button
           type="button"
           data-testid={`library-table-delete-${item.id}`}
-          className="-my-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded text-subtle hover:text-status-cancelled"
+          className="-my-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded-md text-subtle-foreground hover:bg-destructive/10 hover:text-destructive"
           disabled={disabled}
           aria-label={t('repoSettings.deleteNamed', { name: item.name })}
           onClick={(event) => {
@@ -128,7 +184,7 @@ function LibraryDataCard({
       {shownProperties.length > 0 && (
         <dl className="mt-2 space-y-1">
           {shownProperties.map(({ property, text }) => (
-            <div key={property.id} className="flex min-w-0 items-baseline gap-2 text-xs">
+            <div key={property.id} className="flex min-w-0 items-baseline gap-3 text-xs">
               <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
               <dd className="min-w-0 flex-1 truncate text-right text-foreground">{text}</dd>
             </div>
@@ -137,7 +193,7 @@ function LibraryDataCard({
       )}
 
       {item.updatedAt && (
-        <div className="mt-2 text-2xs text-subtle-foreground">
+        <div className="mt-2.5 border-t border-border/60 pt-2 text-2xs text-subtle-foreground">
           {t('table.column.updated')} ·{' '}
           {formatDate(item.updatedAt, { month: 'short', day: 'numeric' }) ?? item.updatedAt}
         </div>
@@ -179,6 +235,9 @@ export function LibraryTableView({
    */
   const listing = useRef(0)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  /** A Property mutation in flight, and what it said when it failed. */
+  const [propertyBusy, setPropertyBusy] = useState(false)
+  const [propertyError, setPropertyError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
   const [newRowName, setNewRowName] = useState('')
@@ -197,6 +256,29 @@ export function LibraryTableView({
   const repoTarget = useMemo(
     () => ({ org, repo, operatorId, repoName: repoLabel }),
     [org, repo, operatorId, repoLabel]
+  )
+
+  /** What the Property mutations address: the repository, by username. */
+  const propertyTarget = useMemo(
+    () => ({ orgUsername: org, repoUsername: repo, ...(operatorId ? { operatorId } : {}) }),
+    [operatorId, org, repo]
+  )
+
+  /**
+   * The column arrangement for this repository, read once per repository and
+   * written back on every change so the table opens the way it was left.
+   */
+  const [layout, setLayout] = useState<LibraryTableLayout>(emptyTableLayout)
+  useEffect(() => {
+    setLayout(loadTableLayout(org, repo))
+  }, [org, repo])
+
+  const updateLayout = useCallback(
+    (next: LibraryTableLayout) => {
+      setLayout(next)
+      saveTableLayout(org, repo, next)
+    },
+    [org, repo]
   )
 
   const reload = useCallback(async () => {
@@ -355,18 +437,174 @@ export function LibraryTableView({
     }
   }, [onDataDeleted, pendingDelete, repoTarget])
 
+  /** Every Property in the reader's order, hidden ones included. */
+  const arrangedProperties = useMemo(
+    () => orderedProperties(properties, layout),
+    [layout, properties]
+  )
+  const shownProperties = useMemo(
+    () => visibleProperties(properties, layout),
+    [layout, properties]
+  )
+
+  const columnWidth = useCallback(
+    (columnId: string, fallback: number) => layout.widths[columnId] ?? fallback,
+    [layout.widths]
+  )
+
+  const handleCreateProperty = useCallback(
+    async (name: string, type: RepositoryPropertyType) => {
+      setPropertyBusy(true)
+      setPropertyError(null)
+      try {
+        const created = await createRepositoryProperty(propertyTarget, newPropertyDraft(name, type))
+        setProperties((current) => [
+          ...current,
+          {
+            id: created.id,
+            name: created.name,
+            typ: normalizeLibraryPropertyType(created.typ),
+            // The two Property shapes disagree about whether an option carries
+            // an id: the settings API models one that has not been saved yet,
+            // and a Property coming back from the server always has.
+            meta: created.meta?.options
+              ? {
+                  options: created.meta.options
+                    .filter((option) => Boolean(option.id))
+                    .map((option) => ({
+                      id: option.id as string,
+                      key: option.key,
+                      name: option.name,
+                    })),
+                }
+              : null,
+          },
+        ])
+        return true
+      } catch (createError: unknown) {
+        setPropertyError(repositoryLoadErrorMessage(createError))
+        return false
+      } finally {
+        setPropertyBusy(false)
+      }
+    },
+    [propertyTarget]
+  )
+
+  const handleRenameProperty = useCallback(
+    async (property: LibraryProperty, name: string) => {
+      setPropertyBusy(true)
+      setMutationError(null)
+      // Renamed on screen first: the header is what the reader just typed in,
+      // and a round trip that fails puts the old name back below.
+      setProperties((current) =>
+        current.map((entry) => (entry.id === property.id ? { ...entry, name } : entry))
+      )
+      try {
+        await updateRepositoryProperty(
+          propertyTarget,
+          property.id,
+          propertyRenameDraft(property, name)
+        )
+      } catch (renameError: unknown) {
+        setProperties((current) =>
+          current.map((entry) => (entry.id === property.id ? property : entry))
+        )
+        setMutationError(repositoryLoadErrorMessage(renameError))
+      } finally {
+        setPropertyBusy(false)
+      }
+    },
+    [propertyTarget]
+  )
+
+  const handleDeleteProperty = useCallback(
+    async (property: LibraryProperty) => {
+      setPropertyBusy(true)
+      setMutationError(null)
+      try {
+        await deleteRepositoryProperty(propertyTarget, property.id)
+        setProperties((current) => current.filter((entry) => entry.id !== property.id))
+        updateLayout({
+          order: layout.order.filter((id) => id !== property.id),
+          hidden: layout.hidden.filter((id) => id !== property.id),
+          widths: Object.fromEntries(
+            Object.entries(layout.widths).filter(([id]) => id !== property.id)
+          ),
+        })
+        // The rows still carry values for a Property that no longer exists,
+        // so the listing is read again rather than patched row by row.
+        void reload()
+      } catch (deletePropertyError: unknown) {
+        setMutationError(repositoryLoadErrorMessage(deletePropertyError))
+      } finally {
+        setPropertyBusy(false)
+      }
+    },
+    [layout, propertyTarget, reload, updateLayout]
+  )
+
+  const handleColumnDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const movedId = String(event.active.id)
+      const overId = event.over ? String(event.over.id) : null
+      if (!overId) return
+      updateLayout(reorderProperties(properties, layout, movedId, overId))
+    },
+    [layout, properties, updateLayout]
+  )
+
+  /**
+   * Column resizing, run from the header's grip rather than through the table
+   * model: the width has to outlive the render anyway, so the drag writes
+   * straight into the arrangement the reader keeps.
+   */
+  const beginResize = useCallback(
+    (columnId: string, startWidth: number) =>
+      (event: React.MouseEvent | React.TouchEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const startX = 'touches' in event ? event.touches[0].clientX : event.clientX
+        let width = startWidth
+        const move = (moveEvent: MouseEvent | TouchEvent) => {
+          const clientX =
+            'touches' in moveEvent ? moveEvent.touches[0]?.clientX ?? startX : moveEvent.clientX
+          width = Math.max(MIN_COLUMN_WIDTH, startWidth + (clientX - startX))
+          setLayout((current) => setColumnWidth(current, columnId, width))
+        }
+        const end = () => {
+          document.removeEventListener('mousemove', move)
+          document.removeEventListener('mouseup', end)
+          document.removeEventListener('touchmove', move)
+          document.removeEventListener('touchend', end)
+          setLayout((current) => {
+            const next = setColumnWidth(current, columnId, width)
+            saveTableLayout(org, repo, next)
+            return next
+          })
+        }
+        document.addEventListener('mousemove', move)
+        document.addEventListener('mouseup', end)
+        document.addEventListener('touchmove', move)
+        document.addEventListener('touchend', end)
+      },
+    [org, repo]
+  )
+
   const columns = useMemo(
     () => [
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COLUMN_WIDTH,
         enableSorting: false,
+        // The delete icon stays out of the way until the row is under the
+        // pointer: one on every row reads as clutter, and as a hazard.
         cell: ({ row }) => (
           <button
             type="button"
             data-testid={`library-table-delete-${row.original.id}`}
-            className="rounded px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-status-cancelled"
+            className="flex size-6 items-center justify-center rounded text-subtle-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
             disabled={saving}
             title={t('libraryTable.deleteRow')}
             aria-label={t('repoSettings.deleteNamed', { name: row.original.name })}
@@ -383,57 +621,100 @@ export function LibraryTableView({
       columnHelper.accessor('name', {
         id: 'name',
         header: t('apiKeys.nameLabel'),
-        size: 240,
+        size: columnWidth('name', 260),
         cell: ({ row }) => (
-          <LibraryNameEditableCell
-            item={row.original}
-            disabled={saving}
-            onCommit={(name) => handleNameCommit(row.original, name)}
-          />
+          <div className="flex min-w-0 items-center gap-1">
+            <LibraryNameEditableCell
+              item={row.original}
+              disabled={saving}
+              onCommit={(name) => handleNameCommit(row.original, name)}
+            />
+            {/* The row itself opens the record, but only this says so. */}
+            <button
+              type="button"
+              data-testid={`library-table-open-${row.original.id}`}
+              className="flex shrink-0 items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-2xs text-muted-foreground opacity-0 transition hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+              aria-label={t('libraryTable.openNamed', { name: row.original.name })}
+              onClick={(event) => {
+                event.stopPropagation()
+                onSelectData(row.original)
+              }}
+            >
+              <ArrowUpRight className="size-3" aria-hidden="true" />
+              {t('libraryTable.openRow')}
+            </button>
+          </div>
         ),
       }),
-      ...properties.map((property) =>
-        columnHelper.display({
-          id: `property:${property.id}`,
-          header: property.name,
-          size: property.typ === 'Markdown' || property.typ === 'Html' || property.typ === 'RichText'
-            ? 220
-            : property.typ === 'Boolean'
-              ? 96
-              : 160,
-          cell: ({ row }) => (
-            <LibraryPropertyEditableCell
-              item={row.original}
-              property={property}
-              disabled={saving}
-              onCommit={(next) => handlePropertyCommit(row.original, next)}
-            />
-          ),
-          sortingFn: (rowA, rowB) => {
-            const valueA = getLibraryDataPropertyValue(rowA.original, property.id)
-            const valueB = getLibraryDataPropertyValue(rowB.original, property.id)
-            const textA = valueA ? propertyValueText(property, valueA) ?? '' : ''
-            const textB = valueB ? propertyValueText(property, valueB) ?? '' : ''
-            return collator(locale).compare(textA, textB)
+      // Accessor columns rather than display ones: a column the table can read
+      // a value out of is a column it can sort, and the header menu offers
+      // exactly that.
+      ...shownProperties.map((property) =>
+        columnHelper.accessor(
+          (item) => {
+            const value = getLibraryDataPropertyValue(item, property.id)
+            return value ? propertyValueText(property, value) ?? '' : ''
           },
-        })
+          {
+            id: `property:${property.id}`,
+            header: property.name,
+            size: columnWidth(property.id, defaultColumnWidth(property)),
+            cell: ({ row }) => (
+              <LibraryPropertyEditableCell
+                item={row.original}
+                property={property}
+                disabled={saving}
+                // One click opens the editor, the way a spreadsheet cell does.
+                // Opening the record moved to the name column's own button, so
+                // the two no longer compete for the same click.
+                activation="single"
+                onCommit={(next) => handlePropertyCommit(row.original, next)}
+              />
+            ),
+            sortingFn: (rowA, rowB, columnId) =>
+              collator(locale).compare(
+                String(rowA.getValue(columnId) ?? ''),
+                String(rowB.getValue(columnId) ?? '')
+              ),
+          }
+        )
       ),
       columnHelper.accessor('updatedAt', {
         id: 'updatedAt',
         header: t('table.column.updated'),
-        size: 110,
+        size: columnWidth('updatedAt', 120),
         cell: (info) => {
           const value = info.getValue()
-          if (!value) return <span className="text-xs text-subtle">—</span>
+          if (!value) return <span className="text-xs text-subtle-foreground">—</span>
           return (
-            <span className="text-xs text-subtle">
+            <span className="whitespace-nowrap text-xs tabular-nums text-subtle-foreground">
               {formatDate(value, { month: 'short', day: 'numeric' }) ?? value}
             </span>
           )
         },
       }),
+      // The column the `+` header sits above. Its cells are empty on purpose:
+      // it exists so the header has somewhere to live and the row still ends
+      // at the table's edge.
+      columnHelper.display({
+        id: 'add-column',
+        header: '',
+        size: ADD_COLUMN_WIDTH,
+        enableSorting: false,
+        cell: () => null,
+      }),
     ],
-    [formatDate, handleNameCommit, handlePropertyCommit, locale, properties, saving, t]
+    [
+      columnWidth,
+      formatDate,
+      handleNameCommit,
+      handlePropertyCommit,
+      locale,
+      onSelectData,
+      saving,
+      shownProperties,
+      t,
+    ]
   )
 
   const table = useReactTable({
@@ -453,6 +734,37 @@ export function LibraryTableView({
   })
 
   const { rows } = table.getRowModel()
+
+  /** Which Property, if any, a table column stands for. */
+  const propertyByColumnId = useMemo(
+    () => new Map(shownProperties.map((property) => [`property:${property.id}`, property])),
+    [shownProperties]
+  )
+
+  /**
+   * Wide enough for every column at its current width, so a column dragged
+   * wider widens the table instead of squeezing its neighbours.
+   */
+  const tableMinWidth = useMemo(
+    () =>
+      ACTIONS_COLUMN_WIDTH +
+      columnWidth('name', 260) +
+      shownProperties.reduce(
+        (total, property) => total + columnWidth(property.id, defaultColumnWidth(property)),
+        0
+      ) +
+      columnWidth('updatedAt', 120) +
+      ADD_COLUMN_WIDTH,
+    [columnWidth, shownProperties]
+  )
+
+  /**
+   * A few pixels of travel before a header drag starts, so the same press can
+   * still be a click on the sort button underneath it.
+   */
+  const columnSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
   // A repository's whole table arrives in one payload, so the card list windows
   // its rows for the same reason the desktop table does.
   const cardVirtualizer = useVirtualizer({
@@ -487,8 +799,8 @@ export function LibraryTableView({
         onConfirm={() => void handleConfirmDelete()}
       />
 
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2 md:px-3">
-        <div className="relative min-w-0 flex-1 md:max-w-sm">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
+        <div className="relative min-w-0 flex-1 md:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle-foreground" aria-hidden="true" />
           <Input
             data-testid="library-table-global-filter"
@@ -496,10 +808,10 @@ export function LibraryTableView({
             placeholder={t('libraryTable.searchPlaceholder')}
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
-            className="h-7 w-full bg-surface pl-8 pr-3 text-xs md:pr-24"
+            className="h-8 w-full rounded-md bg-surface pl-8 pr-3 text-xs md:pr-20"
           />
           {/* Keyboard hints only mean something where there is a keyboard. */}
-          <div className="pointer-events-none absolute inset-y-0 right-2 hidden items-center gap-1 md:flex">
+          <div className="pointer-events-none absolute inset-y-0 right-2 hidden items-center gap-1 opacity-70 md:flex">
             <Kbd>/</Kbd>
             <KbdGroup>
               <Kbd>{/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘' : 'Ctrl'}</Kbd>
@@ -507,48 +819,62 @@ export function LibraryTableView({
             </KbdGroup>
           </div>
         </div>
-        <Button
-          data-testid="library-table-add-row"
-          variant="primary"
-          size="sm"
-          disabled={loading || saving}
-          onClick={() => {
-            setCreatingRow(true)
-            setNewRowName('')
-          }}
-        >
-          <Plus aria-hidden="true" />
-          {t('data.new')}
-        </Button>
-        <span className="hidden shrink-0 items-center gap-1 text-xs text-subtle sm:flex">
-          <Rows3 className="size-3.5" aria-hidden="true" />
-          {loading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
-          {!loading && totalItems !== null && totalItems > items.length
-            ? ` / ${totalItems}`
-            : ''}
-          {saving ? ` · ${t('common.saving')}` : ''}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={() => void reload()}
-          disabled={loading}
-          aria-label={t('libraryTable.refresh')}
-          title={t('libraryTable.refresh')}
-        >
-          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-        </Button>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* The card list has no columns to arrange. */}
+          {!isMobileViewport && properties.length > 0 && (
+            <ColumnVisibilityMenu
+              properties={arrangedProperties}
+              hidden={layout.hidden}
+              onToggle={(propertyId) => updateLayout(togglePropertyHidden(layout, propertyId))}
+              onReset={() => updateLayout(resetTableLayout(layout))}
+            />
+          )}
+          <span className="hidden items-center gap-1.5 text-2xs tabular-nums text-subtle-foreground sm:flex">
+            <Rows3 className="size-3.5" aria-hidden="true" />
+            {loading ? t('common.loading') : tPlural('table.rowCount', rows.length)}
+            {!loading && totalItems !== null && totalItems > items.length
+              ? ` / ${totalItems}`
+              : ''}
+            {saving ? ` · ${t('common.saving')}` : ''}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-subtle-foreground hover:text-foreground"
+            onClick={() => void reload()}
+            disabled={loading}
+            aria-label={t('libraryTable.refresh')}
+            title={t('libraryTable.refresh')}
+          >
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          </Button>
+          <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+          <Button
+            data-testid="library-table-add-row"
+            variant="primary"
+            size="sm"
+            className="h-8"
+            disabled={loading || saving}
+            onClick={() => {
+              setCreatingRow(true)
+              setNewRowName('')
+            }}
+          >
+            <Plus aria-hidden="true" />
+            {t('data.new')}
+          </Button>
+        </div>
       </div>
 
       {mutationError && (
-        <div className="border-b border-border px-4 py-2 text-xs text-status-cancelled" data-testid="library-table-mutation-error">
+        <div className="border-b border-border bg-destructive/10 px-4 py-2 text-xs text-destructive" data-testid="library-table-mutation-error">
           {mutationError}
         </div>
       )}
 
       {creatingRow && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+        <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2 md:px-4">
           <input
             ref={newRowInputRef}
             data-testid="library-table-new-row-name"
@@ -563,52 +889,69 @@ export function LibraryTableView({
                 setNewRowName('')
               }
             }}
-            className="min-w-0 flex-1 rounded border border-accent bg-canvas px-2 py-1.5 text-sm text-foreground outline-none"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border-strong bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-primary"
           />
-          <button
-            type="button"
-            className="rounded bg-accent px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+          <Button
+            size="sm"
+            variant="primary"
+            className="h-8"
             disabled={saving || !newRowName.trim()}
             onClick={() => void handleCreateRow()}
           >
             {t('common.create')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-surface-hover px-2 py-1 text-xs text-muted"
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8"
             onClick={() => {
               setCreatingRow(false)
               setNewRowName('')
             }}
           >
             {t('common.cancel')}
-          </button>
+          </Button>
         </div>
       )}
 
       {loading && (
-        <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-loading">
+        <div
+          className="flex flex-1 items-center justify-center gap-2 px-4 py-12 text-xs text-subtle-foreground"
+          data-testid="library-table-loading"
+        >
+          <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
           {t('libraryTable.loading')}
         </div>
       )}
 
       {!loading && error && (
-        <div className="px-4 py-6 text-sm" data-testid="library-table-error">
-          <p className="text-status-cancelled">{error}</p>
-          <button
-            type="button"
-            className="mt-2 rounded bg-surface-hover px-2 py-1 text-xs font-medium text-muted hover:text-foreground"
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+          data-testid="library-table-error"
+        >
+          <p className="max-w-md text-sm text-destructive">{error}</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8"
             data-testid="library-table-retry"
             onClick={() => void reload()}
           >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
             {t('common.retry')}
-          </button>
+          </Button>
         </div>
       )}
 
       {!loading && !error && rows.length === 0 && !creatingRow && (
-        <div className="px-4 py-6 text-sm text-subtle" data-testid="library-table-empty">
-          {t('libraryTable.empty')}
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+          data-testid="library-table-empty"
+        >
+          <span className="flex size-10 items-center justify-center rounded-full border border-border bg-surface text-subtle-foreground">
+            <Inbox className="size-4" aria-hidden="true" />
+          </span>
+          <p className="text-sm text-muted-foreground">{t('libraryTable.empty')}</p>
         </div>
       )}
 
@@ -644,32 +987,103 @@ export function LibraryTableView({
       )}
 
       {!loading && !error && rows.length > 0 && !isMobileViewport && (
+        <DndContext
+          sensors={columnSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleColumnDragEnd}
+        >
         <div ref={parentRef} className="flex-1 overflow-auto" style={{ minHeight: 240 }}>
-          <table className="w-full" style={{ minWidth: `${Math.max(900, properties.length * 160 + 300)}px` }}>
+          {/* Fixed layout, so one long body value cannot squeeze every other
+              column out of the table: each column keeps the width its
+              definition asks for and cuts its own text. */}
+          <table
+            className="w-full table-fixed border-separate border-spacing-0"
+            style={{ minWidth: `${tableMinWidth}px` }}
+          >
             <thead className="sticky top-0 z-10">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="relative border-b border-border bg-surface px-3 py-2 text-left text-xs font-medium text-subtle select-none"
-                      style={{
-                        width: header.getSize(),
-                        cursor: header.column.getCanSort() ? 'pointer' : 'default',
-                      }}
-                      onClick={header.column.getToggleSortingHandler()}
-                    >
-                      <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {{
-                          asc: ' ↑',
-                          desc: ' ↓',
-                        }[header.column.getIsSorted() as string] ?? null}
-                      </div>
-                    </th>
+              {/* The drag context sits outside the table: it renders live-region
+                  elements of its own, and a <div> is not something a <thead>
+                  may contain. `SortableContext` renders nothing, so it can. */}
+                <SortableContext
+                  items={shownProperties.map((property) => property.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        const columnId = header.column.id
+                        const property = propertyByColumnId.get(columnId)
+                        const width = header.getSize()
+
+                        if (columnId === 'add-column') {
+                          return (
+                            <th
+                              key={header.id}
+                              className="relative border-b border-border bg-background px-2 py-2 text-left align-middle"
+                              style={{ width }}
+                            >
+                              <AddPropertyMenu
+                                busy={propertyBusy}
+                                error={propertyError}
+                                onCreate={handleCreateProperty}
+                              />
+                            </th>
+                          )
+                        }
+
+                        if (columnId === 'actions') {
+                          return (
+                            <th
+                              key={header.id}
+                              className="border-b border-border bg-background px-3 py-2"
+                              style={{ width }}
+                            />
+                          )
+                        }
+
+                        return (
+                          <LibraryTableColumnHeader
+                            key={header.id}
+                            columnId={property ? property.id : columnId}
+                            label={
+                              property
+                                ? property.name
+                                : String(header.column.columnDef.header ?? '')
+                            }
+                            width={width}
+                            sorted={header.column.getIsSorted()}
+                            canSort={header.column.getCanSort()}
+                            onSort={(direction) => {
+                              setSorting(
+                                direction === null
+                                  ? []
+                                  : [{ id: columnId, desc: direction === 'desc' }]
+                              )
+                            }}
+                            onResizeStart={beginResize(
+                              property ? property.id : columnId,
+                              width
+                            )}
+                            property={property}
+                            onHide={
+                              property
+                                ? () => updateLayout(togglePropertyHidden(layout, property.id))
+                                : undefined
+                            }
+                            onRename={
+                              property
+                                ? (name) => void handleRenameProperty(property, name)
+                                : undefined
+                            }
+                            onDelete={
+                              property ? () => void handleDeleteProperty(property) : undefined
+                            }
+                          />
+                        )
+                      })}
+                    </tr>
                   ))}
-                </tr>
-              ))}
+                </SortableContext>
             </thead>
             <tbody>
               {virtualizer.getVirtualItems().length > 0 && virtualRows[0]?.start > 0 && (
@@ -684,14 +1098,27 @@ export function LibraryTableView({
                   <tr
                     key={row.id}
                     data-testid={`library-table-row-${row.original.id}`}
-                    className={`cursor-pointer border-b border-border transition-colors ${
-                      isSelected ? 'bg-surface-hover' : 'hover:bg-surface-hover/60'
+                    aria-current={isSelected ? 'true' : undefined}
+                    className={`group/row cursor-pointer transition-colors ${
+                      isSelected ? 'bg-selected' : 'hover:bg-surface-hover/60'
                     }`}
                     style={{ height: ROW_HEIGHT }}
                     onClick={() => onSelectData(row.original)}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-2 py-1 align-middle">
+                    {row.getVisibleCells().map((cell, cellIndex) => (
+                      <td
+                        key={cell.id}
+                        className="relative border-b border-border/60 px-3 py-1 align-middle"
+                      >
+                        {/* The selected row is marked at its leading edge as well
+                            as by its tint: the tint alone is easy to miss on a
+                            dark surface. */}
+                        {cellIndex === 0 && isSelected && (
+                          <span
+                            className="absolute inset-y-0 left-0 w-0.5 bg-primary"
+                            aria-hidden="true"
+                          />
+                        )}
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -701,13 +1128,14 @@ export function LibraryTableView({
             </tbody>
           </table>
         </div>
+        </DndContext>
       )}
 
       {/* Outside the viewport branches on purpose: the card list and the
           table are two renderings of one listing, and both need its next
           page. */}
       {!loading && !error && rows.length > 0 && nextPage !== null && (
-        <div className="flex flex-col items-center gap-2 border-t border-border px-4 py-3">
+        <div className="flex flex-col items-center gap-2 border-t border-border bg-background px-4 py-3">
           {loadMoreError && (
             <p className="text-xs text-destructive" role="alert">{loadMoreError}</p>
           )}
