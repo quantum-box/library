@@ -9,3 +9,6 @@ storybook-static/
 
 # Rust
 packages/*/target/
+
+# Generated mobile projects (tauri ios init / tauri android init)
+src-tauri/gen/
