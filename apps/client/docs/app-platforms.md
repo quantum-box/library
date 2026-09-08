@@ -207,5 +207,8 @@ Code signing uses the Quantum Box Apple development team configured in
 `src-tauri/tauri.conf.json`. Set `APPLE_DEVELOPMENT_TEAM` in CI or the shell to
 override it for a different team.
 
-Use the generated Xcode project for device archive and App Store signing:
-`src-tauri/gen/apple/photon.xcodeproj`.
+Every push to `main` also builds a signed archive and uploads it to TestFlight;
+see [`ios-testflight.md`](./ios-testflight.md) for the credentials it needs and
+how build numbers are assigned. The generated Xcode project
+(`src-tauri/gen/apple/library-client.xcodeproj`) is there for device archives
+and signing done by hand.

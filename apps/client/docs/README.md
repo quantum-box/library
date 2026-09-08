@@ -6,6 +6,7 @@
 |---|---|
 | [`app-platforms.md`](./app-platforms.md) | web / desktop / mobile の各シェルと、プラットフォームごとの差異 |
 | [`desktop-release.md`](./desktop-release.md) | desktop アプリの配布と自動更新（署名鍵の扱いを含む） |
+| [`ios-testflight.md`](./ios-testflight.md) | iOS ビルドの TestFlight 自動アップロード（App Store Connect API キーと署名） |
 | [`macos-window-tabs.md`](./macos-window-tabs.md) | macOS のウィンドウタブ（単一ウィンドウの子 WebView として実装） |
 | [`library-api-production.md`](./library-api-production.md) | 本番 Library API への接続 |
 | [`data-editor-live.md`](./data-editor-live.md) | data editor の共同編集と Library 側の認可・保存条件 |
