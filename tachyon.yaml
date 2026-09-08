@@ -158,6 +158,20 @@ spec:
           value: "0.05"
         - name: OTEL_PROPAGATORS
           value: "tracecontext"
+        # MCP の認可を Tachyon の認可サーバーへ寄せる (PLT-4398)。
+        # この 2 つが揃うと oauth_resource が strict モードになり、Tachyon が
+        # 発行した token の署名・issuer・audience(= 下の Protected Resource
+        # Metadata の resource)・scope を検証する。同時に Library 自前の
+        # /mcp/oauth/{register,authorize,token} は retired 応答になるため、
+        # そこに登録済みの MCP クライアントは再登録・再認可が必要になる。
+        # 対応する OAuth2Resource は Tachyon 側に登録済み
+        # (tenant tn_01j91h09tpj5ehwbwfwfxpak2b, resource
+        # https://library-api.txcloud.app/mcp)。先に Library だけ切り替えると
+        # 宛先が未登録で MCP 認証が全断するので、順序を入れ替えないこと。
+        - name: MCP_AUTHORIZATION_SERVERS
+          value: "https://api.n1.tachy.one"
+        - name: MCP_OAUTH_JWKS_URL
+          value: "https://api.n1.tachy.one/oauth2/jwks"
     - name: planet-library
       repository:
         url: https://github.com/quantum-box/library
@@ -254,3 +268,21 @@ spec:
           value: ap-northeast-1
         - name: VITE_LIBRARY_DOCS_URL
           value: https://library-user-guide.txcloud.app
+---
+# Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
+# (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が
+# 返す値と完全一致させること。MCP クライアントは Tachyon の動的登録を通るため
+# allowDynamicRegistration を有効にする。
+apiVersion: apps.tachy.one/v1alpha
+kind: OAuth2Resource
+metadata:
+  name: library-mcp
+  tenantId: tn_01j91h09tpj5ehwbwfwfxpak2b
+spec:
+  resource: https://library-api.txcloud.app/mcp
+  displayName: Library MCP
+  scopes:
+    - mcp:read
+    - mcp:write
+  clients:
+    allowDynamicRegistration: true
