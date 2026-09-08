@@ -1,6 +1,7 @@
 import { Badge, Button } from '@tachyon-sdk/native-ui'
 import { BookOpen, Braces, Check, Copy, ExternalLink, Route, Terminal } from 'lucide-react'
 import { useCallback, useState, type ReactNode } from 'react'
+import { handleExternalLinkClick } from '../lib/desktop/openExternalUrl'
 import { configuredLibraryApiBaseUrl } from '../lib/libraryGraphql'
 import {
   apiReferenceLinks,
@@ -214,6 +215,7 @@ export function DocumentationCard() {
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={handleExternalLinkClick}
               className="flex items-center gap-3 px-4 py-2.5 no-underline transition-colors hover:bg-surface"
             >
               <div className="min-w-0 flex-1">
