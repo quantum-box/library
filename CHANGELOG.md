@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-08 - アーティファクトを作るスキル
+
+- plugin に `library-artifact` スキルを足した。これまで `library` スキルには
+  「Library に保存する」手順しか無く、肝心の「サンドボックスの中で成立する
+  HTML をどう書くか」がどこにも無かった。plugin の利用者は Claude 側の
+  artifact 用スキルを持っていないので、書けないまま保存手順だけ渡していた。
+- 描画枠の制約を明文化した。`allow-same-origin` が無いので localStorage と
+  cookie は例外になり、`allow-forms` / `allow-popups` / `allow-downloads` /
+  `allow-modals` も無いのでフォーム送信・`target="_blank"`・ダウンロード・
+  `alert` は黙って何も起きない。リンクは枠自身を置き換えるので戻る道が無い。
+- `srcdoc` は埋め込み元の CSP を継承するため、desktop シェルではインライン
+  script が動かない前提で書く。JS 無しでも読める HTML にして、JS は並べ替えや
+  折りたたみの上乗せに留める。
+- `library` スキルの artifact 節は新スキルへの案内に畳んだ。同じ手順を 2 箇所に
+  置くと必ず片方が古くなるため。plugin は 0.5.0。
+
 ## 2026-09-08 - HTML アーティファクトの全画面表示
 
 - Html Property のプレビューに全画面ボタンを足した。artifact は 1 ページ丸ごと
