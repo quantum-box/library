@@ -10,6 +10,7 @@ import {
 import {
   bodyPropertyFormat,
   getBodyProperty,
+  isArtifactHtml,
 } from '../../lib/libraryTable/bodyProperty'
 import {
   getLibraryDataPropertyValue,
@@ -96,6 +97,9 @@ export function PublicDataView({
     ) ?? ''
     : ''
   const pageProperties = properties.filter((property) => property.id !== bodyProperty?.id)
+  // Same rule as the shared reader: an artifact is a page of its own and
+  // takes the whole region rather than a box inside the article column.
+  const artifact = bodyProperty?.typ === 'Html' && isArtifactHtml(bodyValue)
 
   return (
     <main
@@ -160,7 +164,20 @@ export function PublicDataView({
         </div>
       ) : null}
 
-      {!dataLoading && !dataMissing && !dataError && item ? (
+      {!dataLoading && !dataMissing && !dataError && item && artifact && bodyProperty ? (
+        <div className="flex min-h-0 flex-1 flex-col" data-testid="public-data-artifact">
+          <RecordBodyEditor
+            key={`${item.id}:${bodyProperty.id}`}
+            value={bodyValue}
+            format={bodyPropertyFormat(bodyProperty)}
+            surface="fill"
+            editable={false}
+            onCommit={() => {}}
+          />
+        </div>
+      ) : null}
+
+      {!dataLoading && !dataMissing && !dataError && item && !artifact ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <article className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
             <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">

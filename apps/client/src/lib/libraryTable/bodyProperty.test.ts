@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { LibraryProperty } from '../recordsApi'
-import { bodyPropertyFormat, bodyPropertyValue, getBodyProperty } from './bodyProperty'
+import {
+  bodyPropertyFormat,
+  bodyPropertyValue,
+  getBodyProperty,
+  isArtifactHtml,
+} from './bodyProperty'
 
 function property(id: string, name: string, typ: string): LibraryProperty {
   return { id, name, typ }
@@ -55,5 +60,24 @@ describe('bodyPropertyValue', () => {
     expect(bodyPropertyValue(property('p3', 'Body', 'Markdown'), '# a')).toEqual({
       markdown: '# a',
     })
+  })
+})
+
+describe('isArtifactHtml', () => {
+  /**
+   * The page reads this to decide its own layout, so the answer has to be
+   * about the value, not the property: an Html Property can still hold the
+   * Markdown this editor used to write into one.
+   */
+  it('is true for markup and for a value not written yet', () => {
+    expect(isArtifactHtml('<!doctype html><h1>x</h1>')).toBe(true)
+    expect(isArtifactHtml('\n  <section>x</section>')).toBe(true)
+    expect(isArtifactHtml('')).toBe(true)
+    expect(isArtifactHtml('   ')).toBe(true)
+  })
+
+  it('is false for the Markdown dialect stored in older Html Properties', () => {
+    expect(isArtifactHtml('# Heading\n\ntext')).toBe(false)
+    expect(isArtifactHtml('text with <em>markup</em> inside')).toBe(false)
   })
 })

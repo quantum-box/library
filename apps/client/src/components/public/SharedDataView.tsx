@@ -9,6 +9,7 @@ import {
 import {
   bodyPropertyFormat,
   getBodyProperty,
+  isArtifactHtml,
 } from '../../lib/libraryTable/bodyProperty'
 import {
   getLibraryDataPropertyValue,
@@ -111,6 +112,10 @@ export function SharedDataView({ token }: { token: string }) {
     ) ?? ''
     : ''
   const pageProperties = properties.filter((property) => property.id !== bodyProperty?.id)
+  // An artifact is a page of its own, so it takes the whole region rather
+  // than a fixed box inside the article column. The recipient was handed a
+  // document, not a record card.
+  const artifact = bodyProperty?.typ === 'Html' && isArtifactHtml(bodyValue)
 
   return (
     <main
@@ -127,54 +132,70 @@ export function SharedDataView({ token }: { token: string }) {
         </Badge>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <article className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
-          <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
-            <FileText className="size-5" aria-hidden="true" />
-          </div>
-          <h1
-            data-testid="shared-data-title"
-            className="text-3xl font-semibold tracking-tight md:text-4xl"
-          >
-            {item.name || t('common.untitled')}
-          </h1>
-
-          <section className="mt-8" aria-labelledby="shared-data-properties">
-            <h2 id="shared-data-properties" className="sr-only">{t('viewSettings.properties')}</h2>
-            <div className="space-y-0.5">
-              {pageProperties.length > 0 ? pageProperties.map((property) => (
-                <div
-                  key={property.id}
-                  className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 sm:grid-cols-[132px_minmax(0,1fr)]"
-                >
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
-                    {property.name}
-                  </span>
-                  <LibraryPropertyCell item={item} property={property} />
-                </div>
-              )) : (
-                <p className="py-1.5 text-sm text-muted-foreground">{t('public.noProperties')}</p>
-              )}
+      {artifact && bodyProperty ? (
+        // No title heading and no property list above it: the artifact
+        // carries its own, and a recipient handed one document should get
+        // the window, not a record card wrapped around it.
+        <div className="flex min-h-0 flex-1 flex-col" data-testid="shared-data-artifact">
+          <RecordBodyEditor
+            key={`${item.id}:${bodyProperty.id}`}
+            value={bodyValue}
+            format={bodyPropertyFormat(bodyProperty)}
+            surface="fill"
+            editable={false}
+            onCommit={() => {}}
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <article className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
+            <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
+              <FileText className="size-5" aria-hidden="true" />
             </div>
-          </section>
+            <h1
+              data-testid="shared-data-title"
+              className="text-3xl font-semibold tracking-tight md:text-4xl"
+            >
+              {item.name || t('common.untitled')}
+            </h1>
 
-          <section className="mt-6" aria-labelledby="shared-data-body">
-            <h2 id="shared-data-body" className="sr-only">Body</h2>
-            {bodyProperty ? (
-              <RecordBodyEditor
-                key={`${item.id}:${bodyProperty.id}`}
-                value={bodyValue}
-                format={bodyPropertyFormat(bodyProperty)}
-                surface="page"
-                editable={false}
-                onCommit={() => {}}
-              />
-            ) : (
-              <p className="py-10 text-sm text-muted-foreground">{t('public.noProperties')}</p>
-            )}
-          </section>
-        </article>
-      </div>
+            <section className="mt-8" aria-labelledby="shared-data-properties">
+              <h2 id="shared-data-properties" className="sr-only">{t('viewSettings.properties')}</h2>
+              <div className="space-y-0.5">
+                {pageProperties.length > 0 ? pageProperties.map((property) => (
+                  <div
+                    key={property.id}
+                    className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 sm:grid-cols-[132px_minmax(0,1fr)]"
+                  >
+                    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
+                      {property.name}
+                    </span>
+                    <LibraryPropertyCell item={item} property={property} />
+                  </div>
+                )) : (
+                  <p className="py-1.5 text-sm text-muted-foreground">{t('public.noProperties')}</p>
+                )}
+              </div>
+            </section>
+
+            <section className="mt-6" aria-labelledby="shared-data-body">
+              <h2 id="shared-data-body" className="sr-only">Body</h2>
+              {bodyProperty ? (
+                <RecordBodyEditor
+                  key={`${item.id}:${bodyProperty.id}`}
+                  value={bodyValue}
+                  format={bodyPropertyFormat(bodyProperty)}
+                  surface="page"
+                  editable={false}
+                  onCommit={() => {}}
+                />
+              ) : (
+                <p className="py-10 text-sm text-muted-foreground">{t('public.noProperties')}</p>
+              )}
+            </section>
+          </article>
+        </div>
+      )}
     </main>
   )
 }

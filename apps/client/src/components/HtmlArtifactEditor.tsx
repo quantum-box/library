@@ -23,7 +23,12 @@ export function HtmlArtifactEditor({
   value: string
   onCommit: (value: string) => void
   editable?: boolean
-  surface?: 'panel' | 'page'
+  /**
+   * `fill` gives the artifact the whole region its page hands it, with no
+   * fixed height and no drag handle: an artifact is a page of its own, and
+   * boxing it inside an article column wastes most of the window.
+   */
+  surface?: 'panel' | 'page' | 'fill'
 }) {
   const { t } = useI18n()
   // Local first, same contract as RecordBodyEditor: once mounted, the local
@@ -89,12 +94,19 @@ export function HtmlArtifactEditor({
     commitTimer.current = window.setTimeout(commitPendingValue, 500)
   }
 
+  const fill = surface === 'fill'
   const frameHeight = surface === 'page' ? 'h-[560px]' : 'h-[320px]'
   const shown = editable ? source : value
 
   return (
-    <div className="overflow-hidden rounded border border-border bg-surface">
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+    <div
+      className={
+        fill
+          ? 'flex h-full min-h-0 flex-col overflow-hidden bg-surface'
+          : 'overflow-hidden rounded border border-border bg-surface'
+      }
+    >
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
         <TabButton
           active={tab === 'preview'}
           onClick={() => setTab('preview')}
@@ -136,12 +148,15 @@ export function HtmlArtifactEditor({
       {tab === 'preview' ? (
         <div
           ref={frame}
-          // In fullscreen the element is the viewport, so the fixed height
-          // and the resize handle have to get out of the way.
+          // In fullscreen the element is the viewport; when filling, its
+          // parent decides the height. Either way the fixed height and the
+          // resize handle have to get out of the way.
           className={
             fullscreen
               ? 'h-screen w-screen overflow-auto bg-white'
-              : `${frameHeight} resize-y overflow-auto`
+              : fill
+                ? 'min-h-0 flex-1 overflow-auto'
+                : `${frameHeight} resize-y overflow-auto`
           }
         >
           {shown.trim() === '' ? (
@@ -160,7 +175,9 @@ export function HtmlArtifactEditor({
           spellCheck={false}
           placeholder="<!doctype html>"
           onChange={(event) => handleChange(event.target.value)}
-          className={`${frameHeight} w-full resize-y bg-background p-3 font-mono text-sm leading-relaxed text-foreground outline-none`}
+          className={`${
+            fill ? 'min-h-0 flex-1' : `${frameHeight} resize-y`
+          } w-full bg-background p-3 font-mono text-sm leading-relaxed text-foreground outline-none`}
         />
       )}
     </div>

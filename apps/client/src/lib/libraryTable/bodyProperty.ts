@@ -46,3 +46,16 @@ export function bodyPropertyValue(
   if (property.typ === 'Html') return { html: value }
   return { string: value }
 }
+
+/**
+ * Whether an Html Property's value is markup rather than the Markdown this
+ * editor used to write into Html Properties.
+ *
+ * Lives here rather than in `RecordBodyEditor` so a page can ask it without
+ * importing BlockNote: the answer decides the page's own layout, and an
+ * artifact is given the whole region instead of a box in the article column.
+ * An empty value counts, so a new artifact opens in the artifact editor.
+ */
+export function isArtifactHtml(value: string): boolean {
+  return value.trim() === '' || /^\s*</.test(value)
+}
