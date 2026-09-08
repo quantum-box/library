@@ -99,11 +99,13 @@ cloud-managed distribution certificate and provisioning profile. Nothing has to
 be exported from anyone's Keychain, which is the point — a certificate stored as
 a CI secret expires, and its private key lives in one person's login keychain.
 
-If the team ever has to pin a specific certificate and profile instead, set
+If the team ever has to pin a specific certificate and profile instead, add
 `IOS_CERTIFICATE` (base64 of the `.p12`), `IOS_CERTIFICATE_PASSWORD`, and
-`IOS_MOBILE_PROVISION` (base64 of the `.mobileprovision`) as secrets. The
-workflow already passes them through, and Tauri switches to manual signing when
-it sees them.
+`IOS_MOBILE_PROVISION` (base64 of the `.mobileprovision`) to the build step's
+`env` at that point. Do not wire them up in advance against secrets that may not
+exist: an unset secret expands to an empty string, and Tauri branches on the
+variable being present, not on it having a value — an empty `IOS_MOBILE_PROVISION`
+sends it down the manual-signing path and it dies in `security import`.
 
 ## Failure modes worth recognizing
 

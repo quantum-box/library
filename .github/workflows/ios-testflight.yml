@@ -66,14 +66,12 @@ jobs:
       APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
       APPLE_API_KEY_PATH: ${{ github.workspace }}/.appstoreconnect/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
-      # Optional escape hatch. Left unset, Xcode automatic signing asks App
-      # Store Connect for a cloud-managed distribution certificate. Set all
-      # three and Tauri signs manually with the certificate and profile you
-      # supply instead, which is the way out if the team has to pin a specific
-      # provisioning profile.
-      IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
-      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-      IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+      # Do not pre-wire IOS_CERTIFICATE / IOS_CERTIFICATE_PASSWORD /
+      # IOS_MOBILE_PROVISION here as a manual-signing escape hatch. A missing
+      # secret expands to the empty string rather than an unset variable, and
+      # Tauri branches on the variable being *present*: it read an empty
+      # profile and died in `security import` before signing could start. If
+      # manual signing is ever needed, add them to the build step then.
     steps:
       - uses: actions/checkout@v4
 
