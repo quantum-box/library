@@ -37,11 +37,12 @@ uploaded but failed processing can still be inspected.
 
 ## Current state
 
-Set up on 2026-09-08 and ready to run: the App ID `com.quantumbox.library` is
-registered to team `J8429VCGMR`, the App Store Connect record exists as
-**Planet Library** (the plain name `Library` was already taken by another
-developer), and the three secrets below are configured on this repository from
-an App Manager key named `library-ios-ci`.
+Set up on 2026-09-08 and verified end to end: the App ID
+`com.quantumbox.library` is registered to team `J8429VCGMR`, the App Store
+Connect record exists as **Planet Library** (the plain name `Library` was
+already taken by another developer), and the three secrets below are configured
+on this repository from an Admin key named `library-ios-ci-admin`. The first
+successful upload was build 7 of 0.1.27.
 
 The rest of this section is what to redo if the key is ever revoked or the app
 has to be recreated.
@@ -62,9 +63,12 @@ base config for iOS builds only. Nothing else in the file needs to be repeated;
 the merge is per key.
 
 Create an App Store Connect API key (Users and Access → Integrations → App Store
-Connect API) with the **App Manager** role (Admin also works). The role matters:
-the same key both provisions the signing certificate and uploads the build, and
-a Developer-role key can do neither. Then set three repository secrets:
+Connect API) with the **Admin** role. Admin is not overkill here: cloud signing
+for *distribution* is gated on it, and an App Manager key gets far enough to
+build and sign the archive before failing the export with `Cloud signing
+permission error`. A key's role cannot be changed after it is created, so
+picking the wrong one means issuing a new key. Then set three repository
+secrets:
 
 | Secret | Value |
 | --- | --- |
@@ -121,6 +125,14 @@ sends it down the manual-signing path and it dies in `security import`.
 - **Upload succeeds, build never appears** — App Store Connect processing
   failed, usually on missing export compliance or an invalid icon. The
   rejection arrives by email, not in the workflow log.
+- **`exportArchive Cloud signing permission error`** followed by `No profiles
+  for 'com.quantumbox.library' were found` — the API key is not an Admin key.
+  The archive builds and signs first, so this looks like a late failure rather
+  than a credentials problem.
+- **`MinimumOSVersion too low`** (warning, code 90068) — from Spring 2027 Apple
+  refuses uploads below iOS 15.0. `bundle.iOS.minimumSystemVersion` in
+  `tauri.conf.json` is 14.0; raising it drops iOS 14 devices, so it is a product
+  call rather than a build fix.
 - **Signing asks for a device-provisioning profile** — the export method
   defaulted away from `app-store-connect`; check the build step's flags.
 - **`Undefined symbols ... __swift_FORCE_LOAD_$_swiftCompatibility56`** — the
