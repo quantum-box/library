@@ -11,15 +11,26 @@ build number.
    committed — `src-tauri/gen/` is ignored — so the App Store build comes out of
    `src-tauri/tauri.conf.json` plus `src-tauri/tauri.ios.conf.json` exactly like
    a local one does.
-2. Builds with `tauri ios build --export-method app-store-connect
-   --build-number <run number>`.
+2. Builds with `tauri ios build --export-method app-store-connect` and
+   `bundle.iOS.bundleVersion` set to the workflow run number.
 3. Uploads the resulting IPA with `xcrun altool --upload-app`.
 
-The app version comes from `apps/client/package.json`, the same version the
-desktop release tags. `--build-number` appends the workflow run number, so
-`CFBundleVersion` is `<version>.<run>`: unique and increasing across uploads,
-which is what App Store Connect requires — it rejects a build number it has
-already accepted for a version.
+`CFBundleShortVersionString` is the version in `apps/client/package.json`, the
+same version the desktop release tags. `CFBundleVersion` is the workflow run
+number on its own: unique and increasing across uploads, which is what App Store
+Connect requires — it rejects a build number it has already accepted for a
+version.
+
+The run number is set through `bundle.iOS.bundleVersion` rather than the CLI's
+`--build-number`, because that flag *appends* to the app version. With a
+three-component version like `0.1.22` it produces the four-component
+`0.1.22.<run>`, and `CFBundleVersion` may hold at most three period-separated
+integers — App Store Connect rejects the upload with ITMS-90257.
+
+When pushes arrive faster than a build takes, GitHub keeps only one pending run
+per concurrency group, so the newest main commit wins and the ones it superseded
+are skipped. main is linear, so the build that wins already contains them. Use a
+manual run if a specific commit has to reach TestFlight.
 
 The IPA is also attached to the run as an artifact for 14 days, so a build that
 uploaded but failed processing can still be inspected.
@@ -102,6 +113,9 @@ it sees them.
   been used`** — the build number is not unique. Re-run with an explicit larger
   `build_number` input; this happens when the run number is reset or a build
   was uploaded from a laptop.
+- **`ITMS-90257 ... CFBundleVersion ... at most three non-negative integers`** —
+  something reintroduced `--build-number`, or the bundle version grew past three
+  components. It must stay a bare integer.
 - **Upload succeeds, build never appears** — App Store Connect processing
   failed, usually on missing export compliance or an invalid icon. The
   rejection arrives by email, not in the workflow log.
@@ -114,7 +128,8 @@ it sees them.
 cd apps/client
 npm ci
 npm run tauri -- ios init
-npm run tauri -- ios build --export-method app-store-connect --build-number 1
+npm run tauri -- ios build --export-method app-store-connect \
+  -c '{"bundle":{"iOS":{"bundleVersion":"1"}}}'
 ```
 
 Uploading by hand needs the same key in

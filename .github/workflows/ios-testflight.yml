@@ -12,9 +12,13 @@ on:
 permissions:
   contents: read
 
-# TestFlight rejects a build number it has already seen, and two runs uploading
-# the same version at once is the way to produce one. One at a time, and never
-# cancel a run that may already have handed the IPA to App Store Connect.
+# One upload at a time, and never cancel a run that may already have handed the
+# IPA to App Store Connect. GitHub holds only one pending run per group, so when
+# pushes arrive faster than the build takes, the newest main commit is the one
+# that gets uploaded and the ones it superseded are skipped. That is the
+# intended contract: main is linear, so the build that wins already contains the
+# skipped commits, and a backlog of stale TestFlight builds helps nobody. Run
+# the workflow by hand if you need a specific commit built.
 concurrency:
   group: library-ios-testflight
   cancel-in-progress: false
@@ -106,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/.appstoreconnect" ~/.appstoreconnect/private_keys
-          printf '%s' "$KEY_P8" | base64 --decode > "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8"
+          printf '%s' "$KEY_P8" | base64 -d > "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8"
           chmod 600 "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8"
           cp "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8" \
             ~/.appstoreconnect/private_keys/"AuthKey_${KEY_ID}.p8"
@@ -136,9 +140,13 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      # --build-number appends to the version, so CFBundleVersion is
-      # <package.json version>.<run number>: unique and increasing per upload,
-      # which is what App Store Connect requires.
+      # CFBundleVersion is the run number on its own, set through
+      # bundle.iOS.bundleVersion. It has to be unique and increasing per upload
+      # and at most three period-separated integers -- which is why this is not
+      # `--build-number`: that flag APPENDS to the app version, and
+      # 0.1.22 + 42 would be the four-component 0.1.22.42 that App Store
+      # Connect rejects with ITMS-90257. CFBundleShortVersionString stays the
+      # package.json version.
       - name: Build signed IPA
         env:
           BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
@@ -146,7 +154,7 @@ jobs:
           npm run tauri -- ios build \
             --ci \
             --export-method app-store-connect \
-            --build-number "$BUILD_NUMBER"
+            -c "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"${BUILD_NUMBER}\"}}}"
 
       - name: Locate IPA
         id: ipa
