@@ -860,6 +860,8 @@ export const fr: LocaleMessages = {
   'editor.slashMenuOthers': 'Autres',
   'editor.previewTab': 'Aperçu',
   'editor.codeTab': 'Code',
+  'editor.fullscreen': 'Plein écran',
+  'editor.exitFullscreen': 'Quitter le plein écran',
   'editor.nothingToPreview': 'Rien à prévisualiser pour l’instant — écrivez du HTML dans l’onglet Code.',
   'editor.emptyHtmlBlock': 'Bloc HTML vide',
   'editor.htmlPreviewFrameTitle': 'Aperçu HTML',

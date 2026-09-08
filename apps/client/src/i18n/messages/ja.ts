@@ -863,6 +863,8 @@ export const ja: LocaleMessages = {
   'editor.slashMenuOthers': 'その他',
   'editor.previewTab': 'プレビュー',
   'editor.codeTab': 'コード',
+  'editor.fullscreen': '全画面',
+  'editor.exitFullscreen': '全画面を終了',
   'editor.nothingToPreview': 'まだプレビューするものがありません。コードタブに HTML を書いてください。',
   'editor.emptyHtmlBlock': '空の HTML ブロック',
   'editor.htmlPreviewFrameTitle': 'HTML プレビュー',

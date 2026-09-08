@@ -860,6 +860,8 @@ export const zhHant: LocaleMessages = {
   'editor.slashMenuOthers': '其他',
   'editor.previewTab': '預覽',
   'editor.codeTab': '程式碼',
+  'editor.fullscreen': '全螢幕',
+  'editor.exitFullscreen': '結束全螢幕',
   'editor.nothingToPreview': '還沒有可預覽的內容 — 請在程式碼分頁寫入 HTML。',
   'editor.emptyHtmlBlock': '空的 HTML 區塊',
   'editor.htmlPreviewFrameTitle': 'HTML 預覽',
