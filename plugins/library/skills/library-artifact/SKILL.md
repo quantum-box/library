@@ -22,7 +22,7 @@ Library renders the value in `<iframe sandbox="allow-scripts">` with no `allow-s
 
 ## Building the page
 
-- Start the document with `<!doctype html>` and give it a `<title>` — a short, specific name, the same one used as the record name. A value that does not begin with `<` is stored as block-editor content and never opens in the artifact frame.
+- Start the document with `<!doctype html>` and give it a `<title>` — a short, specific name, the same one used as the record name. Set `<html lang>` to the language the page is actually written in, not the language of the request. A value that does not begin with `<` is stored as block-editor content and never opens in the artifact frame.
 - Size the design to the job: a status page or a set of numbers wants a plain, well-set document; a landing page or a pitch earns real art direction. Either way, write the actual content — no placeholder text, no invented figures.
 - Use relative units and a single readable column (`max-width` around 60rem); the body must never scroll horizontally. Put wide tables, code blocks, and diagrams in their own `overflow-x: auto` container.
 - Keep it small. `POST /mcp` accepts roughly 2 MiB per request and the Html value is capped at 3 MiB, so a photo embedded as a data URI is rejected while inline SVG and small assets are fine. Link large media by URL instead.
@@ -32,7 +32,7 @@ A skeleton that satisfies the frame:
 
 ```html
 <!doctype html>
-<html lang="ja">
+<html lang="<the page's own language>">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
