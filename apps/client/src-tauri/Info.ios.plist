@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Declares the export compliance answer in the build itself, so every
+	     TestFlight upload skips App Store Connect's encryption questionnaire
+	     instead of waiting on a human to answer it before testers see the
+	     build. false is the truthful answer: the app ships no cryptography of
+	     its own, and its only encryption is HTTPS/WSS through the operating
+	     system's TLS, exempt under the standard categories. Revisit this if
+	     the app ever encrypts data itself. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

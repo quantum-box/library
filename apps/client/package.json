@@ -1,7 +1,7 @@
 {
   "name": "@quantum-box/library-client",
   "private": true,
-  "version": "0.1.33",
+  "version": "0.1.34",
   "type": "module",
   "engines": {
     "node": ">=22.12.0 <23"
@@ -68,7 +68,8 @@
     "tauri:android:init": "tauri android init",
     "tauri:android:dev": "tauri android dev",
     "tauri:android:build": "tauri android build",
-    "tauri:ios:init": "tauri ios init",
+    "tauri:ios:init": "tauri ios init && npm run tauri:ios:icon",
+    "tauri:ios:icon": "node scripts/sync-ios-app-icon.mjs",
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
     "tauri:ios:build:sim": "tauri ios build --target aarch64-sim",
