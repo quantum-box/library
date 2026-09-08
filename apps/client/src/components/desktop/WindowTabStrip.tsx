@@ -5,7 +5,6 @@ import {
   activateWindowTab,
   closeWindowTab,
   createWindowTab,
-  fetchTargetOs,
   listWindowTabs,
   listenWindowTabsChanged,
   markWindowTabContentReady,
@@ -13,29 +12,8 @@ import {
   updateWindowTabTitle,
   type WindowTab,
 } from '../../lib/desktop/windowTabs'
+import { useMacosDesktopShell } from '../../lib/desktop/useMacosDesktopShell'
 import { useI18n } from '../../i18n'
-
-/**
- * True only inside the macOS desktop shell. Web, Windows, Linux, and mobile
- * keep the plain layout, so the strip renders nothing there.
- */
-function useMacosDesktopShell() {
-  const [enabled, setEnabled] = useState(false)
-
-  useEffect(() => {
-    let disposed = false
-    fetchTargetOs()
-      .then((target) => {
-        if (!disposed) setEnabled(target === 'macos')
-      })
-      .catch(console.error)
-    return () => {
-      disposed = true
-    }
-  }, [])
-
-  return enabled
-}
 
 /**
  * Turns ⌘-click (Ctrl-click off macOS) on an in-app link into a background tab.
