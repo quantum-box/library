@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, within } from 'storybook/test'
+import { en } from '../../i18n/messages/en'
 import { PdfViewer } from './PdfViewer'
 
 const meta = {
@@ -27,7 +28,7 @@ export const LoadingToolbar: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('broken-preview.pdf')).toBeVisible()
     await expect(canvas.getByText(/120\s*%/)).toBeVisible()
-    await expect(canvas.getByRole('button', { name: 'Prev' })).toBeDisabled()
-    await expect(canvas.getByRole('button', { name: 'Next' })).toBeDisabled()
+    await expect(canvas.getByRole('button', { name: en['common.previous'] })).toBeDisabled()
+    await expect(canvas.getByRole('button', { name: en['common.next'] })).toBeDisabled()
   },
 }

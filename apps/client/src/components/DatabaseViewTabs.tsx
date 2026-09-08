@@ -83,10 +83,10 @@ export function DatabaseViewTabs({
             <button
               key={view.id}
               data-testid={viewTestId(view, views)}
-              className={`relative flex h-8 min-w-20 shrink-0 items-center justify-center gap-1.5 rounded-t-md border px-2.5 text-xs font-medium transition-colors ${
+              className={`relative flex h-8 min-w-20 shrink-0 items-center justify-center gap-1.5 rounded-t-md border px-3 text-xs font-medium transition-colors ${
                 selected
-                  ? 'border-border border-b-background bg-background text-foreground'
-                  : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'border-border border-b-background bg-background text-foreground shadow-[inset_0_2px_0_0_var(--color-primary)]'
+                  : 'border-transparent text-subtle-foreground hover:bg-muted hover:text-foreground'
               }`}
               onClick={() => onSelectView(view)}
               title={t('viewTabs.tabTitle', { name: view.name, type: t(meta.labelKey) })}

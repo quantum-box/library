@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
+import { en } from '../i18n/messages/en'
 import { CreateRecordModal } from './CreateRecordModal'
 
 const meta = {
@@ -25,10 +26,10 @@ export const Open: Story = {
     const page = within(doc.body)
 
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
-    const submitButton = page.getByRole('button', { name: 'Create Record' })
+    const submitButton = page.getByRole('button', { name: en['createRecord.submit'] })
     await expect(submitButton).toBeDisabled()
 
-    await userEvent.type(page.getByLabelText(/title/i), 'Storybook validates record creation')
+    await userEvent.type(page.getByTestId('create-record-title'), 'Storybook validates record creation')
     await expect(submitButton).toBeEnabled()
 
     await userEvent.selectOptions(page.getByLabelText(/status/i), 'in_progress')

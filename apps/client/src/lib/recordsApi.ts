@@ -91,8 +91,18 @@ export interface LibraryProperty {
   id: string
   name: string
   typ: LibraryPropertyType
+  /**
+   * The parts of a Property definition a listing carries.
+   *
+   * `autoGenerate` and `databaseId` are here because the Property mutation
+   * replaces the whole definition: renaming an Id column without its
+   * `autoGenerate` would silently switch generation off, and renaming a
+   * Relation without its target is rejected outright.
+   */
   meta?: {
     options?: LibrarySelectOption[]
+    autoGenerate?: boolean
+    databaseId?: string
   } | null
 }
 
@@ -120,6 +130,22 @@ const libraryPropertyTypeByWireValue: Record<string, LibraryPropertyType> = {
 
 export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
   return libraryPropertyTypeByWireValue[typ.toUpperCase()] ?? typ
+}
+
+/**
+ * The wire spelling of a Property type, for the mutations that write one back.
+ *
+ * A listing hands types over normalized to PascalCase, and the Property
+ * mutations take the API's own SCREAMING_SNAKE, so anything that edits a
+ * Property it read from a listing has to travel back through here.
+ */
+export function libraryPropertyTypeWireValue(typ: string): string {
+  const upper = typ.toUpperCase()
+  if (libraryPropertyTypeByWireValue[upper]) return upper
+  const match = Object.entries(libraryPropertyTypeByWireValue).find(
+    ([, pascal]) => pascal === typ,
+  )
+  return match ? match[0] : upper
 }
 
 function normalizeLibraryProperty(property: LibraryProperty): LibraryProperty {
@@ -493,6 +519,8 @@ const libraryRepoDataQuery = `
         name
         typ
         meta {
+          ... on IdType { autoGenerate }
+          ... on RelationType { databaseId }
           ... on SelectType {
             options { id key name }
           }

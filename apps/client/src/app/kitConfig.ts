@@ -170,6 +170,8 @@ export interface AppKitConfig {
   storage: {
     themeKey: string
     localeKey: string
+    /** Key prefix for one repository table's column arrangement. */
+    tableLayoutKeyPrefix: string
   }
 }
 
@@ -638,5 +640,6 @@ export const appKitConfig: AppKitConfig = {
   storage: {
     themeKey: namespacedKey(appProfile.storageNamespace, 'theme'),
     localeKey: namespacedKey(appProfile.storageNamespace, 'locale'),
+    tableLayoutKeyPrefix: namespacedKey(appProfile.storageNamespace, 'table-layout'),
   },
 }
