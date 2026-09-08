@@ -154,11 +154,22 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   const { provider, state, mounted, initialError } = usePhotonLiveRecord(options)
 
   const joined = !detached && mounted && provider !== null && state !== null
-  // A room that can no longer accept checkpoints -- an external write to the
-  // canonical body, a rejected save, a socket that gave up. The editor keeps
-  // its Y.Doc, because remounting would throw away everything typed into it,
-  // and its saves go back through the ordinary REST body instead.
-  const degraded = joined && (state.status === 'failed' || state.saveStatus === 'conflict')
+  // A room that can no longer save this body -- an external write to the
+  // canonical body, a rejected checkpoint, a socket that gave up. The editor
+  // keeps its Y.Doc, because remounting would throw away everything typed
+  // into it, and its saves go back through the ordinary REST body instead.
+  const degraded = joined && (
+    state.status === 'failed' ||
+    state.saveStatus === 'conflict' ||
+    state.saveStatus === 'error'
+  )
+
+  useEffect(() => {
+    // Stop writing into a room that is no longer carrying the body. Peers
+    // must not keep receiving -- and checkpointing back -- a draft this
+    // editor has started saving through the REST body.
+    if (degraded) provider?.detach()
+  }, [degraded, provider])
 
   useEffect(() => {
     if (!onLivePolicyChange) return
@@ -300,6 +311,25 @@ function BlockRecordBodyEditor({
     if (checkpointing) collaboration!.queueCheckpoint(next)
     else onCommitRef.current(next)
   }, [checkpointing, collaboration])
+
+  useEffect(() => {
+    // Hand the durable body the document as it stands the moment the room
+    // stops carrying it.
+    //
+    // Two things go wrong without this. An edit still inside the debounce is
+    // flushed by the cleanup above through the *previous* closure, into the
+    // provider that has just stopped accepting checkpoints, and is lost. And
+    // the record the page holds still carries the body it loaded before the
+    // room joined, so the next title or property save would replay that stale
+    // text over everything typed since. Serializing the live document covers
+    // both: it does not depend on what the debounce did, and it puts the
+    // current body back in the caller's hands.
+    if (!checkpointsSuspended || !editable) return
+    const next = serializeDocument(editor, format)
+    if (next === lastCommitted.current) return
+    lastCommitted.current = next
+    onCommitRef.current(next)
+  }, [checkpointsSuspended, editable, editor, format])
 
   const schedulePendingCommit = useCallback(() => {
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)

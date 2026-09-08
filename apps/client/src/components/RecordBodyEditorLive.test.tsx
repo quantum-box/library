@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
       initialError: null,
     },
     queueCheckpoint: vi.fn(),
+    detach: vi.fn(),
     collaborationSeen: [] as boolean[],
   }
 })
@@ -86,6 +87,7 @@ function connect(state: PhotonLiveState = connectedState()) {
     provider: {
       queueCheckpoint: mocks.queueCheckpoint,
       flushCheckpoint: vi.fn(),
+      detach: mocks.detach,
       fragment: {},
       awareness: {},
       user: { name: 'Aoi', color: '#000' },
@@ -205,6 +207,7 @@ describe('RecordBodyEditor with Photon Live', () => {
     rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Body the room was holding')
     connect(connectedState({ status: 'failed', saveStatus: 'conflict', canEdit: false }))
     rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
@@ -213,6 +216,11 @@ describe('RecordBodyEditor with Photon Live', () => {
     // looking at -- but its saves go back to the durable body.
     expect(mocks.collaborationSeen.at(-1)).toBe(true)
     expect(onLivePolicyChange).toHaveBeenLastCalledWith('fallback-editable', mocks.live.state)
+    // The room stops receiving this client's updates, and the body the page
+    // holds is brought up to date so a later property save cannot replay the
+    // text loaded before the room joined.
+    expect(mocks.detach).toHaveBeenCalled()
+    expect(onCommit).toHaveBeenCalledWith('Body the room was holding')
 
     mocks.editor.blocksToMarkdownLossy.mockReturnValue('Edit after conflict')
     act(() => mocks.onEditorChange?.(mocks.editor))

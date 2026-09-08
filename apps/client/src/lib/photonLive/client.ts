@@ -429,8 +429,12 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   /** Generation identity learned from the first modern Live-ready frame. */
   private roomGeneration: string | null = null
   private offline = typeof navigator !== 'undefined' && navigator.onLine === false
-  /** True once a transaction this client originated has reached the Y.Doc. */
-  private hasLocalDocEdit = false
+  /**
+   * True once a transaction that is not the server's own snapshot has reached
+   * the Y.Doc -- this client typing, or a peer's edit merged after the room
+   * was initialized. Either one means the document holds a real body.
+   */
+  private hasEditSinceSnapshot = false
   /** The cursor put aside while this client is out of the room. */
   private parkedAwarenessState: Record<string, unknown> | null = null
 
@@ -515,15 +519,39 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
    * A checkpoint overwrites the body, and an empty document is also exactly
    * what this editor holds before it has been given anything -- a room whose
    * content never arrived looks identical to a page someone cleared. So an
-   * empty body that no local transaction produced, over a record that was not
-   * empty when this session started, is refused: the one thing it costs is a
-   * genuine "select all, delete" that somehow reached here without a local
-   * edit, and the other mistake costs the person their page.
+   * empty body that no edit produced -- neither this client's nor a peer's --
+   * over a record that was not empty when this session started, is refused:
+   * the one thing it costs is a genuine clear that somehow reached here
+   * without any transaction, and the other mistake costs the person their
+   * page.
    */
   private mayCheckpoint(body: string): boolean {
-    if (this.hasLocalDocEdit) return true
+    if (this.hasEditSinceSnapshot) return true
     if (!isBlankBody(body, this.format)) return true
     return isBlankBody(this._session?.body ?? '', this.format)
+  }
+
+  /**
+   * Stop writing into the room, keeping the document on screen.
+   *
+   * A room that has stopped carrying the body -- a conflict, a rejected
+   * checkpoint -- must stop receiving this client's updates too. Leaving the
+   * socket attached would keep broadcasting a draft the editor is now saving
+   * through the REST body, so peers could checkpoint it back and race those
+   * saves. The Y.Doc stays: it is what the person is looking at.
+   */
+  detach(): void {
+    if (this.disposed || this.reconnectSuppressed) return
+    this.reconnectSuppressed = true
+    this.leaveRoom()
+    if (this.reconnectTimer !== null) globalThis.clearTimeout(this.reconnectTimer)
+    if (this.checkpointTimer !== null) globalThis.clearTimeout(this.checkpointTimer)
+    this.reconnectTimer = null
+    this.checkpointTimer = null
+    const socket = this.socket
+    this.socket = null
+    socket?.close()
+    this.setConnectionStatus('disconnected')
   }
 
   flushCheckpoint(): void {
@@ -1012,6 +1040,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       // already authoritative and must not turn a clean reconnect into a
       // phantom local edit. Later room updates are merged peer changes.
       if (this.initialized && this.attempt?.receivedSnapshot) {
+        // A peer's edit is as authoritative as this client's own: emptying
+        // the body is something they are allowed to do.
+        this.hasEditSinceSnapshot = true
         this.hasUnackedChanges = true
         if (this.pendingCheckpoint && this.pendingCheckpoint.generation !== this.docGeneration) {
           this.pendingCheckpoint = null
@@ -1020,7 +1051,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       }
       return
     }
-    this.hasLocalDocEdit = true
+    this.hasEditSinceSnapshot = true
     this.hasUnackedChanges = true
     if (this.pendingCheckpoint && this.pendingCheckpoint.generation !== this.docGeneration) {
       this.pendingCheckpoint = null

@@ -23,7 +23,12 @@ export function PhotonLiveStatus({
   const { t } = useI18n()
   if (!state) return null
 
-  const failed = state.status === 'failed' || initialError !== null
+  // A rejected checkpoint is a room that has stopped carrying this body, not
+  // a save still in progress -- without it the line would sit on "saving"
+  // forever over an edit the room already refused.
+  const failed = state.status === 'failed' ||
+    state.saveStatus === 'error' ||
+    initialError !== null
   const conflict = state.saveStatus === 'conflict'
   const saving = state.saveStatus === 'saving' || state.hasUnackedChanges
 

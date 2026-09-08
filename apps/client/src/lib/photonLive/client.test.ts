@@ -752,4 +752,61 @@ describe('Photon Live provider', () => {
     await waitFor(() => expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1))
     fixture.provider.destroy()
   })
+
+  it('lets a peer clear a body this client never edited', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(snapshotWithText('# Canonical'))
+    await flushMicrotasks()
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+
+    // The peer emptied the room. Their edit is as authoritative as a local
+    // one, so the empty serialization it produces is a real save.
+    const peer = new Y.Doc()
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(fixture.provider.doc))
+    peer.getXmlFragment(config.fragmentName).delete(0, peer.getXmlFragment(config.fragmentName).length)
+    socket.message(Y.encodeStateAsUpdate(peer))
+    peer.destroy()
+    await flushMicrotasks()
+
+    fixture.provider.queueCheckpoint('')
+    fixture.provider.flushCheckpoint()
+    await waitFor(() => expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1))
+    fixture.provider.destroy()
+  })
+
+  it('stops writing into a room it has detached from', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await flushMicrotasks()
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 1, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    appendText(fixture.provider, 'before detaching')
+    const documentFrames = () => socket.sent.filter((frame) => typeof frame !== 'string').length
+    const sentBefore = documentFrames()
+    expect(sentBefore).toBeGreaterThan(0)
+
+    fixture.provider.detach()
+    // Leaving is announced, so peers drop this cursor rather than waiting out
+    // their own timeout.
+    expect(sentJson(socket).filter((frame) => frame.type === 'awareness').length).toBeGreaterThan(0)
+
+    // The document is still the person's to edit, but nothing it produces
+    // reaches the room any more -- peers must not checkpoint back a draft the
+    // editor has started saving through the REST body.
+    appendText(fixture.provider, 'after detaching')
+    expect(documentFrames()).toBe(sentBefore)
+    expect(fixture.provider.fragment.toJSON()).toContain('after detaching')
+    fixture.provider.queueCheckpoint('after detaching')
+    fixture.provider.flushCheckpoint()
+    await flushMicrotasks()
+    expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(0)
+    fixture.provider.destroy()
+  })
 })
