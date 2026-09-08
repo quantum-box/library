@@ -71,6 +71,8 @@ pub struct LibraryApp {
         Arc<dyn usecase::GetGlobalIdMappingInputPort>,
     pub find_global_id_mappings:
         Arc<dyn usecase::FindGlobalIdMappingsInputPort>,
+    pub share_links: Arc<dyn usecase::ManageShareLinksInputPort>,
+    pub view_shared_data: Arc<dyn usecase::ViewSharedDataInputPort>,
     pub sign_in: Arc<dyn usecase::SignInInputPort>,
     pub organization_repo: Arc<dyn OrganizationRepository>,
     pub auth_app: Arc<dyn AuthApp>,
@@ -267,6 +269,21 @@ impl LibraryApp {
                 auth_app.clone(),
                 get_repo_members.clone(),
             ));
+        let share_link_repo: Arc<dyn crate::domain::ShareLinkRepository> =
+            Arc::new(interface_adapter::ShareLinkRepositoryImpl::new(
+                library_db.clone(),
+            ));
+        // One instance behind both ports: managing a link and redeeming
+        // one share the same repo resolution and the same database
+        // handle, and splitting them would only duplicate that wiring.
+        let share_links = usecase::ShareLinks::new(
+            auth_app.clone(),
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            repo_repo.clone(),
+            share_link_repo.clone(),
+            database_app.clone(),
+        );
         let view_data = usecase::ViewData::new(
             auth_app.clone(),
             get_organization_by_username.clone(),
@@ -530,6 +547,8 @@ impl LibraryApp {
             search_data,
             search_repo,
             save_data,
+            share_links: share_links.clone(),
+            view_shared_data: share_links,
             view_data,
             update_data,
             upsert_data,

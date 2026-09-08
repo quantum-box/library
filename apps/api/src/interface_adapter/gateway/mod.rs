@@ -35,3 +35,6 @@ pub use translation_repository::*;
 
 pub mod glossary_repository;
 pub use glossary_repository::*;
+
+mod share_link_repository;
+pub use share_link_repository::*;

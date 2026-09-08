@@ -72,6 +72,31 @@ components:
       - username
       - is_public
       type: object
+    CreateShareLinkRequest:
+      properties:
+        name:
+          description: |-
+            Label shown beside the link in the owner's list, for telling
+            several links to the same document apart. Optional.
+          type:
+          - string
+          - 'null'
+      type: object
+    CreateShareLinkResponse:
+      allOf:
+      - $ref: '#/components/schemas/ShareLinkResponse'
+      - properties:
+          token:
+            description: The secret itself. Shown once; it is unrecoverable afterwards.
+            type: string
+          url:
+            description: The address to hand out, in the Library client.
+            type: string
+        required:
+        - token
+        - url
+        type: object
+      description: The one response that carries the secret.
     CreateSourceRequest:
       properties:
         name:
@@ -217,6 +242,124 @@ components:
       required:
       - id
       - url
+      type: object
+    LiveAuthorizationResponse:
+      description: |-
+        Canonical scope and current body returned to the Photon Live worker.
+
+        Field names intentionally use the snake_case protocol used by the
+        Database mutation decision DTOs. `format` is the only editor-facing name
+        and is `richText` or `markdown`.
+      properties:
+        actor_id:
+          type: string
+        body:
+          description: |-
+            RichText is encoded as the editor's serialized JSON document string;
+            Markdown is returned as its source text.
+          type: string
+        data_id:
+          type: string
+        database_id:
+          type: string
+        format:
+          $ref: '#/components/schemas/LiveBodyFormat'
+        property_id:
+          type: string
+        record_version:
+          type: string
+        repo_id:
+          type: string
+        room_id:
+          type: string
+        tenant_id:
+          type: string
+      required:
+      - tenant_id
+      - database_id
+      - repo_id
+      - data_id
+      - property_id
+      - actor_id
+      - record_version
+      - format
+      - body
+      - room_id
+      type: object
+    LiveAuthorizeRequest:
+      description: Request for the read-only room authorization exchange.
+      properties:
+        property_id:
+          type: string
+      required:
+      - property_id
+      type: object
+    LiveBodyFormat:
+      description: The two Property types that Photon Live can open as a document.
+      enum:
+      - richText
+      - markdown
+      type: string
+    LiveCheckpointRequest:
+      description: |-
+        Request that checkpoints one Photon Live body through the Database BC's
+        versioned patch port. The client cannot provide a title or another
+        Property, so a checkpoint can never overwrite those fields accidentally.
+      properties:
+        body:
+          description: |-
+            RichText is the serialized JSON document string; Markdown is source
+            text. Only this one Property is sent to the Database patch port.
+          type: string
+        expected_record_version:
+          description: Decimal RecordVersion. The string form is canonical on the wire.
+          type: string
+        format:
+          $ref: '#/components/schemas/LiveBodyFormat'
+        operation_id:
+          type: string
+        property_id:
+          type: string
+      required:
+      - property_id
+      - operation_id
+      - expected_record_version
+      - format
+      - body
+      type: object
+    LiveCheckpointResponse:
+      description: Durable decision plus the same canonical room scope used at authorize.
+      properties:
+        actor_id:
+          type: string
+        data_id:
+          type: string
+        database_id:
+          type: string
+        decision: {}
+        format:
+          $ref: '#/components/schemas/LiveBodyFormat'
+        property_id:
+          type: string
+        record_version:
+          type: string
+        repo_id:
+          type: string
+        room_id:
+          type: string
+        tenant_id:
+          type: string
+      required:
+      - tenant_id
+      - database_id
+      - repo_id
+      - data_id
+      - property_id
+      - actor_id
+      - record_version
+      - format
+      - room_id
+      - decision
       type: object
     Location:
       description: |-
@@ -584,6 +727,77 @@ components:
       required:
       - languages
       type: object
+    ShareLinkListResponse:
+      properties:
+        share_links:
+          items:
+            $ref: '#/components/schemas/ShareLinkResponse'
+          type: array
+      required:
+      - share_links
+      type: object
+    ShareLinkResponse:
+      description: |-
+        One link, as its owner sees it.
+
+        Carries no token: only the SHA-256 is stored, so the secret cannot be
+        shown again after the response that created it. A lost link is
+        replaced by minting another and revoking the old one.
+      properties:
+        active:
+          description: Whether the link still opens the document.
+          type: boolean
+        createdAt:
+          type: string
+        createdBy:
+          type:
+          - string
+          - 'null'
+        dataId:
+          type: string
+        id:
+          type: string
+        name:
+          type:
+          - string
+          - 'null'
+        revokedAt:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - dataId
+      - createdAt
+      - active
+      type: object
+    SharedDataResponse:
+      description: |-
+        What a share token resolves to.
+
+        Names the org and repo so the viewer page can say where the document
+        came from and can resolve the image URLs its body references. It
+        carries no listing and no sibling ids: a token is one document.
+      properties:
+        data:
+          $ref: '#/components/schemas/DataResponse'
+        org:
+          type: string
+        properties:
+          items:
+            $ref: '#/components/schemas/PropertyResponse'
+          type: array
+        repo:
+          type: string
+        repoName:
+          type: string
+      required:
+      - org
+      - repo
+      - repoName
+      - data
+      - properties
+      type: object
     SignInRequest:
       description: Request body for sign-in endpoint
       properties:
@@ -785,7 +999,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.2
+  version: 1.11.3
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:
@@ -1553,6 +1767,112 @@ paths:
         '404':
           description: Data not found
       tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/live/authorize:
+    post:
+      description: |-
+        This endpoint authorizes a room but never mints a token. Photon Live must
+        forward the caller's Bearer token to this boundary on every authorization
+        exchange and derive its room from the response's canonical ids.
+      operationId: authorize_live
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveAuthorizeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveAuthorizationResponse'
+          description: Photon Live room authorized
+        '400':
+          description: Invalid Property or request
+        '401':
+          description: Caller is not authenticated
+        '403':
+          description: Caller cannot edit the repository
+        '404':
+          description: Repository, record, or Property not found
+        '503':
+          description: Record patching is disabled during storage rollout
+      summary: POST /v1beta/repos/{org}/{repo}/data/{data_id}/live/authorize
+      tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/live/checkpoint:
+    post:
+      description: |-
+        This is deliberately dormant until PropertyValue backfill/parity has
+        enabled a dual-write storage mode. The Database patch port itself keeps
+        the CAS, idempotency, actor derivation, and outbox transaction boundary.
+      operationId: checkpoint_live
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveCheckpointRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCheckpointResponse'
+          description: Photon Live checkpoint decision
+        '400':
+          description: Invalid checkpoint
+        '401':
+          description: Caller is not authenticated
+        '403':
+          description: Caller cannot edit the repository
+        '404':
+          description: Repository, record, or Property not found
+        '409':
+          description: Record version conflict
+        '422':
+          description: Record patch rejected
+        '503':
+          description: Record patching is disabled during storage rollout
+      summary: POST /v1beta/repos/{org}/{repo}/data/{data_id}/live/checkpoint
+      tags: []
   /v1beta/repos/{org}/{repo}/data/{data_id}/md:
     get:
       operationId: view_data_markdown
@@ -1581,6 +1901,83 @@ paths:
         frontmatter carries `url`, the address of this document in the
         Library client, alongside `id` and `title`.
       tags: []
+  /v1beta/repos/{org}/{repo}/data/{data_id}/share-links:
+    get:
+      operationId: list_share_links
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkListResponse'
+          description: Links for this document, newest first
+        '403':
+          description: Caller may not share this repository
+        '404':
+          description: Organization or repository not found
+      summary: '`GET /v1beta/repos/{org}/{repo}/data/{data_id}/share-links`'
+      tags:
+      - share-links
+    post:
+      operationId: create_share_link
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShareLinkRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateShareLinkResponse'
+          description: The link, with its secret shown once
+        '403':
+          description: Caller may not share this repository
+        '404':
+          description: Organization, repository or document not found
+      summary: '`POST /v1beta/repos/{org}/{repo}/data/{data_id}/share-links`'
+      tags:
+      - share-links
   /v1beta/repos/{org}/{repo}/data/{data_id}/upsert:
     put:
       description: |-
@@ -2018,6 +2415,45 @@ paths:
         '404':
           description: Property not found
       tags: []
+  /v1beta/repos/{org}/{repo}/share-links/{share_link_id}:
+    delete:
+      description: |-
+        Revokes rather than deletes, so the owner keeps seeing that the link
+        existed and when it stopped working.
+      operationId: revoke_share_link
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Share link ID (sl_)
+        in: path
+        name: share_link_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkResponse'
+          description: The revoked link
+        '403':
+          description: Caller may not share this repository
+        '404':
+          description: No such link in this repository
+      summary: '`DELETE /v1beta/repos/{org}/{repo}/share-links/{share_link_id}`'
+      tags:
+      - share-links
   /v1beta/repos/{org}/{repo}/sources:
     get:
       operationId: find_sources
@@ -2214,3 +2650,26 @@ paths:
           description: Organization or repository not found
       summary: '`POST /v1beta/repos/:org/:repo/translations/run`'
       tags: []
+  /v1beta/share/{token}:
+    get:
+      description: Unauthenticated on purpose; see the module note.
+      operationId: view_shared_data
+      parameters:
+      - description: Share token (shr_)
+        in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedDataResponse'
+          description: The shared document
+        '404':
+          description: Unknown or revoked token
+      summary: '`GET /v1beta/share/{token}`'
+      tags:
+      - share-links

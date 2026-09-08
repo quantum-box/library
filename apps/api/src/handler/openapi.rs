@@ -13,7 +13,8 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
     auth::*, data::*, docs::*, global_id_mapping::*, image::*, live::*,
-    organization::*, property::*, repository::*, source::*, translation::*,
+    organization::*, property::*, repository::*, share_link::*, source::*,
+    translation::*,
 };
 
 // TODO: add English comment
@@ -64,6 +65,10 @@ use crate::handler::{
         view_image,
         authorize_live,
         checkpoint_live,
+        create_share_link,
+        list_share_links,
+        revoke_share_link,
+        view_shared_data,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -106,6 +111,11 @@ use crate::handler::{
         crate::handler::live::LiveBodyFormat,
         crate::handler::live::LiveCheckpointRequest,
         crate::handler::live::LiveCheckpointResponse,
+        crate::handler::share_link::CreateShareLinkRequest,
+        crate::handler::share_link::CreateShareLinkResponse,
+        crate::handler::share_link::ShareLinkResponse,
+        crate::handler::share_link::ShareLinkListResponse,
+        crate::handler::share_link::SharedDataResponse,
     ))
 )]
 pub struct ApiDoc;
@@ -164,6 +174,9 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(
             routes!(checkpoint_live).layer(checkpoint_live_body_limit()),
         )
+        .routes(routes!(create_share_link, list_share_links))
+        .routes(routes!(revoke_share_link))
+        .routes(routes!(view_shared_data))
 }
 
 fn checkpoint_live_body_limit() -> DefaultBodyLimit {
@@ -244,6 +257,47 @@ mod tests {
         // Building the axum router panics on a conflicting route pattern, so
         // this also proves `/data/:data_id/upsert` and the `/md` sibling can
         // coexist.
+        let _ = create_router();
+    }
+
+    /// The share-link routes sit under path patterns that already carry
+    /// captures — `/data/{data_id}/share-links` beside `/md` and
+    /// `/upsert`, and `/share-links/{share_link_id}` beside
+    /// `/data/{data_id}`. A pattern axum reads as conflicting makes
+    /// `create_router` panic, and one utoipa-axum fails to rewrite
+    /// becomes a 404 nobody notices until a link stops opening.
+    #[test]
+    fn the_share_link_routes_are_registered() {
+        let api = OpenApiRouter::with_openapi(ApiDoc::openapi())
+            .merge(create_openapi_router())
+            .get_openapi()
+            .clone();
+
+        let links = api
+            .paths
+            .paths
+            .get("/v1beta/repos/{org}/{repo}/data/{data_id}/share-links")
+            .expect("the share-link path must reach the OpenAPI document");
+        assert!(links.post.is_some(), "minting a link is a POST");
+        assert!(links.get.is_some(), "listing links is a GET");
+
+        let one = api
+            .paths
+            .paths
+            .get("/v1beta/repos/{org}/{repo}/share-links/{share_link_id}")
+            .expect("the revoke path must reach the OpenAPI document");
+        assert!(one.delete.is_some(), "revoking a link is a DELETE");
+
+        // Redeeming a token names no organization: the token is the only
+        // thing the caller has.
+        let redeem = api
+            .paths
+            .paths
+            .get("/v1beta/share/{token}")
+            .expect("the redeem path must reach the OpenAPI document");
+        assert!(redeem.get.is_some(), "redeeming a token is a GET");
+
+        // Building the axum router panics on a conflicting pattern.
         let _ = create_router();
     }
 

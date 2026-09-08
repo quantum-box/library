@@ -8,6 +8,7 @@ import {
   Database,
   FileText,
   Paperclip,
+  Link2,
   RefreshCw,
   Trash2,
   TriangleAlert,
@@ -41,6 +42,7 @@ import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { RecordBodyEditor } from './RecordBodyEditor'
+import { ShareLinkDialog } from './ShareLinkDialog'
 import { useI18n, t as translate, type I18nContextValue } from '../i18n'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
@@ -143,6 +145,7 @@ export function DataEditorPage({
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
@@ -374,6 +377,16 @@ export function DataEditorPage({
         onConfirm={() => void handleDelete()}
       />
 
+      {shareOpen ? (
+        <ShareLinkDialog
+          org={org}
+          repo={repo}
+          dataId={item.id}
+          operatorId={operatorId}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
+
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         <Button
           data-testid="data-editor-back"
@@ -424,6 +437,17 @@ export function DataEditorPage({
                   ? t('common.saved')
                   : null}
           </span>
+          <Button
+            data-testid="data-editor-share"
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground"
+            onClick={() => setShareOpen(true)}
+            aria-label={t('share.shareData')}
+            title={t('share.shareData')}
+          >
+            <Link2 className="size-3.5" aria-hidden="true" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

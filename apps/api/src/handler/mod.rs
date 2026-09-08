@@ -13,6 +13,7 @@ pub mod openapi;
 pub mod organization;
 pub mod property;
 pub mod repository;
+pub mod share_link;
 pub mod source;
 pub mod translation;
 pub mod types;

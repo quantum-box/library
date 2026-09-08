@@ -17,6 +17,7 @@ import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { PublicShell } from './components/public/PublicShell'
 import { PublicDocsView } from './components/public/PublicDocsView'
+import { SharedDataView } from './components/public/SharedDataView'
 import { TableView } from './components/TableView'
 import { LibraryTableView } from './components/LibraryTableView'
 import { KanbanView } from './components/KanbanView'
@@ -826,12 +827,19 @@ function RouteState({
  * placed under AuthGate. They also stay outside the workspace providers:
  * records, databases, views and attachments all hydrate per signed-in user.
  *
+ * `/s/<token>` joins them: a share link is handed to people who have no
+ * Library account at all, and the token in the URL is the whole credential.
+ *
  * Matching on the literal prefix means an organization whose username is
  * "public" is unreachable at /public/<repo> — a static segment outranks
  * $organization. That org is still reachable everywhere else in the app.
+ * `/s` costs nothing in the same way: a username is at least three
+ * characters, so no organization can be named `s`.
  */
 function isPublicRoutePathname(pathname: string): boolean {
-  return pathname === '/public' || pathname.startsWith('/public/')
+  return pathname === '/public' ||
+    pathname.startsWith('/public/') ||
+    pathname.startsWith('/s/')
 }
 
 const rootRoute = createRootRoute({
@@ -1924,6 +1932,27 @@ function PublicDataPage() {
   )
 }
 
+// ── Shared Document Route (/s/$token) ─────────────────────────
+
+/**
+ * One document, opened by an unguessable token.
+ *
+ * Deliberately not nested under /public: that prefix means "this repo is
+ * public", and a shared document usually lives in a private one.
+ */
+const sharedDataRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 's/$token',
+  component: SharedDataPage,
+})
+
+function SharedDataPage() {
+  const { token } = sharedDataRoute.useParams()
+  // Keyed by the token so a new link remounts the reader rather than
+  // showing the previous document while the next read is in flight.
+  return <SharedDataView key={token} token={token} />
+}
+
 // ── Route Tree & Router ───────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -1946,6 +1975,7 @@ const routeTree = rootRoute.addChildren([
   syncRoute,
   publicRepositoryRoute,
   publicDataRoute,
+  sharedDataRoute,
 ])
 
 export const router = createRouter({ routeTree })
