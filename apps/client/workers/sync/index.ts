@@ -9,19 +9,24 @@
 import { DurableObject } from 'cloudflare:workers'
 import * as Y from 'yjs'
 import photonWorkerDefault, {
+  type Env as PhotonWorkerEnv,
   PhotonSyncRoom as PhotonSyncRoomBase,
 } from '@quantum-box/photon/worker'
 
 /**
- * The old Photon Engine relay remains available on `/ws`. Live uses a
- * different Durable Object namespace so a room name or ticket can never route
- * a browser into the old, generic relay.
+ * Upstream types `PHOTON_SYNC_ROOMS` as its own room class. The binding
+ * resolves to the room defined in this module, which speaks the same wire
+ * protocol on the two entry points upstream actually uses -- `fetch` and
+ * `broadcastEngineChanged` -- but is a different type, and upstream's private
+ * members make the two structurally incompatible.
  */
-export { PhotonSyncRoomBase as PhotonSyncRoom }
+function upstreamEnv(env: Env): PhotonWorkerEnv {
+  return env as unknown as PhotonWorkerEnv
+}
 
 export interface Env {
   /** Generic Photon Engine push/pull relay. */
-  PHOTON_SYNC_ROOMS: DurableObjectNamespace<PhotonSyncRoomBase>
+  PHOTON_SYNC_ROOMS: DurableObjectNamespace<PhotonSyncRoom>
   /** Dedicated Photon Live rooms for data-editor collaboration. */
   PHOTON_LIVE_ROOMS: DurableObjectNamespace<PhotonLiveRoom>
   /** Singleton, short-lived, one-time ticket store. */
@@ -74,6 +79,44 @@ const MAX_TEXT_FRAME_BYTES = MAX_CHECKPOINT_BODY_BYTES + 32 * 1024
 const MAX_UPDATE_BYTES = 128 * 1024 - 4096
 const MAX_AWARENESS_BYTES = 64 * 1024
 const DEFAULT_CLOUD_ENGINE_BASE_URL = 'http://127.0.0.1:3001'
+
+/**
+ * Durable storage layout for a room's Yjs document. The keys are the ones
+ * upstream wrote, so a room carries on from whatever it already holds.
+ */
+const SYNC_SNAPSHOT_LEGACY_KEY = 'yjs:snapshot:bytes'
+const SYNC_SNAPSHOT_META_KEY = 'yjs:snapshot:meta'
+const SYNC_SNAPSHOT_CHUNK_PREFIX = 'yjs:snapshot:chunk:'
+const SYNC_UPDATE_META_KEY = 'yjs:update:meta'
+const SYNC_UPDATE_KEY_PREFIX = 'yjs:update:'
+/** Roll the update log into the snapshot once it exceeds this many rows. */
+const SYNC_COMPACTION_THRESHOLD = 50
+/**
+ * Bytes per stored snapshot row. Durable Object storage caps one value at
+ * 128 KiB, so a document larger than that is spread over several rows rather
+ * than left uncompacted.
+ */
+const SYNC_SNAPSHOT_CHUNK_BYTES = 96 * 1024
+/** Update rows read and applied in one catch-up batch. */
+const SYNC_CATCHUP_BATCH_ROWS = 64
+/**
+ * Batches applied between snapshot writes while catching up. Folding on every
+ * batch would rewrite the whole document per 64 rows; folding never would make
+ * a reset lose all of the pass's work, since rows are only dropped once the
+ * snapshot that covers them is stored.
+ */
+const SYNC_CATCHUP_FOLD_BATCHES = 8
+/** Storage keys written or deleted in one call. The platform caps this. */
+const SYNC_STORAGE_KEYS_PER_CALL = 96
+/**
+ * How long one request may spend catching a room up. A room that is behind
+ * serves what it has and resumes on the next request rather than replaying an
+ * unbounded log in one invocation.
+ */
+const SYNC_CATCHUP_BUDGET_MS = 3_000
+/** Text frames rooms relay verbatim between their sockets. */
+const SYNC_RELAYED_TEXT_TYPES = new Set(['awareness', 'engine-changed'])
+const SYNC_ENGINE_CHANGED_MESSAGE = JSON.stringify({ type: 'engine-changed' })
 
 type JsonObject = Record<string, unknown>
 
@@ -1028,6 +1071,435 @@ export class PhotonLiveTicketStore extends DurableObject<Env> {
   }
 }
 
+interface SyncSnapshotMeta {
+  seq: number
+  byteLength: number
+  updatedAt: string
+  /** Rows the snapshot is split across. Absent on snapshots written before chunking. */
+  chunks?: number
+}
+
+interface SyncUpdateMeta {
+  nextSeq: number
+  oldestSeq: number
+}
+
+/**
+ * The subset of Durable Object storage a room's document needs. Narrowing it
+ * here keeps the store usable against both a live `DurableObjectStorage` and
+ * the transaction handle passed into `storage.transaction`.
+ */
+interface SyncStorageWriter {
+  get<T = unknown>(key: string): Promise<T | undefined>
+  put(entries: Record<string, unknown>): Promise<void>
+  delete(keys: string[]): Promise<number>
+}
+
+interface SyncRoomStorage extends SyncStorageWriter {
+  list<T = unknown>(options: {
+    start?: string
+    end?: string
+    limit?: number
+  }): Promise<Map<string, T>>
+  transaction<T>(closure: (transaction: SyncStorageWriter) => Promise<T>): Promise<T>
+}
+
+function syncUpdateKey(seq: number): string {
+  // 12 zero-padded digits keep lexicographic order equal to numeric order for
+  // any sequence a room will realistically reach.
+  return `${SYNC_UPDATE_KEY_PREFIX}${seq.toString().padStart(12, '0')}`
+}
+
+function syncSnapshotChunkKey(index: number): string {
+  return `${SYNC_SNAPSHOT_CHUNK_PREFIX}${index.toString().padStart(6, '0')}`
+}
+
+function syncSeqFromKey(key: string): number | null {
+  const raw = key.slice(SYNC_UPDATE_KEY_PREFIX.length)
+  if (!/^\d+$/.test(raw)) return null
+  const seq = Number(raw)
+  return Number.isSafeInteger(seq) ? seq : null
+}
+
+function syncPresenceMessage(onlineCount: number): string {
+  return JSON.stringify({ type: 'presence', onlineCount })
+}
+
+async function syncPutInBatches(
+  writer: SyncStorageWriter,
+  entries: Record<string, unknown>,
+): Promise<void> {
+  const keys = Object.keys(entries)
+  for (let start = 0; start < keys.length; start += SYNC_STORAGE_KEYS_PER_CALL) {
+    const batch: Record<string, unknown> = {}
+    for (const key of keys.slice(start, start + SYNC_STORAGE_KEYS_PER_CALL)) {
+      batch[key] = entries[key]
+    }
+    await writer.put(batch)
+  }
+}
+
+async function syncDeleteInBatches(writer: SyncStorageWriter, keys: string[]): Promise<void> {
+  for (let start = 0; start < keys.length; start += SYNC_STORAGE_KEYS_PER_CALL) {
+    await writer.delete(keys.slice(start, start + SYNC_STORAGE_KEYS_PER_CALL))
+  }
+}
+
+/**
+ * A room's Yjs document as it lives in Durable Object storage.
+ *
+ * The document is kept as a snapshot plus the log of updates written since
+ * it, and the log is folded back into the snapshot as it grows. Upstream
+ * writes that snapshot as a single stored value, which Cloudflare caps at
+ * 128 KiB, and reacts to a document that outgrew the cap by skipping
+ * compaction: the log then grows without bound and every wake has to replay
+ * all of it before the room can answer anything. The Library records room --
+ * one room for a whole workspace -- crossed that line, and its Durable Object
+ * was reset for exceeding its CPU limit on every request. A browser cannot
+ * read a WebSocket handshake that fails, so the app simply said it was offline
+ * and reconnected forever.
+ *
+ * Two changes take the ceiling away. The snapshot is stored in chunks, so
+ * compaction never meets a size it must decline. And a document that is behind
+ * replays a bounded batch per request instead of the whole log at once,
+ * folding each batch into the snapshot before it looks at the next one, so a
+ * room that is already buried digs itself out over the requests that follow
+ * instead of being reset partway through every time.
+ */
+export class YjsRoomDocumentStore {
+  /** True while the stored log holds updates this document has not applied. */
+  private catchingUp = false
+
+  constructor(private readonly storage: SyncRoomStorage) {}
+
+  /** Whether the last catch-up left updates on disk that the document lacks. */
+  get behind(): boolean {
+    return this.catchingUp
+  }
+
+  async hydrate(): Promise<Y.Doc> {
+    const doc = new Y.Doc()
+    const snapshot = await this.readSnapshot()
+    if (snapshot) {
+      try {
+        Y.applyUpdate(doc, snapshot)
+      } catch (error) {
+        console.warn('[library-sync] corrupt snapshot, starting fresh', error)
+      }
+    }
+    await this.catchUp(doc)
+    return doc
+  }
+
+  /**
+   * Apply stored updates the document is missing, for at most one budget's
+   * worth of work. Returns whether anything was applied, so the caller can
+   * tell already-connected sockets that the room moved.
+   */
+  async catchUp(doc: Y.Doc): Promise<boolean> {
+    const startedAt = Date.now()
+    const snapshotMeta = await this.storage.get<SyncSnapshotMeta>(SYNC_SNAPSHOT_META_KEY)
+    const snapshotSeq = snapshotMeta?.seq ?? 0
+    let meta = (await this.storage.get<SyncUpdateMeta>(SYNC_UPDATE_META_KEY)) ?? {
+      nextSeq: snapshotSeq + 1,
+      oldestSeq: snapshotSeq + 1,
+    }
+    let applied = false
+    this.catchingUp = false
+    // Where the replay has reached. `meta.oldestSeq` only moves when a
+    // snapshot covering these rows is stored, so the two are tracked apart.
+    let cursor = meta.oldestSeq
+    let batchesSinceFold = 0
+
+    while (cursor < meta.nextSeq) {
+      // Bounded by sequence rather than by the key prefix: `yjs:update:meta`
+      // shares that prefix and is not an update.
+      const stored = await this.storage.list<ArrayBuffer>({
+        start: syncUpdateKey(cursor),
+        end: syncUpdateKey(meta.nextSeq),
+        limit: SYNC_CATCHUP_BATCH_ROWS,
+      })
+      if (stored.size === 0) break
+
+      let through = cursor - 1
+      for (const [key, bytes] of stored) {
+        const seq = syncSeqFromKey(key)
+        if (seq === null || seq >= meta.nextSeq) continue
+        try {
+          Y.applyUpdate(doc, new Uint8Array(bytes))
+          applied = true
+        } catch (error) {
+          console.warn(`[library-sync] skipping corrupt stored update ${key}`, error)
+        }
+        through = Math.max(through, seq)
+      }
+      if (through < cursor) break
+      cursor = through + 1
+      batchesSinceFold += 1
+
+      const spent = Date.now() - startedAt >= SYNC_CATCHUP_BUDGET_MS
+      if (cursor >= meta.nextSeq || spent || batchesSinceFold >= SYNC_CATCHUP_FOLD_BATCHES) {
+        // Fold what has been replayed into the snapshot. Without this the same
+        // rows would be read again on every wake, which is exactly how a room
+        // whose log outgrew one invocation stops answering at all.
+        meta = await this.writeSnapshot(doc, through)
+        batchesSinceFold = 0
+        cursor = Math.max(cursor, meta.oldestSeq)
+      }
+
+      if (spent && cursor < meta.nextSeq) {
+        // Serve what is loaded and resume on the next request. Yjs merges, so
+        // a document that is behind is incomplete, never wrong.
+        this.catchingUp = true
+        console.warn(
+          `[library-sync] room still behind by ${meta.nextSeq - cursor} update(s)`,
+        )
+        break
+      }
+    }
+
+    return applied
+  }
+
+  /** Apply a client update and append it to the log. */
+  async append(doc: Y.Doc, update: Uint8Array): Promise<boolean> {
+    if (update.byteLength > MAX_UPDATE_BYTES) {
+      console.warn(
+        `[library-sync] dropping oversized yjs update ${update.byteLength}B; ` +
+        `limit is ${MAX_UPDATE_BYTES}B`,
+      )
+      return false
+    }
+    try {
+      Y.applyUpdate(doc, update)
+    } catch (error) {
+      console.warn('[library-sync] dropping malformed client update', error)
+      return false
+    }
+
+    const meta = (await this.storage.get<SyncUpdateMeta>(SYNC_UPDATE_META_KEY)) ?? {
+      nextSeq: 1,
+      oldestSeq: 1,
+    }
+    const seq = meta.nextSeq
+    meta.nextSeq = seq + 1
+    if (seq < meta.oldestSeq) meta.oldestSeq = seq
+    await this.storage.put({
+      [syncUpdateKey(seq)]: ownedArrayBuffer(update),
+      [SYNC_UPDATE_META_KEY]: meta,
+    })
+
+    // A room still replaying its own log must not compact. The rows it has yet
+    // to apply sit below this one, and a snapshot written "through seq" would
+    // delete them unread.
+    if (!this.catchingUp && meta.nextSeq - meta.oldestSeq > SYNC_COMPACTION_THRESHOLD) {
+      await this.writeSnapshot(doc, seq)
+    }
+    return true
+  }
+
+  private async readSnapshot(): Promise<Uint8Array | null> {
+    const meta = await this.storage.get<SyncSnapshotMeta>(SYNC_SNAPSHOT_META_KEY)
+    const chunks = typeof meta?.chunks === 'number' ? meta.chunks : 0
+    if (chunks <= 0) {
+      const legacy = await this.storage.get<ArrayBuffer>(SYNC_SNAPSHOT_LEGACY_KEY)
+      return legacy ? new Uint8Array(legacy) : null
+    }
+
+    const parts: Uint8Array[] = []
+    let total = 0
+    for (let index = 0; index < chunks; index += 1) {
+      const chunk = await this.storage.get<ArrayBuffer>(syncSnapshotChunkKey(index))
+      if (!chunk) {
+        // Half a snapshot decodes into nothing usable. Replaying whatever log
+        // survives is the only reading left, and it is what an absent snapshot
+        // already does.
+        console.warn(`[library-sync] snapshot chunk ${index} missing; ignoring snapshot`)
+        return null
+      }
+      const bytes = new Uint8Array(chunk)
+      parts.push(bytes)
+      total += bytes.byteLength
+    }
+
+    const joined = new Uint8Array(total)
+    let offset = 0
+    for (const part of parts) {
+      joined.set(part, offset)
+      offset += part.byteLength
+    }
+    return joined
+  }
+
+  /**
+   * Write the document as the snapshot for everything through `throughSeq` and
+   * drop the log rows it now covers, in one transaction so an aborted write
+   * never leaves a snapshot pointing past deleted updates.
+   */
+  private async writeSnapshot(doc: Y.Doc, throughSeq: number): Promise<SyncUpdateMeta> {
+    const snapshot = Y.encodeStateAsUpdate(doc)
+    const chunks: Record<string, ArrayBuffer> = {}
+    let chunkCount = 0
+    for (let offset = 0; offset < snapshot.byteLength; offset += SYNC_SNAPSHOT_CHUNK_BYTES) {
+      chunks[syncSnapshotChunkKey(chunkCount)] = ownedArrayBuffer(
+        snapshot.subarray(offset, offset + SYNC_SNAPSHOT_CHUNK_BYTES),
+      )
+      chunkCount += 1
+    }
+    const previous = await this.storage.get<SyncSnapshotMeta>(SYNC_SNAPSHOT_META_KEY)
+    const snapshotMeta: SyncSnapshotMeta = {
+      seq: throughSeq,
+      byteLength: snapshot.byteLength,
+      updatedAt: new Date().toISOString(),
+      chunks: chunkCount,
+    }
+
+    return await this.storage.transaction(async (transaction) => {
+      const updateMeta = (await transaction.get<SyncUpdateMeta>(SYNC_UPDATE_META_KEY)) ?? {
+        nextSeq: throughSeq + 1,
+        oldestSeq: 1,
+      }
+      const stale: string[] = []
+      // The single-value snapshot upstream wrote is dead the moment this room
+      // keeps its document in chunks.
+      if (typeof previous?.chunks !== 'number') stale.push(SYNC_SNAPSHOT_LEGACY_KEY)
+      for (let index = chunkCount; index < (previous?.chunks ?? 0); index += 1) {
+        stale.push(syncSnapshotChunkKey(index))
+      }
+      for (let seq = updateMeta.oldestSeq; seq <= throughSeq; seq += 1) {
+        stale.push(syncUpdateKey(seq))
+      }
+
+      updateMeta.oldestSeq = throughSeq + 1
+      if (updateMeta.nextSeq < updateMeta.oldestSeq) updateMeta.nextSeq = updateMeta.oldestSeq
+
+      await syncPutInBatches(transaction, {
+        ...chunks,
+        [SYNC_SNAPSHOT_META_KEY]: snapshotMeta,
+        [SYNC_UPDATE_META_KEY]: updateMeta,
+      })
+      await syncDeleteInBatches(transaction, stale)
+      return updateMeta
+    })
+  }
+}
+
+/**
+ * The generic Yjs relay room on `/ws`.
+ *
+ * Library owns this room rather than re-exporting upstream's, so the document
+ * storage above -- chunked snapshots and a resumable catch-up -- applies to
+ * the workspace records room. The wire behaviour is upstream's: a snapshot on
+ * connect, binary updates relayed to every other socket, `presence` counts,
+ * and the `awareness` / `engine-changed` text frames passed through verbatim.
+ */
+export class PhotonSyncRoom extends DurableObject<Env> {
+  private readonly store: YjsRoomDocumentStore
+  private docPromise: Promise<Y.Doc> | null = null
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env)
+    // `DurableObjectStorage` carries overloads the store does not need; the
+    // narrow shape it does need is satisfied by both it and a transaction.
+    this.store = new YjsRoomDocumentStore(ctx.storage as unknown as SyncRoomStorage)
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('Expected WebSocket upgrade', { status: 426 })
+    }
+    const doc = await this.advance()
+    const pair = new WebSocketPair()
+    const [client, server] = Object.values(pair)
+    this.ctx.acceptWebSocket(server)
+    server.send(Y.encodeStateAsUpdate(doc))
+    this.broadcastPresence()
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  async webSocketMessage(
+    sender: WebSocket,
+    message: string | ArrayBuffer | ArrayBufferView,
+  ): Promise<void> {
+    if (typeof message === 'string') {
+      this.relayTextFrame(sender, message)
+      return
+    }
+    const doc = await this.advance()
+    const bytes = updateBytes(message)
+    if (!await this.store.append(doc, bytes)) return
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket !== sender) socket.send(bytes)
+    }
+  }
+
+  webSocketClose(socket: WebSocket): void {
+    this.broadcastPresence(socket)
+  }
+
+  webSocketError(socket: WebSocket): void {
+    this.broadcastPresence(socket)
+  }
+
+  /** Tell every socket in this room that the Engine op-log advanced. */
+  broadcastEngineChanged(): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      socket.send(SYNC_ENGINE_CHANGED_MESSAGE)
+    }
+  }
+
+  private ensureDoc(): Promise<Y.Doc> {
+    if (this.docPromise) return this.docPromise
+    const pending = this.hydrate()
+    this.docPromise = pending
+    return pending
+  }
+
+  private async hydrate(): Promise<Y.Doc> {
+    try {
+      return await this.store.hydrate()
+    } catch (error) {
+      // A failed hydrate must not be cached: the next request should get a
+      // fresh attempt rather than the same rejection forever.
+      this.docPromise = null
+      throw error
+    }
+  }
+
+  /**
+   * The document, carried one batch further when the room is still replaying
+   * its log. Every request that arrives at a room which is behind moves it
+   * along, and the sockets already attached are told what arrived.
+   */
+  private async advance(): Promise<Y.Doc> {
+    const doc = await this.ensureDoc()
+    if (!this.store.behind) return doc
+    if (await this.store.catchUp(doc)) {
+      const state = Y.encodeStateAsUpdate(doc)
+      for (const socket of this.ctx.getWebSockets()) socket.send(state)
+    }
+    return doc
+  }
+
+  private relayTextFrame(sender: WebSocket, message: string): void {
+    try {
+      const parsed = JSON.parse(message) as { type?: unknown }
+      if (typeof parsed.type !== 'string' || !SYNC_RELAYED_TEXT_TYPES.has(parsed.type)) return
+    } catch {
+      return
+    }
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket !== sender) socket.send(message)
+    }
+  }
+
+  private broadcastPresence(excludedSocket?: WebSocket): void {
+    const sockets = this.ctx.getWebSockets().filter((socket) => socket !== excludedSocket)
+    const message = syncPresenceMessage(sockets.length)
+    for (const socket of sockets) socket.send(message)
+  }
+}
+
 export class PhotonLiveRoom extends PhotonSyncRoomBase {
   // Serialize durable saves, not Yjs updates or awareness. A second caller
   // must not mistake an actively executing checkpoint for an abandoned
@@ -1038,7 +1510,7 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
   private readonly roomGeneration: string
 
   constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env)
+    super(ctx, upstreamEnv(env))
     this.liveEnv = env
     const durableObjectId = (ctx as unknown as { id?: { toString(): string } }).id
     this.roomGeneration = durableObjectId ? durableObjectId.toString() : 'live-room'
@@ -2545,7 +3017,8 @@ export default {
     }
 
     // The imported upstream handler continues to own `/ws` and all Engine
-    // proxy/debug routes. It only receives the old PHOTON_SYNC_ROOMS binding.
-    return photonWorkerDefault.fetch(request, env)
+    // proxy/debug routes. It only receives the old PHOTON_SYNC_ROOMS binding,
+    // which this module's own room class now serves.
+    return photonWorkerDefault.fetch(request, upstreamEnv(env))
   },
 }

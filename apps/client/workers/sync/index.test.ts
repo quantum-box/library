@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import worker, { normalizeBodyHash, PhotonLiveRoom, PhotonLiveTicketStore } from './index'
+import worker, {
+  normalizeBodyHash,
+  PhotonLiveRoom,
+  PhotonLiveTicketStore,
+  YjsRoomDocumentStore,
+} from './index'
 
 const origin = 'http://127.0.0.1:5187'
 
@@ -65,11 +70,15 @@ class MemoryStorage {
   async list<T = unknown>(options: {
     prefix?: string
     startAfter?: string
+    start?: string
+    end?: string
     limit?: number
   } = {}): Promise<Map<string, T>> {
     const keys = [...this.values.keys()]
       .filter((key) => !options.prefix || key.startsWith(options.prefix))
       .filter((key) => !options.startAfter || key > options.startAfter)
+      .filter((key) => options.start === undefined || key >= options.start)
+      .filter((key) => options.end === undefined || key < options.end)
       .sort()
       .slice(0, options.limit ?? 1000)
     return new Map(keys.map((key) => [key, this.values.get(key) as T]))
@@ -1277,5 +1286,170 @@ describe('PhotonLiveRoom coordination', () => {
       { type: 'live-ready', initialized: true, version: 0, record_version: '7', room_generation: 'live-room' },
       { type: 'live-ready', initialized: true, version: 0, record_version: '7', room_generation: 'live-room' },
     ])
+  })
+})
+
+describe('YjsRoomDocumentStore', () => {
+  const SNAPSHOT_META_KEY = 'yjs:snapshot:meta'
+  const SNAPSHOT_LEGACY_KEY = 'yjs:snapshot:bytes'
+  const UPDATE_META_KEY = 'yjs:update:meta'
+  const UPDATE_KEY_PREFIX = 'yjs:update:'
+
+  function updateKey(seq: number): string {
+    return `${UPDATE_KEY_PREFIX}${seq.toString().padStart(12, '0')}`
+  }
+
+  /** A client's edits, as the individual updates its socket would have sent. */
+  function recordedUpdates(edits: (text: Y.Text) => void): { updates: Uint8Array[]; body: string } {
+    const doc = new Y.Doc()
+    const updates: Uint8Array[] = []
+    doc.on('update', (update: Uint8Array) => updates.push(update))
+    edits(doc.getText('body'))
+    const body = doc.getText('body').toString()
+    doc.destroy()
+    return { updates, body }
+  }
+
+  function store(storage: MemoryStorage) {
+    return new YjsRoomDocumentStore(storage as never)
+  }
+
+  async function snapshotMeta(storage: MemoryStorage) {
+    return await storage.get<{ seq: number; byteLength: number; chunks?: number }>(SNAPSHOT_META_KEY)
+  }
+
+  async function pendingUpdateKeys(storage: MemoryStorage) {
+    const keys = [...(await storage.list({ prefix: UPDATE_KEY_PREFIX })).keys()]
+    return keys.filter((key) => key !== UPDATE_META_KEY)
+  }
+
+  it('compacts a document that outgrew a single stored value', async () => {
+    // Upstream declines to compact once the snapshot passes the 128 KiB value
+    // cap, which leaves the log growing forever. Chunking has no such ceiling.
+    const storage = new MemoryStorage()
+    const room = store(storage)
+    const doc = await room.hydrate()
+    const { updates, body } = recordedUpdates((text) => {
+      for (let index = 0; index < 60; index += 1) text.insert(text.length, 'x'.repeat(4096))
+    })
+
+    for (const update of updates) expect(await room.append(doc, update)).toBe(true)
+
+    const meta = await snapshotMeta(storage)
+    expect(meta?.byteLength).toBeGreaterThan(128 * 1024)
+    expect(meta?.chunks ?? 0).toBeGreaterThan(1)
+    expect(await storage.get(SNAPSHOT_LEGACY_KEY)).toBeUndefined()
+    // The rows the snapshot covers are gone, so the next wake replays only
+    // what has landed since it rather than the whole history.
+    const pending = await pendingUpdateKeys(storage)
+    expect(pending.length).toBeLessThanOrEqual(50)
+    expect(pending.length).toBeLessThan(updates.length)
+
+    const reloaded = await store(storage).hydrate()
+    expect(reloaded.getText('body').toString()).toBe(body)
+  })
+
+  it('reads a snapshot written before chunking and replaces it', async () => {
+    const storage = new MemoryStorage()
+    const seeded = new Y.Doc()
+    seeded.getText('body').insert(0, 'from the old snapshot')
+    const legacy = Y.encodeStateAsUpdate(seeded)
+    await storage.put(SNAPSHOT_LEGACY_KEY, legacy.buffer.slice(0) as ArrayBuffer)
+    await storage.put(SNAPSHOT_META_KEY, {
+      seq: 4,
+      byteLength: legacy.byteLength,
+      updatedAt: new Date().toISOString(),
+    })
+    await storage.put(UPDATE_META_KEY, { nextSeq: 5, oldestSeq: 5 })
+
+    const room = store(storage)
+    const doc = await room.hydrate()
+    expect(doc.getText('body').toString()).toBe('from the old snapshot')
+
+    const { updates } = recordedUpdates((text) => {
+      for (let index = 0; index < 60; index += 1) text.insert(text.length, 'y'.repeat(4096))
+    })
+    for (const update of updates) await room.append(doc, update)
+
+    expect((await snapshotMeta(storage))?.chunks ?? 0).toBeGreaterThan(1)
+    expect(await storage.get(SNAPSHOT_LEGACY_KEY)).toBeUndefined()
+    seeded.destroy()
+  })
+
+  describe('a room whose log outgrew one invocation', () => {
+    let now = 0
+
+    beforeEach(() => {
+      vi.restoreAllMocks()
+      // Every read of the clock lands past the catch-up budget, so each pass
+      // replays exactly one batch -- the shape of a room too far behind to
+      // load in a single request.
+      now = 0
+      vi.spyOn(Date, 'now').mockImplementation(() => {
+        now += 60_000
+        return now
+      })
+    })
+
+    async function seedBacklog(storage: MemoryStorage, edits: number) {
+      const { updates, body } = recordedUpdates((text) => {
+        for (let index = 0; index < edits; index += 1) text.insert(text.length, `${index};`)
+      })
+      const entries: Record<string, unknown> = {}
+      updates.forEach((update, index) => {
+        entries[updateKey(index + 1)] = update.buffer.slice(
+          update.byteOffset,
+          update.byteOffset + update.byteLength,
+        ) as ArrayBuffer
+      })
+      await storage.put(entries)
+      await storage.put(UPDATE_META_KEY, { nextSeq: updates.length + 1, oldestSeq: 1 })
+      return { body, total: updates.length }
+    }
+
+    it('serves what it has and catches up over the requests that follow', async () => {
+      const storage = new MemoryStorage()
+      const { body, total } = await seedBacklog(storage, 150)
+      const room = store(storage)
+
+      const doc = await room.hydrate()
+      expect(room.behind).toBe(true)
+      const partial = doc.getText('body').toString()
+      expect(partial.length).toBeGreaterThan(0)
+      expect(partial.length).toBeLessThan(body.length)
+      // Progress is durable: the batch it did replay is folded into the
+      // snapshot, so the next pass starts where this one stopped.
+      expect((await pendingUpdateKeys(storage)).length).toBeLessThan(total)
+
+      while (room.behind) await room.catchUp(doc)
+
+      expect(doc.getText('body').toString()).toBe(body)
+      expect(await pendingUpdateKeys(storage)).toEqual([])
+      expect(await store(storage).hydrate().then((reloaded) => reloaded.getText('body').toString()))
+        .toBe(body)
+    })
+
+    it('keeps the updates it has not replayed yet when a client writes', async () => {
+      const storage = new MemoryStorage()
+      const { body } = await seedBacklog(storage, 150)
+      const room = store(storage)
+      const doc = await room.hydrate()
+      expect(room.behind).toBe(true)
+      const backlog = await pendingUpdateKeys(storage)
+
+      // Compaction here would write a snapshot "through" the new update and
+      // delete every row below it -- including the ones this document has
+      // never seen.
+      const { updates } = recordedUpdates((text) => text.insert(0, 'live edit;'))
+      for (const update of updates) expect(await room.append(doc, update)).toBe(true)
+
+      const remaining = await pendingUpdateKeys(storage)
+      for (const key of backlog) expect(remaining).toContain(key)
+
+      while (room.behind) await room.catchUp(doc)
+      const settled = doc.getText('body').toString()
+      expect(settled).toContain('live edit;')
+      expect(settled.length).toBeGreaterThanOrEqual(body.length)
+    })
   })
 })
