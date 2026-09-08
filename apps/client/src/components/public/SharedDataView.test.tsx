@@ -56,8 +56,45 @@ describe('SharedDataView', () => {
     vi.clearAllMocks()
   })
 
-  it('renders the shared document read-only', async () => {
+  /**
+   * An artifact is a page of its own, so it gets the whole region: no title
+   * heading, no property list, no article column around it.
+   */
+  it('gives an HTML artifact the whole region, read-only', async () => {
     apiMocks.fetchSharedLibraryData.mockResolvedValue(shared)
+
+    await renderSettled(<SharedDataView token="shr_abc" />)
+
+    expect(screen.getByTestId('shared-data-artifact')).toBeTruthy()
+    expect(screen.queryByTestId('shared-data-title')).toBeNull()
+    expect(apiMocks.fetchSharedLibraryData).toHaveBeenCalledWith('shr_abc')
+    expect(bodyEditorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: '<h1>Hello</h1>',
+        editable: false,
+        surface: 'fill',
+      })
+    )
+  })
+
+  /**
+   * Prose is not an artifact. A Markdown or RichText body keeps the reading
+   * column, its title and its properties.
+   */
+  it('keeps the article column for a body that is not an artifact', async () => {
+    apiMocks.fetchSharedLibraryData.mockResolvedValue({
+      item: {
+        ...shared.item,
+        propertyData: [
+          { propertyId: 'property-status', value: { optionId: 'op_draft' } },
+          { propertyId: 'property-body', value: { markdown: '# Hello' } },
+        ],
+      },
+      properties: [
+        shared.properties[0],
+        { id: 'property-body', name: 'Body', typ: 'Markdown' as const, meta: null },
+      ],
+    })
 
     await renderSettled(<SharedDataView token="shr_abc" />)
 
@@ -65,10 +102,7 @@ describe('SharedDataView', () => {
     // The label, not the `op_...` id the record actually stores: the
     // response carries the Select options so the page can resolve it.
     expect(screen.getByText('Draft')).toBeTruthy()
-    expect(apiMocks.fetchSharedLibraryData).toHaveBeenCalledWith('shr_abc')
-    expect(bodyEditorMock).toHaveBeenCalledWith(
-      expect.objectContaining({ value: '<h1>Hello</h1>', editable: false })
-    )
+    expect(screen.queryByTestId('shared-data-artifact')).toBeNull()
   })
 
   /**
@@ -119,6 +153,6 @@ describe('SharedDataView', () => {
     })
 
     expect(apiMocks.fetchSharedLibraryData).toHaveBeenCalledTimes(2)
-    expect(screen.getByTestId('shared-data-title')).toHaveTextContent('Quarterly report')
+    expect(screen.getByTestId('shared-data-artifact')).toBeTruthy()
   })
 })

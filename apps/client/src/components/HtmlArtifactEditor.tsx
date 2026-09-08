@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import { HtmlPreviewFrame } from './HtmlPreviewFrame'
 import { useI18n } from '../i18n'
 
@@ -22,7 +23,12 @@ export function HtmlArtifactEditor({
   value: string
   onCommit: (value: string) => void
   editable?: boolean
-  surface?: 'panel' | 'page'
+  /**
+   * `fill` gives the artifact the whole region its page hands it, with no
+   * fixed height and no drag handle: an artifact is a page of its own, and
+   * boxing it inside an article column wastes most of the window.
+   */
+  surface?: 'panel' | 'page' | 'fill'
 }) {
   const { t } = useI18n()
   // Local first, same contract as RecordBodyEditor: once mounted, the local
@@ -36,6 +42,11 @@ export function HtmlArtifactEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
+  // The artifact is a whole page squeezed into an article column. Native
+  // fullscreen is what gives it the viewport, and it is the browser's own
+  // affordance, so Esc and the platform's exit gesture keep working.
+  const frame = useRef<HTMLDivElement | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -57,6 +68,25 @@ export function HtmlArtifactEditor({
     commitPendingValue()
   }, [commitPendingValue])
 
+  // Esc and the platform's own exit leave fullscreen without telling this
+  // component, so the button's label follows the document, not the click.
+  useEffect(() => {
+    const sync = () =>
+      setFullscreen(document.fullscreenElement === frame.current)
+    document.addEventListener('fullscreenchange', sync)
+    return () => document.removeEventListener('fullscreenchange', sync)
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+      return
+    }
+    // Refused by a browser that blocks fullscreen, and unavailable in some
+    // embeddings. Nothing here depends on it succeeding.
+    void frame.current?.requestFullscreen?.().catch(() => {})
+  }
+
   const handleChange = (next: string) => {
     setSource(next)
     pendingValue.current = next
@@ -64,12 +94,19 @@ export function HtmlArtifactEditor({
     commitTimer.current = window.setTimeout(commitPendingValue, 500)
   }
 
+  const fill = surface === 'fill'
   const frameHeight = surface === 'page' ? 'h-[560px]' : 'h-[320px]'
   const shown = editable ? source : value
 
   return (
-    <div className="overflow-hidden rounded border border-border bg-surface">
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+    <div
+      className={
+        fill
+          ? 'flex h-full min-h-0 flex-col overflow-hidden bg-surface'
+          : 'overflow-hidden rounded border border-border bg-surface'
+      }
+    >
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
         <TabButton
           active={tab === 'preview'}
           onClick={() => setTab('preview')}
@@ -87,9 +124,41 @@ export function HtmlArtifactEditor({
           </TabButton>
         ) : null}
         <span className="ml-auto text-xs text-muted-foreground">HTML</span>
+        {tab === 'preview' && shown.trim() !== '' ? (
+          <button
+            type="button"
+            data-testid="html-artifact-fullscreen"
+            onClick={toggleFullscreen}
+            aria-label={
+              fullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')
+            }
+            title={
+              fullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')
+            }
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {fullscreen ? (
+              <Minimize2 className="size-3.5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
       </div>
       {tab === 'preview' ? (
-        <div className={`${frameHeight} resize-y overflow-auto`}>
+        <div
+          ref={frame}
+          // In fullscreen the element is the viewport; when filling, its
+          // parent decides the height. Either way the fixed height and the
+          // resize handle have to get out of the way.
+          className={
+            fullscreen
+              ? 'h-screen w-screen overflow-auto bg-white'
+              : fill
+                ? 'min-h-0 flex-1 overflow-auto'
+                : `${frameHeight} resize-y overflow-auto`
+          }
+        >
           {shown.trim() === '' ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t('editor.nothingToPreview')}
@@ -106,7 +175,9 @@ export function HtmlArtifactEditor({
           spellCheck={false}
           placeholder="<!doctype html>"
           onChange={(event) => handleChange(event.target.value)}
-          className={`${frameHeight} w-full resize-y bg-background p-3 font-mono text-sm leading-relaxed text-foreground outline-none`}
+          className={`${
+            fill ? 'min-h-0 flex-1' : `${frameHeight} resize-y`
+          } w-full bg-background p-3 font-mono text-sm leading-relaxed text-foreground outline-none`}
         />
       )}
     </div>

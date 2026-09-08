@@ -4,6 +4,7 @@ import { Badge, Button } from '@tachyon-sdk/native-ui'
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
   Clock3,
   Database,
   FileText,
@@ -26,6 +27,7 @@ import {
   bodyPropertyFormat,
   bodyPropertyValue,
   getBodyProperty,
+  isArtifactHtml,
 } from '../lib/libraryTable/bodyProperty'
 import {
   deleteLibraryData,
@@ -361,6 +363,126 @@ export function DataEditorPage({
     : ''
   const pageProperties = properties.filter((property) => property.id !== bodyProperty?.id)
   const attachments = attachmentsForSurface({ surfaceType: 'record', surfaceId: item.id }).map(toFileAttachment)
+  // An HTML artifact is a page in its own right, so it gets the whole
+  // region rather than a fixed box inside the article column. What used
+  // to sit above it -- title, properties, attachments -- folds into one
+  // row instead of being dropped.
+  const artifact = bodyProperty?.typ === 'Html' && isArtifactHtml(bodyValue)
+
+  // Rendered in both layouts: inside the article column normally, inside the
+  // folded row when an artifact has taken the region. One definition so the
+  // two cannot drift.
+  // Same body in both layouts; only the box around it changes.
+  const bodySection = (
+    <section
+      className={artifact ? 'flex min-h-0 flex-1 flex-col' : 'mt-6'}
+      aria-labelledby="data-page-body"
+    >
+    <h2 id="data-page-body" className="sr-only">{t('detail.body')}</h2>
+    {bodyProperty ? (
+    <RecordBodyEditor
+    key={`${item.id}:${bodyProperty.id}`}
+    value={bodyValue}
+    format={bodyPropertyFormat(bodyProperty)}
+    surface={artifact ? 'fill' : 'page'}
+    imageTarget={{ org, repo, operatorId }}
+    liveTarget={
+    appKitConfig.dataLive.baseUrl &&
+    (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText')
+    ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
+    : undefined
+    }
+    onCommit={(value) => {
+    const current = itemRef.current
+    if (!current) return
+    persistItem(mergeLibraryDataProperty(
+    current,
+    bodyProperty.id,
+    bodyPropertyValue(bodyProperty, value),
+    ), true)
+    }}
+    />
+    ) : (
+    <div className="py-10 text-sm text-muted-foreground">
+    {t('dataEditor.noBodyProperty')}
+    </div>
+    )}
+    </section>
+  )
+
+  const titleAndProperties = (
+    <>
+    <PageTitle
+    value={item.name}
+    onCommit={(name) => persistItem({ ...itemRef.current!, name })}
+    />
+
+    <section className="mt-8" aria-labelledby="data-page-properties">
+    <h2 id="data-page-properties" className="sr-only">{t('viewSettings.properties')}</h2>
+    <div className="space-y-0.5">
+    {pageProperties.length > 0 ? pageProperties.map((property) => (
+    <div
+    key={property.id}
+    className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]"
+    >
+    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
+    {property.name}
+    </span>
+    <LibraryPropertyEditableCell
+    item={item}
+    property={property}
+    activation="single"
+    onCommit={(next) => persistItem(next)}
+    />
+    </div>
+    )) : (
+    <p className="py-1.5 text-sm text-muted-foreground">{t('dataEditor.noProperties')}</p>
+    )}
+
+    <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
+    <span className="truncate pt-0.5 text-sm text-muted-foreground">
+    {t('table.column.updated')}
+    </span>
+    <span className="flex min-h-6 items-center gap-1.5 text-sm text-foreground">
+    <Clock3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+    {formatEditorDate(item.updatedAt, i18n)}
+    </span>
+    </div>
+
+    <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
+    <span className="truncate pt-0.5 text-sm text-muted-foreground">
+    {t('detail.attachments')}
+    </span>
+    <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-2">
+    {attachments.length > 0 ? (
+    <div className="flex min-w-0 flex-wrap gap-2" data-testid="record-attachments">
+    {attachments.map((attachment) => (
+    <FileChip key={attachment.id} file={attachment} onPreview={setPreviewFile} />
+    ))}
+    </div>
+    ) : null}
+    <label className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-selected hover:text-primary">
+    <Paperclip className="size-3.5" aria-hidden="true" />
+    {attachments.length > 0 ? t('common.add') : t('dataEditor.attachFile')}
+    <input
+    data-testid="record-attach-file"
+    type="file"
+    multiple
+    accept={appKitConfig.attachments.acceptedTypes}
+    className="hidden"
+    onChange={(event) => {
+    if (event.target.files) handleAttachFiles(event.target.files)
+    event.target.value = ''
+    }}
+    />
+    </label>
+    </div>
+    </div>
+
+    </div>
+    </section>
+    </>
+  )
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background" data-testid="data-editor-page">
@@ -461,116 +583,42 @@ export function DataEditorPage({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <article className="min-w-0">
-          <div className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
-            <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
-              <FileText className="size-5" aria-hidden="true" />
-            </div>
-            <PageTitle
-              value={item.name}
-              onCommit={(name) => persistItem({ ...itemRef.current!, name })}
-            />
-
-            <section className="mt-8" aria-labelledby="data-page-properties">
-              <h2 id="data-page-properties" className="sr-only">{t('viewSettings.properties')}</h2>
-              <div className="space-y-0.5">
-                {pageProperties.length > 0 ? pageProperties.map((property) => (
-                  <div
-                    key={property.id}
-                    className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]"
-                  >
-                    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
-                      {property.name}
-                    </span>
-                    <LibraryPropertyEditableCell
-                      item={item}
-                      property={property}
-                      activation="single"
-                      onCommit={(next) => persistItem(next)}
-                    />
-                  </div>
-                )) : (
-                  <p className="py-1.5 text-sm text-muted-foreground">{t('dataEditor.noProperties')}</p>
-                )}
-
-                <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
-                    {t('table.column.updated')}
-                  </span>
-                  <span className="flex min-h-6 items-center gap-1.5 text-sm text-foreground">
-                    <Clock3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    {formatEditorDate(item.updatedAt, i18n)}
-                  </span>
-                </div>
-
-                <div className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]">
-                  <span className="truncate pt-0.5 text-sm text-muted-foreground">
-                    {t('detail.attachments')}
-                  </span>
-                  <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-2">
-                    {attachments.length > 0 ? (
-                      <div className="flex min-w-0 flex-wrap gap-2" data-testid="record-attachments">
-                        {attachments.map((attachment) => (
-                          <FileChip key={attachment.id} file={attachment} onPreview={setPreviewFile} />
-                        ))}
-                      </div>
-                    ) : null}
-                    <label className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-selected hover:text-primary">
-                      <Paperclip className="size-3.5" aria-hidden="true" />
-                      {attachments.length > 0 ? t('common.add') : t('dataEditor.attachFile')}
-                      <input
-                        data-testid="record-attach-file"
-                        type="file"
-                        multiple
-                        accept={appKitConfig.attachments.acceptedTypes}
-                        className="hidden"
-                        onChange={(event) => {
-                          if (event.target.files) handleAttachFiles(event.target.files)
-                          event.target.value = ''
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-
+      {artifact ? (
+        <div className="flex min-h-0 flex-1 flex-col" data-testid="data-editor-artifact">
+          {/* Everything the article column used to stack above the body,
+              folded into one row. The artifact takes the rest of the region
+              and nothing it displaced is gone. */}
+          <details className="group shrink-0 border-b border-border">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/40 md:px-4">
+              <ChevronRight
+                className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                aria-hidden="true"
+              />
+              <FileText className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+              <span className="truncate font-medium">{item.name || t('common.untitled')}</span>
+            </summary>
+            <div className="max-h-[45vh] overflow-y-auto px-3 pb-4 md:px-4">
+              <div className="mx-auto w-full max-w-3xl">
+                {titleAndProperties}
               </div>
-            </section>
+            </div>
+          </details>
+          {bodySection}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <article className="min-w-0">
+            <div className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
+              <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
+                <FileText className="size-5" aria-hidden="true" />
+              </div>
+              {titleAndProperties}
 
-            <section className="mt-6" aria-labelledby="data-page-body">
-              <h2 id="data-page-body" className="sr-only">{t('detail.body')}</h2>
-              {bodyProperty ? (
-                <RecordBodyEditor
-                  key={`${item.id}:${bodyProperty.id}`}
-                  value={bodyValue}
-                  format={bodyPropertyFormat(bodyProperty)}
-                  surface="page"
-                  imageTarget={{ org, repo, operatorId }}
-                  liveTarget={
-                    appKitConfig.dataLive.baseUrl &&
-                    (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText')
-                      ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
-                      : undefined
-                  }
-                  onCommit={(value) => {
-                    const current = itemRef.current
-                    if (!current) return
-                    persistItem(mergeLibraryDataProperty(
-                      current,
-                      bodyProperty.id,
-                      bodyPropertyValue(bodyProperty, value),
-                    ), true)
-                  }}
-                />
-              ) : (
-                <div className="py-10 text-sm text-muted-foreground">
-                  {t('dataEditor.noBodyProperty')}
-                </div>
-              )}
-            </section>
-          </div>
-        </article>
-      </div>
+              {bodySection}
+            </div>
+          </article>
+        </div>
+      )}
 
       {previewFile ? <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} /> : null}
     </main>

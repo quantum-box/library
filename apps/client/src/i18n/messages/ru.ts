@@ -883,6 +883,8 @@ export const ru: LocaleMessages = {
   'editor.slashMenuOthers': 'Прочее',
   'editor.previewTab': 'Предпросмотр',
   'editor.codeTab': 'Код',
+  'editor.fullscreen': 'Во весь экран',
+  'editor.exitFullscreen': 'Выйти из полноэкранного режима',
   'editor.nothingToPreview': 'Пока нечего показывать — напишите HTML на вкладке «Код».',
   'editor.emptyHtmlBlock': 'Пустой HTML-блок',
   'editor.htmlPreviewFrameTitle': 'Предпросмотр HTML',

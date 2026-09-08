@@ -954,6 +954,8 @@ export const en = {
   'editor.slashMenuOthers': 'Others',
   'editor.previewTab': 'Preview',
   'editor.codeTab': 'Code',
+  'editor.fullscreen': 'Full screen',
+  'editor.exitFullscreen': 'Exit full screen',
   'editor.nothingToPreview': 'Nothing to preview yet — write some HTML in the Code tab.',
   'editor.emptyHtmlBlock': 'Empty HTML block',
   'editor.htmlPreviewFrameTitle': 'HTML preview',

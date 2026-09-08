@@ -860,6 +860,8 @@ export const ko: LocaleMessages = {
   'editor.slashMenuOthers': '기타',
   'editor.previewTab': '미리보기',
   'editor.codeTab': '코드',
+  'editor.fullscreen': '전체 화면',
+  'editor.exitFullscreen': '전체 화면 종료',
   'editor.nothingToPreview': '아직 미리 볼 내용이 없습니다 — 코드 탭에 HTML을 작성하세요.',
   'editor.emptyHtmlBlock': '빈 HTML 블록',
   'editor.htmlPreviewFrameTitle': 'HTML 미리보기',

@@ -13,6 +13,7 @@ import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
+import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
 import { uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
@@ -59,7 +60,7 @@ export interface RecordBodyEditorProps {
   format?: RecordBodyFormat
   onCommit: (value: string) => void
   editable?: boolean
-  surface?: 'panel' | 'page'
+  surface?: 'panel' | 'page' | 'fill'
   /** Pin the read-only public reader independently of the OS theme. */
   theme?: 'light' | 'dark'
   /**
@@ -188,10 +189,6 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
  * with `blocksToFullHTML` — opens with a tag. An empty value is HTML-to-be:
  * the Property's type is the only intent an empty body has.
  */
-function isArtifactHtml(value: string): boolean {
-  return value.trim() === '' || /^\s*</.test(value)
-}
-
 /**
  * The editor is created once per mount, so `imageTarget` is read through a
  * ref: a record that re-renders with a new object identity must not throw

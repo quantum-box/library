@@ -860,6 +860,8 @@ export const ptBR: LocaleMessages = {
   'editor.slashMenuOthers': 'Outros',
   'editor.previewTab': 'Pré-visualização',
   'editor.codeTab': 'Código',
+  'editor.fullscreen': 'Tela cheia',
+  'editor.exitFullscreen': 'Sair da tela cheia',
   'editor.nothingToPreview': 'Ainda não há nada para pré-visualizar — escreva HTML na aba Código.',
   'editor.emptyHtmlBlock': 'Bloco HTML vazio',
   'editor.htmlPreviewFrameTitle': 'Pré-visualização de HTML',

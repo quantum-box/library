@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-08 - HTML アーティファクトの全画面表示
+
+- Html Property のプレビューに全画面ボタンを足した。artifact は 1 ページ丸ごと
+  なのに、記事カラムの中の固定高（ページで 560px）に押し込まれていて、縦の
+  ドラッグリサイズしか逃げ道が無かった。
+- ブラウザ本来の Fullscreen API を使う。Esc と OS 側の終了操作がそのまま効き、
+  ボタンの表示は click ではなく document の状態に追従する。
+- Code タブと、値が空のときはボタンを出さない。拡大するものが無いため。
+- 共有リンクの閲覧ページ (`/s/<token>`) も同じ経路なので一緒に効く。
+- あわせて、HTML アーティファクトを既定でその領域いっぱいに開くようにした。
+  artifact は 1 ページ丸ごとなのに記事カラムの固定高に収まっており、窓の
+  大半が余っていた。record ページではタイトル・プロパティ・添付を折りたたみ
+  1 行に畳んで残す（消していない）。共有ページと公開ページは畳まず、artifact
+  だけを出す — 受け取った人に渡したのは document であって record カードでは
+  ないため。
+- artifact 判定 (`isArtifactHtml`) を `RecordBodyEditor` から
+  `lib/libraryTable/bodyProperty.ts` に移した。ページがレイアウトを決めるのに
+  BlockNote ごと読み込まずに済ませるため。値が Markdown 方言の Html Property
+  は従来どおり記事カラムのまま。
+
 ## 2026-09-08 - private repo の閲覧共有リンク
 
 - private repo の Data 1 件を、Library アカウント無しで読める共有リンクを

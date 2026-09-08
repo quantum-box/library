@@ -860,6 +860,8 @@ export const zhHans: LocaleMessages = {
   'editor.slashMenuOthers': '其他',
   'editor.previewTab': '预览',
   'editor.codeTab': '代码',
+  'editor.fullscreen': '全屏',
+  'editor.exitFullscreen': '退出全屏',
   'editor.nothingToPreview': '还没有可预览的内容 — 请在代码标签中写入 HTML。',
   'editor.emptyHtmlBlock': '空的 HTML 区块',
   'editor.htmlPreviewFrameTitle': 'HTML 预览',
