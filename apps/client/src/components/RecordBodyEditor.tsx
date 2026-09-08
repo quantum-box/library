@@ -28,7 +28,6 @@ import type {
   PhotonLiveFormat,
   PhotonLiveProvider,
   PhotonLiveRecordTarget,
-  PhotonLiveState,
 } from '../lib/photonLive'
 import * as Y from 'yjs'
 
@@ -40,11 +39,6 @@ export interface RecordBodyImageTarget {
   repo: string
   operatorId?: string
 }
-
-export type RecordBodyLivePolicy =
-  | 'normal'
-  | 'live'
-  | 'fallback-editable'
 
 export interface RecordBodyEditorProps {
   value: string
@@ -76,12 +70,6 @@ export interface RecordBodyEditorProps {
   imageTarget?: RecordBodyImageTarget
   /** The record/property scope used by the opt-in Photon Live adapter. */
   liveTarget?: PhotonLiveRecordTarget
-  /**
-   * Reports whether this body is protected by Live or has fallen back to the
-   * ordinary durable editor. Data Editor uses this to keep a title/property
-   * save from echoing a stale Live body back through the REST API.
-   */
-  onLivePolicyChange?: (policy: RecordBodyLivePolicy, state: PhotonLiveState | null) => void
 }
 
 export function RecordBodyEditor(props: RecordBodyEditorProps) {
@@ -128,7 +116,7 @@ export function RecordBodyEditor(props: RecordBodyEditorProps) {
 function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   format: PhotonLiveFormat
 }) {
-  const { liveTarget, format, onLivePolicyChange } = props
+  const { liveTarget, format } = props
   const seedUpdate = useCallback((body: string, seedFormat: PhotonLiveFormat) => {
     const seedEditor = BlockNoteEditor.create({ schema: recordBodySchema })
     const seedDoc = blocksToYDoc(
@@ -171,16 +159,6 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
     if (degraded) provider?.detach()
   }, [degraded, provider])
 
-  useEffect(() => {
-    if (!onLivePolicyChange) return
-    // Only a room that is actually carrying the body may hold it back from
-    // the REST save. In every other state -- still connecting, detached,
-    // degraded -- the ordinary save is the one thing persisting the body, so
-    // a title or property save must keep including it.
-    const live = joined && !degraded && initialError === null
-    onLivePolicyChange(live ? 'live' : 'fallback-editable', state)
-  }, [degraded, initialError, joined, onLivePolicyChange, state])
-
   return (
     <>
       <PhotonLiveStatus
@@ -194,7 +172,6 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
         onLocalEdit={joined ? undefined : () => setDetached(true)}
         editable={props.editable ?? true}
         liveTarget={undefined}
-        onLivePolicyChange={undefined}
       />
     </>
   )
@@ -312,29 +289,25 @@ function BlockRecordBodyEditor({
     else onCommitRef.current(next)
   }, [checkpointing, collaboration])
 
+  // Always the newest one. A body that is waiting out its debounce when the
+  // room stops carrying it has to be committed by the persistence mode that
+  // is in force when the timer fires, not the one that was in force when it
+  // was scheduled -- otherwise the edit is handed to a provider that has just
+  // stopped accepting checkpoints and is lost.
+  const commitPendingValueRef = useRef(commitPendingValue)
   useEffect(() => {
-    // Hand the durable body the document as it stands the moment the room
-    // stops carrying it.
-    //
-    // Two things go wrong without this. An edit still inside the debounce is
-    // flushed by the cleanup above through the *previous* closure, into the
-    // provider that has just stopped accepting checkpoints, and is lost. And
-    // the record the page holds still carries the body it loaded before the
-    // room joined, so the next title or property save would replay that stale
-    // text over everything typed since. Serializing the live document covers
-    // both: it does not depend on what the debounce did, and it puts the
-    // current body back in the caller's hands.
-    if (!checkpointsSuspended || !editable) return
-    const next = serializeDocument(editor, format)
-    if (next === lastCommitted.current) return
-    lastCommitted.current = next
-    onCommitRef.current(next)
-  }, [checkpointsSuspended, editable, editor, format])
+    commitPendingValueRef.current = commitPendingValue
+  }, [commitPendingValue])
 
   const schedulePendingCommit = useCallback(() => {
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
-    commitTimer.current = window.setTimeout(commitPendingValue, 500)
-  }, [commitPendingValue])
+    commitTimer.current = window.setTimeout(() => commitPendingValueRef.current(), 500)
+  }, [])
+
+  const collaborationRef = useRef(collaboration)
+  useEffect(() => {
+    collaborationRef.current = collaboration
+  }, [collaboration])
 
   useEffect(() => () => {
     if (composing.current) {
@@ -342,13 +315,13 @@ function BlockRecordBodyEditor({
       // already have been waiting in the debounce when composition started.
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
-      commitPendingValue()
-      collaboration?.flushCheckpoint()
+      commitPendingValueRef.current()
+      collaborationRef.current?.flushCheckpoint()
       return
     }
-    commitPendingValue()
-    collaboration?.flushCheckpoint()
-  }, [collaboration, commitPendingValue])
+    commitPendingValueRef.current()
+    collaborationRef.current?.flushCheckpoint()
+  }, [])
 
   useEffect(() => {
     // Local first: once seeded, the editor document is the source of truth.

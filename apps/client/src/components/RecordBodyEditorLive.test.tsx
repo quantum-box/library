@@ -132,47 +132,32 @@ describe('RecordBodyEditor with Photon Live', () => {
   })
 
   it('keeps the ordinary editor when the room answers after the first keystroke', async () => {
-    const onLivePolicyChange = vi.fn()
-    const { rerender } = render(
-      <RecordBodyEditor
-        value="Original"
-        format="markdown"
-        onCommit={vi.fn()}
-        liveTarget={liveTarget}
-        onLivePolicyChange={onLivePolicyChange}
-      />,
-    )
+    const onCommit = vi.fn()
+    const props = { value: 'Original', format: 'markdown' as const, onCommit, liveTarget }
+    const { rerender } = render(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
     mocks.editor.blocksToMarkdownLossy.mockReturnValue('Typed first')
     act(() => mocks.onEditorChange?.(mocks.editor))
 
     connect()
-    rerender(
-      <RecordBodyEditor
-        value="Original"
-        format="markdown"
-        onCommit={vi.fn()}
-        liveTarget={liveTarget}
-        onLivePolicyChange={onLivePolicyChange}
-      />,
-    )
+    rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
     // Never swapped onto a collaborative editor, so nothing was taken away
     // from under the caret, and the body still reaches the REST save.
     expect(mocks.collaborationSeen).not.toContain(true)
-    expect(onLivePolicyChange).toHaveBeenLastCalledWith('fallback-editable', null)
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 600)))
+    expect(onCommit).toHaveBeenCalledWith('Typed first')
+    expect(mocks.queueCheckpoint).not.toHaveBeenCalled()
   })
 
   it('joins the room when it answers before anything is typed', async () => {
-    const onLivePolicyChange = vi.fn()
     const props = {
       value: 'Original',
       format: 'markdown' as const,
       onCommit: vi.fn(),
       liveTarget,
-      onLivePolicyChange,
     }
     const { rerender } = render(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
@@ -182,7 +167,6 @@ describe('RecordBodyEditor with Photon Live', () => {
     await act(async () => Promise.resolve())
 
     expect(mocks.collaborationSeen.at(-1)).toBe(true)
-    expect(onLivePolicyChange).toHaveBeenLastCalledWith('live', mocks.live.state)
 
     mocks.editor.blocksToMarkdownLossy.mockReturnValue('Shared edit')
     act(() => mocks.onEditorChange?.(mocks.editor))
@@ -192,14 +176,7 @@ describe('RecordBodyEditor with Photon Live', () => {
 
   it('keeps saving through the ordinary body after the room conflicts', async () => {
     const onCommit = vi.fn()
-    const onLivePolicyChange = vi.fn()
-    const props = {
-      value: 'Original',
-      format: 'markdown' as const,
-      onCommit,
-      liveTarget,
-      onLivePolicyChange,
-    }
+    const props = { value: 'Original', format: 'markdown' as const, onCommit, liveTarget }
     const { rerender } = render(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
@@ -207,20 +184,15 @@ describe('RecordBodyEditor with Photon Live', () => {
     rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
-    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Body the room was holding')
     connect(connectedState({ status: 'failed', saveStatus: 'conflict', canEdit: false }))
     rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
 
     // The editor is not remounted -- that would drop the Y.Doc the person is
-    // looking at -- but its saves go back to the durable body.
+    // looking at -- but the room stops receiving this client's updates and
+    // its saves go back to the durable body.
     expect(mocks.collaborationSeen.at(-1)).toBe(true)
-    expect(onLivePolicyChange).toHaveBeenLastCalledWith('fallback-editable', mocks.live.state)
-    // The room stops receiving this client's updates, and the body the page
-    // holds is brought up to date so a later property save cannot replay the
-    // text loaded before the room joined.
     expect(mocks.detach).toHaveBeenCalled()
-    expect(onCommit).toHaveBeenCalledWith('Body the room was holding')
 
     mocks.editor.blocksToMarkdownLossy.mockReturnValue('Edit after conflict')
     act(() => mocks.onEditorChange?.(mocks.editor))
@@ -238,5 +210,28 @@ describe('RecordBodyEditor with Photon Live', () => {
     rerender(<RecordBodyEditor {...props} />)
     await act(async () => Promise.resolve())
     expect(queryByTestId('data-editor-live-status')).toBeNull()
+  })
+
+  it('commits a debounced edit through REST when the room degrades mid-wait', async () => {
+    const onCommit = vi.fn()
+    const props = { value: 'Original', format: 'markdown' as const, onCommit, liveTarget }
+    const { rerender } = render(<RecordBodyEditor {...props} />)
+    await act(async () => Promise.resolve())
+
+    connect()
+    rerender(<RecordBodyEditor {...props} />)
+    await act(async () => Promise.resolve())
+
+    // Typed while the room was healthy, so the debounce was scheduled to
+    // checkpoint. The room then stops carrying the body before it fires.
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Caught mid-debounce')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    connect(connectedState({ saveStatus: 'error' }))
+    rerender(<RecordBodyEditor {...props} />)
+    await act(async () => Promise.resolve())
+
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 600)))
+    expect(onCommit).toHaveBeenCalledWith('Caught mid-debounce')
+    expect(mocks.queueCheckpoint).not.toHaveBeenCalled()
   })
 })
