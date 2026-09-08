@@ -1,0 +1,206 @@
+name: iOS TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number to append to the app version; empty uses the workflow run number.'
+        required: false
+
+permissions:
+  contents: read
+
+# One upload at a time, and never cancel a run that may already have handed the
+# IPA to App Store Connect. GitHub holds only one pending run per group, so when
+# pushes arrive faster than the build takes, the newest main commit is the one
+# that gets uploaded and the ones it superseded are skipped. That is the
+# intended contract: main is linear, so the build that wins already contains the
+# skipped commits, and a backlog of stale TestFlight builds helps nobody. Run
+# the workflow by hand if you need a specific commit built.
+concurrency:
+  group: library-ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  # `secrets` is not readable from a job-level `if`, so the check has to happen
+  # inside a step. Until the App Store Connect key is configured, a push to main
+  # skips quietly instead of painting main red; a manual run fails loudly,
+  # because someone asked for an upload and did not get one.
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY_P8" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'ready=false' >> "$GITHUB_OUTPUT"
+          msg='App Store Connect credentials are not configured. Set the APPLE_API_KEY_ID, APPLE_API_ISSUER_ID and APPLE_API_KEY_P8 repository secrets (see apps/client/docs/ios-testflight.md).'
+          echo "::warning::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            exit 1
+          fi
+
+  upload:
+    needs: credentials
+    if: needs.credentials.outputs.ready == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: apps/client
+    env:
+      # Tauri reads these three to sign through Xcode automatic signing, and
+      # altool reads the first two again to authenticate the upload. Note that
+      # Tauri's APPLE_API_KEY is the *key ID*, not the key material.
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+      APPLE_API_KEY_PATH: ${{ github.workspace }}/.appstoreconnect/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+      # Optional escape hatch. Left unset, Xcode automatic signing asks App
+      # Store Connect for a cloud-managed distribution certificate. Set all
+      # three and Tauri signs manually with the certificate and profile you
+      # supply instead, which is the way out if the team has to pin a specific
+      # provisioning profile.
+      IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/src-tauri
+
+      # `tauri ios init` regenerates the Xcode project with XcodeGen, which is
+      # not on the runner image. Installing it here keeps the run deterministic
+      # instead of leaving it to Tauri's Homebrew dependency check.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install dependencies
+        run: npm ci
+
+      # altool looks the key up by name in ~/.appstoreconnect/private_keys,
+      # while Tauri wants an explicit path. Write it once and satisfy both.
+      - name: Write App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.appstoreconnect" ~/.appstoreconnect/private_keys
+          printf '%s' "$KEY_P8" | base64 -d > "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8"
+          chmod 600 "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8"
+          cp "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8" \
+            ~/.appstoreconnect/private_keys/"AuthKey_${KEY_ID}.p8"
+          head -1 "$GITHUB_WORKSPACE/.appstoreconnect/AuthKey_${KEY_ID}.p8" \
+            | grep -q 'BEGIN PRIVATE KEY' \
+            || { echo 'APPLE_API_KEY_P8 did not decode to a PEM private key; it must be the base64 of the .p8 file.' >&2; exit 1; }
+
+      # The Xcode project is generated rather than committed, so the App Store
+      # build is built from tauri.conf.json the same way a local one is.
+      - name: Generate iOS project
+        run: npm run tauri -- ios init --ci
+
+      - name: Resolve build number
+        id: build_number
+        env:
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          number="${INPUT_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
+          case "$number" in
+            ''|*[!0-9]*)
+              echo "build_number must be digits only, got '${number}'." >&2
+              exit 1
+              ;;
+          esac
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # CFBundleVersion is the run number on its own, set through
+      # bundle.iOS.bundleVersion. It has to be unique and increasing per upload
+      # and at most three period-separated integers -- which is why this is not
+      # `--build-number`: that flag APPENDS to the app version, and
+      # 0.1.22 + 42 would be the four-component 0.1.22.42 that App Store
+      # Connect rejects with ITMS-90257. CFBundleShortVersionString stays the
+      # package.json version.
+      - name: Build signed IPA
+        env:
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
+        run: |
+          npm run tauri -- ios build \
+            --ci \
+            --export-method app-store-connect \
+            -c "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"${BUILD_NUMBER}\"}}}"
+
+      - name: Locate IPA
+        id: ipa
+        run: |
+          set -euo pipefail
+          path="$(find src-tauri/gen/apple/build -name '*.ipa' -print -quit 2>/dev/null || true)"
+          if [ -z "$path" ]; then
+            echo 'No IPA was produced by the iOS build.' >&2
+            exit 1
+          fi
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA_PATH" \
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
+
+      - name: Summarize
+        if: always()
+        env:
+          VERSION: ${{ steps.build_number.outputs.version }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+        run: |
+          {
+            echo "Version: ${VERSION}"
+            echo "Build number: ${BUILD_NUMBER}"
+            echo "IPA: ${IPA_PATH}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA artifact
+        if: always() && steps.ipa.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-ios-${{ steps.build_number.outputs.version }}.${{ steps.build_number.outputs.number }}
+          path: apps/client/${{ steps.ipa.outputs.path }}
+          retention-days: 14
+
+      - name: Remove App Store Connect API key
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE/.appstoreconnect" ~/.appstoreconnect
