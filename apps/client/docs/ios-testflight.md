@@ -9,7 +9,8 @@ build number.
 
 1. Generates the Xcode project with `tauri ios init`. The project is not
    committed — `src-tauri/gen/` is ignored — so the App Store build comes out of
-   `src-tauri/tauri.conf.json` exactly like a local one does.
+   `src-tauri/tauri.conf.json` plus `src-tauri/tauri.ios.conf.json` exactly like
+   a local one does.
 2. Builds with `tauri ios build --export-method app-store-connect
    --build-number <run number>`.
 3. Uploads the resulting IPA with `xcrun altool --upload-app`.
@@ -23,14 +24,31 @@ already accepted for a version.
 The IPA is also attached to the run as an artifact for 14 days, so a build that
 uploaded but failed processing can still be inspected.
 
+## Current state
+
+Set up on 2026-09-08 and ready to run: the App ID `com.quantumbox.library` is
+registered to team `J8429VCGMR`, the App Store Connect record exists as
+**Planet Library** (the plain name `Library` was already taken by another
+developer), and the three secrets below are configured on this repository from
+an App Manager key named `library-ios-ci`.
+
+The rest of this section is what to redo if the key is ever revoked or the app
+has to be recreated.
+
 ## Required setup
 
-The app record must already exist in App Store Connect for the bundle
-identifier in `tauri.conf.json`:
+The app record must exist in App Store Connect for the iOS bundle identifier:
 
 ```text
-com.quantumbox.library.client
+com.quantumbox.library
 ```
+
+That is not the identifier in `tauri.conf.json`. Desktop is frozen on
+`com.quantumbox.library.client` — changing it would orphan every installed
+copy's macOS settings, Keychain items, and Windows uninstall entry — so iOS
+overrides it in `src-tauri/tauri.ios.conf.json`, which Tauri merges over the
+base config for iOS builds only. Nothing else in the file needs to be repeated;
+the merge is per key.
 
 Create an App Store Connect API key (Users and Access → Integrations → App Store
 Connect API) with the **App Manager** role (Admin also works). The role matters:
