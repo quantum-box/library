@@ -1036,6 +1036,25 @@ describe('PhotonLiveRoom coordination', () => {
       .toMatchObject({ version: 1, savedVersion: 0, bodyHash: 'body-hash' })
   })
 
+  it('rotates a room that was left uninitialized by a page closed during the handshake', async () => {
+    // The upgrade itself writes room metadata, so a page that leaves before it
+    // can send live-initialize leaves a room with no canonical record version.
+    // That room holds no document and must never brick the record for the next
+    // session that opens it with a changed body.
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { initialized: false, recordVersion: undefined })
+    const session = { ...liveSession, recordVersion: '8', bodyHash: 'changed-body-hash' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.headers.get('x-photon-live-generation')).toMatch(/^live-generation:/)
+    expect(await storage.get<{ roomId: string; bodyHash: string; recordVersion: string }>('live:room:current-generation:v1'))
+      .toMatchObject({ bodyHash: 'changed-body-hash', recordVersion: '8' })
+  })
+
   it('rotates clean rooms by canonical record version without reusing an old generation', async () => {
     const baseStorage = new MemoryStorage()
     await putRoomMetadata(baseStorage, { bodyHash: 'body-a', recordVersion: '7', savedVersion: 0 })

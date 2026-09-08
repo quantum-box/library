@@ -1118,8 +1118,14 @@ export class PhotonLiveRoom extends PhotonSyncRoomBase {
       // A delayed ticket must never rotate a clean room back to an older
       // canonical body. Rotation is allowed only after a strictly newer API
       // record version proves that this session is the current authorization.
-      if (!roomMetadata.recordVersion ||
-        !isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion)) {
+      // A room that never finished its handshake is exempt: it was created by
+      // the upgrade itself and holds no document, so there is nothing to rewind
+      // and no canonical version of its own to compare against. Refusing it
+      // would let a page closed mid-handshake leave a room that every later
+      // session with a changed body is turned away from, forever.
+      if (roomMetadata.initialized &&
+        (!roomMetadata.recordVersion ||
+          !isRecordVersionNewer(session.recordVersion, roomMetadata.recordVersion))) {
         return new Response('Live body changed', { status: 409 })
       }
       for (const socket of this.ctx.getWebSockets()) {
