@@ -221,6 +221,14 @@ function ticketStoreContext(storage: MemoryStorage) {
   return { storage } as never
 }
 
+describe('deployment root', () => {
+  it('answers the platform serving probe', async () => {
+    const response = await worker.fetch(new Request('https://live.example.test/'), env())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: 'ok', service: 'library-client-sync' })
+  })
+})
+
 describe('Photon Live edge', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
