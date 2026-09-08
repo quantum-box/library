@@ -5,6 +5,7 @@ import {
   availablePropertyTypeChoices,
   propertyTypeLabel,
 } from '../../lib/repositoryPropertyTypes'
+import { tablePropertyTypeChoices } from '../../lib/libraryTable/propertyDrafts'
 import type { RepositoryPropertyType } from '../../lib/repositorySettingsApi'
 import { useI18n } from '../../i18n'
 
@@ -88,7 +89,7 @@ export function AddPropertyMenu({
             className="mt-1.5 h-8 w-full rounded-md border border-border-strong bg-background px-2 text-xs font-normal normal-case text-foreground outline-none focus-visible:border-primary"
             onChange={(event) => setType(event.target.value as RepositoryPropertyType)}
           >
-            {availablePropertyTypeChoices(undefined).map((choice) => (
+            {tablePropertyTypeChoices(availablePropertyTypeChoices(undefined)).map((choice) => (
               <option key={choice.value} value={choice.value}>
                 {propertyTypeLabel(choice.value)}
               </option>

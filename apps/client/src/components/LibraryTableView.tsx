@@ -38,6 +38,7 @@ import {
 import {
   createRepositoryProperty,
   deleteRepositoryProperty,
+  isRepositoryPermissionError,
   updateRepositoryProperty,
   type RepositoryPropertyType,
 } from '../lib/repositorySettingsApi'
@@ -52,7 +53,11 @@ import {
   LibraryNameEditableCell,
   LibraryPropertyEditableCell,
 } from '../lib/libraryTable/libraryPropertyEditableCell'
-import { newPropertyDraft, propertyRenameDraft } from '../lib/libraryTable/propertyDrafts'
+import {
+  canRenameProperty,
+  newPropertyDraft,
+  propertyRenameDraft,
+} from '../lib/libraryTable/propertyDrafts'
 import {
   emptyTableLayout,
   loadTableLayout,
@@ -238,6 +243,14 @@ export function LibraryTableView({
   /** A Property mutation in flight, and what it said when it failed. */
   const [propertyBusy, setPropertyBusy] = useState(false)
   const [propertyError, setPropertyError] = useState<string | null>(null)
+  /**
+   * Set once the repository has refused a Property write.
+   *
+   * A listing says nothing about who may change the Properties behind it, so
+   * this table learns it the only way it can -- by being told no -- and then
+   * stops offering the actions rather than showing the same refusal again.
+   */
+  const [propertyWritesDenied, setPropertyWritesDenied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
   const [newRowName, setNewRowName] = useState('')
@@ -482,6 +495,7 @@ export function LibraryTableView({
         ])
         return true
       } catch (createError: unknown) {
+        if (isRepositoryPermissionError(createError)) setPropertyWritesDenied(true)
         setPropertyError(repositoryLoadErrorMessage(createError))
         return false
       } finally {
@@ -493,6 +507,8 @@ export function LibraryTableView({
 
   const handleRenameProperty = useCallback(
     async (property: LibraryProperty, name: string) => {
+      const draft = propertyRenameDraft(property, name)
+      if (!draft) return
       setPropertyBusy(true)
       setMutationError(null)
       // Renamed on screen first: the header is what the reader just typed in,
@@ -501,12 +517,9 @@ export function LibraryTableView({
         current.map((entry) => (entry.id === property.id ? { ...entry, name } : entry))
       )
       try {
-        await updateRepositoryProperty(
-          propertyTarget,
-          property.id,
-          propertyRenameDraft(property, name)
-        )
+        await updateRepositoryProperty(propertyTarget, property.id, draft)
       } catch (renameError: unknown) {
+        if (isRepositoryPermissionError(renameError)) setPropertyWritesDenied(true)
         setProperties((current) =>
           current.map((entry) => (entry.id === property.id ? property : entry))
         )
@@ -532,16 +545,26 @@ export function LibraryTableView({
             Object.entries(layout.widths).filter(([id]) => id !== property.id)
           ),
         })
-        // The rows still carry values for a Property that no longer exists,
-        // so the listing is read again rather than patched row by row.
-        void reload()
+        // The loaded rows still carry values for the Property that just went
+        // away, and nothing renders them once its column is gone. Re-reading
+        // the listing here would be a request tied to this repository landing
+        // in whatever repository the reader has moved on to.
+        setItems((current) =>
+          current.map((row) => ({
+            ...row,
+            propertyData: row.propertyData.filter(
+              (entry) => entry.propertyId !== property.id
+            ),
+          }))
+        )
       } catch (deletePropertyError: unknown) {
+        if (isRepositoryPermissionError(deletePropertyError)) setPropertyWritesDenied(true)
         setMutationError(repositoryLoadErrorMessage(deletePropertyError))
       } finally {
         setPropertyBusy(false)
       }
     },
-    [layout, propertyTarget, reload, updateLayout]
+    [layout, propertyTarget, updateLayout]
   )
 
   const handleColumnDragEnd = useCallback(
@@ -560,11 +583,16 @@ export function LibraryTableView({
    * straight into the arrangement the reader keeps.
    */
   const beginResize = useCallback(
-    (columnId: string, startWidth: number) =>
+    (columnId: string, nominalWidth: number) =>
       (event: React.MouseEvent | React.TouchEvent) => {
         event.preventDefault()
         event.stopPropagation()
         const startX = 'touches' in event ? event.touches[0].clientX : event.clientX
+        // The table stretches to fill a viewport wider than its columns ask
+        // for, so the rendered header is the only honest starting width: the
+        // nominal one would make the column jump on the first movement.
+        const header = (event.target as HTMLElement).closest('th')
+        const startWidth = header?.getBoundingClientRect().width ?? nominalWidth
         let width = startWidth
         const move = (moveEvent: MouseEvent | TouchEvent) => {
           const clientX =
@@ -943,18 +971,6 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && !error && rows.length === 0 && !creatingRow && (
-        <div
-          className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
-          data-testid="library-table-empty"
-        >
-          <span className="flex size-10 items-center justify-center rounded-full border border-border bg-surface text-subtle-foreground">
-            <Inbox className="size-4" aria-hidden="true" />
-          </span>
-          <p className="text-sm text-muted-foreground">{t('libraryTable.empty')}</p>
-        </div>
-      )}
-
       {!loading && !error && rows.length > 0 && isMobileViewport && (
         <div ref={cardScrollRef} className="flex-1 overflow-y-auto px-3 py-3">
           <div className="relative" style={{ height: cardVirtualizer.getTotalSize() }}>
@@ -986,7 +1002,10 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && !isMobileViewport && (
+      {/* Rendered with no rows as well: the `+` that defines a column lives in
+          this header, and a repository nobody has written to yet is exactly
+          when someone needs it. */}
+      {!loading && !error && !isMobileViewport && (
         <DndContext
           sensors={columnSensors}
           collisionDetection={closestCenter}
@@ -1022,11 +1041,13 @@ export function LibraryTableView({
                               className="relative border-b border-border bg-background px-2 py-2 text-left align-middle"
                               style={{ width }}
                             >
-                              <AddPropertyMenu
-                                busy={propertyBusy}
-                                error={propertyError}
-                                onCreate={handleCreateProperty}
-                              />
+                              {!propertyWritesDenied && (
+                                <AddPropertyMenu
+                                  busy={propertyBusy}
+                                  error={propertyError}
+                                  onCreate={handleCreateProperty}
+                                />
+                              )}
                             </th>
                           )
                         }
@@ -1071,12 +1092,14 @@ export function LibraryTableView({
                                 : undefined
                             }
                             onRename={
-                              property
+                              property && !propertyWritesDenied && canRenameProperty(property)
                                 ? (name) => void handleRenameProperty(property, name)
                                 : undefined
                             }
                             onDelete={
-                              property ? () => void handleDeleteProperty(property) : undefined
+                              property && !propertyWritesDenied
+                                ? () => void handleDeleteProperty(property)
+                                : undefined
                             }
                           />
                         )
@@ -1127,8 +1150,33 @@ export function LibraryTableView({
               })}
             </tbody>
           </table>
+
+          {rows.length === 0 && !creatingRow && (
+            <div
+              className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+              data-testid="library-table-empty"
+            >
+              <span className="flex size-10 items-center justify-center rounded-full border border-border bg-surface text-subtle-foreground">
+                <Inbox className="size-4" aria-hidden="true" />
+              </span>
+              <p className="text-sm text-muted-foreground">{t('libraryTable.empty')}</p>
+            </div>
+          )}
         </div>
         </DndContext>
+      )}
+
+      {/* The card list has no header to hang the empty message under. */}
+      {!loading && !error && isMobileViewport && rows.length === 0 && !creatingRow && (
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+          data-testid="library-table-empty"
+        >
+          <span className="flex size-10 items-center justify-center rounded-full border border-border bg-surface text-subtle-foreground">
+            <Inbox className="size-4" aria-hidden="true" />
+          </span>
+          <p className="text-sm text-muted-foreground">{t('libraryTable.empty')}</p>
+        </div>
       )}
 
       {/* Outside the viewport branches on purpose: the card list and the

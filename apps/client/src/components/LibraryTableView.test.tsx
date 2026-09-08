@@ -16,6 +16,8 @@ vi.mock('../lib/repositorySettingsApi', () => ({
   createRepositoryProperty: mocks.createRepositoryProperty,
   updateRepositoryProperty: mocks.updateRepositoryProperty,
   deleteRepositoryProperty: mocks.deleteRepositoryProperty,
+  isRepositoryPermissionError: (error: unknown) =>
+    error instanceof Error && error.message === 'permission',
 }))
 
 vi.mock('../lib/recordsApi', () => ({
@@ -297,6 +299,56 @@ describe('LibraryTableView', () => {
       expect(screen.getByText('First item')).toBeInTheDocument()
     })
     expect(screen.queryByText('Title')).not.toBeInTheDocument()
+  })
+
+  /**
+   * A repository nobody has written to yet is exactly when someone needs to
+   * define a column, so the header has to be there before the first row is.
+   */
+  it('keeps the column header reachable when the repository has no rows', async () => {
+    mocks.fetchLibraryRepoTableData.mockResolvedValue({
+      items: [],
+      properties: [{ id: 'prop-title', name: 'Title', typ: 'String' }],
+      repoName: 'docs',
+    })
+
+    render(
+      <LibraryTableView org="quantum-box" repo="docs" onSelectData={() => undefined} />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('library-table-empty')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('library-table-add-column')).toBeInTheDocument()
+    expect(screen.getByText('Title')).toBeInTheDocument()
+  })
+
+  /**
+   * A listing says nothing about who may change Properties, so the table
+   * learns it from the refusal and stops offering what cannot succeed.
+   */
+  it('stops offering Property writes once the repository refuses one', async () => {
+    mocks.createRepositoryProperty.mockRejectedValue(new Error('permission'))
+
+    render(
+      <LibraryTableView org="quantum-box" repo="docs" onSelectData={() => undefined} />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('First item')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('library-table-add-column'))
+    fireEvent.change(screen.getByTestId('library-table-add-column-name'), {
+      target: { value: 'Owner' },
+    })
+    fireEvent.click(screen.getByTestId('library-table-add-column-submit'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('library-table-add-column')).not.toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByTestId('library-table-column-menu-prop-title'))
+    expect(screen.queryByTestId('library-table-rename-prop-title')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('library-table-delete-column-prop-title')).not.toBeInTheDocument()
   })
 
   it('renames a Property from its header menu', async () => {

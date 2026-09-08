@@ -91,8 +91,18 @@ export interface LibraryProperty {
   id: string
   name: string
   typ: LibraryPropertyType
+  /**
+   * The parts of a Property definition a listing carries.
+   *
+   * `autoGenerate` and `databaseId` are here because the Property mutation
+   * replaces the whole definition: renaming an Id column without its
+   * `autoGenerate` would silently switch generation off, and renaming a
+   * Relation without its target is rejected outright.
+   */
   meta?: {
     options?: LibrarySelectOption[]
+    autoGenerate?: boolean
+    databaseId?: string
   } | null
 }
 
@@ -509,6 +519,8 @@ const libraryRepoDataQuery = `
         name
         typ
         meta {
+          ... on IdType { autoGenerate }
+          ... on RelationType { databaseId }
           ... on SelectType {
             options { id key name }
           }
