@@ -19,7 +19,7 @@
   とは 2 点で逆になる — Google Fonts と cdnjs は desktop の CSP に弾かれるので、
   書体はシステムスタックか data URI、ライブラリは使わず inline SVG を手で描く。
 - `library` スキルの artifact 節は新スキルへの案内に畳んだ。同じ手順を 2 箇所に
-  置くと必ず片方が古くなるため。plugin は 0.5.0、desktop は 0.1.35。
+  置くと必ず片方が古くなるため。plugin は 0.5.0、desktop は 0.1.36。
 
 ## 2026-09-08 - HTML アーティファクトの全画面表示
 
