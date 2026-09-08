@@ -296,6 +296,36 @@ export async function requestPhotonLiveSession(
   }
 }
 
+/**
+ * Whether a serialized body carries nothing.
+ *
+ * Markdown says so by being empty. A rich text document never is: BlockNote
+ * always keeps at least one block, so an untouched document is a list of
+ * blocks that hold no content and no children.
+ */
+function isBlankBody(body: string, format: PhotonLiveFormat): boolean {
+  if (body.trim() === '') return true
+  if (format !== 'richText') return false
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    // Not a document this function can judge; treat it as content.
+    return false
+  }
+  const blocks = Array.isArray(parsed)
+    ? parsed
+    : (parsed as { blocks?: unknown })?.blocks
+  if (!Array.isArray(blocks)) return false
+  return blocks.every((block) => {
+    if (!block || typeof block !== 'object') return false
+    const { content, children } = block as { content?: unknown; children?: unknown }
+    if (Array.isArray(children) && children.length > 0) return false
+    if (content === undefined || content === null) return true
+    return Array.isArray(content) && content.length === 0
+  })
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
   const chunkSize = 0x8000
@@ -399,6 +429,14 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   /** Generation identity learned from the first modern Live-ready frame. */
   private roomGeneration: string | null = null
   private offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  /**
+   * True once a transaction that is not the server's own snapshot has reached
+   * the Y.Doc -- this client typing, or a peer's edit merged after the room
+   * was initialized. Either one means the document holds a real body.
+   */
+  private hasEditSinceSnapshot = false
+  /** The cursor put aside while this client is out of the room. */
+  private parkedAwarenessState: Record<string, unknown> | null = null
 
   constructor(options: PhotonLiveProviderOptions) {
     this.target = options.target
@@ -416,6 +454,8 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (typeof window !== 'undefined') {
       window.addEventListener('offline', this.handleOffline)
       window.addEventListener('online', this.handleOnline)
+      window.addEventListener('pagehide', this.handlePageHide)
+      window.addEventListener('pageshow', this.handlePageShow)
       window.addEventListener('library-auth-change', this.handleAuthChange)
     }
   }
@@ -455,6 +495,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   queueCheckpoint(body: string): void {
     if (this.disposed || !this.initialized || this.reconnectSuppressed) return
+    if (!this.mayCheckpoint(body)) return
     // Coalesce only a body that is still waiting to be sent. A body queued
     // while another checkpoint is in flight is a new idempotency operation;
     // reusing that key would make the worker reject a valid later body.
@@ -472,6 +513,47 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     this.scheduleCheckpoint()
   }
 
+  /**
+   * Whether this body is allowed to replace the record's durable one.
+   *
+   * A checkpoint overwrites the body, and an empty document is also exactly
+   * what this editor holds before it has been given anything -- a room whose
+   * content never arrived looks identical to a page someone cleared. So an
+   * empty body that no edit produced -- neither this client's nor a peer's --
+   * over a record that was not empty when this session started, is refused:
+   * the one thing it costs is a genuine clear that somehow reached here
+   * without any transaction, and the other mistake costs the person their
+   * page.
+   */
+  private mayCheckpoint(body: string): boolean {
+    if (this.hasEditSinceSnapshot) return true
+    if (!isBlankBody(body, this.format)) return true
+    return isBlankBody(this._session?.body ?? '', this.format)
+  }
+
+  /**
+   * Stop writing into the room, keeping the document on screen.
+   *
+   * A room that has stopped carrying the body -- a conflict, a rejected
+   * checkpoint -- must stop receiving this client's updates too. Leaving the
+   * socket attached would keep broadcasting a draft the editor is now saving
+   * through the REST body, so peers could checkpoint it back and race those
+   * saves. The Y.Doc stays: it is what the person is looking at.
+   */
+  detach(): void {
+    if (this.disposed || this.reconnectSuppressed) return
+    this.reconnectSuppressed = true
+    this.leaveRoom()
+    if (this.reconnectTimer !== null) globalThis.clearTimeout(this.reconnectTimer)
+    if (this.checkpointTimer !== null) globalThis.clearTimeout(this.checkpointTimer)
+    this.reconnectTimer = null
+    this.checkpointTimer = null
+    const socket = this.socket
+    this.socket = null
+    socket?.close()
+    this.setConnectionStatus('disconnected')
+  }
+
   flushCheckpoint(): void {
     if (this.checkpointTimer !== null) {
       globalThis.clearTimeout(this.checkpointTimer)
@@ -482,6 +564,10 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   destroy(): void {
     if (this.disposed) return
+    // Before `disposed` closes the awareness path: the removal has to be sent
+    // while this provider will still forward it and the socket can still
+    // carry it.
+    this.leaveRoom()
     this.disposed = true
     if (this.reconnectTimer !== null) globalThis.clearTimeout(this.reconnectTimer)
     if (this.handshakeTimer !== null) globalThis.clearTimeout(this.handshakeTimer)
@@ -494,9 +580,10 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (typeof window !== 'undefined') {
       window.removeEventListener('offline', this.handleOffline)
       window.removeEventListener('online', this.handleOnline)
+      window.removeEventListener('pagehide', this.handlePageHide)
+      window.removeEventListener('pageshow', this.handlePageShow)
       window.removeEventListener('library-auth-change', this.handleAuthChange)
     }
-    this.awareness.setLocalState(null)
     this.socket?.close()
     this.socket = null
     this.listeners.clear()
@@ -847,6 +934,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     this.initialized = true
     this.setConnectionStatus('connected', null)
     this.sendCurrentState()
+    this.rejoinRoom()
     this.sendAwarenessUpdate([this.awareness.clientID])
     if (this.inFlight) this.sendCheckpoint(this.inFlight)
     else if (this.pendingCheckpoint) this.scheduleCheckpoint()
@@ -952,6 +1040,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       // already authoritative and must not turn a clean reconnect into a
       // phantom local edit. Later room updates are merged peer changes.
       if (this.initialized && this.attempt?.receivedSnapshot) {
+        // A peer's edit is as authoritative as this client's own: emptying
+        // the body is something they are allowed to do.
+        this.hasEditSinceSnapshot = true
         this.hasUnackedChanges = true
         if (this.pendingCheckpoint && this.pendingCheckpoint.generation !== this.docGeneration) {
           this.pendingCheckpoint = null
@@ -960,6 +1051,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       }
       return
     }
+    this.hasEditSinceSnapshot = true
     this.hasUnackedChanges = true
     if (this.pendingCheckpoint && this.pendingCheckpoint.generation !== this.docGeneration) {
       this.pendingCheckpoint = null
@@ -983,9 +1075,55 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     ])
   }
 
+  /**
+   * Take this client's cursor out of the room.
+   *
+   * Nothing else does. A socket that dies without a close frame -- a phone
+   * leaving coverage, a tab the OS discards -- leaves this client's awareness
+   * entry sitting in every peer's map until their own 30s timeout prunes it,
+   * which is what a room that keeps gaining people looks like. Clearing the
+   * local state emits an awareness update whose `removed` entry this provider
+   * forwards, so peers drop the cursor at once. The state is parked rather
+   * than discarded: a suspended page that comes back rejoins with it.
+   */
+  private leaveRoom(): void {
+    const state = this.awareness.getLocalState()
+    if (state === null) return
+    this.parkedAwarenessState = state
+    this.awareness.setLocalState(null)
+  }
+
+  /** Put the parked cursor back once this client is in the room again. */
+  private rejoinRoom(): void {
+    const state = this.parkedAwarenessState
+    if (state === null) return
+    this.parkedAwarenessState = null
+    if (this.awareness.getLocalState() === null) this.awareness.setLocalState(state)
+  }
+
+  /**
+   * A page being frozen or unloaded, which on a phone is simply switching
+   * away from the tab. The socket handle survives on both ends while nothing
+   * can travel over it, so leave deliberately instead of leaving the room to
+   * discover it later; `pageshow` reconnects a page that comes back.
+   */
+  private handlePageHide = (event: Event): void => {
+    if ((event as PageTransitionEvent).persisted === false) {
+      this.destroy()
+      return
+    }
+    this.handleOffline()
+  }
+
+  private handlePageShow = (event: Event): void => {
+    if (!(event as PageTransitionEvent).persisted) return
+    this.handleOnline()
+  }
+
   private handleOffline = (): void => {
     if (this.disposed || this.offline || this.reconnectSuppressed) return
     this.offline = true
+    this.leaveRoom()
     const socket = this.socket
     this.socket = null
     socket?.close()

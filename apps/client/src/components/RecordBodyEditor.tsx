@@ -28,7 +28,6 @@ import type {
   PhotonLiveFormat,
   PhotonLiveProvider,
   PhotonLiveRecordTarget,
-  PhotonLiveState,
 } from '../lib/photonLive'
 import * as Y from 'yjs'
 
@@ -40,12 +39,6 @@ export interface RecordBodyImageTarget {
   repo: string
   operatorId?: string
 }
-
-export type RecordBodyLivePolicy =
-  | 'normal'
-  | 'live'
-  | 'fallback-editable'
-  | 'fallback-readonly'
 
 export interface RecordBodyEditorProps {
   value: string
@@ -77,12 +70,6 @@ export interface RecordBodyEditorProps {
   imageTarget?: RecordBodyImageTarget
   /** The record/property scope used by the opt-in Photon Live adapter. */
   liveTarget?: PhotonLiveRecordTarget
-  /**
-   * Reports whether this body is protected by Live or has fallen back to the
-   * ordinary durable editor. Data Editor uses this to keep a title/property
-   * save from echoing a stale Live body back through the REST API.
-   */
-  onLivePolicyChange?: (policy: RecordBodyLivePolicy, state: PhotonLiveState | null) => void
 }
 
 export function RecordBodyEditor(props: RecordBodyEditorProps) {
@@ -112,16 +99,24 @@ export function RecordBodyEditor(props: RecordBodyEditorProps) {
 }
 
 /**
- * Wait for an authorized Live room before mounting BlockNote. The normal
- * editor must not mount first: doing so would seed the room's Y.Doc from the
- * API value and race the first server snapshot. A disabled 503 is the one
- * supported editable fallback; authorization and protocol failures remain
- * read-only so they cannot overwrite a body owned by the room.
+ * Mount the ordinary editor immediately and let Live catch up.
+ *
+ * Live is auxiliary and must never stand between the person and their body
+ * text: the document is on screen, editable and saving from the first frame,
+ * whether the room answers in 50ms, in 20 seconds, or never. Nothing here is
+ * allowed to make the editor wait, go read-only, or stop persisting.
+ *
+ * Mounting first is safe because the ordinary editor never touches a Y.Doc:
+ * the room is joined only once the provider has its own server snapshot, and
+ * only while the body is still untouched. The moment anything is typed the
+ * room is dropped for the rest of this mount rather than swapping BlockNote
+ * out from under the caret -- collaboration is worth less than the sentence
+ * being written.
  */
 function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   format: PhotonLiveFormat
 }) {
-  const { liveTarget, format, onLivePolicyChange } = props
+  const { liveTarget, format } = props
   const seedUpdate = useCallback((body: string, seedFormat: PhotonLiveFormat) => {
     const seedEditor = BlockNoteEditor.create({ schema: recordBodySchema })
     const seedDoc = blocksToYDoc(
@@ -138,59 +133,45 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
       seedDoc.destroy()
     }
   }, [])
-  const options = useMemo(() => ({
+  const [detached, setDetached] = useState(false)
+  const options = useMemo(() => detached ? null : {
     target: liveTarget!,
     format,
     seedUpdate,
-  }), [format, liveTarget, seedUpdate])
+  }, [detached, format, liveTarget, seedUpdate])
   const { provider, state, mounted, initialError } = usePhotonLiveRecord(options)
 
+  const joined = !detached && mounted && provider !== null && state !== null
+  // A room that can no longer save this body -- an external write to the
+  // canonical body, a rejected checkpoint, a socket that gave up. The editor
+  // keeps its Y.Doc, because remounting would throw away everything typed
+  // into it, and its saves go back through the ordinary REST body instead.
+  const degraded = joined && (
+    state.status === 'failed' ||
+    state.saveStatus === 'conflict' ||
+    state.saveStatus === 'error'
+  )
+
   useEffect(() => {
-    if (!onLivePolicyChange) return
-    if (!state) {
-      onLivePolicyChange('live', null)
-      return
-    }
-    if (state.status === 'failed' && state.error?.kind === 'disabled') {
-      onLivePolicyChange('fallback-editable', state)
-      return
-    }
-    if (state.status === 'failed') {
-      onLivePolicyChange('fallback-readonly', state)
-      return
-    }
-    onLivePolicyChange('live', state)
-  }, [onLivePolicyChange, state])
-
-  const fallbackEditable = initialError?.kind === 'disabled'
-  const status = <PhotonLiveStatus state={state} initialError={initialError} />
-
-  if (!mounted || !provider || !state) {
-    if (initialError) {
-      return (
-        <>
-          {status}
-          <BlockRecordBodyEditor
-            {...props}
-            editable={fallbackEditable && (props.editable ?? true)}
-            liveTarget={undefined}
-            onLivePolicyChange={undefined}
-          />
-        </>
-      )
-    }
-    return <>{status}<div className="min-h-[420px]" aria-hidden="true" /></>
-  }
+    // Stop writing into a room that is no longer carrying the body. Peers
+    // must not keep receiving -- and checkpointing back -- a draft this
+    // editor has started saving through the REST body.
+    if (degraded) provider?.detach()
+  }, [degraded, provider])
 
   return (
     <>
-      {status}
+      <PhotonLiveStatus
+        state={detached ? null : state}
+        initialError={detached ? null : initialError}
+      />
       <BlockRecordBodyEditor
         {...props}
-        collaboration={provider}
-        editable={(props.editable ?? true) && state.canEdit}
+        collaboration={joined ? provider : undefined}
+        checkpointsSuspended={degraded}
+        onLocalEdit={joined ? undefined : () => setDetached(true)}
+        editable={props.editable ?? true}
         liveTarget={undefined}
-        onLivePolicyChange={undefined}
       />
     </>
   )
@@ -261,7 +242,15 @@ function BlockRecordBodyEditor({
   theme,
   imageTarget,
   collaboration,
-}: RecordBodyEditorProps & { collaboration?: PhotonLiveProvider }) {
+  checkpointsSuspended = false,
+  onLocalEdit,
+}: RecordBodyEditorProps & {
+  collaboration?: PhotonLiveProvider
+  /** The room is attached but can no longer persist; save through onCommit. */
+  checkpointsSuspended?: boolean
+  /** Fired on the first keystroke of every local edit. */
+  onLocalEdit?: () => void
+}) {
   const lastCommitted = useRef(value)
   const loading = useRef(true)
   const seeded = useRef(false)
@@ -270,11 +259,18 @@ function BlockRecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
+  const onLocalEditRef = useRef(onLocalEdit)
   const editor = useBodyEditor(imageTarget, collaboration)
+  // The room persists the body only while it is attached and healthy.
+  const checkpointing = collaboration !== undefined && !checkpointsSuspended
 
   useEffect(() => {
     onCommitRef.current = onCommit
   }, [onCommit])
+
+  useEffect(() => {
+    onLocalEditRef.current = onLocalEdit
+  }, [onLocalEdit])
 
   const commitPendingValue = useCallback(() => {
     if (commitTimer.current !== null) {
@@ -286,17 +282,32 @@ function BlockRecordBodyEditor({
     pendingValue.current = null
     // A Yjs transaction can advance the room without changing the serialized
     // text. Live still needs this fresh generation after a stale checkpoint.
-    if (next === null || (!collaboration && next === lastCommitted.current)) return
+    if (next === null || (!checkpointing && next === lastCommitted.current)) return
 
     lastCommitted.current = next
-    if (collaboration) collaboration.queueCheckpoint(next)
+    if (checkpointing) collaboration!.queueCheckpoint(next)
     else onCommitRef.current(next)
-  }, [collaboration])
+  }, [checkpointing, collaboration])
+
+  // Always the newest one. A body that is waiting out its debounce when the
+  // room stops carrying it has to be committed by the persistence mode that
+  // is in force when the timer fires, not the one that was in force when it
+  // was scheduled -- otherwise the edit is handed to a provider that has just
+  // stopped accepting checkpoints and is lost.
+  const commitPendingValueRef = useRef(commitPendingValue)
+  useEffect(() => {
+    commitPendingValueRef.current = commitPendingValue
+  }, [commitPendingValue])
 
   const schedulePendingCommit = useCallback(() => {
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
-    commitTimer.current = window.setTimeout(commitPendingValue, 500)
-  }, [commitPendingValue])
+    commitTimer.current = window.setTimeout(() => commitPendingValueRef.current(), 500)
+  }, [])
+
+  const collaborationRef = useRef(collaboration)
+  useEffect(() => {
+    collaborationRef.current = collaboration
+  }, [collaboration])
 
   useEffect(() => () => {
     if (composing.current) {
@@ -304,13 +315,13 @@ function BlockRecordBodyEditor({
       // already have been waiting in the debounce when composition started.
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
-      commitPendingValue()
-      collaboration?.flushCheckpoint()
+      commitPendingValueRef.current()
+      collaborationRef.current?.flushCheckpoint()
       return
     }
-    commitPendingValue()
-    collaboration?.flushCheckpoint()
-  }, [collaboration, commitPendingValue])
+    commitPendingValueRef.current()
+    collaborationRef.current?.flushCheckpoint()
+  }, [])
 
   useEffect(() => {
     // Local first: once seeded, the editor document is the source of truth.
@@ -342,6 +353,10 @@ function BlockRecordBodyEditor({
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return
 
+    // Reported before the debounce, so a caller that has to decide between
+    // this document and something arriving asynchronously -- a Live room
+    // still handshaking -- learns about the keystroke rather than the save.
+    onLocalEditRef.current?.()
     pendingValue.current = serializeDocument(changedEditor, format)
     // An IME can keep composition open while the user considers conversion
     // candidates for longer than the normal save debounce. Committing then
@@ -359,11 +374,16 @@ function BlockRecordBodyEditor({
     schedulePendingCommit()
   }, editor)
 
+  // Live no longer narrates its own connection, so `data-live-collab` is the
+  // one place a room's actual attachment is published: absent when this body
+  // has no room at all, "off" once a room has stopped carrying it. The
+  // end-to-end suite waits on "on" before typing into a shared body.
   return (
     <div
       className={surface === 'page'
         ? 'record-body-blocknote record-body-page min-h-[420px] bg-background py-2'
         : 'record-body-blocknote rounded border border-border bg-surface px-2 py-3'}
+      data-live-collab={collaboration === undefined ? undefined : checkpointing ? 'on' : 'off'}
       onCompositionStartCapture={() => {
         composing.current = true
         valueBeforeComposition.current = pendingValue.current

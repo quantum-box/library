@@ -40,7 +40,7 @@ import type { FileAttachment } from './files/types'
 import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
-import { RecordBodyEditor, type RecordBodyLivePolicy } from './RecordBodyEditor'
+import { RecordBodyEditor } from './RecordBodyEditor'
 import { useI18n, t as translate, type I18nContextValue } from '../i18n'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
@@ -150,7 +150,6 @@ export function DataEditorPage({
   const propertiesRef = useRef<LibraryProperty[]>([])
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const revisionRef = useRef(0)
-  const liveBodyPolicyRef = useRef<RecordBodyLivePolicy>('normal')
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
   const repoTarget = useMemo<LibraryRepoTarget>(
@@ -209,11 +208,6 @@ export function DataEditorPage({
       )
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
-      const body = getBodyProperty(payload.properties)
-      liveBodyPolicyRef.current = appKitConfig.dataLive.baseUrl && body &&
-        (body.typ === 'Markdown' || body.typ === 'RichText')
-        ? 'live'
-        : 'normal'
       setItem(payload.item)
       itemRef.current = payload.item
       if (!payload.item) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
@@ -230,20 +224,21 @@ export function DataEditorPage({
     void reload()
   }, [reload])
 
-  const persistItem = useCallback((next: LibraryDataItem) => {
+  const persistItem = useCallback((next: LibraryDataItem, carriesBody = false) => {
     const bodyProperty = getBodyProperty(propertiesRef.current)
     const liveBodyConfigured = Boolean(
       appKitConfig.dataLive.baseUrl &&
       bodyProperty &&
       (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText'),
     )
-    const protectsLiveBody = liveBodyConfigured && (
-      liveBodyPolicyRef.current === 'live' ||
-      liveBodyPolicyRef.current === 'fallback-readonly'
-    )
-    // The body is checkpointed through the room. Keeping it in the item sent
-    // to updateData would let a title/property save replay the API's stale
-    // body over a newer Y.Doc, especially after another collaborator edits.
+    // Only the body editor's own commit may carry the body.
+    //
+    // The record this page holds is whatever the API last returned, and that
+    // is older than the editor's document the moment anyone types -- whether
+    // the room is still carrying it or has already handed it back. Replaying
+    // it from a title or property save would overwrite their work, so a save
+    // that is not about the body simply leaves the body alone.
+    const protectsLiveBody = liveBodyConfigured && !carriesBody
     const durableNext = protectsLiveBody && bodyProperty
       ? {
         ...next,
@@ -468,7 +463,7 @@ export function DataEditorPage({
                       item={item}
                       property={property}
                       activation="single"
-                      onCommit={persistItem}
+                      onCommit={(next) => persistItem(next)}
                     />
                   </div>
                 )) : (
@@ -533,9 +528,6 @@ export function DataEditorPage({
                       ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
                       : undefined
                   }
-                  onLivePolicyChange={(policy) => {
-                    liveBodyPolicyRef.current = policy
-                  }}
                   onCommit={(value) => {
                     const current = itemRef.current
                     if (!current) return
@@ -543,7 +535,7 @@ export function DataEditorPage({
                       current,
                       bodyProperty.id,
                       bodyPropertyValue(bodyProperty, value),
-                    ))
+                    ), true)
                   }}
                 />
               ) : (

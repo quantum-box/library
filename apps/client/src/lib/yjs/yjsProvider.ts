@@ -99,6 +99,8 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let backoff = 1000
 const MAX_BACKOFF = 30_000
 let disposed = false
+/** True while this page is frozen or hidden and has given up its socket. */
+let suspended = false
 
 function getWsUrl(): string | undefined {
   return resolveBrowserSyncWebsocketUrl(
@@ -110,6 +112,7 @@ function getWsUrl(): string | undefined {
 function scheduleReconnect() {
   if (
     disposed ||
+    suspended ||
     reconnectTimer ||
     !getWsUrl() ||
     ws?.readyState === WebSocket.OPEN ||
@@ -132,7 +135,7 @@ function onDocUpdate(update: Uint8Array, origin: unknown) {
 }
 
 export function connectWs() {
-  if (disposed) return
+  if (disposed || suspended) return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return
   }
@@ -288,5 +291,41 @@ export const initialSyncReady: Promise<void> = new Promise((resolve) => {
 // Auto-connect
 // ---------------------------------------------------------------------------
 
+/**
+ * Hand the socket back when this page stops running.
+ *
+ * A page that is frozen into the back/forward cache -- on a phone, simply
+ * switching away from the tab -- keeps its socket handle on both ends while
+ * nothing can travel over it. The room counts this page as present until the
+ * runtime eventually notices, which is how a workspace ends up reporting more
+ * people online than are actually there. Closing deliberately makes the room
+ * see the departure immediately, and `pageshow` reconnects a page that
+ * returns.
+ */
+function handlePageHide(event: PageTransitionEvent) {
+  suspended = true
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  ydoc.off('update', onDocUpdate)
+  const socket = ws
+  ws = null
+  socket?.close()
+  setStatus('disconnected')
+  setPresence({ onlineCount: 0 })
+  // A page that is not being cached is not coming back to this module.
+  if (!event.persisted) disposed = true
+}
+
+function handlePageShow(event: PageTransitionEvent) {
+  if (!event.persisted || disposed) return
+  suspended = false
+  backoff = 1000
+  connectWs()
+}
+
 window.addEventListener('online', connectWs)
+window.addEventListener('pagehide', handlePageHide)
+window.addEventListener('pageshow', handlePageShow)
 connectWs()

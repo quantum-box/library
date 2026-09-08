@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from './test-fixtures'
 import { e2eAuthState } from './auth-state'
 import * as Y from 'yjs'
@@ -14,6 +15,18 @@ otherAuthState.origins[0].localStorage[0].value = JSON.stringify({
   email: 'ren@local.test',
   username: 'Ren',
 })
+
+/**
+ * Wait until the Live room is actually carrying the body.
+ *
+ * The editor now mounts immediately and only joins a room while the body is
+ * still untouched, so typing before the handshake deliberately keeps the
+ * ordinary editor for the rest of that mount. Every shared-editing assertion
+ * below has to let the room attach first.
+ */
+async function liveRoomAttached(page: Page) {
+  await expect(page.locator('.record-body-blocknote')).toHaveAttribute('data-live-collab', 'on')
+}
 
 test('the Live edge rejects missing credentials, forbidden origins and non-body properties', async ({ request }) => {
   const data = { org: 'quantum-box', repo: 'photon-core', data_id: 'seed-data-201', property_id: 'prop-description' }
@@ -73,6 +86,7 @@ for (const format of ['markdown', 'richText'] as const) {
         }))
       }
       await Promise.all([page.goto(route), other.goto(route)])
+      await Promise.all([liveRoomAttached(page), liveRoomAttached(other)])
       const firstEditor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
       const secondEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
       await expect(firstEditor).toContainText(seed)
@@ -85,7 +99,7 @@ for (const format of ['markdown', 'richText'] as const) {
       await page.keyboard.insertText(' First sequential edit.')
       await expect(secondEditor).toContainText('First sequential edit.')
       for (const participant of [page, other]) {
-        await expect(participant.getByTestId('data-editor-live-status'), JSON.stringify(liveErrors)).toHaveText('Shared body saved')
+        await expect(participant.getByTestId('data-editor-live-status'), JSON.stringify(liveErrors)).toHaveText('Saved')
       }
 
       await firstEditor.click()
@@ -138,10 +152,14 @@ for (const format of ['markdown', 'richText'] as const) {
       unrelatedDoc.destroy()
 
       await other.reload()
+      // This page types again below, so it has to be back in the room first:
+      // a keystroke before the handshake keeps the ordinary editor for the
+      // rest of the mount and nothing shared would reach it.
+      await liveRoomAttached(other)
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Aoi contribution.')
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Ren contribution.')
       await otherContext.setOffline(true)
-      await expect(other.getByTestId('data-editor-live-status')).toHaveText('Shared editing paused while offline')
+      await expect(other.getByTestId('data-editor-live-status')).toHaveText('Offline — your edits sync when the connection returns')
       await secondEditor.click()
       await other.keyboard.press('ControlOrMeta+End')
       await other.keyboard.insertText(' Offline contribution.')
@@ -157,7 +175,7 @@ for (const format of ['markdown', 'richText'] as const) {
           .propertyData.find((entry: { propertyId: string }) => entry.propertyId === 'prop-description').value[format] as string
       }).toContain('Reconnected contribution.')
       for (const participant of [page, other]) {
-        await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+        await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Saved')
       }
       for (const editor of [firstEditor, secondEditor]) {
         await expect(editor).toContainText('Offline contribution.')
@@ -195,6 +213,7 @@ test('a different data record is isolated from the live body', async ({ browser,
       page.goto(route),
       other.goto('/quantum-box/photon-core/data/seed-data-202'),
     ])
+    await Promise.all([liveRoomAttached(page), liveRoomAttached(other)])
     const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
     const otherEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
     await expect(editor).toBeVisible()
@@ -213,6 +232,7 @@ test('a different data record is isolated from the live body', async ({ browser,
 
 test('editing a normal property preserves the body and allows the next shared checkpoint', async ({ page }) => {
   await page.goto(route)
+  await liveRoomAttached(page)
   const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
   await expect(editor).toContainText(seed)
   await page.getByTestId('library-editable-cell-prop-assignee').click()
@@ -288,6 +308,7 @@ for (const format of ['markdown', 'richText'] as const) {
     try {
       const initialPage = await initialContext.newPage()
       await initialPage.goto(route)
+      await liveRoomAttached(initialPage)
       const initialEditor = initialPage.locator('.record-body-blocknote [contenteditable="true"]').first()
       await expect(initialEditor).toContainText(seed)
       await initialEditor.click()
@@ -325,6 +346,7 @@ for (const format of ['markdown', 'richText'] as const) {
     try {
       const reopenedPage = await reopenedContext.newPage()
       await reopenedPage.goto(route)
+      await liveRoomAttached(reopenedPage)
       const reopenedEditor = reopenedPage.locator('.record-body-blocknote [contenteditable="true"]').first()
       await expect(reopenedEditor).toContainText(externalBodyText)
       await expect(reopenedEditor).not.toContainText(previousContribution.trim())
@@ -332,12 +354,13 @@ for (const format of ['markdown', 'richText'] as const) {
       await reopenedPage.keyboard.press('ControlOrMeta+End')
       await reopenedPage.keyboard.insertText(recoveryContribution)
       await expect.poll(canonicalBody).toContain(recoveryContribution.trim())
-      await expect(reopenedPage.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+      await expect(reopenedPage.getByTestId('data-editor-live-status')).toHaveText('Saved')
 
       const nextContext = await browser.newContext({ storageState: otherAuthState })
       try {
         const nextPage = await nextContext.newPage()
         await nextPage.goto(route)
+        await liveRoomAttached(nextPage)
         const nextEditor = nextPage.locator('.record-body-blocknote [contenteditable="true"]').first()
         await expect(nextEditor).toContainText(externalBodyText)
         await expect(nextEditor).toContainText(recoveryContribution.trim())
@@ -380,15 +403,16 @@ test('does not merge a retained offline document into a replacement room', async
   try {
     const oldPage = await oldContext.newPage()
     await oldPage.goto(route)
+    await liveRoomAttached(oldPage)
     const oldEditor = oldPage.locator('.record-body-blocknote [contenteditable="true"]').first()
     await expect(oldEditor).toContainText(seed)
     await oldEditor.click()
     await oldPage.keyboard.press('ControlOrMeta+End')
     await oldPage.keyboard.insertText(initialText)
     await expect.poll(canonicalBody).toContain(initialText.trim())
-    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Saved')
     await oldContext.setOffline(true)
-    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared editing paused while offline')
+    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Offline — your edits sync when the connection returns')
     await oldEditor.click()
     await oldPage.keyboard.press('ControlOrMeta+End')
     await oldPage.keyboard.insertText(' Retained offline draft.')
@@ -405,14 +429,19 @@ test('does not merge a retained offline document into a replacement room', async
     expect(update.ok()).toBe(true)
     const freshPage = await freshContext.newPage()
     await freshPage.goto(route)
+    await liveRoomAttached(freshPage)
     const freshEditor = freshPage.locator('.record-body-blocknote [contenteditable="true"]').first()
     await expect(freshEditor).toContainText(externalText)
     await oldContext.setOffline(false)
-    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared body conflicts with a newer saved version')
+    await expect(oldPage.getByTestId('data-editor-live-status')).toHaveText('Shared editing stopped after a conflicting change. Edits are saved normally')
     await expect(oldPage.locator('.record-body-blocknote')).toContainText(initialText.trim())
     await expect(oldPage.locator('.record-body-blocknote')).toContainText('Retained offline draft.')
     await expect(oldPage.locator('.record-body-blocknote')).not.toContainText(externalText)
-    await expect(oldPage.locator('.record-body-blocknote [contenteditable="true"]')).toHaveCount(0)
+    // A conflicted room stops carrying the body, but it does not take the
+    // editor with it: the retained draft stays on screen and editable, and
+    // saves through the ordinary REST body from here on.
+    await expect(oldPage.locator('.record-body-blocknote')).toHaveAttribute('data-live-collab', 'off')
+    await expect(oldPage.locator('.record-body-blocknote [contenteditable="true"]')).toHaveCount(1)
     await freshEditor.click()
     await freshPage.keyboard.press('ControlOrMeta+End')
     await freshPage.keyboard.insertText(' Fresh room stays writable.')
@@ -445,13 +474,14 @@ test('keeps recovering when an external write restores an earlier body', async (
     try {
       const participant = await context.newPage()
       await participant.goto(route)
+      await liveRoomAttached(participant)
       const editor = participant.locator('.record-body-blocknote [contenteditable="true"]').first()
       await expect(editor).toContainText(body)
       await expect(editor).not.toContainText('Cycle edit')
       await editor.click()
       await participant.keyboard.press('ControlOrMeta+End')
       await participant.keyboard.insertText(` Cycle edit ${index}.`)
-      await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Shared body saved')
+      await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Saved')
     } finally {
       await context.close()
     }

@@ -80,5 +80,7 @@ export interface PhotonLiveProvider {
   subscribeSave(listener: (state: PhotonLiveState) => void): () => void
   queueCheckpoint(body: string): void
   flushCheckpoint(): void
+  /** Leave the room but keep the document, for a body Live no longer carries. */
+  detach(): void
   destroy(): void
 }
