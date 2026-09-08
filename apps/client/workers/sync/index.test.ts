@@ -1036,6 +1036,89 @@ describe('PhotonLiveRoom coordination', () => {
       .toMatchObject({ version: 1, savedVersion: 0, bodyHash: 'body-hash' })
   })
 
+  it('records the canonical version on a room the upgrade creates', async () => {
+    // A page that leaves before it can send live-initialize must not leave a
+    // room with no version behind: the next session would have nothing to
+    // prove it is fresher than, and the record's Live would be unreachable.
+    const storage = new MemoryStorage()
+    const session = { ...liveSession, recordVersion: '8' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await storage.get<{ initialized: boolean; recordVersion: string }>('live:room:meta:v1'))
+      .toMatchObject({ initialized: false, recordVersion: '8' })
+  })
+
+  it('advances the version of an uninitialized room when a fresher session has the same body', async () => {
+    // The ready frame reports the room's version, so a room still waiting for
+    // its handshake must not hand a later joiner a stale one to checkpoint
+    // against after a title or property edit moved the record forward.
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { initialized: false, recordVersion: '7' })
+    const session = { ...liveSession, recordVersion: '8' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await storage.get<{ recordVersion: string; bodyHash: string }>('live:room:meta:v1'))
+      .toMatchObject({ recordVersion: '8', bodyHash: 'body-hash' })
+  })
+
+  it('rotates a room left uninitialized by a page closed during the handshake', async () => {
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { initialized: false, recordVersion: '7' })
+    const session = { ...liveSession, recordVersion: '8', bodyHash: 'changed-body-hash' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.headers.get('x-photon-live-generation')).toMatch(/^live-generation:/)
+    expect(await storage.get<{ roomId: string; bodyHash: string; recordVersion: string }>('live:room:current-generation:v1'))
+      .toMatchObject({ bodyHash: 'changed-body-hash', recordVersion: '8' })
+  })
+
+  it('refuses a stale ticket for a room left uninitialized by a newer session', async () => {
+    // An uninitialized room holds no document, but rotating it on a stale
+    // ticket would point every later session at a generation seeded from an
+    // obsolete body -- which a conflict fallback could then write back over
+    // the newer one.
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { initialized: false, recordVersion: '8' })
+    const session = { ...liveSession, recordVersion: '7', bodyHash: 'stale-body-hash' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.headers.get('x-photon-live-generation')).toBeNull()
+    expect(await storage.get('live:room:current-generation:v1')).toBeUndefined()
+    expect(await storage.get<{ recordVersion: string; bodyHash: string }>('live:room:meta:v1'))
+      .toMatchObject({ recordVersion: '8', bodyHash: 'body-hash' })
+  })
+
+  it('rotates pre-versioned metadata for a room that never finished its handshake', async () => {
+    // Metadata written before rooms recorded their version. Refusing it would
+    // leave rooms already stuck in storage unreachable forever.
+    const storage = new MemoryStorage()
+    await putRoomMetadata(storage, { initialized: false, recordVersion: undefined })
+    const session = { ...liveSession, recordVersion: '8', bodyHash: 'changed-body-hash' }
+    const room = new PhotonLiveRoom(roomContext(storage) as never, liveRoomEnvironment(session))
+    const response = await room.fetch(
+      internalWebSocketRequest(session),
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.headers.get('x-photon-live-generation')).toMatch(/^live-generation:/)
+  })
+
   it('rotates clean rooms by canonical record version without reusing an old generation', async () => {
     const baseStorage = new MemoryStorage()
     await putRoomMetadata(baseStorage, { bodyHash: 'body-a', recordVersion: '7', savedVersion: 0 })

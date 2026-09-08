@@ -458,6 +458,10 @@ test('keeps recovering when an external write restores an earlier body', async (
   const initialPage = await initialContext.newPage()
   await initialPage.goto(route)
   await expect(initialPage.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText(seed)
+  // The body is on screen before the room answers, so the text above no longer
+  // proves this page ever joined. Wait for the room itself: the whole point of
+  // this page is to leave a durable room behind for the external write below.
+  await liveRoomAttached(initialPage)
   await initialContext.close()
   for (const [index, body] of ['External body A.', 'External body B.', 'External body A.'].entries()) {
     const result = await page.request.post(`${api}/v1/graphql`, {
