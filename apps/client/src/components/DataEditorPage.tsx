@@ -38,6 +38,7 @@ import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libra
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
+import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
 import type { FileAttachment } from './files/types'
 import { FileChip } from './files/FileChip'
@@ -314,6 +315,8 @@ export function DataEditorPage({
       setDeleteBusy(false)
     }
   }, [item, onBack, repoTarget])
+
+  useDocumentTitle(item?.name)
 
   if (loading || !item) {
     return (

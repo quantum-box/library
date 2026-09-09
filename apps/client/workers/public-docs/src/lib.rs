@@ -13,6 +13,11 @@ use worker::*;
 
 const PUBLIC_ORIGIN: &str = "https://planetlibrary.txcloud.app";
 const LIMIT: usize = 2 * 1024 * 1024;
+/// Square mark used for link previews, resolved against the page's own
+/// origin so a preview deployment never advertises production's asset.
+const SOCIAL_IMAGE_PATH: &str = "/apple-touch-icon.png";
+/// Longest description a preview keeps; the rest is elided on a word break.
+const DESCRIPTION_LIMIT: usize = 160;
 // Set by the build script from the same resolved Vite environment as the SPA.
 const API_BASE: &str = match option_env!("VITE_LIBRARY_API_BASE_URL") {
     Some(v) => v,
@@ -177,6 +182,30 @@ fn visit(node: &Value, depth: usize) -> String {
         _ => String::new(),
     }
 }
+/// Mirrors `publicDescription` in `src/components/public/publicSeoMetadata.ts`;
+/// the reader re-derives the same summary once React owns the head.
+fn description_of(text: &str, fallback: &str) -> String {
+    let source = if text.trim().is_empty() {
+        fallback
+    } else {
+        text
+    };
+    let text = replace(source, r"\s+", " ").trim().to_string();
+    if text.chars().count() <= DESCRIPTION_LIMIT {
+        return text;
+    }
+    // Cut on the last word break so a preview never ends mid-word. Japanese
+    // and Chinese bodies have no break to find, so those fall back to the
+    // hard limit rather than losing most of the sentence.
+    let cut: String = text.chars().take(DESCRIPTION_LIMIT - 1).collect();
+    let kept = match cut.rfind(' ') {
+        Some(i) if cut[..i].chars().count() > DESCRIPTION_LIMIT / 2 => {
+            &cut[..i]
+        }
+        _ => &cut[..],
+    };
+    kept.trim_end().to_string() + "…"
+}
 fn document_text(data: &Data, properties: &[Property]) -> String {
     for (kind, format) in [
         ("RICH_TEXT", "richText"),
@@ -237,6 +266,28 @@ fn response(
     }
     .with_headers(headers)
     .with_status(status))
+}
+/// Repeat robots.txt in a header for every page outside `/public/`.
+///
+/// Only the reader is written for crawlers. The app shell and, above all,
+/// `/s/` share links are reachable by anyone holding the URL, and a crawler
+/// that arrives from a pasted link never reads robots.txt for the root.
+fn unindexed_html(asset: Response) -> Result<Response> {
+    let html = asset
+        .headers()
+        .get("content-type")?
+        .is_some_and(|value| value.contains("text/html"));
+    if !html {
+        return Ok(asset);
+    }
+    // A response handed back by a binding carries immutable headers, so the
+    // instruction goes on a copy rather than on the asset's own list.
+    let headers = Headers::new();
+    for (key, value) in asset.headers().entries() {
+        headers.set(&key, &value)?;
+    }
+    headers.set("x-robots-tag", "noindex, nofollow")?;
+    Ok(asset.with_headers(headers))
 }
 async fn shell(env: &Env, url: &Url) -> Result<Response> {
     env.service("ASSETS")?
@@ -341,26 +392,21 @@ async fn render(
                 .await?;
         (site.clone(), profile.description.clone(), Some(listing))
     };
-    let description = replace(
-        if text.trim().is_empty() {
-            &profile.description
-        } else {
-            text.trim()
-        },
-        r"\s+",
-        " ",
-    )
-    .trim()
-    .chars()
-    .take(160)
-    .collect::<String>();
+    let description = description_of(&text, &profile.description);
     let canonical = origin.clone() + &public_path(org, repo, id);
+    let image = origin.clone() + SOCIAL_IMAGE_PATH;
+    let indexed = origin == PUBLIC_ORIGIN;
     let seo_title = if id.is_some() {
         format!("{title} · {site}")
     } else {
         title.clone()
     };
-    let mut schema = json!({"@context":"https://schema.org", "@type": if id.is_some() { "TechArticle" } else { "CollectionPage" }, "name":title, "description":description, "url":canonical, "isPartOf":{"@type":"WebSite", "name":site}});
+    let mut schema = json!({"@context":"https://schema.org", "@type": if id.is_some() { "TechArticle" } else { "CollectionPage" }, "name":title, "url":canonical, "image":image, "isPartOf":{"@type":"WebSite", "name":site, "url": origin.clone() + "/"}});
+    // An empty string would claim the document has a blank summary, so an
+    // undescribed page carries no description key at all.
+    if !description.is_empty() {
+        schema["description"] = json!(description);
+    }
     if id.is_some() {
         schema["headline"] = json!(title);
     }
@@ -370,7 +416,7 @@ async fn render(
         (
             "name",
             "robots",
-            if origin == PUBLIC_ORIGIN {
+            if indexed {
                 "index, follow"
             } else {
                 "noindex, nofollow"
@@ -379,6 +425,7 @@ async fn render(
         ("name", "twitter:card", "summary"),
         ("name", "twitter:title", &seo_title),
         ("name", "twitter:description", &description),
+        ("name", "twitter:image", &image),
         ("property", "og:title", &seo_title),
         ("property", "og:description", &description),
         (
@@ -388,13 +435,26 @@ async fn render(
         ),
         ("property", "og:url", &canonical),
         ("property", "og:site_name", site),
+        ("property", "og:image", &image),
+        ("property", "og:image:alt", site),
     ] {
+        // An undescribed repository gets no description tag at all; an empty
+        // one only tells a crawler the summary is blank.
+        if content.is_empty() {
+            continue;
+        }
         head += &format!(
             "<meta data-public-docs-meta {key}=\"{name}\" content=\"{}\">",
             esc(content)
         );
     }
-    head += &format!("<link data-public-docs-meta rel=\"canonical\" href=\"{}\"><link data-public-docs-meta rel=\"sitemap\" type=\"application/xml\" href=\"{}/sitemap.xml\"><script type=\"application/ld+json\" data-public-docs-meta data-public-docs-schema>{}</script>", esc(&canonical), esc(&base_path), schema.to_string().replace('<', "\\u003c"));
+    head += &format!("<link data-public-docs-meta rel=\"canonical\" href=\"{}\"><link data-public-docs-meta rel=\"sitemap\" type=\"application/xml\" href=\"{}/sitemap.xml\">", esc(&canonical), esc(&base_path));
+    // Structured data describes a page that is offered for indexing. A
+    // preview deployment serves the same document at a URL nobody should
+    // collect, so it ships none.
+    if indexed {
+        head += &format!("<script type=\"application/ld+json\" data-public-docs-meta data-public-docs-schema>{}</script>", schema.to_string().replace('<', "\\u003c"));
+    }
     let nav = listing
         .map(|l| {
             format!(
@@ -425,6 +485,11 @@ async fn render(
         &shell,
         RewriteStrSettings {
             element_content_handlers: vec![
+                // The shell's own defaults describe the app, not this document.
+                element!("meta[data-app-default]", |el| {
+                    el.remove();
+                    Ok(())
+                }),
                 element!("title", |el| {
                     el.set_attribute("data-public-docs-title", "")?;
                     el.set_inner_content(&seo_title, ContentType::Text);
@@ -471,7 +536,8 @@ pub async fn fetch(
     }
     let parts = route(url.path());
     if parts.is_none() && !url.path().starts_with("/public/") {
-        return env.service("ASSETS")?.fetch_request(request).await;
+        let asset = env.service("ASSETS")?.fetch_request(request).await?;
+        return unindexed_html(asset);
     }
     if parts.is_some()
         && !matches!(request.method(), Method::Get | Method::Head)

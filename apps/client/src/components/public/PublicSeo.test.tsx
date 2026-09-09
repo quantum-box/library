@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { PublicSeo } from './PublicSeo'
 import {
   publicBodyText,
+  publicDescription,
   publicDocsPath,
   serializeJsonLd,
 } from './publicSeoMetadata'
@@ -61,6 +62,43 @@ describe('public document SEO', () => {
     expect(document.title).toBe('Library')
     expect(document.head.querySelector('meta[name="description"]')).toBeNull()
     expect(document.head.querySelector('script[data-public-docs-schema]')).toBeNull()
+  })
+
+  /**
+   * An empty description tag is worse than none: it tells a crawler the
+   * page has a blank summary, and left behind it keeps answering with the
+   * previous document's.
+   */
+  it('drops a description it cannot fill and points previews at the app mark', () => {
+    const props = {
+      title: 'Guide',
+      site: 'Guide',
+      url: 'https://example.com/public/org/guide',
+      article: false,
+    }
+    const view = render(<PublicSeo {...props} description="Repository summary" />)
+    expect(
+      document.head.querySelector('meta[name="description"]'),
+    ).toHaveAttribute('content', 'Repository summary')
+    expect(
+      document.head.querySelector('meta[property="og:image"]'),
+    ).toHaveAttribute('content', 'https://example.com/apple-touch-icon.png')
+    view.rerender(<PublicSeo {...props} description="" />)
+    expect(document.head.querySelector('meta[name="description"]')).toBeNull()
+    expect(
+      document.head.querySelector('meta[property="og:description"]'),
+    ).toBeNull()
+    view.unmount()
+  })
+
+  it('ends a long description on a word break', () => {
+    const description = publicDescription(`${'word '.repeat(60)}tail`)
+    expect(description.length).toBeLessThanOrEqual(160)
+    expect(description.endsWith('word…')).toBe(true)
+    // Nothing to break on, so the hard limit stands rather than losing the
+    // whole sentence.
+    expect(publicDescription('あ'.repeat(400))).toHaveLength(160)
+    expect(publicDescription('Short body')).toBe('Short body')
   })
 
   it('extracts nested rich text without exposing JSON, IDs or styles', () => {

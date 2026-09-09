@@ -139,6 +139,29 @@ describe('SharedDataView', () => {
     expect(screen.queryByTestId('shared-data-failed')).toBeNull()
   })
 
+  /**
+   * The window, a bookmark and anything that unfurls the link all read the
+   * document's own name -- and a share token is handed to one person, so
+   * the page has to keep itself out of search results in every state.
+   */
+  it('names the window after the document and asks not to be indexed', async () => {
+    apiMocks.fetchSharedLibraryData.mockResolvedValue(shared)
+
+    await renderSettled(<SharedDataView token="shr_abc" />)
+
+    expect(document.title).toBe('Quarterly report · Library')
+    expect(
+      document.head.querySelector('meta[name="robots"]'),
+    ).toHaveAttribute('content', 'noindex, nofollow')
+    // A share URL canonicalizes to nothing public and belongs to no
+    // repository sitemap.
+    expect(document.head.querySelector('link[rel="canonical"]')).toBeNull()
+    expect(document.head.querySelector('link[rel="sitemap"]')).toBeNull()
+    expect(
+      document.head.querySelector('script[data-public-docs-schema]'),
+    ).toBeNull()
+  })
+
   it('retries a read that failed for another reason', async () => {
     apiMocks.fetchSharedLibraryData.mockRejectedValueOnce(
       new RecordApiError('Library shared document request failed: 500', 500)

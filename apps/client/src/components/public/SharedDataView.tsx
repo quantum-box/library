@@ -18,6 +18,9 @@ import {
 import { LibraryPropertyCell } from '../../lib/libraryTable/libraryPropertyCells'
 import { RecordBodyEditor } from '../RecordBodyEditor'
 import { PublicLoadingState } from './PublicRepositoryState'
+import { PublicSeo } from './PublicSeo'
+import { publicBodyText, publicDescription } from './publicSeoMetadata'
+import { appKitConfig } from '../../app/kitConfig'
 import { useI18n } from '../../i18n'
 
 type SharedStatus = 'loading' | 'ready' | 'gone' | 'failed'
@@ -73,33 +76,57 @@ export function SharedDataView({ token }: { token: string }) {
     setAttempt((previous) => previous + 1)
   }
 
+  /**
+   * A share link is handed to one person, so every state of this route is
+   * unindexable -- including the ones that never resolve a document. The
+   * worker sends the same instruction in a header for crawlers without JS.
+   */
+  const seo = (documentTitle: string, description = '') => (
+    <PublicSeo
+      title={documentTitle}
+      site={appKitConfig.app.displayName}
+      description={description}
+      url={window.location.href}
+      article
+      indexable={false}
+    />
+  )
+
   if (status === 'loading') {
-    return <PublicLoadingState label={t('shared.opening')} />
+    return (
+      <>
+        {seo(t('shared.opening'))}
+        <PublicLoadingState label={t('shared.opening')} />
+      </>
+    )
   }
 
   if (status !== 'ready' || !shared) {
     const gone = status === 'gone'
     return (
-      <main
-        className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background p-6 text-center"
-        data-testid={gone ? 'shared-data-gone' : 'shared-data-failed'}
-      >
-        <div>
-          <TriangleAlert className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
-          <h1 className="mt-3 text-sm font-semibold">
-            {gone ? t('shared.gone.title') : t('shared.failed.title')}
-          </h1>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            {gone ? t('shared.gone.detail') : error ?? t('shared.failed.detail')}
-          </p>
-          {gone ? null : (
-            <Button variant="secondary" size="sm" className="mt-4" onClick={retry}>
-              <RefreshCw aria-hidden="true" />
-              {t('common.tryAgain')}
-            </Button>
-          )}
-        </div>
-      </main>
+      <>
+        {seo(t(gone ? 'shared.gone.title' : 'shared.failed.title'))}
+        <main
+          className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background p-6 text-center"
+          data-testid={gone ? 'shared-data-gone' : 'shared-data-failed'}
+        >
+          <div>
+            <TriangleAlert className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+            <h1 className="mt-3 text-sm font-semibold">
+              {gone ? t('shared.gone.title') : t('shared.failed.title')}
+            </h1>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              {gone ? t('shared.gone.detail') : error ?? t('shared.failed.detail')}
+            </p>
+            {gone ? null : (
+              <Button variant="secondary" size="sm" className="mt-4" onClick={retry}>
+                <RefreshCw aria-hidden="true" />
+                {t('common.tryAgain')}
+              </Button>
+            )}
+          </div>
+        </main>
+      </>
     )
   }
 
@@ -118,84 +145,92 @@ export function SharedDataView({ token }: { token: string }) {
   const artifact = bodyProperty?.typ === 'Html' && isArtifactHtml(bodyValue)
 
   return (
-    <main
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
-      data-testid="shared-data-view"
-    >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
-        <Link2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
-        {/* Nothing here names the repository. The recipient was given one
-            document, and the collection it came from is part of what the
-            private repository keeps private. */}
-        <Badge variant="outline" className="ml-auto shrink-0">
-          {t('shared.badge')}
-        </Badge>
-      </header>
-
-      {artifact && bodyProperty ? (
-        // No title heading and no property list above it: the artifact
-        // carries its own, and a recipient handed one document should get
-        // the window, not a record card wrapped around it.
-        <div className="flex min-h-0 flex-1 flex-col" data-testid="shared-data-artifact">
-          <RecordBodyEditor
-            key={`${item.id}:${bodyProperty.id}`}
-            value={bodyValue}
-            format={bodyPropertyFormat(bodyProperty)}
-            surface="fill"
-            editable={false}
-            onCommit={() => {}}
-          />
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <article className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
-            <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
-              <FileText className="size-5" aria-hidden="true" />
-            </div>
-            <h1
-              data-testid="shared-data-title"
-              className="text-3xl font-semibold tracking-tight md:text-4xl"
-            >
-              {item.name || t('common.untitled')}
-            </h1>
-
-            <section className="mt-8" aria-labelledby="shared-data-properties">
-              <h2 id="shared-data-properties" className="sr-only">{t('viewSettings.properties')}</h2>
-              <div className="space-y-0.5">
-                {pageProperties.length > 0 ? pageProperties.map((property) => (
-                  <div
-                    key={property.id}
-                    className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 sm:grid-cols-[132px_minmax(0,1fr)]"
-                  >
-                    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
-                      {property.name}
-                    </span>
-                    <LibraryPropertyCell item={item} property={property} />
-                  </div>
-                )) : (
-                  <p className="py-1.5 text-sm text-muted-foreground">{t('public.noProperties')}</p>
-                )}
-              </div>
-            </section>
-
-            <section className="mt-6" aria-labelledby="shared-data-body">
-              <h2 id="shared-data-body" className="sr-only">Body</h2>
-              {bodyProperty ? (
-                <RecordBodyEditor
-                  key={`${item.id}:${bodyProperty.id}`}
-                  value={bodyValue}
-                  format={bodyPropertyFormat(bodyProperty)}
-                  surface="page"
-                  editable={false}
-                  onCommit={() => {}}
-                />
-              ) : (
-                <p className="py-10 text-sm text-muted-foreground">{t('public.noProperties')}</p>
-              )}
-            </section>
-          </article>
-        </div>
+    <>
+      {seo(
+        item.name || t('common.untitled'),
+        publicDescription(
+          bodyProperty ? publicBodyText(bodyValue, bodyPropertyFormat(bodyProperty)) : '',
+        ),
       )}
-    </main>
+      <main
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+        data-testid="shared-data-view"
+      >
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
+          <Link2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          {/* Nothing here names the repository. The recipient was given one
+              document, and the collection it came from is part of what the
+              private repository keeps private. */}
+          <Badge variant="outline" className="ml-auto shrink-0">
+            {t('shared.badge')}
+          </Badge>
+        </header>
+
+        {artifact && bodyProperty ? (
+          // No title heading and no property list above it: the artifact
+          // carries its own, and a recipient handed one document should get
+          // the window, not a record card wrapped around it.
+          <div className="flex min-h-0 flex-1 flex-col" data-testid="shared-data-artifact">
+            <RecordBodyEditor
+              key={`${item.id}:${bodyProperty.id}`}
+              value={bodyValue}
+              format={bodyPropertyFormat(bodyProperty)}
+              surface="fill"
+              editable={false}
+              onCommit={() => {}}
+            />
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <article className="mx-auto w-full max-w-3xl px-5 pb-24 pt-8 sm:px-8 md:pt-12">
+              <div className="mb-5 flex size-9 items-center justify-center rounded-md bg-selected text-primary">
+                <FileText className="size-5" aria-hidden="true" />
+              </div>
+              <h1
+                data-testid="shared-data-title"
+                className="text-3xl font-semibold tracking-tight md:text-4xl"
+              >
+                {item.name || t('common.untitled')}
+              </h1>
+
+              <section className="mt-8" aria-labelledby="shared-data-properties">
+                <h2 id="shared-data-properties" className="sr-only">{t('viewSettings.properties')}</h2>
+                <div className="space-y-0.5">
+                  {pageProperties.length > 0 ? pageProperties.map((property) => (
+                    <div
+                      key={property.id}
+                      className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 sm:grid-cols-[132px_minmax(0,1fr)]"
+                    >
+                      <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
+                        {property.name}
+                      </span>
+                      <LibraryPropertyCell item={item} property={property} />
+                    </div>
+                  )) : (
+                    <p className="py-1.5 text-sm text-muted-foreground">{t('public.noProperties')}</p>
+                  )}
+                </div>
+              </section>
+
+              <section className="mt-6" aria-labelledby="shared-data-body">
+                <h2 id="shared-data-body" className="sr-only">Body</h2>
+                {bodyProperty ? (
+                  <RecordBodyEditor
+                    key={`${item.id}:${bodyProperty.id}`}
+                    value={bodyValue}
+                    format={bodyPropertyFormat(bodyProperty)}
+                    surface="page"
+                    editable={false}
+                    onCommit={() => {}}
+                  />
+                ) : (
+                  <p className="py-10 text-sm text-muted-foreground">{t('public.noProperties')}</p>
+                )}
+              </section>
+            </article>
+          </div>
+        )}
+      </main>
+    </>
   )
 }
