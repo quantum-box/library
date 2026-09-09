@@ -158,7 +158,12 @@ export function HtmlArtifactEditor({
           </TabButton>
         ) : null}
         <span className="ml-auto text-xs text-muted-foreground">HTML</span>
-        {tab === 'preview' && shown.trim() !== '' ? (
+        {/*
+          Once the overlay is up it owns the screen, so the way back out has to
+          outlive whatever put it there: switching to Code, or clearing the
+          document, would otherwise strand a phone -- no button, no Esc key.
+        */}
+        {expanded || (tab === 'preview' && shown.trim() !== '') ? (
           <button
             type="button"
             data-testid="html-artifact-fullscreen"

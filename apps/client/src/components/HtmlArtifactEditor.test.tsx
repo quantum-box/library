@@ -166,6 +166,34 @@ describe('HtmlArtifactEditor', () => {
   })
 
   /**
+   * The overlay covers the whole app, so the control that dismisses it cannot
+   * disappear with a tab switch -- a phone has no Esc key to fall back on.
+   */
+  it('keeps the exit control while the overlay is up', async () => {
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: null,
+      configurable: true,
+    })
+    Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
+    render(<HtmlArtifactEditor value={doc} editable onCommit={() => {}} />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('html-artifact-fullscreen'))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('html-artifact-tab-code'))
+    })
+
+    const exit = screen.getByTestId('html-artifact-fullscreen')
+    expect(exit).toHaveAttribute('aria-label', 'Exit full screen')
+
+    await act(async () => {
+      fireEvent.click(exit)
+    })
+    expect(screen.getByTestId('html-artifact-surface').className).not.toContain('fixed')
+  })
+
+  /**
    * There is nothing to enlarge on the Code tab, and nothing to enlarge when
    * the value is empty.
    */
