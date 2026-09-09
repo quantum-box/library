@@ -1,3 +1,4 @@
+import { fitArtifactToFrame } from '../lib/html/artifactDocument'
 import { useI18n } from '../i18n'
 
 /**
@@ -8,6 +9,9 @@ import { useI18n } from '../i18n'
  * no cookies, no localStorage, no reach into the app that embeds it. The
  * server-side renderer (packages/blocknote/src/to_html.rs) emits the same
  * sandbox for the read-only HTML view, so the two paths must stay in step.
+ *
+ * `fitArtifactToFrame` is what keeps a document written for a desktop window
+ * from panning a phone sideways; see that module.
  */
 export function HtmlPreviewFrame({
   source,
@@ -24,7 +28,7 @@ export function HtmlPreviewFrame({
     <iframe
       data-testid="html-preview-frame"
       sandbox="allow-scripts"
-      srcDoc={source}
+      srcDoc={fitArtifactToFrame(source)}
       title={title ?? t('editor.htmlPreviewFrameTitle')}
       className={className ?? 'h-full w-full border-0 bg-white'}
     />

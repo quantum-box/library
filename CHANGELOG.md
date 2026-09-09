@@ -1,5 +1,70 @@
 # Changelog
 
+## 2026-09-09 - iOS アプリの UI 修正
+
+シミュレータ実機（iPhone 17 Pro / iOS 26）で一通り触って見つかった 7 件。
+
+- **画面下 130pt が死んでいた。** Tauri は webview を window の *inner* size に
+  合わせるが、iOS の `tao` はそれをセーフエリアとして返す。画面 874pt に対して
+  webview は 778pt、しかも上端 y=0 に置かれるので不足分 96pt が全部下に溜まる。
+  一方 `env(safe-area-inset-*)` は端末本来の 62/34 を返し続けるため、
+  `index.css` の `body` padding が同じ領域をもう一度確保していた。
+  `src-tauri/src/ios_webview.rs` で webview を親ビューいっぱいに張り直し、
+  scroll view の自動 content inset を切って原因側を潰した。
+- **アプリの枠を `body` から `#root` に移した。** Radix はメニュー・ダイアログ・
+  ポップオーバーを開くたび `react-remove-scroll-bar` 経由で
+  `body[data-scroll-locked] { position: relative !important; padding-top: … }`
+  を注入する。`position: fixed` とセーフエリアの padding を `body` に載せて
+  いたので、それが両方消えていた。アカウントメニュー（テーマ 3 + 言語 11 で
+  約 600pt）を開くと body が popover の高さまで伸び、ページ全体が 244pt 上に
+  ずれてアプリバーが Dynamic Island の下に隠れる、という形で表に出ていた。
+  `#root` は誰も書き換えない。
+- **背の高いメニューを画面に収めた。** Radix が測った空き高さで頭打ちにして
+  スクロールさせ、`collisionPadding` にセーフエリアを渡した
+  （`useSafeAreaInsets`。Radix は JS で位置を決めるので `env()` を読めない）。
+- **ホーム画面だけモバイル対応が入っていなかった。** デスクトップのヘッダと
+  擬似タブ列が電話でも出ており、シェルのアプリバーと合わせて「Library」も
+  「新しいデータ」も 2 回ずつ描かれていた。`md` 未満で両方隠した。
+- **HTML アーティファクトの全画面ボタンが iPhone で無反応だった。**
+  iPhone に element fullscreen は存在せず `requestFullscreen` が生えていない。
+  固定オーバーレイにフォールバックし、ツールバーごと画面を占有して戻る導線を
+  残す（電話には Esc が無いため）。
+- **`bundle.iOS.minimumSystemVersion` を 14.0 から 16.4 に上げた。**
+  Tailwind v4 が出す `@property` / `color-mix()` / `oklch()` は Safari 16.4 以降。
+  低い床は「入るが壊れて見える」ビルドを配ることになる。
+- **横向きの電話がデスクトップレイアウトになっていた。** 幅 874pt が `md` を
+  超えるため。`md` を `(min-width: 768px) and (min-height: 500px)` に再定義し、
+  `MOBILE_VIEWPORT_QUERY` と `.detail-panel` も同じ線に揃えた。
+- **リポジトリの「リンクをコピー」が `tauri://localhost` を配っていた。**
+  `shareableUrl()` を通していない唯一のコピー経路だったので通した。
+
+### 横方向のはみ出し
+
+電話でアプリが横に滑る経路を潰した。ページ自体は絶対に pan せず、はみ出しは
+必ずそれ用の pane の中で起きる、という線を引き直している。
+
+- **HTML アーティファクトが横に滑っていた。** artifact は他人が書いた 1 枚の
+  HTML で、電話向けには書かれていない。viewport meta を持たない文書と、
+  デスクトップ幅の `pre` や table がフレームからはみ出す。
+  `fitArtifactToFrame` が viewport meta と最小限の `max-width` 規則を
+  **著者の記述より前に**差し込む（後から書いたものが勝つので上書きは自由）。
+  iPhone 17 Pro の実機計測で、内側の文書幅が 757px → 386px（フレーム幅）に。
+  自分で viewport を宣言している文書は幅について意思表示しているので触らない。
+- **長いタイトルがカードを押し広げていた。** `body` に
+  `overflow-wrap: anywhere` を敷いた。`break-word` ではなく `anywhere` なのは、
+  要素の min-content 幅を縮めるのは `anywhere` だけで、flex / grid の item を
+  画面外へ押し出すのがその min-content 幅だから。190 文字のタイトルで
+  リポジトリのカードが 937px はみ出していた。
+- **ブレークポイントでしか列を定義していない grid が max-content まで伸びて
+  いた。** 暗黙の列は `auto` で、中に `truncate`（= `nowrap`）があると
+  その max-content まで育つ。ホームの「最近のアクティビティ」は 402px の画面で
+  1290px あった。`grid-cols-[minmax(0,1fr)]` を base に足した
+  （home / 組織概要 / API キー / リポジトリ設定 / サインイン）。
+  `grid-cols-[1fr_auto]` も `minmax(0,1fr)` に直した（`1fr` の min は auto）。
+- 意図して横に流す帯（リポジトリタブ・ビュータブ・ボード・chat の table と
+  コード）に `overscroll-x-contain` を付けた。横のドラッグが後ろのアプリに
+  伝播しない。
+
 ## 2026-09-08 - HTML アーティファクトの全画面表示
 
 - Html Property のプレビューに全画面ボタンを足した。artifact は 1 ページ丸ごと

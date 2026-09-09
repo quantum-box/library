@@ -28,3 +28,9 @@ tauri-plugin-opener = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# `ios_webview` reaches into UIKit to give the WebView the whole screen; see
+# that module for why Tauri leaves it short of the bottom without this.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+objc2-ui-kit = { version = "0.3", features = ["std", "UIResponder", "UIScrollView", "UIView"] }

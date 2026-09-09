@@ -76,7 +76,7 @@ export function RepositoryTabs({
     <nav
       aria-label={t('repository.sections')}
       data-testid="repository-tabs"
-      className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1 md:px-3"
+      className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto overscroll-x-contain border-b border-border bg-surface px-2 pt-1 md:px-3"
     >
       <Tab active={active === 'overview'} icon={BookOpen} label={t('repository.overview')}>
         {(className, content) => (

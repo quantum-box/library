@@ -109,9 +109,10 @@ describe('HtmlArtifactEditor', () => {
   })
 
   /**
-   * A browser that refuses fullscreen must not take the page down with it.
+   * A browser that refuses fullscreen must not take the page down with it, and
+   * the button must still do what it says.
    */
-  it('survives a refused fullscreen request', async () => {
+  it('falls back to the overlay when fullscreen is refused', async () => {
     Object.defineProperty(document, 'fullscreenElement', {
       value: null,
       configurable: true,
@@ -127,8 +128,41 @@ describe('HtmlArtifactEditor', () => {
     })
     expect(screen.getByTestId('html-artifact-fullscreen')).toHaveAttribute(
       'aria-label',
-      'Full screen'
+      'Exit full screen'
     )
+    expect(screen.getByTestId('html-artifact-surface').className).toContain('fixed')
+  })
+
+  /**
+   * iPhone has no element fullscreen at all: `requestFullscreen` is missing
+   * rather than failing, which used to leave the button doing nothing while
+   * still offering to enlarge the artifact.
+   */
+  it('takes over the viewport where the Fullscreen API does not exist', async () => {
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: null,
+      configurable: true,
+    })
+    Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
+    render(<HtmlArtifactEditor value={doc} editable={false} onCommit={() => {}} />)
+
+    const surface = screen.getByTestId('html-artifact-surface')
+    expect(surface.className).not.toContain('fixed')
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('html-artifact-fullscreen'))
+    })
+    expect(screen.getByTestId('html-artifact-surface').className).toContain('fixed')
+    expect(screen.getByTestId('html-artifact-fullscreen')).toHaveAttribute(
+      'aria-label',
+      'Exit full screen'
+    )
+
+    // Esc leaves the overlay, and so does the button.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' })
+    })
+    expect(screen.getByTestId('html-artifact-surface').className).not.toContain('fixed')
   })
 
   /**

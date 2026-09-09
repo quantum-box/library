@@ -232,7 +232,12 @@ describe('RecordBodyEditor', () => {
     )
 
     const frame = getByTestId('html-preview-frame')
-    expect(frame.getAttribute('srcdoc')).toBe('<h2>Heading</h2>')
+    // The author's markup reaches the frame untouched. The frame prepends a
+    // viewport meta and an overflow floor so a desktop-width document cannot
+    // pan a phone (`fitArtifactToFrame`), and nothing else changes.
+    const srcdoc = frame.getAttribute('srcdoc') ?? ''
+    expect(srcdoc.endsWith('<h2>Heading</h2>')).toBe(true)
+    expect(srcdoc).toContain('name="viewport"')
     // allow-scripts without allow-same-origin: the document runs but gets an
     // opaque origin, no reach into the app.
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')

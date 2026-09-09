@@ -47,6 +47,10 @@ export function HtmlArtifactEditor({
   // affordance, so Esc and the platform's exit gesture keep working.
   const frame = useRef<HTMLDivElement | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  // iPhone has no element fullscreen at all -- `requestFullscreen` is simply
+  // absent -- so on the iOS app the button used to be a no-op that still
+  // called itself "Full screen". The overlay is the same promise kept in CSS.
+  const [overlay, setOverlay] = useState(false)
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -77,14 +81,36 @@ export function HtmlArtifactEditor({
     return () => document.removeEventListener('fullscreenchange', sync)
   }, [])
 
+  // The overlay is its own exit route: it keeps the toolbar on screen, which
+  // matters most exactly where it is used, since a phone has no Esc key.
+  useEffect(() => {
+    if (!overlay) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOverlay(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [overlay])
+
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
       void document.exitFullscreen()
       return
     }
-    // Refused by a browser that blocks fullscreen, and unavailable in some
-    // embeddings. Nothing here depends on it succeeding.
-    void frame.current?.requestFullscreen?.().catch(() => {})
+    if (overlay) {
+      setOverlay(false)
+      return
+    }
+
+    const request = frame.current?.requestFullscreen
+    if (!request) {
+      setOverlay(true)
+      return
+    }
+    // A browser can still refuse a request it advertises -- a permissions
+    // policy, an embedding that disallows it. Fall back rather than leave the
+    // button dead.
+    void request.call(frame.current).catch(() => setOverlay(true))
   }
 
   const handleChange = (next: string) => {
@@ -95,15 +121,23 @@ export function HtmlArtifactEditor({
   }
 
   const fill = surface === 'fill'
+  const expanded = fullscreen || overlay
   const frameHeight = surface === 'page' ? 'h-[560px]' : 'h-[320px]'
   const shown = editable ? source : value
 
   return (
     <div
+      data-testid="html-artifact-surface"
+      // The overlay takes the whole viewport rather than just the preview, so
+      // the toolbar -- and with it the way back out -- stays reachable. Fixed
+      // positioning escapes the safe-area padding on `#root`, so it re-applies
+      // the insets itself, the way `.detail-panel` does.
       className={
-        fill
-          ? 'flex h-full min-h-0 flex-col overflow-hidden bg-surface'
-          : 'overflow-hidden rounded border border-border bg-surface'
+        overlay
+          ? 'fixed inset-0 z-[100] flex flex-col overflow-hidden bg-surface pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)]'
+          : fill
+            ? 'flex h-full min-h-0 flex-col overflow-hidden bg-surface'
+            : 'overflow-hidden rounded border border-border bg-surface'
       }
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
@@ -130,14 +164,14 @@ export function HtmlArtifactEditor({
             data-testid="html-artifact-fullscreen"
             onClick={toggleFullscreen}
             aria-label={
-              fullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')
+              expanded ? t('editor.exitFullscreen') : t('editor.fullscreen')
             }
             title={
-              fullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')
+              expanded ? t('editor.exitFullscreen') : t('editor.fullscreen')
             }
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            {fullscreen ? (
+            {expanded ? (
               <Minimize2 className="size-3.5" aria-hidden="true" />
             ) : (
               <Maximize2 className="size-3.5" aria-hidden="true" />
@@ -150,13 +184,16 @@ export function HtmlArtifactEditor({
           ref={frame}
           // In fullscreen the element is the viewport; when filling, its
           // parent decides the height. Either way the fixed height and the
-          // resize handle have to get out of the way.
+          // resize handle have to get out of the way. `overscroll-contain`
+          // keeps a document still wider than the frame -- one that declared
+          // its own viewport, say -- scrolling inside this box rather than
+          // handing the drag to the app behind it.
           className={
             fullscreen
-              ? 'h-screen w-screen overflow-auto bg-white'
-              : fill
-                ? 'min-h-0 flex-1 overflow-auto'
-                : `${frameHeight} resize-y overflow-auto`
+              ? 'h-screen w-screen overflow-auto overscroll-contain bg-white'
+              : overlay || fill
+                ? 'min-h-0 flex-1 overflow-auto overscroll-contain'
+                : `${frameHeight} resize-y overflow-auto overscroll-contain`
           }
         >
           {shown.trim() === '' ? (

@@ -113,7 +113,7 @@ function ApiCallCard({ toolCall }: { toolCall: ToolCall }) {
       </button>
 
       {expanded && response && (
-        <div className="px-3 py-2 text-xs font-mono overflow-x-auto border-t border-border bg-code text-foreground">
+        <div className="px-3 py-2 text-xs font-mono overflow-x-auto overscroll-x-contain border-t border-border bg-code text-foreground">
           <pre className="whitespace-pre-wrap">{JSON.stringify(response.body, null, 2)}</pre>
         </div>
       )}
@@ -164,7 +164,7 @@ function CodeExecCard({ toolCall }: { toolCall: ToolCall }) {
       </button>
 
       {expanded && result && (
-        <div className="px-3 py-2 text-xs font-mono overflow-x-auto border-t border-border bg-code text-foreground">
+        <div className="px-3 py-2 text-xs font-mono overflow-x-auto overscroll-x-contain border-t border-border bg-code text-foreground">
           <pre className="whitespace-pre-wrap">{result.output}</pre>
         </div>
       )}
