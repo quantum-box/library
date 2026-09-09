@@ -1,7 +1,7 @@
 {
   "name": "@quantum-box/library-client",
   "private": true,
-  "version": "0.1.40",
+  "version": "0.1.41",
   "type": "module",
   "engines": {
     "node": ">=22.12.0 <23"
@@ -33,10 +33,6 @@
       "types": "./dist/package/src/platform/server-contract.d.ts",
       "default": "./dist/package/src/platform/server-contract.js"
     },
-    "./worker": {
-      "types": "./dist/package/workers/sync/index.d.ts",
-      "default": "./dist/package/workers/sync/index.js"
-    },
     "./styles.css": "./src/index.css"
   },
   "scripts": {
@@ -45,13 +41,13 @@
     "build": "tsc -b && vite build",
     "build:preview": "node scripts/build-preview.mjs",
     "build:cloud": "npm run build:package && tsc -b && vite build && npm run build:public-docs",
-    "build:package": "tsc -p tsconfig.package.json && tsc -p tsconfig.package.worker.json",
+    "build:package": "tsc -p tsconfig.package.json",
     "lint": "eslint .",
     "prepare": "npm run build:package",
     "type-check": "tsc -b --noEmit",
-    "type-check:worker": "tsc -p tsconfig.worker.json && npm run type-check:public-docs",
+    "type-check:worker": "cargo check --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown --workspace --locked",
     "test": "vitest run",
-    "test:worker": "vitest run --config vitest.worker.config.ts && npm run test:public-docs-worker",
+    "test:worker": "npm run build:worker && node --test scripts/test-sync-worker.mjs && npm run test:public-docs-worker",
     "fixtures:blocknote": "UPDATE_FIXTURES=1 vitest run src/test/blocknoteFixtures.test.ts",
     "test-storybook": "vitest --config vitest.storybook.config.ts --project=storybook",
     "test:e2e": "playwright test",
@@ -79,9 +75,11 @@
     "pages:deploy": "npm run pages:build && cd dist && wrangler pages deploy . --project-name library-client --branch main --commit-dirty=true",
     "worker:dev": "wrangler dev --config wrangler.jsonc --port 8787",
     "worker:deploy": "wrangler deploy --config wrangler.jsonc",
-    "build:public-docs": "vite build --config vite.public-docs.config.ts",
-    "type-check:public-docs": "tsc -p tsconfig.public-docs.json",
-    "test:public-docs-worker": "node --test scripts/test-public-docs-worker.mjs"
+    "build:public-docs": "node scripts/build-workers.mjs public-docs",
+    "type-check:public-docs": "cargo check --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown -p library-public-docs-worker --locked",
+    "test:public-docs-worker": "node --test scripts/test-public-docs-worker.mjs",
+    "build:worker": "node scripts/build-workers.mjs sync",
+    "build:native": "npm run build:package && npm run build"
   },
   "dependencies": {
     "@blocknote/code-block": "^0.50.0",

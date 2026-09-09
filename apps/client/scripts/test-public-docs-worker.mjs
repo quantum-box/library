@@ -1,24 +1,19 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { build } from 'vite'
+import { spawnSync } from 'node:child_process'
 import { createFetchMock, Miniflare } from 'miniflare'
 
 const outDir = await mkdtemp(join(tmpdir(), 'library-public-docs-test-'))
 after(() => rm(outDir, { recursive: true, force: true }))
-await build({
-  configFile: 'vite.public-docs.config.ts',
-  build: { outDir },
-  logLevel: 'error',
-  define: {
-    'import.meta.env.VITE_LIBRARY_API_BASE_URL': JSON.stringify(
-      'https://api.example.test',
-    ),
-  },
+const build = spawnSync('node', ['scripts/build-workers.mjs', 'public-docs'], {
+  stdio: 'inherit',
+  env: { ...process.env, PUBLIC_DOCS_OUT_DIR: outDir, VITE_LIBRARY_API_BASE_URL: 'https://api.example.test' },
 })
-const script = await readFile(join(outDir, '_worker.js'), 'utf8')
+assert.equal(build.status, 0)
+const scriptPath = join(outDir, '_worker.js', 'index.js')
 const origin = 'https://planetlibrary.txcloud.app'
 const base = '/v1beta/repos/acme/guide'
 const route = '/public/acme/guide'
@@ -66,7 +61,9 @@ async function scenario(t, routes = {}) {
     .persist()
   const mf = new Miniflare({
     modules: true,
-    script,
+    scriptPath,
+    modulesRoot: join(outDir, '_worker.js'),
+    modulesRules: [{ type: 'CompiledWasm', include: ['**/*.wasm'], fallthrough: true }],
     compatibilityDate: '2026-05-05',
     compatibilityFlags: ['nodejs_compat'],
     fetchMock,
@@ -245,4 +242,11 @@ test('API redirects and oversized data are rejected rather than followed or cach
   assert.equal(response.status, 503)
   assert.equal(response.headers.get('cache-control'), 'no-store')
   assert.equal(large.calls.length, 1)
+})
+
+test('nullable repository descriptions retain the public page and empty fallback', async (t) => {
+  const { fetch } = await scenario(t, { ...ready, [base]: { data: { ...profile, description: null } } })
+  const response = await fetch()
+  assert.equal(response.status, 200)
+  assert.match(await response.text(), /A useful public document\./)
 })
