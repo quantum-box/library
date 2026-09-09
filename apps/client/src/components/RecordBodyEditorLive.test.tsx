@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => {
       provider: null as PhotonLiveProvider | null,
       state: null as PhotonLiveState | null,
       mounted: false,
-      initialError: null,
+      initialError: null as string | null,
     },
     queueCheckpoint: vi.fn(),
     detach: vi.fn(),
@@ -149,6 +149,23 @@ describe('RecordBodyEditor with Photon Live', () => {
     expect(mocks.collaborationSeen).not.toContain(true)
     await act(async () => new Promise((resolve) => setTimeout(resolve, 600)))
     expect(onCommit).toHaveBeenCalledWith('Typed first')
+    expect(mocks.queueCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('keeps editing and saving when the initial Live connection fails', async () => {
+    mocks.live.initialError = 'Live origin is not allowed'
+    const onCommit = vi.fn()
+    const { getByTestId } = render(<RecordBodyEditor
+      value="Original" format="markdown" onCommit={onCommit} liveTarget={liveTarget}
+    />)
+    await act(async () => Promise.resolve())
+    expect(getByTestId('block-note-view')).toBeTruthy()
+    expect(mocks.collaborationSeen).not.toContain(true)
+
+    mocks.editor.blocksToMarkdownLossy.mockReturnValue('Typed after connection failure')
+    act(() => mocks.onEditorChange?.(mocks.editor))
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 600)))
+    expect(onCommit).toHaveBeenCalledWith('Typed after connection failure')
     expect(mocks.queueCheckpoint).not.toHaveBeenCalled()
   })
 

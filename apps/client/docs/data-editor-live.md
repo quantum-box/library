@@ -49,6 +49,18 @@ Worker の Live用 Durable Object binding は `PHOTON_LIVE_ROOMS` と
 `PHOTON_LIVE_TICKETS`。許可Originは実際に使うWeb / Tauriシェルに合わせる。
 利用者Bearerを固定のサービス権限に置き換えない。
 
+デスクトップの配布ビルドは `.env.production` の本文Live URLを読み込む。
+Tauriの本番CSPには同じWorkerの `https:`（session）と `wss:`（接続）の
+両方を許可する。Workerの本番OriginはWebの2種類に加え、macOS/Linuxの
+`tauri://localhost` とWindowsの `http://tauri.localhost` のみを完全一致で許可する。
+`null`、任意のlocalhost、ワイルドカードは許可しない。
+
+Liveは補助機能であり、接続待ち・失敗中も本文の表示・入力・通常保存を続ける。
+接続前に入力した場合、そのエディタを開いている間は通常保存を継続する既存の
+保護を維持する。Liveを有効にするために入力を待たせたり、入力中のエディタを
+差し替えたりしない。同時編集の検証では接続済みの本文Liveと、この通常保存への
+フォールバックを分けて確認する（オンライン人数だけでは本文Liveの証明にならない）。
+
 ## PR301 の隔離Preview
 
 `wrangler.preview.jsonc` は `library-client-live-pr301` 専用で、本番とは別の

@@ -1,4 +1,6 @@
+/// <reference types="node" />
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import * as Y from 'yjs'
 import worker, {
   normalizeBodyHash,
@@ -9,6 +11,8 @@ import worker, {
 } from './index'
 
 const origin = 'http://127.0.0.1:5187'
+const productionOrigins = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8')
+  .match(/"PHOTON_LIVE_ALLOWED_ORIGINS":\s*"([^"]+)"/)![1]
 
 function namespace(stub?: Record<string, unknown>) {
   return {
@@ -266,6 +270,36 @@ describe('Photon Live edge', () => {
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({ error: 'Live origin is not allowed' })
   })
+
+  it.each(['tauri://localhost', 'http://tauri.localhost'])(
+    'allows production native Origin %s through CORS but still requires authorization',
+    async (nativeOrigin) => {
+      const liveEnv = env({ PHOTON_LIVE_ALLOWED_ORIGINS: productionOrigins })
+      const preflight = await worker.fetch(new Request('https://live.example.test/live/session', {
+        method: 'OPTIONS',
+        headers: { Origin: nativeOrigin, 'Access-Control-Request-Method': 'POST' },
+      }), liveEnv)
+      expect(preflight.status).toBe(204)
+      expect(preflight.headers.get('Access-Control-Allow-Origin')).toBe(nativeOrigin)
+
+      const response = await worker.fetch(request(
+        { org: 'org', repo: 'repo', data_id: 'data', property_id: 'prop' },
+        { Origin: nativeOrigin },
+      ), liveEnv)
+      expect(response.status).toBe(401)
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe(nativeOrigin)
+    },
+  )
+
+  it.each(['null', 'http://localhost', 'tauri://localhost.evil.test', 'http://tauri.localhost.evil.test'])(
+    'rejects untrusted Origin %s with the production allowlist',
+    async (untrustedOrigin) => {
+      const response = await worker.fetch(request({}, { Origin: untrustedOrigin }),
+        env({ PHOTON_LIVE_ALLOWED_ORIGINS: productionOrigins }))
+      expect(response.status).toBe(403)
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    },
+  )
 
   it('does not expose canonical room data when API authorization fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
