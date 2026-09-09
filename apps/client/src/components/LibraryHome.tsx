@@ -120,7 +120,14 @@ export function LibraryHome() {
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
+      {/*
+        Desktop chrome only. On a phone the shell's own app bar already carries
+        the Library mark, the drawer and the account menu, so this row would
+        repeat the branding and the "new data" button that the page body below
+        already offers -- two rows of duplication across the top of a screen
+        that has none to spare.
+      */}
+      <header className="hidden h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:flex md:px-4">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <img src={libraryAppIcon} alt="" className="size-4" />
           <span className="font-semibold">Library</span>
@@ -148,7 +155,7 @@ export function LibraryHome() {
         </Button>
       </header>
 
-      <div className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1.5">
+      <div className="hidden h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1.5 md:flex">
         <div className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
           <img src={libraryAppIcon} alt="" className="size-3.5" />
           {t('home.title')}
@@ -222,7 +229,7 @@ export function LibraryHome() {
             </div>
           </section>
 
-          <div className="mt-7 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="mt-7 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="activity-heading">
               <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
                 <Activity className="size-4 text-muted-foreground" aria-hidden="true" />

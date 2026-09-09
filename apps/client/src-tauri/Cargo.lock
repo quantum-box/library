@@ -2195,6 +2195,8 @@ name = "library-client"
 version = "0.1.0"
 dependencies = [
  "log",
+ "objc2",
+ "objc2-ui-kit",
  "serde",
  "serde_json",
  "tauri",

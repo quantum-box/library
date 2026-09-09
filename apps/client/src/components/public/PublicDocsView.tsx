@@ -26,6 +26,7 @@ import {
   getLibraryDataPropertyValue,
   propertyValueEditText,
 } from '../../lib/libraryTable/libraryPropertyFormat'
+import { fitArtifactToFrame } from '../../lib/html/artifactDocument'
 import { RecordBodyEditor } from '../RecordBodyEditor'
 import {
   PublicLoadingState,
@@ -570,10 +571,17 @@ function DocsArticle({
             <h1>{detail.item.name || t('common.untitled')}</h1>
             <div ref={bodyRef} className="docs-body">
               {htmlDocument ? (
+                /*
+                  Its own iframe rather than `HtmlPreviewFrame`, because the
+                  reader talks to the document through `htmlFrameRef`. The
+                  source still goes through `fitArtifactToFrame`: a shared link
+                  opened on a phone is exactly where a desktop-width artifact
+                  would pan the page sideways.
+                */
                 <iframe
                   ref={htmlFrameRef}
                   sandbox="allow-scripts"
-                  srcDoc={htmlDocument.source}
+                  srcDoc={fitArtifactToFrame(htmlDocument.source)}
                   title={t('editor.htmlPreviewFrameTitle')}
                   className="h-[560px] w-full border-0 bg-white"
                 />

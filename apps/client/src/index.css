@@ -9,6 +9,19 @@
 /* Native UI's Tailwind v3 preset uses class-based dark mode. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+  `md` is the line between the phone shell and the two-pane desktop one, and
+  width alone draws it in the wrong place: a phone in landscape is 874x402,
+  wide enough for `md` and nowhere near tall enough for a sidebar, a header,
+  and a pane. Asking for both keeps a rotated phone on the app-bar shell.
+
+  500px is clear of every phone in landscape (up to ~440) and below every
+  tablet (744+) and the desktop window's own 640px minimum. Anything reading
+  the same line in JavaScript or in a plain media query -- `useIsMobileViewport`
+  and the `.detail-panel` rules below -- has to move with it.
+*/
+@custom-variant md (@media (min-width: 768px) and (min-height: 500px));
+
 /* ─── Library Design Tokens ────────────────────────────────────── */
 
 :root {
@@ -315,13 +328,14 @@
 
   /*
     The shell is an app frame, not a document: every scroll happens inside a
-    pane. Pinning the body to the layout viewport keeps mobile browsers from
+    pane. Pinning the frame to the layout viewport keeps mobile browsers from
     rubber-banding the whole app, resizing it as the URL bar hides, or panning
     it sideways when a pane overflows. `position: fixed` sizes against the
     layout viewport, so this height does not move with browser chrome.
   */
   html {
     height: 100%;
+    background: var(--bg-primary);
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
@@ -330,23 +344,56 @@
     font-family: var(--nui-font-sans);
     background: var(--bg-primary);
     color: var(--text-primary);
-    position: fixed;
-    inset: 0;
     overflow: hidden;
     overscroll-behavior: none;
+    /*
+      Long unbroken text -- a data title with no spaces, a pasted URL, an
+      identifier -- must wrap rather than widen the pane it sits in. `anywhere`
+      rather than `break-word` because only `anywhere` shrinks the element's
+      min-content width, and it is the min-content width that pushes a flex or
+      grid item past the screen. Anything that would rather clip opts in with
+      `truncate`, which turns wrapping off entirely.
+    */
+    overflow-wrap: anywhere;
     /* Skip the 300ms double-tap-to-zoom wait on taps. */
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* `100%` of the padding box, so the safe-area insets below do not push the
-     app past the bottom of the screen the way a viewport unit would. */
+  /*
+    The frame is `#root`, not `body`, and that is not a style choice. Radix
+    locks scrolling for every menu, dialog and popover by injecting
+    `body[data-scroll-locked] { position: relative !important; padding-top: … }`
+    through `react-remove-scroll-bar`. On a body that carried `position: fixed`
+    and the safe-area insets, opening the account menu dropped both: the body
+    grew to the height of the popover and the app bar slid up under the notch.
+    Nothing rewrites `#root`.
+  */
   #root {
-    height: 100%;
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--bg-primary);
+  }
+
+  /*
+    Body content is other people's markup: a pasted screenshot, a wide code
+    block, a table with more columns than a phone has room for. Each one gets
+    to overflow inside its own box instead of widening the article column.
+    `public-docs.css` states the same rules for the public reader.
+  */
+  .photon-blocknote :is(img, video, canvas, iframe) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .photon-blocknote :is(pre, table) {
+    max-width: 100%;
+    overflow: auto;
   }
 
   @supports (padding: max(0px)) {
-    body {
+    #root {
       padding-top: env(safe-area-inset-top);
       padding-right: env(safe-area-inset-right);
       padding-bottom: env(safe-area-inset-bottom);
@@ -355,13 +402,13 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   :root {
     --detail-width: 100vw;
   }
 
   /* Radix centres its dialog content with `position: fixed`, which escapes the
-     safe-area padding on `body`. Cap the height at the usable area so a long
+     safe-area padding on `#root`. Cap the height at the usable area so a long
      dialog scrolls inside the notch and home indicator instead of under them.
      `[data-state]` keeps this off the shell's own nav drawer. */
   [role="dialog"][data-state] {
@@ -369,7 +416,7 @@
   }
 
   /* Fixed positioning resolves against the viewport, so this panel escapes the
-     safe-area padding on `body` and has to re-apply the insets itself. */
+     safe-area padding on `#root` and has to re-apply the insets itself. */
   .detail-panel {
     position: fixed;
     inset: 0;

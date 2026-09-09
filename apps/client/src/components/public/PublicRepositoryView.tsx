@@ -246,7 +246,7 @@ export function PublicRepositoryView({
           ) : null}
 
           {!dataLoading && !dataError && rows.length > 0 && !isMobileViewport ? (
-            <div className="overflow-x-auto rounded-lg border border-border">
+            <div className="overflow-x-auto overscroll-x-contain rounded-lg border border-border">
               <table className="w-full min-w-[640px]">
                 <thead>
                   <tr>

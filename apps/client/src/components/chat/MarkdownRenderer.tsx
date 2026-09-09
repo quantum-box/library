@@ -83,7 +83,7 @@ function useMarkdownComponents(): Components {
   },
   table({ children }) {
     return (
-      <div className="my-3 overflow-x-auto rounded-lg border border-border">
+      <div className="my-3 overflow-x-auto overscroll-x-contain rounded-lg border border-border">
         <table className="w-full text-sm">{children}</table>
       </div>
     )

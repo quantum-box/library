@@ -4,6 +4,9 @@ mod macos_menu;
 #[cfg(target_os = "macos")]
 mod macos_tabs;
 
+#[cfg(target_os = "ios")]
+mod ios_webview;
+
 #[cfg(target_os = "macos")]
 use tauri::{Manager, WindowEvent};
 
@@ -26,6 +29,16 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
+            }
+            #[cfg(target_os = "ios")]
+            {
+                use tauri::Manager;
+                match app.get_webview_window("main") {
+                    Some(window) => ios_webview::stretch_to_window(&window),
+                    None => log::error!(
+                        "no main window to resize the iOS webview in"
+                    ),
+                }
             }
             if cfg!(debug_assertions) {
                 app.handle().plugin(

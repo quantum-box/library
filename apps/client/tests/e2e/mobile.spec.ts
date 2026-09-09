@@ -63,6 +63,59 @@ test.describe('Library mobile shell', () => {
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\//)
   })
 
+  /**
+   * A data name is free text and nothing stops it being one 200-character
+   * token -- a pasted URL, an exported identifier. Wrapping is what keeps that
+   * inside the card instead of widening the pane and letting the phone pan.
+   */
+  test('keeps a long unbroken title inside the screen', async ({ page, request }) => {
+    const title = `long-${'x'.repeat(180)}`
+
+    // Renamed through the API rather than the UI: the point is what the list
+    // does with a name it cannot break, not how the name got there.
+    const renamed = await request.post('http://127.0.0.1:50063/v1/graphql', {
+      data: {
+        query: 'mutation LibraryClientUpdateData { updateData { id } }',
+        variables: {
+          input: {
+            orgUsername: 'quantum-box',
+            repoUsername: 'photon-core',
+            dataId: 'seed-data-201',
+            dataName: title,
+          },
+        },
+      },
+    })
+    expect(renamed.ok(), await renamed.text()).toBe(true)
+
+    await page.goto('/quantum-box/photon-core/data')
+    const card = page.getByTestId('library-table-card').filter({ hasText: 'long-xxx' })
+    await expect(card).toHaveCount(1)
+
+    const pagePan = () =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    const spill = (locator: ReturnType<typeof page.getByTestId>) =>
+      locator.evaluate((element) => element.scrollWidth - element.clientWidth)
+
+    expect(await pagePan()).toBeLessThanOrEqual(0)
+    expect(await spill(card)).toBeLessThanOrEqual(0)
+
+    // The data page shows the same name as a heading, at three times the size.
+    await card.click()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\/.+/)
+    await expect(page.getByText('long-xxx', { exact: false }).first()).toBeVisible()
+
+    expect(await pagePan()).toBeLessThanOrEqual(0)
+    expect(
+      await page.evaluate(() => {
+        const main = document.querySelector('main') ?? document.body
+        return main.scrollWidth - main.clientWidth
+      })
+    ).toBeLessThanOrEqual(0)
+  })
+
   test('reads public documentation without signing in on mobile', async ({ page, request }) => {
     // The public route is what a shared link opens, so exercise it the way a
     // visitor arrives: no session, phone viewport.
