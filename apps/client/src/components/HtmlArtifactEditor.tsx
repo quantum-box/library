@@ -189,18 +189,18 @@ export function HtmlArtifactEditor({
           ref={frame}
           // In fullscreen the element is the viewport; when filling, its
           // parent decides the height. Either way the fixed height and the
-          // resize handle have to get out of the way. `overscroll-none`
+          // resize handle have to get out of the way. `overscroll-contain`
           // keeps a document still wider than the frame -- one that declared
           // its own viewport, say -- scrolling inside this box rather than
-          // handing the drag to the app behind it, and drops the rubber-band
-          // this box would otherwise show at its own ends; the frame is a
-          // pane, not a page.
+          // handing the drag to the app behind it; `overscroll-none`, where
+          // the artifact owns its region, additionally drops the rubber-band
+          // the box would show at its own ends.
           className={
             fullscreen
               ? 'h-screen w-screen overflow-auto overscroll-none bg-white'
               : overlay || fill
                 ? 'min-h-0 flex-1 overflow-auto overscroll-none'
-                : `${frameHeight} resize-y overflow-auto overscroll-none`
+                : `${frameHeight} resize-y overflow-auto overscroll-contain`
           }
         >
           {shown.trim() === '' ? (
@@ -208,7 +208,14 @@ export function HtmlArtifactEditor({
               {t('editor.nothingToPreview')}
             </div>
           ) : (
-            <HtmlPreviewFrame source={shown} />
+            /*
+              An artifact that owns its region -- fullscreen, the phone
+              overlay, a `fill` surface -- has nothing behind it to scroll, so
+              a drag past its top should stop rather than bounce. A boxed one
+              sits in a scrolling column, where the reader's scroll has to
+              chain out to the page once the document ends.
+            */
+            <HtmlPreviewFrame source={shown} lockOverscroll={fill || expanded} />
           )}
         </div>
       ) : (

@@ -64,14 +64,27 @@ describe('fitArtifactToFrame', () => {
   })
 
   /**
-   * The frame is a pane inside the app, so a scroll that runs past the top or
-   * bottom of the artifact must stop dead rather than bounce the document.
+   * An artifact that owns its region has nothing behind it to scroll, so a
+   * drag past its top must stop dead rather than bounce the document.
    */
-  it('stops the document rubber-banding at its own ends', () => {
+  it('stops the document rubber-banding when the frame owns its region', () => {
     const out = fitArtifactToFrame(
       '<!doctype html><html><head><meta name="viewport" content="width=1024"></head><body></body></html>',
+      { lockOverscroll: true },
     )
 
     expect(out).toContain('html,body{overscroll-behavior:none}')
+  })
+
+  /**
+   * The other half of that trade: an artifact embedded in a page must still
+   * hand the scroll to the page once its own document ends, or a reader who
+   * starts scrolling over the frame is stuck inside it.
+   */
+  it('leaves scroll chaining alone by default', () => {
+    const out = fitArtifactToFrame('<p>x</p>')
+
+    expect(out).not.toContain('overscroll-behavior')
+    expect(out).toContain('table{max-width:100%}')
   })
 })
