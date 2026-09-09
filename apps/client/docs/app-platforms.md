@@ -76,18 +76,93 @@ Mobile release candidates must also pass the phone-viewport browser smoke:
 npm run test:e2e:mobile
 ```
 
+Nothing may pan the app sideways. The page itself never scrolls horizontally,
+and anything wider than the screen scrolls inside a pane that owns it — the
+repository tab strip, the board, a chat table — each carrying
+`overscroll-x-contain` so the drag stops there. Three things break that rule if
+left alone, and each has a fix worth knowing about:
+
+- **Long unbroken text.** `body` sets `overflow-wrap: anywhere`. `break-word`
+  is not enough: only `anywhere` shrinks an element's min-content width, and it
+  is the min-content width that pushes a flex or grid item off the screen. A
+  190-character data title used to widen a repository card by 937px. Anything
+  that would rather clip opts out with `truncate`.
+- **A grid whose columns are only declared at a breakpoint.** The implicit
+  column is `auto`, which grows to max-content, and a `truncate` descendant's
+  max-content is the whole untruncated string. Home's activity card came out
+  1290px wide on a 402px screen. Every such grid names
+  `grid-cols-[minmax(0,1fr)]` at the base width. `1fr` on its own is not
+  enough either — its minimum is `auto`, so write `minmax(0,1fr)`.
+- **HTML artifacts.** See `src/lib/html/artifactDocument.ts`: an artifact is
+  someone else's whole document and was not written for a phone, so the frame
+  injects a viewport meta and a `max-width` floor ahead of the author's own
+  markup. Measured on an iPhone 17 Pro, that takes the embedded document from
+  757px to the 386px frame.
+
+`mobile.spec.ts` asserts the rule with a 190-character title, on the list and
+on the data page.
+
 The phone shell is an app frame rather than a document, and two rules keep it
 that way. `index.html` pins the viewport (`maximum-scale=1, user-scalable=no,
 viewport-fit=cover`) so a focused input cannot zoom the layout out from under
-the user, and `src/index.css` fixes `body` to the layout viewport with
-`overscroll-behavior: none`. Nothing outside a pane may scroll: a screen that
-makes the document itself overflow is a bug, and `mobile.spec.ts` asserts it.
+the user, and `src/index.css` fixes **`#root`** to the layout viewport with
+`overscroll-behavior: none` on `body`. Nothing outside a pane may scroll: a
+screen that makes the document itself overflow is a bug, and `mobile.spec.ts`
+asserts it.
+
+The frame is `#root` and not `body` on purpose. Radix locks scrolling for every
+menu, dialog and popover by injecting
+`body[data-scroll-locked] { position: relative !important; padding-top: … }`
+through `react-remove-scroll-bar`. A `body` carrying `position: fixed` and the
+safe-area insets loses both the moment anything opens: the body grows to the
+height of the popover and the app slides up behind the notch. Put nothing the
+layout depends on on `body`.
 
 On a phone the workspace navigation lives in a drawer behind the app bar rather
 than in the sidebar, and views that cannot reflow — the repository data table
 and its public counterpart, above all — swap to a card layout through
 `useIsMobileViewport`. Anything a phone can only reach by tapping has to have a
 tap target: the command palette is opened from the drawer, not just by `⌘K`.
+
+The phone/desktop line is width **and** height. A phone in landscape is 874x402:
+wider than the desktop breakpoint and far too short for a sidebar, a header and
+a pane, so `md` is redefined in `src/index.css` as
+`(min-width: 768px) and (min-height: 500px)` and every `md:` in the app follows
+it. `MOBILE_VIEWPORT_QUERY` and the `.detail-panel` rules state the same line
+and have to move with it. 500px clears every phone in landscape (up to ~440)
+and sits below every tablet (744+) and the desktop window's own 640px minimum.
+
+Screen chrome is not free on a phone. The shell's app bar already carries the
+Library mark, the drawer and the account menu, so a page that also draws a
+desktop header spends a tenth of the screen repeating it — `LibraryHome` hides
+both its header and its tab strip below `md` for that reason. Popovers need the
+same care in the other direction: the account menu is the tallest in the app,
+and without a `max-height` and `collisionPadding` it does not fit a phone,
+which drags the whole page up behind the notch as the browser tries to reveal
+it. `useSafeAreaInsets` exists for that, because Radix positions from
+JavaScript and cannot read `env()`.
+
+### iOS shell
+
+The WebView is stretched over the window in `src-tauri/src/ios_webview.rs`.
+Tauri sizes a webview to the window's *inner* size, and `tao` reports that as
+the safe area on iOS, so the WebView comes out 96pt shorter than the screen
+while still sitting at the top of it. `env(safe-area-inset-*)` keeps reporting
+the device's real insets, so the stylesheet pads `body` on top of a frame that
+already lost the same space and the app stops 130pt short of the bottom of the
+screen. The module resets the frame, gives it a flexible autoresizing mask so
+rotation carries through, and turns off the scroll view's automatic content
+inset so UIKit does not put the margin back as scroll offset.
+
+`bundle.iOS.minimumSystemVersion` is **16.4**, not the Tauri default. Tailwind
+v4 emits `@property`, `color-mix()` and `oklch()`, which Safari only understands
+from 16.4; `dvh`, `:has()` and `overscroll-behavior` land around the same
+releases. A lower floor ships a build that renders wrong rather than one that
+refuses to install.
+
+Element fullscreen does not exist on iPhone at all — `requestFullscreen` is
+absent rather than failing — so `HtmlArtifactEditor` falls back to a fixed
+overlay and its full-screen button means the same thing on every platform.
 
 CI runs an Android APK smoke build for `aarch64` so the Tauri mobile wrapper,
 Rust command bridge, WASM frontend build, and generated Android project stay in

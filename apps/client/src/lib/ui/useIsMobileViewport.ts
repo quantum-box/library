@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Phone-width breakpoint, kept in step with the `md` breakpoint the shell uses
- * for its responsive utilities and with the `.detail-panel` rule in
- * `src/index.css`. Views that cannot simply reflow — a wide data table, say —
- * read this to swap in a layout built for one narrow column.
+ * Phone breakpoint, kept in step with the `md` variant the shell uses for its
+ * responsive utilities and with the `.detail-panel` rule in `src/index.css`.
+ * Views that cannot simply reflow -- a wide data table, say -- read this to
+ * swap in a layout built for one narrow column.
+ *
+ * Height counts as well as width: a phone in landscape is wider than the
+ * desktop breakpoint and shorter than anything the desktop layout can be
+ * folded into, so it stays on the phone shell. See the `md` override in
+ * `src/index.css` for where the 500px comes from.
  */
-export const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)'
+export const MOBILE_VIEWPORT_QUERY = '(max-width: 767px), (max-height: 499px)'
 
 export function getIsMobileViewport() {
   return typeof window !== 'undefined'

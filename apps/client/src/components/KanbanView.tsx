@@ -389,7 +389,7 @@ export function KanbanView({
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto p-2 md:gap-3 md:p-4">
+      <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto overscroll-x-contain p-2 md:gap-3 md:p-4">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}

@@ -72,7 +72,7 @@ export function DatabaseViewTabs({
       }`}
     >
       <nav
-        className="flex min-w-0 flex-1 overflow-x-auto"
+        className="flex min-w-0 flex-1 overflow-x-auto overscroll-x-contain"
         aria-label={t('viewTabs.navLabel')}
       >
         {views.map((view) => {

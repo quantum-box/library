@@ -260,7 +260,7 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
           </div>
         </section>
 
-        <div className="grid items-start xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start xl:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0">
             <section id="repositories" className="border-b border-border" aria-labelledby="organization-repositories-heading">
               <div className="flex h-10 items-center gap-2 bg-surface/60 px-4 md:px-5">

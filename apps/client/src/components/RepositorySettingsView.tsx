@@ -311,7 +311,7 @@ export function RepositorySettingsView({
               </div>
             ) : null}
 
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
               <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="repository-profile-heading">
                 <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-3">
                   <FolderCog className="size-4 text-muted-foreground" aria-hidden="true" />

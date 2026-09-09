@@ -89,7 +89,7 @@ export function AuthGate({ children }: AuthGateProps) {
   if (session?.accessToken) return <>{children}</>
 
   return (
-    <main className="grid h-full min-h-0 bg-background text-foreground lg:grid-cols-[minmax(420px,0.9fr)_minmax(480px,1.1fr)]">
+    <main className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background text-foreground lg:grid-cols-[minmax(420px,0.9fr)_minmax(480px,1.1fr)]">
       <section className="relative hidden min-h-0 overflow-hidden border-r border-border bg-surface lg:flex">
         <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(to_right,hsl(var(--nui-border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--nui-border))_1px,transparent_1px)] [background-size:36px_36px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
         <div className="relative flex w-full flex-col justify-between p-10 xl:p-14">

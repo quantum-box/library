@@ -73,8 +73,10 @@ import { useTheme, type ThemeMode } from '../contexts/ThemeContext'
 import type { Status } from '../data/mock'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { navigateToData } from '../lib/ui/dataLocation'
+import { collisionPaddingFor, useSafeAreaInsets } from '../lib/ui/safeAreaInsets'
 import { fetchLibraryAccessibleTenants } from '../lib/recordsApi'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
+import { shareableUrl } from '../lib/shareUrl'
 import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
@@ -137,6 +139,7 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
   const [session, setSession] = useState(() => loadAuthTokens())
   const { mode, setMode } = useTheme()
   const { t } = useI18n()
+  const safeArea = useSafeAreaInsets()
 
   useEffect(() => {
     const reload = () => setSession(loadAuthTokens())
@@ -164,7 +167,20 @@ function AccountMenu({ mobile = false }: { mobile?: boolean }) {
           </SidebarAccount>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent side={mobile ? 'bottom' : 'right'} align="end" className="w-56">
+      {/*
+        Three themes and eleven languages make this the tallest menu in the
+        app, and on a small phone it does not fit. Capping it at the room Radix
+        measured turns the overflow into a scroll instead of a menu that runs
+        off the screen. The collision padding is the other half: the notch and
+        the home indicator are inside the viewport, and Radix places from
+        JavaScript, so it cannot read `env()` for itself.
+      */}
+      <DropdownMenuContent
+        side={mobile ? 'bottom' : 'right'}
+        align="end"
+        collisionPadding={collisionPaddingFor(safeArea)}
+        className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-56 overflow-y-auto overscroll-contain"
+      >
         <DropdownMenuLabel className="normal-case tracking-normal">
           <span className="block truncate text-sm font-medium text-foreground">{accountName}</span>
           <span className="mt-0.5 block truncate text-2xs font-normal text-muted-foreground">
@@ -439,6 +455,9 @@ export function Sidebar() {
     return database
   }
 
+  // Both branches go through `shareableUrl`: inside the desktop and mobile
+  // shells `window.location.origin` is `tauri://localhost`, which is an address
+  // only this app can open, so pasting it anywhere else hands over a dead link.
   const copyDatabaseLink = async (databaseId: string | null) => {
     const database = databaseId
       ? databases.find((candidate) => candidate.id === databaseId)
@@ -447,7 +466,7 @@ export function Sidebar() {
       const organization = encodeURIComponent(database.orgUsername)
       const repository = encodeURIComponent(database.repoUsername)
       await navigator.clipboard.writeText(
-        new URL(`/${organization}/${repository}`, window.location.origin).toString(),
+        shareableUrl(new URL(`/${organization}/${repository}`, window.location.origin).toString()),
       )
       return
     }
@@ -458,7 +477,7 @@ export function Sidebar() {
       url.searchParams.set('view', currentDatabaseViewType)
     }
     if (normalizedId) url.searchParams.set('database', normalizedId)
-    await navigator.clipboard.writeText(url.toString())
+    await navigator.clipboard.writeText(shareableUrl(url.toString()))
   }
 
   const connectionText = connectionStatus === 'connected'

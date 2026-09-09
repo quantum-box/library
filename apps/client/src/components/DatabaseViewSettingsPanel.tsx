@@ -307,7 +307,7 @@ export function DatabaseViewSettingsPanel({
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-[1fr_auto] gap-2">
+      <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
         <label className="flex flex-col gap-1 text-xs text-subtle">
           {t('viewSettings.sort')}
           <select
