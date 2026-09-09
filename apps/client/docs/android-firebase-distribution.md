@@ -95,28 +95,43 @@ the signing step instead fails loudly if the APK ever arrives already signed.
 
 ## Current state
 
-Set up on 2026-09-09, up to the point where CI can be wired:
+Set up on 2026-09-09 and wired end to end:
 
 | Thing | Value |
 | --- | --- |
 | Firebase project | `planet-library` (`planet-library-1ca62`), under the `quantum-box.com` GCP organization |
 | Android app | `com.quantumbox.library`, nickname *Library Android* |
 | App ID | `1:845752196507:android:584dd46517206a5d67553e` |
-| Tester group | alias `testers`, empty |
+| Tester group | alias `testers` |
+| Service account | `firebase-adminsdk-fbsvc@planet-library-1ca62.iam.gserviceaccount.com` |
+| Signing key | PKCS12, alias `library-android`, RSA 4096, SHA-256 fingerprint `9F:85:EF:...:23:36` |
+
+All five secrets and the App ID variable are configured on this repository, and
+the whole pipeline — build, `zipalign`, `apksigner`, upload — was run once from
+a laptop against these credentials before the workflow was merged. That first
+release (version code 1, 33.5 MB, `com.quantumbox.library`) sits in App
+Distribution with no group attached: it was a pipeline check, not something
+testers were notified about.
+
+The service account is the one Firebase creates for the Admin SDK rather than a
+purpose-made one, because granting a fresh service account an IAM role needs the
+Google Cloud console, which asks for a passkey this project's CI setup cannot
+supply. Its default role turned out to cover App Distribution reads and writes,
+verified by listing and adding a tester before anything depended on it. If it is
+ever narrowed, the fix is a dedicated service account with **Firebase App
+Distribution Admin**.
 
 Google Analytics is deliberately off: App Distribution does not use it, and
 turning it on would add data collection the app does not otherwise do. The app
-carries no Firebase SDK, so no `google-services.json` was downloaded.
-
-Still to do, in this order: the service account and its JSON key, the signing
-keystore, the secrets and variables, and the tester invitations. Everything
-below describes those.
+carries no Firebase SDK, so no `google-services.json` is checked in.
 
 Google Play is not in the picture. The `Quantum Box, Inc.` developer account was
 closed in November 2024 under Google's unused-account policy and cannot be
 revived, and the `FANG Inc.` account does not grant this user permission to
 create an app. Publishing there means a new developer registration, which is a
 separate decision.
+
+The sections below are what to redo if any of this has to be rebuilt.
 
 ## Required setup
 
