@@ -3,8 +3,9 @@ export const publicDocsOrigin = 'https://planetlibrary.txcloud.app'
 /**
  * Square mark used for link previews, resolved against the page being
  * described so a preview deployment never advertises production's asset.
+ * The Rust response worker keeps its own copy of this path.
  */
-export const publicSocialImagePath = '/apple-touch-icon.png'
+const publicSocialImagePath = '/apple-touch-icon.png'
 
 /** Longest description a preview keeps; the rest is elided on a word break. */
 const descriptionLimit = 160

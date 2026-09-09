@@ -239,13 +239,26 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/workers -> target
+          cache-directories: ~/.cache/.wasm-pack
+      - name: Install Rust Worker build tool
+        run: cargo install worker-build --version 0.8.5 --locked
       - name: Install client dependencies
         run: npm ci
       - name: Lint client
         run: npm run lint
       - name: Test client
         run: npm run test
-      - name: Test Photon Live Worker
+      - name: Format and lint Rust Workers
+        run: |
+          cargo fmt --manifest-path workers/Cargo.toml --all --check
+          cargo clippy --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown --workspace --locked -- -D warnings
+      - name: Test Rust Workers
         run: npm run test:worker
       - name: Type check client
         run: npm run type-check

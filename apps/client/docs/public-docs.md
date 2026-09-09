@@ -30,13 +30,13 @@ or the signed-in app's dark background from leaving black strips around a
 white article. Read-only bodies use their content height instead of the
 editor's `55vh` canvas. The user's app theme preference is unchanged.
 
-`npm run build:cloud` also builds a Pages advanced-mode `_worker.js` and
+`npm run build:cloud` also builds a Pages advanced-mode `_worker.js/` module directory and
 `_routes.json`. Only `/public/*` and `/robots.txt` invoke this worker; other
 assets retain normal Pages serving. The worker uses the same build-time
 `VITE_LIBRARY_API_BASE_URL` as the client, including `build:preview` overrides.
 It needs the default Pages `ASSETS` binding and no API credentials or extra
 infrastructure bindings. Deploy the entire `dist` through a Pages Functions
-capable deployment path, including `_worker.js` and `_routes.json`.
+capable deployment path, including `_worker.js/index.js`, `_worker.js/index_bg.wasm` and `_routes.json`.
 
 For each public URL, the worker checks the repository anonymously before
 reading the article or listing. The initial HTML includes title, description,
@@ -68,11 +68,11 @@ loading/error UI. Search engines control the timing of indexing/removal.
 
 Validation additions:
 
-- `npm run test:public-docs-worker` exercises the actual workerd HTML rewriter
-  through Miniflare: initial HTML, escaping, anonymous-only reads, HTTP error
+- `npm run test:public-docs-worker` exercises the compiled Rust/Wasm renderer
+  in workerd through Miniflare: initial HTML, escaping, anonymous-only reads, HTTP error
   semantics, pagination, previews, HEAD, malformed routes, redirects and bounds.
 - `npm run type-check:public-docs` checks the response worker separately from
-  the browser application. Both commands are included in the existing Worker
+  the browser application using Cargo. Both commands are included in the existing Worker
   test/type-check scripts used by CI.
 - Local UI with the production API (read-only): OS and app dark themes, normal
   desktop width, 390px mobile menu/navigation, and metadata after article
@@ -82,6 +82,9 @@ Screenshot: OS dark mode and app `data-theme=dark`, with the public reader
 remaining light after the fix:
 
 ![Public reader with dark app and OS preferences](screenshots/public-docs-dark-fixed.png)
+
+The response worker was migrated to Rust in PLT-4464. Build and persistence
+notes for both Workers are in [workers/README.md](../workers/README.md).
 
 ## Metadata cleanup (title, description, previews)
 
@@ -110,6 +113,12 @@ page's own origin.
 Structured data is only emitted for a page that is offered for indexing, so
 preview deployments, `noindex` states and failed loads no longer ship a
 `TechArticle` for a document that is not there.
+
+These rules live twice, as they have since PLT-4464: in
+`src/components/public/publicSeoMetadata.ts` for the reader that takes over
+the head once React mounts, and in `workers/public-docs/src/lib.rs` for the
+response the crawler actually receives. Changing one means changing the
+other; `npm run test:public-docs-worker` checks the Rust side.
 
 `/s/:token` share links describe themselves like any other document but ask
 not to be indexed, in the metadata and -- for crawlers that never run the

@@ -1,7 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "library-client-live-pr301",
-  "main": "workers/sync/index.ts",
+  "main": "workers/sync/build/index.js",
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": ["workers/sync/src", "workers/common/src", "workers/Cargo.toml", "workers/Cargo.lock"]
+  },
+  "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
   "compatibility_date": "2026-05-05",
   "account_id": "fef3f6ef891ab3e121deb43eeb57318a",
   "vars": {
