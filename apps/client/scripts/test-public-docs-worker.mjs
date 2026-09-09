@@ -73,7 +73,10 @@ async function scenario(t, routes = {}) {
     serviceBindings: {
       ASSETS: () =>
         new Response(
-          '<!doctype html><html lang="en"><head><title>Library</title></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>',
+          '<!doctype html><html lang="en"><head><title>Library</title>' +
+            '<meta name="description" data-app-default content="App default">' +
+            '<meta property="og:title" data-app-default content="Library">' +
+            '</head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>',
           { headers: { 'content-type': 'text/html' } },
         ),
     },
@@ -113,7 +116,16 @@ test('initial HTML includes metadata and body without JS; incoming credentials n
   )
   assert.match(html, /property="og:type" content="article"/)
   assert.match(html, /name="twitter:card" content="summary"/)
+  assert.match(
+    html,
+    /property="og:image" content="https:\/\/planetlibrary.txcloud.app\/apple-touch-icon.png"/,
+  )
   assert.match(html, /"@type":"TechArticle"/)
+  // The shell's own defaults describe the app, so a document is never
+  // described twice with the app's summary left standing.
+  assert.doesNotMatch(html, /data-app-default/)
+  assert.doesNotMatch(html, /content="App default"/)
+  assert.equal(html.match(/name="description"/g).length, 1)
   assert.match(html, /<h1>Introduction<\/h1>/)
   assert.match(html, /A useful public document\./)
   assert.match(html, /src="\/assets\/app.js"/)
@@ -186,10 +198,11 @@ test('preview responses stay unindexed and HEAD retains metadata headers without
     `https://test.library-client.pages.dev${route}/intro`,
   )
   assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow')
-  assert.match(
-    await preview.text(),
-    /name="robots" content="noindex, nofollow"/,
-  )
+  const previewHtml = await preview.text()
+  assert.match(previewHtml, /name="robots" content="noindex, nofollow"/)
+  // Structured data describes a page offered for indexing; a preview URL
+  // is not one.
+  assert.doesNotMatch(previewHtml, /application\/ld\+json/)
   const head = await fetch(undefined, { method: 'HEAD' })
   assert.equal(head.status, 200)
   assert.equal(await head.text(), '')
@@ -205,6 +218,17 @@ test('repository text cannot inject markup or terminate the structured data scri
   assert.doesNotMatch(html, /<script>alert/)
   assert.match(html, /\\u003c\/script>/)
   assert.match(html, /&lt;script&gt;alert/)
+})
+
+test('share links and the app shell are unindexed without an API call', async (t) => {
+  const { fetch, calls } = await scenario(t)
+  for (const path of ['/s/shr_token', '/home']) {
+    const response = await fetch(path)
+    assert.equal(response.status, 200, path)
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow', path)
+  }
+  // Static assets are not pages and keep the headers Pages gave them.
+  assert.equal(calls.length, 0)
 })
 
 test('robots permits only public production routes and blocks previews', async (t) => {

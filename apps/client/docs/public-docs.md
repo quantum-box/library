@@ -82,3 +82,44 @@ Screenshot: OS dark mode and app `data-theme=dark`, with the public reader
 remaining light after the fix:
 
 ![Public reader with dark app and OS preferences](screenshots/public-docs-dark-fixed.png)
+
+## Metadata cleanup (title, description, previews)
+
+The head is now described in one place for every route the client serves,
+not only the public reader.
+
+`index.html` carries the app's own defaults -- description, `og:title`,
+`og:type`, `og:site_name`, `og:image`, `twitter:card` -- each marked
+`data-app-default`. The Pages worker removes them before it appends a
+document's metadata, so a public page is described once, by itself, and the
+app shell is still described when a route describes nothing.
+
+Titles name the thing on screen. A public article is `<data name> · <repository>`,
+a shared document is `<data name> · Library`, and the record editor sets the
+same window title through `useDocumentTitle`, so a browser tab, a bookmark
+and the window switcher stop reading "Library" for every open document.
+
+Descriptions come from the body text and end on a word break with an ellipsis
+rather than mid-word; Japanese and Chinese bodies have no break to find and
+keep the hard 160-character limit. A page with nothing to summarise removes
+the description, `og:description` and `twitter:description` tags instead of
+publishing empty ones or leaving the previous document's behind. Link previews
+carry `og:image`/`twitter:image` pointing at `/apple-touch-icon.png` on the
+page's own origin.
+
+Structured data is only emitted for a page that is offered for indexing, so
+preview deployments, `noindex` states and failed loads no longer ship a
+`TechArticle` for a document that is not there.
+
+`/s/:token` share links describe themselves like any other document but ask
+not to be indexed, in the metadata and -- for crawlers that never run the
+app -- in an `X-Robots-Tag` response header the worker adds to every HTML
+route outside `/public/`. That header repeats what `robots.txt` already says
+for a crawler that arrived from a pasted link rather than the site root.
+
+Validation additions:
+
+- `npm test -- src/components/public src/lib/ui/useDocumentTitle.test.tsx`
+- `npm run test:public-docs-worker` (default-metadata removal, `og:image`,
+  share-link and app-shell `X-Robots-Tag`, no structured data on previews)
+- `npm run type-check`, `npm run type-check:public-docs`

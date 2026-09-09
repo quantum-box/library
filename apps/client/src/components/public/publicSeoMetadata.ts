@@ -1,5 +1,14 @@
 export const publicDocsOrigin = 'https://planetlibrary.txcloud.app'
 
+/**
+ * Square mark used for link previews, resolved against the page being
+ * described so a preview deployment never advertises production's asset.
+ */
+export const publicSocialImagePath = '/apple-touch-icon.png'
+
+/** Longest description a preview keeps; the rest is elided on a word break. */
+const descriptionLimit = 160
+
 /** Shared by the reader and Pages response renderer; no DOM or private API imports. */
 export function publicDocsPath(org: string, repo: string, dataId?: string) {
   return `/public/${[org, repo, ...(dataId ? [dataId] : [])].map(encodeURIComponent).join('/')}`
@@ -64,7 +73,14 @@ export function publicBodyText(value: string, format: string): string {
 }
 
 export function publicDescription(body: string, fallback = '') {
-  return (body.trim() || fallback).replace(/\s+/g, ' ').trim().slice(0, 160)
+  const text = (body.trim() || fallback).replace(/\s+/g, ' ').trim()
+  if (text.length <= descriptionLimit) return text
+  // Cut on the last word break so a preview never ends mid-word. Japanese
+  // and Chinese bodies have no break to find, so those fall back to the
+  // hard limit rather than losing most of the sentence.
+  const cut = text.slice(0, descriptionLimit - 1)
+  const boundary = cut.lastIndexOf(' ')
+  return (boundary > descriptionLimit / 2 ? cut.slice(0, boundary) : cut).trimEnd() + '…'
 }
 
 export function publicSeo(input: {
@@ -74,17 +90,22 @@ export function publicSeo(input: {
   url: string
   article: boolean
 }) {
+  const image = new URL(publicSocialImagePath, input.url).href
   return {
     ...input,
     title: input.article ? `${input.title} · ${input.site}` : input.title,
+    image,
     structuredData: {
       '@context': 'https://schema.org',
       '@type': input.article ? 'TechArticle' : 'CollectionPage',
       name: input.title,
       ...(input.article ? { headline: input.title } : {}),
-      description: input.description,
+      // An empty string would claim the document has a blank summary, so an
+      // undescribed page carries no description key at all.
+      ...(input.description ? { description: input.description } : {}),
       url: input.url,
-      isPartOf: { '@type': 'WebSite', name: input.site },
+      image,
+      isPartOf: { '@type': 'WebSite', name: input.site, url: new URL('/', input.url).href },
     },
   }
 }
@@ -110,6 +131,9 @@ export function publicMetadata(
   | { name: string; content: string }
   | { property: string; content: string }
 )[] {
+  // Entries keep their place even when empty: a reader walking from an
+  // article to an undescribed index has to see the stale description go,
+  // and only the caller knows whether that means removing or skipping it.
   return [
     { name: 'description', content: seo.description },
     {
@@ -119,10 +143,13 @@ export function publicMetadata(
     { name: 'twitter:card', content: 'summary' },
     { name: 'twitter:title', content: seo.title },
     { name: 'twitter:description', content: seo.description },
+    { name: 'twitter:image', content: seo.image },
     { property: 'og:title', content: seo.title },
     { property: 'og:description', content: seo.description },
     { property: 'og:type', content: seo.article ? 'article' : 'website' },
     { property: 'og:url', content: seo.url },
     { property: 'og:site_name', content: seo.site },
+    { property: 'og:image', content: seo.image },
+    { property: 'og:image:alt', content: seo.site },
   ]
 }

@@ -14,6 +14,24 @@ const apiBase = import.meta.env.VITE_LIBRARY_API_BASE_URL?.replace(/\/+$/, '')
 const publicOrigin = publicDocsOrigin
 const limit = 2 * 1024 * 1024
 
+/**
+ * Repeat robots.txt in a header for every page outside `/public/`.
+ *
+ * Only the reader is written for crawlers. The app shell and, above all,
+ * `/s/` share links are reachable by anyone holding the URL, and a crawler
+ * that arrives from a pasted link never reads robots.txt for the root.
+ */
+function unindexedHtml(asset: Response) {
+  if (!asset.headers.get('content-type')?.includes('text/html')) return asset
+  const headers = new Headers(asset.headers)
+  headers.set('x-robots-tag', 'noindex, nofollow')
+  return new Response(asset.body, {
+    status: asset.status,
+    statusText: asset.statusText,
+    headers,
+  })
+}
+
 class PublicError extends Error {
   constructor(readonly status: number) {
     super('Public document unavailable')
@@ -101,7 +119,7 @@ export default {
     )
     if (!match) {
       const asset = await env.ASSETS.fetch(request)
-      if (!url.pathname.startsWith('/public/')) return asset
+      if (!url.pathname.startsWith('/public/')) return unindexedHtml(asset)
       return new Response(request.method === 'HEAD' ? null : asset.body, {
         status: 404,
         headers: {
@@ -192,8 +210,12 @@ export default {
         url: canonical,
         article: Boolean(id),
       })
+      const indexed = url.origin === publicOrigin
       const head =
-        publicMetadata(seo, url.origin === publicOrigin)
+        publicMetadata(seo, indexed)
+          // An undescribed repository gets no description tag at all; an
+          // empty one only tells a crawler the summary is blank.
+          .filter((attributes) => attributes.content)
           .map(
             (attributes) =>
               `<meta data-public-docs-meta ${Object.entries(attributes)
@@ -203,7 +225,12 @@ export default {
           .join('') +
         `<link data-public-docs-meta rel="canonical" href="${esc(canonical)}">` +
         `<link data-public-docs-meta rel="sitemap" type="application/xml" href="${esc(basePath)}/sitemap.xml">` +
-        `<script type="application/ld+json" data-public-docs-meta data-public-docs-schema>${serializeJsonLd(seo.structuredData)}</script>`
+        // Structured data describes a page that is offered for indexing.
+        // A preview deployment serves the same document at a URL nobody
+        // should collect, so it ships none.
+        (indexed
+          ? `<script type="application/ld+json" data-public-docs-meta data-public-docs-schema>${serializeJsonLd(seo.structuredData)}</script>`
+          : '')
       // Visible semantic fallback until React mounts, also useful without JS.
       // Raw repository HTML/JSON is never injected into the parent document.
       const body = `<main style="height:100%;overflow:auto;max-width:900px;margin:auto;padding:32px;background:white;color:#253047"><a href="${esc(basePath)}">${esc(seo.site)}</a><h1>${esc(title)}</h1><div style="white-space:pre-wrap">${esc(text)}</div>${listing ? `<nav>${listing.data.map((data) => `<p><a href="${esc(publicDocsPath(org, repo, data.id))}">${esc(data.name)}</a></p>`).join('')}</nav>` : ''}</main>`
@@ -213,6 +240,12 @@ export default {
       if (!shell.ok) throw new PublicError(503)
       const response = new Response(shell.body, { headers })
       const result = new HTMLRewriter()
+        // The shell's own defaults describe the app, not this document.
+        .on('meta[data-app-default]', {
+          element(element) {
+            element.remove()
+          },
+        })
         .on('title', {
           element(element) {
             element.setAttribute('data-public-docs-title', '')

@@ -11,6 +11,18 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>Library</title>
+    <!--
+      Defaults for every route that does not describe itself. The public
+      reader owns the head once it mounts, and the Pages worker drops these
+      before injecting a document's own metadata, so a page is never
+      described twice. Keep `data-app-default` on each of them.
+    -->
+    <meta name="description" data-app-default content="Library keeps a team's documents, records and pages in one place." />
+    <meta name="twitter:card" data-app-default content="summary" />
+    <meta property="og:title" data-app-default content="Library" />
+    <meta property="og:type" data-app-default content="website" />
+    <meta property="og:site_name" data-app-default content="Library" />
+    <meta property="og:image" data-app-default content="https://planetlibrary.txcloud.app/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>
