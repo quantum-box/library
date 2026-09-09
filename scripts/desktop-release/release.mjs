@@ -35,6 +35,11 @@ export function validateVersion(pkg, lock, baseVersion) {
 function checkVersion() {
   const base = process.env.BASE_REF
   if (!base || !/^[a-zA-Z0-9_./-]+$/.test(base) || base.startsWith('-')) throw new Error('BASE_REF is required')
+  const changedClientFiles = git('diff', '--name-only', `${base}...HEAD`, '--', 'apps/client')
+  if (!changedClientFiles) {
+    console.log('Desktop version bump not required: apps/client is unchanged')
+    return
+  }
   const baseVersion = JSON.parse(git('show', `${base}:apps/client/package.json`)).version
   const version = validateVersion(json('apps/client/package.json'), json('apps/client/package-lock.json'), baseVersion)
   console.log(`Desktop version: ${baseVersion} -> ${version}`)
