@@ -321,6 +321,8 @@ spec:
   resource: https://library-api.txcloud.app/mcp
   displayName: Library MCP
   scopes:
+    - openid
+    - email
     - mcp:read
     - mcp:write
   clients:
