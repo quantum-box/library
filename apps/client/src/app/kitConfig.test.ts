@@ -44,6 +44,9 @@ describe('appKitConfig', () => {
 
   it('keeps runtime storage and sync keys explicit', () => {
     expect(appKitConfig.storage.themeKey).toBe('library-client-theme')
+    expect(appKitConfig.storage.selectedOrganizationKey).toBe(
+      'library-client-selected-organization'
+    )
     expect(appKitConfig.sync.backend).toBe('rust-server')
     expect(appKitConfig.sync.tenantId).toBe('library')
     expect(appKitConfig.sync.workspaceId).toBe('library-default')

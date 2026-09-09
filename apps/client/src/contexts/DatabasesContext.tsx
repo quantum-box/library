@@ -12,6 +12,11 @@ import {
   type LibraryRepository,
 } from '../lib/recordsApi'
 import { t } from '../i18n'
+import {
+  loadSelectedOrganization,
+  saveSelectedOrganization,
+  type StoredOrganizationSelection,
+} from '../lib/selectedOrganizationStorage'
 
 export interface WorkspaceDatabase {
   id: string
@@ -85,12 +90,30 @@ function uniqueOrganizations(orgs: LibraryOrganization[]): WorkspaceOrganization
   })
 }
 
-function defaultOrganizationId(
-  orgs: LibraryOrganization[],
-  current: string | null
+/**
+ * Picks the organization filter after a (re)load of the organization list.
+ *
+ * Precedence: an explicit "all" the user chose earlier, then whatever is
+ * currently selected, then the last selection persisted across reloads, then
+ * the first organization that has repositories. Only the first three survive
+ * a page reload, which is the whole point of persisting them.
+ */
+export function resolveSelectedOrganizationId(
+  orgs: Pick<LibraryOrganization, 'id' | 'repos'>[],
+  current: string | null,
+  stored: StoredOrganizationSelection = loadSelectedOrganization(),
 ): string | null {
+  if (stored.kind === 'all') return null
   if (current && orgs.some((org) => org.id === current)) return current
+  if (stored.kind === 'organization' && orgs.some((org) => org.id === stored.organizationId)) {
+    return stored.organizationId
+  }
   return orgs.find((org) => org.repos.length > 0)?.id ?? orgs[0]?.id ?? null
+}
+
+function initialSelectedOrganizationId(): string | null {
+  const stored = loadSelectedOrganization()
+  return stored.kind === 'organization' ? stored.organizationId : null
 }
 
 function repositoryLoadErrorMessage(error: unknown): string {
@@ -101,7 +124,9 @@ function repositoryLoadErrorMessage(error: unknown): string {
 export function DatabasesProvider({ children }: { children: ReactNode }) {
   const [databases, setDatabases] = useState<WorkspaceDatabase[]>([])
   const [organizations, setOrganizations] = useState<WorkspaceOrganization[]>([])
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null)
+  const [selectedOrganizationId, setSelectedOrganizationIdState] = useState<string | null>(
+    initialSelectedOrganizationId,
+  )
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
 
@@ -115,17 +140,25 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       ])
       const nextOrganizations = uniqueOrganizations(orgs)
       setOrganizations(nextOrganizations)
-      setSelectedOrganizationId((current) => defaultOrganizationId(orgs, current))
+      setSelectedOrganizationIdState((current) => resolveSelectedOrganizationId(orgs, current))
       setDatabases(repos.map(repoToDatabase))
     } catch (error: unknown) {
       console.warn('Failed to load Library repositories', error)
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
-      setSelectedOrganizationId(null)
+      // Load failures are transient; keep the persisted choice for the retry.
+      setSelectedOrganizationIdState(null)
       setDatabases([])
     } finally {
       setRepositoriesLoading(false)
     }
+  }, [])
+
+  // The user's pick outlives the page: it is written through to localStorage
+  // so a reload (or a Tauri window relaunch) reopens the same organization.
+  const setSelectedOrganizationId = useCallback((organizationId: string | null) => {
+    saveSelectedOrganization(organizationId)
+    setSelectedOrganizationIdState(organizationId)
   }, [])
 
   // Creating an organization and importing an existing tenant both end with a
@@ -142,7 +175,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       : [...current, organization])
     setSelectedOrganizationId(created.id)
     return organization
-  }, [refreshRepositories])
+  }, [refreshRepositories, setSelectedOrganizationId])
 
   const createOrganization = useCallback(
     async (name: string, username: string) =>
@@ -188,7 +221,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       : [...current, database])
     setSelectedOrganizationId(organization.id)
     return database
-  }, [databases, organizations, refreshRepositories])
+  }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
 
   useEffect(() => {
     void refreshRepositories()
@@ -243,6 +276,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       repositoriesError,
       repositoriesLoading,
       selectedOrganizationId,
+      setSelectedOrganizationId,
     ]
   )
 
