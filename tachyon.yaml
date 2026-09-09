@@ -237,7 +237,7 @@ spec:
       deploymentTarget: cloudflare_pages
       build:
         installCommand: >-
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts && bash scripts/install-worker-toolchain.sh
         command: npm run build:cloud
         outputDirectory: dist
         nodeVersion: "22"
@@ -287,6 +287,9 @@ spec:
       # 入るものだけに絞り、UI だけの変更で本番 Worker を差し替えない。
       watchPaths:
         - apps/client/workers/**
+        - apps/client/scripts/build-workers.mjs
+        - apps/client/scripts/install-worker-toolchain.sh
+        - apps/client/rust-toolchain.toml
         - apps/client/wrangler.jsonc
         - apps/client/package.json
         - apps/client/package-lock.json
@@ -295,10 +298,9 @@ spec:
       deploymentTarget: cloudflare_workers
       build:
         runnerBackend: kubernetes_kata
-        # wrangler が workers/sync/index.ts を直接バンドルするので build 成果物は無い。
-        # 依存 (@quantum-box/photon/worker, yjs, y-protocols, wrangler 自体) の
-        # install だけが要る。apps/client は yarn workspace ではなく npm 管理。
-        installCommand: npm ci --ignore-scripts
+        # Prepare Rust/Wasm artifacts before the provider collects the bundle.
+        installCommand: npm ci --ignore-scripts && bash scripts/install-worker-toolchain.sh
+        command: npm run build:worker
         nodeVersion: "22"
       # `/` は 404 を返す。明示しないと serving smoke が落ちてデプロイが failed に
       # 記録され、txcloud.app URL が発行されない (SOL-431)。

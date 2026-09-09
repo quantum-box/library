@@ -1,7 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "library-data-live-e2e",
-  "main": "workers/sync/index.ts",
+  "main": "workers/sync/build/index.js",
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": ["workers/sync/src", "workers/common/src", "workers/Cargo.toml", "workers/Cargo.lock"]
+  },
+  "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
   "compatibility_date": "2026-05-05",
   "vars": {
     "PHOTON_LIVE_ENABLED": "true",

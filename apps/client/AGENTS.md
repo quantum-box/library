@@ -9,7 +9,9 @@
 - `src/lib/recordsApi.ts`: the Library API client. `src/lib/photonEngine/`: the local-first store.
 - `src/components/chat/` and `src/components/files/`: chat and file preview features.
 - `src-tauri/`: Tauri shell for desktop and mobile.
-- `workers/sync/`: Cloudflare Worker — Engine proxy and the Live Durable Object relay.
+- `workers/`: independent Rust/Wasm workspace for both Cloudflare Workers.
+- `workers/sync/`: Engine proxy and Live Durable Object relay (`yrs`/Yjs v1).
+- `workers/public-docs/`: anonymous public-page HTML/SEO and sitemap renderer.
 - `tests/e2e/`: Playwright end-to-end tests, backed by the Node fixture in `tests/e2e/library-api-fixture.mjs`.
 - `docs/`: this app's own operational docs. See [`docs/README.md`](./docs/README.md).
 
@@ -29,7 +31,8 @@
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript, React function components, and hooks. Keep components in PascalCase files such as `CreateRecordModal.tsx`; hooks use `useSomething.ts`.
+Use Rust for both Workers; see `workers/README.md` for builds and workerd tests.
+Use TypeScript, React function components, and hooks for the browser application. Keep components in PascalCase files such as `CreateRecordModal.tsx`; hooks use `useSomething.ts`.
 
 ESLint is configured in `eslint.config.js`. Use two-space indentation, single quotes, and existing Tailwind utility patterns. Add `data-testid` only for stable user-facing flows that need E2E coverage.
 
