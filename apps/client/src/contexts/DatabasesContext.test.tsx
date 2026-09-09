@@ -355,6 +355,44 @@ describe('DatabasesProvider', () => {
       expect(window.localStorage.getItem(SELECTED_ORGANIZATION_KEY)).toBe('org-2')
     })
 
+    it('keeps the in-memory selection when the localStorage write fails', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+      window.localStorage.setItem(SELECTED_ORGANIZATION_KEY, 'all')
+      const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError')
+      })
+
+      try {
+        render(
+          <DatabasesProvider>
+            <Probe />
+          </DatabasesProvider>
+        )
+
+        await waitFor(() => {
+          expect(screen.getByTestId('loading')).toHaveTextContent('false')
+        })
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('')
+
+        await act(async () => {
+          screen.getByTestId('select-org-2').click()
+        })
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+
+        await act(async () => {
+          window.dispatchEvent(new Event('library-auth-change'))
+        })
+        await waitFor(() => {
+          expect(mocks.fetchLibraryOrganizations).toHaveBeenCalledTimes(2)
+        })
+
+        // The stored "all" is stale; the live selection must survive the refresh.
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+      } finally {
+        setItem.mockRestore()
+      }
+    })
+
     it('keeps "all organizations" across a reload of the organization list', async () => {
       mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
 
