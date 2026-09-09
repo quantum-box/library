@@ -320,6 +320,23 @@ describe('RepositorySettingsView', () => {
     expect(screen.getByText('Legacy · switch to Rich text')).toBeInTheDocument()
   })
 
+  it('lets an artifact repository delete its seeded content Property', async () => {
+    // `create_repo` seeds `content`, and an Html artifact repository has to
+    // drop it — the reader picks Rich text over Html for the body.
+    apiMocks.fetchRepositorySettings.mockResolvedValueOnce({
+      ...settings,
+      properties: [
+        { id: 'property-id', name: 'id', typ: 'ID' as const, meta: null },
+        { id: 'property-content', name: 'content', typ: 'RICH_TEXT' as const, meta: null },
+      ],
+    })
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    expect(screen.getByRole('button', { name: 'Delete content' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Delete id' })).toBeDisabled()
+  })
+
   it('invites creation when the repository has no Property definitions', async () => {
     apiMocks.fetchRepositorySettings.mockResolvedValueOnce({ ...settings, properties: [] })
     renderView()
