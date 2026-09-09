@@ -1,6 +1,6 @@
 # Library Rust Workers (PLT-4464)
 
-Both deployed Workers are implemented in Rust and compiled to Wasm with
+Both Workers are implemented in Rust and compiled to Wasm with
 `worker` / `worker-build` 0.8.5. The generated JavaScript contains the
 Cloudflare/wasm-bindgen adapters; request handling and Durable Object state
 machines live in Rust. This Cargo workspace is separate from the API and
@@ -46,6 +46,8 @@ toolchain using `scripts/install-worker-toolchain.sh`; CI provisions it too.
 The old private package's TypeScript `./worker` export is removed. Worker
 consumers now build the Rust crate and deploy the generated module directory;
 `build:package` continues to build the browser-facing package without Rust.
+Tauri uses `build:native` to bundle only the app frontend; native release jobs
+do not build or bundle the server-side Workers.
 
 ## Persistence and concurrency
 
