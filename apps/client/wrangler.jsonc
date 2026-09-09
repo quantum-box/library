@@ -1,7 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "library-client-sync",
-  "main": "workers/sync/index.ts",
+  "main": "workers/sync/build/index.js",
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": ["workers/sync/src", "workers/common/src", "workers/Cargo.toml", "workers/Cargo.lock"]
+  },
+  "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
   "compatibility_date": "2026-05-05",
   // Quantum Box, Inc. The deploying account has a personal account too, and
   // wrangler cannot pick between them non-interactively.
