@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -217,15 +217,20 @@ test('repository text cannot inject markup or terminate the structured data scri
   assert.match(html, /&lt;script&gt;alert/)
 })
 
-test('share links and the app shell are unindexed without an API call', async (t) => {
+test('share links reach the worker and are unindexed without an API call', async (t) => {
+  // The header is only worth anything if Pages routes the path here at all;
+  // everything outside `include` is served straight from the asset bucket.
+  const routes = JSON.parse(await readFile(join(outDir, '_routes.json'), 'utf8'))
+  assert.deepEqual(routes.include, ['/public/*', '/robots.txt', '/s/*'])
+
   const { fetch, calls } = await scenario(t)
-  for (const path of ['/s/shr_token', '/home']) {
-    const response = await fetch(path)
-    assert.equal(response.status, 200, path)
-    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow', path)
-  }
-  // Static assets are not pages and keep the headers Pages gave them.
+  const response = await fetch('/s/shr_token')
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow')
+  // A share token is never read here: the worker adds the instruction and
+  // hands back the shell, so no private document reaches a crawler.
   assert.equal(calls.length, 0)
+  assert.doesNotMatch(await response.text(), /shr_token/)
 })
 
 test('robots permits only public production routes and blocks previews', async (t) => {
