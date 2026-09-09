@@ -164,9 +164,10 @@ Element fullscreen does not exist on iPhone at all — `requestFullscreen` is
 absent rather than failing — so `HtmlArtifactEditor` falls back to a fixed
 overlay and its full-screen button means the same thing on every platform.
 
-CI runs an Android APK smoke build for `aarch64` so the Tauri mobile wrapper,
-Rust command bridge, WASM frontend build, and generated Android project stay in
-sync with the shared app shell.
+Every push to `main` builds and ships both mobile shells: the iOS archive goes
+to TestFlight and the Android APK to Firebase App Distribution, which also keeps
+the Tauri mobile wrapper, Rust command bridge, frontend build, and generated
+mobile projects in sync with the shared app shell.
 
 Release following for apps that should avoid the npm registry is documented in
 [`release-following.md`](./release-following.md).
@@ -263,7 +264,12 @@ npm run tauri:android:build -- --target aarch64 --apk
 ```
 
 The generated Android manifest includes Internet permission so the bundled app
-can connect to the Cloudflare sync Worker.
+can connect to the Cloudflare sync Worker. The application ID is
+`com.quantumbox.library`, set in `src-tauri/tauri.android.conf.json` so desktop
+can stay on its frozen `com.quantumbox.library.client`.
+
+Release builds are distributed to testers by
+[`android-firebase-distribution.md`](./android-firebase-distribution.md).
 
 If `JAVA_HOME` points at an old or missing JDK, use Android Studio's bundled
 JBR for the build:
