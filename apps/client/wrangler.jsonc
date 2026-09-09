@@ -16,7 +16,9 @@
     // Production rollout and PropertyValue parity verified on 2026-09-05.
     // Preview deployments use their separate, opt-in configuration.
     "PHOTON_LIVE_ENABLED": "true",
-    "PHOTON_LIVE_ALLOWED_ORIGINS": "https://planetlibrary.txcloud.app,https://library-client.txcloud.app",
+    // Tauri uses tauri://localhost on macOS/Linux and http://tauri.localhost
+    // on Windows (the shell does not enable useHttpsScheme).
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "https://planetlibrary.txcloud.app,https://library-client.txcloud.app,tauri://localhost,http://tauri.localhost",
     "PHOTON_LIVE_API_BASE_URL": "https://library-api.txcloud.app"
   },
   "observability": {
