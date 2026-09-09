@@ -11,6 +11,7 @@ import {
   mockUsers,
 } from '../data/mock'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
+import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
 import { appKitConfig } from '../app/kitConfig'
 import { FileChip } from './files/FileChip'
@@ -47,6 +48,10 @@ export function DetailPanel({
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
+
+  // The other record screen: All Data, a local database and the workflow
+  // preview all land here rather than in the Library editor.
+  useDocumentTitle(record?.title)
 
   // Reset confirm dialog when record changes
   useEffect(() => {

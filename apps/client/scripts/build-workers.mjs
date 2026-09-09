@@ -26,6 +26,9 @@ for (const name of names) {
     const worker = join(dist, '_worker.js')
     mkdirSync(worker, { recursive: true })
     cpSync(join(cwd, 'build'), worker, { recursive: true, filter: (source) => !source.includes('/.tmp') && !source.endsWith('/worker') })
-    writeFileSync(join(dist, '_routes.json'), JSON.stringify({ version: 1, include: ['/public/*', '/robots.txt'], exclude: [] }))
+    // `/s/*` is here for the response header alone: share links carry no
+    // public content, but Pages would otherwise serve them straight from
+    // assets and the worker could never ask a crawler to skip them.
+    writeFileSync(join(dist, '_routes.json'), JSON.stringify({ version: 1, include: ['/public/*', '/robots.txt', '/s/*'], exclude: [] }))
   }
 }

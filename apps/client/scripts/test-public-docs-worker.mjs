@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -70,7 +70,10 @@ async function scenario(t, routes = {}) {
     serviceBindings: {
       ASSETS: () =>
         new Response(
-          '<!doctype html><html lang="en"><head><title>Library</title></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>',
+          '<!doctype html><html lang="en"><head><title>Library</title>' +
+            '<meta name="description" data-app-default content="App default">' +
+            '<meta property="og:title" data-app-default content="Library">' +
+            '</head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>',
           { headers: { 'content-type': 'text/html' } },
         ),
     },
@@ -110,7 +113,16 @@ test('initial HTML includes metadata and body without JS; incoming credentials n
   )
   assert.match(html, /property="og:type" content="article"/)
   assert.match(html, /name="twitter:card" content="summary"/)
+  assert.match(
+    html,
+    /property="og:image" content="https:\/\/planetlibrary.txcloud.app\/apple-touch-icon.png"/,
+  )
   assert.match(html, /"@type":"TechArticle"/)
+  // The shell's own defaults describe the app, so a document is never
+  // described twice with the app's summary left standing.
+  assert.doesNotMatch(html, /data-app-default/)
+  assert.doesNotMatch(html, /content="App default"/)
+  assert.equal(html.match(/name="description"/g).length, 1)
   assert.match(html, /<h1>Introduction<\/h1>/)
   assert.match(html, /A useful public document\./)
   assert.match(html, /src="\/assets\/app.js"/)
@@ -183,10 +195,11 @@ test('preview responses stay unindexed and HEAD retains metadata headers without
     `https://test.library-client.pages.dev${route}/intro`,
   )
   assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow')
-  assert.match(
-    await preview.text(),
-    /name="robots" content="noindex, nofollow"/,
-  )
+  const previewHtml = await preview.text()
+  assert.match(previewHtml, /name="robots" content="noindex, nofollow"/)
+  // Structured data describes a page offered for indexing; a preview URL
+  // is not one.
+  assert.doesNotMatch(previewHtml, /application\/ld\+json/)
   const head = await fetch(undefined, { method: 'HEAD' })
   assert.equal(head.status, 200)
   assert.equal(await head.text(), '')
@@ -202,6 +215,22 @@ test('repository text cannot inject markup or terminate the structured data scri
   assert.doesNotMatch(html, /<script>alert/)
   assert.match(html, /\\u003c\/script>/)
   assert.match(html, /&lt;script&gt;alert/)
+})
+
+test('share links reach the worker and are unindexed without an API call', async (t) => {
+  // The header is only worth anything if Pages routes the path here at all;
+  // everything outside `include` is served straight from the asset bucket.
+  const routes = JSON.parse(await readFile(join(outDir, '_routes.json'), 'utf8'))
+  assert.deepEqual(routes.include, ['/public/*', '/robots.txt', '/s/*'])
+
+  const { fetch, calls } = await scenario(t)
+  const response = await fetch('/s/shr_token')
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow')
+  // A share token is never read here: the worker adds the instruction and
+  // hands back the shell, so no private document reaches a crawler.
+  assert.equal(calls.length, 0)
+  assert.doesNotMatch(await response.text(), /shr_token/)
 })
 
 test('robots permits only public production routes and blocks previews', async (t) => {
