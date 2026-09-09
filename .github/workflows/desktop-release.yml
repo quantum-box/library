@@ -67,6 +67,7 @@ jobs:
       - run: npm test
       - run: npm run type-check
       - run: npm run build
+      - run: node scripts/verify-desktop-live.mjs
 
   build-tauri:
     needs: [prepare-release, verify-client]

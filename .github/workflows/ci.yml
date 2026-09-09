@@ -254,6 +254,8 @@ jobs:
       - name: Build client
         timeout-minutes: 15
         run: npm run build
+      - name: Verify desktop Live configuration and bundle
+        run: node scripts/verify-desktop-live.mjs
       - name: Install Playwright Chromium
         run: |
           "${{ github.workspace }}/scripts/ci/apt-harden.sh"
