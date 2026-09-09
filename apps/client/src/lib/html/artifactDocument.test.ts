@@ -62,4 +62,16 @@ describe('fitArtifactToFrame', () => {
     expect(out).toContain('pre{max-width:100%;overflow-x:auto}')
     expect(out).toContain('table{max-width:100%}')
   })
+
+  /**
+   * The frame is a pane inside the app, so a scroll that runs past the top or
+   * bottom of the artifact must stop dead rather than bounce the document.
+   */
+  it('stops the document rubber-banding at its own ends', () => {
+    const out = fitArtifactToFrame(
+      '<!doctype html><html><head><meta name="viewport" content="width=1024"></head><body></body></html>',
+    )
+
+    expect(out).toContain('html,body{overscroll-behavior:none}')
+  })
 })

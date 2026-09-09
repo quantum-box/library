@@ -2,7 +2,7 @@
  * Prepares an artifact's markup for the frame it is about to be shown in.
  *
  * An artifact is somebody else's whole HTML document, and a phone is not the
- * window it was written for. Two things go wrong without this:
+ * window it was written for. Three things go wrong without this:
  *
  * - A document with no viewport meta is laid out at the mobile browser's
  *   fallback width — 980px in WebKit — even inside a 402pt frame. Everything
@@ -10,6 +10,10 @@
  *   app feel like it was sliding around.
  * - Images, wide `pre` blocks and tables written for a desktop column push the
  *   document past its own viewport.
+ * - The frame is a pane of the app, not a page of its own, so the document
+ *   must not rubber-band when a scroll runs past its top or bottom. The app
+ *   shell already refuses that (see `body` in index.css), but an iframe is a
+ *   separate document and keeps its own overscroll affordance.
  *
  * The injected rules go in first so anything the author wrote overrides them:
  * this is a floor, not a redesign. A document that declares its own viewport
@@ -26,6 +30,7 @@ const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initia
 
 const OVERFLOW_FLOOR = [
   '<style>',
+  'html,body{overscroll-behavior:none}',
   'img,svg,video,canvas,iframe{max-width:100%;height:auto}',
   'pre{max-width:100%;overflow-x:auto}',
   'table{max-width:100%}',

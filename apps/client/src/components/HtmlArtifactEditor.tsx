@@ -189,16 +189,18 @@ export function HtmlArtifactEditor({
           ref={frame}
           // In fullscreen the element is the viewport; when filling, its
           // parent decides the height. Either way the fixed height and the
-          // resize handle have to get out of the way. `overscroll-contain`
+          // resize handle have to get out of the way. `overscroll-none`
           // keeps a document still wider than the frame -- one that declared
           // its own viewport, say -- scrolling inside this box rather than
-          // handing the drag to the app behind it.
+          // handing the drag to the app behind it, and drops the rubber-band
+          // this box would otherwise show at its own ends; the frame is a
+          // pane, not a page.
           className={
             fullscreen
-              ? 'h-screen w-screen overflow-auto overscroll-contain bg-white'
+              ? 'h-screen w-screen overflow-auto overscroll-none bg-white'
               : overlay || fill
-                ? 'min-h-0 flex-1 overflow-auto overscroll-contain'
-                : `${frameHeight} resize-y overflow-auto overscroll-contain`
+                ? 'min-h-0 flex-1 overflow-auto overscroll-none'
+                : `${frameHeight} resize-y overflow-auto overscroll-none`
           }
         >
           {shown.trim() === '' ? (
