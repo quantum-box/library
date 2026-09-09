@@ -48,12 +48,16 @@ interface PropertyDialogState {
   property?: RepositoryPropertyDefinition
 }
 
+/** Names the record itself is keyed and stamped by; deleting one strands every
+ * record. `content` is deliberately absent: `create_repo` seeds it, but it is
+ * an ordinary body Property, and an artifact repository has to drop it so the
+ * Html body is the one the reader picks up.
+ */
 const protectedPropertyNames = new Set([
   'id',
   'name',
   'createdat',
   'updatedat',
-  'content',
 ])
 
 function propertyDetail(property: RepositoryPropertyDefinition): string {

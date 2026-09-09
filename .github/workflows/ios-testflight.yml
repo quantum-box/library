@@ -117,9 +117,14 @@ jobs:
             || { echo 'APPLE_API_KEY_P8 did not decode to a PEM private key; it must be the base64 of the .p8 file.' >&2; exit 1; }
 
       # The Xcode project is generated rather than committed, so the App Store
-      # build is built from tauri.conf.json the same way a local one is.
+      # build is built from tauri.conf.json the same way a local one is. The
+      # icon sync is part of generating it: `tauri ios init` writes Tauri's
+      # placeholder AppIcon from the CLI's own template and never looks at
+      # src-tauri/icons/ios, so without this the IPA ships the placeholder.
       - name: Generate iOS project
-        run: npm run tauri -- ios init --ci
+        run: |
+          npm run tauri -- ios init --ci
+          npm run tauri:ios:icon
 
       - name: Resolve build number
         id: build_number

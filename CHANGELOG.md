@@ -65,6 +65,40 @@
   コード）に `overscroll-x-contain` を付けた。横のドラッグが後ろのアプリに
   伝播しない。
 
+## 2026-09-09 - content Property を UI から消せるようにする
+
+- Repository 設定のプロパティ一覧で、名前が `content` のプロパティだけ削除
+  ボタンが常に disabled だった。保護リストに名前がハードコードされていて、
+  型に関係なく効いていたため。API 側は削除を許しており、UI だけの制限。
+- `create_repo` は必ず RichText の `content` を作る。一方 client は本文に
+  RichText を Html より優先するので、Html アーティファクト用の repo では
+  `content` を消さないと artifact が本文にならない。UI からその repo を
+  仕上げる経路が無く、MCP か CLI に降りるしかなかった。
+- 保護するのはレコードのキーとタイムスタンプ (`id` / `name` / `createdat` /
+  `updatedat`) だけにした。`ext_` のシステム Property と、client が型を
+  知らない Property の読み取り専用扱いは従来どおり。
+
+## 2026-09-08 - アーティファクトを作るスキル
+
+- plugin に `library-artifact` スキルを足した。これまで `library` スキルには
+  「Library に保存する」手順しか無く、肝心の「サンドボックスの中で成立する
+  HTML をどう書くか」がどこにも無かった。plugin の利用者は Claude 側の
+  artifact 用スキルを持っていないので、書けないまま保存手順だけ渡していた。
+- 描画枠の制約を明文化した。`allow-same-origin` が無いので localStorage と
+  cookie は例外になり、`allow-forms` / `allow-popups` / `allow-downloads` /
+  `allow-modals` も無いのでフォーム送信・`target="_blank"`・ダウンロード・
+  `alert` は黙って何も起きない。リンクは枠自身を置き換えるので戻る道が無い。
+- `srcdoc` は埋め込み元の CSP を継承するため、desktop シェルではインライン
+  script が動かない前提で書く。JS 無しでも読める HTML にして、JS は並べ替えや
+  折りたたみの上乗せに留める。
+- 設計の指針も入れた。色・書体・レイアウトの計画を先に立てる、依頼の性質に
+  応じて仕上げの強度を変える、繰り返す要素は 1 つの部品として揃える、読ませる
+  ものは読み込み直後に全部見えている、といった話。Claude の artifact 向け指針
+  とは 2 点で逆になる — Google Fonts と cdnjs は desktop の CSP に弾かれるので、
+  書体はシステムスタックか data URI、ライブラリは使わず inline SVG を手で描く。
+- `library` スキルの artifact 節は新スキルへの案内に畳んだ。同じ手順を 2 箇所に
+  置くと必ず片方が古くなるため。plugin は 0.5.0、desktop は 0.1.36。
+
 ## 2026-09-08 - HTML アーティファクトの全画面表示
 
 - Html Property のプレビューに全画面ボタンを足した。artifact は 1 ページ丸ごと
