@@ -356,6 +356,22 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('repository-page')).toBeVisible()
   })
 
+  test('scopes the sidebar to the organization named by the URL', async ({ page }) => {
+    // `aurora` has no repositories, so the sidebar scoped to it is empty.
+    await page.goto('/organizations/aurora')
+
+    await expect(page.getByTestId('organization-page')).toBeVisible()
+    await expect(page.getByTestId('database-quantum-box/photon-core')).toHaveCount(0)
+
+    // Opening a repository of another organization — by link, or by loading its
+    // URL cold — has to switch to that organization, not keep the one the
+    // sidebar was left on.
+    await page.goto('/quantum-box/photon-core')
+
+    await expect(page.getByTestId('repository-page')).toBeVisible()
+    await expect(page.getByTestId('database-quantum-box/photon-core')).toBeVisible()
+  })
+
   test('creates a repository and opens its GitHub-style URL', async ({ page }) => {
     await page.goto('/organizations/quantum-box')
     await page.getByRole('button', { name: 'New repository' }).click()

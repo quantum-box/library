@@ -17,6 +17,7 @@ import {
   saveSelectedOrganization,
   type StoredOrganizationSelection,
 } from '../lib/selectedOrganizationStorage'
+import { organizationIdForUsername } from '../lib/ui/organizationLocation'
 
 export interface WorkspaceDatabase {
   id: string
@@ -94,16 +95,25 @@ function uniqueOrganizations(orgs: LibraryOrganization[]): WorkspaceOrganization
  * Picks the organization filter after a (re)load of the organization list.
  *
  * `intent` is what the user last asked for: an explicit "all", a specific
- * organization, or nothing yet. It wins over `current` because `current` is
- * cleared on load errors and may lag behind. An organization that no longer
- * exists falls back to the first one that has repositories.
+ * organization, or nothing yet. "All" is the one answer the URL cannot
+ * override, because it already includes whatever the URL points at.
+ *
+ * `route` is the organization the current URL is about, and it outranks the
+ * remembered pick: a link into a repository has to open with that repository's
+ * organization selected, whatever the sidebar was left on.
+ *
+ * Otherwise the intent wins over `current`, which is cleared on load errors and
+ * may lag behind. An organization that no longer exists falls back to the first
+ * one that has repositories.
  */
 export function resolveSelectedOrganizationId(
   orgs: Pick<LibraryOrganization, 'id' | 'repos'>[],
   current: string | null,
   intent: StoredOrganizationSelection,
+  route: string | null = null,
 ): string | null {
   if (intent.kind === 'all') return null
+  if (route && orgs.some((org) => org.id === route)) return route
   if (intent.kind === 'organization' && orgs.some((org) => org.id === intent.organizationId)) {
     return intent.organizationId
   }
@@ -116,7 +126,17 @@ function repositoryLoadErrorMessage(error: unknown): string {
   return t('errors.loadRepositories')
 }
 
-export function DatabasesProvider({ children }: { children: ReactNode }) {
+export function DatabasesProvider({
+  children,
+  organizationUsername = null,
+}: {
+  children: ReactNode
+  /**
+   * The organization named by the current URL, if any. Supplied by the router
+   * so the provider itself stays usable without one.
+   */
+  organizationUsername?: string | null
+}) {
   const [databases, setDatabases] = useState<WorkspaceDatabase[]>([])
   const [organizations, setOrganizations] = useState<WorkspaceOrganization[]>([])
   // localStorage is read once, here; afterwards the ref is the source of truth
@@ -128,6 +148,11 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     const intent = selectionIntent.current
     return intent?.kind === 'organization' ? intent.organizationId : null
   })
+  // Read in `refreshRepositories`, which is created once; the URL can change
+  // between two loads, and the load has to land on the organization the user is
+  // looking at now.
+  const routeOrganizationUsername = useRef(organizationUsername)
+  routeOrganizationUsername.current = organizationUsername
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
 
@@ -141,8 +166,18 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       ])
       const nextOrganizations = uniqueOrganizations(orgs)
       setOrganizations(nextOrganizations)
+      const routeOrganizationId = organizationIdForUsername(
+        routeOrganizationUsername.current,
+        orgs.map((org) => ({ id: org.id, username: org.operatorName })),
+        repos,
+      )
       setSelectedOrganizationIdState((current) =>
-        resolveSelectedOrganizationId(orgs, current, selectionIntent.current ?? { kind: 'unset' }),
+        resolveSelectedOrganizationId(
+          orgs,
+          current,
+          selectionIntent.current ?? { kind: 'unset' },
+          routeOrganizationId,
+        ),
       )
       setDatabases(repos.map(repoToDatabase))
     } catch (error: unknown) {
@@ -228,6 +263,50 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
     setSelectedOrganizationId(organization.id)
     return database
   }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
+
+  // Each URL is acted on once. The sidebar's own picker selects and then
+  // navigates, so for a moment the selection is already the new organization
+  // while the URL still names the old one; acting on that URL a second time
+  // would pull the selection back to the page being navigated away from.
+  const appliedRouteOrganizationUsername = useRef<string | null>(null)
+  useEffect(() => {
+    if (!organizationUsername) {
+      // A page that is about no organization in particular. Coming back to this
+      // organization later has to switch to it again.
+      appliedRouteOrganizationUsername.current = null
+      return
+    }
+    if (appliedRouteOrganizationUsername.current === organizationUsername) return
+    // Before the first load there is no selection to compare against; the load
+    // itself resolves the URL.
+    if (organizations.length === 0) return
+    // "All organizations" is not the wrong organization: it already lists what
+    // the URL points at, and narrowing it would take away the list the user is
+    // browsing from.
+    if (!selectedOrganizationId) {
+      appliedRouteOrganizationUsername.current = organizationUsername
+      return
+    }
+    const routeOrganizationId = organizationIdForUsername(
+      organizationUsername,
+      organizations.map((organization) => ({
+        id: organization.id,
+        username: organization.label,
+      })),
+      databases,
+    )
+    // An organization that has not loaded yet stays unapplied, so the list
+    // arriving is what finally switches to it.
+    if (!routeOrganizationId) return
+    appliedRouteOrganizationUsername.current = organizationUsername
+    setSelectedOrganizationId(routeOrganizationId)
+  }, [
+    databases,
+    organizationUsername,
+    organizations,
+    selectedOrganizationId,
+    setSelectedOrganizationId,
+  ])
 
   useEffect(() => {
     void refreshRepositories()
