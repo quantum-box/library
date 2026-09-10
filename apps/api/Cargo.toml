@@ -1,6 +1,6 @@
 [package]
 name = "library-api"
-version = "1.11.3"
+version = "1.11.4"
 edition = "2021"
 license.workspace = true
 

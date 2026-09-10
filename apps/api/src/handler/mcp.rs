@@ -480,11 +480,16 @@ pub async fn mcp_handler(
     Extension(sdk): Extension<Arc<SdkAuthApp>>,
     Json(request): Json<JsonRpcRequest>,
 ) -> Response {
-    match dispatch_rpc(&headers, library_app, sdk, request).await {
-        // A notification carries no id, so JSON-RPC has nothing to answer
-        // with. The plain HTTP transport still owes the caller a body, and
-        // an empty object is what MCP clients expect there.
-        Ok(None) => Json(json!({})).into_response(),
+    into_http_response(
+        dispatch_rpc(&headers, library_app, sdk, request).await,
+    )
+}
+
+fn into_http_response(result: Result<Option<Value>, Response>) -> Response {
+    match result {
+        // Streamable HTTP acknowledges accepted notifications without a
+        // JSON-RPC response body.
+        Ok(None) => StatusCode::ACCEPTED.into_response(),
         Ok(Some(response)) => Json(response).into_response(),
         Err(challenge) => challenge,
     }
@@ -3573,6 +3578,19 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn notification_http_response_is_accepted_without_body() {
+        use axum::body::to_bytes;
+
+        let response = into_http_response(Ok(None));
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert!(to_bytes(response.into_body(), 1)
+            .await
+            .unwrap()
+            .is_empty());
+    }
 
     #[test]
     fn oauth_read_scope_hides_writes_and_rejects_direct_write_calls() {
