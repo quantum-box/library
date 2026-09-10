@@ -3280,7 +3280,14 @@ fn mcp_oauth_issuer() -> String {
 
 fn mcp_scopes_supported() -> Vec<String> {
     if oauth_resource::enabled() {
-        return vec!["mcp:read".into(), "mcp:write".into()];
+        // Must match tachyon.yaml library-mcp scopes so DCR clients can request OIDC scopes.
+        return vec![
+            "openid".into(),
+            "profile".into(),
+            "email".into(),
+            "mcp:read".into(),
+            "mcp:write".into(),
+        ];
     }
     std::env::var("MCP_SCOPES_SUPPORTED")
         .ok()
@@ -3737,7 +3744,7 @@ mod tests {
         );
         assert_eq!(
             metadata["scopes_supported"],
-            json!(["mcp:read", "mcp:write"])
+            json!(["openid", "profile", "email", "mcp:read", "mcp:write"])
         );
         let query = "response_type=code&client_id=test&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&code_challenge=test&code_challenge_method=S256";
         for (method, uri, content_type, body) in [

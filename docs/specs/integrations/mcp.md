@@ -85,7 +85,7 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_AUTHORIZATION_SERVER` | 設定するとTachyon OAuth検証を有効化する。信頼するHTTPS issuerを一つ指定。未設定時は従来のLibrary OAuth facade |
 | `MCP_AUTHORIZATION_SERVERS` | 上記の別名（優先）。現在は一つのissuerのみ対応。複数・空値は認証を拒否する |
 | `MCP_OAUTH_JWKS_URL` | 外部モードで必須。信頼するTachyon discoveryの `jwks_uri` を管理者が確認して指定するHTTPS URL |
-| `MCP_SCOPES_SUPPORTED` | 旧モードのscopes。外部モードは実際に検証する `mcp:read,mcp:write` を固定で案内する |
+| `MCP_SCOPES_SUPPORTED` | 旧モードのscopes。外部モードは `openid,profile,email,mcp:read,mcp:write` を固定で案内する |
 | `MCP_OAUTH_ISSUER` | Library MCP OAuth facade の issuer。未指定時は `{LIBRARY_API_BASE_URL}/mcp/oauth` |
 | `MCP_COGNITO_CLIENT_ID` | MCP OAuth facade が Cognito `USER_PASSWORD_AUTH` に使う client id。`COGNITO_CLIENT_ID` / `VITE_COGNITO_CLIENT_ID` も fallback として読む |
 | `MCP_COGNITO_CLIENT_SECRET` | Cognito client secret。未指定時は `SECRET_HASH` を送らない。`COGNITO_CLIENT_SECRET` も fallback として読む。frontend に公開される `VITE_*` からは読まない |
@@ -97,7 +97,7 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 
 外部モードではTachyon発行access tokenのRS256署名、kid、issuer、exp、nbf、Libraryのresource URLと一致するaudienceを検証する。同じtokenをSDKでも検証し、返されたユーザーIDとsubが一致することを確認する。その後は従来の組織所属とデータアクセス権を適用する。APIキーの組織指定・ポリシー検証は維持する。
 
-`mcp:read` は読取ツール、`mcp:write` は変更ツールに対応する。一方のscopeからもう一方を推定しない。scope不足のツールは一覧から除外し、直接呼出しは `403` と `insufficient_scope` challengeを返す。
+`mcp:read` は読取ツール、`mcp:write` は変更ツールに対応する。一方のscopeからもう一方を推定しない。scope不足のツールは一覧から除外し、直接呼出しは `403` と `insufficient_scope` challengeを返す。`openid` / `profile` / `email` は Tachyon 側の同意・ID 用途であり、Library MCP のツール認可には使わない。
 
 JWKSは最大5分キャッシュする。未知のkidや期限切れキャッシュの取得失敗は認証を拒否するため、鍵ローテーション時は新しい公開鍵を5分以上前に公開する。tokenヘッダーのjku/x5uやJWKS HTTPリダイレクトは使用しない。
 
