@@ -1,0 +1,283 @@
+name: Android Firebase Distribution
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Android versionCode for this build; empty uses the workflow run number.'
+        required: false
+      build_only:
+        description: 'Build and attach the APK as an artifact without distributing it to testers.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Same contract as the iOS workflow: one distribution at a time, and never
+# cancel a run that may already have handed the APK to Firebase. GitHub holds
+# only one pending run per group, so when pushes arrive faster than the build
+# takes, the newest main commit is the one that reaches testers and the ones it
+# superseded are skipped. main is linear, so the build that wins already
+# contains the skipped commits. Run the workflow by hand if you need a specific
+# commit built.
+concurrency:
+  group: library-android-firebase
+  cancel-in-progress: false
+
+jobs:
+  # `secrets` is not readable from a job-level `if`, so the check has to happen
+  # inside a step. Until the credentials are configured, a push to main skips
+  # quietly instead of painting main red; a manual run fails loudly, because
+  # someone asked for a distribution and did not get one.
+  #
+  # The signing key and the Firebase credentials are checked separately so that
+  # a `build_only` run can produce an APK before the Firebase app exists --
+  # which is how the app gets registered in the first place, since Firebase
+  # wants the package name of a real build.
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          APP_ID: ${{ vars.FIREBASE_ANDROID_APP_ID }}
+          BUILD_ONLY: ${{ inputs.build_only }}
+        run: |
+          missing=''
+          if [ -z "$KEYSTORE" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            missing='the signing key: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD'
+          elif [ "$BUILD_ONLY" != 'true' ] && { [ -z "$SERVICE_ACCOUNT_JSON" ] || [ -z "$APP_ID" ]; }; then
+            missing='the Firebase credentials: FIREBASE_SERVICE_ACCOUNT_JSON secret and FIREBASE_ANDROID_APP_ID variable (or run with build_only to just build the APK)'
+          fi
+          if [ -z "$missing" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'ready=false' >> "$GITHUB_OUTPUT"
+          msg="Firebase App Distribution is not configured. Missing ${missing} (see apps/client/docs/android-firebase-distribution.md)."
+          echo "::warning::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            exit 1
+          fi
+
+  distribute:
+    needs: credentials
+    if: needs.credentials.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+
+      # AGP 8 runs on JDK 17; the runner defaults to a newer one, and Gradle
+      # fails on a JDK it does not know rather than degrading.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/src-tauri
+
+      # Tauri locates the NDK through NDK_HOME alone. The runner image installs
+      # one and exports ANDROID_NDK_LATEST_HOME, but nothing sets NDK_HOME, and
+      # without it the Rust build fails inside Gradle with a linker error that
+      # does not name the NDK. zipalign and apksigner come from the newest
+      # build-tools the image has; neither is on PATH by default.
+      - name: Resolve Android SDK tooling
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_NDK_LATEST_HOME:-}" ]; then
+            echo 'The runner image did not export ANDROID_NDK_LATEST_HOME; pin an NDK path here.' >&2
+            exit 1
+          fi
+          echo "NDK_HOME=${ANDROID_NDK_LATEST_HOME}" >> "$GITHUB_ENV"
+          build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)"
+          if [ -z "$build_tools" ]; then
+            echo "No build-tools under ${ANDROID_HOME}/build-tools." >&2
+            exit 1
+          fi
+          echo "${ANDROID_HOME}/build-tools/${build_tools}" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The Gradle project is generated rather than committed, so the
+      # distributed build comes out of tauri.conf.json plus
+      # tauri.android.conf.json the same way a local one does. The icon sync is
+      # part of generating it: `tauri android init` writes Tauri's placeholder
+      # launcher icons from the CLI's own template and never looks at
+      # src-tauri/icons/android, so without this the APK ships the placeholder.
+      - name: Generate Android project
+        run: |
+          npm run tauri -- android init --ci
+          npm run tauri:android:icon
+
+      # Android refuses to install a version code lower than the one already on
+      # the device, so it has to increase on every build a tester might take --
+      # which is what the run number is. It is set through
+      # bundle.android.versionCode rather than left to Tauri's default, because
+      # that default is derived from the semver (0.1.39 -> 1039) and would
+      # repeat itself on every rebuild of the same version. versionName stays
+      # the package.json version.
+      - name: Resolve version code
+        id: version
+        env:
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          code="${INPUT_VERSION_CODE:-${GITHUB_RUN_NUMBER}}"
+          case "$code" in
+            ''|*[!0-9]*)
+              echo "version_code must be digits only, got '${code}'." >&2
+              exit 1
+              ;;
+          esac
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          name="$(node -p "require('./package.json').version")"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      # An APK rather than an AAB: App Distribution only takes a bundle for an
+      # app that is linked to Google Play, and testers install this one straight
+      # from the Firebase link.
+      #
+      # arm64 covers every phone a tester will use; x86_64 keeps emulators and
+      # Chromebooks installable. Adding armv7 means a third full Rust build for
+      # devices that predate 2017 -- add it here if one ever has to be
+      # supported.
+      - name: Build APK
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          npm run tauri -- android build \
+            --ci \
+            --apk \
+            --target aarch64 --target x86_64 \
+            -c "{\"bundle\":{\"android\":{\"versionCode\":${VERSION_CODE}}}}"
+
+      - name: Locate APK
+        id: apk
+        run: |
+          set -euo pipefail
+          path="$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit 2>/dev/null || true)"
+          if [ -z "$path" ]; then
+            echo 'No APK was produced by the Android build.' >&2
+            exit 1
+          fi
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+
+      # Tauri's Gradle template declares no release signingConfig, so the APK
+      # comes out unsigned and unaligned and is finished here instead. apksigner
+      # rather than jarsigner: an APK that carries only a v1 JAR signature will
+      # not install on Android 11 and later, and zipalign has to run before
+      # signing because apksigner preserves the alignment it is given.
+      #
+      # There is no Play App Signing in this path, so this key IS the app
+      # signing key. Replacing it makes every installed copy refuse the update
+      # with INSTALL_FAILED_UPDATE_INCOMPATIBLE -- testers have to uninstall
+      # first. Keep it.
+      - name: Sign APK
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          UNSIGNED: ${{ steps.apk.outputs.path }}
+        run: |
+          set -euo pipefail
+          case "$UNSIGNED" in
+            *-unsigned.apk)
+              signed="${UNSIGNED%-unsigned.apk}.apk"
+              ;;
+            *)
+              echo "Expected an unsigned APK, got '${UNSIGNED}'. Gradle grew a signingConfig; sign it there rather than twice." >&2
+              exit 1
+              ;;
+          esac
+          keystore="${RUNNER_TEMP}/signing-key.p12"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore" \
+            || { echo 'ANDROID_KEYSTORE_BASE64 is not valid base64; it must be the base64 of the keystore file.' >&2; exit 1; }
+          [ -s "$keystore" ] \
+            || { echo 'ANDROID_KEYSTORE_BASE64 decoded to an empty file.' >&2; exit 1; }
+          zipalign -p -f 4 "$UNSIGNED" "${RUNNER_TEMP}/aligned.apk"
+          apksigner sign \
+            --ks "$keystore" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "$signed" \
+            "${RUNNER_TEMP}/aligned.apk"
+          apksigner verify --print-certs "$signed"
+          echo "path=${signed}" >> "$GITHUB_OUTPUT"
+
+      - name: Distribute to testers
+        if: ${{ !inputs.build_only }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          APP_ID: ${{ vars.FIREBASE_ANDROID_APP_ID }}
+          # Comma-separated App Distribution group aliases. Set the variable to
+          # reach a different set of testers without touching this file.
+          TESTER_GROUPS: ${{ vars.FIREBASE_TESTER_GROUPS || 'testers' }}
+          APK_PATH: ${{ steps.sign.outputs.path }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          credentials="${RUNNER_TEMP}/firebase-service-account.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$credentials"
+          export GOOGLE_APPLICATION_CREDENTIALS="$credentials"
+          notes="$(git log -1 --pretty=%s) (${GITHUB_SHA:0:7})"
+          npx --yes firebase-tools@15 appdistribution:distribute "$APK_PATH" \
+            --app "$APP_ID" \
+            --groups "$TESTER_GROUPS" \
+            --release-notes "${VERSION_NAME} (${VERSION_CODE}) — ${notes}"
+
+      - name: Summarize
+        if: always()
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          APK_PATH: ${{ steps.sign.outputs.path }}
+        run: |
+          {
+            echo "Version name: ${VERSION_NAME}"
+            echo "Version code: ${VERSION_CODE}"
+            echo "APK: ${APK_PATH}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK artifact
+        if: always() && steps.sign.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-android-${{ steps.version.outputs.name }}.${{ steps.version.outputs.code }}
+          path: apps/client/${{ steps.sign.outputs.path }}
+          retention-days: 14
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/signing-key.p12" "${RUNNER_TEMP}/firebase-service-account.json"
