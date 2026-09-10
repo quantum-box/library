@@ -8,7 +8,7 @@ Codex `0.153.4` からLibrary MCPへ接続すると、初期化通知へのHTTP�
 
 1. `dispatch_rpc` の結果をHTTPレスポンスへ変換する処理を分離し、`Ok(None)` を `202 Accepted` の空レスポンスへ変換した。
 2. 通知レスポンスのHTTPステータスと0 byte本文を固定する回帰テストを追加した。
-3. Library APIを `1.11.3` から `1.11.4` へpatch更新した。
+3. Library APIを `1.11.3` から `1.11.4` へpatch更新し、チェックイン済みOpenAPIの `info.version` も同期した。
 
 通常のJSON-RPC request、OAuth検証、ツール一覧・呼出し、SSE transportは変更していない。新しいADR/DDは不要と判断した。
 

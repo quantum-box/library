@@ -13,6 +13,7 @@
 - `OPENSSL_NO_VENDOR=1 CARGO_BUILD_JOBS=4 cargo +nightly-2026-06-04 clippy -p library-api --lib --no-deps -- -D warnings`: 成功。
 - `OPENSSL_NO_VENDOR=1 CARGO_BUILD_JOBS=4 cargo +nightly-2026-06-04 build -p library-api --lib`: 成功。
 - `OPENSSL_NO_VENDOR=1 CARGO_BUILD_JOBS=4 cargo +nightly-2026-06-04 test -p library-api --lib handler::mcp`: 34件成功。
+- `apps/api/Cargo.toml`、`Cargo.lock`、`apps/api/library.openapi.yaml` のAPIバージョンが `1.11.4` で一致することを確認した。
 
 既存の `apps/api/bin/migrate.rs` が2つのbin targetに登録されているmanifest warningのみ発生した。今回の差分によるwarningではない。
 
