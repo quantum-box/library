@@ -324,6 +324,7 @@ spec:
   displayName: Library MCP
   scopes:
     - openid
+    - profile
     - email
     - mcp:read
     - mcp:write
