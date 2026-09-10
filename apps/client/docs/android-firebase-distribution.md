@@ -106,6 +106,20 @@ Set up on 2026-09-09 and wired end to end:
 | Service account | `firebase-adminsdk-fbsvc@planet-library-1ca62.iam.gserviceaccount.com` |
 | Signing key | PKCS12, alias `library-android`, RSA 4096, SHA-256 fingerprint `9F:85:EF:...:23:36` |
 
+The signing key and the service account key live in 1Password, in the
+`deployment` vault:
+
+```bash
+op read "op://deployment/Library Android signing key/password"
+op read "op://deployment/4zq6r5m53uzkqsh6ctwx4kbtru/keystore/p12" --out-file library-android-key.p12
+op read "op://deployment/7vwuzsknezofwbzgccoyei4my4/serviceaccount" --out-file service-account.json
+```
+
+Reference the attachments by item ID rather than title: a title containing
+parentheses does not resolve as a secret reference. `op read` on stdout appends
+a newline, which corrupts a binary keystore, so always use `--out-file` for the
+`.p12`.
+
 All five secrets and the App ID variable are configured on this repository, and
 the whole pipeline — build, `zipalign`, `apksigner`, upload — was run once from
 a laptop against these credentials before the workflow was merged. That first
