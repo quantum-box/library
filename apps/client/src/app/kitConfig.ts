@@ -172,6 +172,8 @@ export interface AppKitConfig {
     localeKey: string
     /** Key prefix for one repository table's column arrangement. */
     tableLayoutKeyPrefix: string
+    /** The organization the sidebar was last narrowed to (or "all"). */
+    selectedOrganizationKey: string
   }
 }
 
@@ -641,5 +643,6 @@ export const appKitConfig: AppKitConfig = {
     themeKey: namespacedKey(appProfile.storageNamespace, 'theme'),
     localeKey: namespacedKey(appProfile.storageNamespace, 'locale'),
     tableLayoutKeyPrefix: namespacedKey(appProfile.storageNamespace, 'table-layout'),
+    selectedOrganizationKey: namespacedKey(appProfile.storageNamespace, 'selected-organization'),
   },
 }

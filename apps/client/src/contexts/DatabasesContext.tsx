@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   createLibraryOrganization,
@@ -12,6 +12,11 @@ import {
   type LibraryRepository,
 } from '../lib/recordsApi'
 import { t } from '../i18n'
+import {
+  loadSelectedOrganization,
+  saveSelectedOrganization,
+  type StoredOrganizationSelection,
+} from '../lib/selectedOrganizationStorage'
 
 export interface WorkspaceDatabase {
   id: string
@@ -85,10 +90,23 @@ function uniqueOrganizations(orgs: LibraryOrganization[]): WorkspaceOrganization
   })
 }
 
-function defaultOrganizationId(
-  orgs: LibraryOrganization[],
-  current: string | null
+/**
+ * Picks the organization filter after a (re)load of the organization list.
+ *
+ * `intent` is what the user last asked for: an explicit "all", a specific
+ * organization, or nothing yet. It wins over `current` because `current` is
+ * cleared on load errors and may lag behind. An organization that no longer
+ * exists falls back to the first one that has repositories.
+ */
+export function resolveSelectedOrganizationId(
+  orgs: Pick<LibraryOrganization, 'id' | 'repos'>[],
+  current: string | null,
+  intent: StoredOrganizationSelection,
 ): string | null {
+  if (intent.kind === 'all') return null
+  if (intent.kind === 'organization' && orgs.some((org) => org.id === intent.organizationId)) {
+    return intent.organizationId
+  }
   if (current && orgs.some((org) => org.id === current)) return current
   return orgs.find((org) => org.repos.length > 0)?.id ?? orgs[0]?.id ?? null
 }
@@ -101,7 +119,15 @@ function repositoryLoadErrorMessage(error: unknown): string {
 export function DatabasesProvider({ children }: { children: ReactNode }) {
   const [databases, setDatabases] = useState<WorkspaceDatabase[]>([])
   const [organizations, setOrganizations] = useState<WorkspaceOrganization[]>([])
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null)
+  // localStorage is read once, here; afterwards the ref is the source of truth
+  // for what the user chose. A failed write must not make a stale stored value
+  // override a selection that is alive in memory.
+  const selectionIntent = useRef<StoredOrganizationSelection | null>(null)
+  if (selectionIntent.current === null) selectionIntent.current = loadSelectedOrganization()
+  const [selectedOrganizationId, setSelectedOrganizationIdState] = useState<string | null>(() => {
+    const intent = selectionIntent.current
+    return intent?.kind === 'organization' ? intent.organizationId : null
+  })
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
 
@@ -115,17 +141,30 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       ])
       const nextOrganizations = uniqueOrganizations(orgs)
       setOrganizations(nextOrganizations)
-      setSelectedOrganizationId((current) => defaultOrganizationId(orgs, current))
+      setSelectedOrganizationIdState((current) =>
+        resolveSelectedOrganizationId(orgs, current, selectionIntent.current ?? { kind: 'unset' }),
+      )
       setDatabases(repos.map(repoToDatabase))
     } catch (error: unknown) {
       console.warn('Failed to load Library repositories', error)
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
-      setSelectedOrganizationId(null)
+      // Load failures are transient; keep the persisted choice for the retry.
+      setSelectedOrganizationIdState(null)
       setDatabases([])
     } finally {
       setRepositoriesLoading(false)
     }
+  }, [])
+
+  // The user's pick outlives the page: it is written through to localStorage
+  // so a reload (or a Tauri window relaunch) reopens the same organization.
+  const setSelectedOrganizationId = useCallback((organizationId: string | null) => {
+    selectionIntent.current = organizationId
+      ? { kind: 'organization', organizationId }
+      : { kind: 'all' }
+    saveSelectedOrganization(organizationId)
+    setSelectedOrganizationIdState(organizationId)
   }, [])
 
   // Creating an organization and importing an existing tenant both end with a
@@ -142,7 +181,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       : [...current, organization])
     setSelectedOrganizationId(created.id)
     return organization
-  }, [refreshRepositories])
+  }, [refreshRepositories, setSelectedOrganizationId])
 
   const createOrganization = useCallback(
     async (name: string, username: string) =>
@@ -188,7 +227,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       : [...current, database])
     setSelectedOrganizationId(organization.id)
     return database
-  }, [databases, organizations, refreshRepositories])
+  }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
 
   useEffect(() => {
     void refreshRepositories()
@@ -243,6 +282,7 @@ export function DatabasesProvider({ children }: { children: ReactNode }) {
       repositoriesError,
       repositoriesLoading,
       selectedOrganizationId,
+      setSelectedOrganizationId,
     ]
   )
 
