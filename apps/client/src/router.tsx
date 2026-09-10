@@ -75,6 +75,7 @@ import {
   splitRepoDatabaseId,
   type DataViewSearch,
 } from './lib/ui/dataLocation'
+import { organizationUsernameFromLocation } from './lib/ui/organizationLocation'
 import { RepositoriesPage } from './components/RepositoriesPage'
 import {
   clearDatabaseViewDraft,
@@ -684,10 +685,19 @@ function AuthenticatedWorkspaceRoot() {
     commandPaletteOpen,
     closeCommandPalette,
   } = useGlobalKeyboardShortcuts(setCreateModalOpen)
+  // The address bar is the workspace's own state: an organization in the URL
+  // is the organization the shell is scoped to.
+  const organizationUsername = useRouterState({
+    select: (state) =>
+      organizationUsernameFromLocation(
+        state.location.pathname,
+        (state.location.search as { database?: string }).database,
+      ),
+  })
 
   return (
     <DatabaseRecordsProvider>
-      <DatabasesProvider>
+      <DatabasesProvider organizationUsername={organizationUsername}>
         <DatabaseViewsProvider>
           <AttachmentsProvider>
             <CreateModalContext.Provider value={{ open: createModalOpen, setOpen: setCreateModalOpen }}>

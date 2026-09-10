@@ -393,6 +393,140 @@ describe('DatabasesProvider', () => {
       }
     })
 
+    it('opens the organization the URL names instead of the stored one', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+      window.localStorage.setItem(SELECTED_ORGANIZATION_KEY, 'org-1')
+
+      render(
+        <DatabasesProvider organizationUsername="Beta">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading')).toHaveTextContent('false')
+      })
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+    })
+
+    it('resolves the URL organization through a repository username', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+
+      render(
+        <DatabasesProvider organizationUsername="acme">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      // `acme` is the repository's org username; the organization calls itself
+      // `Acme`, and only the repository ties the two together.
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-1')
+      })
+      // The organization arrived at through the URL is the one to reopen next
+      // time, the same as one picked in the sidebar.
+      await waitFor(() => {
+        expect(window.localStorage.getItem(SELECTED_ORGANIZATION_KEY)).toBe('org-1')
+      })
+    })
+
+    it('switches when navigation changes the organization in the URL', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+
+      const { rerender } = render(
+        <DatabasesProvider organizationUsername="Acme">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-1')
+      })
+
+      rerender(
+        <DatabasesProvider organizationUsername="Beta">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+      })
+      expect(window.localStorage.getItem(SELECTED_ORGANIZATION_KEY)).toBe('org-2')
+    })
+
+    it('leaves the selection alone on a URL that names no organization', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+      window.localStorage.setItem(SELECTED_ORGANIZATION_KEY, 'org-2')
+
+      const { rerender } = render(
+        <DatabasesProvider organizationUsername="Acme">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-1')
+      })
+
+      rerender(
+        <DatabasesProvider organizationUsername={null}>
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-1')
+    })
+
+    it('keeps the sidebar pick made while a repository page is still on screen', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+
+      render(
+        <DatabasesProvider organizationUsername="Acme">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-1')
+      })
+
+      // The picker selects first and navigates after, so the URL still points
+      // at the old organization for a render or two.
+      await act(async () => {
+        screen.getByTestId('select-org-2').click()
+      })
+
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('org-2')
+    })
+
+    it('leaves "all organizations" alone when the URL names one of them', async () => {
+      mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
+      window.localStorage.setItem(SELECTED_ORGANIZATION_KEY, 'all')
+
+      const { rerender } = render(
+        <DatabasesProvider organizationUsername={null}>
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading')).toHaveTextContent('false')
+      })
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('')
+
+      // Opening a repository from the unfiltered list must not narrow the list
+      // it was opened from.
+      rerender(
+        <DatabasesProvider organizationUsername="Beta">
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      expect(screen.getByTestId('selected-organization')).toHaveTextContent('')
+      expect(window.localStorage.getItem(SELECTED_ORGANIZATION_KEY)).toBe('all')
+    })
+
     it('keeps "all organizations" across a reload of the organization list', async () => {
       mocks.fetchLibraryOrganizations.mockResolvedValue(twoOrganizations)
 

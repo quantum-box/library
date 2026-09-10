@@ -11,7 +11,7 @@ import {
   Plus,
   RefreshCw,
 } from 'lucide-react'
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import {
   useWorkspaceDatabases,
   type WorkspaceDatabase,
@@ -100,7 +100,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
     repositoriesLoading,
     repositoriesError,
     refreshRepositories,
-    setSelectedOrganizationId,
   } = useWorkspaceDatabases()
 
   const organization = useMemo(
@@ -116,9 +115,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
     [databases, organizationPath, organizations],
   )
 
-  useEffect(() => {
-    if (organization) setSelectedOrganizationId(organization.id)
-  }, [organization, setSelectedOrganizationId])
 
   const repositories = useMemo(() => {
     if (!organization) return []

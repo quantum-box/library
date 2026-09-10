@@ -435,11 +435,21 @@ function graphqlResponse(query, variables) {
         id: 'library-e2e-user',
         email: 'library-e2e@local.test',
         tenantIdList: ['org-1'],
-        organizations: [{
-          id: 'org-1',
-          operatorName: 'quantum-box',
-          platformTenantId: platformId,
-        }],
+        organizations: [
+          {
+            id: 'org-1',
+            operatorName: 'quantum-box',
+            platformTenantId: platformId,
+          },
+          // A second organization, with no repositories of its own, so the
+          // sidebar has something to be scoped to that the fixture repository
+          // is not part of.
+          {
+            id: 'org-2',
+            operatorName: 'aurora',
+            platformTenantId: platformId,
+          },
+        ],
       },
     }
   }
