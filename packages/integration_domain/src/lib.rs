@@ -5,10 +5,12 @@
 //! integrations.
 
 mod external_sync;
+mod external_sync_lifecycle;
 mod marketplace;
 pub mod oauth;
 
 pub use external_sync::*;
+pub use external_sync_lifecycle::*;
 pub use marketplace::*;
 
 // Re-export OAuth types for convenience

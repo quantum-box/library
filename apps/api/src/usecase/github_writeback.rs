@@ -39,6 +39,7 @@ pub struct GithubWritebackDispatch {
     sync_data: Arc<dyn SyncDataInputPort>,
     webhook_endpoint_repo: Arc<dyn WebhookEndpointRepository>,
     sync_state_repo: Arc<dyn SyncStateRepository>,
+    external_outbox: Option<Arc<super::ExternalSyncOutboxDispatch>>,
 }
 
 impl std::fmt::Debug for GithubWritebackDispatch {
@@ -58,6 +59,19 @@ impl GithubWritebackDispatch {
             sync_data,
             webhook_endpoint_repo,
             sync_state_repo,
+            external_outbox: None,
+        })
+    }
+
+    pub fn with_external_outbox(
+        self: Arc<Self>,
+        external_outbox: Arc<super::ExternalSyncOutboxDispatch>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            sync_data: self.sync_data.clone(),
+            webhook_endpoint_repo: self.webhook_endpoint_repo.clone(),
+            sync_state_repo: self.sync_state_repo.clone(),
+            external_outbox: Some(external_outbox),
         })
     }
 
@@ -85,6 +99,34 @@ impl GithubWritebackDispatch {
         properties: &[Property],
     ) {
         if !Provider::Github.is_runtime_available() {
+            return;
+        }
+
+        if std::env::var("LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED")
+            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        {
+            if let Some(outbox) = &self.external_outbox {
+                if let Err(error) = outbox
+                    .capture_and_deliver(
+                        executor,
+                        multi_tenancy,
+                        data,
+                        properties,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        %error,
+                        data_id = %data.id(),
+                        "failed to derive external delivery from transactional outbox"
+                    );
+                }
+            } else {
+                tracing::error!(
+                    data_id = %data.id(),
+                    "external sync engine is enabled without an outbox adapter"
+                );
+            }
             return;
         }
 

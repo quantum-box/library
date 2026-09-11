@@ -1,9 +1,10 @@
-# PLT-4534 Phase 0–1 Verification Report
+# PLT-4534 Phase 0–4 Verification Report
 
 ## Scope
 
-This report records completed verification for the Phase 0 readiness correction
-and the Phase 1 provider-neutral binding/object-link model and persistence layer.
+This report records completed verification for the Phase 0 readiness correction,
+the Phase 1 provider-neutral model, and the Phase 2–4 durable inbound, reviewed
+ChangeSet, outbound delivery, API, and operator UI implementation.
 
 ## Phase 0 passed on 2026-09-11
 
@@ -67,3 +68,41 @@ later PLT-4534 phases.
 
 Phase 1 proves the local domain and persistence boundary. It does not claim that
 continuous synchronization works at an external or deployed surface.
+
+## Phase 2–4 passed on 2026-09-11
+
+- `cargo +nightly-2026-06-04 fmt --all -- --check`
+- `cargo +nightly-2026-06-04 run --manifest-path apps/api/Cargo.toml --bin library_codegen`:
+  generated `apps/api/schema.graphql`; binding, ChangeSet, delivery queries and
+  mutations match the primary-client operations.
+- `cargo +nightly-2026-06-04 check -p library-api`
+- `cargo +nightly-2026-06-04 test -p integration_domain -p inbound_sync -p outbound_sync --lib`:
+  15 + 114 + 4 passed.
+- `DEV_DATABASE_URL=mysql://root:@127.0.0.1:15000/library cargo +nightly-2026-06-04 test -p inbound_sync --test external_sync_repository -- --ignored --nocapture`:
+  1 passed against MySQL 8.0.46. The isolated contract applies both up
+  migrations, round-trips binding, object link, ChangeSet, delivery, and durable
+  dispatch capability state, verifies tenant isolation/idempotency/claim
+  behavior, applies both down migrations, and removes its temporary database.
+- `cargo +nightly-2026-06-04 clippy -p integration_domain -p inbound_sync -p outbound_sync -p library-api --all-targets -- -D warnings ...`
+- Focused primary-client Vitest: 3 files, 67 tests passed (external-sync API,
+  repository settings interaction, and all locale catalogs).
+- Primary-client TypeScript check, focused ESLint, and production build passed.
+- `npm run type-check:worker`: sync and public-docs Workers passed the locked
+  `wasm32-unknown-unknown` workspace check.
+- `npm run test:worker`: sync Worker 25/25 and public-docs Worker 14/14 passed.
+- Visual brief HTML5 parse passed; `git diff --check` passed.
+
+## Not run in Phase 2–4
+
+- A dedicated GitHub account/repository round trip covering OAuth, webhook,
+  Library accept/reject, outbound commit, conflict recovery, rename, and delete
+- Preview deployment, preview database migration, deployed Durable Object alarm,
+  or authenticated browser verification
+- Production migration or feature activation. Production keeps the experimental
+  integration and external-sync engine flags disabled.
+
+The implementation captures an outbox-derived delivery immediately after the
+Library transaction commits. An independent scanner for recovering the narrow
+process-death window between commit and capture is not yet present. Consequently,
+the local gates prove the Phase 2–4 code and contracts, not release-level
+at-least-once behavior at an external surface.

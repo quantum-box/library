@@ -224,15 +224,15 @@
         </div>
         <aside class="verdict" aria-label="現在の判定">
           <strong>判定: Experimental</strong>
-          現行実装には one-shot import までの実用範囲がある一方、継続双方向同期を GA と呼べる durable dispatch・競合処理・状態表示が揃っていません。
+          Phase 4 までのコード経路は実装済み。専用 GitHub repository での OAuth・webhook・競合・削除の往復 proof と production activation はまだ別 gate です。
         </aside>
       </div>
 
       <div class="status-strip" aria-label="概要">
         <div><small>Product status</small><b>Experimental</b><span>runtime flag で明示的に有効化</span></div>
-        <div><small>Phase 0</small><b>実装済み</b><span>誤った GA 表示と fake queued を停止</span></div>
+        <div><small>Phase 0–4</small><b>実装済み</b><span>durable inbound、ChangeSet、Outbox、UI</span></div>
         <div><small>Target model</small><b>External Sync Kernel</b><span>ChangeSet + Outbox + adapters</span></div>
-        <div><small>Proof</small><b>140 tests + check</b><span>実 GitHub E2E は未実施</span></div>
+        <div><small>Proof</small><b>Local quality gates</b><span>実 GitHub E2E は未実施</span></div>
       </div>
     </div>
   </header>
@@ -466,10 +466,10 @@
         </div>
         <div class="timeline">
           <article class="phase done"><div class="phase-id">Phase 0</div><div><h3>現実と表示を一致</h3><p>GitHub 継続同期を Experimental に戻し、runtime gate、HTTP 503、readiness / GA / API 文書を実態に合わせる。</p></div><span class="tag good">implemented</span></article>
-          <article class="phase now"><div class="phase-id">Phase 1</div><div><h3>共通 Binding と Link</h3><p>provider-neutral な外部接続と Data-object 対応の schema、API、冪等な旧設定 migration を追加する。</p></div><span class="tag warn">next</span></article>
-          <article class="phase"><div class="phase-id">Phase 2</div><div><h3>Durable inbound</h3><p>webhook reception から consumer invocation を保証し、差分を InboundChangeSet として保存する。</p></div><span class="tag proposed">planned</span></article>
-          <article class="phase"><div class="phase-id">Phase 3</div><div><h3>Outbox delivery</h3><p>accepted revision から transactional outbox を作り、retry / conflict / delivery state を実装する。</p></div><span class="tag proposed">planned</span></article>
-          <article class="phase"><div class="phase-id">Phase 4</div><div><h3>UI、parity、adapter展開</h3><p>接続、差分、競合、再試行 UI を追加。GitHub parity 後に旧 decorator を停止し、CRM adapter は別タスクで追加する。</p></div><span class="tag proposed">planned</span></article>
+          <article class="phase done"><div class="phase-id">Phase 1</div><div><h3>共通 Binding と Link</h3><p>provider-neutral な外部接続と Data-object 対応の schema、API、冪等な旧設定 migration を追加する。</p></div><span class="tag good">implemented</span></article>
+          <article class="phase done"><div class="phase-id">Phase 2</div><div><h3>Durable inbound</h3><p>webhook reception から consumer invocation を保証し、差分を InboundChangeSet として保存する。</p></div><span class="tag good">implemented</span></article>
+          <article class="phase done"><div class="phase-id">Phase 3</div><div><h3>Outbox delivery</h3><p>accepted revision から transactional outbox を作り、retry / conflict / delivery state を実装する。</p></div><span class="tag good">implemented</span></article>
+          <article class="phase done"><div class="phase-id">Phase 4</div><div><h3>UI、parity、adapter展開</h3><p>接続、差分、競合、再試行 UI と legacy materialization を追加。CRM adapter は共通 kernel を使う別タスクで追加する。</p></div><span class="tag good">implemented</span></article>
         </div>
       </div>
     </section>
@@ -482,13 +482,15 @@
         </div>
         <div class="checks">
           <article class="check-card">
-            <h3>Phase 0 — verified</h3>
+            <h3>Phase 0–4 — local proof</h3>
             <div class="check-list">
               <div class="check pass"><i>✓</i><span><code>inbound_sync_domain</code>: 31 tests passed</span></div>
               <div class="check pass"><i>✓</i><span><code>inbound_sync</code>: 109 tests passed</span></div>
               <div class="check pass"><i>✓</i><span><code>library-api</code>: nightly cargo check passed</span></div>
               <div class="check pass"><i>✓</i><span>GitHub provider / marketplace を Experimental 表示</span></div>
               <div class="check pass"><i>✓</i><span>gate 無効時の webhook / legacy mutation を停止</span></div>
+              <div class="check pass"><i>✓</i><span>binding / ChangeSet / delivery / durable dispatch の lifecycle を実装</span></div>
+              <div class="check pass"><i>✓</i><span>repository settings に review / conflict / retry UI を実装</span></div>
             </div>
           </article>
           <article class="check-card">
@@ -502,7 +504,7 @@
             </div>
           </article>
         </div>
-        <div class="boundary"><strong>現在の保証境界</strong>Phase 0 は「危険な継続同期を有効に見せない」変更です。実 GitHub との import → Library 編集 → GitHub 編集 → conflict → delete の往復 proof は、Phase 1–4 の実装後に別 gate として実施します。</div>
+        <div class="boundary"><strong>現在の保証境界</strong>Phase 4 までの実装と local verification は、実 GitHub 上の同期成功や production activation を意味しません。import → Library 編集 → GitHub 編集 → conflict → tombstone review の往復 proof は Preview / 専用 repository で別 gate として実施します。</div>
       </div>
     </section>
   </main>

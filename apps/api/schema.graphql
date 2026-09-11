@@ -148,6 +148,15 @@ input CreateApiKeyInput {
 	serviceAccountName: String
 }
 
+input CreateExternalSyncBindingInput {
+	repositoryId: String!
+	provider: GqlProvider!
+	connectionId: String!
+	externalScope: String!
+	objectType: String!
+	mapping: String!
+}
+
 input CreateGlobalIdMappingInput {
 	"""
 	Optional Library-issued global ID (prefix `gid_`).
@@ -698,6 +707,51 @@ enum GqlEndpointStatus {
 	DISABLED
 }
 
+type GqlExternalSyncBinding {
+	id: String!
+	tenantId: String!
+	repositoryId: String!
+	provider: GqlProvider!
+	connectionId: String!
+	externalScope: String!
+	objectType: String!
+	mapping: String!
+	inboundPolicy: String!
+	outboundPolicy: String!
+	deletePolicy: String!
+	status: GqlExternalSyncBindingStatus!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+enum GqlExternalSyncBindingStatus {
+	ACTIVE
+	PAUSED
+	REAUTHORIZATION_REQUIRED
+}
+
+type GqlInboundChangeSet {
+	id: String!
+	bindingId: String!
+	dataId: String
+	externalObjectId: String!
+	externalRevision: String!
+	baseExternalRevision: String
+	changeType: String!
+	payload: String!
+	status: String!
+	decisionNote: String
+	createdAt: DateTime!
+	decidedAt: DateTime
+}
+
+enum GqlInboundChangeSetStatus {
+	PENDING
+	ACCEPTED
+	REJECTED
+	CONFLICT
+}
+
 """
 Integration available in the marketplace.
 """
@@ -823,6 +877,31 @@ type GqlOAuthConfig {
 	Whether refresh tokens are supported
 	"""
 	supportsRefresh: Boolean!
+}
+
+type GqlOutboundDelivery {
+	id: String!
+	bindingId: String!
+	dataId: String!
+	externalObjectId: String!
+	libraryRevision: String!
+	baseExternalRevision: String
+	status: String!
+	attemptCount: Int!
+	nextAttemptAt: DateTime!
+	lastErrorCategory: String
+	remoteRevision: String
+	deliveryUrl: String
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+enum GqlOutboundDeliveryStatus {
+	PENDING
+	RETRYING
+	DELIVERED
+	CONFLICT
+	FAILED
 }
 
 """
@@ -1031,7 +1110,7 @@ input ImportMarkdownFromGitHubInput {
 	"""
 	skipExisting: Boolean
 	"""
-	Whether to enable GitHub sync. GitHub sync/writeback is Non-GA and is
+	Whether to enable GitHub sync. GitHub sync/writeback is experimental and is
 	rejected when true; omit or pass false for one-shot Markdown import.
 	"""
 	enableGithubSync: Boolean
@@ -1464,6 +1543,10 @@ type Mutation {
 	[LIBRARY-API] Import Markdown files from GitHub
 	"""
 	importMarkdownFromGithub(input: ImportMarkdownFromGitHubInput!): ImportMarkdownResult!
+	createExternalSyncBinding(input: CreateExternalSyncBindingInput!): GqlExternalSyncBinding!
+	updateExternalSyncBindingStatus(bindingId: String!, status: GqlExternalSyncBindingStatus!): GqlExternalSyncBinding!
+	decideInboundChangeSet(changeSetId: String!, accept: Boolean!, note: String): GqlInboundChangeSet!
+	retryOutboundDelivery(deliveryId: String!): GqlOutboundDelivery!
 	"""
 	Create a new webhook endpoint.
 	
@@ -1855,6 +1938,9 @@ type Query {
 	[LIBRARY-API] List Linear issues
 	"""
 	linearListIssues(teamId: String, projectId: String): [LinearIssue!]!
+	externalSyncBindings(repositoryId: String!): [GqlExternalSyncBinding!]!
+	inboundChangeSets(bindingId: String!, status: GqlInboundChangeSetStatus, limit: Int! = 50): [GqlInboundChangeSet!]!
+	outboundDeliveries(bindingId: String!, status: GqlOutboundDeliveryStatus, limit: Int! = 50): [GqlOutboundDelivery!]!
 	"""
 	Get a webhook endpoint by ID.
 	"""

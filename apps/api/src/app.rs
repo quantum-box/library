@@ -119,6 +119,30 @@ impl LibraryApp {
         >,
         sync_state_repo: Arc<dyn inbound_sync_domain::SyncStateRepository>,
     ) -> Self {
+        Self::new_with_external_sync(
+            library_db,
+            database_app,
+            sdk,
+            sync_data,
+            webhook_endpoint_repo,
+            sync_state_repo,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn new_with_external_sync(
+        library_db: Arc<persistence::Db>,
+        database_app: Arc<database_manager::App>,
+        sdk: Arc<SdkAuthApp>,
+        sync_data: Arc<dyn outbound_sync::SyncDataInputPort>,
+        webhook_endpoint_repo: Arc<
+            dyn inbound_sync_domain::WebhookEndpointRepository,
+        >,
+        sync_state_repo: Arc<dyn inbound_sync_domain::SyncStateRepository>,
+        external_outbox: Option<Arc<usecase::ExternalSyncOutboxDispatch>>,
+    ) -> Self {
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
 
@@ -229,11 +253,15 @@ impl LibraryApp {
         // GitHub auto-writeback: wraps the Data mutation ports so that
         // saving a Data item with ext_github.enabled=true pushes its
         // markdown back to GitHub (best-effort, echo-suppressed).
-        let github_writeback = usecase::GithubWritebackDispatch::new(
+        let mut github_writeback = usecase::GithubWritebackDispatch::new(
             sync_data.clone(),
             webhook_endpoint_repo,
             sync_state_repo,
         );
+        if let Some(external_outbox) = external_outbox {
+            github_writeback =
+                github_writeback.with_external_outbox(external_outbox);
+        }
         let add_data: Arc<dyn usecase::AddDataInputPort> =
             usecase::AddDataWithGithubWriteback::new(
                 usecase::AddData::new(

@@ -161,6 +161,7 @@ impl SyncPayload {
             metadata: SyncMetadata {
                 message: Some(message.into()),
                 properties: None,
+                expected_revision: None,
             },
         }
     }
@@ -173,6 +174,23 @@ impl SyncPayload {
             metadata: SyncMetadata {
                 message: None,
                 properties: Some(properties),
+                expected_revision: None,
+            },
+        }
+    }
+
+    pub fn markdown_with_message_and_expected_revision(
+        content: impl Into<String>,
+        message: impl Into<String>,
+        expected_revision: Option<String>,
+    ) -> Self {
+        Self {
+            content: content.into(),
+            content_type: "text/markdown".to_string(),
+            metadata: SyncMetadata {
+                message: Some(message.into()),
+                properties: None,
+                expected_revision,
             },
         }
     }
@@ -185,6 +203,10 @@ pub struct SyncMetadata {
     pub message: Option<String>,
     /// Properties for CRM providers
     pub properties: Option<serde_json::Value>,
+    /// Provider revision observed when the Library edit was based on.
+    /// Adapters must reject a write if the remote revision has changed.
+    #[serde(default)]
+    pub expected_revision: Option<String>,
 }
 
 /// Remote data retrieved from a provider.

@@ -83,7 +83,7 @@ const BINDING_COLUMNS: &str = r#"
     created_at, updated_at
 "#;
 
-fn persistence_error(error: sqlx::Error) -> errors::Error {
+pub(super) fn persistence_error(error: sqlx::Error) -> errors::Error {
     match &error {
         sqlx::Error::Database(database_error)
             if database_error.is_unique_violation() =>
@@ -479,6 +479,25 @@ impl ExternalObjectLinkRepository for SqlxExternalObjectLinkRepository {
         let rows: Vec<ExternalObjectLinkRow> = sqlx::query_as(&query)
             .bind(tenant_id.to_string())
             .bind(binding_id.as_str())
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(persistence_error)?;
+        rows.into_iter().map(TryInto::try_into).collect()
+    }
+
+    async fn find_by_tenant_and_data(
+        &self,
+        tenant_id: &TenantId,
+        data_id: &LibraryDataId,
+    ) -> errors::Result<Vec<ExternalObjectLink>> {
+        let query = format!(
+            "SELECT {LINK_COLUMNS} FROM external_object_links AS link \
+             JOIN external_sync_bindings AS binding ON binding.id = link.binding_id \
+             WHERE binding.tenant_id = ? AND link.data_id = ? ORDER BY link.binding_id"
+        );
+        let rows: Vec<ExternalObjectLinkRow> = sqlx::query_as(&query)
+            .bind(tenant_id.to_string())
+            .bind(data_id.as_str())
             .fetch_all(self.pool.as_ref())
             .await
             .map_err(persistence_error)?;

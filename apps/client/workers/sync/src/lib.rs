@@ -2,6 +2,7 @@ mod auth;
 mod checkpoint;
 mod document;
 mod edge;
+mod external_dispatch;
 mod live;
 mod model;
 mod relay;

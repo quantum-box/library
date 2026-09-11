@@ -13,6 +13,7 @@ library-api-preview-migrate = { path = "../../packages/preview_migrate" }
 outbound_sync = { path = "./packages/outbound_sync" }
 inbound_sync = { path = "./packages/inbound_sync" }
 inbound_sync_domain = { path = "./packages/inbound_sync/domain" }
+integration_domain = { path = "../../packages/integration_domain" }
 
 persistence = { path = "../../packages/persistence" }
 value_object = { path = "../../packages/value_object", features = ["axum"] }

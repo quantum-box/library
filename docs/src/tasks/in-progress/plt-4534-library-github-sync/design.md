@@ -78,7 +78,7 @@ inbound / outbound policy を設定する。初期値は review とし、将来�
 
 利用者が編集する Property に provider cursor や認証状態を保存しない。
 
-GitHub adapter の `external_scope` は `github_repository`, `ref`, `path_pattern`、
+GitHub adapter の `external_scope` は `repository`, `ref`, `path_pattern`、
 `external_object_id` は path、external revision は commit SHA とする。CRM adapter
 ではそれぞれ object type / query scope、provider record ID、ETag または更新
 version に置き換わる。secret と token はどの adapter でも binding から参照する
@@ -166,3 +166,30 @@ lookup は hash と元値の両方を比較する。
 repository adapter で行う。Repo と integration connection は binding tenant と provider
 が一致する場合だけ保存できる。Data は production で別物理 database にあるため FK を
 作らず、すべての link query が親 binding を join して tenant scope を検証する。
+
+### Phase 2 — durable inbound / ChangeSet（2026-09-11）
+
+API は webhook event と capability digest を永続化してから Edge Worker を呼ぶ。Worker は
+event ID ごとの Durable Object に plaintext capability と callback URL を保持し、alarm から
+API の単一 event consumer を呼ぶ。API の claim lease と Worker alarm はどちらも再試行可能で、
+API が completed を返した時だけ Durable Object の state を削除する。
+
+GitHub adapter は verified push / merged PR を `InboundChangeSet` に変換する。upsert、rename、
+tombstone はいずれも review 対象であり、webhook handler からの hard delete は行わない。
+
+### Phase 3 — transactional outbox delivery（2026-09-11）
+
+Record mutation と同じ transaction で作られた `domain_outbox_events` の event ID を accepted
+Library revision として delivery identity に含める。delivery ID も idempotency key から
+決定的に生成し、at-least-once の同一 event 観測が provider call の重複にならないようにする。
+GitHub adapter は保存済み base SHA と remote SHA の一致を PUT 前に確認する。
+
+### Phase 4 — parity / operator UI（2026-09-11）
+
+旧 endpoint / SyncState は最初の inbound event で、旧 `ext_github` は次の accepted Record
+mutation で binding / link に materialize する。この lazy migration は全 Record の一括更新を
+要求せず、実際に同期 activity が再開した object から切り替える。新 engine flag が有効な時は
+旧 decorator の direct provider call を止め、二重配送を避ける。
+
+repository settings UI は接続、受信 review、外部配信を別々に表示する。queued を synced と
+表示せず、利用者が pending ChangeSet と retry / conflict delivery を個別に操作できる。

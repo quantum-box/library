@@ -116,6 +116,9 @@ pub async fn fetch(mut request: Request, env: Env) -> Result<Response> {
     if path == "/live/session" || path == "/live/ws" {
         return auth::route(request, &env).await;
     }
+    if path == "/external-sync/dispatch" {
+        return crate::external_dispatch::enqueue(request, &env).await;
+    }
     let mut response = if request.method() == Method::Options {
         Response::empty()?.with_status(204)
     } else if path == "/api/health" {

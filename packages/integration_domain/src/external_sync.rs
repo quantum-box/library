@@ -451,6 +451,11 @@ impl ExternalSyncBinding {
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
+
+    pub fn set_status(&mut self, status: ExternalSyncBindingStatus) {
+        self.status = status;
+        self.updated_at = Utc::now();
+    }
 }
 
 /// Mapping between one Library data item and one external object.
@@ -568,6 +573,11 @@ pub trait ExternalObjectLinkRepository: Send + Sync + Debug {
         &self,
         tenant_id: &TenantId,
         binding_id: &ExternalSyncBindingId,
+    ) -> errors::Result<Vec<ExternalObjectLink>>;
+    async fn find_by_tenant_and_data(
+        &self,
+        tenant_id: &TenantId,
+        data_id: &LibraryDataId,
     ) -> errors::Result<Vec<ExternalObjectLink>>;
 }
 

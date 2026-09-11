@@ -1,15 +1,19 @@
 use std::{str::FromStr, sync::Arc};
 
 use chrono::{TimeZone, Utc};
-use inbound_sync::{
+use inbound_sync::interface_adapter::{
     SqlxExternalObjectLinkRepository, SqlxExternalSyncBindingRepository,
+    SqlxExternalSyncDispatchRepository,
+    SqlxExternalSyncLifecycleRepository,
 };
 use integration_domain::{
-    ConnectionId, ExternalDeletePolicy, ExternalObjectLink,
-    ExternalObjectLinkRepository, ExternalScope, ExternalSyncBinding,
-    ExternalSyncBindingId, ExternalSyncBindingRepository,
-    ExternalSyncBindingStatus, ExternalSyncPolicy, LibraryDataId,
-    LibraryRepoId, OAuthProvider,
+    ConnectionId, ExternalChangeType, ExternalDeletePolicy,
+    ExternalObjectLink, ExternalObjectLinkRepository, ExternalScope,
+    ExternalSyncBinding, ExternalSyncBindingId,
+    ExternalSyncBindingRepository, ExternalSyncBindingStatus,
+    ExternalSyncPolicy, InboundChangeSet, InboundChangeSetRepository,
+    LibraryDataId, LibraryRepoId, OAuthProvider, OutboundDelivery,
+    OutboundDeliveryRepository, OutboundDeliveryStatus,
 };
 use serde_json::json;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
@@ -50,12 +54,21 @@ async fn repositories_round_trip_and_enforce_tenant_scope(
                 provider VARCHAR(32) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
               COLLATE=utf8mb4_unicode_ci;
+            CREATE TABLE webhook_events (
+                id VARCHAR(30) NOT NULL PRIMARY KEY
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+              COLLATE=utf8mb4_unicode_ci;
             "#,
         )
         .execute(&pool)
         .await?;
         sqlx::raw_sql(include_str!(
             "../../../migrations/20260911000000_create_external_sync_model.up.sql"
+        ))
+        .execute(&pool)
+        .await?;
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/20260911010000_create_external_sync_lifecycle.up.sql"
         ))
         .execute(&pool)
         .await?;
@@ -192,6 +205,89 @@ async fn repositories_round_trip_and_enforce_tenant_scope(
             .find_by_data(&other_tenant, binding.id(), link.data_id())
             .await?
             .is_none());
+
+        let lifecycle =
+            SqlxExternalSyncLifecycleRepository::new(Arc::new(pool.clone()));
+        let mut change = InboundChangeSet::create(
+            tenant_id.clone(),
+            binding.id().clone(),
+            Some(link.data_id().clone()),
+            "docs/guide.md",
+            "github-sha-2",
+            Some("github-sha".into()),
+            ExternalChangeType::Upsert,
+            json!({"content": "updated"}),
+        )?;
+        InboundChangeSetRepository::save(&lifecycle, &change).await?;
+        let restored_change = InboundChangeSetRepository::find_by_id(
+            &lifecycle,
+            &tenant_id,
+            change.id(),
+        )
+            .await?
+            .expect("change set should round-trip");
+        assert_eq!(restored_change.status().as_str(), "pending");
+        change.accept(Some("reviewed".into()))?;
+        InboundChangeSetRepository::save(&lifecycle, &change).await?;
+        assert_eq!(
+            InboundChangeSetRepository::find_by_id(
+                &lifecycle,
+                &tenant_id,
+                change.id(),
+            )
+                .await?
+                .expect("decision should persist")
+                .status()
+                .as_str(),
+            "accepted"
+        );
+
+        let mut delivery = OutboundDelivery::create(
+            tenant_id.clone(),
+            binding.id().clone(),
+            link.data_id().clone(),
+            "docs/guide.md",
+            "outbox-event-1",
+            Some("github-sha".into()),
+            json!({"content": "updated"}),
+        )?;
+        OutboundDeliveryRepository::save(&lifecycle, &delivery).await?;
+        let attempted_at = Utc::now();
+        delivery.mark_attempt(attempted_at);
+        delivery.mark_conflict(None, attempted_at);
+        OutboundDeliveryRepository::save(&lifecycle, &delivery).await?;
+        let restored_delivery = OutboundDeliveryRepository::find_by_id(
+            &lifecycle,
+            &tenant_id,
+            delivery.id(),
+        )
+            .await?
+            .expect("delivery should round-trip");
+        assert_eq!(restored_delivery.status(), OutboundDeliveryStatus::Conflict);
+        assert_eq!(restored_delivery.attempt_count(), 1);
+
+        let event_id = inbound_sync::WebhookEventId::from(
+            "wev_01j91h09tpj5ehwbwfwfxpak2b".to_owned(),
+        );
+        sqlx::query("INSERT INTO webhook_events (id) VALUES (?)")
+            .bind(event_id.to_string())
+            .execute(&pool)
+            .await?;
+        let dispatch =
+            SqlxExternalSyncDispatchRepository::new(Arc::new(pool.clone()));
+        let job = dispatch.create(&event_id).await?;
+        assert!(!dispatch.validate(&event_id, &"0".repeat(64)).await?);
+        assert!(dispatch.validate(&event_id, &job.capability).await?);
+        assert!(dispatch.claim(&event_id, &job.capability).await?);
+        assert!(!dispatch.claim(&event_id, &job.capability).await?);
+        dispatch.complete(&event_id).await?;
+        assert!(dispatch.completed(&event_id, &job.capability).await?);
+
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/20260911010000_create_external_sync_lifecycle.down.sql"
+        ))
+        .execute(&pool)
+        .await?;
 
         sqlx::raw_sql(include_str!(
             "../../../migrations/20260911000000_create_external_sync_model.down.sql"

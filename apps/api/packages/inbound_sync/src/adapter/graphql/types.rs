@@ -9,6 +9,221 @@ use inbound_sync_domain::{
     ProcessingStats, ProcessingStatus, SyncCapability, SyncDirection,
     SyncState, WebhookEndpoint, WebhookEvent,
 };
+use integration_domain::{
+    ExternalSyncBinding, InboundChangeSet, OutboundDelivery,
+};
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum GqlExternalSyncBindingStatus {
+    Active,
+    Paused,
+    ReauthorizationRequired,
+}
+
+impl From<integration_domain::ExternalSyncBindingStatus>
+    for GqlExternalSyncBindingStatus
+{
+    fn from(status: integration_domain::ExternalSyncBindingStatus) -> Self {
+        match status {
+            integration_domain::ExternalSyncBindingStatus::Active => {
+                Self::Active
+            }
+            integration_domain::ExternalSyncBindingStatus::Paused => {
+                Self::Paused
+            }
+            integration_domain::ExternalSyncBindingStatus::ReauthorizationRequired => {
+                Self::ReauthorizationRequired
+            }
+        }
+    }
+}
+
+impl From<GqlExternalSyncBindingStatus>
+    for integration_domain::ExternalSyncBindingStatus
+{
+    fn from(status: GqlExternalSyncBindingStatus) -> Self {
+        match status {
+            GqlExternalSyncBindingStatus::Active => Self::Active,
+            GqlExternalSyncBindingStatus::Paused => Self::Paused,
+            GqlExternalSyncBindingStatus::ReauthorizationRequired => {
+                Self::ReauthorizationRequired
+            }
+        }
+    }
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum GqlInboundChangeSetStatus {
+    Pending,
+    Accepted,
+    Rejected,
+    Conflict,
+}
+
+impl From<GqlInboundChangeSetStatus>
+    for integration_domain::InboundChangeSetStatus
+{
+    fn from(status: GqlInboundChangeSetStatus) -> Self {
+        match status {
+            GqlInboundChangeSetStatus::Pending => Self::Pending,
+            GqlInboundChangeSetStatus::Accepted => Self::Accepted,
+            GqlInboundChangeSetStatus::Rejected => Self::Rejected,
+            GqlInboundChangeSetStatus::Conflict => Self::Conflict,
+        }
+    }
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum GqlOutboundDeliveryStatus {
+    Pending,
+    Retrying,
+    Delivered,
+    Conflict,
+    Failed,
+}
+
+impl From<GqlOutboundDeliveryStatus>
+    for integration_domain::OutboundDeliveryStatus
+{
+    fn from(status: GqlOutboundDeliveryStatus) -> Self {
+        match status {
+            GqlOutboundDeliveryStatus::Pending => Self::Pending,
+            GqlOutboundDeliveryStatus::Retrying => Self::Retrying,
+            GqlOutboundDeliveryStatus::Delivered => Self::Delivered,
+            GqlOutboundDeliveryStatus::Conflict => Self::Conflict,
+            GqlOutboundDeliveryStatus::Failed => Self::Failed,
+        }
+    }
+}
+
+#[derive(SimpleObject)]
+pub struct GqlExternalSyncBinding {
+    pub id: String,
+    pub tenant_id: String,
+    pub repository_id: String,
+    pub provider: GqlProvider,
+    pub connection_id: String,
+    pub external_scope: String,
+    pub object_type: String,
+    pub mapping: String,
+    pub inbound_policy: String,
+    pub outbound_policy: String,
+    pub delete_policy: String,
+    pub status: GqlExternalSyncBindingStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<ExternalSyncBinding> for GqlExternalSyncBinding {
+    fn from(binding: ExternalSyncBinding) -> Self {
+        Self {
+            id: binding.id().to_string(),
+            tenant_id: binding.tenant_id().to_string(),
+            repository_id: binding.library_repo_id().to_string(),
+            provider: binding.provider().into(),
+            connection_id: binding.connection_id().to_string(),
+            external_scope: binding.external_scope().value().to_string(),
+            object_type: binding.object_type().into(),
+            mapping: binding.mapping().to_string(),
+            inbound_policy: binding.inbound_policy().to_string(),
+            outbound_policy: binding.outbound_policy().to_string(),
+            delete_policy: binding.delete_policy().to_string(),
+            status: binding.status().into(),
+            created_at: binding.created_at(),
+            updated_at: binding.updated_at(),
+        }
+    }
+}
+
+#[derive(SimpleObject)]
+pub struct GqlInboundChangeSet {
+    pub id: String,
+    pub binding_id: String,
+    pub data_id: Option<String>,
+    pub external_object_id: String,
+    pub external_revision: String,
+    pub base_external_revision: Option<String>,
+    pub change_type: String,
+    pub payload: String,
+    pub status: String,
+    pub decision_note: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+}
+
+impl From<InboundChangeSet> for GqlInboundChangeSet {
+    fn from(change_set: InboundChangeSet) -> Self {
+        Self {
+            id: change_set.id().to_string(),
+            binding_id: change_set.binding_id().to_string(),
+            data_id: change_set.data_id().map(ToString::to_string),
+            external_object_id: change_set.external_object_id().into(),
+            external_revision: change_set.external_revision().into(),
+            base_external_revision: change_set
+                .base_external_revision()
+                .map(str::to_owned),
+            change_type: change_set.change_type().to_string(),
+            payload: change_set.payload().to_string(),
+            status: change_set.status().to_string(),
+            decision_note: change_set.decision_note().map(str::to_owned),
+            created_at: change_set.created_at(),
+            decided_at: change_set.decided_at(),
+        }
+    }
+}
+
+#[derive(SimpleObject)]
+pub struct GqlOutboundDelivery {
+    pub id: String,
+    pub binding_id: String,
+    pub data_id: String,
+    pub external_object_id: String,
+    pub library_revision: String,
+    pub base_external_revision: Option<String>,
+    pub status: String,
+    pub attempt_count: u32,
+    pub next_attempt_at: DateTime<Utc>,
+    pub last_error_category: Option<String>,
+    pub remote_revision: Option<String>,
+    pub delivery_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<OutboundDelivery> for GqlOutboundDelivery {
+    fn from(delivery: OutboundDelivery) -> Self {
+        Self {
+            id: delivery.id().to_string(),
+            binding_id: delivery.binding_id().to_string(),
+            data_id: delivery.data_id().to_string(),
+            external_object_id: delivery.external_object_id().into(),
+            library_revision: delivery.library_revision().into(),
+            base_external_revision: delivery
+                .base_external_revision()
+                .map(str::to_owned),
+            status: delivery.status().to_string(),
+            attempt_count: delivery.attempt_count(),
+            next_attempt_at: delivery.next_attempt_at(),
+            last_error_category: delivery
+                .last_error_category()
+                .map(str::to_owned),
+            remote_revision: delivery.remote_revision().map(str::to_owned),
+            delivery_url: delivery.delivery_url().map(str::to_owned),
+            created_at: delivery.created_at(),
+            updated_at: delivery.updated_at(),
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub struct CreateExternalSyncBindingInput {
+    pub repository_id: String,
+    pub provider: GqlProvider,
+    pub connection_id: String,
+    pub external_scope: String,
+    pub object_type: String,
+    pub mapping: String,
+}
 
 /// Provider type enum for GraphQL.
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]

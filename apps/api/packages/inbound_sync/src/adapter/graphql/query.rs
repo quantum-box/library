@@ -7,10 +7,17 @@ use inbound_sync_domain::{
     ConnectionRepository, IntegrationRepository, WebhookEndpointId,
     WebhookEndpointRepository, WebhookEventRepository,
 };
+use integration_domain::{
+    ExternalSyncBindingId, ExternalSyncBindingRepository,
+    InboundChangeSetRepository, LibraryRepoId, OutboundDeliveryRepository,
+};
+use tachyon_sdk::auth::{AuthApp, CheckPolicyInput, MultiTenancyAction};
 use value_object::TenantId;
 
 use super::types::{
-    GqlConnection, GqlIntegration, GqlIntegrationCategory, GqlProvider,
+    GqlConnection, GqlExternalSyncBinding, GqlInboundChangeSet,
+    GqlInboundChangeSetStatus, GqlIntegration, GqlIntegrationCategory,
+    GqlOutboundDelivery, GqlOutboundDeliveryStatus, GqlProvider,
     GqlWebhookEndpoint, GqlWebhookEvent,
 };
 
@@ -27,10 +34,105 @@ pub struct LibrarySyncQueryState {
     pub integration_repository: Arc<dyn IntegrationRepository>,
     pub connection_repository: Arc<dyn ConnectionRepository>,
     pub base_url: String,
+    pub auth: Arc<dyn AuthApp>,
+    pub external_sync_bindings: Arc<dyn ExternalSyncBindingRepository>,
+    pub inbound_change_sets: Arc<dyn InboundChangeSetRepository>,
+    pub outbound_deliveries: Arc<dyn OutboundDeliveryRepository>,
+}
+
+async fn authorized_external_sync_tenant(
+    ctx: &Context<'_>,
+    state: &LibrarySyncQueryState,
+) -> Result<TenantId> {
+    let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+    let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+    state
+        .auth
+        .check_policy(&CheckPolicyInput {
+            executor,
+            multi_tenancy,
+            action: "library:InboundSyncListConnections",
+        })
+        .await?;
+    Ok(multi_tenancy.get_operator_id()?)
 }
 
 #[Object]
 impl LibrarySyncQuery {
+    async fn external_sync_bindings(
+        &self,
+        ctx: &Context<'_>,
+        repository_id: String,
+    ) -> Result<Vec<GqlExternalSyncBinding>> {
+        let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant_id = authorized_external_sync_tenant(ctx, state).await?;
+        let bindings = state
+            .external_sync_bindings
+            .find_by_repo(&tenant_id, &LibraryRepoId::parse(repository_id)?)
+            .await?;
+        Ok(bindings.into_iter().map(Into::into).collect())
+    }
+
+    async fn inbound_change_sets(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+        status: Option<GqlInboundChangeSetStatus>,
+        #[graphql(default = 50)] limit: u32,
+    ) -> Result<Vec<GqlInboundChangeSet>> {
+        let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant_id = authorized_external_sync_tenant(ctx, state).await?;
+        let binding_id = ExternalSyncBindingId::parse(binding_id)?;
+        if state
+            .external_sync_bindings
+            .find_by_id(&tenant_id, &binding_id)
+            .await?
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        let changes = state
+            .inbound_change_sets
+            .find_by_binding(
+                &tenant_id,
+                &binding_id,
+                status.map(Into::into),
+                limit,
+            )
+            .await?;
+        Ok(changes.into_iter().map(Into::into).collect())
+    }
+
+    async fn outbound_deliveries(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+        status: Option<GqlOutboundDeliveryStatus>,
+        #[graphql(default = 50)] limit: u32,
+    ) -> Result<Vec<GqlOutboundDelivery>> {
+        let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant_id = authorized_external_sync_tenant(ctx, state).await?;
+        let binding_id = ExternalSyncBindingId::parse(binding_id)?;
+        if state
+            .external_sync_bindings
+            .find_by_id(&tenant_id, &binding_id)
+            .await?
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        let deliveries = state
+            .outbound_deliveries
+            .find_by_binding(
+                &tenant_id,
+                &binding_id,
+                status.map(Into::into),
+                limit,
+            )
+            .await?;
+        Ok(deliveries.into_iter().map(Into::into).collect())
+    }
+
     /// Get a webhook endpoint by ID.
     async fn webhook_endpoint(
         &self,

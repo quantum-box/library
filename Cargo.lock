@@ -3526,6 +3526,7 @@ dependencies = [
  "hyper 1.8.1",
  "inbound_sync",
  "inbound_sync_domain",
+ "integration_domain",
  "jsonwebtoken",
  "lambda_http",
  "lambda_runtime",
@@ -4450,6 +4451,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "urlencoding",
  "value_object",
 ]
 

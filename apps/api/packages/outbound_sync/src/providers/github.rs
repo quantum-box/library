@@ -338,6 +338,16 @@ struct GitHubCommit {
     html_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GitHubRefResponse {
+    object: GitHubRefObject,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRefObject {
+    sha: String,
+}
+
 #[derive(Debug, Serialize)]
 struct GitHubCreateUpdateRequest {
     message: String,
@@ -468,6 +478,38 @@ impl SyncProvider for GitHubSyncProvider {
         // Get existing file SHA (required for updates)
         let existing = self.get_data(auth, target).await?;
 
+        if let Some(expected) =
+            payload.metadata.expected_revision.as_deref()
+        {
+            let branch = target.version.as_deref().unwrap_or("main");
+            let url = format!(
+                "{GITHUB_API_BASE}/repos/{}/git/ref/heads/{}",
+                target.container,
+                urlencoding::encode(branch),
+            );
+            let response = self.get_with_retry(&url, auth).await?;
+            if !response.status().is_success() {
+                return Err(errors::Error::provider_error(
+                    "github",
+                    format!(
+                        "Failed to read GitHub branch revision: HTTP {}",
+                        response.status()
+                    ),
+                ));
+            }
+            let current: GitHubRefResponse = response.json().await.map_err(|error| {
+                errors::Error::provider_error(
+                    "github",
+                    format!("Failed to parse GitHub branch revision: {error}"),
+                )
+            })?;
+            if current.object.sha != expected {
+                return Err(errors::Error::conflict(
+                    "GitHub branch changed after the last accepted revision",
+                ));
+            }
+        }
+
         let url = self.contents_url(&target.container, path);
 
         // Prepare message
@@ -499,6 +541,16 @@ impl SyncProvider for GitHubSyncProvider {
                     message: "Unknown error".to_string(),
                     documentation_url: None,
                 });
+            if matches!(
+                status,
+                reqwest::StatusCode::CONFLICT
+                    | reqwest::StatusCode::UNPROCESSABLE_ENTITY
+            ) {
+                return Err(errors::Error::conflict(format!(
+                    "GitHub rejected the expected file revision: {}",
+                    error.message
+                )));
+            }
             return Err(errors::Error::provider_error(
                 "github",
                 format!("GitHub API error: {}", error.message),

@@ -10,6 +10,8 @@ use inbound_sync_domain::{
 
 use crate::{WebhookSecretStore, WebhookVerifierRegistry};
 
+use super::WebhookDispatcher;
+
 /// Input for receiving a webhook.
 pub struct ReceiveWebhookInput {
     /// Endpoint ID from URL
@@ -50,6 +52,7 @@ pub struct ReceiveWebhook {
     event_repository: Arc<dyn WebhookEventRepository>,
     verifier_registry: Arc<WebhookVerifierRegistry>,
     provider_secrets: Arc<WebhookSecretStore>,
+    dispatcher: Option<Arc<dyn WebhookDispatcher>>,
 }
 
 impl ReceiveWebhook {
@@ -64,7 +67,17 @@ impl ReceiveWebhook {
             event_repository,
             verifier_registry,
             provider_secrets,
+            dispatcher: None,
         }
+    }
+
+    /// Wake a durable consumer after a valid event is committed.
+    pub fn with_dispatcher(
+        mut self,
+        dispatcher: Arc<dyn WebhookDispatcher>,
+    ) -> Self {
+        self.dispatcher = Some(dispatcher);
+        self
     }
 
     /// Execute the use case.
@@ -80,6 +93,11 @@ impl ReceiveWebhook {
                 input.provider.unavailable_reason().unwrap_or(
                     "Webhook processing is not available in this runtime.",
                 ),
+            ));
+        }
+        if input.provider == Provider::Github && self.dispatcher.is_none() {
+            return Err(errors::Error::service_unavailable(
+                "GitHub continuous sync requires a durable dispatcher",
             ));
         }
 
@@ -169,6 +187,12 @@ impl ReceiveWebhook {
 
         let event_id = event.id().clone();
         self.event_repository.save(&event).await?;
+
+        if signature_valid {
+            if let Some(dispatcher) = &self.dispatcher {
+                dispatcher.dispatch(&event_id).await?;
+            }
+        }
 
         tracing::info!(
             endpoint_id = %input.endpoint_id,

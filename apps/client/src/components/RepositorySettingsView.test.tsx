@@ -15,10 +15,19 @@ const apiMocks = vi.hoisted(() => ({
   updateRepositorySettings: vi.fn(),
 }))
 
+const externalSyncMocks = vi.hoisted(() => ({
+  decideInboundChange: vi.fn(),
+  fetchExternalSyncOverview: vi.fn(),
+  retryOutboundDelivery: vi.fn(),
+  setExternalSyncBindingStatus: vi.fn(),
+}))
+
 vi.mock('../lib/repositorySettingsApi', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/repositorySettingsApi')>(),
   ...apiMocks,
 }))
+
+vi.mock('../lib/externalSyncApi', () => externalSyncMocks)
 
 import { RepositorySettingsApiError } from '../lib/repositorySettingsApi'
 import { RepositorySettingsView } from './RepositorySettingsView'
@@ -99,6 +108,11 @@ describe('RepositorySettingsView', () => {
       meta: null,
     })
     apiMocks.deleteRepositoryProperty.mockResolvedValue(undefined)
+    externalSyncMocks.fetchExternalSyncOverview.mockResolvedValue({
+      bindings: [],
+      changes: [],
+      deliveries: [],
+    })
     deleteRepository.mockResolvedValue(undefined)
   })
 
@@ -126,6 +140,44 @@ describe('RepositorySettingsView', () => {
     expect(screen.queryByText('Beta · read-only')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Legacy body' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Delete Legacy body' })).toBeEnabled()
+  })
+
+  it('reviews inbound changes and exposes outbound delivery recovery', async () => {
+    externalSyncMocks.fetchExternalSyncOverview.mockResolvedValue({
+      bindings: [{
+        id: 'esb_1', repositoryId: 'repo-1', provider: 'GITHUB', connectionId: 'con_1',
+        externalScope: JSON.stringify({ repository: 'quantum-box/library', ref: 'main', path_pattern: 'docs/**/*.md' }),
+        objectType: 'markdown_document', inboundPolicy: 'review', outboundPolicy: 'review',
+        deletePolicy: 'review_tombstone', status: 'ACTIVE', updatedAt: '2026-09-11T00:00:00Z',
+      }],
+      changes: [{
+        id: 'ics_1', bindingId: 'esb_1', dataId: 'data_1', externalObjectId: 'docs/guide.md',
+        externalRevision: 'abcdef123456', baseExternalRevision: 'previous', changeType: 'upsert',
+        status: 'pending', createdAt: '2026-09-11T00:00:00Z',
+      }],
+      deliveries: [{
+        id: 'odl_1', bindingId: 'esb_1', dataId: 'data_1', externalObjectId: 'docs/guide.md',
+        libraryRevision: 'evt_1', status: 'conflict', attemptCount: 2,
+        nextAttemptAt: '2026-09-11T00:05:00Z', lastErrorCategory: 'revision_conflict',
+        updatedAt: '2026-09-11T00:00:00Z',
+      }],
+    })
+    externalSyncMocks.decideInboundChange.mockResolvedValue({ id: 'ics_1' })
+    externalSyncMocks.retryOutboundDelivery.mockResolvedValue({ id: 'odl_1' })
+    renderView()
+
+    const section = await screen.findByTestId('external-sync-section')
+    expect(section).toHaveTextContent('quantum-box/library')
+    expect(section).toHaveTextContent('docs/guide.md')
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Accept' }))
+    await waitFor(() => expect(externalSyncMocks.decideInboundChange).toHaveBeenCalledWith(
+      { repositoryId: 'repo-1', operatorId: 'operator-1' }, 'ics_1', true,
+    ))
+    fireEvent.click(within(section).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(externalSyncMocks.retryOutboundDelivery).toHaveBeenCalledWith(
+      { repositoryId: 'repo-1', operatorId: 'operator-1' }, 'odl_1',
+    ))
   })
 
   it('shows permission failure distinctly and retries the same GraphQL settings read', async () => {
