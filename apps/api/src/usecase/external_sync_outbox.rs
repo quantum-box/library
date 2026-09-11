@@ -56,13 +56,15 @@ async fn register_record_events(
     let mut transaction = pool.begin().await?;
     let cursor: Option<String> = sqlx::query_scalar(
         r#"
-        SELECT CAST(MAX(event_id) AS CHAR)
+        SELECT CAST(event_id AS CHAR)
         FROM domain_outbox_deliveries
         WHERE consumer_name = ?
+        ORDER BY event_id DESC
+        LIMIT 1
         "#,
     )
     .bind(OUTBOX_CONSUMER)
-    .fetch_one(&mut *transaction)
+    .fetch_optional(&mut *transaction)
     .await?;
     let event_ids: Vec<String> = sqlx::query_scalar(
         r#"
