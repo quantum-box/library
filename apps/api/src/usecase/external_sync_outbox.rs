@@ -44,6 +44,27 @@ struct ClaimedRecordEvent {
     event_type: String,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ClaimedRecordEventRow {
+    event_id: Vec<u8>,
+    tenant_id: String,
+    database_id: String,
+    aggregate_id: String,
+    aggregate_version: u64,
+    event_type: Vec<u8>,
+}
+
+fn decode_ascii_column(
+    bytes: Vec<u8>,
+    column: &str,
+) -> errors::Result<String> {
+    String::from_utf8(bytes).map_err(|error| {
+        errors::Error::internal_server_error(format!(
+            "outbox {column} is not valid ASCII: {error}"
+        ))
+    })
+}
+
 async fn register_record_events(
     pool: &MySqlPool,
     scan_after: DateTime<Utc>,
@@ -54,9 +75,9 @@ async fn register_record_events(
     // a separate statement, then let the delivery table's unique key make the
     // individual inserts idempotent under concurrent scanners.
     let mut transaction = pool.begin().await?;
-    let cursor: Option<String> = sqlx::query_scalar(
+    let cursor: Option<Vec<u8>> = sqlx::query_scalar(
         r#"
-        SELECT CAST(event_id AS CHAR)
+        SELECT event_id
         FROM domain_outbox_deliveries
         WHERE consumer_name = ?
         ORDER BY event_id DESC
@@ -66,9 +87,9 @@ async fn register_record_events(
     .bind(OUTBOX_CONSUMER)
     .fetch_optional(&mut *transaction)
     .await?;
-    let event_ids: Vec<String> = sqlx::query_scalar(
+    let event_ids: Vec<Vec<u8>> = sqlx::query_scalar(
         r#"
-        SELECT CAST(event.event_id AS CHAR)
+        SELECT event.event_id
         FROM domain_outbox_events AS event
         WHERE event.aggregate_type = 'RECORD'
           AND event.occurred_at >= ?
@@ -107,9 +128,9 @@ async fn claim_record_events(
     batch_size: u32,
 ) -> errors::Result<Vec<ClaimedRecordEvent>> {
     let mut transaction = pool.begin().await?;
-    let event_ids: Vec<String> = sqlx::query_scalar(
+    let event_ids: Vec<Vec<u8>> = sqlx::query_scalar(
         r#"
-        SELECT CAST(event_id AS CHAR)
+        SELECT event_id
         FROM domain_outbox_deliveries AS delivery
         WHERE delivery.consumer_name = ?
           AND delivery.attempt_count < ?
@@ -148,21 +169,27 @@ async fn claim_record_events(
         .bind(OUTBOX_CONSUMER)
         .execute(&mut *transaction)
         .await?;
-        rows.push(
-            sqlx::query_as::<_, ClaimedRecordEvent>(
-                r#"
-                SELECT CAST(event_id AS CHAR) AS event_id,
+        let row = sqlx::query_as::<_, ClaimedRecordEventRow>(
+            r#"
+                SELECT event_id,
                        tenant_id, database_id, aggregate_id,
                        aggregate_version,
-                       CAST(event_type AS CHAR) AS event_type
+                       event_type
                 FROM domain_outbox_events
                 WHERE event_id = ?
                 "#,
-            )
-            .bind(event_id)
-            .fetch_one(&mut *transaction)
-            .await?,
-        );
+        )
+        .bind(&event_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        rows.push(ClaimedRecordEvent {
+            event_id: decode_ascii_column(row.event_id, "event_id")?,
+            tenant_id: row.tenant_id,
+            database_id: row.database_id,
+            aggregate_id: row.aggregate_id,
+            aggregate_version: row.aggregate_version,
+            event_type: decode_ascii_column(row.event_type, "event_type")?,
+        });
     }
     transaction.commit().await?;
     Ok(rows)
@@ -298,9 +325,9 @@ impl ExternalSyncOutboxDispatch {
         data: &Data,
         properties: &[Property],
     ) -> errors::Result<()> {
-        let event_id: String = sqlx::query_scalar(
+        let event_id: Vec<u8> = sqlx::query_scalar(
             r#"
-            SELECT CAST(event_id AS CHAR) FROM domain_outbox_events
+            SELECT event_id FROM domain_outbox_events
             WHERE tenant_id = ? AND database_id = ?
               AND aggregate_type = 'RECORD' AND aggregate_id = ?
               AND aggregate_version = ? LIMIT 1
@@ -317,6 +344,7 @@ impl ExternalSyncOutboxDispatch {
                 "Transactional record outbox event is not available yet",
             )
         })?;
+        let event_id = decode_ascii_column(event_id, "event_id")?;
         self.capture_and_deliver_event(
             executor,
             multi_tenancy,
@@ -508,15 +536,17 @@ impl ExternalSyncOutboxDispatch {
     ) -> errors::Result<()> {
         let latest_version: Option<u64> = sqlx::query_scalar(
             r#"
-            SELECT MAX(aggregate_version) FROM domain_outbox_events
+            SELECT aggregate_version FROM domain_outbox_events
             WHERE tenant_id = ? AND database_id = ?
               AND aggregate_type = 'RECORD' AND aggregate_id = ?
+            ORDER BY aggregate_version DESC
+            LIMIT 1
             "#,
         )
         .bind(&event.tenant_id)
         .bind(&event.database_id)
         .bind(&event.aggregate_id)
-        .fetch_one(self.source_pool.as_ref())
+        .fetch_optional(self.source_pool.as_ref())
         .await?;
         if latest_version
             .is_some_and(|version| version != event.aggregate_version)
