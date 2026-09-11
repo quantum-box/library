@@ -55,12 +55,25 @@ const settings = {
   policies: [{ userId: 'user-1', role: 'owner' }],
 }
 
+const deleteRepository = vi.fn<() => Promise<void>>()
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function renderView() {
   return render(
     <RepositorySettingsView
       organization="quantum-box"
       repository="library"
       operatorId="operator-1"
+      onDeleteRepository={deleteRepository}
     />,
   )
 }
@@ -86,6 +99,7 @@ describe('RepositorySettingsView', () => {
       meta: null,
     })
     apiMocks.deleteRepositoryProperty.mockResolvedValue(undefined)
+    deleteRepository.mockResolvedValue(undefined)
   })
 
   it('shows an explicit loading state before rendering repository metadata and schema', async () => {
@@ -404,5 +418,69 @@ describe('RepositorySettingsView', () => {
     )
     expect(screen.getByRole('button', { name: 'Add Property' })).toBeDisabled()
     expect(screen.getByLabelText('Description')).toBeDisabled()
+  })
+
+  it('requires the exact repository path before deleting', async () => {
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete repository' }))
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete repository' })
+    const input = within(dialog).getByLabelText('Type quantum-box/library to confirm')
+
+    expect(confirm).toBeDisabled()
+    fireEvent.change(input, { target: { value: 'quantum-box/Library' } })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(input, { target: { value: 'quantum-box/library' } })
+    expect(confirm).toBeEnabled()
+    fireEvent.click(confirm)
+
+    await waitFor(() => expect(deleteRepository).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not allow deletion while a metadata save is in flight', async () => {
+    const update = deferred<typeof settings.repository>()
+    apiMocks.updateRepositorySettings.mockReturnValueOnce(update.promise)
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Saving description' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(apiMocks.updateRepositorySettings).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Delete repository' })).toBeDisabled()
+
+    update.resolve({ ...settings.repository, description: 'Saving description' })
+    await update.promise
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete repository' })).toBeEnabled()
+    })
+  })
+
+  it('keeps the confirmation open and reports a repository deletion failure', async () => {
+    deleteRepository.mockRejectedValueOnce(new RepositorySettingsApiError(
+      'You do not have permission to delete this repository.',
+      403,
+      'permission',
+    ))
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete repository' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Type quantum-box/library to confirm'), {
+      target: { value: 'quantum-box/library' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete repository' }))
+
+    expect(await screen.findByTestId('delete-repository-error')).toHaveTextContent(
+      'You do not have permission to delete this repository.',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('repository-settings-permission-error')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toBeEnabled()
   })
 })

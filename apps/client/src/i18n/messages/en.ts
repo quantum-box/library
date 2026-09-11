@@ -665,6 +665,13 @@ export const en = {
   'repoSettings.upToDate': 'Settings are up to date',
   'repoSettings.saveChanges': 'Save changes',
   'repoSettings.saved': 'Repository settings saved.',
+  'repoSettings.dangerZone': 'Danger zone',
+  'repoSettings.deleteRepository': 'Delete repository',
+  'repoSettings.deleteRepositorySummary': 'Permanently delete this repository and all of its data. This action cannot be undone.',
+  'repoSettings.deleteRepositoryTitle': 'Delete this repository?',
+  'repoSettings.deleteRepositoryDescription': '{path} and all of its data will be permanently deleted. This action cannot be undone.',
+  'repoSettings.deleteRepositoryConfirmationLabel': 'Type {path} to confirm',
+  'repoSettings.deleteRepositoryConfirmationHint': 'The repository path must match exactly.',
   'repoSettings.schemaLedger': 'Schema ledger',
   'repoSettings.schemaLedgerSubtitle': 'Canonical Property definitions in repository order',
   'repoSettings.property': 'Property',
@@ -962,6 +969,7 @@ export const en = {
 
   // ---------------------------------------------------------------- errors
   'errors.loadRepositories': 'Failed to load repositories',
+  'errors.deleteRepositoryInvalidResponse': 'Library returned an invalid repository deletion response.',
   'errors.hydrateRecords': 'Failed to hydrate records',
   'errors.persistStatus': 'Failed to persist record status update',
   'errors.persistField': 'Failed to persist record field update',

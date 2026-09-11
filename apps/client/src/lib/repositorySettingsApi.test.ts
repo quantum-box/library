@@ -9,6 +9,7 @@ import {
   RepositorySettingsApiError,
   createRepositoryProperty,
   deleteRepositoryProperty,
+  deleteRepository,
   fetchRepositorySettings,
   updateRepositoryProperty,
   updateRepositorySettings,
@@ -328,6 +329,45 @@ describe('repositorySettingsApi', () => {
         repoUsername: 'library',
         id: 'property-old',
       },
+    })
+  })
+
+  it('deletes a repository only after GraphQL confirms success', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_ACCESS_TOKEN', 'access-token')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    const fetchMock = vi.fn(async () => graphqlResponse({ data: { deleteRepo: 'ok' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(deleteRepository(target)).resolves.toBeUndefined()
+    expect(requestBody(fetchMock)).toMatchObject({
+      query: expect.stringContaining('LibraryClientDeleteRepository'),
+      variables: {
+        orgUsername: 'quantum-box',
+        repoUsername: 'library',
+      },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://library.example.test/v1/graphql',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer access-token',
+          'x-operator-id': 'operator-1',
+          'x-platform-id': 'platform-1',
+        }),
+      }),
+    )
+  })
+
+  it('classifies a forbidden repository deletion for the settings UI', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => graphqlResponse({
+      data: null,
+      errors: [{ message: 'Forbidden', extensions: { code: 'FORBIDDEN' } }],
+    })))
+
+    await expect(deleteRepository(target)).rejects.toMatchObject({
+      kind: 'permission',
+      status: 400,
     })
   })
 

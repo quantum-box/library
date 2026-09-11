@@ -139,6 +139,10 @@ interface RepositoryPropertyDeleteResponse {
   deleteProperty?: string | null
 }
 
+interface RepositoryDeleteResponse {
+  deleteRepo?: string | null
+}
+
 interface RepositoryUpdateResponse {
   updateRepo?: RepositorySettingsData['repository'] | null
 }
@@ -216,6 +220,12 @@ const deleteRepositoryPropertyMutation = `
       repoUsername: $repoUsername
       propertyId: $id
     )
+  }
+`
+
+const deleteRepositoryMutation = `
+  mutation LibraryClientDeleteRepository($orgUsername: String!, $repoUsername: String!) {
+    deleteRepo(orgUsername: $orgUsername, repoUsername: $repoUsername)
   }
 `
 
@@ -494,6 +504,26 @@ export async function deleteRepositoryProperty(
   if (payload.deleteProperty !== propertyId) {
     throw new RepositorySettingsApiError(
       'Repository did not confirm the deleted Property.',
+      200,
+      'invalid-response',
+    )
+  }
+}
+
+export async function deleteRepository(
+  target: RepositorySettingsTarget,
+): Promise<void> {
+  const payload = await requestRepositoryGraphQL<RepositoryDeleteResponse>(
+    deleteRepositoryMutation,
+    {
+      orgUsername: target.orgUsername.trim(),
+      repoUsername: target.repoUsername.trim(),
+    },
+    target,
+  )
+  if (payload.deleteRepo !== 'ok') {
+    throw new RepositorySettingsApiError(
+      t('errors.deleteRepositoryInvalidResponse'),
       200,
       'invalid-response',
     )
