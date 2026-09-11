@@ -100,6 +100,24 @@ describe('libraryPropertyInput', () => {
     )).toEqual([{ propertyId: dateProperty.id, value: { date: '' } }])
   })
 
+  it('sends an empty Relation as an explicit clear command', () => {
+    const relationProperty: LibraryProperty = {
+      id: 'prop-related',
+      name: 'Related',
+      typ: 'Relation',
+      meta: { databaseId: 'database-target' },
+    }
+
+    expect(clearedPropertyValue(relationProperty)).toEqual({ dataIds: [] })
+    expect(libraryPropertyValueToGraphqlInput(relationProperty, { dataIds: [] })).toEqual({
+      relation: [],
+    })
+    expect(libraryDataItemToGraphqlPropertyData(
+      [relationProperty],
+      [{ propertyId: relationProperty.id, value: { dataIds: [] } }],
+    )).toEqual([{ propertyId: relationProperty.id, value: { relation: [] } }])
+  })
+
   it('edits multi-line values multi-line so a single-line input cannot strip the newlines', () => {
     const markdownProperty: LibraryProperty = { id: 'prop-body', name: 'Body', typ: 'Markdown' }
 

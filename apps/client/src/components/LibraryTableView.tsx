@@ -49,6 +49,7 @@ import {
   propertyValueText,
 } from '../lib/libraryTable/libraryPropertyFormat'
 import { libraryRowSearchText } from '../lib/libraryTable/libraryRowSearchText'
+import { createLibraryRelationRecordLoader } from '../lib/libraryTable/relationRecords'
 import {
   LibraryNameEditableCell,
   LibraryPropertyEditableCell,
@@ -219,6 +220,10 @@ export function LibraryTableView({
   onGlobalFilterChange,
 }: LibraryTableViewProps) {
   const { t, tPlural, locale, formatDate } = useI18n()
+  const relationLoader = useMemo(
+    () => createLibraryRelationRecordLoader(),
+    [],
+  )
   const [items, setItems] = useState<LibraryDataItem[]>([])
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -696,6 +701,7 @@ export function LibraryTableView({
                 // Opening the record moved to the name column's own button, so
                 // the two no longer compete for the same click.
                 activation="single"
+                relationLoader={relationLoader}
                 onCommit={(next) => handlePropertyCommit(row.original, next)}
               />
             ),
@@ -739,6 +745,7 @@ export function LibraryTableView({
       handlePropertyCommit,
       locale,
       onSelectData,
+      relationLoader,
       saving,
       shownProperties,
       t,

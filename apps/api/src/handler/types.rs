@@ -134,6 +134,9 @@ pub struct PropertyResponse {
     pub property_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_generate: Option<bool>,
+    /// Canonical target repository id of a `RELATION` property.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database_id: Option<String>,
     /// Choices of a `SELECT` or `MULTI_SELECT` property.
     ///
     /// A stored value carries the option's id, not its label, so a client

@@ -16,6 +16,15 @@ const repositoryTemplate = {
   policies: [{ userId: 'library-e2e-user', role: 'owner' }],
 }
 
+const relationRepositoryTemplate = {
+  id: 'repo-people',
+  username: 'people',
+  name: 'People',
+  description: 'Related people records for Library E2E',
+  isPublic: false,
+  policies: [{ userId: 'library-e2e-user', role: 'owner' }],
+}
+
 const option = (prefix, key, name) => ({ id: `${prefix}-${key}`, key, name })
 
 const propertyTemplates = [
@@ -102,6 +111,23 @@ const seedData = () => [
       propertyDataEntry('prop-priority', { optionId: 'priority-medium' }),
       propertyDataEntry('prop-description', { markdown: 'A second item keeps board and workflow tests meaningful.' }),
     ],
+  },
+]
+
+const seedRelationData = () => [
+  {
+    id: 'person-aoi',
+    name: 'Aoi Tanaka',
+    createdAt: '2026-07-10T09:00:00.000Z',
+    updatedAt: '2026-07-10T09:00:00.000Z',
+    propertyData: [propertyDataEntry('people-identifier', { id: 'PEOPLE-1' })],
+  },
+  {
+    id: 'person-ren',
+    name: 'Ren Sato',
+    createdAt: '2026-07-11T09:00:00.000Z',
+    updatedAt: '2026-07-11T09:00:00.000Z',
+    propertyData: [propertyDataEntry('people-identifier', { id: 'PEOPLE-2' })],
   },
 ]
 
@@ -240,8 +266,13 @@ function resetState() {
   liveDecisions = new Map()
   state = {
     repository: clone(repositoryTemplate),
+    relationRepository: clone(relationRepositoryTemplate),
     properties: clone(propertyTemplates),
+    relationProperties: [
+      { id: 'people-identifier', name: 'Identifier', typ: 'Id', meta: { autoGenerate: true } },
+    ],
     data: seedData(),
+    relationData: seedRelationData(),
     nextDataNumber: 103,
     nextPropertyNumber: 1,
     liveCheckpoints: [],
@@ -256,26 +287,41 @@ function repositoryExists(org, repo) {
   return org === 'quantum-box' && repo === state.repository?.username
 }
 
-function publicRepository() {
-  if (!state.repository) return null
+function readableRepository(org, repo) {
+  if (org !== 'quantum-box') return null
+  if (repo === state.repository?.username) {
+    return { repository: state.repository, properties: state.properties, data: state.data }
+  }
+  if (repo === state.relationRepository.username) {
+    return {
+      repository: state.relationRepository,
+      properties: state.relationProperties,
+      data: state.relationData,
+    }
+  }
+  return null
+}
+
+function publicRepository(repository = state.repository) {
+  if (!repository) return null
   return {
-    id: state.repository.id,
-    username: state.repository.username,
-    name: state.repository.name,
-    description: state.repository.description,
+    id: repository.id,
+    username: repository.username,
+    name: repository.name,
+    description: repository.description,
   }
 }
 
-function restRepository() {
+function restRepository(repository = state.repository) {
   return {
-    ...publicRepository(),
+    ...publicRepository(repository),
     organization_id: 'org-1',
     org_username: 'quantum-box',
   }
 }
 
-function findData(value) {
-  return state.data.find((item) => {
+function findData(value, data = state.data) {
+  return data.find((item) => {
     const identifier = item.propertyData.find((entry) => entry.propertyId === 'prop-identifier')?.value?.id
     return item.id === value || identifier === value
   })
@@ -373,8 +419,8 @@ function wirePropertyType(typ) {
   return typ.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
 }
 
-function wireProperties() {
-  return state.properties.map((property) => ({
+function wireProperties(properties = state.properties) {
+  return properties.map((property) => ({
     ...clone(property),
     typ: wirePropertyType(property.typ),
   }))
@@ -491,7 +537,10 @@ function graphqlResponse(query, variables) {
             id: 'org-1',
             name: 'Quantum Box',
             username: 'quantum-box',
-            repos: state.repository ? [publicRepository()] : [],
+            repos: [
+              ...(state.repository ? [publicRepository()] : []),
+              publicRepository(state.relationRepository),
+            ],
           }
         : null,
     }
@@ -506,37 +555,38 @@ function graphqlResponse(query, variables) {
   }
 
   if (query.includes('LibraryClientRepoData')) {
-    const exists = repositoryExists(variables.org, variables.repo)
+    const readable = readableRepository(variables.org, variables.repo)
     return {
-      repo: exists
+      repo: readable
         ? {
-            ...publicRepository(),
+            ...publicRepository(readable.repository),
             dataList: {
-              items: clone(state.data),
+              items: clone(readable.data),
               paginator: {
                 currentPage: 1,
                 itemsPerPage: variables.pageSize ?? 100,
-                totalItems: state.data.length,
+                totalItems: readable.data.length,
                 totalPages: 1,
               },
             },
-            properties: wireProperties(),
+            properties: wireProperties(readable.properties),
           }
         : null,
     }
   }
 
   if (query.includes('LibraryClientProperties')) {
+    const readable = readableRepository(variables.org, variables.repo)
     return {
-      properties: repositoryExists(variables.org, variables.repo) ? wireProperties() : [],
+      properties: readable ? wireProperties(readable.properties) : [],
     }
   }
 
   if (query.includes('LibraryClientDataDetail')) {
-    const exists = repositoryExists(variables.org, variables.repo)
+    const readable = readableRepository(variables.org, variables.repo)
     return {
-      data: exists ? clone(findData(variables.dataId) ?? null) : null,
-      properties: exists ? wireProperties() : [],
+      data: readable ? clone(findData(variables.dataId, readable.data) ?? null) : null,
+      properties: readable ? wireProperties(readable.properties) : [],
     }
   }
 
@@ -682,7 +732,10 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/v1beta/repos') {
-      sendJson(response, 200, state.repository ? [restRepository()] : [])
+      sendJson(response, 200, [
+        ...(state.repository ? [restRepository()] : []),
+        restRepository(state.relationRepository),
+      ])
       return
     }
 
@@ -787,21 +840,22 @@ const server = createServer(async (request, response) => {
       const [, encodedOrg, encodedRepo, suffix = ''] = repoMatch
       const org = decodeURIComponent(encodedOrg)
       const repo = decodeURIComponent(encodedRepo)
-      if (!repositoryExists(org, repo)) {
+      const readable = readableRepository(org, repo)
+      if (!readable) {
         sendJson(response, 404, { error: 'Repository not found' })
         return
       }
 
       if (request.method === 'GET' && suffix === '') {
         sendJson(response, 200, {
-          ...restRepository(),
-          is_public: state.repository.isPublic ?? false,
+          ...restRepository(readable.repository),
+          is_public: readable.repository.isPublic ?? false,
         })
         return
       }
 
       if (request.method === 'GET' && suffix === 'properties') {
-        sendJson(response, 200, state.properties.map((property) => ({
+        sendJson(response, 200, readable.properties.map((property) => ({
           id: property.id,
           name: property.name,
           property_type: wirePropertyType(property.typ),
@@ -811,11 +865,11 @@ const server = createServer(async (request, response) => {
 
       if (request.method === 'GET' && suffix === 'data-list') {
         sendJson(response, 200, {
-          data: state.data.map(restData),
+          data: readable.data.map(restData),
           paginator: {
             current_page: 1,
-            items_per_page: state.data.length,
-            total_items: state.data.length,
+            items_per_page: readable.data.length,
+            total_items: readable.data.length,
             total_pages: 1,
           },
         })
@@ -841,7 +895,7 @@ const server = createServer(async (request, response) => {
       if (dataMatch) {
         const dataId = decodeURIComponent(dataMatch[1])
         if (request.method === 'GET') {
-          const data = findData(dataId)
+          const data = findData(dataId, readable.data)
           sendJson(response, data ? 200 : 404, data ? restData(data) : { error: 'Data not found' })
           return
         }
