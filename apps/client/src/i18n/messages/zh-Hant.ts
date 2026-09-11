@@ -682,7 +682,6 @@ export const zhHant: LocaleMessages = {
   'auth.developmentOnly': '僅限開發',
   'auth.accessToken': '存取權杖',
   'auth.useDevelopmentToken': '使用開發權杖',
-  'auth.cognitoNote': '驗證使用 Cognito，並會建立或還原你的 Library 帳戶。',
   'update.checking': '檢查更新中',
   'update.checkingHint': '正在向發行來源查詢新版本。',
   'update.upToDate': 'Library 已是最新版本',

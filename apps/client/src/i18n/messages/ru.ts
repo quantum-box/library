@@ -703,7 +703,6 @@ export const ru: LocaleMessages = {
   'auth.developmentOnly': 'Только для разработки',
   'auth.accessToken': 'Токен доступа',
   'auth.useDevelopmentToken': 'Использовать токен разработки',
-  'auth.cognitoNote': 'Аутентификация выполняется через Cognito и создаёт или восстанавливает ваш аккаунт Library.',
   'update.checking': 'Проверка обновлений',
   'update.checkingHint': 'Запрашиваем у ленты релизов более новую версию.',
   'update.upToDate': 'Library обновлён',

@@ -682,7 +682,6 @@ export const zhHans: LocaleMessages = {
   'auth.developmentOnly': '仅限开发',
   'auth.accessToken': '访问令牌',
   'auth.useDevelopmentToken': '使用开发令牌',
-  'auth.cognitoNote': '认证使用 Cognito，并会创建或恢复你的 Library 账户。',
   'update.checking': '正在检查更新',
   'update.checkingHint': '正在向发布源查询新版本。',
   'update.upToDate': 'Library 已是最新版本',

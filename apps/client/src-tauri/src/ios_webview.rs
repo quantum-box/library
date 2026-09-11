@@ -1,4 +1,4 @@
-//! Gives the iOS WebView the whole screen.
+//! Configures the iOS WebView for native navigation and full-screen layout.
 //!
 //! Tauri sizes a webview to the window's inner size, and on iOS `tao` reports
 //! that as the *safe area*: on an iPhone 17 Pro the WebView comes out 402x778
@@ -24,18 +24,18 @@ use objc2_ui_kit::{
 };
 use tauri::WebviewWindow;
 
-/// Lays the window's WebView over the whole screen, once it exists.
+/// Enables native history gestures and lays the WebView over the whole screen.
 ///
-/// Failures here cost 15% of the screen, not correctness, so every one of them
-/// is logged and stepped over rather than propagated.
-pub fn stretch_to_window(window: &WebviewWindow) {
+/// A missing WebView should not prevent the rest of app setup, so failures are
+/// logged and stepped over rather than propagated.
+pub fn configure_for_window(window: &WebviewWindow) {
     if let Err(error) = window.with_webview(|webview| {
         // SAFETY: Tauri hands the closure the live `WKWebView` on the main
         // thread, which is where UIKit requires this work to happen.
-        unsafe { stretch_to_superview(webview.inner()) }
+        unsafe { configure_webview(webview.inner()) }
     }) {
         log::error!(
-            "could not reach the iOS webview to resize it: {error}"
+            "could not reach the iOS webview to configure it: {error}"
         );
     }
 }
@@ -44,12 +44,22 @@ pub fn stretch_to_window(window: &WebviewWindow) {
 ///
 /// `webview` must be a live `WKWebView` that already has a superview, and the
 /// caller must be on the main thread.
-unsafe fn stretch_to_superview(webview: *mut std::ffi::c_void) {
+unsafe fn configure_webview(webview: *mut std::ffi::c_void) {
     if webview.is_null() {
         return;
     }
 
     let webview = &*webview.cast::<UIView>();
+
+    // TanStack Router already records every in-app navigation in WebKit's
+    // back-forward list. WKWebView disables its native horizontal navigation
+    // gesture by default, so connect that existing history to the familiar
+    // left-edge back (and right-edge forward) swipe on iOS.
+    let _: () = msg_send![
+        webview,
+        setAllowsBackForwardNavigationGestures: true
+    ];
+
     let Some(parent) = webview.superview() else {
         log::warn!(
             "iOS webview has no superview yet; leaving its frame alone"

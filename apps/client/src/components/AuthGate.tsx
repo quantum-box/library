@@ -236,10 +236,6 @@ export function AuthGate({ children }: AuthGateProps) {
               </div>
             </div>
           )}
-
-          <p className="mt-6 text-center text-2xs leading-5 text-subtle-foreground">
-            {t('auth.cognitoNote')}
-          </p>
         </div>
       </section>
     </main>
