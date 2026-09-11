@@ -69,6 +69,7 @@ use crate::handler::{
         list_share_links,
         revoke_share_link,
         view_shared_data,
+        slack_unfurl_projection,
     ),
     components(schemas(
         crate::handler::auth::SignInRequest,
@@ -117,6 +118,10 @@ use crate::handler::{
         crate::handler::share_link::ShareLinkResponse,
         crate::handler::share_link::ShareLinkListResponse,
         crate::handler::share_link::SharedDataResponse,
+        crate::handler::share_link::SlackUnfurlProjectionRequest,
+        crate::handler::share_link::SlackUnfurlProjectionResponse,
+        crate::handler::share_link::SlackUnfurlProjectionKind,
+        crate::handler::share_link::SlackUnfurlNoUnfurlReason,
     ))
 )]
 pub struct ApiDoc;
@@ -178,6 +183,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(create_share_link, list_share_links))
         .routes(routes!(revoke_share_link))
         .routes(routes!(view_shared_data))
+        .routes(routes!(slack_unfurl_projection))
 }
 
 fn checkpoint_live_body_limit() -> DefaultBodyLimit {
@@ -297,6 +303,18 @@ mod tests {
             .get("/v1beta/share/{token}")
             .expect("the redeem path must reach the OpenAPI document");
         assert!(redeem.get.is_some(), "redeeming a token is a GET");
+
+        let slack_unfurl = api
+            .paths
+            .paths
+            .get("/internal/slack/unfurl-projection")
+            .expect(
+                "the Slack unfurl path must reach the OpenAPI document",
+            );
+        assert!(
+            slack_unfurl.post.is_some(),
+            "Slack unfurl projection is a POST"
+        );
 
         // Building the axum router panics on a conflicting pattern.
         let _ = create_router();
