@@ -49,27 +49,34 @@ async fn register_record_events(
     scan_after: DateTime<Utc>,
     batch_size: u32,
 ) -> errors::Result<u64> {
-    // TiDB cannot reliably plan INSERT IGNORE ... SELECT against this table's
-    // composite primary key. Select a bounded candidate set first and let the
-    // delivery table's unique key make the individual inserts idempotent.
+    // TiDB cannot reliably plan a join or correlated subquery between these
+    // tables while registering deliveries. Read the consumer's ULID cursor in
+    // a separate statement, then let the delivery table's unique key make the
+    // individual inserts idempotent under concurrent scanners.
     let mut transaction = pool.begin().await?;
+    let cursor: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT CAST(MAX(event_id) AS CHAR)
+        FROM domain_outbox_deliveries
+        WHERE consumer_name = ?
+        "#,
+    )
+    .bind(OUTBOX_CONSUMER)
+    .fetch_one(&mut *transaction)
+    .await?;
     let event_ids: Vec<String> = sqlx::query_scalar(
         r#"
         SELECT CAST(event.event_id AS CHAR)
         FROM domain_outbox_events AS event
         WHERE event.aggregate_type = 'RECORD'
           AND event.occurred_at >= ?
-          AND NOT EXISTS (
-            SELECT 1 FROM domain_outbox_deliveries AS delivery
-            WHERE delivery.event_id = event.event_id
-              AND delivery.consumer_name = ?
-          )
-        ORDER BY event.occurred_at, event.event_id
+          AND event.event_id > ?
+        ORDER BY event.event_id
         LIMIT ?
         "#,
     )
     .bind(scan_after)
-    .bind(OUTBOX_CONSUMER)
+    .bind(cursor.unwrap_or_default())
     .bind(batch_size)
     .fetch_all(&mut *transaction)
     .await?;
