@@ -760,7 +760,6 @@ export const en = {
   'auth.developmentOnly': 'Development only',
   'auth.accessToken': 'Access token',
   'auth.useDevelopmentToken': 'Use development token',
-  'auth.cognitoNote': 'Authentication uses Cognito and creates or restores your Library account.',
 
   // --------------------------------------------------------- app updates
   'update.checking': 'Checking for updates',

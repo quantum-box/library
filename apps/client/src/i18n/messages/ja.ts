@@ -689,7 +689,6 @@ export const ja: LocaleMessages = {
   'auth.developmentOnly': '開発用',
   'auth.accessToken': 'アクセストークン',
   'auth.useDevelopmentToken': '開発用トークンを使う',
-  'auth.cognitoNote': '認証には Cognito を使用し、Library アカウントを作成または復元します。',
   'update.checking': 'アップデートを確認中',
   'update.checkingHint': 'リリースフィードに新しいバージョンを問い合わせています。',
   'update.upToDate': 'Library は最新です',

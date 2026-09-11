@@ -34,7 +34,9 @@ pub fn run() {
             {
                 use tauri::Manager;
                 match app.get_webview_window("main") {
-                    Some(window) => ios_webview::stretch_to_window(&window),
+                    Some(window) => {
+                        ios_webview::configure_for_window(&window)
+                    }
                     None => log::error!(
                         "no main window to resize the iOS webview in"
                     ),

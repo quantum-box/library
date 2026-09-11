@@ -682,7 +682,6 @@ export const ptBR: LocaleMessages = {
   'auth.developmentOnly': 'Apenas desenvolvimento',
   'auth.accessToken': 'Token de acesso',
   'auth.useDevelopmentToken': 'Usar o token de desenvolvimento',
-  'auth.cognitoNote': 'A autenticação usa o Cognito e cria ou restaura sua conta do Library.',
   'update.checking': 'Verificando atualizações',
   'update.checkingHint': 'Consultando o feed de versões por uma mais recente.',
   'update.upToDate': 'O Library está atualizado',
