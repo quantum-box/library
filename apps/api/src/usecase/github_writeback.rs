@@ -84,6 +84,10 @@ impl GithubWritebackDispatch {
         data: &Data,
         properties: &[Property],
     ) {
+        if !Provider::Github.is_runtime_available() {
+            return;
+        }
+
         let Some(meta) = Self::sync_enabled_meta(data, properties) else {
             return;
         };

@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library External Sync Engine</title>
+  <style>
+    :root {
+      --paper: #f4f1e9;
+      --ink: #17211d;
+      --muted: #65706a;
+      --line: #c9cec5;
+      --card: rgba(255, 255, 255, .72);
+      --green: #176b52;
+      --green-soft: #dcebe3;
+      --amber: #9a5b13;
+      --amber-soft: #f4e6c9;
+      --red: #9a3d33;
+      --red-soft: #f1dcd7;
+      --blue: #315d79;
+      --blue-soft: #dbe7ee;
+      --shadow: 0 18px 60px rgba(23, 33, 29, .08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 4%, rgba(49, 93, 121, .10), transparent 28rem),
+        radial-gradient(circle at 90% 18%, rgba(23, 107, 82, .10), transparent 30rem),
+        var(--paper);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+
+    a { color: inherit; }
+    code {
+      padding: .12rem .35rem;
+      border: 1px solid rgba(23, 33, 29, .12);
+      border-radius: .35rem;
+      background: rgba(255,255,255,.58);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .88em;
+    }
+
+    .wrap { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--green);
+      font-size: .75rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 { margin: 0; line-height: 1.15; letter-spacing: -.035em; }
+    h1 { max-width: 870px; font-family: Georgia, "Yu Mincho", serif; font-size: clamp(2.7rem, 7vw, 6.4rem); font-weight: 500; }
+    h2 { font-size: clamp(1.8rem, 3.2vw, 3rem); }
+    h3 { font-size: 1.05rem; letter-spacing: -.015em; }
+    p { margin: 0; }
+    .muted { color: var(--muted); }
+
+    header { padding: 78px 0 48px; }
+    .hero-copy { display: grid; grid-template-columns: 1fr 330px; gap: 52px; align-items: end; }
+    .lede { margin-top: 24px; max-width: 720px; color: #3f4a44; font-size: clamp(1.04rem, 1.8vw, 1.28rem); }
+    .verdict {
+      border-top: 4px solid var(--amber);
+      padding: 20px 22px 22px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .verdict strong { display: block; margin-bottom: 7px; color: var(--amber); font-size: 1.2rem; }
+
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-top: 54px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.36);
+    }
+    .status-strip > div { min-height: 112px; padding: 19px; border-right: 1px solid var(--line); }
+    .status-strip > div:last-child { border-right: 0; }
+    .status-strip small { display: block; margin-bottom: 12px; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .status-strip b { display: block; font-size: 1rem; }
+    .status-strip span { display: block; margin-top: 4px; color: var(--muted); font-size: .85rem; }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(244, 241, 233, .9);
+      backdrop-filter: blur(14px);
+    }
+    nav .wrap { display: flex; gap: 22px; overflow-x: auto; }
+    nav a { padding: 13px 0; color: var(--muted); font-size: .84rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    nav a:hover { color: var(--ink); }
+
+    section { padding: 80px 0; border-bottom: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: 280px 1fr; gap: 42px; margin-bottom: 34px; }
+    .section-head p { max-width: 680px; color: var(--muted); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 22px 322px; }
+    .tag, .state {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: .69rem;
+      font-weight: 800;
+      letter-spacing: .045em;
+      text-transform: uppercase;
+    }
+    .good { color: var(--green); background: var(--green-soft); }
+    .warn { color: var(--amber); background: var(--amber-soft); }
+    .bad { color: var(--red); background: var(--red-soft); }
+    .proposed { color: var(--blue); background: var(--blue-soft); }
+
+    .matrix { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); }
+    .matrix article { min-height: 254px; padding: 24px; border-right: 1px solid var(--line); background: rgba(255,255,255,.4); }
+    .matrix article:last-child { border-right: 0; }
+    .matrix h3 { margin: 17px 0 10px; }
+    .matrix p { color: var(--muted); font-size: .91rem; }
+    .matrix .fact { margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink); font-size: .82rem; }
+
+    .callout {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      margin-top: 22px;
+      padding: 20px 22px;
+      border-left: 4px solid var(--red);
+      background: var(--red-soft);
+    }
+    .callout .mark { font-family: Georgia, serif; font-size: 2rem; line-height: 1; }
+    .callout strong { display: block; margin-bottom: 5px; }
+
+    .flow-frame { padding: 28px; border: 1px solid var(--line); background: #17211d; color: #f8f6ee; box-shadow: var(--shadow); overflow-x: auto; }
+    .flow-frame svg { display: block; min-width: 880px; width: 100%; height: auto; }
+    .flow-note { margin-top: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: rgba(255,255,255,.15); }
+    .flow-note > div { padding: 18px; background: #1d2924; }
+    .flow-note b { display: block; margin-bottom: 4px; font-size: .87rem; }
+    .flow-note span { color: #b7c1bc; font-size: .79rem; }
+
+    .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .principle { padding: 25px; border: 1px solid var(--line); background: var(--card); }
+    .principle .num { color: var(--green); font-family: Georgia, serif; font-size: 2.3rem; line-height: 1; }
+    .principle h3 { margin: 14px 0 8px; }
+    .principle p { color: var(--muted); font-size: .92rem; }
+
+    .model { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .entity { position: relative; padding: 28px; border: 1px solid var(--line); background: var(--card); }
+    .entity h3 { margin-bottom: 15px; font-size: 1.35rem; }
+    .entity ul { margin: 0; padding-left: 1.1rem; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .83rem; }
+    .entity .state { position: absolute; top: 24px; right: 24px; }
+    .entity-foot { margin-top: 17px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--ink); font-size: .85rem; }
+
+    .timeline { position: relative; display: grid; gap: 0; margin-left: 22px; border-left: 2px solid var(--line); }
+    .phase { position: relative; display: grid; grid-template-columns: 110px 1fr 150px; gap: 24px; padding: 8px 0 34px 34px; }
+    .phase::before { content: ""; position: absolute; left: -8px; top: 14px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--paper); background: var(--line); box-shadow: 0 0 0 1px var(--line); }
+    .phase.done::before { background: var(--green); box-shadow: 0 0 0 1px var(--green); }
+    .phase.now::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+    .phase-id { font-size: .75rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    .phase h3 { margin-bottom: 7px; }
+    .phase p { color: var(--muted); font-size: .91rem; }
+    .phase .tag { justify-self: start; }
+
+    .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .check-card { padding: 26px; border: 1px solid var(--line); background: var(--card); }
+    .check-card h3 { margin-bottom: 16px; }
+    .check-list { display: grid; gap: 11px; }
+    .check { display: grid; grid-template-columns: 22px 1fr; gap: 9px; font-size: .91rem; }
+    .check i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-style: normal; font-size: .72rem; font-weight: 900; }
+    .check.pass i { color: white; background: var(--green); }
+    .check.todo i { color: var(--amber); border: 1px solid var(--amber); }
+
+    .boundary { margin-top: 18px; padding: 24px; border: 1px dashed var(--amber); background: var(--amber-soft); }
+    .boundary strong { display: block; margin-bottom: 6px; color: var(--amber); }
+
+    footer { padding: 50px 0 72px; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 30px; color: var(--muted); font-size: .82rem; }
+    footer a { color: var(--green); font-weight: 700; }
+
+    @media (max-width: 850px) {
+      .hero-copy, .section-head { grid-template-columns: 1fr; }
+      .status-strip, .matrix { grid-template-columns: 1fr 1fr; }
+      .status-strip > div:nth-child(2), .matrix article:nth-child(2) { border-right: 0; }
+      .status-strip > div:nth-child(-n+2), .matrix article:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .legend { margin-left: 0; }
+      .phase { grid-template-columns: 80px 1fr; }
+      .phase .tag { grid-column: 2; }
+    }
+    @media (max-width: 600px) {
+      .wrap { width: min(100% - 24px, 1180px); }
+      header { padding-top: 45px; }
+      section { padding: 58px 0; }
+      .status-strip, .matrix, .model, .principles, .checks { grid-template-columns: 1fr; }
+      .status-strip > div, .matrix article { border-right: 0; border-bottom: 1px solid var(--line); }
+      .status-strip > div:last-child, .matrix article:last-child { border-bottom: 0; }
+      .phase { grid-template-columns: 1fr; padding-left: 28px; }
+      .phase .tag { grid-column: 1; }
+      footer .wrap { flex-direction: column; }
+    }
+    @media print {
+      nav { display: none; }
+      body { background: white; }
+      section { break-inside: avoid; padding: 36px 0; }
+      .flow-frame, .verdict { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">PLT-4534 / Design decision / 2026-09-11</p>
+      <div class="hero-copy">
+        <div>
+          <h1>Libraryを、外部データの<br>同期エンジンへ。</h1>
+          <p class="lede">GitHub を最初の縦切りとして、CRMや業務SaaSへ広げる。保存・受信・配信をひとつの「同期成功」に丸めず、外部オブジェクトと Library Revision を監査可能に差分交換するための設計です。</p>
+        </div>
+        <aside class="verdict" aria-label="現在の判定">
+          <strong>判定: Experimental</strong>
+          現行実装には one-shot import までの実用範囲がある一方、継続双方向同期を GA と呼べる durable dispatch・競合処理・状態表示が揃っていません。
+        </aside>
+      </div>
+
+      <div class="status-strip" aria-label="概要">
+        <div><small>Product status</small><b>Experimental</b><span>runtime flag で明示的に有効化</span></div>
+        <div><small>Phase 0</small><b>実装済み</b><span>誤った GA 表示と fake queued を停止</span></div>
+        <div><small>Target model</small><b>External Sync Kernel</b><span>ChangeSet + Outbox + adapters</span></div>
+        <div><small>Proof</small><b>140 tests + check</b><span>実 GitHub E2E は未実施</span></div>
+      </div>
+    </div>
+  </header>
+
+  <nav aria-label="ページ内ナビゲーション">
+    <div class="wrap">
+      <a href="#reality">現状</a>
+      <a href="#engine">同期エンジン</a>
+      <a href="#failure">失敗点</a>
+      <a href="#target">目標フロー</a>
+      <a href="#model">データモデル</a>
+      <a href="#phases">移行</a>
+      <a href="#proof">検証</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="reality">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">01 / Reality map</p><h2>いま何が動くか</h2></div>
+          <p>GitHub 連携は単一機能ではなく、別々に追加された複数経路です。経路ごとの保証を分けないと、webhook を受理しただけで「同期済み」に見えるなど、画面と実態がずれます。</p>
+        </div>
+        <div class="legend"><span class="tag good">usable</span><span class="tag warn">partial</span><span class="tag bad">unsafe / broken</span><span class="tag proposed">target</span></div>
+        <div class="matrix">
+          <article>
+            <span class="tag good">usable</span>
+            <h3>One-shot import</h3>
+            <p>Markdown の一覧、preview、frontmatter mapping、一括 import。同期 binding を作らない独立操作として残します。</p>
+            <p class="fact"><b>境界:</b> import 成功は、その後の継続同期を保証しない。</p>
+          </article>
+          <article>
+            <span class="tag warn">partial</span>
+            <h3>Outbound writeback</h3>
+            <p>Data 更新 decorator から GitHub Contents API を inline 呼び出し。外部障害が保存経路に混ざり、失敗は warn に留まります。</p>
+            <p class="fact"><b>不足:</b> durable retry / delivery state / 共通 base。</p>
+          </article>
+          <article>
+            <span class="tag bad">broken in Lambda</span>
+            <h3>Inbound webhook</h3>
+            <p>イベントを DB queue に保存しますが、本番 Lambda では常駐 worker が起動しません。従来は処理されない queue を queued と返せました。</p>
+            <p class="fact"><b>Phase 0:</b> gate 無効時は HTTP 503 を返す。</p>
+          </article>
+          <article>
+            <span class="tag bad">fragmented</span>
+            <h3>Configuration</h3>
+            <p><code>ext_github</code>、webhook config、outbound sync config が repo / branch / path / direction を別々に保持します。</p>
+            <p class="fact"><b>結果:</b> 接続の所有者と統一状態を UI が説明できない。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="engine">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">02 / North Star</p><h2>GitHubは最初のadapter</h2></div>
+          <p>共通 kernel は binding、外部オブジェクト対応、revision cursor、ChangeSet、delivery、冪等性、retry、conflict、観測性を所有します。provider 固有の識別子とAPI操作は adapter に閉じ込めます。</p>
+        </div>
+        <div class="matrix">
+          <article>
+            <span class="tag good">first slice</span>
+            <h3>GitHub</h3>
+            <p>Markdown file を Library Data と対応。repository / ref / path / commit SHA は GitHub adapter が解釈します。</p>
+            <p class="fact"><b>今回:</b> 危険な現行同期を gate し、共通モデルを定義。</p>
+          </article>
+          <article>
+            <span class="tag proposed">next adapters</span>
+            <h3>CRM</h3>
+            <p>contact / company / deal と Library Data を対応。external ID、ETag、field mapping を provider config として扱います。</p>
+            <p class="fact"><b>同じ経路:</b> inbound review と outbound delivery。</p>
+          </article>
+          <article>
+            <span class="tag proposed">future</span>
+            <h3>業務 SaaS</h3>
+            <p>order、ticket、project などを typed adapter で接続。providerごとのAPI制限やcursorを共通domainへ漏らしません。</p>
+            <p class="fact"><b>共通保証:</b> retry、冪等性、競合、監査。</p>
+          </article>
+          <article>
+            <span class="tag proposed">future</span>
+            <h3>Document / Storage</h3>
+            <p>ファイルや文書を external object として接続。content hash とversionを共通baseに利用します。</p>
+            <p class="fact"><b>削除:</b> providerを問わず tombstone review。</p>
+          </article>
+        </div>
+        <div class="boundary"><strong>拡張のルール</strong>adapter を増やしても Library Record を直接更新しません。すべての外部変更は ExternalChange → InboundChangeSet、すべての外部配信は Library Revision → Transactional Outbox → OutboundDelivery を通ります。</div>
+      </div>
+    </section>
+
+    <section id="failure">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">03 / Failure anatomy</p><h2>「queued」は成功ではない</h2></div>
+          <p>HTTP 応答が意味できるのは、署名を検証し、後続処理が確実に起動する durable な場所へ保存できたことまでです。consumer が動かない queue への insert は同期の進捗ではありません。</p>
+        </div>
+        <div class="flow-frame" role="img" aria-label="現行 webhook フローの問題図">
+          <svg viewBox="0 0 1040 260" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="arrow-red" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#df8376"/></marker></defs>
+            <g font-family="Inter, sans-serif">
+              <text x="16" y="24" fill="#98aaa2" font-size="12" font-weight="700" letter-spacing="1.4">CURRENT INBOUND PATH</text>
+              <rect x="15" y="70" width="190" height="94" rx="8" fill="#25342e" stroke="#6f8179"/>
+              <text x="35" y="105" fill="#f8f6ee" font-size="16" font-weight="700">GitHub webhook</text>
+              <text x="35" y="132" fill="#b7c1bc" font-size="13">署名・event type</text>
+              <path d="M205 117 H288" stroke="#b7c1bc" stroke-width="2" marker-end="url(#arrow-red)"/>
+              <rect x="300" y="70" width="190" height="94" rx="8" fill="#25342e" stroke="#6f8179"/>
+              <text x="320" y="105" fill="#f8f6ee" font-size="16" font-weight="700">DB queue</text>
+              <text x="320" y="132" fill="#b7c1bc" font-size="13">event = pending</text>
+              <path d="M490 117 H573" stroke="#df8376" stroke-width="2" stroke-dasharray="8 7" marker-end="url(#arrow-red)"/>
+              <circle cx="548" cy="117" r="17" fill="#9a3d33"/><text x="542" y="123" fill="white" font-size="18" font-weight="800">×</text>
+              <rect x="585" y="70" width="190" height="94" rx="8" fill="#392825" stroke="#df8376"/>
+              <text x="605" y="105" fill="#f8f6ee" font-size="16" font-weight="700">常駐 worker</text>
+              <text x="605" y="132" fill="#df8376" font-size="13">Lambda 本番では無効</text>
+              <path d="M775 117 H858" stroke="#5d6963" stroke-width="2" stroke-dasharray="4 8"/>
+              <rect x="870" y="70" width="155" height="94" rx="8" fill="#202b27" stroke="#5d6963" opacity=".62"/>
+              <text x="890" y="105" fill="#8e9c96" font-size="16" font-weight="700">Data 更新</text>
+              <text x="890" y="132" fill="#75837d" font-size="13">到達しない</text>
+              <text x="300" y="211" fill="#df8376" font-size="14" font-weight="700">旧: HTTP 202 queued</text>
+              <text x="300" y="234" fill="#b7c1bc" font-size="13">受理と処理可能性を混同</text>
+              <text x="585" y="211" fill="#e6bd71" font-size="14" font-weight="700">Phase 0: HTTP 503</text>
+              <text x="585" y="234" fill="#b7c1bc" font-size="13">機能 gate 無効時に失敗を隠さない</text>
+            </g>
+          </svg>
+        </div>
+        <div class="callout">
+          <div class="mark">!</div>
+          <div><strong>最も危険な旧挙動</strong><span>GitHub 側の delete / rename を Data の直接 hard delete / upsert として処理すること。review、CAS、監査がなく、誤削除や force-push を利用者が止められません。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="target">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">04 / Target flow</p><h2>安全な差分交換</h2></div>
+          <p>GitHub の変更は ChangeSet として止め、Library の保存は GitHub 配信から切り離します。両側に独立した revision と状態を持たせることで、競合を黙って上書きしません。</p>
+        </div>
+        <div class="flow-frame" role="img" aria-label="提案する同期状態遷移図">
+          <svg viewBox="0 0 1110 340" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7ac5a6"/></marker>
+              <marker id="arrow-amber" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#e6bd71"/></marker>
+            </defs>
+            <g font-family="Inter, sans-serif">
+              <text x="15" y="24" fill="#98aaa2" font-size="12" font-weight="700" letter-spacing="1.4">INBOUND — EXTERNAL TRUTH → REVIEWED LIBRARY REVISION</text>
+              <g fill="#25342e" stroke="#6f8179">
+                <rect x="15" y="53" width="164" height="78" rx="8"/><rect x="227" y="53" width="164" height="78" rx="8"/><rect x="439" y="53" width="190" height="78" rx="8"/>
+              </g>
+              <rect x="677" y="53" width="164" height="78" rx="8" fill="#3b3323" stroke="#e6bd71"/>
+              <rect x="889" y="53" width="205" height="78" rx="8" fill="#20352d" stroke="#7ac5a6"/>
+              <g fill="#f8f6ee" font-size="15" font-weight="700"><text x="34" y="86">GitHub webhook</text><text x="247" y="86">Verified event</text><text x="459" y="86">Durable dispatch</text><text x="697" y="86">ChangeSet</text><text x="909" y="86">Library revision</text></g>
+              <g fill="#b7c1bc" font-size="12"><text x="34" y="109">delivery id + SHA</text><text x="247" y="109">secret stays secret</text><text x="459" y="109">at-least-once</text><text x="697" y="109">pending / conflict</text><text x="909" y="109">accepted projection</text></g>
+              <g stroke="#7ac5a6" stroke-width="2" marker-end="url(#arrow-green)"><path d="M179 92 H217"/><path d="M391 92 H429"/><path d="M629 92 H667"/><path d="M841 92 H879"/></g>
+
+              <text x="15" y="192" fill="#98aaa2" font-size="12" font-weight="700" letter-spacing="1.4">OUTBOUND — ACCEPTED LIBRARY REVISION → DURABLE GITHUB DELIVERY</text>
+              <g fill="#25342e" stroke="#6f8179">
+                <rect x="15" y="221" width="190" height="78" rx="8"/><rect x="253" y="221" width="190" height="78" rx="8"/><rect x="491" y="221" width="190" height="78" rx="8"/>
+              </g>
+              <rect x="729" y="221" width="164" height="78" rx="8" fill="#3b3323" stroke="#e6bd71"/>
+              <rect x="941" y="221" width="153" height="78" rx="8" fill="#20352d" stroke="#7ac5a6"/>
+              <g fill="#f8f6ee" font-size="15" font-weight="700"><text x="35" y="254">Library revision</text><text x="273" y="254">Outbox event</text><text x="511" y="254">Delivery worker</text><text x="749" y="254">SHA compare</text><text x="961" y="254">GitHub file</text></g>
+              <g fill="#b7c1bc" font-size="12"><text x="35" y="277">保存はここで成功</text><text x="273" y="277">transactional</text><text x="511" y="277">retry + backoff</text><text x="749" y="277">CAS / conflict</text><text x="961" y="277">delivered</text></g>
+              <g stroke="#7ac5a6" stroke-width="2" marker-end="url(#arrow-green)"><path d="M205 260 H243"/><path d="M443 260 H481"/><path d="M681 260 H719"/><path d="M893 260 H931"/></g>
+              <path d="M811 221 C811 188 780 178 735 178" fill="none" stroke="#e6bd71" stroke-width="2" marker-end="url(#arrow-amber)"/>
+              <text x="820" y="187" fill="#e6bd71" font-size="12" font-weight="700">base mismatch → conflict</text>
+            </g>
+          </svg>
+          <div class="flow-note">
+            <div><b>受信の冪等 key</b><span>binding + external revision + object ID + change type</span></div>
+            <div><b>配信の冪等 key</b><span>binding + library revision + object ID</span></div>
+            <div><b>Delete / rename</b><span>即時削除せず tombstone を review</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">05 / Guardrails</p><h2>守る原則</h2></div>
+          <p>これは単なる queue の修理ではありません。同期に必要な authority、失敗、競合、利用者判断の境界をプロダクトモデルとして固定します。</p>
+        </div>
+        <div class="principles">
+          <article class="principle"><div class="num">01</div><h3>正本は二つ、勝手に混ぜない</h3><p>Library accepted revision と GitHub commit SHA は、それぞれの側の truth。共通 base から差分を判定します。</p></article>
+          <article class="principle"><div class="num">02</div><h3>保存と配信を分ける</h3><p>GitHub API が落ちても Library 保存は成功。配信は pending / retrying / failed として後から追えます。</p></article>
+          <article class="principle"><div class="num">03</div><h3>外部変更は review を通す</h3><p>初期 policy は inbound / outbound とも review。自動 accept と direct push は監査 UI が完成するまで導入しません。</p></article>
+          <article class="principle"><div class="num">04</div><h3>秘密をコンテンツに入れない</h3><p>token と webhook secret は Property、ログ、ChangeSet payload に保存せず、tenant-owned connection を binding が参照します。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="model">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">06 / Domain model</p><h2>接続とobject対応を分離</h2></div>
+          <p>repository 単位の外部接続設定と、Data 単位の外部object対応を別 entity にします。利用者が編集する Property を provider cursor の置き場にしません。</p>
+        </div>
+        <div class="model">
+          <article class="entity">
+            <span class="state proposed">proposed</span>
+            <h3>ExternalSyncBinding</h3>
+            <ul>
+              <li>library_repo_id + provider + connection_id</li>
+              <li>external_scope (typed provider config)</li>
+              <li>object_type + field / content mapping</li>
+              <li>inbound_policy / outbound_policy</li>
+              <li>delete_policy = review_tombstone</li>
+              <li>active / paused / reauthorization_required</li>
+            </ul>
+            <p class="entity-foot">接続の所有者、対象範囲、方向、運用状態を repository 単位で一元化。</p>
+          </article>
+          <article class="entity">
+            <span class="state proposed">proposed</span>
+            <h3>ExternalObjectLink</h3>
+            <ul>
+              <li>binding_id + data_id + external_object_id</li>
+              <li>last_accepted_external_revision</li>
+              <li>last_delivered_library_revision</li>
+              <li>base_content_hash</li>
+            </ul>
+            <p class="entity-foot">Library Data と外部objectの対応と、競合判定に必要な共通 base だけを保持。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="phases">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">07 / Migration</p><h2>段階移行</h2></div>
+          <p>既存の <code>ext_github</code> を一度に捨てません。互換読み取りと冪等 migration、二重書き parity の確認を経て、最後に legacy field を read-only にします。</p>
+        </div>
+        <div class="timeline">
+          <article class="phase done"><div class="phase-id">Phase 0</div><div><h3>現実と表示を一致</h3><p>GitHub 継続同期を Experimental に戻し、runtime gate、HTTP 503、readiness / GA / API 文書を実態に合わせる。</p></div><span class="tag good">implemented</span></article>
+          <article class="phase now"><div class="phase-id">Phase 1</div><div><h3>共通 Binding と Link</h3><p>provider-neutral な外部接続と Data-object 対応の schema、API、冪等な旧設定 migration を追加する。</p></div><span class="tag warn">next</span></article>
+          <article class="phase"><div class="phase-id">Phase 2</div><div><h3>Durable inbound</h3><p>webhook reception から consumer invocation を保証し、差分を InboundChangeSet として保存する。</p></div><span class="tag proposed">planned</span></article>
+          <article class="phase"><div class="phase-id">Phase 3</div><div><h3>Outbox delivery</h3><p>accepted revision から transactional outbox を作り、retry / conflict / delivery state を実装する。</p></div><span class="tag proposed">planned</span></article>
+          <article class="phase"><div class="phase-id">Phase 4</div><div><h3>UI、parity、adapter展開</h3><p>接続、差分、競合、再試行 UI を追加。GitHub parity 後に旧 decorator を停止し、CRM adapter は別タスクで追加する。</p></div><span class="tag proposed">planned</span></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof">
+      <div class="wrap">
+        <div class="section-head">
+          <div><p class="eyebrow">08 / Evidence</p><h2>確認できたこと</h2></div>
+          <p>Phase 0 の proof と、まだ越えていない gate を分離します。テスト成功や compile 成功は、実 GitHub 上の同期成功を意味しません。</p>
+        </div>
+        <div class="checks">
+          <article class="check-card">
+            <h3>Phase 0 — verified</h3>
+            <div class="check-list">
+              <div class="check pass"><i>✓</i><span><code>inbound_sync_domain</code>: 31 tests passed</span></div>
+              <div class="check pass"><i>✓</i><span><code>inbound_sync</code>: 109 tests passed</span></div>
+              <div class="check pass"><i>✓</i><span><code>library-api</code>: nightly cargo check passed</span></div>
+              <div class="check pass"><i>✓</i><span>GitHub provider / marketplace を Experimental 表示</span></div>
+              <div class="check pass"><i>✓</i><span>gate 無効時の webhook / legacy mutation を停止</span></div>
+            </div>
+          </article>
+          <article class="check-card">
+            <h3>Release proof — not yet</h3>
+            <div class="check-list">
+              <div class="check todo"><i>•</i><span>実 GitHub OAuth と専用 repository</span></div>
+              <div class="check todo"><i>•</i><span>webhook redelivery / 順序逆転 / force-push</span></div>
+              <div class="check todo"><i>•</i><span>rename / delete の tombstone review</span></div>
+              <div class="check todo"><i>•</i><span>Library API scenario と browser UI</span></div>
+              <div class="check todo"><i>•</i><span>本番相当の durable consumer / backlog alarm</span></div>
+            </div>
+          </article>
+        </div>
+        <div class="boundary"><strong>現在の保証境界</strong>Phase 0 は「危険な継続同期を有効に見せない」変更です。実 GitHub との import → Library 編集 → GitHub 編集 → conflict → delete の往復 proof は、Phase 1–4 の実装後に別 gate として実施します。</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>Library External Sync Engine / PLT-4534<br>GitHub-first architecture brief</p>
+      <p>References: PLT-4534 task · External Sync Engine design · ADR-0006</p>
+    </div>
+  </footer>
+</body>
+</html>

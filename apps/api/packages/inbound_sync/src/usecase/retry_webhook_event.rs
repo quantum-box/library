@@ -40,6 +40,10 @@ impl RetryWebhookEvent {
             )));
         }
 
+        // A failed event cannot be reintroduced into the pending queue while
+        // its provider is unavailable in this runtime.
+        ensure_retry_provider_available(&event)?;
+
         // Schedule a retry (allows up to 10 retries)
         if !event.schedule_retry(10) {
             return Err(errors::Error::invalid("Maximum retries exceeded"));
@@ -55,5 +59,33 @@ impl RetryWebhookEvent {
         );
 
         Ok(event)
+    }
+}
+
+fn ensure_retry_provider_available(
+    event: &WebhookEvent,
+) -> errors::Result<()> {
+    event.provider().ensure_runtime_available()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_provider_cannot_be_requeued() {
+        let mut event = WebhookEvent::create(
+            inbound_sync_domain::WebhookEndpointId::default(),
+            inbound_sync_domain::Provider::Hubspot,
+            "contact.creation",
+            serde_json::json!({}),
+            None,
+            true,
+        );
+        event.mark_failed("provider disabled");
+
+        assert!(ensure_retry_provider_available(&event).is_err());
+        assert_eq!(*event.status(), ProcessingStatus::Failed);
+        assert_eq!(*event.retry_count(), 0);
     }
 }
