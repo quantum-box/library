@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod data;
 pub mod docs;
+pub mod external_sync_scanner;
 pub mod global_id_mapping;
 pub mod graphql;
 pub mod image;

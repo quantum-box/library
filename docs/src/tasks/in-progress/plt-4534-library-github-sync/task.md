@@ -109,6 +109,30 @@ outbox delivery、primary client UI は後続 Phase のまま。
 binding の実配備、実 GitHub OAuth / webhook / Contents API、browser UI の往復確認は、PR CI と
 Preview surface で別 gate として記録する。
 
+### 2026-09-11 Release hardening
+
+- commit 済み Record event を独立 scanner が `domain_outbox_deliveries` へ冪等登録し、request
+  process が outbound capture 前に停止した場合も期限付き lease と retry で回収する。
+- event capture と provider I/O を分離する。scanner は deterministic delivery を永続化し、due
+  delivery は別の CAS lease で少数ずつ自動再送する。
+- API の内部 scanner route は専用 bearer を必須とし、Cloudflare Worker cron は一分ごとに呼ぶ。
+  credential は Tachyon secret にだけ登録し、manifest には参照だけを置く。
+- Preview は engine 有効・cron 無効で配備と手動 E2E を行う。本番は dedicated GitHub round trip
+  が合格するまで engine / cron とも無効のまま維持する。
+
+### 2026-09-12 Preview scanner
+
+- Ready PR #357 の隔離 Preview に API / client / sync Worker を配備した。
+- Preview TiDB の projection pruning に合わせ、outbox の registration / claim / lookup は
+  predicate と order に使う列も SELECT に保持し、`ascii_bin` は Rust 側で明示 decode する。
+- API と Worker に同一の Preview branch 限定 scanner secret を登録した。値は repository と
+  検証出力へ残していない。
+- `bld_01m28gpn642xmfhr2xfjj1wr8r` の配備後、認証付き scanner を2回呼び、どちらも HTTP 200、
+  全 count 0 の再実行 no-op を確認した。これは空 backlog の runtime proof であり、実 GitHub
+  event / Contents API の往復成功を意味しない。
+- 本番の engine / cron は無効のまま。実 GitHub OAuth、signed webhook simulation、outbound、
+  conflict、rename、delete、画面 reload は専用 fixture で引き続き検証する。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

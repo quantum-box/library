@@ -517,6 +517,7 @@ pub async fn router(
         Arc::new(crate::usecase::ExternalSyncOutboxDispatch::new(
             library_db.pool(),
             database_manager_db.pool(),
+            database_app.clone(),
             connection_repository.clone(),
             webhook_endpoint_repo.clone(),
             sync_state_repo.clone(),
@@ -525,6 +526,10 @@ pub async fn router(
             external_sync_lifecycle.clone(),
             sync_data.clone(),
         ));
+    let external_sync_scanner_router =
+        crate::handler::external_sync_scanner::create_router(
+            external_outbox.clone(),
+        )?;
 
     // GraphQL state for library sync
     let inbound_sync_query_state =
@@ -759,6 +764,7 @@ pub async fn router(
         .merge(collab_router)
         .merge(mcp_sse_router)
         .merge(webhook_router)
+        .merge(external_sync_scanner_router)
         // Layer order matters: outermost (first in chain) to innermost
         // Layers are applied in reverse order of declaration:
         // 1. SetRequestIdLayer - generates UUID and sets x-request-id header on request

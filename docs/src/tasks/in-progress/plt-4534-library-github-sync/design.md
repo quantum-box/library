@@ -193,3 +193,21 @@ mutation で binding / link に materialize する。この lazy migration は�
 
 repository settings UI は接続、受信 review、外部配信を別々に表示する。queued を synced と
 表示せず、利用者が pending ChangeSet と retry / conflict delivery を個別に操作できる。
+
+### Release hardening — independent outbox scanner（2026-09-11）
+
+API request が Record transaction の commit 後、outbound delivery の materialize 前に停止しても
+event を失わないよう、既存の `domain_outbox_deliveries` を
+`library.external-sync.v1` consumer の durable cursor として使用する。Cloudflare Worker の cron は
+専用 bearer で内部 scanner endpoint を毎分呼び、scanner は activation timestamp 以降の Record
+event だけを登録する。これにより engine 有効化より前の履歴を後から一括配信しない。
+
+scanner は `FOR UPDATE SKIP LOCKED` と期限付き lease で event を claim し、最新 Record version
+だけを deterministic `OutboundDelivery` に変換する。provider I/O は event lease の外へ分離し、
+少数の due delivery を別の CAS lease で再送する。stale version、削除済み Record、同期 link がない
+Record は成功 no-op とし、一時障害は指数 backoff、上限到達は dead / failed として残す。
+
+scanner credential は API と Worker に同じ値を Tachyon secret として登録し、repository、manifest、
+ログには平文を保存しない。Preview では API engine を有効にして配備面を検証するが、cron 自体は
+off のまま手動 E2E を行う。本番の engine と cron は、専用 GitHub repository で OAuth、webhook、
+outbound、競合、rename、delete の往復が通った後にのみ有効化する。

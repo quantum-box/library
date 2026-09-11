@@ -196,7 +196,7 @@ describe('RepositorySettingsView', () => {
     renderView()
 
     const section = await screen.findByTestId('external-sync-section')
-    expect(section).toHaveTextContent('quantum-box/library')
+    expect(await within(section).findByText('quantum-box/library')).toBeInTheDocument()
     expect(section).toHaveTextContent('docs/guide.md')
 
     fireEvent.click(within(section).getByRole('button', { name: 'Accept' }))

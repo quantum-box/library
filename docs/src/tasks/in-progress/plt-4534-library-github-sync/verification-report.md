@@ -102,8 +102,80 @@ continuous synchronization works at an external or deployed surface.
 - Production migration or feature activation. Production keeps the experimental
   integration and external-sync engine flags disabled.
 
-The implementation captures an outbox-derived delivery immediately after the
-Library transaction commits. An independent scanner for recovering the narrow
-process-death window between commit and capture is not yet present. Consequently,
-the local gates prove the Phase 2–4 code and contracts, not release-level
-at-least-once behavior at an external surface.
+At the Phase 2–4 checkpoint, the implementation captured an outbox-derived
+delivery immediately after the Library transaction committed, but did not yet
+have an independent scanner for the narrow process-death window between commit
+and capture. The release-hardening section below closes that local implementation
+gap; deployed at-least-once behavior remains a separate gate.
+
+## Release hardening passed locally on 2026-09-11
+
+- Added an independent `library.external-sync.v1` consumer over
+  `domain_outbox_deliveries`, with bounded registration, `SKIP LOCKED` claim,
+  expiring leases, retry backoff, and dead-letter state.
+- Scanner capture persists deterministic `OutboundDelivery` rows without holding
+  the Record-event lease across provider I/O. A separate bounded CAS claim retries
+  due provider deliveries, and every in-flight provider attempt advances its next
+  due time before the network call.
+- `DEV_DATABASE_URL=mysql://root:@127.0.0.1:15000/library cargo +nightly-2026-06-04 test -p library-api scanner_registration_and_lease_recovery_are_durable -- --ignored --nocapture`:
+  passed twice (library and binary test targets) against MySQL. It verifies
+  idempotent registration, exclusive lease, expired-lease recovery, retry state,
+  and terminal completion, then removes the exact test rows.
+- The MySQL contract exposed `ascii_bin` columns as `VARBINARY`; scanner and
+  immediate-capture lookups now decode those identifiers explicitly instead of
+  relying on SQL casts.
+- `npm run test:worker`: sync Worker 26/26 and public-docs Worker 14/14 passed.
+  The new scheduled test proves the disabled gate and exact dedicated bearer on
+  the scanner request.
+- `tachyon manifest validate --file tachyon.yaml`: both CloudApps and
+  OAuth2Resource documents passed.
+- `EXTERNAL_SYNC_SCANNER_TOKEN` was registered as a secret for `library-api` and
+  `library-client-sync`; only key/type metadata was read back. The manifest stores
+  references, not the value.
+- The active tenant GitHub connection remains active and its allowlist was
+  atomically extended from `quantum-box/library` to include the dedicated
+  `quantum-box/library-sample` E2E repository.
+
+## Preview deployment passed on 2026-09-12
+
+- Ready PR [#357](https://github.com/quantum-box/library/pull/357) deployed the
+  current scanner head `4946aec` to the isolated Preview API.
+- Tachyon build `bld_01m28gpn642xmfhr2xfjj1wr8r` succeeded for
+  `library-api`; the public Preview API and client origins remained reachable.
+- Preview-only branch configuration enables the experimental integration and
+  API engine while leaving the Worker cron disabled. Production configuration
+  was not changed.
+- The internal scanner route rejected an unauthenticated request with HTTP 401.
+  One generated token was registered only as a Preview branch secret for the
+  API and sync Worker; its value was neither persisted in the repository nor
+  printed in verification output.
+- Two consecutive authenticated calls to
+  `POST /internal/external-sync/outbound-scan` returned HTTP 200. Both returned
+  `registered=0`, `record_events_processed=0`,
+  `record_events_retried=0`, and `outbound_deliveries_retried=0`, proving the
+  deployed empty-backlog path and repeated no-op behavior.
+- Preview TiDB exposed projection-pruning failures when scanner statements
+  returned only an expression or aggregate while filtering on other columns.
+  Registration, claim, lookup, and latest-version statements now select the
+  columns used by their predicates/order and decode `ascii_bin` values in Rust.
+  The focused MySQL durability test, API check, and clippy passed after the
+  compatibility changes.
+
+The zero-count scan does not prove event capture or provider delivery. Those
+remain part of the dedicated GitHub round trip below.
+
+## Remaining release gates
+
+- Current Ready PR CI after the final TiDB compatibility commit
+- Dedicated GitHub OAuth, webhook, outbound commit, conflict, rename, and delete
+  round trip, including authenticated browser state after reload
+- Provider-originated webhook delivery requires a governance-managed GitHub
+  repository setting; an endpoint-specific signed Preview simulation must be
+  recorded separately and must not be reported as provider delivery.
+- Production manifest activation of the API engine and Worker cron, followed by
+  live scanner, save, and reload evidence
+
+Production remains inactive until all of these gates pass. The Tachyon CLI's
+standalone `compute apps sync-secrets` operation currently rejects Lambda and
+Worker apps as Pages-only; the normal Cloud App apply/build path remains the
+deployment gate for the registered secret references.
