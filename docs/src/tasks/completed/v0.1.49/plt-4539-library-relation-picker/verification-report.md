@@ -20,6 +20,10 @@
 - Relation picker で複数ページを追加読込し、選択・解除した `dataIds` を確定する。
 - Relation の空配列を `relation: []` として明示送信する。
 - Property 作成画面で Database ID を手入力せず repository を選択する。
+- Relation 候補を Property 元と同じ tenant / organization に限定する。
+- 同一 Record の並行 detail 読込を 1 request に集約する。
+- 選択済み Record の 404 は unavailable として保持し、503 などの一時失敗は retry 可能なエラーとして伝播する。
+- REST fallback の Property metadata から Relation target database ID を復元する。
 
 ### Type / lint / build
 
@@ -35,6 +39,10 @@
 fixture に Relation 対象 repository を追加して複数 repository 構成になったため、mobile の作成フローも対象 repository を明示選択するよう更新した。`npm --prefix apps/client run test:e2e:mobile` を実行し、Mobile Chromium 4 tests が成功した。
 
 Relation シナリオでは fixture の `photon-core` repository に Relation Property を作成し、対象として別の `People` repository を選択した。Aoi Tanaka と Ren Sato を関連付けて保存し、reload 後に `Aoi Tanaka +1` と解決表示されることを確認した。その後 2 件とも解除し、再 reload 後に関連先なしとなることを確認した。
+
+### PR review follow-up
+
+Codex review の 6 件を反映し、target unavailable のローカライズ、tenant scope、REST metadata、in-flight deduplication、一時失敗の retry、全 9 non-English catalog の翻訳を追加した。follow-up 後の対象 Vitest は 3 files / 59 tests、および Relation cell 1 file / 6 tests が成功し、type-check、lint、production build も成功した。全 CI の再実行結果は PR 上で確認する。
 
 ## スキップした確認と理由
 

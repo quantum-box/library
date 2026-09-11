@@ -4,6 +4,7 @@ import {
   fetchLibraryRepoTableData,
   type LibraryRepository,
 } from '../recordsApi'
+import { t } from '../../i18n'
 
 export interface RelationRecordOption {
   id: string
@@ -37,7 +38,7 @@ function relationTarget(
 ): RelationTarget {
   const repository = repositories.find((candidate) => candidate.id === databaseId)
   if (!repository?.orgUsername) {
-    throw new Error(`Relation target repository ${databaseId} is unavailable`)
+    throw new Error(t('repoSettings.relationUnavailable'))
   }
   return {
     org: repository.orgUsername,
@@ -59,6 +60,7 @@ function relationTarget(
 export function createLibraryRelationRecordLoader(): LibraryRelationRecordLoader {
   let repositoriesPromise: Promise<LibraryRepository[]> | null = null
   const recordCache = new Map<string, RelationRecordOption>()
+  const recordPromises = new Map<string, Promise<RelationRecordOption>>()
 
   const repositories = () => {
     repositoriesPromise ??= fetchLibraryRepositories().catch((error: unknown) => {
@@ -75,6 +77,41 @@ export function createLibraryRelationRecordLoader(): LibraryRelationRecordLoader
 
   const remember = (databaseId: string, items: readonly RelationRecordOption[]) => {
     for (const item of items) recordCache.set(`${databaseId}:${item.id}`, item)
+  }
+
+  const loadRecord = (
+    databaseId: string,
+    dataId: string,
+    resolved: RelationTarget,
+  ): Promise<RelationRecordOption> => {
+    const key = `${databaseId}:${dataId}`
+    const cached = recordCache.get(key)
+    if (cached) return Promise.resolve(cached)
+
+    const inFlight = recordPromises.get(key)
+    if (inFlight) return inFlight
+
+    const request = fetchLibraryDataDetail(dataId, resolved)
+      .then((detail) => {
+        const item = { id: detail.item.id, name: detail.item.name }
+        remember(databaseId, [item])
+        return item
+      })
+      .catch((error: unknown) => {
+        if (
+          typeof error === 'object'
+          && error !== null
+          && 'status' in error
+          && error.status === 404
+        ) {
+          return { id: dataId, name: dataId, unavailable: true }
+        }
+        throw error
+      })
+      .finally(() => recordPromises.delete(key))
+
+    recordPromises.set(key, request)
+    return request
   }
 
   return {
@@ -94,21 +131,9 @@ export function createLibraryRelationRecordLoader(): LibraryRelationRecordLoader
     async loadSelected(databaseId, dataIds) {
       const resolved = await target(databaseId)
       const uniqueIds = [...new Set(dataIds)]
-      const loaded = await Promise.all(uniqueIds.map(async (dataId) => {
-        const cached = recordCache.get(`${databaseId}:${dataId}`)
-        if (cached) return cached
-        try {
-          const detail = await fetchLibraryDataDetail(dataId, resolved)
-          const item = { id: detail.item.id, name: detail.item.name }
-          remember(databaseId, [item])
-          return item
-        } catch {
-          // A selected record may have been removed or become unreadable. Keep
-          // its id visible and selected so merely opening the editor is never
-          // a destructive write.
-          return { id: dataId, name: dataId, unavailable: true }
-        }
-      }))
+      const loaded = await Promise.all(
+        uniqueIds.map((dataId) => loadRecord(databaseId, dataId, resolved)),
+      )
       return loaded
     },
   }

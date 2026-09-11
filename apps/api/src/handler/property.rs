@@ -314,8 +314,45 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
             PropertyType::Id(type_id) => Some(type_id.auto_generate),
             _ => None,
         },
+        database_id: match property.property_type() {
+            PropertyType::Relation(relation) => {
+                Some(relation.database_id.to_string())
+            }
+            _ => None,
+        },
         options: crate::handler::types::property_select_options(
             property.property_type(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_property_response;
+    use database_manager::domain::{
+        DatabaseId, Property, PropertyId, PropertyType, TypeRelation,
+    };
+    use value_object::TenantId;
+
+    #[test]
+    fn relation_response_includes_its_target_database_id() {
+        let relation_database_id: DatabaseId =
+            "db_01hmp05xtq6fs5mmk8fg125cy7".parse().unwrap();
+        let property = Property::new(
+            &PropertyId::default(),
+            &TenantId::default(),
+            &DatabaseId::default(),
+            "Related people",
+            &PropertyType::Relation(TypeRelation::new(
+                relation_database_id.clone(),
+            )),
+            false,
+            0,
+        );
+
+        assert_eq!(
+            to_property_response(&property).database_id,
+            Some(relation_database_id.to_string())
+        );
     }
 }

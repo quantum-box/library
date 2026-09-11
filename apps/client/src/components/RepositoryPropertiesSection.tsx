@@ -104,12 +104,14 @@ function errorMessage(error: unknown): string {
 
 function PropertyEditorDialog({
   state,
+  target,
   busy,
   error,
   onClose,
   onSave,
 }: {
   state: PropertyDialogState
+  target: RepositorySettingsTarget
   busy: boolean
   error: string | null
   onClose: () => void
@@ -156,7 +158,14 @@ function PropertyEditorDialog({
 
   const relationRepositoryOptions = useMemo(() => {
     const options = relationRepositories
-      .filter((repository) => Boolean(repository.id && repository.orgUsername))
+      .filter((repository) => {
+        if (!repository.id || !repository.orgUsername) return false
+        if (target.operatorId && repository.operatorId) {
+          return target.operatorId === repository.operatorId
+        }
+        return repository.orgUsername.toLocaleLowerCase()
+          === target.orgUsername.toLocaleLowerCase()
+      })
       .map((repository) => ({
         value: repository.id,
         label: `${repository.orgUsername} / ${repository.name || repository.username}`,
@@ -170,7 +179,7 @@ function PropertyEditorDialog({
       })
     }
     return options
-  }, [relationDatabaseId, relationRepositories, t])
+  }, [relationDatabaseId, relationRepositories, t, target.operatorId, target.orgUsername])
   const selectedRelationRepository = relationRepositoryOptions.find(
     (option) => option.value === relationDatabaseId,
   )
@@ -667,6 +676,7 @@ export function RepositoryPropertiesSection({
         <PropertyEditorDialog
           key={`${propertyDialog.mode}:${propertyDialog.property?.id ?? 'new'}`}
           state={propertyDialog}
+          target={target}
           busy={propertyBusy}
           error={propertyError}
           onClose={() => {

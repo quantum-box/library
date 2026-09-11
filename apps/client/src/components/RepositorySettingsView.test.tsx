@@ -119,7 +119,13 @@ describe('RepositorySettingsView', () => {
         id: 'database-people',
         username: 'people',
         name: 'People',
-        orgUsername: 'example',
+        orgUsername: 'quantum-box',
+      },
+      {
+        id: 'database-other-tenant',
+        username: 'private-people',
+        name: 'Private people',
+        orgUsername: 'other-tenant',
       },
     ])
     deleteRepository.mockResolvedValue(undefined)
@@ -355,7 +361,9 @@ describe('RepositorySettingsView', () => {
 
     await waitFor(() => expect(recordsMocks.fetchLibraryRepositories).toHaveBeenCalled())
     fireEvent.click(within(dialog).getByRole('combobox', { name: 'Related repository' }))
-    fireEvent.click(screen.getByRole('option', { name: /example \/ People/ }))
+    expect(screen.queryByRole('option', { name: /other-tenant \/ Private people/ }))
+      .not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('option', { name: /quantum-box \/ People/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add Property' }))
 
     await waitFor(() => expect(apiMocks.createRepositoryProperty).toHaveBeenCalledWith(

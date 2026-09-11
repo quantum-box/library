@@ -8,7 +8,7 @@ Relation Property の wire value は対象 `databaseId` と `dataIds` の集合�
 
 ### 対象リポジトリ
 
-- 既存 `fetchLibraryRepositories()` が返す、利用者に見える repository を候補とする。
+- 既存 `fetchLibraryRepositories()` が返す repository のうち、Property 元と同じ tenant / organization に属するものを候補とする。
 - UI は `organization / repository` 名を表示し、mutation には canonical repository ID を `relationDatabaseId` として送る。
 - 編集時に既存 target が現在の一覧へ存在しなくても ID を保持し、候補取得失敗や権限変更だけで schema を別 target に書き換えない。
 
@@ -22,23 +22,25 @@ Relation Property の wire value は対象 `databaseId` と `dataIds` の集合�
 
 ### 表示とキャッシュ
 
-- 読込済みの対象 Record 名は同一 target Database 内で共有する。
+- 読込済みの対象 Record 名と in-flight detail request は同一 target Database 内で共有する。
 - 未解決時は件数を表示し、解決後は先頭の Record 名と残件数を表示する。
 - target 取得失敗時は既存値を read-only 表示し、再試行できる。保存は picker が正常に読み込めた場合だけ許可する。
 
 ## API とデータモデル
 
-公開 API、GraphQL schema、DB schema は変更しない。既存の以下を利用する。
+GraphQL schema と DB schema は変更しない。REST fallback でも GraphQL と同じ Relation editor を使えるよう、`PropertyResponse` に optional `database_id` を追加する。Relation 以外では省略される additive な response 変更とする。その他は既存の以下を利用する。
 
 - repository list: canonical repository ID と `orgUsername` / `username`
 - `repo(...).dataList(pageSize, page)`: Relation 候補 Record
 - `updateData`: `{ propertyId, value: { relation: dataIds } }`
 - `RelationType.databaseId` / `RelationValue.databaseId`
+- REST `PropertyResponse.database_id`: Relation target の canonical repository ID
 
 ## エラーと認可
 
 - repository list と target data list は既存 token、platform、operator header の解決規則を使う。
-- target repository が見つからない場合は Relation を変更不可にし、既存 ID を保持する。
+- target repository が見つからない場合は locale catalog のエラーを表示して Relation を変更不可にし、既存 ID を保持する。
+- 選択済み Record の detail 取得は 404 だけを削除済みとして扱い、認証・通信・server の一時失敗は picker の retry 対象にする。
 - mutation error は既存の table mutation error と同じ場所へ表示し、楽観的に更新した値を server snapshot へ戻す。
 - picker の loading 中や保存中は多重送信を防ぐ。
 

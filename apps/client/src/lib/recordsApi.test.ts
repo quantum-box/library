@@ -219,6 +219,43 @@ describe('recordsApi', () => {
     })
   })
 
+  it('preserves Relation target metadata when the table falls back to REST', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/v1/graphql')) {
+        return new Response('not found', { status: 404 })
+      }
+      if (url.endsWith('/v1beta/repos/acme/docs/properties')) {
+        return Response.json([{
+          id: 'prop-related',
+          name: 'Related people',
+          property_type: 'RELATION',
+          database_id: 'database-people',
+        }])
+      }
+      if (url.endsWith('/v1beta/repos/acme/docs')) {
+        return Response.json({ id: 'database-docs' })
+      }
+      if (url.includes('/v1beta/repos/acme/docs/data-list?')) {
+        return Response.json({
+          data: [],
+          paginator: { current_page: 1, items_per_page: 100, total_items: 0, total_pages: 0 },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    }))
+
+    await expect(fetchLibraryRepoTableData({ org: 'acme', repo: 'docs' }))
+      .resolves.toMatchObject({
+        properties: [{
+          id: 'prop-related',
+          typ: 'Relation',
+          meta: { databaseId: 'database-people' },
+        }],
+      })
+  })
+
   it('normalizes SCREAMING_SNAKE_CASE Property types from the live API', async () => {
     vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')

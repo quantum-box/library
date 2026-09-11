@@ -44,7 +44,8 @@ export function LibraryRelationEditor({
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [selectedLoadFailed, setSelectedLoadFailed] = useState(false)
   const [nextPage, setNextPage] = useState<number | undefined>()
   const [repositoryLabel, setRepositoryLabel] = useState('')
   const [loadedFirstPage, setLoadedFirstPage] = useState(false)
@@ -54,7 +55,8 @@ export function LibraryRelationEditor({
     setNextPage(undefined)
     setRepositoryLabel('')
     setLoadedFirstPage(false)
-    setError(null)
+    setPageError(null)
+    setSelectedLoadFailed(false)
   }, [databaseId])
 
   const loadSelected = useCallback(async () => {
@@ -62,9 +64,12 @@ export function LibraryRelationEditor({
     try {
       const resolved = await loader.loadSelected(databaseId, canonicalValue)
       setOptions((current) => mergeOptions(current, resolved))
+      setSelectedLoadFailed(false)
     } catch {
-      // The compact cell can keep showing a count. The full picker exposes a
-      // retryable error once the user actually asks to edit it.
+      // The compact cell can keep showing a count. Once opened, the picker
+      // surfaces this as retryable instead of pretending a transient failure
+      // means the selected record was deleted.
+      setSelectedLoadFailed(true)
     }
   }, [canonicalValue, databaseId, loader])
 
@@ -78,7 +83,7 @@ export function LibraryRelationEditor({
 
   const loadPage = useCallback(async (page = 1) => {
     setLoading(true)
-    setError(null)
+    setPageError(null)
     try {
       const result = await loader.loadPage(databaseId, page)
       setOptions((current) => mergeOptions(current, result.items))
@@ -86,7 +91,7 @@ export function LibraryRelationEditor({
       setNextPage(result.nextPage)
       if (page === 1) setLoadedFirstPage(true)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : t('relationPicker.loadFailed'))
+      setPageError(loadError instanceof Error ? loadError.message : t('relationPicker.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -98,7 +103,8 @@ export function LibraryRelationEditor({
     setSelected(canonicalValue)
     setQuery('')
     setOpen(true)
-    if (!loadedFirstPage || error) void loadPage()
+    if (!loadedFirstPage || pageError) void loadPage()
+    if (selectedLoadFailed) void loadSelected()
   }
 
   const normalizedQuery = query.trim().toLocaleLowerCase()
@@ -160,10 +166,13 @@ export function LibraryRelationEditor({
             disabled={loading && options.length === 0}
           />
 
-          {error ? (
+          {pageError || selectedLoadFailed ? (
             <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
-              <span>{error}</span>
-              <Button type="button" size="sm" onClick={() => void loadPage()}>
+              <span>{pageError ?? t('relationPicker.loadFailed')}</span>
+              <Button type="button" size="sm" onClick={() => {
+                if (pageError) void loadPage()
+                if (selectedLoadFailed) void loadSelected()
+              }}>
                 <RefreshCw aria-hidden="true" />
                 {t('common.retry')}
               </Button>
@@ -216,7 +225,7 @@ export function LibraryRelationEditor({
             <Button type="button" onClick={() => setOpen(false)} disabled={saving}>
               {t('common.cancel')}
             </Button>
-            <Button type="button" variant="primary" onClick={save} disabled={loading || Boolean(error) || saving}>
+            <Button type="button" variant="primary" onClick={save} disabled={loading || Boolean(pageError) || selectedLoadFailed || saving}>
               {t('relationPicker.save', { count: selected.length })}
             </Button>
           </DialogFooter>

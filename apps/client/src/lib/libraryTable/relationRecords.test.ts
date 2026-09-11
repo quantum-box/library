@@ -50,7 +50,7 @@ describe('createLibraryRelationRecordLoader', () => {
   it('loads selected labels directly and preserves an unavailable id', async () => {
     mocks.fetchLibraryDataDetail
       .mockResolvedValueOnce({ item: { id: 'data-2', name: 'Haru Example' }, properties: [] })
-      .mockRejectedValueOnce(new Error('not found'))
+      .mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
     const loader = createLibraryRelationRecordLoader()
 
     await expect(loader.loadSelected('database-target', ['data-2', 'removed', 'data-2']))
@@ -63,7 +63,38 @@ describe('createLibraryRelationRecordLoader', () => {
   it('rejects a target repository the caller cannot see', async () => {
     const loader = createLibraryRelationRecordLoader()
     await expect(loader.loadPage('other-database'))
-      .rejects.toThrow('Relation target repository other-database is unavailable')
+      .rejects.toThrow('Relation target unavailable')
+  })
+
+  it('deduplicates concurrent detail requests for the same selected record', async () => {
+    mocks.fetchLibraryDataDetail.mockResolvedValue({
+      item: { id: 'data-2', name: 'Haru Example' },
+      properties: [],
+    })
+    const loader = createLibraryRelationRecordLoader()
+
+    await Promise.all([
+      loader.loadSelected('database-target', ['data-2']),
+      loader.loadSelected('database-target', ['data-2']),
+    ])
+
+    expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('propagates transient detail failures and permits a retry', async () => {
+    mocks.fetchLibraryDataDetail
+      .mockRejectedValueOnce(Object.assign(new Error('temporary failure'), { status: 503 }))
+      .mockResolvedValueOnce({
+        item: { id: 'data-2', name: 'Haru Example' },
+        properties: [],
+      })
+    const loader = createLibraryRelationRecordLoader()
+
+    await expect(loader.loadSelected('database-target', ['data-2']))
+      .rejects.toThrow('temporary failure')
+    await expect(loader.loadSelected('database-target', ['data-2']))
+      .resolves.toEqual([{ id: 'data-2', name: 'Haru Example' }])
+    expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledTimes(2)
   })
 
   it('retries repository discovery after a failed request', async () => {

@@ -28,6 +28,7 @@ Library v2 の Relation Property は schema と値の読取・書込契約を持
 - `apps/client/src/lib/recordsApi.ts`
 - `apps/client/src/lib/libraryTable/`
 - `apps/client/tests/e2e/`
+- `apps/api/src/handler/`（REST fallback 用 Relation target metadata）
 
 ## 設計
 
