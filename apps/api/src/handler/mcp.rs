@@ -2457,8 +2457,8 @@ fn tools_list_result(is_authenticated: bool) -> Value {
         let read_only = is_read_tool(name);
         tool["annotations"] = json!({
             "readOnlyHint": read_only,
-            "destructiveHint": !read_only,
-            "openWorldHint": true,
+            "destructiveHint": is_destructive_tool(name),
+            "openWorldHint": is_open_world_tool(name),
         });
     }
     json!({ "tools": tools })
@@ -2480,6 +2480,41 @@ fn is_read_tool(name: &str) -> bool {
             | "get_property"
             | "list_sources"
             | "get_source"
+    )
+}
+
+fn is_destructive_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "rename_repo"
+            | "upsert_data"
+            | "revoke_share_link"
+            | "update_org"
+            | "update_repo"
+            | "delete_repo"
+            | "update_data"
+            | "delete_data"
+            | "update_property"
+            | "delete_property"
+            | "update_source"
+            | "delete_source"
+    )
+}
+
+fn is_open_world_tool(name: &str) -> bool {
+    !matches!(name, "get_me" | "list_orgs" | "search_repos")
+}
+
+fn openai_apps_challenge_response(token: Option<String>) -> Response {
+    match token.filter(|value| !value.is_empty()) {
+        Some(token) => token.into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+pub async fn openai_apps_challenge() -> Response {
+    openai_apps_challenge_response(
+        std::env::var("OPENAI_APPS_CHALLENGE_TOKEN").ok(),
     )
 }
 
@@ -3647,6 +3682,55 @@ mod tests {
             .contains("insufficient_scope"));
         assert!(McpAuthContext::accepted_without_executor(true)
             .can_use_write_tools());
+    }
+
+    #[test]
+    fn tool_annotations_distinguish_creation_from_destructive_writes() {
+        let tools = tools_list_result(true);
+        let annotations = |name: &str| {
+            tools["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap()["annotations"]
+                .clone()
+        };
+
+        assert_eq!(annotations("get_data")["readOnlyHint"], true);
+        assert_eq!(annotations("get_data")["destructiveHint"], false);
+        assert_eq!(annotations("get_data")["openWorldHint"], true);
+        assert_eq!(annotations("get_me")["openWorldHint"], false);
+        assert_eq!(annotations("list_orgs")["openWorldHint"], false);
+        assert_eq!(annotations("search_repos")["openWorldHint"], false);
+        assert_eq!(annotations("create_data")["readOnlyHint"], false);
+        assert_eq!(annotations("create_data")["destructiveHint"], false);
+        assert_eq!(
+            annotations("create_share_link")["destructiveHint"],
+            false
+        );
+        assert_eq!(annotations("update_data")["destructiveHint"], true);
+        assert_eq!(annotations("delete_data")["destructiveHint"], true);
+        assert_eq!(
+            annotations("revoke_share_link")["destructiveHint"],
+            true
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_apps_challenge_returns_exact_token_or_not_found() {
+        use axum::body::to_bytes;
+
+        let response = openai_apps_challenge_response(None);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let response =
+            openai_apps_challenge_response(Some("challenge-token".into()));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 1024).await.unwrap(),
+            "challenge-token"
+        );
     }
 
     #[test]

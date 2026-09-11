@@ -641,6 +641,10 @@ pub async fn router(
             "/.well-known/oauth-authorization-server/mcp/oauth",
             get(handler::mcp::mcp_oauth_authorization_server_metadata),
         )
+        .route(
+            "/.well-known/openai-apps-challenge",
+            get(handler::mcp::openai_apps_challenge),
+        )
         .route("/mcp", post(handler::mcp::mcp_handler))
         .route(
             "/mcp/oauth/register",
