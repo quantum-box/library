@@ -253,10 +253,11 @@ function resetState() {
 resetState()
 
 function repositoryExists(org, repo) {
-  return org === 'quantum-box' && repo === state.repository.username
+  return org === 'quantum-box' && repo === state.repository?.username
 }
 
 function publicRepository() {
+  if (!state.repository) return null
   return {
     id: state.repository.id,
     username: state.repository.username,
@@ -490,7 +491,7 @@ function graphqlResponse(query, variables) {
             id: 'org-1',
             name: 'Quantum Box',
             username: 'quantum-box',
-            repos: [publicRepository()],
+            repos: state.repository ? [publicRepository()] : [],
           }
         : null,
     }
@@ -596,6 +597,16 @@ function graphqlResponse(query, variables) {
     return { updateRepo: clone(state.repository) }
   }
 
+  if (query.includes('LibraryClientDeleteRepository')) {
+    if (!repositoryExists(variables.orgUsername, variables.repoUsername)) {
+      return { deleteRepo: null }
+    }
+    state.repository = null
+    state.properties = []
+    state.data = []
+    return { deleteRepo: 'ok' }
+  }
+
   return null
 }
 
@@ -671,7 +682,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/v1beta/repos') {
-      sendJson(response, 200, [restRepository()])
+      sendJson(response, 200, state.repository ? [restRepository()] : [])
       return
     }
 

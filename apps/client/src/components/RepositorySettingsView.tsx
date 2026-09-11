@@ -1,5 +1,17 @@
 import { Link } from '@tanstack/react-router'
-import { Badge, Button, Label } from '@tachyon-sdk/native-ui'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+} from '@tachyon-sdk/native-ui'
 import {
   AlertCircle,
   ArrowLeft,
@@ -9,6 +21,7 @@ import {
   Lock,
   RefreshCw,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react'
 import {
   type FormEvent,
@@ -33,6 +46,84 @@ interface RepositorySettingsViewProps {
   organization: string
   repository: string
   operatorId?: string
+  onDeleteRepository: () => Promise<void>
+}
+
+function DeleteRepositoryDialog({
+  open,
+  repositoryPath,
+  confirmation,
+  busy,
+  error,
+  onConfirmationChange,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean
+  repositoryPath: string
+  confirmation: string
+  busy: boolean
+  error: string | null
+  onConfirmationChange: (value: string) => void
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useI18n()
+  const confirmed = confirmation === repositoryPath
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen && !busy) onClose()
+    }}>
+      <DialogContent className="max-w-md" aria-busy={busy}>
+        <DialogHeader>
+          <DialogTitle>{t('repoSettings.deleteRepositoryTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('repoSettings.deleteRepositoryDescription', { path: repositoryPath })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="delete-repository-confirmation">
+            {t('repoSettings.deleteRepositoryConfirmationLabel', { path: repositoryPath })}
+          </Label>
+          <Input
+            id="delete-repository-confirmation"
+            value={confirmation}
+            onChange={(event) => onConfirmationChange(event.target.value)}
+            placeholder={repositoryPath}
+            autoComplete="off"
+            disabled={busy}
+          />
+          <p className="text-2xs text-muted-foreground">
+            {t('repoSettings.deleteRepositoryConfirmationHint')}
+          </p>
+        </div>
+        {error ? (
+          <div
+            role="alert"
+            data-testid="delete-repository-error"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {error}
+          </div>
+        ) : null}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" disabled={busy}>{t('common.cancel')}</Button>
+          </DialogClose>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!confirmed || busy}
+            onClick={onConfirm}
+          >
+            <Trash2 aria-hidden="true" />
+            {busy ? t('common.deleting') : t('repoSettings.deleteRepository')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function errorMessage(error: unknown): string {
@@ -104,6 +195,7 @@ export function RepositorySettingsView({
   organization,
   repository,
   operatorId,
+  onDeleteRepository,
 }: RepositorySettingsViewProps) {
   const { t, tPlural } = useI18n()
   const target = useMemo<RepositorySettingsTarget>(() => ({
@@ -121,6 +213,11 @@ export function RepositorySettingsView({
   const [metadataError, setMetadataError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [writePermissionDenied, setWritePermissionDenied] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const repositoryPath = `${organization}/${repository}`
 
   const loadSettings = useCallback(async () => {
     const revision = ++loadRevision.current
@@ -188,6 +285,27 @@ export function RepositorySettingsView({
       setMetadataError(markMutationFailure(error))
     } finally {
       setMetadataBusy(false)
+    }
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleteBusy) return
+    setDeleteDialogOpen(false)
+    setDeleteConfirmation('')
+    setDeleteError(null)
+  }
+
+  const handleRepositoryDelete = async () => {
+    if (deleteBusy || deleteConfirmation !== repositoryPath) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await onDeleteRepository()
+      setDeleteDialogOpen(false)
+    } catch (error) {
+      setDeleteError(markMutationFailure(error))
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -413,9 +531,54 @@ export function RepositorySettingsView({
                 onPermissionDenied={() => setWritePermissionDenied(true)}
               />
             </div>
+
+            <section
+              className="mt-5 overflow-hidden rounded-lg border border-destructive/40 bg-background shadow-soft"
+              aria-labelledby="repository-danger-zone-heading"
+            >
+              <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-3">
+                <Trash2 className="size-4 text-destructive" aria-hidden="true" />
+                <h2 id="repository-danger-zone-heading" className="text-sm font-semibold text-destructive">
+                  {t('repoSettings.dangerZone')}
+                </h2>
+              </div>
+              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">{t('repoSettings.deleteRepository')}</p>
+                  <p className="mt-0.5 max-w-2xl text-xs leading-5 text-muted-foreground">
+                    {t('repoSettings.deleteRepositorySummary')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full shrink-0 sm:w-auto"
+                  disabled={writePermissionDenied}
+                  onClick={() => {
+                    setDeleteConfirmation('')
+                    setDeleteError(null)
+                    setDeleteDialogOpen(true)
+                  }}
+                >
+                  <Trash2 aria-hidden="true" />
+                  {t('repoSettings.deleteRepository')}
+                </Button>
+              </div>
+            </section>
           </div>
         </div>
       )}
+
+      <DeleteRepositoryDialog
+        open={deleteDialogOpen}
+        repositoryPath={repositoryPath}
+        confirmation={deleteConfirmation}
+        busy={deleteBusy}
+        error={deleteError}
+        onConfirmationChange={setDeleteConfirmation}
+        onClose={closeDeleteDialog}
+        onConfirm={() => void handleRepositoryDelete()}
+      />
     </main>
   )
 }

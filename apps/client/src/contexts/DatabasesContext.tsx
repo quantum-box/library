@@ -11,6 +11,7 @@ import {
   type LibraryOrganization,
   type LibraryRepository,
 } from '../lib/recordsApi'
+import { deleteRepository as deleteLibraryRepository } from '../lib/repositorySettingsApi'
 import { t } from '../i18n'
 import {
   loadSelectedOrganization,
@@ -51,6 +52,11 @@ interface DatabasesContextValue {
     description: string,
     isPublic: boolean,
   ) => Promise<WorkspaceDatabase>
+  deleteRepository: (
+    orgUsername: string,
+    repoUsername: string,
+    operatorId?: string,
+  ) => Promise<void>
   addDatabase: (label: string) => WorkspaceDatabase | null
   removeDatabase: (databaseId: string) => boolean
   canRemoveDatabase: (databaseId: string | null | undefined) => boolean
@@ -264,6 +270,19 @@ export function DatabasesProvider({
     return database
   }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
 
+  const deleteRepository = useCallback(async (
+    orgUsername: string,
+    repoUsername: string,
+    operatorId?: string,
+  ) => {
+    await deleteLibraryRepository({ orgUsername, repoUsername, operatorId })
+    setDatabases((current) => current.filter(
+      (database) => !(
+        database.orgUsername === orgUsername && database.repoUsername === repoUsername
+      ),
+    ))
+  }, [])
+
   // Each URL is acted on once. The sidebar's own picker selects and then
   // navigates, so for a moment the selection is already the new organization
   // while the URL still names the old one; acting on that URL a second time
@@ -342,6 +361,7 @@ export function DatabasesProvider({
       createOrganization,
       importOrganization,
       createRepository,
+      deleteRepository,
       addDatabase,
       removeDatabase,
       canRemoveDatabase,
@@ -354,6 +374,7 @@ export function DatabasesProvider({
       createOrganization,
       importOrganization,
       createRepository,
+      deleteRepository,
       getDatabase,
       organizations,
       refreshRepositories,

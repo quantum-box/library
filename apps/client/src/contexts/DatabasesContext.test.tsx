@@ -21,6 +21,14 @@ vi.mock('../lib/recordsApi', () => ({
   importLibraryTenant: mocks.importLibraryTenant,
 }))
 
+const settingsMocks = vi.hoisted(() => ({
+  deleteRepository: vi.fn(),
+}))
+
+vi.mock('../lib/repositorySettingsApi', () => ({
+  deleteRepository: settingsMocks.deleteRepository,
+}))
+
 function Probe() {
   const {
     databases,
@@ -31,6 +39,7 @@ function Probe() {
     createOrganization,
     importOrganization,
     createRepository,
+    deleteRepository,
     selectedOrganizationId,
     setSelectedOrganizationId,
   } = useWorkspaceDatabases()
@@ -91,6 +100,13 @@ function Probe() {
       >
         Create repository
       </button>
+      <button
+        type="button"
+        data-testid="delete-repository"
+        onClick={() => void deleteRepository('acme', 'alpha', 'org-1')}
+      >
+        Delete repository
+      </button>
     </div>
   )
 }
@@ -134,6 +150,7 @@ describe('DatabasesProvider', () => {
       orgUsername: 'acme',
       isPublic: false,
     })
+    settingsMocks.deleteRepository.mockResolvedValue(undefined)
   })
 
   it('loads sidebar repositories via fetchLibraryRepositories on mount', async () => {
@@ -293,6 +310,26 @@ describe('DatabasesProvider', () => {
       username: 'research-library',
       description: 'Research notes',
       isPublic: false,
+    })
+  })
+
+  it('removes a deleted repository from the client collection immediately', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('database-count')).toHaveTextContent('1'))
+
+    await act(async () => {
+      screen.getByTestId('delete-repository').click()
+    })
+
+    await waitFor(() => expect(screen.getByTestId('database-count')).toHaveTextContent('0'))
+    expect(settingsMocks.deleteRepository).toHaveBeenCalledWith({
+      orgUsername: 'acme',
+      repoUsername: 'alpha',
+      operatorId: 'org-1',
     })
   })
 

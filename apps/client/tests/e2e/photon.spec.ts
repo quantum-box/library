@@ -406,6 +406,26 @@ test.describe('Library shell', () => {
     await expect(page.getByLabel('Description')).toHaveValue(description)
   })
 
+  test('deletes a repository from its danger zone after path confirmation', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/settings')
+    await expect(page.getByTestId('repository-settings-page')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Delete repository' }).click()
+    const dialog = page.getByRole('dialog')
+    const confirm = dialog.getByRole('button', { name: 'Delete repository' })
+    await expect(confirm).toBeDisabled()
+    await dialog.getByLabel('Type quantum-box/photon-core to confirm').fill(
+      'quantum-box/photon-core',
+    )
+    await confirm.click()
+
+    await expect(page).toHaveURL(/\/repositories$/)
+    await expect(page.getByTestId('database-quantum-box/photon-core')).toHaveCount(0)
+
+    await page.reload()
+    await expect(page.getByTestId('database-quantum-box/photon-core')).toHaveCount(0)
+  })
+
   test('edits and clears a data Property value from the data page', async ({ page }) => {
     await page.goto('/quantum-box/photon-core/data/seed-data-201')
     await expect(page.getByTestId('data-editor-page')).toBeVisible()

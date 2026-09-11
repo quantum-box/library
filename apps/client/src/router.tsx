@@ -949,7 +949,8 @@ const repositorySettingsRoute = createRoute({
 
 function RepositorySettingsPage() {
   const { organization, repository } = repositorySettingsRoute.useParams()
-  const { databases } = useWorkspaceDatabases()
+  const { databases, deleteRepository } = useWorkspaceDatabases()
+  const navigate = useNavigate()
   const operatorId = databases.find(
     (database) =>
       database.orgUsername === organization && database.repoUsername === repository,
@@ -960,6 +961,10 @@ function RepositorySettingsPage() {
       organization={organization}
       repository={repository}
       operatorId={operatorId}
+      onDeleteRepository={async () => {
+        await deleteRepository(organization, repository, operatorId)
+        await navigate({ to: '/repositories', replace: true })
+      }}
     />
   )
 }
