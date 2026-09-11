@@ -187,7 +187,11 @@ remain part of the dedicated GitHub round trip below.
 
 ## Remaining release gates
 
-- Follow-up Ready PR CI and production sync Worker deployment
+- Follow-up Ready PR [#359](https://github.com/quantum-box/library/pull/359)
+  merged as `f7330125ce169a917241577e8f2e31bbfbe795ce`; all main checks passed.
+- Production sync Worker deployment `dep_01m28pfcy57e5mhpg2gq09zjkb` is active,
+  and `/api/health` returned HTTP 200. Library `0.1.54` was published, and the
+  public updater metadata reports `0.1.54` for every supported platform.
 - Dedicated GitHub OAuth, webhook, outbound commit, conflict, rename, and delete
   round trip, including authenticated browser state after reload
 - Provider-originated webhook delivery requires a governance-managed GitHub
