@@ -49,6 +49,8 @@ async fn register_record_events(
     scan_after: DateTime<Utc>,
     batch_size: u32,
 ) -> errors::Result<u64> {
+    // Let the delivery table's unique key provide idempotency. TiDB cannot
+    // reliably plan an INSERT ... SELECT that LEFT JOINs the insert target.
     let result = sqlx::query(
         r#"
         INSERT IGNORE INTO domain_outbox_deliveries (
@@ -56,17 +58,12 @@ async fn register_record_events(
         )
         SELECT event.event_id, ?
         FROM domain_outbox_events AS event
-        LEFT JOIN domain_outbox_deliveries AS delivery
-          ON delivery.event_id = event.event_id
-         AND delivery.consumer_name = ?
         WHERE event.aggregate_type = 'RECORD'
           AND event.occurred_at >= ?
-          AND delivery.event_id IS NULL
         ORDER BY event.occurred_at, event.event_id
         LIMIT ?
         "#,
     )
-    .bind(OUTBOX_CONSUMER)
     .bind(OUTBOX_CONSUMER)
     .bind(scan_after)
     .bind(batch_size)
@@ -1002,7 +999,9 @@ mod scanner_database_tests {
         .execute(&pool)
         .await?;
 
-        let scan_after = chrono::Utc::now() - chrono::Duration::minutes(1);
+        // Docker Desktop can resume the local MySQL VM with a clock a few
+        // minutes behind the host, so keep this test cutoff comfortably old.
+        let scan_after = chrono::Utc::now() - chrono::Duration::hours(1);
         assert_eq!(register_record_events(&pool, scan_after, 50).await?, 1);
         assert_eq!(register_record_events(&pool, scan_after, 50).await?, 0);
 
