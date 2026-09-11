@@ -68,7 +68,7 @@ async function scenario(t, overrides = {}) {
     compatibilityDate: '2026-05-05',
     durableObjects: Object.fromEntries(['PhotonSyncRoom', 'PhotonLiveRoom', 'PhotonLiveTicketStore'].map((className, i) => [ ['PHOTON_SYNC_ROOMS', 'PHOTON_LIVE_ROOMS', 'PHOTON_LIVE_TICKETS'][i], { className, useSQLite: true } ])),
     durableObjectsPersist: persist,
-    bindings: { PHOTON_LIVE_ENABLED: 'true', PHOTON_LIVE_ALLOWED_ORIGINS: origin, PHOTON_LIVE_API_BASE_URL: api, PHOTON_CLOUD_ENGINE_BASE_URL: api, ...overrides.bindings },
+    bindings: { PHOTON_LIVE_ENABLED: 'true', PHOTON_LIVE_ALLOWED_ORIGINS: origin, PHOTON_LIVE_API_BASE_URL: api, PHOTON_CLOUD_ENGINE_BASE_URL: api, EXTERNAL_SYNC_SCANNER_ENABLED: 'false', ...overrides.bindings },
     outboundService: async (request) => {
       assert.equal(new URL(request.url).origin, api)
       const body = request.method === 'GET' ? undefined : await request.json()
@@ -103,11 +103,25 @@ async function scenario(t, overrides = {}) {
   const storage = async (binding, name) => (await (await stub(binding, name)).fetch('https://fixture/__test/state')).json()
   const seed = async (values, binding, name) => { const r = await (await stub(binding, name)).fetch('https://fixture/__test/seed', { method: 'POST', body: JSON.stringify(values) }); assert.equal(r.status, 200) }
   return { state, fetch, issue, connect, live, sync, storage, seed, stub,
+    scheduled: async () => (await mf.getWorker()).scheduled(),
     restart: async () => { for (const ws of sockets) ws.close(); await mf.dispose(); mf = start() },
     initialize: async () => { const ws = await live(); ws.seed(state.body); await ws.take('live-ready', (m) => m.initialized); return ws },
     checkpoints: () => state.calls.filter((c) => c.path.endsWith('/live/checkpoint')),
   }
 }
+
+test('scheduled external-sync scan is gated and carries only its secret bearer', async (t) => {
+  const off = await scenario(t)
+  await off.scheduled()
+  assert.equal(off.state.calls.some((call) => call.path.endsWith('/internal/external-sync/outbound-scan')), false)
+
+  const on = await scenario(t, { bindings: { EXTERNAL_SYNC_SCANNER_ENABLED: 'true', EXTERNAL_SYNC_SCANNER_TOKEN: 'scanner-test-secret-at-least-32-bytes' } })
+  await on.scheduled()
+  const scan = on.state.calls.find((call) => call.path.endsWith('/internal/external-sync/outbound-scan'))
+  assert.ok(scan)
+  assert.equal(scan.headers.authorization, 'Bearer scanner-test-secret-at-least-32-bytes')
+  assert.deepEqual(scan.body, {})
+})
 
 test('root, health, feature gate, exact origins and protected internal routes', async (t) => {
   const s = await scenario(t)

@@ -79,6 +79,10 @@ spec:
               type: credential
               valueFrom:
                 secret: library-api/OPENAI_APPS_CHALLENGE_TOKEN
+            - name: EXTERNAL_SYNC_SCANNER_TOKEN
+              type: credential
+              valueFrom:
+                secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
@@ -87,6 +91,17 @@ spec:
             provider: tidb
             engine: mysql
             envVar: DATABASE_URL
+          envVars:
+            - name: LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS
+              value: "true"
+            - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
+              value: "true"
+            - name: LIBRARY_EXTERNAL_SYNC_OUTBOX_SCAN_AFTER
+              value: "2026-09-11T00:00:00Z"
+            - name: EXTERNAL_SYNC_SCANNER_TOKEN
+              type: credential
+              valueFrom:
+                secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
       envVars:
         - name: DATABASE_URL
           type: credential
@@ -320,8 +335,13 @@ spec:
       readinessProof:
         path: /api/health
       # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # cloudflare_workers ターゲットは repo の wrangler 設定をそのまま使うため、
-      # ここで envVars や worker.generateConfig を宣言すると二重管理になる。
+      # Scanner bearer だけは Tachyon の secret source of truth から注入し、
+      # 平文を wrangler config や repository に保存しない。
+      envVars:
+        - name: EXTERNAL_SYNC_SCANNER_TOKEN
+          type: credential
+          valueFrom:
+            secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
 ---
 # Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
 # (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が

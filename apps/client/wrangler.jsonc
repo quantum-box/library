@@ -24,7 +24,11 @@
     // Tauri uses tauri://localhost on macOS/Linux and http://tauri.localhost
     // on Windows (the shell does not enable useHttpsScheme).
     "PHOTON_LIVE_ALLOWED_ORIGINS": "https://planetlibrary.txcloud.app,https://library-client.txcloud.app,tauri://localhost,http://tauri.localhost",
-    "PHOTON_LIVE_API_BASE_URL": "https://library-api.txcloud.app"
+    "PHOTON_LIVE_API_BASE_URL": "https://library-api.txcloud.app",
+    "EXTERNAL_SYNC_SCANNER_ENABLED": "false"
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
   },
   "observability": {
     "enabled": true

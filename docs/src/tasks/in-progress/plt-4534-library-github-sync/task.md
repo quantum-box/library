@@ -109,6 +109,17 @@ outbox delivery、primary client UI は後続 Phase のまま。
 binding の実配備、実 GitHub OAuth / webhook / Contents API、browser UI の往復確認は、PR CI と
 Preview surface で別 gate として記録する。
 
+### 2026-09-11 Release hardening
+
+- commit 済み Record event を独立 scanner が `domain_outbox_deliveries` へ冪等登録し、request
+  process が outbound capture 前に停止した場合も期限付き lease と retry で回収する。
+- event capture と provider I/O を分離する。scanner は deterministic delivery を永続化し、due
+  delivery は別の CAS lease で少数ずつ自動再送する。
+- API の内部 scanner route は専用 bearer を必須とし、Cloudflare Worker cron は一分ごとに呼ぶ。
+  credential は Tachyon secret にだけ登録し、manifest には参照だけを置く。
+- Preview は engine 有効・cron 無効で配備と手動 E2E を行う。本番は dedicated GitHub round trip
+  が合格するまで engine / cron とも無効のまま維持する。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

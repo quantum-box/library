@@ -10,6 +10,7 @@
   "compatibility_date": "2026-05-05",
   "vars": {
     "PHOTON_LIVE_ENABLED": "true",
+    "EXTERNAL_SYNC_SCANNER_ENABLED": "false",
     "PHOTON_LIVE_API_BASE_URL": "http://127.0.0.1:50063",
     "PHOTON_LIVE_ALLOWED_ORIGINS": "http://127.0.0.1:5187"
   },

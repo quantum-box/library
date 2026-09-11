@@ -478,6 +478,10 @@ impl OutboundDelivery {
     pub fn mark_attempt(&mut self, now: DateTime<Utc>) {
         self.attempt_count = self.attempt_count.saturating_add(1);
         self.status = OutboundDeliveryStatus::Retrying;
+        // Keep an in-flight attempt out of the due queue. A process that
+        // stops before recording the provider result is picked up again
+        // after this lease expires.
+        self.next_attempt_at = now + chrono::Duration::minutes(2);
         self.updated_at = now;
     }
 
@@ -740,6 +744,7 @@ mod tests {
         assert_eq!(delivery.idempotency_key().len(), 64);
         assert_eq!(delivery.id(), duplicate.id());
         delivery.mark_attempt(now);
+        assert!(delivery.next_attempt_at() > now);
         delivery.mark_retry("rate_limited", now);
         assert!(delivery.next_attempt_at() > now);
         assert_eq!(delivery.attempt_count(), 1);

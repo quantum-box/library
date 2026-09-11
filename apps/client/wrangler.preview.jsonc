@@ -11,7 +11,8 @@
   "account_id": "fef3f6ef891ab3e121deb43eeb57318a",
   "vars": {
     "PHOTON_LIVE_ENABLED": "false",
-    "PHOTON_LIVE_ALLOWED_ORIGINS": ""
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "",
+    "EXTERNAL_SYNC_SCANNER_ENABLED": "false"
   },
   "observability": {
     "enabled": true
