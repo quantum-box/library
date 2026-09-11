@@ -84,7 +84,7 @@ continuous synchronization works at an external or deployed surface.
   dispatch capability state, verifies tenant isolation/idempotency/claim
   behavior, applies both down migrations, and removes its temporary database.
 - `cargo +nightly-2026-06-04 clippy -p integration_domain -p inbound_sync -p outbound_sync -p library-api --all-targets -- -D warnings ...`
-- Focused primary-client Vitest: 3 files, 67 tests passed (external-sync API,
+- Focused primary-client Vitest: 3 files, 68 tests passed (external-sync API,
   repository settings interaction, and all locale catalogs).
 - Primary-client TypeScript check, focused ESLint, and production build passed.
 - `npm run type-check:worker`: sync and public-docs Workers passed the locked

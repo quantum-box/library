@@ -384,6 +384,8 @@ interface LibraryRestPropertyResponse {
   id: string
   name: string
   property_type: string
+  auto_generate?: boolean
+  database_id?: string
   options?: LibrarySelectOption[]
 }
 
@@ -1778,14 +1780,23 @@ function restDataToLibraryDataItem(item: LibraryRestDataResponse): LibraryDataIt
 }
 
 function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): LibraryProperty {
+  const meta = {
+    ...(property.options ? { options: property.options } : {}),
+    ...(typeof property.auto_generate === 'boolean'
+      ? { autoGenerate: property.auto_generate }
+      : {}),
+    ...(typeof property.database_id === 'string'
+      ? { databaseId: property.database_id }
+      : {}),
+  }
   return {
     id: property.id,
     name: property.name,
     typ: normalizeLibraryPropertyType(property.property_type),
-    // A Select value stores its option id, so without these the cell has
-    // nothing to render but `op_...`. The GraphQL path already carries
-    // them; REST readers were seeing raw ids.
-    meta: property.options ? { options: property.options } : null,
+    // The GraphQL path already carries type metadata. Preserve its REST
+    // equivalents too: Select labels, Id generation, and Relation editing
+    // all depend on these fields rather than the bare Property type.
+    meta: Object.keys(meta).length > 0 ? meta : null,
   }
 }
 

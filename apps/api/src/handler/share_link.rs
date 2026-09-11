@@ -298,6 +298,12 @@ pub async fn view_shared_data(
                 name: property.name().to_string(),
                 property_type: property.property_type().to_string(),
                 auto_generate: None,
+                database_id: match property.property_type() {
+                    database_manager::domain::PropertyType::Relation(
+                        relation,
+                    ) => Some(relation.database_id.to_string()),
+                    _ => None,
+                },
                 // Without these a Select value renders as the raw
                 // `op_...` id, which is not the document the owner
                 // shared.

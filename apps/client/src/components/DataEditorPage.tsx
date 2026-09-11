@@ -37,6 +37,7 @@ import {
 import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libraryTable/libraryPropertyFormat'
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
+import { createLibraryRelationRecordLoader } from '../lib/libraryTable/relationRecords'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
@@ -139,6 +140,10 @@ export function DataEditorPage({
   repoLabel,
   onBack,
 }: DataEditorPageProps) {
+  const relationLoader = useMemo(
+    () => createLibraryRelationRecordLoader(),
+    [],
+  )
   const i18n = useI18n()
   const { t } = i18n
   const [item, setItem] = useState<LibraryDataItem | null>(null)
@@ -435,6 +440,7 @@ export function DataEditorPage({
     item={item}
     property={property}
     activation="single"
+    relationLoader={relationLoader}
     onCommit={(next) => persistItem(next)}
     />
     </div>

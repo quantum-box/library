@@ -110,6 +110,7 @@ export type PropertyDataValue = {
 
 export type PropertyResponse = {
   auto_generate?: boolean | null;
+  database_id?: string | null;
   id: string;
   name: string;
   property_type: string;

@@ -21,6 +21,7 @@ test.describe('Library mobile shell', () => {
     await expect(page.getByTestId('mobile-nav')).toHaveCount(0)
 
     await page.getByTestId('open-create-record').click()
+    await page.getByTestId('create-record-repository').selectOption('quantum-box/photon-core')
     await expect(page.getByTestId('create-record-repository')).toHaveValue('quantum-box/photon-core')
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()

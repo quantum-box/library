@@ -11,6 +11,8 @@ import {
   parseEditablePropertyValue,
 } from './libraryPropertyInput'
 import { LibraryPropertyCell, checkboxClassName } from './libraryPropertyCells'
+import { LibraryRelationEditor } from '../../components/libraryTable/LibraryRelationEditor'
+import type { LibraryRelationRecordLoader } from './relationRecords'
 import { t } from '../../i18n'
 
 const editableFieldClassName =
@@ -134,6 +136,7 @@ export function LibraryPropertyEditableCell({
   property,
   disabled,
   activation = 'double',
+  relationLoader,
   onCommit,
 }: {
   item: LibraryDataItem
@@ -145,10 +148,32 @@ export function LibraryPropertyEditableCell({
    * `single` -- a value nobody can find how to edit reads as read-only.
    */
   activation?: 'single' | 'double'
+  relationLoader?: LibraryRelationRecordLoader
   onCommit: (item: LibraryDataItem) => void
 }) {
   const [editing, setEditing] = useState(false)
   const currentValue = getLibraryDataPropertyValue(item, property.id)
+
+  if (property.typ === 'Relation') {
+    const databaseId = property.meta?.databaseId
+    if (!databaseId || !relationLoader) {
+      return <LibraryPropertyCell item={item} property={property} />
+    }
+    return (
+      <LibraryRelationEditor
+        propertyName={property.name}
+        propertyId={property.id}
+        databaseId={databaseId}
+        value={currentValue?.dataIds ?? []}
+        disabled={disabled}
+        activation={activation}
+        loader={relationLoader}
+        onCommit={(dataIds) => {
+          onCommit(mergeLibraryDataProperty(item, property.id, { dataIds }))
+        }}
+      />
+    )
+  }
 
   // A checkbox has no edit mode worth entering: the click that would open an
   // editor is the edit. It commits straight from the cell.

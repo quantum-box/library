@@ -1,12 +1,13 @@
 {
   "name": "library",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Search Library data, manage repositories, properties, and sources, and publish HTML artifacts through MCP.",
   "author": {
-    "name": "Quantum Box, Inc.",
+    "name": "Quantum Box株式会社",
+    "email": "info@quantum-box.com",
     "url": "https://github.com/quantum-box"
   },
-  "homepage": "https://github.com/quantum-box/library/tree/main/plugins/library",
+  "homepage": "https://library-user-guide.txcloud.app/",
   "repository": "https://github.com/quantum-box/library",
   "license": "MIT",
   "keywords": ["library", "mcp", "knowledge", "documents", "artifacts"],
@@ -15,11 +16,14 @@
     "displayName": "Library",
     "shortDescription": "Search and manage Library data, and publish HTML artifacts.",
     "longDescription": "Connect to Library over HTTP MCP to discover your organizations, read authorized data, cite source records, perform authorized writes with your Library account, and publish HTML reports and pages as Library Data.",
-    "developerName": "Quantum Box, Inc.",
+    "developerName": "Quantum Box株式会社",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "websiteURL": "https://github.com/quantum-box/library",
-    "defaultPrompt": ["Libraryの公開データを検索して、出典付きで要約して。", "Libraryのリポジトリのプロパティとソースを確認して。", "このメモを指定したLibraryリポジトリに保存して。", "このレポートをHTMLページにしてLibraryに置いて。"]
+    "websiteURL": "https://planet-library.txcloud.app/",
+    "defaultPrompt": ["Libraryの公開データを検索して、出典付きで要約して。", "Libraryのリポジトリのプロパティとソースを確認して。", "このレポートをHTMLページにしてLibraryに置いて。"],
+    "brandColor": "#1557FF",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.svg"
   },
   "mcpServers": "./.mcp.json"
 }

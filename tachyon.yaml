@@ -72,6 +72,13 @@ spec:
               value: dual_write_legacy_read
             - name: LIBRARY_PHOTON_LIVE_ENABLED
               value: "true"
+            # OpenAI Apps domain verification is production-only. The portal-
+            # issued value must be provisioned in Tachyon before deployment;
+            # never commit it to this repository.
+            - name: OPENAI_APPS_CHALLENGE_TOKEN
+              type: credential
+              valueFrom:
+                secret: library-api/OPENAI_APPS_CHALLENGE_TOKEN
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
