@@ -15,9 +15,18 @@ const apiMocks = vi.hoisted(() => ({
   updateRepositorySettings: vi.fn(),
 }))
 
+const recordsMocks = vi.hoisted(() => ({
+  fetchLibraryRepositories: vi.fn(),
+}))
+
 vi.mock('../lib/repositorySettingsApi', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/repositorySettingsApi')>(),
   ...apiMocks,
+}))
+
+vi.mock('../lib/recordsApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/recordsApi')>(),
+  ...recordsMocks,
 }))
 
 import { RepositorySettingsApiError } from '../lib/repositorySettingsApi'
@@ -81,6 +90,12 @@ function renderView() {
 describe('RepositorySettingsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    })
+    HTMLElement.prototype.scrollIntoView = vi.fn()
     apiMocks.fetchRepositorySettings.mockResolvedValue(settings)
     apiMocks.updateRepositorySettings.mockImplementation(async (_target, update) => ({
       ...settings.repository,
@@ -99,6 +114,14 @@ describe('RepositorySettingsView', () => {
       meta: null,
     })
     apiMocks.deleteRepositoryProperty.mockResolvedValue(undefined)
+    recordsMocks.fetchLibraryRepositories.mockResolvedValue([
+      {
+        id: 'database-people',
+        username: 'people',
+        name: 'People',
+        orgUsername: 'example',
+      },
+    ])
     deleteRepository.mockResolvedValue(undefined)
   })
 
@@ -310,6 +333,39 @@ describe('RepositorySettingsView', () => {
     expect(availablePropertyTypeChoices(undefined).map((choice) => choice.value)).toContain(
       'BOOLEAN',
     )
+  })
+
+  it('creates a Relation by choosing a repository instead of entering a database id', async () => {
+    apiMocks.createRepositoryProperty.mockResolvedValueOnce({
+      id: 'property-related',
+      name: 'Related people',
+      typ: 'RELATION',
+      meta: { databaseId: 'database-people' },
+    })
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Property' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), {
+      target: { value: 'Related people' },
+    })
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Type' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Relation' }))
+
+    await waitFor(() => expect(recordsMocks.fetchLibraryRepositories).toHaveBeenCalled())
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Related repository' }))
+    fireEvent.click(screen.getByRole('option', { name: /example \/ People/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add Property' }))
+
+    await waitFor(() => expect(apiMocks.createRepositoryProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
+      {
+        name: 'Related people',
+        type: 'RELATION',
+        relationDatabaseId: 'database-people',
+      },
+    ))
   })
 
   it('keeps Markdown selectable on a Property that already uses it', () => {
