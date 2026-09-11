@@ -24,6 +24,7 @@ Library plugin を OpenAI Platform の審査ポータルへ `With MCP` として
 
 - `apps/api/src/handler/mcp.rs`
 - `apps/api/src/router.rs`
+- `tachyon.yaml`
 - `plugins/library/.codex-plugin/plugin.json`
 - `plugins/library/assets/`
 - `plugins/library/submission/README.md`
@@ -31,13 +32,13 @@ Library plugin を OpenAI Platform の審査ポータルへ `With MCP` として
 ## 設計判断
 
 - 新規 DD / ADR は作成しない。MCP の機能・認可境界は変更せず、OpenAI が定義する提出契約へ既存 metadata と検証経路を合わせるため。
-- ドメイン検証トークンはソースへ埋め込まず、`OPENAI_APPS_CHALLENGE_TOKEN` から exact plain text として返す。
+- ドメイン検証トークンはソースへ埋め込まず、production の `library-api/OPENAI_APPS_CHALLENGE_TOKEN` secret reference から環境変数へ渡し、exact plain text として返す。
 - portal が発行するトークン、demo credentials、Platform権限は運用値としてリポジトリ外で扱う。
 
 ## 実装と検証
 
 1. create と destructive write を分けた tool annotation を実装し、代表ケースをテストする。
-2. `/.well-known/openai-apps-challenge` を追加し、未設定時404・設定時exact tokenをテストする。
+2. `/.well-known/openai-apps-challenge` とproduction secret referenceを追加し、未設定時404・設定時exact tokenをテストする。
 3. plugin manifest の starter prompt を3件に絞り、ブランド素材を同梱する。
 4. portal 用提出資料と未解決ゲートを1か所にまとめる。
 5. focused Rust test、plugin validator、公開 endpoint preflight を実行する。
