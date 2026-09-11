@@ -327,7 +327,7 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
 }
 
 #[cfg(test)]
-mod tests {
+mod relation_response_tests {
     use super::to_property_response;
     use database_manager::domain::{
         DatabaseId, Property, PropertyId, PropertyType, TypeRelation,
