@@ -147,3 +147,22 @@ experimental に戻す。Phase 1 以降で provider-neutral な binding / link s
 durable dispatcher、ChangeSet adapter、outbox consumer の順に GitHub adapter を
 最初の縦切りとして実装する。CRM adapter はこの共通 kernel が GitHub 固有概念を
 漏らさず成立したことを確認した後の別タスクとする。
+
+## 実装状況
+
+### Phase 1 — binding / object link model（2026-09-11）
+
+共通 kernel として `packages/integration_domain` に `ExternalSyncBinding` と
+`ExternalObjectLink` を追加した。`external_scope` の provider-specific な値は JSON に
+閉じ込める一方、object key を再帰的に正規化した SHA-256 を共通 identity とする。
+これにより JSON key 順に依存せず、DB の unique key で
+`(tenant, repo, provider, external scope)` を一つに保つ。
+
+外部 object ID は元値と exact-value SHA-256 を併記し、長い path / provider ID でも
+index 長に依存せず一 binding 内の一意性を保証する。SHA collision 時の誤読を避けるため、
+lookup は hash と元値の両方を比較する。
+
+永続化は `external_sync_bindings` / `external_object_links` の additive table と SQLx
+repository adapter で行う。Repo と integration connection は binding tenant と provider
+が一致する場合だけ保存できる。Data は production で別物理 database にあるため FK を
+作らず、すべての link query が親 binding を join して tenant scope を検証する。

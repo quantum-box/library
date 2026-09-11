@@ -70,6 +70,24 @@ provider-neutral な binding、external object link、ChangeSet、durable delive
 実 GitHub OAuth / webhook、Library API scenario、browser UI は Phase 0 では未実施。
 Experimental gate と設計文書の変更であり、外部同期の成功を検証する段階ではないためである。
 
+### 2026-09-11 Phase 1
+
+- `packages/integration_domain` に provider-neutral な
+  `ExternalSyncBinding` / `ExternalObjectLink`、policy / status、repository port を追加。
+- `external_scope` は object key 順を正規化した SHA-256 を identity とし、
+  `(tenant, Library repo, provider, external scope)` の冪等性を DB unique key で保証。
+- credential / secret / cursor field を `external_scope` から拒否し、provider cursor や
+  認証状態を binding 設定に混在させない。
+- `external_sync_bindings` / `external_object_links` の additive up/down migration を追加。
+  Data は別物理 DB のため FK を張らず、link query は親 binding の tenant scope を必須化。
+- SQLx adapter は Repo と connection の tenant / provider 所有権を保存前に検証し、
+  binding scope と external object の競合を transaction lock 下で拒否。
+- 実 MySQL の一時 database で migration up、binding / link round-trip、tenant isolation、
+  duplicate identity rejection、migration down を検証。
+
+Phase 1 は共通モデルと永続化までであり、binding API、durable dispatcher、ChangeSet、
+outbox delivery、primary client UI は後続 Phase のまま。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

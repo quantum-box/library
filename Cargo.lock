@@ -3263,6 +3263,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "sha2",
  "strum 0.26.3",
  "tachyon-sdk",
  "ulid 1.2.1",
@@ -3497,7 +3498,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "library-api"
-version = "1.11.5"
+version = "1.11.6"
 dependencies = [
  "anyhow",
  "arrow",

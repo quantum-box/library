@@ -4,9 +4,11 @@
 //! enabling tenants to discover, connect, and manage external service
 //! integrations.
 
+mod external_sync;
 mod marketplace;
 pub mod oauth;
 
+pub use external_sync::*;
 pub use marketplace::*;
 
 // Re-export OAuth types for convenience

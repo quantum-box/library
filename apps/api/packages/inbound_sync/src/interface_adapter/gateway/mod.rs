@@ -22,5 +22,9 @@ pub use webhook_event_repository::*;
 
 // Repository implementations (moved from integration package)
 mod connection_repository;
+mod external_sync_repository;
 
 pub use connection_repository::SqlxConnectionRepository;
+pub use external_sync_repository::{
+    SqlxExternalObjectLinkRepository, SqlxExternalSyncBindingRepository,
+};

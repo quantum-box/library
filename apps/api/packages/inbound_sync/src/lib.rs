@@ -59,6 +59,7 @@ pub use inbound_sync_domain::*;
 // Re-export key types
 pub use interface_adapter::{
     BuiltinIntegrationRegistry, SqlxConnectionRepository,
+    SqlxExternalObjectLinkRepository, SqlxExternalSyncBindingRepository,
 };
 pub use webhook_secret_store::WebhookSecretStore;
 pub use webhook_verifier::{WebhookVerifier, WebhookVerifierRegistry};
