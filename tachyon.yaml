@@ -83,6 +83,12 @@ spec:
               type: credential
               valueFrom:
                 secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
+            # Shared only with the Tachyon Slack unfurl workload. The API
+            # accepts short-lived, audience-bound JWTs and rejects replay.
+            - name: LIBRARY_SLACK_UNFURL_AUTH_SECRET
+              type: credential
+              valueFrom:
+                secret: library-api/LIBRARY_SLACK_UNFURL_AUTH_SECRET
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
