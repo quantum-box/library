@@ -10,7 +10,8 @@ Library側のReady PRとOpenAIへの最終提出を区別する。次のゲー�
 - [ ] Library向けprivacy policyとTerms of Serviceを法務・事業承認し、公開URLの実画面と内容を確認する
 - [ ] MFA、SMS、email confirmation、社内ネットワーク不要の審査専用accountと架空fixtureを用意する
 - [ ] OAuth UserInfoがdemo userの`email`と`email_verified: true`を返すことを確認する
-- [ ] portalからOAuth authorizationし、Scan Toolsで29 tool、skills、annotationsを確認する
+- [x] portalからOAuth authorizationし、Scan Toolsで本番32 toolを取得する
+- [ ] 修正版のデプロイ後に再scanし、32 tool、skills、`outputSchema`、annotationsを確認する
 - [ ] ChatGPTとCodexでpositive 5件 / negative 3件を実行し、期待結果とデータ後始末を記録する
 - [ ] Directory iconとcomposer iconをアップロードし、Developer Modeのdemo recording URLを設定する
 - [ ] starter prompts、global availability、release notes、policy attestationsを最終確認する

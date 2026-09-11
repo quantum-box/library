@@ -21,12 +21,12 @@
 - OpenAI Platform: `Quantum Box株式会社` / `Default project` でIndividualとBusinessがApproved。Ownerとして`With MCP` draftを作成した。
 - Draft Info: Library、`1.0.0`、Productivity、Business identity、公開説明、website、supportを保存した。
 - Draft MCP: `https://library-api.txcloud.app/mcp` とOAuthを保存し、domain challenge token発行まで確認した。token値はrepository、taskdoc、ログへ保存していない。
-- Scan Tools: Library OAuth authorization直前で停止した。認可とツール実行はデプロイ後の運用ゲートである。
+- Scan Tools: Library OAuth authorizationに成功し、本番の32ツールを取得した。本番は修正版デプロイ前のため、旧annotationのままで、全toolに`outputSchema`追加の推奨が表示されることを確認した。PLT-4553で修正し、デプロイ後再scanを残した。
 - `https://library.n1.tachy.one/privacy` と `/terms` はHTTP 200でもSPA上は`Not Found`のため、提出URLとして不採用。
 
 ## スキップした確認と理由
 
 - Domain verification: challenge endpointが未デプロイで、本番は404のため。
-- OAuth authorization、29 tool scan、positive 5件 / negative 3件: 審査用fixtureとdemo accountを作成し、修正版をデプロイした後に実行するため。
+- 修正版annotation / `outputSchema`の再scan、positive 5件 / negative 3件: 審査用fixtureとdemo accountを作成し、修正版をデプロイした後に実行するため。
 - Privacy policy / Terms of Service: 法務・事業承認済みの公開文書が未整備のため。
 - Directory/composer icon uploadとdemo recording: 外部アップロードおよび実クライアント録画を運用ゲートで行うため。

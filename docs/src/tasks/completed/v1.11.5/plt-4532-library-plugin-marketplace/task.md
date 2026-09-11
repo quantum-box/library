@@ -54,13 +54,13 @@ Library plugin を OpenAI Platform の審査ポータルへ `With MCP` として
 - 公開website / user guide / support URL: HTTP 200
 - 本番challenge endpoint: 未デプロイのためHTTP 404（期待どおり残ゲート）
 - OpenAI Platform: `Quantum Box株式会社` / `Default project` でbusiness verificationのApprovedを確認し、Owner権限で`With MCP` draftを作成済み
-- Portal draft: Infoの公開文言・Productivity・Business identity・website・support、および本番MCP URL・OAuthを保存済み。Scan ToolsはOAuth authorization直前で停止中
+- Portal draft: Infoの公開文言・Productivity・Business identity・website・support、および本番MCP URL・OAuthを保存済み。OAuth authorizationとScan Toolsで本番32ツールを取得済み
 - Privacy / terms候補URLはHTTP 200でもSPAの`Not Found`表示であり、公開ポリシーとして使用不可
 - `docs/SUMMARY.md` はこのrepositoryに存在しないため、taskdoc navigation更新は対象なし
 
 ## 完了条件
 
-- 全29ツールに実態どおりの `readOnlyHint`、`openWorldHint`、`destructiveHint` が返る。
+- 全32ツールに実態どおりの `readOnlyHint`、`openWorldHint`、`destructiveHint` が返る。
 - challenge endpoint が設定時にportal発行トークンだけを返し、未設定時404になる。
 - plugin package が validator を通る。
 - OpenAI PlatformにBusiness identity付き`With MCP` draftがあり、本番MCP URLとOAuthが保存される。

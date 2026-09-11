@@ -36,9 +36,11 @@ portalが発行したドメイン検証トークンを `OPENAI_APPS_CHALLENGE_TO
 
 ### Tool annotation justifications
 
-- `readOnlyHint`: `get_*`、`list_*`、`search_*` は状態を変更しないため `true`。create/update/delete/rename/upsert/revokeは `false`。
+- `readOnlyHint`: `get_*`、`list_*`、`search_*` は状態を変更しないため `true`。create/update/delete/rename/upsert/revokeは `false`。`list_share_links`も一覧取得だけなので `true`。
 - `destructiveHint`: create系と`create_share_link`は既存データを削除・上書きしないため `false`。rename、upsert、update、delete、revokeは既存状態を上書きまたは無効化するため `true`。
 - `openWorldHint`: `get_me`、`list_orgs`、認証済みorganization内だけの`search_repos`はbounded account/workspaceなので `false`。それ以外は公開repository/Data/Sourceを読み書きできるか、公開設定・共有リンクを通じて外部閲覧へ影響できるため `true`。
+
+全32ツールは成功時のJSON形を`outputSchema`で広告し、同じ値を`structuredContent`と後方互換用のtext contentで返す。修正版デプロイ後のScan Toolsでschema認識を再確認する。
 
 ## Starter prompts
 
@@ -118,7 +120,8 @@ Initial public submission of Library for ChatGPT and Codex. The plugin connects 
 - [ ] OAuth UserInfoがdemo userの`email`と`email_verified: true`を返す
 - [ ] annotation修正とchallenge endpointを本番デプロイ済み
 - [ ] portal tokenを設定しdomain verification成功
-- [ ] Scan Tools後の29 tool、skills、annotationsを目視確認
+- [x] OAuth authorizationとScan Toolsで本番の32 toolを取得（本番annotationは修正版デプロイ後に再scanする）
+- [ ] 修正版デプロイ後の32 tool、skills、`outputSchema`、annotationsを目視確認
 - [ ] release notesとpolicy attestationsを確認してSubmit for Review
 
 ### OpenAI Platform draft
@@ -130,4 +133,4 @@ Initial public submission of Library for ChatGPT and Codex. The plugin connects 
 - Version: `1.0.0`
 - Info: name、subtitle、description、Productivity、Business identity、author、website、supportを保存済み
 - MCP: production URLとOAuthを保存済み。domain challenge tokenはportal外へ公開・commitしない
-- Scan Tools: OAuth authorization直前で停止中
+- Scan Tools: OAuth authorization成功。本番32 toolを取得し、未デプロイの旧annotationsが表示されることを確認済み
