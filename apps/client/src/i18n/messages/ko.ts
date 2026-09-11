@@ -682,7 +682,6 @@ export const ko: LocaleMessages = {
   'auth.developmentOnly': '개발 전용',
   'auth.accessToken': '액세스 토큰',
   'auth.useDevelopmentToken': '개발 토큰 사용',
-  'auth.cognitoNote': '인증에는 Cognito를 사용하며, Library 계정을 만들거나 복구합니다.',
   'update.checking': '업데이트 확인 중',
   'update.checkingHint': '릴리스 피드에 새 버전을 문의하고 있습니다.',
   'update.upToDate': 'Library가 최신 버전입니다',

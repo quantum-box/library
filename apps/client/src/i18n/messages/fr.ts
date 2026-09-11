@@ -682,7 +682,6 @@ export const fr: LocaleMessages = {
   'auth.developmentOnly': 'Développement uniquement',
   'auth.accessToken': 'Jeton d’accès',
   'auth.useDevelopmentToken': 'Utiliser le jeton de développement',
-  'auth.cognitoNote': 'L’authentification utilise Cognito et crée ou restaure votre compte Library.',
   'update.checking': 'Recherche de mises à jour',
   'update.checkingHint': 'Interrogation du flux de versions pour une version plus récente.',
   'update.upToDate': 'Library est à jour',
