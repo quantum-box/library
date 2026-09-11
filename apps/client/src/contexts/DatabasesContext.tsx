@@ -159,10 +159,12 @@ export function DatabasesProvider({
   // looking at now.
   const routeOrganizationUsername = useRef(organizationUsername)
   routeOrganizationUsername.current = organizationUsername
+  const repositoriesRequestGeneration = useRef(0)
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
 
   const refreshRepositories = useCallback(async () => {
+    const requestGeneration = ++repositoriesRequestGeneration.current
     setRepositoriesLoading(true)
     setRepositoriesError(null)
     try {
@@ -170,6 +172,7 @@ export function DatabasesProvider({
         fetchLibraryRepositories(),
         fetchLibraryOrganizations(),
       ])
+      if (requestGeneration !== repositoriesRequestGeneration.current) return
       const nextOrganizations = uniqueOrganizations(orgs)
       setOrganizations(nextOrganizations)
       const routeOrganizationId = organizationIdForUsername(
@@ -187,6 +190,7 @@ export function DatabasesProvider({
       )
       setDatabases(repos.map(repoToDatabase))
     } catch (error: unknown) {
+      if (requestGeneration !== repositoriesRequestGeneration.current) return
       console.warn('Failed to load Library repositories', error)
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
@@ -194,7 +198,9 @@ export function DatabasesProvider({
       setSelectedOrganizationIdState(null)
       setDatabases([])
     } finally {
-      setRepositoriesLoading(false)
+      if (requestGeneration === repositoriesRequestGeneration.current) {
+        setRepositoriesLoading(false)
+      }
     }
   }, [])
 
@@ -276,11 +282,20 @@ export function DatabasesProvider({
     operatorId?: string,
   ) => {
     await deleteLibraryRepository({ orgUsername, repoUsername, operatorId })
+    // A refresh that began before the mutation may still carry the deleted
+    // repository. Invalidate it before updating the local collection so its
+    // stale response cannot put the repository back.
+    repositoriesRequestGeneration.current += 1
+    setRepositoriesLoading(false)
+    setRepositoriesError(null)
     setDatabases((current) => current.filter(
       (database) => !(
         database.orgUsername === orgUsername && database.repoUsername === repoUsername
       ),
     ))
+    window.dispatchEvent(new CustomEvent('library-repository-deleted', {
+      detail: { orgUsername, repoUsername },
+    }))
   }, [])
 
   // Each URL is acted on once. The sidebar's own picker selects and then

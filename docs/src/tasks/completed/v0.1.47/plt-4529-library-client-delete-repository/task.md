@@ -10,6 +10,8 @@ Library Client にはリポジトリの作成・設定導線がある一方、�
 - 対象の `organization/repository` を入力しないと確定できない確認ダイアログを追加する。
 - 削除中の多重送信を防ぎ、API・認可エラーをダイアログ内に表示する。
 - 削除成功後に Client のリポジトリ一覧を更新し、リポジトリ一覧へ遷移する。
+- 削除対象の Record projection を除去し、古い一覧 refresh からの復活を防ぐ。
+- metadata 保存と削除を直列化し、別権限の失敗状態を分離する。
 - API 呼び出し、状態更新、確認 UI のテストを追加する。
 
 ## 対象外
@@ -31,6 +33,7 @@ Library Client にはリポジトリの作成・設定導線がある一方、�
 2. `DatabasesContext` に削除操作と成功時のローカル一覧更新を追加する。
 3. 設定画面へ危険ゾーンと確認ダイアログを追加し、成功時の遷移を Router から渡す。
 4. 全言語のメッセージカタログと unit/component/E2E fixture を更新する。
+5. PR review で検出した保存競合、古い refresh、Record projection、削除権限エラーの状態分離を修正する。
 
 ## 検証
 
@@ -38,6 +41,8 @@ Library Client にはリポジトリの作成・設定導線がある一方、�
 - 確認文字列が一致するまで削除ボタンが無効であること。
 - 実行中の閉じる操作と多重送信が無効であること。
 - 成功後に一覧から対象が消え、`/repositories` へ遷移すること。
+- 削除前に開始した refresh が完了しても対象が復活せず、対象 Record も projection から消えること。
+- metadata 保存中は削除できず、削除権限エラーだけでは metadata／Property 編集が read-only にならないこと。
 - Forbidden や API エラーでは設定画面に留まり、内容を表示して再試行できること。
 - Client の focused test、type-check、build を実行する。
 

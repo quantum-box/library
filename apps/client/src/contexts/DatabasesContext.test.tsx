@@ -5,6 +5,16 @@ import { appKitConfig } from '../app/kitConfig'
 
 const SELECTED_ORGANIZATION_KEY = appKitConfig.storage.selectedOrganizationKey
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 const mocks = vi.hoisted(() => ({
   fetchLibraryRepositories: vi.fn(),
   fetchLibraryOrganizations: vi.fn(),
@@ -331,6 +341,60 @@ describe('DatabasesProvider', () => {
       repoUsername: 'alpha',
       operatorId: 'org-1',
     })
+  })
+
+  it('does not restore a deleted repository from an older refresh response', async () => {
+    const staleRefresh = deferred<Array<{
+      id: string
+      username: string
+      name: string
+      orgUsername: string
+      operatorId: string
+    }>>()
+    mocks.fetchLibraryRepositories
+      .mockResolvedValueOnce([
+        {
+          id: 'repo-1',
+          username: 'alpha',
+          name: 'Alpha Repo',
+          orgUsername: 'acme',
+          operatorId: 'org-1',
+        },
+      ])
+      .mockReturnValueOnce(staleRefresh.promise)
+
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('database-count')).toHaveTextContent('1'))
+
+    act(() => {
+      screen.getByTestId('refresh').click()
+    })
+    await waitFor(() => expect(mocks.fetchLibraryRepositories).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      screen.getByTestId('delete-repository').click()
+    })
+    await waitFor(() => expect(screen.getByTestId('database-count')).toHaveTextContent('0'))
+
+    await act(async () => {
+      staleRefresh.resolve([
+        {
+          id: 'repo-1',
+          username: 'alpha',
+          name: 'Alpha Repo',
+          orgUsername: 'acme',
+          operatorId: 'org-1',
+        },
+      ])
+      await staleRefresh.promise
+    })
+
+    expect(screen.getByTestId('database-count')).toHaveTextContent('0')
+    expect(screen.getByTestId('loading')).toHaveTextContent('false')
   })
 
   describe('persisted organization selection', () => {

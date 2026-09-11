@@ -57,6 +57,16 @@ const settings = {
 
 const deleteRepository = vi.fn<() => Promise<void>>()
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function renderView() {
   return render(
     <RepositorySettingsView
@@ -429,6 +439,27 @@ describe('RepositorySettingsView', () => {
     await waitFor(() => expect(deleteRepository).toHaveBeenCalledTimes(1))
   })
 
+  it('does not allow deletion while a metadata save is in flight', async () => {
+    const update = deferred<typeof settings.repository>()
+    apiMocks.updateRepositorySettings.mockReturnValueOnce(update.promise)
+    renderView()
+    await screen.findByTestId('repository-settings-body')
+
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Saving description' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(apiMocks.updateRepositorySettings).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Delete repository' })).toBeDisabled()
+
+    update.resolve({ ...settings.repository, description: 'Saving description' })
+    await update.promise
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete repository' })).toBeEnabled()
+    })
+  })
+
   it('keeps the confirmation open and reports a repository deletion failure', async () => {
     deleteRepository.mockRejectedValueOnce(new RepositorySettingsApiError(
       'You do not have permission to delete this repository.',
@@ -449,6 +480,7 @@ describe('RepositorySettingsView', () => {
       'You do not have permission to delete this repository.',
     )
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByTestId('repository-settings-permission-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('repository-settings-permission-error')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toBeEnabled()
   })
 })

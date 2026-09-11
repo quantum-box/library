@@ -138,6 +138,18 @@ function removeYDatabaseRecord(recordId: string) {
   }
 }
 
+function removeYRepositoryRecords(orgUsername: string, repoUsername: string) {
+  for (let index = recordsArray.length - 1; index >= 0; index--) {
+    const record = recordsArray.get(index)
+    if (
+      record.get('orgUsername') === orgUsername &&
+      record.get('repoUsername') === repoUsername
+    ) {
+      recordsArray.delete(index, 1)
+    }
+  }
+}
+
 function reconcileYRecords(
   serverRecords: DatabaseRecord[],
   protectedRecordIds: ReadonlySet<string> = new Set()
@@ -294,6 +306,28 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     recordsArray.observeDeep(noteRemoteChange)
     return () => recordsArray.unobserveDeep(noteRemoteChange)
   }, [])
+
+  useEffect(() => {
+    const removeDeletedRepositoryRecords = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        orgUsername?: unknown
+        repoUsername?: unknown
+      }>).detail
+      if (
+        typeof detail?.orgUsername !== 'string' ||
+        typeof detail.repoUsername !== 'string'
+      ) {
+        return
+      }
+      transactProjection(() => {
+        removeYRepositoryRecords(detail.orgUsername as string, detail.repoUsername as string)
+      })
+    }
+    window.addEventListener('library-repository-deleted', removeDeletedRepositoryRecords)
+    return () => {
+      window.removeEventListener('library-repository-deleted', removeDeletedRepositoryRecords)
+    }
+  }, [transactProjection])
 
   // Hydrate the Yjs projection from the configured Library API.
   useEffect(() => {

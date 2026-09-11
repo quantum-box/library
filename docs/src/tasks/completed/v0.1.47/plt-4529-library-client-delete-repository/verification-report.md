@@ -10,15 +10,17 @@
 
 ### Unit / component
 
-`apps/client` で `npm test -- --run` を実行し、76 files / 629 tests が成功した。
+`apps/client` で変更対象 3 files / 58 tests が成功した。全体実行では 76 files / 632 tests 中 630 tests が成功し、CPU 負荷下で変更外の 2 tests が timeout したため、それぞれ単独再実行して `WorkflowView` 5 tests と Photon engine 24 tests の成功を確認した。更新後の最終統合判定は PR CI に委ねる。
 
 追加した確認は以下のとおり。
 
 - `repositorySettingsApi` が既存 `deleteRepo` mutation へ対象 path、認証 token、platform/operator header を送る。
 - GraphQL の Forbidden が permission error に分類される。
-- `DatabasesContext` は API 成功後だけ対象 repository を Client 一覧から外す。
+- `DatabasesContext` は API 成功後だけ対象 repository を Client 一覧から外し、削除前に開始した refresh response を無視する。
+- `RecordsContext` は対象 repository の Record を Yjs projection から除去する。
 - 設定画面は完全な `organization/repository` path が一致するまで確定操作を無効にする。
-- 削除失敗時は確認 dialog を維持し、エラーと read-only 状態を表示する。
+- metadata 保存中は削除を開始できず、保存と削除が競合しない。
+- 削除失敗時は確認 dialog と delete 固有エラーを維持し、metadata／Property の権限状態は変更しない。
 - 全 11 言語の message catalog が同じ key と placeholder を持つ。
 
 ### Type / lint / build
@@ -39,6 +41,8 @@ npx playwright test tests/e2e/photon.spec.ts \
 ```
 
 fixture repository の設定画面を開き、危険ゾーンから dialog を開く、未確認では削除不可、path 入力後に削除、`/repositories` へ遷移、一覧から消える、reload 後も復活しないことを確認した。
+
+PR review 修正後にも同じ test を再実行し、1 test が成功した。
 
 ## スキップした確認と理由
 

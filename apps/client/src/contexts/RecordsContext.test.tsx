@@ -150,6 +150,9 @@ function seedYDatabaseRecord(record: DatabaseRecord) {
   ymap.set('createdAt', record.createdAt)
   ymap.set('updatedAt', record.updatedAt)
   ymap.set('description', record.description)
+  if (record.orgUsername) ymap.set('orgUsername', record.orgUsername)
+  if (record.repoUsername) ymap.set('repoUsername', record.repoUsername)
+  if (record.operatorId) ymap.set('operatorId', record.operatorId)
   mocks.recordsArray.push([ymap])
 }
 
@@ -293,6 +296,33 @@ describe('RecordsProvider server-accepted projection', () => {
     })
 
     expect(mocks.recordsArray.length).toBe(0)
+  })
+
+  it('removes records belonging to a repository after that repository is deleted', () => {
+    seedYDatabaseRecord({
+      ...serverDatabaseRecord,
+      orgUsername: 'quantum-box',
+      repoUsername: 'library',
+      operatorId: 'operator-1',
+    })
+    seedYDatabaseRecord({
+      ...serverDatabaseRecord,
+      id: 'record-other-repository',
+      orgUsername: 'quantum-box',
+      repoUsername: 'other',
+      operatorId: 'operator-1',
+    })
+
+    render(<RecordsProvider><div /></RecordsProvider>)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('library-repository-deleted', {
+        detail: { orgUsername: 'quantum-box', repoUsername: 'library' },
+      }))
+    })
+
+    expect(mocks.recordsArray.length).toBe(1)
+    expect(mocks.recordsArray.get(0).get('id')).toBe('record-other-repository')
   })
 
   it('ignores an older hydration response after an auth-triggered reload finishes', async () => {

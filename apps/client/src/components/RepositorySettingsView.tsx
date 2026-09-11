@@ -296,14 +296,16 @@ export function RepositorySettingsView({
   }
 
   const handleRepositoryDelete = async () => {
-    if (deleteBusy || deleteConfirmation !== repositoryPath) return
+    if (deleteBusy || metadataBusy || deleteConfirmation !== repositoryPath) return
     setDeleteBusy(true)
     setDeleteError(null)
     try {
       await onDeleteRepository()
       setDeleteDialogOpen(false)
     } catch (error) {
-      setDeleteError(markMutationFailure(error))
+      // Delete permission is separate from metadata/property permissions, so a
+      // failed delete must not make the rest of the settings page read-only.
+      setDeleteError(errorMessage(error))
     } finally {
       setDeleteBusy(false)
     }
@@ -553,7 +555,7 @@ export function RepositorySettingsView({
                   type="button"
                   variant="destructive"
                   className="w-full shrink-0 sm:w-auto"
-                  disabled={writePermissionDenied}
+                  disabled={metadataBusy || writePermissionDenied}
                   onClick={() => {
                     setDeleteConfirmation('')
                     setDeleteError(null)
@@ -573,7 +575,7 @@ export function RepositorySettingsView({
         open={deleteDialogOpen}
         repositoryPath={repositoryPath}
         confirmation={deleteConfirmation}
-        busy={deleteBusy}
+        busy={deleteBusy || metadataBusy}
         error={deleteError}
         onConfirmationChange={setDeleteConfirmation}
         onClose={closeDeleteDialog}
