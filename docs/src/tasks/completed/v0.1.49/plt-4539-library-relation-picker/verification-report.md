@@ -32,6 +32,8 @@
 
 `npm --prefix apps/client run test:e2e -- tests/e2e/photon.spec.ts` を実行し、Chromium 25 tests が成功した。
 
+fixture に Relation 対象 repository を追加して複数 repository 構成になったため、mobile の作成フローも対象 repository を明示選択するよう更新した。`npm --prefix apps/client run test:e2e:mobile` を実行し、Mobile Chromium 4 tests が成功した。
+
 Relation シナリオでは fixture の `photon-core` repository に Relation Property を作成し、対象として別の `People` repository を選択した。Aoi Tanaka と Ren Sato を関連付けて保存し、reload 後に `Aoi Tanaka +1` と解決表示されることを確認した。その後 2 件とも解除し、再 reload 後に関連先なしとなることを確認した。
 
 ## スキップした確認と理由

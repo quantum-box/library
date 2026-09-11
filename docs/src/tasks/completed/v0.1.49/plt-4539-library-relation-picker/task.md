@@ -62,4 +62,5 @@ Library v2 の Relation Property は schema と値の読取・書込契約を持
 - `npm --prefix apps/client run test`: 77 files / 639 tests pass
 - `npm --prefix apps/client run build`: pass
 - `npm --prefix apps/client run test:e2e -- tests/e2e/photon.spec.ts`: Chromium 25 tests pass
+- `npm --prefix apps/client run test:e2e:mobile`: Mobile Chromium 4 tests pass
 - E2E で Relation Property 作成、対象 repository 選択、2 Record の関連付け、保存、reload 後の名前表示、全解除、再 reload を確認した。
