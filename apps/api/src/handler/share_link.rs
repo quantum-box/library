@@ -7,26 +7,49 @@
 //! with exactly one document.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::{Extension, Path as AxumPath},
+    http::{header::AUTHORIZATION, HeaderMap},
     Json,
 };
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use value_object::TenantId;
 
 use crate::app::LibraryApp;
 use crate::domain::ShareLink;
-use crate::handler::library_executor_extractor::LibraryExecutor;
+use crate::handler::library_executor_extractor::{
+    LibraryExecutor, LibraryExecutorKind,
+};
 use crate::handler::types::{
     property_select_options, DataResponse, PropertyDataResponse,
     PropertyResponse,
 };
+use crate::ttl_cache::TtlCache;
 use crate::usecase::{
     library_client_url::share_url, CreateShareLinkInputData, LibraryOrg,
     ListShareLinksInputData, RevokeShareLinkInputData, ShareLinkRepoTarget,
-    SharedData,
+    SharedData, ViewDataInputData,
 };
+
+const SLACK_UNFURL_ISSUER_ENV: &str = "LIBRARY_SLACK_UNFURL_ISSUER";
+const SLACK_UNFURL_AUDIENCE_ENV: &str = "LIBRARY_SLACK_UNFURL_AUDIENCE";
+const SLACK_UNFURL_AUTH_SECRET_ENV: &str =
+    "LIBRARY_SLACK_UNFURL_AUTH_SECRET";
+const DEFAULT_SLACK_UNFURL_ISSUER: &str = "tachyon-slack-unfurl";
+const DEFAULT_SLACK_UNFURL_AUDIENCE: &str =
+    "library-slack-unfurl-projection";
+const SLACK_UNFURL_REPLAY_TTL: Duration = Duration::from_secs(300);
+const SLACK_UNFURL_REPLAY_CAPACITY: usize = 4096;
+
+static SLACK_UNFURL_JTI_CACHE: Lazy<TtlCache<String, ()>> =
+    Lazy::new(|| {
+        TtlCache::new(SLACK_UNFURL_REPLAY_TTL, SLACK_UNFURL_REPLAY_CAPACITY)
+    });
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateShareLinkRequest {
@@ -99,6 +122,51 @@ pub struct ShareLinkListResponse {
 pub struct SharedDataResponse {
     pub data: DataResponse,
     pub properties: Vec<PropertyResponse>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SlackUnfurlProjectionRequest {
+    pub url: String,
+    pub slack_team_id: String,
+    pub tachyon_tenant_id: String,
+    pub request_id: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case", tag = "result")]
+pub enum SlackUnfurlProjectionResponse {
+    Unfurl {
+        kind: SlackUnfurlProjectionKind,
+        title: String,
+        summary: String,
+        content_kind: String,
+        canonical_url: String,
+    },
+    NoUnfurl {
+        reason: SlackUnfurlNoUnfurlReason,
+    },
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SlackUnfurlProjectionKind {
+    PrivateShare,
+    PublicData,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SlackUnfurlNoUnfurlReason {
+    UnsupportedOrNotFound,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SlackUnfurlClaims {
+    sub: String,
+    exp: i64,
+    jti: String,
+    tenant: String,
 }
 
 fn target<'a>(
@@ -311,4 +379,353 @@ pub async fn view_shared_data(
             })
             .collect(),
     }))
+}
+
+/// `POST /internal/slack/unfurl-projection`
+///
+/// Private service route for Tachyon's Slack integration. Authentication is a
+/// short-lived workload JWT; a share token by itself is never enough to call
+/// this endpoint.
+#[utoipa::path(
+    post,
+    path = "/internal/slack/unfurl-projection",
+    request_body = SlackUnfurlProjectionRequest,
+    responses(
+        (status = 200, description = "Projection or explicit no-op", body = SlackUnfurlProjectionResponse),
+        (status = 401, description = "Missing or invalid workload token")
+    ),
+    tag = "internal"
+)]
+#[axum::debug_handler]
+pub async fn slack_unfurl_projection(
+    headers: HeaderMap,
+    Extension(library_app): Extension<Arc<LibraryApp>>,
+    Json(payload): Json<SlackUnfurlProjectionRequest>,
+) -> errors::Result<Json<SlackUnfurlProjectionResponse>> {
+    let tenant_id =
+        verify_slack_unfurl_workload(&headers, &payload.tachyon_tenant_id)?;
+    if tenant_id.to_string() != payload.tachyon_tenant_id {
+        return Err(slack_unfurl_unauthorized());
+    }
+
+    let response = match classify_slack_unfurl_url(&payload.url) {
+        SlackUnfurlUrl::PrivateShare { token } => {
+            private_share_projection(&library_app, &token, &payload.url)
+                .await
+        }
+        SlackUnfurlUrl::PublicData { org, repo, data_id } => {
+            public_data_projection(
+                &library_app,
+                &org,
+                &repo,
+                &data_id,
+                &payload.url,
+            )
+            .await
+        }
+        SlackUnfurlUrl::Unsupported => {
+            Ok(SlackUnfurlProjectionResponse::NoUnfurl {
+                reason: SlackUnfurlNoUnfurlReason::UnsupportedOrNotFound,
+            })
+        }
+    }?;
+
+    Ok(Json(response))
+}
+
+enum SlackUnfurlUrl {
+    PrivateShare {
+        token: String,
+    },
+    PublicData {
+        org: String,
+        repo: String,
+        data_id: String,
+    },
+    Unsupported,
+}
+
+fn verify_slack_unfurl_workload(
+    headers: &HeaderMap,
+    expected_tenant: &str,
+) -> errors::Result<TenantId> {
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(slack_unfurl_unauthorized)?;
+    let secret = std::env::var(SLACK_UNFURL_AUTH_SECRET_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(slack_unfurl_unauthorized)?;
+    let issuer = std::env::var(SLACK_UNFURL_ISSUER_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_SLACK_UNFURL_ISSUER.to_string());
+    let audience = std::env::var(SLACK_UNFURL_AUDIENCE_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_SLACK_UNFURL_AUDIENCE.to_string());
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.set_issuer(&[&issuer]);
+    validation.set_audience(&[&audience]);
+    validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+    validation.leeway = 0;
+    let claims = decode::<SlackUnfurlClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map_err(|_| slack_unfurl_unauthorized())?
+    .claims;
+
+    if claims.sub.trim().is_empty()
+        || claims.jti.trim().is_empty()
+        || claims.tenant != expected_tenant
+    {
+        return Err(slack_unfurl_unauthorized());
+    }
+
+    let now = chrono::Utc::now().timestamp();
+    if claims.exp <= now || claims.exp - now > 300 {
+        return Err(slack_unfurl_unauthorized());
+    }
+    if !SLACK_UNFURL_JTI_CACHE.insert_if_absent(
+        claims.jti,
+        (),
+        Duration::from_secs((claims.exp - now) as u64),
+    ) {
+        return Err(slack_unfurl_unauthorized());
+    }
+
+    claims
+        .tenant
+        .parse()
+        .map_err(|_| slack_unfurl_unauthorized())
+}
+
+fn slack_unfurl_unauthorized() -> errors::Error {
+    errors::Error::unauthorized("invalid Slack unfurl workload token")
+}
+
+fn classify_slack_unfurl_url(value: &str) -> SlackUnfurlUrl {
+    let configured =
+        crate::usecase::library_client_url::library_client_base_url();
+    classify_slack_unfurl_url_with_base(value, &configured)
+}
+
+fn classify_slack_unfurl_url_with_base(
+    value: &str,
+    configured_base: &str,
+) -> SlackUnfurlUrl {
+    let Ok(url) = url::Url::parse(value) else {
+        return SlackUnfurlUrl::Unsupported;
+    };
+    if url.scheme() != "https"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return SlackUnfurlUrl::Unsupported;
+    }
+    let Ok(base) = url::Url::parse(configured_base) else {
+        return SlackUnfurlUrl::Unsupported;
+    };
+    if url.host_str() != base.host_str()
+        || url.port_or_known_default() != base.port_or_known_default()
+    {
+        return SlackUnfurlUrl::Unsupported;
+    }
+
+    let segments = url
+        .path_segments()
+        .map(|segments| segments.collect::<Vec<_>>())
+        .unwrap_or_default();
+    match segments.as_slice() {
+        ["s", token] if !token.is_empty() => SlackUnfurlUrl::PrivateShare {
+            token: (*token).to_string(),
+        },
+        ["public", org, repo, data_id]
+            if !org.is_empty()
+                && !repo.is_empty()
+                && !data_id.is_empty() =>
+        {
+            SlackUnfurlUrl::PublicData {
+                org: (*org).to_string(),
+                repo: (*repo).to_string(),
+                data_id: (*data_id).to_string(),
+            }
+        }
+        _ => SlackUnfurlUrl::Unsupported,
+    }
+}
+
+async fn private_share_projection(
+    library_app: &LibraryApp,
+    token: &str,
+    canonical_url: &str,
+) -> errors::Result<SlackUnfurlProjectionResponse> {
+    let shared = match library_app.view_shared_data.execute(token).await {
+        Ok(shared) => shared,
+        Err(error) if error.is_not_found() => {
+            return Ok(SlackUnfurlProjectionResponse::NoUnfurl {
+                reason: SlackUnfurlNoUnfurlReason::UnsupportedOrNotFound,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+
+    Ok(SlackUnfurlProjectionResponse::Unfurl {
+        kind: SlackUnfurlProjectionKind::PrivateShare,
+        title: projection_title(&shared.data),
+        summary: projection_summary(&shared.data),
+        content_kind: "data".to_string(),
+        canonical_url: canonical_url.to_string(),
+    })
+}
+
+async fn public_data_projection(
+    library_app: &LibraryApp,
+    org: &str,
+    repo: &str,
+    data_id: &str,
+    canonical_url: &str,
+) -> errors::Result<SlackUnfurlProjectionResponse> {
+    let executor = LibraryExecutor {
+        inner: LibraryExecutorKind::None,
+        original_token: None,
+    };
+    let library_org = LibraryOrg::with_org(org.to_string());
+    let (data, _properties) = match library_app
+        .view_data
+        .execute(&ViewDataInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            org_username: org.to_string(),
+            repo_username: repo.to_string(),
+            data_id: data_id.to_string(),
+        })
+        .await
+    {
+        Ok(output) => output,
+        Err(error) if error.is_not_found() || error.is_forbidden() => {
+            return Ok(SlackUnfurlProjectionResponse::NoUnfurl {
+                reason: SlackUnfurlNoUnfurlReason::UnsupportedOrNotFound,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+
+    Ok(SlackUnfurlProjectionResponse::Unfurl {
+        kind: SlackUnfurlProjectionKind::PublicData,
+        title: projection_title(&data),
+        summary: projection_summary(&data),
+        content_kind: "data".to_string(),
+        canonical_url: canonical_url.to_string(),
+    })
+}
+
+fn projection_title(data: &database_manager::domain::Data) -> String {
+    let title = data.name().to_string();
+    if title.trim().is_empty() {
+        "Untitled".to_string()
+    } else {
+        title
+    }
+}
+
+fn projection_summary(data: &database_manager::domain::Data) -> String {
+    let text = data
+        .property_data()
+        .iter()
+        .filter_map(|value| value.value().as_ref())
+        .map(|value| value.string_value())
+        .map(|value| sanitize_projection_text(&value))
+        .find(|value| !value.is_empty())
+        .unwrap_or_default();
+    if text.chars().count() <= 160 {
+        return text;
+    }
+    let mut summary = text.chars().take(159).collect::<String>();
+    summary.push('…');
+    summary
+}
+
+fn sanitize_projection_text(value: &str) -> String {
+    value
+        .replace(|ch: char| ch.is_control(), " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE_URL: &str = "https://library.example";
+
+    #[test]
+    fn slack_unfurl_classifies_private_share_urls() {
+        match classify_slack_unfurl_url_with_base(
+            "https://library.example/s/shr_deadbeef",
+            BASE_URL,
+        ) {
+            SlackUnfurlUrl::PrivateShare { token } => {
+                assert_eq!(token, "shr_deadbeef");
+            }
+            _ => panic!("expected a private share URL"),
+        }
+    }
+
+    #[test]
+    fn slack_unfurl_classifies_public_data_urls() {
+        match classify_slack_unfurl_url_with_base(
+            "https://library.example/public/quantumbox/artifacts/data_123",
+            BASE_URL,
+        ) {
+            SlackUnfurlUrl::PublicData { org, repo, data_id } => {
+                assert_eq!(org, "quantumbox");
+                assert_eq!(repo, "artifacts");
+                assert_eq!(data_id, "data_123");
+            }
+            _ => panic!("expected a public data URL"),
+        }
+    }
+
+    #[test]
+    fn slack_unfurl_rejects_query_fragments_and_foreign_hosts() {
+        assert!(matches!(
+            classify_slack_unfurl_url_with_base(
+                "https://library.example/s/shr_deadbeef?x=1",
+                BASE_URL,
+            ),
+            SlackUnfurlUrl::Unsupported
+        ));
+        assert!(matches!(
+            classify_slack_unfurl_url_with_base(
+                "https://evil.example/s/shr_deadbeef",
+                BASE_URL,
+            ),
+            SlackUnfurlUrl::Unsupported
+        ));
+        assert!(matches!(
+            classify_slack_unfurl_url_with_base(
+                "http://library.example/s/shr_deadbeef",
+                BASE_URL,
+            ),
+            SlackUnfurlUrl::Unsupported
+        ));
+    }
+
+    #[test]
+    fn sanitize_projection_text_strips_controls() {
+        let raw = format!("hello\n\tworld {}", "あ".repeat(200));
+        let sanitized = sanitize_projection_text(&raw);
+
+        assert!(sanitized.starts_with("hello world"));
+        assert!(!sanitized.contains('\n'));
+        assert!(!sanitized.contains('\t'));
+    }
 }
