@@ -64,6 +64,60 @@ where
         self.insert_until(key, value, self.ttl);
     }
 
+    /// Store `value` only when `key` is not already present and valid.
+    ///
+    /// This is used for replay protection, where the lookup and insert must be
+    /// one critical section. Returns `true` when the value was stored.
+    pub fn insert_if_absent(
+        &self,
+        key: K,
+        value: V,
+        ttl: Duration,
+    ) -> bool {
+        if !self.is_enabled() {
+            return false;
+        }
+
+        let now = Instant::now();
+        let ttl = ttl.min(self.ttl);
+        if ttl.is_zero() {
+            return false;
+        }
+
+        let mut entries = self.lock();
+        match entries.get(&key) {
+            Some(entry) if entry.expires_at > now => return false,
+            Some(_) => {
+                entries.remove(&key);
+            }
+            None => {}
+        }
+
+        entries.insert(
+            key,
+            Entry {
+                value,
+                expires_at: now + ttl,
+                stored_at: now,
+            },
+        );
+
+        if entries.len() > self.capacity {
+            entries.retain(|_, entry| entry.expires_at > now);
+            while entries.len() > self.capacity {
+                let Some(oldest) = entries
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.stored_at)
+                    .map(|(key, _)| key.clone())
+                else {
+                    break;
+                };
+                entries.remove(&oldest);
+            }
+        }
+        true
+    }
+
     /// Cache `value` under `key` for `ttl`, capped at the configured
     /// TTL.
     ///
@@ -237,5 +291,22 @@ mod tests {
         assert!(!cache.is_enabled());
         assert_eq!(cache.get_at(&"a".into(), now), None);
         assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn insert_if_absent_is_atomic_for_live_entries() {
+        let cache = cache();
+
+        assert!(cache.insert_if_absent(
+            "a".into(),
+            1,
+            Duration::from_secs(30)
+        ));
+        assert!(!cache.insert_if_absent(
+            "a".into(),
+            2,
+            Duration::from_secs(30)
+        ));
+        assert_eq!(cache.get(&"a".into()), Some(1));
     }
 }
