@@ -176,7 +176,8 @@ static BUILTIN_INTEGRATIONS: LazyLock<Vec<Integration>> = LazyLock::new(
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             supports_refresh: false,
         })
-        .as_experimental(provider_reason(Provider::Github)),
+        .as_experimental(provider_reason(Provider::Github))
+        .set_enabled(),
         // Linear Integration
         Integration::new(
             IntegrationId::new("int_linear"),
@@ -474,11 +475,17 @@ mod tests {
             .unwrap();
         assert_eq!(github.name(), "GitHub");
         assert!(github.requires_oauth());
-        assert!(!github.is_enabled());
+        assert!(github.is_enabled());
         assert_eq!(
             github.unavailable_reason(),
             Some(provider_reason(Provider::Github))
         );
+
+        let enabled = registry.find_enabled().await.unwrap();
+        assert!(enabled
+            .iter()
+            .any(|integration| integration.provider()
+                == OAuthProvider::Github));
     }
 
     #[tokio::test]
