@@ -38,7 +38,10 @@ test('real git: prepare tags exact merged commit, retries reuse it, published re
 const fs = require('node:fs'); const args = process.argv.slice(2);
 const mode = fs.readFileSync(process.env.RELEASE_STATE, 'utf8');
 const release = {id: 1, tag_name: 'library-v0.1.8', draft: mode !== 'published'};
-if(args[0] === 'api' && args.includes('--paginate')) console.log(JSON.stringify([mode === 'missing' ? [] : [release]]));
+if(args[0] === 'api' && args.includes('--paginate')) {
+  if(!args.includes('--jq')) process.exit(1);
+  if(mode !== 'missing') console.log(JSON.stringify(release));
+}
 else if(args[0] === 'release' && args[1] === 'create') fs.writeFileSync(process.env.RELEASE_STATE, 'draft');
 else if(args[0] === 'api' && args.includes('POST')) {
   if(mode !== 'missing') process.exit(1);

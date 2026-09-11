@@ -133,6 +133,20 @@ Preview surface で別 gate として記録する。
 - 本番の engine / cron は無効のまま。実 GitHub OAuth、signed webhook simulation、outbound、
   conflict、rename、delete、画面 reload は専用 fixture で引き続き検証する。
 
+### 2026-09-12 Post-merge packaging hardening
+
+- Ready PR #357 は全 required check と review thread の解消後に main へ merge した。
+- main の API と client は新しい commit を配備し、production API health を確認した。
+- sync Worker の production build は Preview 限定 scanner credential を共通
+  `envVars` として解決しようとして target mismatch で停止した。production の
+  engine / cron は無効のため scanner は起動していない。
+- Worker manifest は production overlay を credential なし、Preview overlay だけを
+  scanner credential ありに分離する。production activation 時は専用 credential を
+  明示的に登録してから別 gate で有効化する。
+- Desktop Release は tag 作成後、全 release と asset を Node に取り込んで 1 MiB の
+  output buffer を超えた。GitHub CLI 側で release summary へ射影してから Node に渡し、
+  release history の増加で prepare が失敗しないようにする。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

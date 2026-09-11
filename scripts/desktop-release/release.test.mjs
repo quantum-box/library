@@ -32,8 +32,8 @@ test('new draft uses the creation response without a published-tag lookup', () =
   const release = ensureRelease(repository, draft.tag_name, '0.1.15', (...args) => {
     calls++
     if (calls === 1) {
-      assert.deepEqual(args, ['api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`])
-      return '[[]]'
+      assert.deepEqual(args, ['api', '--paginate', `repos/${repository}/releases?per_page=100`, '--jq', '.[] | {id,tag_name,draft,prerelease}'])
+      return ''
     }
     assert.equal(calls, 2, 'draft must not be fetched by tag after creation')
     assert.deepEqual(args, ['api', '--method', 'POST', `repos/${repository}/releases`,
@@ -50,7 +50,7 @@ test('retries reuse draft and published releases across paginated results', () =
     let calls = 0
     const release = ensureRelease(repository, existing.tag_name, '0.1.15', () => {
       assert.equal(++calls, 1, 'an existing release must not be recreated')
-      return JSON.stringify([[{ id: 999, tag_name: 'library-v0.1.16' }], [existing]])
+      return [{ id: 999, tag_name: 'library-v0.1.16' }, existing].map(JSON.stringify).join('\n')
     })
     assert.deepEqual(release, existing)
   }
@@ -61,7 +61,7 @@ test('release lookup and creation failures propagate instead of continuing packa
     const error = new Error('GitHub unavailable')
     assert.throws(() => ensureRelease(repository, 'library-v0.1.15', '0.1.15', () => {
       if (++calls === failAt) throw error
-      return '[[]]'
+      return ''
     }), (actual) => actual === error)
     assert.equal(calls, failAt)
   }

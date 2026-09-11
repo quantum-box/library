@@ -164,9 +164,30 @@ gap; deployed at-least-once behavior remains a separate gate.
 The zero-count scan does not prove event capture or provider delivery. Those
 remain part of the dedicated GitHub round trip below.
 
+## Post-merge packaging hardening on 2026-09-12
+
+- PR #357 merged as `5fbf998510c3e8847f70dfb83f09eba08e3253e2` after its
+  required checks passed and all review threads were resolved.
+- Tachyon production API build `bld_01m28mjhegxf8rqjz1xgybn73g` succeeded;
+  deployment `dep_01m28mtr7az6j4vg6v9r3gd2tf` is active and
+  `https://library-api.txcloud.app/health` returned HTTP 200.
+- The matching client build `bld_01m28mjb4qqfra8b0tj7jdb4e5` succeeded.
+- The matching sync Worker build `bld_01m28mj4wpdrn8ftqbvg73cy1d` stopped in
+  manifest apply because a Preview-target scanner credential could not be used
+  for production. No production scanner activation occurred.
+- The follow-up manifest resolves production with no scanner credential and
+  Preview with `EXTERNAL_SYNC_SCANNER_TOKEN`; manifest validation plus both
+  production and Preview dry-runs pass.
+- Desktop Release run `34621815769` created tag `library-v0.1.53` and then failed
+  with `ENOBUFS` while listing full release objects and assets through the
+  default 1 MiB `execFileSync` buffer. Release lookup now projects only
+  `id`, `tag_name`, `draft`, and `prerelease` in `gh` before Node receives the
+  paginated output. The owning client version advances from `0.1.53` to
+  `0.1.54` for the follow-up Ready PR.
+
 ## Remaining release gates
 
-- Current Ready PR CI after the final TiDB compatibility commit
+- Follow-up Ready PR CI and production sync Worker deployment
 - Dedicated GitHub OAuth, webhook, outbound commit, conflict, rename, and delete
   round trip, including authenticated browser state after reload
 - Provider-originated webhook delivery requires a governance-managed GitHub

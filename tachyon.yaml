@@ -335,13 +335,17 @@ spec:
       readinessProof:
         path: /api/health
       # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # Scanner bearer だけは Tachyon の secret source of truth から注入し、
-      # 平文を wrangler config や repository に保存しない。
-      envVars:
-        - name: EXTERNAL_SYNC_SCANNER_TOKEN
-          type: credential
-          valueFrom:
-            secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
+      # Scanner bearer は Preview だけで検証中。production の scanner/cron を
+      # 有効化するまでは Preview credential を production に流用しない。
+      environments:
+        production:
+          envVars: []
+        preview:
+          envVars:
+            - name: EXTERNAL_SYNC_SCANNER_TOKEN
+              type: credential
+              valueFrom:
+                secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
 ---
 # Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
 # (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が

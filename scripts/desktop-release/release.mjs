@@ -7,6 +7,12 @@ const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8' }).trim()
 const json = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const writeJson = (file, value) => writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
 const output = (key, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`)
+const releaseSummaryJq = '.[] | {id,tag_name,draft,prerelease}'
+
+function listReleaseSummaries(repository, runGh = gh) {
+  const value = runGh('api', '--paginate', `repos/${repository}/releases?per_page=100`, '--jq', releaseSummaryJq)
+  return value ? value.split('\n').map((line) => JSON.parse(line)) : []
+}
 
 export function compareVersions(a, b) {
   if (![a, b].every((v) => /^\d+\.\d+\.\d+$/.test(v))) throw new Error('Invalid stable version')
@@ -74,7 +80,9 @@ export function validateManifest(manifest, release, version, repository) {
 
 export function ensureRelease(repository, tag, version, runGh = gh) {
   // Listing must succeed: a network/auth failure must never mean "not found".
-  const releases = JSON.parse(runGh('api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`)).flat()
+  // Project each page before it reaches Node. Full release objects include every
+  // asset and eventually exceed execFileSync's output buffer as history grows.
+  const releases = listReleaseSummaries(repository, runGh)
   const existing = releases.find((item) => item.tag_name === tag)
   if (existing) return existing
 
@@ -126,7 +134,7 @@ function publish() {
     writeJson(file, validateManifest(json(file), release, version, repository))
     gh('release', 'upload', release.tag_name, file, '--clobber')
     // A retry of an older source may finish after a newer source. Never move the feed backwards.
-    const releases = JSON.parse(gh('api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`)).flat()
+    const releases = listReleaseSummaries(repository)
     const newer = releases.some((item) => !item.draft && !item.prerelease && /^library-v\d+\.\d+\.\d+$/.test(item.tag_name) && compareVersions(item.tag_name.slice(9), version) > 0)
     gh('api', '--method', 'PATCH', `repos/${repository}/releases/${release.id}`, '-F', 'draft=false', '-f', `make_latest=${newer ? 'false' : 'true'}`)
   }
