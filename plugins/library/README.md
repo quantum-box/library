@@ -1,5 +1,7 @@
 # Library plugin
 
+OpenAI Plugins Directoryへの公開申請に使うlisting、test cases、release notes、未完了ゲートは[submission dossier](submission/README.md)にまとめています。審査用認証情報とドメイン検証トークンはリポジトリへ保存しません。
+
 Claude Code と Codex から Library の所属orgの一覧取得、公開・許可された非公開データの検索・要約、認証済みユーザーに許可された更新操作、HTML アーティファクトの Library への保存を行うプラグインです。HTTP MCP の接続設定と、両クライアントで共有する `library` スキルを含みます。ローカルの MCP サーバーや Library CLI のインストールは不要です。
 
 ## インストール

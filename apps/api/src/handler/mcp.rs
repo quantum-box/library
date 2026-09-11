@@ -2453,15 +2453,319 @@ fn tools_list_result(is_authenticated: bool) -> Value {
     }
 
     for tool in &mut tools {
-        let name = tool["name"].as_str().unwrap_or_default();
-        let read_only = is_read_tool(name);
+        let name = tool["name"].as_str().unwrap_or_default().to_owned();
+        tool["outputSchema"] = output_schema_for_tool(&name);
+        let read_only = is_read_tool(&name);
         tool["annotations"] = json!({
             "readOnlyHint": read_only,
-            "destructiveHint": !read_only,
-            "openWorldHint": true,
+            "destructiveHint": is_destructive_tool(&name),
+            "openWorldHint": is_open_world_tool(&name),
         });
     }
     json!({ "tools": tools })
+}
+
+/// Return the JSON Schema for the structured result of one MCP tool.
+///
+/// Every successful MCP handler returns a JSON object which is currently
+/// serialized into `content[0].text` and `structuredContent`. Keeping this
+/// mapping beside the tool catalog makes it impossible to advertise a tool
+/// without also advertising the shape its handler returns.
+fn output_schema_for_tool(name: &str) -> Value {
+    match name {
+        "get_me" => schema_object(
+            json!({
+                "id": { "type": "string" },
+                "type": {
+                    "type": "string",
+                    "enum": ["user", "service_account"]
+                },
+                "name": { "type": "string" },
+                "username": { "type": "string" }
+            }),
+            &["id", "type", "name"],
+        ),
+        "list_orgs" => schema_object(
+            json!({
+                "organizations": schema_array(mcp_organization_schema()),
+                "paginator": mcp_paginator_schema()
+            }),
+            &["organizations", "paginator"],
+        ),
+        "list_repos" => schema_object(
+            json!({
+                "repos": schema_array(mcp_repo_schema()),
+                "paginator": mcp_paginator_schema()
+            }),
+            &["repos", "paginator"],
+        ),
+        "get_org" => schema_object(
+            json!({
+                "organization": mcp_organization_schema(),
+                "repos": schema_array(mcp_repo_schema())
+            }),
+            &["organization", "repos"],
+        ),
+        "search_repos" => schema_object(
+            json!({ "repos": schema_array(mcp_repo_schema()) }),
+            &["repos"],
+        ),
+        "get_repo" | "rename_repo" | "create_repo" | "update_repo" => {
+            schema_object(json!({ "repo": mcp_repo_schema() }), &["repo"])
+        }
+        "list_data" | "search_data" => schema_object(
+            json!({
+                "data": schema_array(mcp_data_summary_schema()),
+                "paginator": mcp_paginator_schema()
+            }),
+            &["data", "paginator"],
+        ),
+        "get_data" => {
+            schema_object(json!({ "data": mcp_data_schema() }), &["data"])
+        }
+        "list_properties" => schema_object(
+            json!({ "properties": schema_array(mcp_property_schema()) }),
+            &["properties"],
+        ),
+        "get_property" | "create_property" | "update_property" => {
+            schema_object(
+                json!({ "property": mcp_property_schema() }),
+                &["property"],
+            )
+        }
+        "list_sources" => schema_object(
+            json!({ "sources": schema_array(mcp_source_schema()) }),
+            &["sources"],
+        ),
+        "get_source" | "create_source" | "update_source" => schema_object(
+            json!({ "source": mcp_source_schema() }),
+            &["source"],
+        ),
+        "upsert_data" => schema_object(
+            json!({
+                "data": mcp_data_schema(),
+                "outcome": {
+                    "type": "string",
+                    "enum": ["created", "updated"]
+                }
+            }),
+            &["data", "outcome"],
+        ),
+        "create_share_link" => schema_object(
+            json!({
+                "share_link": mcp_share_link_schema(),
+                "url": { "type": "string" },
+                "token": { "type": "string" }
+            }),
+            &["share_link", "url", "token"],
+        ),
+        "list_share_links" => schema_object(
+            json!({
+                "share_links": schema_array(mcp_share_link_schema())
+            }),
+            &["share_links"],
+        ),
+        "revoke_share_link" => schema_object(
+            json!({ "share_link": mcp_share_link_schema() }),
+            &["share_link"],
+        ),
+        "create_org" | "update_org" => schema_object(
+            json!({ "organization": mcp_organization_schema() }),
+            &["organization"],
+        ),
+        "create_data" | "update_data" => schema_object(
+            json!({ "data": mcp_data_with_property_count_schema() }),
+            &["data"],
+        ),
+        "delete_repo" | "delete_data" | "delete_source" => {
+            deleted_output_schema()
+        }
+        "delete_property" => schema_object(
+            json!({
+                "deleted": { "type": "boolean" },
+                "property": mcp_property_schema()
+            }),
+            &["deleted", "property"],
+        ),
+        _ => panic!("missing MCP output schema for tool {name}"),
+    }
+}
+
+fn schema_object(properties: Value, required: &[&str]) -> Value {
+    json!({
+        "type": "object",
+        "properties": properties,
+        "required": required
+    })
+}
+
+fn schema_array(items: Value) -> Value {
+    json!({ "type": "array", "items": items })
+}
+
+fn mcp_paginator_schema() -> Value {
+    schema_object(
+        json!({
+            "current_page": { "type": "integer", "minimum": 1 },
+            "items_per_page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+            },
+            "total_items": { "type": "integer", "minimum": 0 },
+            "total_pages": { "type": "integer", "minimum": 0 }
+        }),
+        &[
+            "current_page",
+            "items_per_page",
+            "total_items",
+            "total_pages",
+        ],
+    )
+}
+
+fn mcp_data_summary_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "url": { "type": "string" }
+        }),
+        &["id", "title", "url"],
+    )
+}
+
+fn mcp_data_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "markdown": { "type": "string" },
+            "url": { "type": "string" },
+            "record_version": { "type": "string" },
+            "property_data": schema_array(mcp_property_data_schema())
+        }),
+        &[
+            "id",
+            "title",
+            "markdown",
+            "url",
+            "record_version",
+            "property_data",
+        ],
+    )
+}
+
+fn mcp_data_with_property_count_schema() -> Value {
+    let mut schema = mcp_data_schema();
+    schema["properties"]["property_count"] =
+        json!({ "type": "integer", "minimum": 0 });
+    schema["required"] = json!([
+        "id",
+        "title",
+        "markdown",
+        "url",
+        "record_version",
+        "property_data",
+        "property_count"
+    ]);
+    schema
+}
+
+fn mcp_property_data_schema() -> Value {
+    schema_object(
+        json!({
+            "property_id": { "type": "string" },
+            "value_type": { "type": "string" },
+            "value": {}
+        }),
+        &["property_id", "value_type", "value"],
+    )
+}
+
+fn mcp_repo_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "org": { "type": "string" },
+            "username": { "type": "string" },
+            "name": { "type": "string" },
+            "is_public": { "type": "boolean" },
+            "description": { "type": ["string", "null"] },
+            "tags": schema_array(json!({ "type": "string" }))
+        }),
+        &[
+            "id",
+            "org",
+            "username",
+            "name",
+            "is_public",
+            "description",
+            "tags",
+        ],
+    )
+}
+
+fn mcp_property_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "property_type": { "type": "string" },
+            "meta": {}
+        }),
+        &["id", "name", "property_type", "meta"],
+    )
+}
+
+fn mcp_source_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "repo_id": { "type": "string" },
+            "name": { "type": "string" },
+            "url": { "type": ["string", "null"] }
+        }),
+        &["id", "repo_id", "name", "url"],
+    )
+}
+
+fn mcp_organization_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "username": { "type": "string" },
+            "name": { "type": "string" },
+            "description": { "type": ["string", "null"] },
+            "website": { "type": ["string", "null"] }
+        }),
+        &["id", "username", "name", "description", "website"],
+    )
+}
+
+fn mcp_share_link_schema() -> Value {
+    schema_object(
+        json!({
+            "id": { "type": "string" },
+            "name": { "type": ["string", "null"] },
+            "data_id": { "type": "string" },
+            "created_at": { "type": "string" },
+            "revoked_at": { "type": ["string", "null"] },
+            "active": { "type": "boolean" }
+        }),
+        &[
+            "id",
+            "name",
+            "data_id",
+            "created_at",
+            "revoked_at",
+            "active",
+        ],
+    )
+}
+
+fn deleted_output_schema() -> Value {
+    schema_object(json!({ "deleted": { "type": "boolean" } }), &["deleted"])
 }
 
 fn is_read_tool(name: &str) -> bool {
@@ -2480,6 +2784,42 @@ fn is_read_tool(name: &str) -> bool {
             | "get_property"
             | "list_sources"
             | "get_source"
+            | "list_share_links"
+    )
+}
+
+fn is_destructive_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "rename_repo"
+            | "upsert_data"
+            | "revoke_share_link"
+            | "update_org"
+            | "update_repo"
+            | "delete_repo"
+            | "update_data"
+            | "delete_data"
+            | "update_property"
+            | "delete_property"
+            | "update_source"
+            | "delete_source"
+    )
+}
+
+fn is_open_world_tool(name: &str) -> bool {
+    !matches!(name, "get_me" | "list_orgs" | "search_repos")
+}
+
+fn openai_apps_challenge_response(token: Option<String>) -> Response {
+    match token.filter(|value| !value.is_empty()) {
+        Some(token) => token.into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+pub async fn openai_apps_challenge() -> Response {
+    openai_apps_challenge_response(
+        std::env::var("OPENAI_APPS_CHALLENGE_TOKEN").ok(),
     )
 }
 
@@ -2636,14 +2976,16 @@ where
 }
 
 fn tool_text_result(value: Value) -> Value {
+    let text = serde_json::to_string_pretty(&value)
+        .unwrap_or_else(|_| value.to_string());
     json!({
         "content": [
             {
                 "type": "text",
-                "text": serde_json::to_string_pretty(&value)
-                    .unwrap_or_else(|_| value.to_string())
+                "text": text
             }
-        ]
+        ],
+        "structuredContent": value
     })
 }
 
@@ -3650,6 +3992,388 @@ mod tests {
     }
 
     #[test]
+    fn tool_annotations_distinguish_creation_from_destructive_writes() {
+        let tools = tools_list_result(true);
+        let annotations = |name: &str| {
+            tools["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap()["annotations"]
+                .clone()
+        };
+
+        assert_eq!(annotations("get_data")["readOnlyHint"], true);
+        assert_eq!(annotations("get_data")["destructiveHint"], false);
+        assert_eq!(annotations("get_data")["openWorldHint"], true);
+        assert_eq!(annotations("get_me")["openWorldHint"], false);
+        assert_eq!(annotations("list_orgs")["openWorldHint"], false);
+        assert_eq!(annotations("search_repos")["openWorldHint"], false);
+        assert_eq!(annotations("create_data")["readOnlyHint"], false);
+        assert_eq!(annotations("create_data")["destructiveHint"], false);
+        assert_eq!(
+            annotations("create_share_link")["destructiveHint"],
+            false
+        );
+        assert_eq!(annotations("list_share_links")["readOnlyHint"], true);
+        assert_eq!(
+            annotations("list_share_links")["destructiveHint"],
+            false
+        );
+        assert_eq!(annotations("update_data")["destructiveHint"], true);
+        assert_eq!(annotations("delete_data")["destructiveHint"], true);
+        assert_eq!(
+            annotations("revoke_share_link")["destructiveHint"],
+            true
+        );
+    }
+
+    #[test]
+    fn authenticated_tools_list_describes_all_thirty_two_outputs() {
+        let expected = [
+            "get_me",
+            "list_orgs",
+            "list_repos",
+            "get_org",
+            "search_repos",
+            "get_repo",
+            "list_data",
+            "search_data",
+            "get_data",
+            "list_properties",
+            "get_property",
+            "list_sources",
+            "get_source",
+            "rename_repo",
+            "upsert_data",
+            "create_share_link",
+            "list_share_links",
+            "revoke_share_link",
+            "create_org",
+            "update_org",
+            "create_repo",
+            "update_repo",
+            "delete_repo",
+            "create_data",
+            "update_data",
+            "delete_data",
+            "create_property",
+            "update_property",
+            "delete_property",
+            "create_source",
+            "update_source",
+            "delete_source",
+        ];
+        let result = tools_list_result(true);
+        let tools = result["tools"].as_array().expect("tools list");
+
+        assert_eq!(tools.len(), expected.len());
+        for name in expected {
+            let tool = tools
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap_or_else(|| panic!("missing tool {name}"));
+            let schema = &tool["outputSchema"];
+            assert_eq!(schema["type"], "object", "{name}");
+            assert!(schema["properties"].is_object(), "{name}");
+            assert!(
+                schema["required"]
+                    .as_array()
+                    .is_some_and(|required| !required.is_empty()),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn representative_tool_results_match_their_output_schemas() {
+        let organization = json!({
+            "id": "tn_01example",
+            "username": "example",
+            "name": "Example",
+            "description": null,
+            "website": null
+        });
+        let repo = json!({
+            "id": "repo_01example",
+            "org": "example",
+            "username": "notes",
+            "name": "Notes",
+            "is_public": false,
+            "description": null,
+            "tags": ["demo"]
+        });
+        let paginator = json!({
+            "current_page": 1,
+            "items_per_page": 20,
+            "total_items": 1,
+            "total_pages": 1
+        });
+        let data_summary = json!({
+            "id": "data_01example",
+            "title": "Example data",
+            "url": "https://library.example.test/example/notes/data_01example"
+        });
+        let property = json!({
+            "id": "prop_01example",
+            "name": "Status",
+            "property_type": "SELECT",
+            "meta": null
+        });
+        let source = json!({
+            "id": "src_01example",
+            "repo_id": "repo_01example",
+            "name": "Reference",
+            "url": "https://example.test/reference"
+        });
+        let share_link = json!({
+            "id": "sl_01example",
+            "name": "Reviewer",
+            "data_id": "data_01example",
+            "created_at": "2026-09-11T00:00:00Z",
+            "revoked_at": null,
+            "active": true
+        });
+        let data = json!({
+            "id": "data_01example",
+            "title": "Example data",
+            "markdown": "# Example data",
+            "url": "https://library.example.test/example/notes/data_01example",
+            "record_version": "1",
+            "property_data": [{
+                "property_id": "prop_01example",
+                "value_type": "string",
+                "value": "value"
+            }]
+        });
+        let data_with_property_count = json!({
+            "id": "data_01example",
+            "title": "Example data",
+            "markdown": "# Example data",
+            "url": "https://library.example.test/example/notes/data_01example",
+            "record_version": "1",
+            "property_data": [{
+                "property_id": "prop_01example",
+                "value_type": "string",
+                "value": "value"
+            }],
+            "property_count": 1
+        });
+
+        let representative_results = vec![
+            (
+                "get_me",
+                json!({
+                    "id": "us_01example",
+                    "type": "user",
+                    "name": "Example User",
+                    "username": "example"
+                }),
+            ),
+            (
+                "list_orgs",
+                json!({
+                    "organizations": [organization.clone()],
+                    "paginator": paginator.clone()
+                }),
+            ),
+            (
+                "list_repos",
+                json!({
+                    "repos": [repo.clone()],
+                    "paginator": paginator.clone()
+                }),
+            ),
+            (
+                "get_org",
+                json!({
+                    "organization": organization.clone(),
+                    "repos": [repo.clone()]
+                }),
+            ),
+            ("search_repos", json!({ "repos": [repo.clone()] })),
+            ("get_repo", json!({ "repo": repo.clone() })),
+            (
+                "list_data",
+                json!({
+                    "data": [data_summary.clone()],
+                    "paginator": paginator.clone()
+                }),
+            ),
+            (
+                "search_data",
+                json!({
+                    "data": [data_summary.clone()],
+                    "paginator": paginator.clone()
+                }),
+            ),
+            ("get_data", json!({ "data": data.clone() })),
+            (
+                "list_properties",
+                json!({ "properties": [property.clone()] }),
+            ),
+            ("get_property", json!({ "property": property.clone() })),
+            ("list_sources", json!({ "sources": [source.clone()] })),
+            ("get_source", json!({ "source": source.clone() })),
+            ("rename_repo", json!({ "repo": repo.clone() })),
+            (
+                "upsert_data",
+                json!({ "data": data.clone(), "outcome": "updated" }),
+            ),
+            (
+                "create_share_link",
+                json!({
+                    "share_link": share_link.clone(),
+                    "url": "https://library.example.test/s/share-token",
+                    "token": "share-token"
+                }),
+            ),
+            (
+                "list_share_links",
+                json!({ "share_links": [share_link.clone()] }),
+            ),
+            (
+                "revoke_share_link",
+                json!({ "share_link": share_link.clone() }),
+            ),
+            (
+                "create_org",
+                json!({ "organization": organization.clone() }),
+            ),
+            (
+                "update_org",
+                json!({ "organization": organization.clone() }),
+            ),
+            ("create_repo", json!({ "repo": repo.clone() })),
+            ("update_repo", json!({ "repo": repo.clone() })),
+            ("delete_repo", json!({ "deleted": true })),
+            (
+                "create_data",
+                json!({ "data": data_with_property_count.clone() }),
+            ),
+            (
+                "update_data",
+                json!({ "data": data_with_property_count.clone() }),
+            ),
+            ("delete_data", json!({ "deleted": true })),
+            ("create_property", json!({ "property": property.clone() })),
+            ("update_property", json!({ "property": property.clone() })),
+            (
+                "delete_property",
+                json!({ "deleted": true, "property": property.clone() }),
+            ),
+            ("create_source", json!({ "source": source.clone() })),
+            ("update_source", json!({ "source": source.clone() })),
+            ("delete_source", json!({ "deleted": true })),
+        ];
+        let result = tools_list_result(true);
+        let tools = result["tools"].as_array().expect("tools list");
+
+        for (name, result) in representative_results {
+            let schema = &tools
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap_or_else(|| panic!("missing tool {name}"))
+                ["outputSchema"];
+            assert_json_matches_schema(schema, &result, name);
+        }
+    }
+
+    fn assert_json_matches_schema(
+        schema: &Value,
+        value: &Value,
+        context: &str,
+    ) {
+        if let Some(types) = schema["type"].as_array() {
+            assert!(
+                types.iter().any(|typ| type_matches(typ, value)),
+                "{context}: value {value} does not match {schema}"
+            );
+        } else if schema["type"].is_string() {
+            assert!(
+                type_matches(&schema["type"], value),
+                "{context}: value {value} does not match {schema}"
+            );
+        }
+
+        if let Some(enums) = schema["enum"].as_array() {
+            assert!(
+                enums.iter().any(|candidate| candidate == value),
+                "{context}: value {value} is outside {enums:?}"
+            );
+        }
+
+        if schema["type"] == "object" {
+            let object = value
+                .as_object()
+                .unwrap_or_else(|| panic!("{context}: expected object"));
+            let properties = schema["properties"]
+                .as_object()
+                .expect("object schema properties");
+            for required in schema["required"]
+                .as_array()
+                .expect("object schema required")
+            {
+                let required = required.as_str().expect("required field");
+                assert!(
+                    object.contains_key(required),
+                    "{context}: missing required field {required}"
+                );
+            }
+            for (name, property_schema) in properties {
+                if let Some(property) = object.get(name) {
+                    assert_json_matches_schema(
+                        property_schema,
+                        property,
+                        &format!("{context}.{name}"),
+                    );
+                }
+            }
+        } else if schema["type"] == "array" {
+            let items = value
+                .as_array()
+                .unwrap_or_else(|| panic!("{context}: expected array"));
+            for item in items {
+                assert_json_matches_schema(
+                    &schema["items"],
+                    item,
+                    &format!("{context}[]"),
+                );
+            }
+        }
+    }
+
+    fn type_matches(schema_type: &Value, value: &Value) -> bool {
+        match schema_type.as_str() {
+            Some("object") => value.is_object(),
+            Some("array") => value.is_array(),
+            Some("string") => value.is_string(),
+            Some("integer") => value.is_i64() || value.is_u64(),
+            Some("number") => value.is_number(),
+            Some("boolean") => value.is_boolean(),
+            Some("null") => value.is_null(),
+            _ => false,
+        }
+    }
+
+    #[tokio::test]
+    async fn openai_apps_challenge_returns_exact_token_or_not_found() {
+        use axum::body::to_bytes;
+
+        let response = openai_apps_challenge_response(None);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let response =
+            openai_apps_challenge_response(Some("challenge-token".into()));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 1024).await.unwrap(),
+            "challenge-token"
+        );
+    }
+
+    #[test]
     fn oauth_write_scope_does_not_grant_read_access() {
         let mut auth = McpAuthContext::accepted_without_executor(true);
         auth.oauth_scopes = Some(oauth_resource::Scopes {
@@ -3858,6 +4582,7 @@ mod tests {
             .as_str()
             .expect("text")
             .contains("\"ok\": true"));
+        assert_eq!(result["structuredContent"], json!({ "ok": true }));
     }
 }
 
