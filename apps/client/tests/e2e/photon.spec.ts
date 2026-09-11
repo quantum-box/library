@@ -65,8 +65,10 @@ async function addDatabaseView(page: Page, type: 'board' | 'workflow' | 'timelin
   await page.getByTestId(`new-${type}-view`).click()
 }
 
-async function expectCreateRepository(page: Page) {
-  await expect(page.getByTestId('create-record-repository')).toHaveValue(e2eRepositoryId)
+async function selectCreateRepository(page: Page) {
+  const repository = page.getByTestId('create-record-repository')
+  await repository.selectOption(e2eRepositoryId)
+  await expect(repository).toHaveValue(e2eRepositoryId)
 }
 
 test.describe('Library shell', () => {
@@ -83,7 +85,7 @@ test.describe('Library shell', () => {
     await expect(page.getByText(/\d+ data/)).toBeVisible()
 
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
-    await expectCreateRepository(page)
+    await selectCreateRepository(page)
 
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
@@ -406,6 +408,54 @@ test.describe('Library shell', () => {
     await expect(page.getByLabel('Description')).toHaveValue(description)
   })
 
+  test('creates a Relation Property, links records, reloads them, and clears them', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/settings')
+    await expect(page.getByTestId('repository-settings-page')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Add Property' }).click()
+    const propertyDialog = page.getByRole('dialog')
+    await propertyDialog.getByLabel('Name').fill('Related people')
+    await propertyDialog.getByRole('combobox', { name: 'Type' }).click()
+    await page.getByRole('option', { name: 'Relation' }).click()
+    await propertyDialog.getByRole('combobox', { name: 'Related repository' }).click()
+    await page.getByRole('option', { name: /quantum-box \/ People/ }).click()
+    await propertyDialog.getByRole('button', { name: 'Add Property' }).click()
+
+    await expect(page.getByText('Property added.')).toBeVisible()
+    await expect(page.getByTestId('repository-property-list')).toContainText('Related people')
+    await expect(page.getByTestId('repository-property-list')).toContainText('repo-people')
+
+    await page.goto('/quantum-box/photon-core/data/seed-data-201')
+    await expect(page.getByTestId('data-editor-page')).toBeVisible()
+    const relationCell = page.getByTestId('library-relation-cell-e2e-property-1')
+    await expect(relationCell).toHaveText('No related records')
+    await relationCell.click()
+
+    const relationDialog = page.getByRole('dialog', { name: 'Edit Related people' })
+    await expect(relationDialog).toContainText('quantum-box / People')
+    await relationDialog.getByRole('button', { name: /Aoi Tanaka/ }).click()
+    await relationDialog.getByRole('button', { name: /Ren Sato/ }).click()
+    await relationDialog.getByRole('button', { name: 'Save 2 links' }).click()
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('library-relation-cell-e2e-property-1')).toHaveText(
+      'Aoi Tanaka +1',
+    )
+
+    await page.getByTestId('library-relation-cell-e2e-property-1').click()
+    const clearingDialog = page.getByRole('dialog', { name: 'Edit Related people' })
+    await clearingDialog.getByRole('button', { name: /Aoi Tanaka/ }).click()
+    await clearingDialog.getByRole('button', { name: /Ren Sato/ }).click()
+    await clearingDialog.getByRole('button', { name: 'Save 0 links' }).click()
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('library-relation-cell-e2e-property-1')).toHaveText(
+      'No related records',
+    )
+  })
+
   test('deletes a repository from its danger zone after path confirmation', async ({ page }) => {
     await page.goto('/quantum-box/photon-core/settings')
     await expect(page.getByTestId('repository-settings-page')).toBeVisible()
@@ -621,7 +671,7 @@ test.describe('Library shell', () => {
     await secondPage.getByPlaceholder('Filter data...').fill(title)
 
     await page.getByTestId('open-create-record').click()
-    await expectCreateRepository(page)
+    await selectCreateRepository(page)
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
     await expect(page.getByTestId('create-record-modal')).toBeHidden()
@@ -686,6 +736,7 @@ test.describe('Library shell', () => {
     const body = `Chat move preservation ${Date.now()}`
 
     await page.goto('/chat')
+    await page.getByTestId('chat-repository-select').selectOption(e2eRepositoryId)
     await expect(page.getByTestId('chat-repository-select')).toHaveValue(e2eRepositoryId)
     await page.getByTestId('chat-message-input').fill(`create record "${title}"`)
     await page.getByTestId('chat-send').click()
@@ -749,6 +800,7 @@ test.describe('Library shell', () => {
     const title = `Detail command data ${Date.now()}`
 
     await page.goto('/chat')
+    await page.getByTestId('chat-repository-select').selectOption(e2eRepositoryId)
     await expect(page.getByTestId('chat-repository-select')).toHaveValue(e2eRepositoryId)
     await page.getByTestId('chat-message-input').fill(`create record "${title}"`)
     await page.getByTestId('chat-send').click()

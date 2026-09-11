@@ -69,6 +69,14 @@ impl ReceiveProviderWebhook {
         &self,
         input: ReceiveProviderWebhookInput,
     ) -> errors::Result<ReceiveProviderWebhookOutput> {
+        if !input.provider.is_runtime_available() {
+            return Err(errors::Error::service_unavailable(
+                input.provider.unavailable_reason().unwrap_or(
+                    "Webhook processing is not available in this runtime.",
+                ),
+            ));
+        }
+
         let payload: serde_json::Value =
             serde_json::from_slice(&input.payload).map_err(|e| {
                 errors::Error::invalid(format!("Invalid JSON payload: {e}"))

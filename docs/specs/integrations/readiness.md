@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | Linear | GA | Enabled / Featured | `connectIntegration`, `createWebhookEndpoint`, `sendTestWebhook`, `startInitialSync`, `triggerSync` を許可 | `OAuthLinearClient` と `DefaultLinearDataHandler` を runtime に配線済み |
 | Square | Experimental | `Beta gated` / disabled | `LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS=true` かつ `SQUARE_API_KEY` がない限り利用不可理由を返す | Square API client は env 次第。GA では beta gate なしに見せない |
-| GitHub | GA | Enabled | `connectIntegration`, `createWebhookEndpoint`, `sendTestWebhook`, `startInitialSync`, `triggerSync` を許可 | `OAuthGitHubClient` と `DefaultGitHubDataHandler` を runtime に配線済み。webhook secret は SDK bootstrap から `WebhookSecretStore` に供給 |
+| GitHub | Experimental | Beta gated | one-shot import は GA。継続同期 API は `LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS=true` の環境だけで許可 | Lambda 本番に durable webhook consumer がなく、現行 inbound / outbound は ADR-0006 の ChangeSet / Outbox 境界へ未移行 |
 | HubSpot | Non-GA | `Coming soon` / disabled | marketplace には理由付きで返すが接続・endpoint 作成・test/sync は拒否 | `NoOpHubSpotClient` / `NoOpHubSpotDataHandler` |
 | Stripe | Non-GA | `Coming soon` / disabled | marketplace には理由付きで返すが接続・endpoint 作成・test/sync は拒否 | `NoOpStripeClient` / `NoOpStripeDataHandler` |
 | Notion | Non-GA | `Coming soon` / disabled | marketplace には理由付きで返すが接続・endpoint 作成・test/sync は拒否 | `NoOpNotionClient` / `NoOpNotionDataHandler` |
@@ -16,17 +16,19 @@
 
 ## 1.1 GitHub Markdown import / sync
 
-GitHub Markdown の双方向継続同期は GA として扱う（2026-08-26 変更）。inbound は push webhook（`POST /webhooks/github`）→ `GitHubEventProcessor` → Data upsert、outbound は Data 保存時の自動 writeback（`ext_github.enabled=true` の Data のみ、best-effort）で行う。
+one-shot GitHub Markdown import は GA、双方向継続同期は Experimental として扱う
+（2026-09-11 再判定）。inbound は Lambda 本番で queue consumer が保証されず、
+outbound は inline best-effort で失敗と競合が利用者に見えないためである。
 
 | 経路 | GA扱い | UI/API 挙動 | 根拠 |
 | --- | --- | --- | --- |
 | `githubAuthUrl` / `githubExchangeToken` | GA | GitHub OAuth 接続として利用可 | state HMAC 検証と OAuth token 保存経路が実装済み |
 | `githubListDirectoryContents` / `githubGetMarkdownPreviews` / `githubAnalyzeFrontmatter` | GA | OAuth token を使った import preview / analyze として利用可 | 実 GitHub credential なしの検証では mock/fixture 対象。実通信は利用者 OAuth の明示接続後のみ |
 | `importMarkdownFromGithub(enableGithubSync=false)` | GA | one-shot import。`ext_github` は `enabled=false` / `sync_to_github=false` で保存（default-deny 維持） | `library:CreateData` 認可、repo 作成、property/data 作成経路あり |
-| `importMarkdownFromGithub(enableGithubSync=true)` | GA | import と同時に継続同期を有効化。`ext_github` は `enabled=true` / `sync_to_github=true` で保存 | UI の import dialog にチェックボックスあり（デフォルト off） |
-| `syncDataToGithub` / `bulkSyncExtGithub` / `enableGithubSync` | GA | 手動同期・一括同期・ext_github property 作成として利用可 | `SyncDataToGithub` / `BulkSyncExtGithub` usecase が `outbound_sync::SyncData` に配線済み |
-| Data 保存時の自動 writeback | GA | `ext_github.enabled=true` の Data を保存すると `ref` ブランチへ markdown を push。失敗は warn のみで保存は成功 | `GithubWritebackDispatch` デコレータ（`AddData`/`UpdateData` port をラップ）。inbound 起点の保存は `database_manager` 直書きのためデコレータを通らずループしない |
-| inbound GitHub sync (push webhook) | GA | `POST /webhooks/github` を `x-hub-signature-256` で検証し Data upsert | `OAuthGitHubClient` / `DefaultGitHubDataHandler` 配線済み。自 push のエコーは `SyncState.external_version`（commit SHA）一致で skip |
+| `importMarkdownFromGithub(enableGithubSync=true)` | Experimental | import と同時に legacy `ext_github` を有効化 | repository binding / ChangeSet への移行対象 |
+| `syncDataToGithub` / `bulkSyncExtGithub` / `enableGithubSync` | Experimental | experimental gate 下のみ利用 | delivery 状態と共通 base revision が未実装 |
+| Data 保存時の自動 writeback | Experimental | legacy compatibility。新規仕様では generic mutation から起動しない | inline 外部 API と warn-only failure を廃止予定 |
+| inbound GitHub sync (push webhook) | Experimental | handler / queue / processor は存在するが本番継続処理を保証しない | Lambda durable dispatch と ChangeSet acceptance が必要 |
 | GitHub App installation | Non-GA | `completeGitHubInstall` は connection metadata を保存するのみ | GitHub App JWT / installation token 発行は未実装。認証は OAuth App ベース |
 
 ## 2. GraphQL 表示仕様

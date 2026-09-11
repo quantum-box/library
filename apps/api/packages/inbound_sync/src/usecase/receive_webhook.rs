@@ -75,6 +75,14 @@ impl ReceiveWebhook {
         &self,
         input: ReceiveWebhookInput,
     ) -> errors::Result<ReceiveWebhookOutput> {
+        if !input.provider.is_runtime_available() {
+            return Err(errors::Error::service_unavailable(
+                input.provider.unavailable_reason().unwrap_or(
+                    "Webhook processing is not available in this runtime.",
+                ),
+            ));
+        }
+
         // 1. Find the endpoint
         let endpoint = self
             .endpoint_repository

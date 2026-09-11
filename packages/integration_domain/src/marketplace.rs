@@ -300,6 +300,15 @@ impl Integration {
         self
     }
 
+    /// Mark as enabled in the marketplace.
+    ///
+    /// Readiness and runtime availability remain separate gates. This is used
+    /// for experimental integrations that the runtime feature flag admits.
+    pub fn set_enabled(mut self) -> Self {
+        self.is_enabled = true;
+        self
+    }
+
     /// Mark as experimental with an unavailable reason.
     pub fn as_experimental(mut self, reason: impl Into<String>) -> Self {
         self.readiness = IntegrationReadiness::Experimental;

@@ -54,7 +54,7 @@ export function libraryPropertyValueToGraphqlInput(
     case 'Image':
       return value.url != null ? { image: value.url } : null
     case 'Relation':
-      return value.dataIds?.length ? { relation: value.dataIds } : null
+      return value.dataIds != null ? { relation: value.dataIds } : null
     case 'Location':
       if (typeof value.latitude === 'number' && typeof value.longitude === 'number') {
         return { location: { latitude: value.latitude, longitude: value.longitude } }
@@ -236,6 +236,8 @@ export function clearedPropertyValue(
       return { url: '' }
     case 'Id':
       return { id: '' }
+    case 'Relation':
+      return { dataIds: [] }
     default:
       return null
   }

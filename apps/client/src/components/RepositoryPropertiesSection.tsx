@@ -1,6 +1,7 @@
 import {
   Badge,
   Button,
+  Combobox,
   Dialog,
   DialogClose,
   DialogContent,
@@ -17,7 +18,7 @@ import {
   SelectValue,
 } from '@tachyon-sdk/native-ui'
 import { FileKey2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   createRepositoryProperty,
   deleteRepositoryProperty,
@@ -42,6 +43,7 @@ import {
   type PropertyOptionDraft,
 } from '../lib/propertyOptionDrafts'
 import { useI18n, t as translate } from '../i18n'
+import { fetchLibraryRepositories, type LibraryRepository } from '../lib/recordsApi'
 
 interface PropertyDialogState {
   mode: 'create' | 'edit'
@@ -102,12 +104,14 @@ function errorMessage(error: unknown): string {
 
 function PropertyEditorDialog({
   state,
+  target,
   busy,
   error,
   onClose,
   onSave,
 }: {
   state: PropertyDialogState
+  target: RepositorySettingsTarget
   busy: boolean
   error: string | null
   onClose: () => void
@@ -123,8 +127,62 @@ function PropertyEditorDialog({
     () => optionDraftsFromProperty(property),
   )
   const [relationDatabaseId, setRelationDatabaseId] = useState(property?.meta?.databaseId ?? '')
+  const [relationRepositories, setRelationRepositories] = useState<LibraryRepository[]>([])
+  const [relationRepositoriesLoading, setRelationRepositoriesLoading] = useState(false)
+  const [relationRepositoriesError, setRelationRepositoriesError] = useState<string | null>(null)
   const [autoGenerateId, setAutoGenerateId] = useState(property?.meta?.autoGenerate ?? true)
   const [validationError, setValidationError] = useState<string | null>(null)
+
+  const loadRelationRepositories = async () => {
+    setRelationRepositoriesLoading(true)
+    setRelationRepositoriesError(null)
+    try {
+      setRelationRepositories(await fetchLibraryRepositories())
+    } catch (loadError) {
+      setRelationRepositoriesError(
+        loadError instanceof Error ? loadError.message : t('repoSettings.relationLoadFailed'),
+      )
+    } finally {
+      setRelationRepositoriesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (type === 'RELATION' && relationRepositories.length === 0 && !relationRepositoriesLoading) {
+      void loadRelationRepositories()
+    }
+    // Loading is intentionally triggered only by switching into Relation.
+    // A failed request waits for the explicit retry button instead of looping.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type])
+
+  const relationRepositoryOptions = useMemo(() => {
+    const options = relationRepositories
+      .filter((repository) => {
+        if (!repository.id || !repository.orgUsername) return false
+        if (target.operatorId && repository.operatorId) {
+          return target.operatorId === repository.operatorId
+        }
+        return repository.orgUsername.toLocaleLowerCase()
+          === target.orgUsername.toLocaleLowerCase()
+      })
+      .map((repository) => ({
+        value: repository.id,
+        label: `${repository.orgUsername} / ${repository.name || repository.username}`,
+        description: repository.id,
+      }))
+    if (relationDatabaseId && !options.some((option) => option.value === relationDatabaseId)) {
+      options.unshift({
+        value: relationDatabaseId,
+        label: t('repoSettings.relationUnavailable'),
+        description: relationDatabaseId,
+      })
+    }
+    return options
+  }, [relationDatabaseId, relationRepositories, t, target.operatorId, target.orgUsername])
+  const selectedRelationRepository = relationRepositoryOptions.find(
+    (option) => option.value === relationDatabaseId,
+  )
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -138,6 +196,9 @@ function PropertyEditorDialog({
       const parsedOptions = type === 'SELECT' || type === 'MULTI_SELECT'
         ? optionDraftsToPayload(options)
         : undefined
+      if (type === 'RELATION' && !relationDatabaseId.trim()) {
+        throw new Error(t('repoSettings.relationRequired'))
+      }
       const existingOptions = property && (
         property.typ === 'SELECT' || property.typ === 'MULTI_SELECT'
       )
@@ -242,13 +303,43 @@ function PropertyEditorDialog({
           {type === 'RELATION' ? (
             <div className="space-y-1.5">
               <Label htmlFor="repository-property-relation">{t('repoSettings.relationLabel')}</Label>
-              <Input
-                id="repository-property-relation"
-                value={relationDatabaseId}
-                onChange={(event) => setRelationDatabaseId(event.target.value)}
-                placeholder="database_…"
-                disabled={busy}
-              />
+              {relationRepositoriesLoading && relationRepositoryOptions.length === 0 ? (
+                <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+                  {t('common.loading')}
+                </div>
+              ) : (
+                <Combobox
+                  className="w-full"
+                  options={relationRepositoryOptions}
+                  value={relationDatabaseId}
+                  onValueChange={setRelationDatabaseId}
+                  placeholder={t('repoSettings.relationPlaceholder')}
+                  searchPlaceholder={t('repoSettings.relationSearch')}
+                  disabled={busy}
+                  trigger={(
+                    <button
+                      type="button"
+                      id="repository-property-relation"
+                      role="combobox"
+                      aria-label={t('repoSettings.relationLabel')}
+                      disabled={busy}
+                      className="flex h-7 w-full items-center rounded-md border border-input bg-background px-2 text-left text-sm text-foreground disabled:opacity-50"
+                    >
+                      <span className={selectedRelationRepository ? 'truncate' : 'truncate text-subtle-foreground'}>
+                        {selectedRelationRepository?.label ?? t('repoSettings.relationPlaceholder')}
+                      </span>
+                    </button>
+                  )}
+                />
+              )}
+              {relationRepositoriesError ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+                  <span>{relationRepositoriesError}</span>
+                  <Button type="button" size="sm" onClick={() => void loadRelationRepositories()}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              ) : null}
               <p className="text-2xs text-muted-foreground">
                 {t('repoSettings.relationHelp')}
               </p>
@@ -585,6 +676,7 @@ export function RepositoryPropertiesSection({
         <PropertyEditorDialog
           key={`${propertyDialog.mode}:${propertyDialog.property?.id ?? 'new'}`}
           state={propertyDialog}
+          target={target}
           busy={propertyBusy}
           error={propertyError}
           onClose={() => {

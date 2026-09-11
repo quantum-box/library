@@ -122,6 +122,16 @@ impl ProcessWebhookEvent {
             return Ok(ProcessingStats::default());
         }
 
+        // Recheck runtime availability when consuming the queue. Events may
+        // have been queued before an experimental provider was disabled, or
+        // manually reset to pending. Failing them prevents an unavailable
+        // provider from mutating Library data and avoids a hot pending loop.
+        if let Some(error) = unavailable_provider_error(&event) {
+            event.mark_failed(error.to_string());
+            self.event_repository.save(&event).await?;
+            return Err(error);
+        }
+
         // Skip if signature was invalid
         if !event.signature_valid() {
             event.mark_failed("Invalid webhook signature");
@@ -239,6 +249,12 @@ impl ProcessWebhookEvent {
     }
 }
 
+fn unavailable_provider_error(
+    event: &WebhookEvent,
+) -> Option<errors::Error> {
+    event.provider().ensure_runtime_available().err()
+}
+
 /// Result of batch processing.
 #[derive(Debug, Default)]
 pub struct BatchResult {
@@ -347,6 +363,20 @@ fn is_expected_worker_infra_error(error: &errors::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_provider_is_rejected_before_processing() {
+        let event = WebhookEvent::create(
+            inbound_sync_domain::WebhookEndpointId::default(),
+            inbound_sync_domain::Provider::Hubspot,
+            "contact.creation",
+            serde_json::json!({}),
+            None,
+            true,
+        );
+
+        assert!(unavailable_provider_error(&event).is_some());
+    }
 
     #[test]
     fn test_batch_result() {
