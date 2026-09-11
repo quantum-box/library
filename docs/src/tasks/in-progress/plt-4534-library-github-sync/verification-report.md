@@ -121,9 +121,9 @@ gap; deployed at-least-once behavior remains a separate gate.
   passed twice (library and binary test targets) against MySQL. It verifies
   idempotent registration, exclusive lease, expired-lease recovery, retry state,
   and terminal completion, then removes the exact test rows.
-- The MySQL contract exposed `ascii_bin` columns as `VARBINARY`; both scanner
-  claim and the pre-existing immediate capture lookup now cast event identifiers
-  to character values before Rust decoding.
+- The MySQL contract exposed `ascii_bin` columns as `VARBINARY`; scanner and
+  immediate-capture lookups now decode those identifiers explicitly instead of
+  relying on SQL casts.
 - `npm run test:worker`: sync Worker 26/26 and public-docs Worker 14/14 passed.
   The new scheduled test proves the disabled gate and exact dedicated bearer on
   the scanner request.
@@ -136,13 +136,42 @@ gap; deployed at-least-once behavior remains a separate gate.
   atomically extended from `quantum-box/library` to include the dedicated
   `quantum-box/library-sample` E2E repository.
 
+## Preview deployment passed on 2026-09-12
+
+- Ready PR [#357](https://github.com/quantum-box/library/pull/357) deployed the
+  current scanner head `4946aec` to the isolated Preview API.
+- Tachyon build `bld_01m28gpn642xmfhr2xfjj1wr8r` succeeded for
+  `library-api`; the public Preview API and client origins remained reachable.
+- Preview-only branch configuration enables the experimental integration and
+  API engine while leaving the Worker cron disabled. Production configuration
+  was not changed.
+- The internal scanner route rejected an unauthenticated request with HTTP 401.
+  One generated token was registered only as a Preview branch secret for the
+  API and sync Worker; its value was neither persisted in the repository nor
+  printed in verification output.
+- Two consecutive authenticated calls to
+  `POST /internal/external-sync/outbound-scan` returned HTTP 200. Both returned
+  `registered=0`, `record_events_processed=0`,
+  `record_events_retried=0`, and `outbound_deliveries_retried=0`, proving the
+  deployed empty-backlog path and repeated no-op behavior.
+- Preview TiDB exposed projection-pruning failures when scanner statements
+  returned only an expression or aggregate while filtering on other columns.
+  Registration, claim, lookup, and latest-version statements now select the
+  columns used by their predicates/order and decode `ascii_bin` values in Rust.
+  The focused MySQL durability test, API check, and clippy passed after the
+  compatibility changes.
+
+The zero-count scan does not prove event capture or provider delivery. Those
+remain part of the dedicated GitHub round trip below.
+
 ## Remaining release gates
 
-- Ready PR CI and PR-scoped API / Worker deployment
-- Preview API self-URL override so webhook callbacks stay on the same isolated
-  preview database
+- Current Ready PR CI after the final TiDB compatibility commit
 - Dedicated GitHub OAuth, webhook, outbound commit, conflict, rename, and delete
   round trip, including authenticated browser state after reload
+- Provider-originated webhook delivery requires a governance-managed GitHub
+  repository setting; an endpoint-specific signed Preview simulation must be
+  recorded separately and must not be reported as provider delivery.
 - Production manifest activation of the API engine and Worker cron, followed by
   live scanner, save, and reload evidence
 

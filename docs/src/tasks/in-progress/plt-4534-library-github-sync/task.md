@@ -120,6 +120,19 @@ Preview surface で別 gate として記録する。
 - Preview は engine 有効・cron 無効で配備と手動 E2E を行う。本番は dedicated GitHub round trip
   が合格するまで engine / cron とも無効のまま維持する。
 
+### 2026-09-12 Preview scanner
+
+- Ready PR #357 の隔離 Preview に API / client / sync Worker を配備した。
+- Preview TiDB の projection pruning に合わせ、outbox の registration / claim / lookup は
+  predicate と order に使う列も SELECT に保持し、`ascii_bin` は Rust 側で明示 decode する。
+- API と Worker に同一の Preview branch 限定 scanner secret を登録した。値は repository と
+  検証出力へ残していない。
+- `bld_01m28gpn642xmfhr2xfjj1wr8r` の配備後、認証付き scanner を2回呼び、どちらも HTTP 200、
+  全 count 0 の再実行 no-op を確認した。これは空 backlog の runtime proof であり、実 GitHub
+  event / Contents API の往復成功を意味しない。
+- 本番の engine / cron は無効のまま。実 GitHub OAuth、signed webhook simulation、outbound、
+  conflict、rename、delete、画面 reload は専用 fixture で引き続き検証する。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。
