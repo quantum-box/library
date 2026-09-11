@@ -34,6 +34,22 @@ type ClaimableDeliveryRow = (
     Option<DateTime<Utc>>,
 );
 
+type ClaimableOutboundDeliveryRow = (
+    String,
+    String,
+    String,
+    u32,
+    DateTime<Utc>,
+    Option<String>,
+    Option<DateTime<Utc>>,
+);
+
+#[derive(Debug)]
+struct ClaimedOutboundDelivery {
+    delivery: OutboundDelivery,
+    claim_owner: String,
+}
+
 fn scanner_lease_owner() -> String {
     use rand::RngCore;
 
@@ -138,6 +154,22 @@ async fn claim_record_events(
     batch_size: u32,
 ) -> errors::Result<Vec<ClaimedRecordEvent>> {
     let mut transaction = pool.begin().await?;
+    // A worker can stop after claiming the final allowed attempt. Once that
+    // lease expires, terminate it explicitly instead of leaving an INFLIGHT
+    // row that can never satisfy the claim predicate again.
+    sqlx::query(
+        r#"
+        UPDATE domain_outbox_deliveries
+        SET state = 'DEAD', lease_owner = NULL, lease_expires_at = NULL,
+            last_error = 'lease expired after final attempt'
+        WHERE consumer_name = ? AND state = 'INFLIGHT'
+          AND attempt_count >= ? AND lease_expires_at <= NOW(6)
+        "#,
+    )
+    .bind(OUTBOX_CONSUMER)
+    .bind(OUTBOX_MAX_ATTEMPTS)
+    .execute(&mut *transaction)
+    .await?;
     let event_rows: Vec<ClaimableDeliveryRow> = sqlx::query_as(
         r#"
         SELECT event_id, consumer_name, state, attempt_count,
@@ -525,29 +557,54 @@ impl ExternalSyncOutboxDispatch {
         let due = self
             .claim_due_outbound_deliveries(delivery_batch_size)
             .await?;
-        for delivery in due {
+        for claimed in due {
+            let delivery = claimed.delivery;
+            let delivery_id = delivery.id().clone();
+            let claimed_attempt_count = delivery.attempt_count();
             let executor = inbound_sync::sdk::SystemExecutor;
             let multi_tenancy =
                 inbound_sync::sdk::OperatorMultiTenancy::new(
                     delivery.tenant_id().clone(),
                 );
-            if let Err(error) = self
-                .retry_delivery(
+            match self
+                .retry_claimed_delivery(
                     &executor,
                     &multi_tenancy,
-                    delivery.tenant_id(),
-                    delivery.id(),
+                    delivery,
+                    false,
                 )
                 .await
             {
-                tracing::warn!(
-                    %error,
-                    delivery_id = %delivery.id(),
-                    "automatic external delivery retry failed"
-                );
-                self.release_failed_outbound_claim(delivery.id()).await?;
+                Ok(Some(_delivery)) => {
+                    self.clear_outbound_claim(
+                        &delivery_id,
+                        &claimed.claim_owner,
+                    )
+                    .await?;
+                    summary.outbound_deliveries_retried += 1;
+                }
+                Ok(None) => {
+                    self.clear_outbound_claim(
+                        &delivery_id,
+                        &claimed.claim_owner,
+                    )
+                    .await?;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        delivery_id = %delivery_id,
+                        "automatic external delivery retry failed"
+                    );
+                    self.release_failed_outbound_claim(
+                        &delivery_id,
+                        &claimed.claim_owner,
+                        claimed_attempt_count,
+                    )
+                    .await?;
+                    summary.outbound_deliveries_retried += 1;
+                }
             }
-            summary.outbound_deliveries_retried += 1;
         }
         self.fail_exhausted_outbound_deliveries().await?;
         Ok(summary)
@@ -625,12 +682,18 @@ impl ExternalSyncOutboxDispatch {
     async fn claim_due_outbound_deliveries(
         &self,
         batch_size: u32,
-    ) -> errors::Result<Vec<OutboundDelivery>> {
-        let ids: Vec<String> = sqlx::query_scalar(
+    ) -> errors::Result<Vec<ClaimedOutboundDelivery>> {
+        let candidates: Vec<ClaimableOutboundDeliveryRow> = sqlx::query_as(
             r#"
-            SELECT id FROM outbound_deliveries
+            SELECT id, tenant_id, status, attempt_count, next_attempt_at,
+                   scanner_claim_owner, scanner_claim_expires_at
+            FROM outbound_deliveries
             WHERE status IN ('pending', 'retrying')
               AND attempt_count < ? AND next_attempt_at <= NOW(6)
+              AND (
+                scanner_claim_owner IS NULL
+                OR scanner_claim_expires_at <= NOW(6)
+              )
             ORDER BY next_attempt_at, id LIMIT ?
             "#,
         )
@@ -639,17 +702,34 @@ impl ExternalSyncOutboxDispatch {
         .fetch_all(self.library_pool.as_ref())
         .await?;
         let mut claimed = Vec::new();
-        for id in ids {
+        for (
+            id,
+            tenant,
+            _status,
+            _attempt_count,
+            _next_attempt_at,
+            _claim_owner,
+            _claim_expires_at,
+        ) in candidates
+        {
+            let claim_owner = scanner_lease_owner();
             let result = sqlx::query(
                 r#"
                 UPDATE outbound_deliveries
-                SET status = 'retrying',
-                    next_attempt_at = DATE_ADD(NOW(6), INTERVAL 2 MINUTE),
+                SET status = 'retrying', scanner_claim_owner = ?,
+                    scanner_claim_expires_at = DATE_ADD(
+                      NOW(6), INTERVAL 5 MINUTE
+                    ),
                     updated_at = NOW(6)
                 WHERE id = ? AND status IN ('pending', 'retrying')
                   AND attempt_count < ? AND next_attempt_at <= NOW(6)
+                  AND (
+                    scanner_claim_owner IS NULL
+                    OR scanner_claim_expires_at <= NOW(6)
+                  )
                 "#,
             )
+            .bind(&claim_owner)
             .bind(&id)
             .bind(OUTBOX_MAX_ATTEMPTS)
             .execute(self.library_pool.as_ref())
@@ -658,17 +738,14 @@ impl ExternalSyncOutboxDispatch {
                 continue;
             }
             let id = OutboundDeliveryId::parse(id)?;
-            let tenant: String = sqlx::query_scalar(
-                "SELECT tenant_id FROM outbound_deliveries WHERE id = ?",
-            )
-            .bind(id.as_str())
-            .fetch_one(self.library_pool.as_ref())
-            .await?;
             let tenant_id: value_object::TenantId = tenant.parse()?;
             if let Some(delivery) =
                 self.deliveries.find_by_id(&tenant_id, &id).await?
             {
-                claimed.push(delivery);
+                claimed.push(ClaimedOutboundDelivery {
+                    delivery,
+                    claim_owner,
+                });
             }
         }
         Ok(claimed)
@@ -681,8 +758,14 @@ impl ExternalSyncOutboxDispatch {
             r#"
             UPDATE outbound_deliveries
             SET status = 'failed', last_error_category = 'retry_exhausted',
+                scanner_claim_owner = NULL,
+                scanner_claim_expires_at = NULL,
                 updated_at = NOW(6)
             WHERE status = 'retrying' AND attempt_count >= ?
+              AND (
+                scanner_claim_owner IS NULL
+                OR scanner_claim_expires_at <= NOW(6)
+              )
             "#,
         )
         .bind(OUTBOX_MAX_ATTEMPTS)
@@ -694,28 +777,66 @@ impl ExternalSyncOutboxDispatch {
     async fn release_failed_outbound_claim(
         &self,
         delivery_id: &OutboundDeliveryId,
+        claim_owner: &str,
+        claimed_attempt_count: u32,
     ) -> errors::Result<()> {
         sqlx::query(
             r#"
             UPDATE outbound_deliveries
-            SET status = IF(attempt_count + 1 >= ?, 'failed', 'retrying'),
+            SET status = IF(
+                  attempt_count + IF(attempt_count = ?, 1, 0) >= ?,
+                  'failed', 'retrying'
+                ),
                 next_attempt_at = DATE_ADD(
                   NOW(6),
                   INTERVAL LEAST(
                     300,
-                    POW(2, LEAST(attempt_count + 1, 8))
+                    POW(
+                      2,
+                      LEAST(
+                        attempt_count + IF(attempt_count = ?, 1, 0),
+                        8
+                      )
+                    )
                   ) SECOND
                 ),
                 last_error_category = LEFT(?, 64),
-                attempt_count = attempt_count + 1,
+                attempt_count = attempt_count
+                  + IF(attempt_count = ?, 1, 0),
+                scanner_claim_owner = NULL,
+                scanner_claim_expires_at = NULL,
                 updated_at = NOW(6)
             WHERE id = ? AND status = 'retrying'
-              AND next_attempt_at > NOW(6)
+              AND scanner_claim_owner = ?
             "#,
         )
+        .bind(claimed_attempt_count)
         .bind(OUTBOX_MAX_ATTEMPTS)
+        .bind(claimed_attempt_count)
         .bind("scanner_precondition")
+        .bind(claimed_attempt_count)
         .bind(delivery_id.as_str())
+        .bind(claim_owner)
+        .execute(self.library_pool.as_ref())
+        .await?;
+        Ok(())
+    }
+
+    async fn clear_outbound_claim(
+        &self,
+        delivery_id: &OutboundDeliveryId,
+        claim_owner: &str,
+    ) -> errors::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE outbound_deliveries
+            SET scanner_claim_owner = NULL, scanner_claim_expires_at = NULL,
+                updated_at = NOW(6)
+            WHERE id = ? AND scanner_claim_owner = ?
+            "#,
+        )
+        .bind(delivery_id.as_str())
+        .bind(claim_owner)
         .execute(self.library_pool.as_ref())
         .await?;
         Ok(())
@@ -846,22 +967,92 @@ impl ExternalSyncOutboxDispatch {
         tenant_id: &value_object::TenantId,
         delivery_id: &OutboundDeliveryId,
     ) -> errors::Result<OutboundDelivery> {
-        let mut delivery = self
+        let claim_owner = scanner_lease_owner();
+        let claimed = sqlx::query(
+            r#"
+            UPDATE outbound_deliveries
+            SET scanner_claim_owner = ?,
+                scanner_claim_expires_at = DATE_ADD(
+                  NOW(6), INTERVAL 5 MINUTE
+                ),
+                updated_at = NOW(6)
+            WHERE id = ? AND tenant_id = ?
+              AND status IN ('pending', 'retrying', 'conflict', 'failed')
+              AND (
+                scanner_claim_owner IS NULL
+                OR scanner_claim_expires_at <= NOW(6)
+              )
+            "#,
+        )
+        .bind(&claim_owner)
+        .bind(delivery_id.as_str())
+        .bind(tenant_id.to_string())
+        .execute(self.library_pool.as_ref())
+        .await?;
+        if claimed.rows_affected() != 1 {
+            return Err(errors::Error::conflict(
+                "outbound delivery is already being attempted or cannot be retried",
+            ));
+        }
+
+        let delivery = self
             .deliveries
             .find_by_id(tenant_id, delivery_id)
             .await?
             .ok_or_else(|| errors::Error::not_found("Outbound delivery"))?;
+        let claimed_attempt_count = delivery.attempt_count();
+        match self
+            .retry_claimed_delivery(executor, multi_tenancy, delivery, true)
+            .await
+        {
+            Ok(Some(delivery)) => {
+                self.clear_outbound_claim(delivery.id(), &claim_owner)
+                    .await?;
+                Ok(delivery)
+            }
+            Ok(None) => {
+                self.clear_outbound_claim(delivery_id, &claim_owner)
+                    .await?;
+                Err(errors::Error::conflict(
+                    "external sync binding is paused",
+                ))
+            }
+            Err(error) => {
+                self.release_failed_outbound_claim(
+                    delivery_id,
+                    &claim_owner,
+                    claimed_attempt_count,
+                )
+                .await?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn retry_claimed_delivery(
+        &self,
+        executor: &dyn ExecutorAction,
+        multi_tenancy: &dyn MultiTenancyAction,
+        mut delivery: OutboundDelivery,
+        rebase_from_link: bool,
+    ) -> errors::Result<Option<OutboundDelivery>> {
+        let tenant_id = delivery.tenant_id().clone();
         let binding = self
             .bindings
-            .find_by_id(tenant_id, delivery.binding_id())
+            .find_by_id(&tenant_id, delivery.binding_id())
             .await?
             .ok_or_else(|| {
                 errors::Error::not_found("External sync binding")
             })?;
+        if binding.status() != ExternalSyncBindingStatus::Active
+            || binding.outbound_policy() == ExternalSyncPolicy::Disabled
+        {
+            return Ok(None);
+        }
         let link = self
             .links
             .find_by_data(
-                tenant_id,
+                &tenant_id,
                 delivery.binding_id(),
                 delivery.data_id(),
             )
@@ -869,10 +1060,15 @@ impl ExternalSyncOutboxDispatch {
             .ok_or_else(|| {
                 errors::Error::not_found("External object link")
             })?;
-        delivery.request_retry_from_base(
-            link.last_accepted_external_revision().map(str::to_owned),
-            chrono::Utc::now(),
-        )?;
+        if rebase_from_link {
+            // Only an explicit user retry rebases after a reviewed conflict.
+            // Automatic retries retain the immutable base captured with the
+            // delivery so newer remote writes remain detectable as conflicts.
+            delivery.request_retry_from_base(
+                link.last_accepted_external_revision().map(str::to_owned),
+                chrono::Utc::now(),
+            )?;
+        }
         self.deliver(
             executor,
             multi_tenancy,
@@ -881,7 +1077,7 @@ impl ExternalSyncOutboxDispatch {
             &mut delivery,
         )
         .await?;
-        Ok(delivery)
+        Ok(Some(delivery))
     }
 
     async fn deliver(
@@ -1026,7 +1222,7 @@ mod scanner_database_tests {
 
     use super::{
         claim_record_events, complete_record_event, register_record_events,
-        retry_record_event, OUTBOX_CONSUMER,
+        retry_record_event, OUTBOX_CONSUMER, OUTBOX_MAX_ATTEMPTS,
     };
 
     #[tokio::test]
@@ -1148,10 +1344,46 @@ mod scanner_database_tests {
         assert_eq!(attempts, 2);
         assert_eq!(last_error.as_deref(), Some("temporary failure"));
 
+        // A crash on the final allowed attempt must become terminal after
+        // lease expiry instead of remaining INFLIGHT forever.
         sqlx::query(
             r#"
             UPDATE domain_outbox_deliveries
-            SET next_attempt_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND)
+            SET state = 'INFLIGHT', attempt_count = ?,
+                lease_owner = 'scanner-crashed',
+                lease_expires_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND)
+            WHERE event_id = ? AND consumer_name = ?
+            "#,
+        )
+        .bind(OUTBOX_MAX_ATTEMPTS)
+        .bind(event_id.to_string())
+        .bind(OUTBOX_CONSUMER)
+        .execute(&pool)
+        .await?;
+        assert!(claim_record_events(&pool, "scanner-after-crash", 50)
+            .await?
+            .is_empty());
+        let terminal_state: String = sqlx::query_scalar(
+            r#"
+            SELECT CAST(state AS CHAR) AS state
+            FROM domain_outbox_deliveries
+            WHERE event_id = ? AND consumer_name = ?
+            "#,
+        )
+        .bind(event_id.to_string())
+        .bind(OUTBOX_CONSUMER)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(terminal_state, "DEAD");
+
+        // Restore the fixture so the successful completion path below is
+        // still covered independently of the terminal recovery assertion.
+        sqlx::query(
+            r#"
+            UPDATE domain_outbox_deliveries
+            SET state = 'PENDING', attempt_count = 2,
+                next_attempt_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND),
+                lease_owner = NULL, lease_expires_at = NULL
             WHERE event_id = ? AND consumer_name = ?
             "#,
         )
@@ -1159,6 +1391,7 @@ mod scanner_database_tests {
         .bind(OUTBOX_CONSUMER)
         .execute(&pool)
         .await?;
+
         assert_eq!(
             claim_record_events(&pool, "scanner-c", 50).await?.len(),
             1
