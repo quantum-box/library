@@ -49,27 +49,47 @@ async fn register_record_events(
     scan_after: DateTime<Utc>,
     batch_size: u32,
 ) -> errors::Result<u64> {
-    // Let the delivery table's unique key provide idempotency. TiDB cannot
-    // reliably plan an INSERT ... SELECT that LEFT JOINs the insert target.
-    let result = sqlx::query(
+    // TiDB cannot reliably plan INSERT IGNORE ... SELECT against this table's
+    // composite primary key. Select a bounded candidate set first and let the
+    // delivery table's unique key make the individual inserts idempotent.
+    let mut transaction = pool.begin().await?;
+    let event_ids: Vec<String> = sqlx::query_scalar(
         r#"
-        INSERT IGNORE INTO domain_outbox_deliveries (
-            event_id, consumer_name
-        )
-        SELECT event.event_id, ?
+        SELECT CAST(event.event_id AS CHAR)
         FROM domain_outbox_events AS event
         WHERE event.aggregate_type = 'RECORD'
           AND event.occurred_at >= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM domain_outbox_deliveries AS delivery
+            WHERE delivery.event_id = event.event_id
+              AND delivery.consumer_name = ?
+          )
         ORDER BY event.occurred_at, event.event_id
         LIMIT ?
         "#,
     )
-    .bind(OUTBOX_CONSUMER)
     .bind(scan_after)
+    .bind(OUTBOX_CONSUMER)
     .bind(batch_size)
-    .execute(pool)
+    .fetch_all(&mut *transaction)
     .await?;
-    Ok(result.rows_affected())
+    let mut registered = 0;
+    for event_id in event_ids {
+        registered += sqlx::query(
+            r#"
+            INSERT IGNORE INTO domain_outbox_deliveries (
+                event_id, consumer_name
+            ) VALUES (?, ?)
+            "#,
+        )
+        .bind(event_id)
+        .bind(OUTBOX_CONSUMER)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+    }
+    transaction.commit().await?;
+    Ok(registered)
 }
 
 async fn claim_record_events(
