@@ -7,9 +7,8 @@ const ENABLED: &str = "EXTERNAL_SYNC_SCANNER_ENABLED";
 const TOKEN: &str = "EXTERNAL_SYNC_SCANNER_TOKEN";
 
 pub async fn run(env: &Env) -> Result<()> {
-    let enabled = variable(env, ENABLED).is_some_and(|value| {
-        value.trim().eq_ignore_ascii_case("true")
-    });
+    let enabled = variable(env, ENABLED)
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"));
     if !enabled {
         return Ok(());
     }
