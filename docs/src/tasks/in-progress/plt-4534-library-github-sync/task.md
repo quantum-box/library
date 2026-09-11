@@ -37,6 +37,7 @@ provider-neutral な binding、external object link、ChangeSet、durable delive
 - Linear: [PLT-4534](https://linear.app/issue/PLT-4534)
 - Design: [design.md](design.md)
 - Visual brief: [library-github-sync.html](library-github-sync.html)
+- Library Artifact: [Library External Sync Engine](https://planetlibrary.txcloud.app/quantumbox/artifacts/data/data_01m27js35xtpc42gmxte79wage)
 - Verification: [verification-report.md](verification-report.md)
 - Architecture: [ADR-0006](../../../../specs/decisions/ADR-0006-library-photon-bounded-contexts.md)
 
