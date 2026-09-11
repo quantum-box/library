@@ -18,7 +18,6 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use value_object::TenantId;
 
 use crate::app::LibraryApp;
 use crate::domain::ShareLink;
@@ -402,11 +401,7 @@ pub async fn slack_unfurl_projection(
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Json(payload): Json<SlackUnfurlProjectionRequest>,
 ) -> errors::Result<Json<SlackUnfurlProjectionResponse>> {
-    let tenant_id =
-        verify_slack_unfurl_workload(&headers, &payload.tachyon_tenant_id)?;
-    if tenant_id.to_string() != payload.tachyon_tenant_id {
-        return Err(slack_unfurl_unauthorized());
-    }
+    verify_slack_unfurl_workload(&headers, &payload.tachyon_tenant_id)?;
 
     let response = match classify_slack_unfurl_url(&payload.url) {
         SlackUnfurlUrl::PrivateShare { token } => {
@@ -448,7 +443,7 @@ enum SlackUnfurlUrl {
 fn verify_slack_unfurl_workload(
     headers: &HeaderMap,
     expected_tenant: &str,
-) -> errors::Result<TenantId> {
+) -> errors::Result<()> {
     let token = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -502,8 +497,9 @@ fn verify_slack_unfurl_workload(
 
     claims
         .tenant
-        .parse()
-        .map_err(|_| slack_unfurl_unauthorized())
+        .parse::<value_object::TenantId>()
+        .map_err(|_| slack_unfurl_unauthorized())?;
+    Ok(())
 }
 
 fn slack_unfurl_unauthorized() -> errors::Error {
