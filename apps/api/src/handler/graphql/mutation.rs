@@ -1328,6 +1328,7 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
         input: SyncToGitHubInput,
     ) -> Result<SyncResult> {
+        ensure_experimental_github_sync_available()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
@@ -1371,6 +1372,7 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
         input: BulkSyncExtGithubInput,
     ) -> Result<BulkSyncExtGithubResult> {
+        ensure_experimental_github_sync_available()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
@@ -1414,6 +1416,7 @@ impl LibraryMutation {
         ctx: &async_graphql::Context<'_>,
         input: EnableGitHubSyncInput,
     ) -> Result<EnableGitHubSyncResult> {
+        ensure_experimental_github_sync_available()?;
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
@@ -1686,6 +1689,10 @@ impl LibraryMutation {
     ) -> Result<super::model::ImportMarkdownResult> {
         use super::model::{ImportError, ImportMarkdownResult};
 
+        if input.enable_github_sync.unwrap_or(false) {
+            ensure_experimental_github_sync_available()?;
+        }
+
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
@@ -1757,6 +1764,12 @@ impl LibraryMutation {
             repo_id: result.repo_id,
         })
     }
+}
+
+fn ensure_experimental_github_sync_available() -> Result<()> {
+    inbound_sync_domain::Provider::Github
+        .ensure_runtime_available()
+        .map_err(|error| error.extend())
 }
 
 /// Reject a caller who cannot grant policies inside the tenant.

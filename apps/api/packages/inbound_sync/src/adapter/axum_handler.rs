@@ -160,15 +160,7 @@ async fn handle_provider_webhook(
         Err(e) => {
             tracing::error!(error = %e, "Failed to receive provider webhook");
 
-            let (status_code, error_code) = if e.is_not_found() {
-                (StatusCode::NOT_FOUND, "endpoint_not_found")
-            } else if e.is_forbidden() {
-                (StatusCode::FORBIDDEN, "forbidden")
-            } else if e.is_bad_request() {
-                (StatusCode::BAD_REQUEST, "bad_request")
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
-            };
+            let (status_code, error_code) = webhook_error_status(&e);
 
             (
                 status_code,
@@ -276,15 +268,7 @@ async fn handle_webhook(
         Err(e) => {
             tracing::error!(error = %e, "Failed to receive webhook");
 
-            let (status_code, error_code) = if e.is_not_found() {
-                (StatusCode::NOT_FOUND, "endpoint_not_found")
-            } else if e.is_forbidden() {
-                (StatusCode::FORBIDDEN, "forbidden")
-            } else if e.is_bad_request() {
-                (StatusCode::BAD_REQUEST, "bad_request")
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
-            };
+            let (status_code, error_code) = webhook_error_status(&e);
 
             (
                 status_code,
@@ -295,6 +279,22 @@ async fn handle_webhook(
             )
                 .into_response()
         }
+    }
+}
+
+fn webhook_error_status(
+    error: &errors::Error,
+) -> (StatusCode, &'static str) {
+    if error.is_not_found() {
+        (StatusCode::NOT_FOUND, "endpoint_not_found")
+    } else if error.is_forbidden() {
+        (StatusCode::FORBIDDEN, "forbidden")
+    } else if error.is_bad_request() {
+        (StatusCode::BAD_REQUEST, "bad_request")
+    } else if matches!(error, errors::Error::ServiceUnavailable { .. }) {
+        (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable")
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
     }
 }
 
@@ -328,5 +328,17 @@ mod tests {
         let json = headers_to_json(&headers);
         assert!(json.get("content-type").is_some());
         assert!(json.get("x-hub-signature-256").is_some());
+    }
+
+    #[test]
+    fn unavailable_webhook_runtime_returns_retryable_status() {
+        let error = errors::Error::service_unavailable(
+            "GitHub continuous sync is disabled",
+        );
+
+        assert_eq!(
+            webhook_error_status(&error),
+            (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable")
+        );
     }
 }

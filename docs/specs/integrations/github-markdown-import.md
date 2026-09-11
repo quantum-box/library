@@ -1,13 +1,20 @@
-# GitHub Markdown import / sync GA verification
+# GitHub Markdown import / sync readiness
 
 最終更新: 2026-08-26
 
 ## 結論
 
-GitHub Markdown import と**双方向継続同期**を GA として扱う（2026-08-26 変更。旧判断: one-shot import のみ GA）。
+one-shot GitHub Markdown import のみを GA とする。**双方向継続同期は
+Experimental** として再設計する（2026-09-11 変更）。
 
-- **inbound (GitHub → Library)**: push webhook のみ。`POST /webhooks/github` を `x-hub-signature-256` で検証 → webhook event queue → `GitHubEventProcessor`（5秒 poll の `WebhookEventWorker`）→ Data upsert。
-- **outbound (Library → GitHub)**: Data 保存時の自動 writeback。`ext_github.enabled=true` の Data を `AddData` / `UpdateData` port 経由で保存すると、`GithubWritebackDispatch` デコレータが markdown を合成し `ext_github.ref` ブランチへ push する。best-effort（失敗は warn のみで保存は成功）。手動経路として `syncDataToGithub` / `bulkSyncExtGithub` mutation も利用可。
+2026-08-26 に双方向継続同期を GA としたが、本番 `library-api` は Lambda で
+`LIBRARY_WEBHOOK_WORKER_ENABLED` が設定されておらず、受信イベントは DB に
+queued された後に処理されない。また、inbound の直接 Data 更新と generic Data
+mutation からの inline writeback は ADR-0006 の ChangeSet / transactional outbox
+境界に反する。接続 UI や queue 保存を同期成功の根拠にしない。
+
+- **inbound (GitHub → Library)**: Experimental。push webhook を検証して DB queue に保存する実装と、常駐 process で queue を処理する実装はあるが、Lambda 本番で durable consumer invocation を保証していない。現行 processor は ChangeSet を通さず Data を直接 upsert/delete する。
+- **outbound (Library → GitHub)**: Experimental。Data 保存時の inline best-effort writeback と手動 mutation はあるが、失敗状態を利用者に返さず、external revision を共通 base とする競合解決もない。
 - GitHub App installation（`completeGitHubInstall`）だけは引き続き Non-GA 相当: connection metadata を保存するのみで、installation token 発行は未実装。認証は OAuth App ベース。
 
 ## ループ防止
@@ -37,11 +44,11 @@ GitHub Markdown import と**双方向継続同期**を GA として扱う（2026
 | --- | --- | --- |
 | OAuth URL / token exchange | GA | `apps/api/src/handler/graphql/mutation.rs` の `githubAuthUrl` / `githubExchangeToken`。OAuth state は HMAC 検証され、token は provider `github` として保存される |
 | Directory / preview / frontmatter analyze | GA | `apps/api/src/usecase/list_github_directory.rs`、`apps/api/src/usecase/get_markdown_previews.rs` |
-| Markdown import | GA | `apps/api/src/usecase/import_markdown_from_github.rs`。`enableGithubSync` 入力が `ext_github.enabled` / `sync_to_github` にそのまま反映される（デフォルト false） |
-| 手動 writeback | GA | `apps/api/src/usecase/sync_data_to_github.rs`（単一）と `apps/api/src/usecase/bulk_sync_ext_github.rs`（一括）。どちらも `outbound_sync::SyncData` → `GitHubSyncProvider`（contents API、SHA conflict 処理付き） |
-| 自動 writeback | GA | `apps/api/src/usecase/github_writeback.rs`。`apps/api/src/app.rs` で `AddData` / `UpdateData` port をラップ |
-| inbound sync runtime | GA | `apps/api/src/router.rs` が `OAuthGitHubClient` / `DefaultGitHubDataHandler` を配線。webhook secret は `apps/api/src/sdk_auth.rs`（`github_webhook_secret`）→ `apps/api/src/bootstrap.rs` → `WebhookSecretStore` |
-| marketplace readiness | GA | `inbound_sync/domain/src/provider.rs` で `Provider::Github` は `Ga` / runtime available。`builtin_integrations.rs` で `int_github` は `SyncCapability::Bidirectional` |
+| Markdown import | GA (one-shot) | `enableGithubSync=false` のみ。import 後の継続同期は作らない |
+| 手動 writeback | Experimental | contents API の SHA conflict 処理はあるが、Library revision と external revision の共通 base / 利用者向け状態がない |
+| 自動 writeback | Experimental | inline best-effort であり ADR-0006 の禁止事項に該当する。移行対象 |
+| inbound sync runtime | Experimental | handler と processor は配線済みだが、Lambda 本番に durable consumer がない。直接 Data 更新も移行対象 |
+| marketplace readiness | Experimental | `LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS=true` の環境だけで表示・操作する |
 | GitHub App installation | Non-GA | `completeGitHubInstall` は installation_id を connection metadata に保存するのみ |
 
 ## 検証
@@ -54,6 +61,11 @@ GitHub Markdown import と**双方向継続同期**を GA として扱う（2026
 4. unit test: webhook secret が `Provider::Github` として store に入る（`bootstrap.rs`）。
 5. unit test: `github_import_metadata` の enable_sync true/false 両ケース（`import_markdown_from_github.rs`）。
 6. web unit test: `normalizeExtGithubEditorState` の ref/default-deny（`ext-github-sync-policy.test.ts`）。
+
+## 再設計
+
+正本と移行計画は [PLT-4534 design](../../src/tasks/in-progress/plt-4534-library-github-sync/design.md)
+および ADR-0006 を参照する。
 
 ## 残リスク
 
