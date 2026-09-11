@@ -33,7 +33,9 @@ async fn repositories_round_trip_and_enforce_tenant_scope(
         .max_connections(1)
         .connect_with(options.clone().database("mysql"))
         .await?;
-    sqlx::query(&format!("CREATE DATABASE `{database_name}`"))
+    sqlx::query(&format!(
+        "CREATE DATABASE `{database_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+    ))
         .execute(&admin)
         .await?;
 

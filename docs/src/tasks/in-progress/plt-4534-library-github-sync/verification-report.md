@@ -79,7 +79,8 @@ continuous synchronization works at an external or deployed surface.
 - `cargo +nightly-2026-06-04 test -p integration_domain -p inbound_sync -p outbound_sync --lib`:
   15 + 114 + 4 passed.
 - `DEV_DATABASE_URL=mysql://root:@127.0.0.1:15000/library cargo +nightly-2026-06-04 test -p inbound_sync --test external_sync_repository -- --ignored --nocapture`:
-  1 passed against MySQL 8.0.46. The isolated contract applies both up
+  1 passed against MySQL 8.0.46 with the CI-default `utf8mb4_0900_ai_ci`
+  database collation. The isolated contract applies both up
   migrations, round-trips binding, object link, ChangeSet, delivery, and durable
   dispatch capability state, verifies tenant isolation/idempotency/claim
   behavior, applies both down migrations, and removes its temporary database.

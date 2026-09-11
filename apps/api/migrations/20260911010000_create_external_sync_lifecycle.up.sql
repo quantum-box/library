@@ -73,7 +73,8 @@ COMMENT='At-least-once delivery of Library revisions to external objects';
 -- The API stores only a digest of the capability. The plaintext capability is
 -- handed to a Durable Object, which presents it when invoking the consumer.
 CREATE TABLE IF NOT EXISTS `external_sync_dispatch_jobs` (
-    `event_id`                   VARCHAR(30)  NOT NULL,
+    `event_id`                   VARCHAR(30) CHARACTER SET utf8mb4
+                                            COLLATE utf8mb4_unicode_ci NOT NULL,
     `capability_hash`            CHAR(64)     NOT NULL,
     `status`                     VARCHAR(16)  NOT NULL DEFAULT 'pending',
     `attempt_count`              INT UNSIGNED NOT NULL DEFAULT 0,
