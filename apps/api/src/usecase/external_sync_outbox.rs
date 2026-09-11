@@ -105,15 +105,10 @@ async fn claim_record_events(
     batch_size: u32,
 ) -> errors::Result<Vec<ClaimedRecordEvent>> {
     let mut transaction = pool.begin().await?;
-    let rows = sqlx::query_as::<_, ClaimedRecordEvent>(
+    let event_ids: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT CAST(event.event_id AS CHAR) AS event_id,
-               event.tenant_id, event.database_id,
-               event.aggregate_id, event.aggregate_version,
-               CAST(event.event_type AS CHAR) AS event_type
+        SELECT CAST(event_id AS CHAR)
         FROM domain_outbox_deliveries AS delivery
-        JOIN domain_outbox_events AS event
-          ON event.event_id = delivery.event_id
         WHERE delivery.consumer_name = ?
           AND delivery.attempt_count < ?
           AND delivery.next_attempt_at <= NOW(6)
@@ -124,8 +119,7 @@ async fn claim_record_events(
               AND delivery.lease_expires_at <= NOW(6)
             )
           )
-        ORDER BY delivery.next_attempt_at, event.occurred_at,
-                 event.event_id
+        ORDER BY delivery.next_attempt_at, delivery.event_id
         LIMIT ?
         FOR UPDATE SKIP LOCKED
         "#,
@@ -135,7 +129,8 @@ async fn claim_record_events(
     .bind(batch_size)
     .fetch_all(&mut *transaction)
     .await?;
-    for row in &rows {
+    let mut rows = Vec::with_capacity(event_ids.len());
+    for event_id in event_ids {
         sqlx::query(
             r#"
             UPDATE domain_outbox_deliveries
@@ -147,10 +142,25 @@ async fn claim_record_events(
             "#,
         )
         .bind(lease_owner)
-        .bind(&row.event_id)
+        .bind(&event_id)
         .bind(OUTBOX_CONSUMER)
         .execute(&mut *transaction)
         .await?;
+        rows.push(
+            sqlx::query_as::<_, ClaimedRecordEvent>(
+                r#"
+                SELECT CAST(event_id AS CHAR) AS event_id,
+                       tenant_id, database_id, aggregate_id,
+                       aggregate_version,
+                       CAST(event_type AS CHAR) AS event_type
+                FROM domain_outbox_events
+                WHERE event_id = ?
+                "#,
+            )
+            .bind(event_id)
+            .fetch_one(&mut *transaction)
+            .await?,
+        );
     }
     transaction.commit().await?;
     Ok(rows)
