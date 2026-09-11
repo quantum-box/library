@@ -25,6 +25,14 @@ use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction};
 
 const OUTBOX_CONSUMER: &str = "library.external-sync.v1";
 const OUTBOX_MAX_ATTEMPTS: u32 = 12;
+type ClaimableDeliveryRow = (
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    u32,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+);
 
 fn scanner_lease_owner() -> String {
     use rand::RngCore;
@@ -75,9 +83,9 @@ async fn register_record_events(
     // a separate statement, then let the delivery table's unique key make the
     // individual inserts idempotent under concurrent scanners.
     let mut transaction = pool.begin().await?;
-    let cursor: Option<Vec<u8>> = sqlx::query_scalar(
+    let cursor: Option<(Vec<u8>, Vec<u8>)> = sqlx::query_as(
         r#"
-        SELECT event_id
+        SELECT event_id, consumer_name
         FROM domain_outbox_deliveries
         WHERE consumer_name = ?
         ORDER BY event_id DESC
@@ -87,9 +95,11 @@ async fn register_record_events(
     .bind(OUTBOX_CONSUMER)
     .fetch_optional(&mut *transaction)
     .await?;
-    let event_ids: Vec<Vec<u8>> = sqlx::query_scalar(
-        r#"
-        SELECT event.event_id
+    let cursor = cursor.map(|(event_id, _consumer_name)| event_id);
+    let event_rows: Vec<(Vec<u8>, Vec<u8>, DateTime<Utc>)> =
+        sqlx::query_as(
+            r#"
+        SELECT event.event_id, event.aggregate_type, event.occurred_at
         FROM domain_outbox_events AS event
         WHERE event.aggregate_type = 'RECORD'
           AND event.occurred_at >= ?
@@ -97,14 +107,14 @@ async fn register_record_events(
         ORDER BY event.event_id
         LIMIT ?
         "#,
-    )
-    .bind(scan_after)
-    .bind(cursor.unwrap_or_default())
-    .bind(batch_size)
-    .fetch_all(&mut *transaction)
-    .await?;
+        )
+        .bind(scan_after)
+        .bind(cursor.unwrap_or_default())
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await?;
     let mut registered = 0;
-    for event_id in event_ids {
+    for (event_id, _aggregate_type, _occurred_at) in event_rows {
         registered += sqlx::query(
             r#"
             INSERT IGNORE INTO domain_outbox_deliveries (
@@ -128,9 +138,10 @@ async fn claim_record_events(
     batch_size: u32,
 ) -> errors::Result<Vec<ClaimedRecordEvent>> {
     let mut transaction = pool.begin().await?;
-    let event_ids: Vec<Vec<u8>> = sqlx::query_scalar(
+    let event_rows: Vec<ClaimableDeliveryRow> = sqlx::query_as(
         r#"
-        SELECT event_id
+        SELECT event_id, consumer_name, state, attempt_count,
+               next_attempt_at, lease_expires_at
         FROM domain_outbox_deliveries AS delivery
         WHERE delivery.consumer_name = ?
           AND delivery.attempt_count < ?
@@ -152,8 +163,16 @@ async fn claim_record_events(
     .bind(batch_size)
     .fetch_all(&mut *transaction)
     .await?;
-    let mut rows = Vec::with_capacity(event_ids.len());
-    for event_id in event_ids {
+    let mut rows = Vec::with_capacity(event_rows.len());
+    for (
+        event_id,
+        _consumer_name,
+        _state,
+        _attempt_count,
+        _next_attempt_at,
+        _lease_expires_at,
+    ) in event_rows
+    {
         sqlx::query(
             r#"
             UPDATE domain_outbox_deliveries
@@ -325,9 +344,12 @@ impl ExternalSyncOutboxDispatch {
         data: &Data,
         properties: &[Property],
     ) -> errors::Result<()> {
-        let event_id: Vec<u8> = sqlx::query_scalar(
+        let event_row: (Vec<u8>, String, String, Vec<u8>, String, u64) =
+            sqlx::query_as(
             r#"
-            SELECT event_id FROM domain_outbox_events
+            SELECT event_id, tenant_id, database_id, aggregate_type,
+                   aggregate_id, aggregate_version
+            FROM domain_outbox_events
             WHERE tenant_id = ? AND database_id = ?
               AND aggregate_type = 'RECORD' AND aggregate_id = ?
               AND aggregate_version = ? LIMIT 1
@@ -337,13 +359,14 @@ impl ExternalSyncOutboxDispatch {
         .bind(data.database_id().to_string())
         .bind(data.id().to_string())
         .bind(data.record_version().get())
-        .fetch_optional(self.source_pool.as_ref())
-        .await?
-        .ok_or_else(|| {
-            errors::Error::service_unavailable(
-                "Transactional record outbox event is not available yet",
-            )
-        })?;
+            .fetch_optional(self.source_pool.as_ref())
+            .await?
+            .ok_or_else(|| {
+                errors::Error::service_unavailable(
+                    "Transactional record outbox event is not available yet",
+                )
+            })?;
+        let event_id = event_row.0;
         let event_id = decode_ascii_column(event_id, "event_id")?;
         self.capture_and_deliver_event(
             executor,
@@ -534,20 +557,24 @@ impl ExternalSyncOutboxDispatch {
         &self,
         event: &ClaimedRecordEvent,
     ) -> errors::Result<()> {
-        let latest_version: Option<u64> = sqlx::query_scalar(
-            r#"
-            SELECT aggregate_version FROM domain_outbox_events
+        let latest_row: Option<(u64, String, String, Vec<u8>, String)> =
+            sqlx::query_as(
+                r#"
+            SELECT aggregate_version, tenant_id, database_id,
+                   aggregate_type, aggregate_id
+            FROM domain_outbox_events
             WHERE tenant_id = ? AND database_id = ?
               AND aggregate_type = 'RECORD' AND aggregate_id = ?
             ORDER BY aggregate_version DESC
             LIMIT 1
             "#,
-        )
-        .bind(&event.tenant_id)
-        .bind(&event.database_id)
-        .bind(&event.aggregate_id)
-        .fetch_optional(self.source_pool.as_ref())
-        .await?;
+            )
+            .bind(&event.tenant_id)
+            .bind(&event.database_id)
+            .bind(&event.aggregate_id)
+            .fetch_optional(self.source_pool.as_ref())
+            .await?;
+        let latest_version = latest_row.map(|row| row.0);
         if latest_version
             .is_some_and(|version| version != event.aggregate_version)
         {
