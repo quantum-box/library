@@ -106,6 +106,12 @@ spec:
           value: "https://api.n1.tachy.one"
         - name: LIBRARY_API_BASE_URL
           value: "https://library-api.txcloud.app"
+        - name: EXTERNAL_SYNC_DISPATCHER_URL
+          value: "https://library-client-sync.quantum-box.workers.dev/external-sync/dispatch"
+        # GitHub continuous sync and the replacement external-sync engine stay
+        # dark until the PR preview migration, Durable Object deployment, and
+        # dedicated GitHub round trip have passed. Activation is a separate
+        # operational gate, not a side effect of shipping the implementation.
         # Origin the public API reports as a document's home, so callers
         # such as corporate-site-v3 can link back without hard-coding a
         # route. This is library-client (planetlibrary), not the older

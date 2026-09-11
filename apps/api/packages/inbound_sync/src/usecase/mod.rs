@@ -23,3 +23,7 @@ pub use receive_webhook::*;
 pub use register_webhook_endpoint::*;
 pub use retry_webhook_event::*;
 pub use send_test_webhook::*;
+mod durable_dispatch;
+mod external_sync;
+pub use durable_dispatch::*;
+pub use external_sync::*;

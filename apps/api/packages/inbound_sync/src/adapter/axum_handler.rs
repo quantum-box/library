@@ -11,15 +11,25 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use inbound_sync_domain::{Provider, WebhookEndpointId};
+use inbound_sync_domain::{Provider, WebhookEndpointId, WebhookEventId};
 
-use crate::usecase::{ReceiveProviderWebhook, ReceiveWebhook};
+use crate::{
+    interface_adapter::SqlxExternalSyncDispatchRepository,
+    usecase::{
+        ProcessWebhookEvent, ReceiveProviderWebhook, ReceiveWebhook,
+    },
+};
 
 /// State for webhook handlers.
 #[derive(Clone)]
 pub struct WebhookHandlerState {
     pub receive_webhook: Arc<ReceiveWebhook>,
     pub receive_provider_webhook: Arc<ReceiveProviderWebhook>,
+    /// Capability store used by the edge durable dispatcher callback.
+    pub external_sync_dispatch_jobs:
+        Option<Arc<SqlxExternalSyncDispatchRepository>>,
+    /// Single-event consumer invoked only after capability validation.
+    pub process_webhook_event: Option<Arc<ProcessWebhookEvent>>,
     /// API base URL (e.g. `https://library.api.n1.tachy.one`).
     /// Used to construct the full webhook notification URL for
     /// providers like Square that include it in signature
@@ -61,6 +71,12 @@ pub struct ProviderPath {
     pub provider: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct InternalDispatchRequest {
+    event_id: String,
+    capability: String,
+}
+
 /// Create the webhook router.
 ///
 /// # Routes
@@ -80,7 +96,88 @@ pub fn create_webhook_router(state: WebhookHandlerState) -> Router {
     Router::new()
         .route("/webhooks/:provider", post(handle_provider_webhook))
         .route("/webhooks/:provider/:endpoint_id", post(handle_webhook))
+        .route(
+            "/internal/external-sync/validate",
+            post(validate_external_sync_dispatch),
+        )
+        .route(
+            "/internal/external-sync/process",
+            post(process_external_sync_dispatch),
+        )
         .with_state(state)
+}
+
+async fn validate_external_sync_dispatch(
+    State(state): State<WebhookHandlerState>,
+    Json(input): Json<InternalDispatchRequest>,
+) -> StatusCode {
+    let Some(jobs) = state.external_sync_dispatch_jobs else {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    };
+    let event_id = WebhookEventId::from(input.event_id);
+    match jobs.validate(&event_id, &input.capability).await {
+        Ok(true) => StatusCode::NO_CONTENT,
+        Ok(false) => StatusCode::UNAUTHORIZED,
+        Err(error) => {
+            tracing::error!(%error, %event_id, "dispatch validation failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+async fn process_external_sync_dispatch(
+    State(state): State<WebhookHandlerState>,
+    Json(input): Json<InternalDispatchRequest>,
+) -> StatusCode {
+    let (Some(jobs), Some(processor)) = (
+        state.external_sync_dispatch_jobs,
+        state.process_webhook_event,
+    ) else {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    };
+    let event_id = WebhookEventId::from(input.event_id);
+
+    match jobs.completed(&event_id, &input.capability).await {
+        Ok(true) => return StatusCode::NO_CONTENT,
+        Ok(false) => {}
+        Err(error) => {
+            tracing::error!(%error, %event_id, "dispatch completion lookup failed");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    match jobs.claim(&event_id, &input.capability).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::CONFLICT,
+        Err(error) => {
+            tracing::error!(%error, %event_id, "dispatch claim failed");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    match processor.process_by_id(&event_id).await {
+        Ok(_) => match jobs.complete(&event_id).await {
+            Ok(()) => StatusCode::NO_CONTENT,
+            Err(error) => {
+                tracing::error!(%error, %event_id, "dispatch completion failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, %event_id, "durable webhook processing failed");
+            if let Err(repository_error) =
+                jobs.retry(&event_id, "webhook_processing_failed").await
+            {
+                tracing::error!(
+                    error = %repository_error,
+                    %event_id,
+                    "dispatch retry scheduling failed"
+                );
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
 }
 
 /// Handle incoming webhook for provider-only endpoint.

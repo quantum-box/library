@@ -39,6 +39,7 @@ import {
   type RepositorySettingsTarget,
 } from '../lib/repositorySettingsApi'
 import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
+import { ExternalSyncSection } from './ExternalSyncSection'
 import { RepositoryTabs } from './RepositoryTabs'
 import { useI18n, t as translate } from '../i18n'
 
@@ -533,6 +534,12 @@ export function RepositorySettingsView({
                 onPermissionDenied={() => setWritePermissionDenied(true)}
               />
             </div>
+
+            <ExternalSyncSection
+              repositoryId={settings.repository.id}
+              operatorId={operatorId}
+              readOnly={writePermissionDenied}
+            />
 
             <section
               className="mt-5 overflow-hidden rounded-lg border border-destructive/40 bg-background shadow-soft"

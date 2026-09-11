@@ -17,13 +17,18 @@
     "bindings": [
       { "name": "PHOTON_SYNC_ROOMS", "class_name": "PhotonSyncRoom" },
       { "name": "PHOTON_LIVE_ROOMS", "class_name": "PhotonLiveRoom" },
-      { "name": "PHOTON_LIVE_TICKETS", "class_name": "PhotonLiveTicketStore" }
+      { "name": "PHOTON_LIVE_TICKETS", "class_name": "PhotonLiveTicketStore" },
+      { "name": "EXTERNAL_SYNC_DISPATCH", "class_name": "ExternalSyncDispatcher" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["PhotonSyncRoom", "PhotonLiveRoom", "PhotonLiveTicketStore"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ExternalSyncDispatcher"]
     }
   ]
 }

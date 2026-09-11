@@ -25,6 +25,7 @@ pub struct GitHubEventProcessor {
     github_client: Arc<dyn GitHubClient>,
     sync_state_repo: Arc<dyn SyncStateRepository>,
     data_handler: Arc<dyn GitHubDataHandler>,
+    change_set_sink: Option<Arc<dyn GitHubChangeSetSink>>,
 }
 
 impl GitHubEventProcessor {
@@ -37,7 +38,17 @@ impl GitHubEventProcessor {
             github_client,
             sync_state_repo,
             data_handler,
+            change_set_sink: None,
         }
+    }
+
+    /// Route GitHub changes through the provider-neutral review lifecycle.
+    pub fn with_change_set_sink(
+        mut self,
+        sink: Arc<dyn GitHubChangeSetSink>,
+    ) -> Self {
+        self.change_set_sink = Some(sink);
+        self
     }
 
     /// Process a push event.
@@ -112,6 +123,7 @@ impl GitHubEventProcessor {
                             repo,
                             branch,
                             &file.path,
+                            &push.before,
                             &push.after,
                         )
                         .await
@@ -138,7 +150,13 @@ impl GitHubEventProcessor {
                 }
                 ChangeType::Removed => {
                     match self
-                        .process_removed(endpoint, repo, &file.path)
+                        .process_removed(
+                            endpoint,
+                            repo,
+                            &file.path,
+                            &push.before,
+                            &push.after,
+                        )
                         .await
                     {
                         Ok(deleted) => {
@@ -176,8 +194,29 @@ impl GitHubEventProcessor {
         repo: &str,
         branch: &str,
         path: &str,
+        base_commit_sha: &str,
         commit_sha: &str,
     ) -> errors::Result<Option<bool>> {
+        if let Some(sink) = &self.change_set_sink {
+            let content = self
+                .github_client
+                .get_file_content(endpoint.tenant_id(), repo, path, branch)
+                .await?;
+            let captured = sink
+                .capture(GitHubChangeSetInput {
+                    endpoint,
+                    repository: repo,
+                    branch,
+                    path,
+                    previous_path: None,
+                    external_revision: commit_sha,
+                    base_external_revision: Some(base_commit_sha),
+                    content: Some(&content),
+                })
+                .await?;
+            return Ok(Some(captured));
+        }
+
         // Generate external ID for this file
         let external_id = format!("{repo}:{path}");
 
@@ -250,7 +289,27 @@ impl GitHubEventProcessor {
         endpoint: &WebhookEndpoint,
         repo: &str,
         path: &str,
+        base_commit_sha: &str,
+        commit_sha: &str,
     ) -> errors::Result<bool> {
+        if let Some(sink) = &self.change_set_sink {
+            return sink
+                .capture(GitHubChangeSetInput {
+                    endpoint,
+                    repository: repo,
+                    branch: match endpoint.config() {
+                        ProviderConfig::Github { branch, .. } => branch,
+                        _ => "",
+                    },
+                    path,
+                    previous_path: None,
+                    external_revision: commit_sha,
+                    base_external_revision: Some(base_commit_sha),
+                    content: None,
+                })
+                .await;
+        }
+
         let external_id = format!("{repo}:{path}");
 
         // Find the sync state
@@ -378,6 +437,7 @@ impl GitHubEventProcessor {
                             repo,
                             branch,
                             &file.filename,
+                            pr_event.pull_request.base.sha.as_str(),
                             pr_event
                                 .pull_request
                                 .merge_commit_sha
@@ -408,7 +468,17 @@ impl GitHubEventProcessor {
                 }
                 "removed" => {
                     match self
-                        .process_removed(endpoint, repo, &file.filename)
+                        .process_removed(
+                            endpoint,
+                            repo,
+                            &file.filename,
+                            pr_event.pull_request.base.sha.as_str(),
+                            pr_event
+                                .pull_request
+                                .merge_commit_sha
+                                .as_deref()
+                                .unwrap_or(&pr_event.pull_request.head.sha),
+                        )
                         .await
                     {
                         Ok(deleted) => {
@@ -428,6 +498,52 @@ impl GitHubEventProcessor {
                         }
                     }
                 }
+                "renamed" => {
+                    let Some(previous_path) =
+                        file.previous_filename.as_deref()
+                    else {
+                        stats.skipped += 1;
+                        continue;
+                    };
+                    if let Some(sink) = &self.change_set_sink {
+                        let content = self
+                            .github_client
+                            .get_file_content(
+                                endpoint.tenant_id(),
+                                repo,
+                                &file.filename,
+                                branch,
+                            )
+                            .await?;
+                        let captured = sink
+                            .capture(GitHubChangeSetInput {
+                                endpoint,
+                                repository: repo,
+                                branch,
+                                path: &file.filename,
+                                previous_path: Some(previous_path),
+                                external_revision: pr_event
+                                    .pull_request
+                                    .merge_commit_sha
+                                    .as_deref()
+                                    .unwrap_or(
+                                        &pr_event.pull_request.head.sha,
+                                    ),
+                                base_external_revision: Some(
+                                    pr_event.pull_request.base.sha.as_str(),
+                                ),
+                                content: Some(&content),
+                            })
+                            .await?;
+                        if captured {
+                            stats.created += 1;
+                        } else {
+                            stats.updated += 1;
+                        }
+                    } else {
+                        stats.skipped += 1;
+                    }
+                }
                 other => {
                     tracing::debug!(
                         status = other,
@@ -441,6 +557,26 @@ impl GitHubEventProcessor {
 
         Ok(stats)
     }
+}
+
+pub struct GitHubChangeSetInput<'a> {
+    pub endpoint: &'a WebhookEndpoint,
+    pub repository: &'a str,
+    pub branch: &'a str,
+    pub path: &'a str,
+    pub previous_path: Option<&'a str>,
+    pub external_revision: &'a str,
+    pub base_external_revision: Option<&'a str>,
+    pub content: Option<&'a str>,
+}
+
+#[async_trait]
+pub trait GitHubChangeSetSink: Send + Sync + std::fmt::Debug {
+    /// Returns true when the external object is not linked to existing Data.
+    async fn capture(
+        &self,
+        input: GitHubChangeSetInput<'_>,
+    ) -> errors::Result<bool>;
 }
 
 #[async_trait]
@@ -596,6 +732,21 @@ pub trait GitHubDataHandler: Send + Sync + std::fmt::Debug {
         content: &str,
         mapping: Option<&inbound_sync_domain::PropertyMapping>,
     ) -> errors::Result<String>;
+
+    /// Apply reviewed content to an already-linked Library record. The
+    /// default keeps lightweight adapters compatible; the production handler
+    /// overrides it to preserve record identity across GitHub renames.
+    async fn update_linked_data(
+        &self,
+        endpoint: &WebhookEndpoint,
+        data_id: &str,
+        path: &str,
+        content: &str,
+        mapping: Option<&inbound_sync_domain::PropertyMapping>,
+    ) -> errors::Result<String> {
+        let _ = data_id;
+        self.upsert_data(endpoint, path, content, mapping).await
+    }
 
     /// Delete data from Library.
     async fn delete_data(
@@ -793,6 +944,7 @@ mod tests {
                 "owner/repo",
                 "main",
                 "docs/a.md",
+                "sha_before",
                 "sha_echo",
             )
             .await
@@ -822,6 +974,7 @@ mod tests {
                 "owner/repo",
                 "main",
                 "docs/a.md",
+                "sha_old",
                 "sha_new",
             )
             .await
@@ -843,6 +996,7 @@ mod tests {
                 "owner/repo",
                 "main",
                 "docs/a.md",
+                "sha_before",
                 "sha_new",
             )
             .await

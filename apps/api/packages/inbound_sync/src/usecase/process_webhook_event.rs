@@ -122,6 +122,15 @@ impl ProcessWebhookEvent {
             return Ok(ProcessingStats::default());
         }
 
+        if event
+            .next_retry_at()
+            .is_some_and(|next_retry_at| next_retry_at > chrono::Utc::now())
+        {
+            return Err(errors::Error::service_unavailable(
+                "Webhook event retry is not due yet",
+            ));
+        }
+
         // Recheck runtime availability when consuming the queue. Events may
         // have been queued before an experimental provider was disabled, or
         // manually reset to pending. Failing them prevents an unavailable

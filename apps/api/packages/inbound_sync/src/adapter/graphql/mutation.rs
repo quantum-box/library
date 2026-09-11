@@ -1,8 +1,13 @@
 //! GraphQL mutation resolvers for library sync.
 
 use async_graphql::{Context, Object, Result, SimpleObject};
+use integration_domain::{
+    ExternalScope, ExternalSyncBinding, ExternalSyncBindingId,
+    ExternalSyncBindingRepository, InboundChangeSetId, LibraryRepoId,
+    OutboundDeliveryId, OutboundDeliveryRepository,
+};
 use std::sync::Arc;
-use tachyon_sdk::auth::MultiTenancyAction;
+use tachyon_sdk::auth::{AuthApp, CheckPolicyInput, MultiTenancyAction};
 
 use inbound_sync_domain::{
     ApiKeyValidator, Connection, ConnectionId, ConnectionRepository,
@@ -13,9 +18,10 @@ use inbound_sync_domain::{
 };
 
 use crate::usecase::{
-    DeleteWebhookEndpoint, DeleteWebhookEndpointInputData,
-    DeleteWebhookEndpointInputPort, InitialSyncInputData,
-    OnDemandPullInputData, RegisterWebhookEndpoint,
+    DecideInboundChangeSet, DeleteWebhookEndpoint,
+    DeleteWebhookEndpointInputData, DeleteWebhookEndpointInputPort,
+    ExternalDeliveryRetrier, InboundChangeSetDecision,
+    InitialSyncInputData, OnDemandPullInputData, RegisterWebhookEndpoint,
     RegisterWebhookEndpointInputData, RegisterWebhookEndpointInputPort,
     RetryWebhookEvent, SendTestWebhook, UpdateWebhookEndpoint,
     UpdateWebhookEndpointInputData, UpdateWebhookEndpointInputPort,
@@ -23,10 +29,12 @@ use crate::usecase::{
 };
 
 use super::types::{
-    ConnectIntegrationInput, CreateWebhookEndpointInput,
-    CreateWebhookEndpointOutput, ExchangeOAuthCodeInput, GqlConnection,
-    GqlConnectionAction, GqlSyncOperation, GqlWebhookEndpoint,
-    GqlWebhookEvent, InitOAuthInput, OAuthInitOutput,
+    ConnectIntegrationInput, CreateExternalSyncBindingInput,
+    CreateWebhookEndpointInput, CreateWebhookEndpointOutput,
+    ExchangeOAuthCodeInput, GqlConnection, GqlConnectionAction,
+    GqlExternalSyncBinding, GqlExternalSyncBindingStatus,
+    GqlInboundChangeSet, GqlOutboundDelivery, GqlSyncOperation,
+    GqlWebhookEndpoint, GqlWebhookEvent, InitOAuthInput, OAuthInitOutput,
     StartInitialSyncInput, TriggerSyncInput, UpdateEndpointConfigInput,
     UpdateEndpointEventsInput, UpdateEndpointMappingInput,
     UpdateEndpointStatusInput,
@@ -52,6 +60,29 @@ pub struct LibrarySyncMutationState {
     pub oauth_service: Option<Arc<dyn OAuthService>>,
     pub api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
     pub base_url: String,
+    pub auth: Arc<dyn AuthApp>,
+    pub external_sync_bindings: Arc<dyn ExternalSyncBindingRepository>,
+    pub outbound_deliveries: Arc<dyn OutboundDeliveryRepository>,
+    pub decide_inbound_change_set: Arc<DecideInboundChangeSet>,
+    pub external_delivery_retrier: Arc<dyn ExternalDeliveryRetrier>,
+}
+
+async fn authorize_external_sync_change(
+    ctx: &Context<'_>,
+    state: &LibrarySyncMutationState,
+    action: &'static str,
+) -> Result<value_object::TenantId> {
+    let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+    let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+    state
+        .auth
+        .check_policy(&CheckPolicyInput {
+            executor,
+            multi_tenancy,
+            action,
+        })
+        .await?;
+    Ok(multi_tenancy.get_operator_id()?)
 }
 
 /// Output for send test webhook mutation.
@@ -65,6 +96,150 @@ pub struct SendTestWebhookOutput {
 
 #[Object]
 impl LibrarySyncMutation {
+    async fn create_external_sync_binding(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateExternalSyncBindingInput,
+    ) -> Result<GqlExternalSyncBinding> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let tenant_id = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncRegisterWebhookEndpoint",
+        )
+        .await?;
+        let provider: inbound_sync_domain::OAuthProvider =
+            input.provider.into();
+        let runtime_provider: inbound_sync_domain::Provider =
+            provider.into();
+        runtime_provider.ensure_runtime_available()?;
+        let scope_value: serde_json::Value =
+            serde_json::from_str(&input.external_scope)?;
+        let external_scope = if provider
+            == inbound_sync_domain::OAuthProvider::Github
+        {
+            let repository =
+                scope_value["repository"].as_str().ok_or_else(|| {
+                    async_graphql::Error::new(
+                        "GitHub external scope requires repository",
+                    )
+                })?;
+            let branch = scope_value["ref"].as_str().ok_or_else(|| {
+                async_graphql::Error::new(
+                    "GitHub external scope requires ref",
+                )
+            })?;
+            let path_pattern = match scope_value.get("path_pattern") {
+                Some(serde_json::Value::String(value)) => {
+                    Some(value.as_str())
+                }
+                Some(serde_json::Value::Null) | None => None,
+                _ => {
+                    return Err(async_graphql::Error::new(
+                        "GitHub path_pattern must be a string or null",
+                    ));
+                }
+            };
+            crate::providers::github::github_external_scope(
+                repository,
+                branch,
+                path_pattern,
+            )?
+        } else {
+            ExternalScope::new(scope_value)?
+        };
+        let binding = ExternalSyncBinding::create(
+            tenant_id,
+            LibraryRepoId::parse(input.repository_id)?,
+            provider,
+            ConnectionId::new(input.connection_id),
+            external_scope,
+            input.object_type,
+            serde_json::from_str(&input.mapping)?,
+        )?;
+        state.external_sync_bindings.save(&binding).await?;
+        Ok(binding.into())
+    }
+
+    async fn update_external_sync_binding_status(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+        status: GqlExternalSyncBindingStatus,
+    ) -> Result<GqlExternalSyncBinding> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let tenant_id = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncUpdateWebhookEndpoint",
+        )
+        .await?;
+        let binding_id = ExternalSyncBindingId::parse(binding_id)?;
+        let mut binding = state
+            .external_sync_bindings
+            .find_by_id(&tenant_id, &binding_id)
+            .await?
+            .ok_or_else(|| {
+                async_graphql::Error::new("Binding not found")
+            })?;
+        binding.set_status(status.into());
+        state.external_sync_bindings.save(&binding).await?;
+        Ok(binding.into())
+    }
+
+    async fn decide_inbound_change_set(
+        &self,
+        ctx: &Context<'_>,
+        change_set_id: String,
+        accept: bool,
+        note: Option<String>,
+    ) -> Result<GqlInboundChangeSet> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let tenant_id = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncUpdateWebhookEndpoint",
+        )
+        .await?;
+        let change_set = state
+            .decide_inbound_change_set
+            .execute(
+                &tenant_id,
+                &InboundChangeSetId::parse(change_set_id)?,
+                if accept {
+                    InboundChangeSetDecision::Accept
+                } else {
+                    InboundChangeSetDecision::Reject
+                },
+                note,
+            )
+            .await?;
+        Ok(change_set.into())
+    }
+
+    async fn retry_outbound_delivery(
+        &self,
+        ctx: &Context<'_>,
+        delivery_id: String,
+    ) -> Result<GqlOutboundDelivery> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let tenant_id = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncUpdateWebhookEndpoint",
+        )
+        .await?;
+        let delivery_id = OutboundDeliveryId::parse(delivery_id)?;
+        let delivery = state
+            .external_delivery_retrier
+            .retry(executor, multi_tenancy, &tenant_id, &delivery_id)
+            .await?;
+        Ok(delivery.into())
+    }
+
     /// Create a new webhook endpoint.
     ///
     /// Returns the created endpoint along with the webhook URL and secret.

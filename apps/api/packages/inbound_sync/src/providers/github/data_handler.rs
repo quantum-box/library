@@ -422,6 +422,23 @@ impl GitHubDataHandler for DefaultGitHubDataHandler {
         }
     }
 
+    async fn update_linked_data(
+        &self,
+        endpoint: &WebhookEndpoint,
+        data_id: &str,
+        path: &str,
+        content: &str,
+        mapping: Option<&PropertyMapping>,
+    ) -> errors::Result<String> {
+        let parsed = parse_frontmatter(content);
+        let name = extract_title(&parsed.frontmatter, &parsed.body, path);
+        let properties = apply_mapping(&parsed.frontmatter, mapping);
+        self.data_repo
+            .update_data(endpoint, data_id, &name, &parsed.body, properties)
+            .await?;
+        Ok(data_id.to_owned())
+    }
+
     async fn delete_data(
         &self,
         endpoint: &WebhookEndpoint,

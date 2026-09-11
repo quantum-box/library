@@ -11,6 +11,8 @@ use inbound_sync_domain::{
 use crate::providers::linear::LinearWebhookEvent;
 use crate::{WebhookSecretStore, WebhookVerifierRegistry};
 
+use super::WebhookDispatcher;
+
 use super::receive_webhook::{extract_event_type, resolve_webhook_secret};
 
 /// Input for receiving a provider-only webhook.
@@ -46,6 +48,7 @@ pub struct ReceiveProviderWebhook {
     verifier_registry: Arc<WebhookVerifierRegistry>,
     connection_repository: Arc<dyn ConnectionRepository>,
     provider_secrets: Arc<WebhookSecretStore>,
+    dispatcher: Option<Arc<dyn WebhookDispatcher>>,
 }
 
 impl ReceiveProviderWebhook {
@@ -62,7 +65,17 @@ impl ReceiveProviderWebhook {
             verifier_registry,
             connection_repository,
             provider_secrets,
+            dispatcher: None,
         }
+    }
+
+    /// Wake a durable consumer after each valid, processable event is saved.
+    pub fn with_dispatcher(
+        mut self,
+        dispatcher: Arc<dyn WebhookDispatcher>,
+    ) -> Self {
+        self.dispatcher = Some(dispatcher);
+        self
     }
 
     pub async fn execute(
@@ -74,6 +87,11 @@ impl ReceiveProviderWebhook {
                 input.provider.unavailable_reason().unwrap_or(
                     "Webhook processing is not available in this runtime.",
                 ),
+            ));
+        }
+        if input.provider == Provider::Github && self.dispatcher.is_none() {
+            return Err(errors::Error::service_unavailable(
+                "GitHub continuous sync requires a durable dispatcher",
             ));
         }
 
@@ -148,7 +166,8 @@ impl ReceiveProviderWebhook {
                 signature_valid,
             );
 
-            if !endpoint.should_process_event(&event_type) {
+            let should_process = endpoint.should_process_event(&event_type);
+            if !should_process {
                 event.mark_skipped(
                     "Event type not in configured events list",
                 );
@@ -156,6 +175,11 @@ impl ReceiveProviderWebhook {
 
             let event_id = event.id().clone();
             self.event_repository.save(&event).await?;
+            if signature_valid && should_process {
+                if let Some(dispatcher) = &self.dispatcher {
+                    dispatcher.dispatch(&event_id).await?;
+                }
+            }
             event_ids.push(event_id);
         }
 

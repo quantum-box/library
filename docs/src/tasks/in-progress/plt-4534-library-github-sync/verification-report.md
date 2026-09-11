@@ -1,12 +1,12 @@
-# PLT-4534 Phase 0 Verification Report
+# PLT-4534 Phase 0–4 Verification Report
 
 ## Scope
 
-This report covers the Phase 0 Ready PR only: correcting GitHub continuous-sync
-readiness, enforcing the experimental runtime gate, documenting the GitHub-first
-external sync engine direction, and separating current proof from future E2E gates.
+This report records completed verification for the Phase 0 readiness correction,
+the Phase 1 provider-neutral model, and the Phase 2–4 durable inbound, reviewed
+ChangeSet, outbound delivery, API, and operator UI implementation.
 
-## Passed on 2026-09-11
+## Phase 0 passed on 2026-09-11
 
 - `cargo +nightly-2026-06-04 fmt --all -- --check`
 - `cargo +nightly-2026-06-04 clippy -p inbound_sync_domain -p inbound_sync -p library-api --lib -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names`
@@ -37,5 +37,73 @@ them there.
 - Durable consumer invocation and backlog alarms in a production-equivalent runtime
 - CRM or other provider adapter implementation
 
-These require the provider-neutral binding/link schema, durable dispatcher,
-ChangeSet adapter, outbox consumer, and UI planned for later PLT-4534 phases.
+The binding/link schema is now covered by Phase 1 below. The other items require
+the durable dispatcher, ChangeSet adapter, outbox consumer, and UI planned for
+later PLT-4534 phases.
+
+## Phase 1 passed on 2026-09-11
+
+- Owning component version: `library-api` `1.11.5` on `origin/main` → `1.11.6`
+  in this PR (patch bump).
+- `cargo +nightly-2026-06-04 check -p integration_domain -p inbound_sync`
+- `cargo +nightly-2026-06-04 test -p integration_domain --lib`: 12 passed
+- `cargo +nightly-2026-06-04 test -p inbound_sync --lib`: 113 passed
+- `cargo +nightly-2026-06-04 test -p inbound_sync --lib external_sync_repository`:
+  2 passed (111 filtered)
+- `DEV_DATABASE_URL=mysql://root:@127.0.0.1:15000/library cargo +nightly-2026-06-04 test -p inbound_sync --test external_sync_repository -- --ignored --nocapture`:
+  1 passed against MySQL 8.0.46
+- `cargo +nightly-2026-06-04 clippy -p integration_domain -p inbound_sync --all-targets -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names -A clippy::bool_assert_comparison -A clippy::assertions_on_constants`
+- `cargo +nightly-2026-06-04 check -p library-api`
+- The MySQL contract creates an isolated temporary database, applies the Phase 1
+  up migration, round-trips a binding and object link through the SQLx adapters,
+  verifies tenant isolation and duplicate-identity rejection, applies the down
+  migration, and removes the temporary database.
+
+## Not run in Phase 1
+
+- Binding REST / GraphQL API and primary-client UI (not implemented in Phase 1)
+- Real GitHub OAuth, webhook, repository, or content mutation
+- Durable dispatcher, ChangeSet acceptance, and outbound delivery (later phases)
+- Preview deployment or production database migration
+
+Phase 1 proves the local domain and persistence boundary. It does not claim that
+continuous synchronization works at an external or deployed surface.
+
+## Phase 2–4 passed on 2026-09-11
+
+- `cargo +nightly-2026-06-04 fmt --all -- --check`
+- `cargo +nightly-2026-06-04 run --manifest-path apps/api/Cargo.toml --bin library_codegen`:
+  generated `apps/api/schema.graphql`; binding, ChangeSet, delivery queries and
+  mutations match the primary-client operations.
+- `cargo +nightly-2026-06-04 check -p library-api`
+- `cargo +nightly-2026-06-04 test -p integration_domain -p inbound_sync -p outbound_sync --lib`:
+  15 + 114 + 4 passed.
+- `DEV_DATABASE_URL=mysql://root:@127.0.0.1:15000/library cargo +nightly-2026-06-04 test -p inbound_sync --test external_sync_repository -- --ignored --nocapture`:
+  1 passed against MySQL 8.0.46 with the CI-default `utf8mb4_0900_ai_ci`
+  database collation. The isolated contract applies both up
+  migrations, round-trips binding, object link, ChangeSet, delivery, and durable
+  dispatch capability state, verifies tenant isolation/idempotency/claim
+  behavior, applies both down migrations, and removes its temporary database.
+- `cargo +nightly-2026-06-04 clippy -p integration_domain -p inbound_sync -p outbound_sync -p library-api --all-targets -- -D warnings ...`
+- Focused primary-client Vitest: 3 files, 68 tests passed (external-sync API,
+  repository settings interaction, and all locale catalogs).
+- Primary-client TypeScript check, focused ESLint, and production build passed.
+- `npm run type-check:worker`: sync and public-docs Workers passed the locked
+  `wasm32-unknown-unknown` workspace check.
+- `npm run test:worker`: sync Worker 25/25 and public-docs Worker 14/14 passed.
+- Visual brief HTML5 parse passed; `git diff --check` passed.
+
+## Not run in Phase 2–4
+
+- A dedicated GitHub account/repository round trip covering OAuth, webhook,
+  Library accept/reject, outbound commit, conflict recovery, rename, and delete
+- Preview deployment, preview database migration, deployed Durable Object alarm,
+  or authenticated browser verification
+- Production migration or feature activation. Production keeps the experimental
+  integration and external-sync engine flags disabled.
+
+The implementation captures an outbox-derived delivery immediately after the
+Library transaction commits. An independent scanner for recovering the narrow
+process-death window between commit and capture is not yet present. Consequently,
+the local gates prove the Phase 2–4 code and contracts, not release-level
+at-least-once behavior at an external surface.

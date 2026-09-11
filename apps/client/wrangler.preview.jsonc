@@ -29,6 +29,10 @@
       {
         "name": "PHOTON_LIVE_TICKETS",
         "class_name": "PhotonLiveTicketStore"
+      },
+      {
+        "name": "EXTERNAL_SYNC_DISPATCH",
+        "class_name": "ExternalSyncDispatcher"
       }
     ]
   },
@@ -44,6 +48,12 @@
       "new_sqlite_classes": [
         "PhotonLiveRoom",
         "PhotonLiveTicketStore"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "ExternalSyncDispatcher"
       ]
     }
   ],

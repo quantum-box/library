@@ -196,9 +196,7 @@ pub async fn graphql_introspection(
 mod tests {
     use super::count_tenant_staff;
     use chrono::Utc;
-    use tachyon_sdk::auth::{
-        DefaultRole, MockAuthApp, MultiTenancyAction, User,
-    };
+    use tachyon_sdk::auth::{DefaultRole, MockAuthApp, User};
     use value_object::{TenantId, UserId};
 
     /// The listing must run in the tenant's own operator scope: tachyon

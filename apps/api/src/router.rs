@@ -31,13 +31,15 @@ use crate::handler::image::{
 };
 
 use inbound_sync::interface_adapter::{
-    BuiltinIntegrationRegistry, HttpApiKeyValidator, NoOpHubSpotClient,
+    BuiltinIntegrationRegistry, HttpApiKeyValidator,
+    HttpDurableWebhookDispatcher, NoOpHubSpotClient,
     NoOpHubSpotDataHandler, NoOpNotionClient, NoOpNotionDataHandler,
     NoOpSquareClient, NoOpStripeClient, NoOpStripeDataHandler,
-    SqlxConnectionRepository, SqlxSyncStateRepository,
+    SqlxConnectionRepository, SqlxExternalSyncDispatchRepository,
+    SqlxSyncStateRepository,
 };
 use inbound_sync::providers::github::{
-    DefaultGitHubDataHandler, OAuthGitHubClient,
+    DefaultGitHubChangeSetSink, DefaultGitHubDataHandler, OAuthGitHubClient,
 };
 use inbound_sync::providers::linear::{
     DefaultLinearDataHandler, OAuthLinearClient,
@@ -58,6 +60,8 @@ use inbound_sync::{
 const COLLAB_WS_ENABLED_ENV: &str = "LIBRARY_COLLAB_WS_ENABLED";
 const MCP_SSE_ENABLED_ENV: &str = "LIBRARY_MCP_SSE_ENABLED";
 const WEBHOOK_WORKER_ENABLED_ENV: &str = "LIBRARY_WEBHOOK_WORKER_ENABLED";
+const EXTERNAL_SYNC_DISPATCHER_URL_ENV: &str =
+    "EXTERNAL_SYNC_DISPATCHER_URL";
 
 #[derive(Serialize)]
 struct VersionResponse {
@@ -151,6 +155,23 @@ pub async fn router(
     // Base URL for webhook endpoints
     let base_url = std::env::var("LIBRARY_API_BASE_URL")
         .unwrap_or_else(|_| "http://localhost:50055".to_string());
+    let external_sync_dispatch_jobs = Arc::new(
+        SqlxExternalSyncDispatchRepository::new(library_db.pool()),
+    );
+    let durable_dispatcher: Option<
+        Arc<dyn inbound_sync::usecase::WebhookDispatcher>,
+    > = std::env::var(EXTERNAL_SYNC_DISPATCHER_URL_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|dispatcher_url| {
+            HttpDurableWebhookDispatcher::new(
+                external_sync_dispatch_jobs.clone(),
+                dispatcher_url,
+                base_url.clone(),
+            )
+            .map(|dispatcher| Arc::new(dispatcher) as Arc<_>)
+        })
+        .transpose()?;
 
     // Usecases
     let register_endpoint =
@@ -169,13 +190,16 @@ pub async fn router(
             auth_app_trait.clone(),
             webhook_endpoint_repo.clone(),
         ));
-    let receive_webhook =
-        Arc::new(inbound_sync::usecase::ReceiveWebhook::new(
-            webhook_endpoint_repo.clone(),
-            webhook_event_repo.clone(),
-            webhook_verifier_registry.clone(),
-            provider_secrets.clone(),
-        ));
+    let mut receive_webhook = inbound_sync::usecase::ReceiveWebhook::new(
+        webhook_endpoint_repo.clone(),
+        webhook_event_repo.clone(),
+        webhook_verifier_registry.clone(),
+        provider_secrets.clone(),
+    );
+    if let Some(dispatcher) = durable_dispatcher.clone() {
+        receive_webhook = receive_webhook.with_dispatcher(dispatcher);
+    }
+    let receive_webhook = Arc::new(receive_webhook);
 
     // SyncState repository for tracking sync status
     let sync_state_repo: Arc<dyn inbound_sync::SyncStateRepository> =
@@ -190,15 +214,39 @@ pub async fn router(
         Arc::new(SqlxConnectionRepository::new(library_db.pool()));
     let connection_repository: Arc<dyn ConnectionRepository> =
         sqlx_connection_repository.clone();
+    let external_sync_bindings: Arc<
+        dyn integration_domain::ExternalSyncBindingRepository,
+    > = Arc::new(
+        inbound_sync::interface_adapter::SqlxExternalSyncBindingRepository::new(
+            library_db.pool(),
+        ),
+    );
+    let external_object_links: Arc<
+        dyn integration_domain::ExternalObjectLinkRepository,
+    > = Arc::new(
+        inbound_sync::interface_adapter::SqlxExternalObjectLinkRepository::new(
+            library_db.pool(),
+        ),
+    );
+    let external_sync_lifecycle = Arc::new(
+        inbound_sync::interface_adapter::SqlxExternalSyncLifecycleRepository::new(
+            library_db.pool(),
+        ),
+    );
 
-    let receive_provider_webhook =
-        Arc::new(inbound_sync::usecase::ReceiveProviderWebhook::new(
+    let mut receive_provider_webhook =
+        inbound_sync::usecase::ReceiveProviderWebhook::new(
             webhook_endpoint_repo.clone(),
             webhook_event_repo.clone(),
             webhook_verifier_registry.clone(),
             connection_repository.clone(),
             provider_secrets.clone(),
-        ));
+        );
+    if let Some(dispatcher) = durable_dispatcher {
+        receive_provider_webhook =
+            receive_provider_webhook.with_dispatcher(dispatcher);
+    }
+    let receive_provider_webhook = Arc::new(receive_provider_webhook);
 
     // List usecases for inbound sync
     let list_integrations: Arc<
@@ -248,6 +296,14 @@ pub async fn router(
     > = Arc::new(DefaultGitHubDataHandler::new(
         library_data_repository.clone(),
     ));
+    let decide_inbound_change_set =
+        Arc::new(inbound_sync::usecase::DecideInboundChangeSet::new(
+            external_sync_bindings.clone(),
+            external_object_links.clone(),
+            external_sync_lifecycle.clone(),
+            webhook_endpoint_repo.clone(),
+            github_data_handler.clone(),
+        ));
     let linear_token_provider =
         Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
     let linear_client: Arc<
@@ -302,11 +358,22 @@ pub async fn router(
 
     // Event Processor Registry
     let mut processor_registry = EventProcessorRegistry::new();
-    processor_registry.register(Arc::new(GitHubEventProcessor::new(
-        github_client.clone(),
-        sync_state_repo.clone(),
-        github_data_handler.clone(),
-    )));
+    processor_registry.register(Arc::new(
+        GitHubEventProcessor::new(
+            github_client.clone(),
+            sync_state_repo.clone(),
+            github_data_handler.clone(),
+        )
+        .with_change_set_sink(Arc::new(
+            DefaultGitHubChangeSetSink::new(
+                external_sync_bindings.clone(),
+                external_object_links.clone(),
+                external_sync_lifecycle.clone(),
+                connection_repository.clone(),
+                sync_state_repo.clone(),
+            ),
+        )),
+    ));
     processor_registry.register(Arc::new(LinearEventProcessor::new(
         linear_client.clone(),
         sync_state_repo.clone(),
@@ -429,6 +496,7 @@ pub async fn router(
         process_webhook_event,
         receive_webhook,
         receive_provider_webhook,
+        external_sync_dispatch_jobs,
     );
 
     // Clone repositories for GraphQL schema before moving to mutation state
@@ -445,6 +513,19 @@ pub async fn router(
         dyn inbound_sync_domain::OAuthTokenRepository,
     > = Arc::clone(&oauth_token_repo);
 
+    let external_outbox =
+        Arc::new(crate::usecase::ExternalSyncOutboxDispatch::new(
+            library_db.pool(),
+            database_manager_db.pool(),
+            connection_repository.clone(),
+            webhook_endpoint_repo.clone(),
+            sync_state_repo.clone(),
+            external_sync_bindings.clone(),
+            external_object_links.clone(),
+            external_sync_lifecycle.clone(),
+            sync_data.clone(),
+        ));
+
     // GraphQL state for library sync
     let inbound_sync_query_state =
         inbound_sync::adapter::LibrarySyncQueryState {
@@ -454,6 +535,10 @@ pub async fn router(
             integration_repository: integration_repository.clone(),
             connection_repository: connection_repository.clone(),
             base_url: base_url.clone(),
+            auth: auth_app_trait.clone(),
+            external_sync_bindings: external_sync_bindings.clone(),
+            inbound_change_sets: external_sync_lifecycle.clone(),
+            outbound_deliveries: external_sync_lifecycle.clone(),
         };
     let inbound_sync_mutation_state =
         inbound_sync::adapter::LibrarySyncMutationState {
@@ -470,16 +555,22 @@ pub async fn router(
             oauth_service: Some(oauth_service),
             api_key_validator: Some(api_key_validator),
             base_url: base_url.clone(),
+            auth: auth_app_trait.clone(),
+            external_sync_bindings: external_sync_bindings.clone(),
+            outbound_deliveries: external_sync_lifecycle.clone(),
+            decide_inbound_change_set,
+            external_delivery_retrier: external_outbox.clone(),
         };
 
     let library_app: Arc<LibraryApp> = Arc::new(
-        LibraryApp::new(
+        LibraryApp::new_with_external_sync(
             library_db.clone(),
             database_app.clone(),
             sdk.clone(),
             sync_data.clone(),
             webhook_endpoint_repo.clone(),
             sync_state_repo.clone(),
+            Some(external_outbox),
         )
         .await,
     );
@@ -821,6 +912,9 @@ fn build_webhook_runtime(
     receive_provider_webhook: Arc<
         inbound_sync::usecase::ReceiveProviderWebhook,
     >,
+    external_sync_dispatch_jobs: Arc<
+        inbound_sync::interface_adapter::SqlxExternalSyncDispatchRepository,
+    >,
 ) -> (
     Option<tokio::sync::broadcast::Sender<()>>,
     inbound_sync::adapter::WebhookHandlerState,
@@ -833,7 +927,7 @@ fn build_webhook_runtime(
             env = WEBHOOK_WORKER_ENABLED_ENV,
             "enabling webhook event worker"
         );
-        let worker = WebhookEventWorker::new(process_webhook_event)
+        let worker = WebhookEventWorker::new(process_webhook_event.clone())
             .with_batch_size(10)
             .with_poll_interval(std::time::Duration::from_secs(5));
         let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
@@ -846,7 +940,6 @@ fn build_webhook_runtime(
             env = WEBHOOK_WORKER_ENABLED_ENV,
             "webhook event worker disabled"
         );
-        drop(process_webhook_event);
         None
     };
 
@@ -854,6 +947,8 @@ fn build_webhook_runtime(
         inbound_sync::adapter::WebhookHandlerState {
             receive_webhook,
             receive_provider_webhook,
+            external_sync_dispatch_jobs: Some(external_sync_dispatch_jobs),
+            process_webhook_event: Some(process_webhook_event),
             base_url: std::env::var("LIBRARY_API_BASE_URL").ok(),
         };
     (shutdown_tx, webhook_handler_state)

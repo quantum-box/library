@@ -70,6 +70,45 @@ provider-neutral な binding、external object link、ChangeSet、durable delive
 実 GitHub OAuth / webhook、Library API scenario、browser UI は Phase 0 では未実施。
 Experimental gate と設計文書の変更であり、外部同期の成功を検証する段階ではないためである。
 
+### 2026-09-11 Phase 1
+
+- `packages/integration_domain` に provider-neutral な
+  `ExternalSyncBinding` / `ExternalObjectLink`、policy / status、repository port を追加。
+- `external_scope` は object key 順を正規化した SHA-256 を identity とし、
+  `(tenant, Library repo, provider, external scope)` の冪等性を DB unique key で保証。
+- credential / secret / cursor field を `external_scope` から拒否し、provider cursor や
+  認証状態を binding 設定に混在させない。
+- `external_sync_bindings` / `external_object_links` の additive up/down migration を追加。
+  Data は別物理 DB のため FK を張らず、link query は親 binding の tenant scope を必須化。
+- SQLx adapter は Repo と connection の tenant / provider 所有権を保存前に検証し、
+  binding scope と external object の競合を transaction lock 下で拒否。
+- 実 MySQL の一時 database で migration up、binding / link round-trip、tenant isolation、
+  duplicate identity rejection、migration down を検証。
+
+Phase 1 は共通モデルと永続化までであり、binding API、durable dispatcher、ChangeSet、
+outbox delivery、primary client UI は後続 Phase のまま。
+
+### 2026-09-11 Phase 2–4 implementation
+
+- webhook reception は検証済み event と一回限り capability を DB に保存してから
+  Edge Worker の per-event Durable Object を起動する。consumer callback は capability を
+  hash 照合し、lease、指数 backoff、完了状態を使って at-least-once に処理する。
+- GitHub push / merged PR の変更は Data を直接更新せず、rename / tombstone を含む
+  `InboundChangeSet` を冪等保存する。base SHA が最後に accepted された SHA と異なる場合は
+  `conflict` とし、accept / reject は GraphQL mutation と監査状態を通る。
+- Record transaction と同時に確定する `domain_outbox_events.event_id` を Library revision として
+  deterministic な `OutboundDelivery` を作る。GitHub Contents API は期待 SHA を比較し、
+  delivered / retrying / conflict を Library 保存とは別状態で保持する。
+- 旧 `webhook_endpoints` / `sync_states` / `ext_github` は inbound event または次回 Record 保存時に
+  binding / link へ冪等 materialize する。既存の終端 delivery は再送せず、新エンジン有効時は
+  旧 inline decorator の provider call を実行しない。
+- primary client の repository settings に、connection → inbound review → outbound delivery の
+  状態レール、binding pause/resume、ChangeSet accept/reject、delivery retry を追加した。
+
+この段階の完了は local code / contract verification を意味する。Preview migration、Durable Object
+binding の実配備、実 GitHub OAuth / webhook / Contents API、browser UI の往復確認は、PR CI と
+Preview surface で別 gate として記録する。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

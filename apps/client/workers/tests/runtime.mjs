@@ -4,6 +4,7 @@ import worker, {
   PhotonSyncRoom as Sync,
   PhotonLiveRoom as Live,
   PhotonLiveTicketStore as Tickets,
+  ExternalSyncDispatcher as ExternalDispatch,
 } from '../sync/build/index.js'
 export default worker
 function decode(value) {
@@ -41,3 +42,4 @@ function fixture(Base) {
 export class PhotonSyncRoom extends fixture(Sync) {}
 export class PhotonLiveRoom extends fixture(Live) {}
 export class PhotonLiveTicketStore extends fixture(Tickets) {}
+export class ExternalSyncDispatcher extends fixture(ExternalDispatch) {}
