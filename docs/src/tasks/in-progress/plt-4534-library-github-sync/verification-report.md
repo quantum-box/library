@@ -471,3 +471,15 @@ credential configured or installation used by this flow.
   the shared IaC localhost callback and existing App callback are not replaced.
 - Tachyon PR #9795 adds the authenticated public API proxy as well as broker
   storage and configuration. Actual OAuth remains pending its reviewed rollout.
+
+### Token-export review correction
+
+The broker token endpoint is restricted to registered service-account identities.
+Library now retains its process credential when creating a caller-scoped SDK:
+caller policy evaluation still uses the original user, then an explicitly allowed
+result permits the server to retrieve the token with its own credential. Denied
+and missing policy results cannot trigger that read. The SDK regression covers
+both credentials and verifies that the refresh secret is never returned.
+Tachyon separately verifies the process service account against its consumer
+registry. Existing `library-api-service` was found through CLI; its runtime token
+identity must match before activating Preview.

@@ -410,6 +410,8 @@ pub struct SdkAuthApp {
     /// original JWT. For the base instance, this is a
     /// fallback token (e.g. dummy-token for dev).
     auth_token: String,
+    /// Process credential retained when creating a caller-scoped instance.
+    service_auth_token: String,
 }
 
 /// Where and as whom the service calls tachyon-api for its own work.
@@ -501,10 +503,12 @@ impl SdkAuthApp {
         default_operator_id: &TenantId,
         auth_token: impl Into<String>,
     ) -> Self {
+        let auth_token = auth_token.into();
         Self {
             base_url: base_url.into(),
             default_operator_id: default_operator_id.as_str().to_string(),
-            auth_token: auth_token.into(),
+            service_auth_token: auth_token.clone(),
+            auth_token,
         }
     }
 
@@ -517,6 +521,7 @@ impl SdkAuthApp {
             base_url: self.base_url.clone(),
             default_operator_id: self.default_operator_id.clone(),
             auth_token: token.to_string(),
+            service_auth_token: self.service_auth_token.clone(),
         }
     }
 
@@ -531,7 +536,7 @@ impl SdkAuthApp {
         ServiceEndpoint {
             base_url: self.base_url.clone(),
             operator_id: self.default_operator_id.clone(),
-            auth_token: self.auth_token.clone(),
+            auth_token: self.service_auth_token.clone(),
         }
     }
 
@@ -2197,11 +2202,12 @@ impl AuthApp for SdkAuthApp {
         input: &auth::GetOAuthTokenByProviderInput<'a>,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
         if input.provider == "github" && github_oauth_broker_enabled() {
-            let config = self.github_broker_context(
-                input.executor,
-                input.multi_tenancy,
-            )?;
-            return Self::github_broker_token(&config).await;
+            return self
+                .authorized_github_broker_token(
+                    input.executor,
+                    input.multi_tenancy,
+                )
+                .await;
         }
         let config = self
             .sdk_config_with_context(input.executor, input.multi_tenancy);
@@ -2939,7 +2945,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         {
             let config = self.sdk.github_broker_tenant(
                 &sdk_tenant_id,
-                &self.sdk.auth_token,
+                &self.sdk.service_auth_token,
             )?;
             return Ok(SdkAuthApp::github_broker_token(&config)
                 .await?
@@ -3001,7 +3007,7 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         {
             let config = self.sdk.github_broker_tenant(
                 &sdk_tenant_id,
-                &self.sdk.auth_token,
+                &self.sdk.service_auth_token,
             )?;
             return SdkAuthApp::rest_delete(
                 &config,

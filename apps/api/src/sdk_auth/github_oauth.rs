@@ -104,6 +104,40 @@ impl SdkAuthApp {
         .await
     }
 
+    pub(super) async fn authorized_github_broker_token(
+        &self,
+        executor: &dyn auth::ExecutorAction,
+        tenancy: &dyn auth::MultiTenancyAction,
+    ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
+        if !executor.is_user() && !executor.is_service_account() {
+            return Err(errors::Error::forbidden(
+                "An authenticated caller is required",
+            ));
+        }
+        // First authorize the original caller, failing closed on missing results.
+        // The subsequent token read is server work with a separately registered
+        // process identity; never replace the caller in policy evaluation.
+        let results = self
+            .evaluate_policies_batch(&auth::EvaluatePoliciesBatchInput {
+                executor,
+                multi_tenancy: tenancy,
+                actions: &["auth:GetOAuthToken"],
+            })
+            .await?;
+        if !results.iter().any(|result| {
+            result.action == "auth:GetOAuthToken" && result.allowed
+        }) {
+            return Err(errors::Error::forbidden(
+                "GitHub token access denied",
+            ));
+        }
+        let config = self.github_broker_tenant(
+            &tenancy.get_operator_id()?,
+            &self.service_auth_token,
+        )?;
+        Self::github_broker_token(&config).await
+    }
+
     pub(super) async fn github_broker_token(
         config: &Configuration,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
@@ -174,59 +208,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broker_preserves_caller_and_tenant_and_never_returns_refresh_secrets(
+    async fn broker_authorizes_caller_before_using_the_registered_server_identity(
     ) {
         let operator: TenantId =
             "tn_01hy91qw3362djx6z9jerr34v4".parse().unwrap();
-        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let captured = requests.clone();
-        let router = axum::Router::new().route(TOKEN_PATH, axum::routing::get(
-            move |headers: axum::http::HeaderMap| {
-                let captured = captured.clone();
-                async move {
-                    captured.lock().unwrap().push(headers);
-                    axum::Json(serde_json::json!({
-                        "provider_user_id": "octocat", "access_token": "test-access",
-                        "refresh_token": "must-never-be-forwarded", "expires_at": "2030-01-01T00:00:00Z"
-                    }))
-                }
+        for allowed in [Some(true), Some(false), None] {
+            let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let policy_capture = requests.clone();
+            let token_capture = requests.clone();
+            let router = axum::Router::new()
+                .route("/v1/auth/policies/check", axum::routing::post(move |headers: axum::http::HeaderMap| {
+                    let capture = policy_capture.clone();
+                    async move {
+                        capture.lock().unwrap().push(headers);
+                        axum::Json(serde_json::json!({"results":allowed.map(|value| vec![serde_json::json!({"action":"auth:GetOAuthToken","allowed":value,"error":null})]).unwrap_or_default()}))
+                    }
+                }))
+                .route(TOKEN_PATH, axum::routing::get(move |headers: axum::http::HeaderMap| {
+                    let capture = token_capture.clone();
+                    async move {
+                        capture.lock().unwrap().push(headers);
+                        axum::Json(serde_json::json!({"provider_user_id":"octocat","access_token":"test-access","refresh_token":"must-not-forward","expires_at":"2030-01-01T00:00:00Z"}))
+                    }
+                }));
+            let listener =
+                tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                axum::serve(listener, router).await.unwrap();
+            });
+            let sdk = SdkAuthApp::new(
+                format!("http://{addr}"),
+                &operator,
+                "process-secret",
+            )
+            .with_caller_token("caller-jwt");
+            let tenancy = auth::MultiTenancy::new(
+                Some(operator.clone()),
+                Some(operator.clone()),
+            );
+            let result =
+                caller_token_scope(Some("caller-jwt".into()), async {
+                    sdk.authorized_github_broker_token(&User, &tenancy)
+                        .await
+                })
+                .await;
+            server.abort();
+            let seen = requests.lock().unwrap();
+            assert_eq!(seen[0]["authorization"], "Bearer caller-jwt");
+            if allowed == Some(true) {
+                let token = result.unwrap().unwrap();
+                assert_eq!(seen.len(), 2);
+                assert_eq!(
+                    seen[1]["authorization"],
+                    "Bearer process-secret"
+                );
+                assert_eq!(seen[1]["x-operator-id"], operator.as_str());
+                assert_eq!(
+                    seen[1]["x-platform-id"],
+                    crate::domain::LIBRARY_TENANT.as_str()
+                );
+                assert_eq!(token.access_token, "test-access");
+                assert!(token.refresh_token.is_none());
+            } else {
+                assert!(result.is_err());
+                assert_eq!(
+                    seen.len(),
+                    1,
+                    "denied caller must never trigger a service token read"
+                );
             }
-        ));
-        let listener =
-            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        });
-        let sdk = SdkAuthApp::new(
-            format!("http://{addr}"),
-            &operator,
-            "process-secret",
-        );
-        let tenancy = auth::MultiTenancy::new(
-            Some(operator.clone()),
-            Some(operator.clone()),
-        );
-        let token = caller_token_scope(Some("caller-jwt".into()), async {
-            let config =
-                sdk.github_broker_context(&User, &tenancy).unwrap();
-            SdkAuthApp::github_broker_token(&config)
-                .await
-                .unwrap()
-                .unwrap()
-        })
-        .await;
-        server.abort();
-        let seen = requests.lock().unwrap();
-        assert_eq!(seen.len(), 1);
-        assert_eq!(seen[0]["authorization"], "Bearer caller-jwt");
-        assert_eq!(seen[0]["x-operator-id"], operator.as_str());
-        assert_eq!(
-            seen[0]["x-platform-id"],
-            crate::domain::LIBRARY_TENANT.as_str()
-        );
-        assert_eq!(token.access_token, "test-access");
-        assert!(token.refresh_token.is_none());
+        }
     }
 
     #[tokio::test]
