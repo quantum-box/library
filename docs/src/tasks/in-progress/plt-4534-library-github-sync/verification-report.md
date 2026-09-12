@@ -185,6 +185,69 @@ remain part of the dedicated GitHub round trip below.
   paginated output. The owning client version advances from `0.1.53` to
   `0.1.54` for the follow-up Ready PR.
 
+## Regression verification on 2026-09-12
+
+Before the dedicated repository round trip, new use-case and processor tests
+reproduced three release-blocking defects:
+
+1. Re-accepting an accepted or rejected ChangeSet reached the apply adapter
+   before the terminal-decision check. Validate acceptance first, then apply and
+   persist the decision only after successful application.
+2. Push and merged-PR file handling swallowed GitHub read / ChangeSet persistence
+   failures as skipped files. The review path now propagates them to the durable
+   consumer so the event is retried instead of marked complete.
+3. Reviewed content was fetched from a moving branch while retaining the webhook
+   commit as its revision. Push upserts and merged-PR modifications / renames now
+   fetch the immutable event commit. The configured branch remains the binding
+   scope and subsequent delivery target.
+
+Verification:
+
+- Before the fix: `inbound_sync` had 116 passing and 6 failing tests. The failures
+  exercised terminal acceptance, push/PR failure propagation, and immutable
+  revision reads. Two other new tests cover failed acceptance without a decision
+  save and rejecting a pending change without provider/data writes.
+- After the fix: `cargo test -p inbound_sync -p integration_domain -p outbound_sync
+  --lib --locked` passed: 122 + 15 + 4 tests.
+- Client `externalSyncApi`, `RepositorySettingsView`, and locale-catalog tests:
+  22 + 46 passed. `npm run type-check` passed.
+- `cargo fmt --all -- --check` and `cargo clippy -p inbound_sync --all-targets
+  --locked -- -D warnings -A clippy::double_must_use
+  -A clippy::redundant_field_names` passed. Two existing boolean assertions in
+  the GitHub data-handler tests were updated to satisfy Clippy.
+- PR #360 Preview API `/health`: HTTP 200. Unauthenticated
+  `POST /internal/external-sync/outbound-scan`: HTTP 401.
+- Authenticated Preview browser sign-in succeeded. Its observed REST and GraphQL
+  requests targeted `https://pr360--library-api.txcloud.app`, confirming API
+  isolation for this browser session.
+
+These checks do not establish a GitHub provider round trip or production
+activation. No fixture repository or GitHub file was created during this
+checkpoint. The private Preview fixture form was prepared as
+`test333/plt-4534-github-sync-e2e`; execution is pending.
+
+### Dedicated repository verification still required
+
+Use synthetic documents only, in the private Preview Library fixture and the
+dedicated `quantum-box/library-sample` GitHub repository. Record the Preview SHA,
+binding / ChangeSet / delivery IDs, GitHub commits, statuses, and browser results;
+never record bearer tokens, OAuth codes, or webhook secrets.
+
+| Step | Required evidence |
+| --- | --- |
+| Connect / import | Active GitHub OAuth connection with access to the dedicated repository; one imported document and its binding/link |
+| GitHub change | Provider webhook delivery, durable job completion, pending ChangeSet, unchanged Library content before acceptance |
+| Accept / reject | Acceptance changes Library content, rejection preserves it, reload preserves the decision, repeated acceptance performs no writes |
+| Library edit | Save survives reload, delivery reaches `delivered`, GitHub commit contains the saved content |
+| Retry | Failed dispatch remains retryable; redelivery converges without duplicate changes or commits |
+| Conflict | Concurrent remote edit produces a visible conflict and preserves both contents until an explicit resolution |
+| Rename | Merged-PR rename produces a reviewed rename; acceptance preserves the Library data ID and changes its link path |
+| Delete | Remote removal produces a reviewed tombstone; accepting it does not hard-delete Library data |
+| Activation | After all prior gates pass, enable production engine/scanner with production credentials and a fixed scan start timestamp, then verify live scan/save/reload |
+
+An endpoint-specific signed simulation may validate the Preview consumer path,
+but must be labeled separately from provider-originated webhook delivery.
+
 ## Remaining release gates
 
 - Follow-up Ready PR [#359](https://github.com/quantum-box/library/pull/359)
