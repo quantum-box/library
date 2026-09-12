@@ -3,7 +3,7 @@ FROM rust:bookworm AS builder
 WORKDIR /workspace
 
 # Build the API image from the repository root so workspace crates are available.
-RUN rustup default nightly \
+RUN rustup default nightly-2026-06-04 \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \

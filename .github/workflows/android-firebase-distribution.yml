@@ -94,9 +94,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly-2026-06-04
+        uses: dtolnay/rust-toolchain@nightly
         with:
+          toolchain: nightly-2026-06-04
           targets: aarch64-linux-android,x86_64-linux-android
 
       - uses: Swatinem/rust-cache@v2
