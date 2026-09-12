@@ -96,6 +96,10 @@ spec:
             # Preview otherwise fell back to the historical development ID.
             - name: LIBRARY_TENANT_ID
               value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
+            # The shared callback forwards the signed state to this Preview.
+            # The old Library callback URL currently serves the v1 SPA.
+            - name: GITHUB_REDIRECT_URI
+              value: "https://api.n1.tachy.one/v1/integrations/callback/github"
             - name: LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS
               value: "true"
             - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
