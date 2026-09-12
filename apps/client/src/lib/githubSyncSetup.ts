@@ -45,27 +45,28 @@ export async function beginGitHubSyncOAuth(target: ExternalSyncTarget, href: str
   returnUrl.search = '?github_sync=callback'
   returnUrl.hash = ''
   const expiresAt = Date.now() + OAUTH_MAX_AGE
-  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('')
-  const payload = { returnUrl: returnUrl.toString(), nonce, operatorId: target.operatorId, expiresAt: Math.floor(expiresAt / 1000) }
-  const state = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(payload))))
-  const data = await externalSyncRequest<{ githubAuthUrl: { url: string; state: string } }>(target,
-    `mutation GitHubSyncAuthorize($state: String!) {
-      githubAuthUrl(state: $state, proxyCompatible: true) { url state }
-    }`, { state })
-  const authorizationUrl = new URL(data.githubAuthUrl.url)
+  const verifier = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('')
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  const codeChallenge = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+  const data = await externalSyncRequest<{ githubSyncAuthUrl: { url: string; state: string } }>(target,
+    `mutation GitHubSyncAuthorize($returnUrl: String!, $codeChallenge: String!) {
+      githubSyncAuthUrl(returnUrl: $returnUrl, codeChallenge: $codeChallenge) { url state }
+    }`, { returnUrl: returnUrl.toString(), codeChallenge })
+  const authorizationUrl = new URL(data.githubSyncAuthUrl.url)
   if (authorizationUrl.origin !== 'https://github.com' || authorizationUrl.pathname !== '/login/oauth/authorize'
-    || authorizationUrl.searchParams.get('state') !== data.githubAuthUrl.state) {
+    || !/^gb1_[a-f0-9]{64}$/.test(data.githubSyncAuthUrl.state)
+    || authorizationUrl.searchParams.get('state') !== data.githubSyncAuthUrl.state) {
     throw new Error('Invalid GitHub authorization response')
   }
   sessionStorage.setItem(OAUTH_STORAGE_KEY, JSON.stringify({
-    state: data.githubAuthUrl.state, expiresAt, target, returnUrl: returnUrl.toString(),
+    state: data.githubSyncAuthUrl.state, verifier, expiresAt, target, returnUrl: returnUrl.toString(),
   }))
   return authorizationUrl.toString()
 }
 
-/** Consume once before exchanging; never keep the authorization code in history or storage. */
+/** Consume the browser proof once; GitHub codes and tokens stay at Tachyon. */
 export function takeGitHubSyncCallback(target: ExternalSyncTarget, href: string):
-  { code: string; state: string } | null {
+  { session: string; codeVerifier: string } | null {
   const url = new URL(href)
   if (url.searchParams.get('github_sync') !== 'callback') return null
   const raw = sessionStorage.getItem(OAUTH_STORAGE_KEY)
@@ -75,22 +76,23 @@ export function takeGitHubSyncCallback(target: ExternalSyncTarget, href: string)
   if (!raw || !code || !state || url.searchParams.has('error')) throw new Error('Invalid GitHub callback')
   const saved = JSON.parse(raw)
   const expectedUrl = new URL(saved.returnUrl)
-  if (saved.state !== state || !Number.isFinite(saved.expiresAt) || saved.expiresAt <= Date.now()
+  if (saved.state !== state || code !== state || !/^[a-f0-9]{64}$/.test(saved.verifier)
+    || !Number.isFinite(saved.expiresAt) || saved.expiresAt <= Date.now()
     || saved.expiresAt > Date.now() + OAUTH_MAX_AGE
     || saved.target.operatorId !== target.operatorId || saved.target.repositoryId !== target.repositoryId
     || expectedUrl.origin !== url.origin || expectedUrl.pathname !== url.pathname) {
     throw new Error('Invalid GitHub callback')
   }
-  return { code, state }
+  return { session: state, codeVerifier: saved.verifier }
 }
 
-export async function completeGitHubSyncOAuth(target: ExternalSyncTarget, callback: { code: string; state: string }) {
+export async function completeGitHubSyncOAuth(target: ExternalSyncTarget, callback: { session: string; codeVerifier: string }) {
   requireOperator(target)
-  const result = await externalSyncRequest<{ githubExchangeToken: { connected: boolean } }>(target,
-    `mutation GitHubSyncExchange($code: String!, $state: String!) {
-      githubExchangeToken(code: $code, state: $state) { connected }
+  const result = await externalSyncRequest<{ githubSyncCompleteOauth: { connected: boolean } }>(target,
+    `mutation GitHubSyncComplete($session: String!, $codeVerifier: String!) {
+      githubSyncCompleteOauth(session: $session, codeVerifier: $codeVerifier) { connected }
     }`, callback)
-  if (!result.githubExchangeToken.connected) throw new Error('GitHub authorization failed')
+  if (!result.githubSyncCompleteOauth.connected) throw new Error('GitHub authorization failed')
 }
 
 export async function saveGitHubSyncBinding(target: ExternalSyncTarget, scope: GitHubSyncScope): Promise<ExternalSyncBinding> {

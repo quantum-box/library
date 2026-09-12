@@ -86,22 +86,6 @@ impl OAuthBootstrap {
 
     /// The GitHub client secret, used to sign OAuth CSRF state.
     pub async fn github_client_secret(&self) -> errors::Result<String> {
-        Ok(self.github_credentials().await?.client_secret)
-    }
-
-    async fn github_credentials(
-        &self,
-    ) -> errors::Result<OAuthClientCredentials> {
-        // A Preview can use its own App without replacing the platform's
-        // shared IaC registration. All GitHub callers, including state signing
-        // and token refresh, must resolve the same credential pair.
-        if let Some(credentials) = deployment_github_credentials(
-            std::env::var("LIBRARY_GITHUB_OAUTH_CLIENT_ID").ok(),
-            std::env::var("LIBRARY_GITHUB_OAUTH_CLIENT_SECRET").ok(),
-            std::env::var("GITHUB_REDIRECT_URI").ok(),
-        )? {
-            return Ok(credentials);
-        }
         let config = self.resolve().await?;
         let credentials =
             config.github_credentials.as_ref().ok_or_else(|| {
@@ -110,40 +94,7 @@ impl OAuthBootstrap {
                 self.tenant
             ))
             })?;
-        Ok(OAuthClientCredentials {
-            client_id: credentials.client_id.clone(),
-            client_secret: credentials.client_secret.clone(),
-            redirect_uri: github_redirect_uri(&credentials.redirect_uri),
-        })
-    }
-}
-
-fn deployment_github_credentials(
-    client_id: Option<String>,
-    client_secret: Option<String>,
-    redirect_uri: Option<String>,
-) -> errors::Result<Option<OAuthClientCredentials>> {
-    // A redirect override alone retains the existing IaC behavior.
-    if client_id.is_none() && client_secret.is_none() {
-        return Ok(None);
-    }
-    match (client_id, client_secret, redirect_uri) {
-        (Some(client_id), Some(client_secret), Some(redirect_uri))
-            if !client_id.trim().is_empty()
-                && !client_secret.trim().is_empty()
-                && !redirect_uri.trim().is_empty() =>
-        {
-            Ok(Some(OAuthClientCredentials {
-                client_id,
-                client_secret,
-                redirect_uri,
-            }))
-        }
-        _ => Err(errors::Error::service_unavailable(
-            "GitHub deployment OAuth override requires \
-             LIBRARY_GITHUB_OAUTH_CLIENT_ID, \
-             LIBRARY_GITHUB_OAUTH_CLIENT_SECRET and GITHUB_REDIRECT_URI",
-        )),
+        Ok(credentials.client_secret.clone())
     }
 }
 
@@ -152,11 +103,11 @@ impl github_provider::OAuthConfigSource for OAuthBootstrap {
     async fn github_oauth_config(
         &self,
     ) -> Option<github_provider::OAuthConfig> {
-        let credentials = self.github_credentials().await.ok()?;
+        let credentials = self.get().await?.github_credentials.as_ref()?;
         Some(github_provider::OAuthConfig {
-            client_id: credentials.client_id,
-            client_secret: credentials.client_secret,
-            redirect_uri: credentials.redirect_uri,
+            client_id: credentials.client_id.clone(),
+            client_secret: credentials.client_secret.clone(),
+            redirect_uri: github_redirect_uri(&credentials.redirect_uri),
         })
     }
 }
@@ -174,19 +125,26 @@ impl OAuthCredentialsSource for OAuthBootstrap {
         &self,
         provider: OAuthProvider,
     ) -> Option<OAuthClientCredentials> {
-        if provider == OAuthProvider::Github {
-            return self.github_credentials().await.ok();
-        }
         let config = self.get().await?;
         let credentials = match provider {
+            OAuthProvider::Github => config.github_credentials.as_ref()?,
             OAuthProvider::Linear => config.linear_credentials.as_ref()?,
             _ => return None,
+        };
+
+        // The redirect URI may be overridden per deployment, the same
+        // way the startup path allowed.
+        let redirect_uri = match provider {
+            OAuthProvider::Github => {
+                github_redirect_uri(&credentials.redirect_uri)
+            }
+            _ => credentials.redirect_uri.clone(),
         };
 
         Some(OAuthClientCredentials {
             client_id: credentials.client_id.clone(),
             client_secret: credentials.client_secret.clone(),
-            redirect_uri: credentials.redirect_uri.clone(),
+            redirect_uri,
         })
     }
 }
@@ -197,71 +155,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const TEST_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
-
-    #[test]
-    fn deployment_override_preserves_the_complete_credential_pair() {
-        let credentials = deployment_github_credentials(
-            Some("preview-client".into()),
-            Some("preview-secret".into()),
-            Some("https://example.test/callback".into()),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(credentials.client_id, "preview-client");
-        assert_eq!(credentials.client_secret, "preview-secret");
-        assert_eq!(
-            credentials.redirect_uri,
-            "https://example.test/callback"
-        );
-        assert!(deployment_github_credentials(
-            None,
-            None,
-            Some("https://example.test/callback".into()),
-        )
-        .unwrap()
-        .is_none());
-    }
-
-    #[test]
-    fn incomplete_deployment_override_cannot_fall_back_to_another_app() {
-        for (client_id, secret, redirect) in [
-            (
-                Some("preview-client"),
-                None,
-                Some("https://example.test/cb"),
-            ),
-            (
-                None,
-                Some("preview-secret"),
-                Some("https://example.test/cb"),
-            ),
-            (Some("preview-client"), Some("preview-secret"), None),
-            (
-                Some(""),
-                Some("preview-secret"),
-                Some("https://example.test/cb"),
-            ),
-            (
-                Some("preview-client"),
-                Some("  "),
-                Some("https://example.test/cb"),
-            ),
-            (Some("preview-client"), Some("preview-secret"), Some("")),
-        ] {
-            let error = deployment_github_credentials(
-                client_id.map(str::to_owned),
-                secret.map(str::to_owned),
-                redirect.map(str::to_owned),
-            )
-            .unwrap_err()
-            .to_string();
-            assert!(
-                error.contains("GitHub deployment OAuth override requires")
-            );
-            assert!(!error.contains("preview-secret"));
-            assert!(!error.contains("preview-client"));
-        }
-    }
 
     /// Serves `/v1/iac/oauth-providers`, failing the first
     /// `failures` requests, and reports how many it received.

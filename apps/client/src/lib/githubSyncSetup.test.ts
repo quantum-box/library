@@ -1,7 +1,9 @@
+import { webcrypto } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('./auth', async (original) => ({ ...await original<typeof import('./auth')>(), getValidAuthTokens: vi.fn(async () => null) }))
 import { beginGitHubSyncOAuth, completeGitHubSyncOAuth, fetchGitHubSyncSetup, isGitHubScopeValid, saveGitHubSyncBinding, takeGitHubSyncCallback } from './githubSyncSetup'
 
+const brokerState = `gb1_${'a'.repeat(64)}`
 const target = { operatorId: 'tn_test', repositoryId: 'rp_test' }
 const href = 'https://preview.example.test/org/repo/settings'
 const scope = { repository: 'quantum-box/library-sample', branch: 'main', pathPattern: 'docs/**/*.md' }
@@ -10,16 +12,16 @@ const response = (data: unknown) => new Response(JSON.stringify({ data }), { sta
 const requestBody = (mock: ReturnType<typeof vi.fn>, index: number) => JSON.parse(mock.mock.calls[index][1].body)
 
 describe('GitHub sync setup', () => {
-  beforeEach(() => sessionStorage.clear())
+  beforeEach(() => { sessionStorage.clear(); vi.stubGlobal('crypto', webcrypto) })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   async function authorize() {
     const fetchMock = vi.fn(async (_url, init) => {
       const payload = JSON.parse(init.body)
-      const decoded = JSON.parse(atob(payload.variables.state))
-      expect(decoded).toMatchObject({ operatorId: target.operatorId, returnUrl: `${href}?github_sync=callback` })
-      expect(decoded.nonce).toMatch(/^[a-f0-9]{64}$/)
-      return response({ githubAuthUrl: { url: 'https://github.com/login/oauth/authorize?state=signed-state', state: 'signed-state' } })
+      expect(payload.variables.returnUrl).toBe(`${href}?github_sync=callback`)
+      expect(payload.variables.codeChallenge).toMatch(/^[a-f0-9]{64}$/)
+      expect(payload.variables).not.toHaveProperty('codeVerifier')
+      return response({ githubSyncAuthUrl: { url: `https://github.com/login/oauth/authorize?state=${brokerState}`, state: brokerState } })
     })
     vi.stubGlobal('fetch', fetchMock)
     await beginGitHubSyncOAuth(target, href)
@@ -28,20 +30,20 @@ describe('GitHub sync setup', () => {
 
   it('binds an OAuth callback to one repository and consumes it once', async () => {
     const fetchMock = await authorize()
-    expect(requestBody(fetchMock, 0).query).toContain('proxyCompatible: true')
-    expect(takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=test-code&state=signed-state`))
-      .toEqual({ code: 'test-code', state: 'signed-state' })
-    expect(() => takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=test-code&state=signed-state`)).toThrow()
+    expect(requestBody(fetchMock, 0).query).toContain('githubSyncAuthUrl')
+    expect(takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=${brokerState}&state=${brokerState}`))
+      .toEqual({ session: brokerState, codeVerifier: expect.stringMatching(/^[a-f0-9]{64}$/) })
+    expect(() => takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=${brokerState}&state=${brokerState}`)).toThrow()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it.each([
-    ['wrong state', target, `${href}?github_sync=callback&code=test-code&state=wrong`],
-    ['other organization', { ...target, operatorId: 'tn_other' }, `${href}?github_sync=callback&code=test-code&state=signed-state`],
-    ['other repository', { ...target, repositoryId: 'rp_other' }, `${href}?github_sync=callback&code=test-code&state=signed-state`],
-    ['other origin', target, `https://other.example.test/org/repo/settings?github_sync=callback&code=test-code&state=signed-state`],
-    ['missing state', target, `${href}?github_sync=callback&code=test-code`],
-    ['provider denial', target, `${href}?github_sync=callback&error=access_denied&state=signed-state`],
+    ['wrong state', target, `${href}?github_sync=callback&code=${brokerState}&state=wrong`],
+    ['other organization', { ...target, operatorId: 'tn_other' }, `${href}?github_sync=callback&code=${brokerState}&state=${brokerState}`],
+    ['other repository', { ...target, repositoryId: 'rp_other' }, `${href}?github_sync=callback&code=${brokerState}&state=${brokerState}`],
+    ['other origin', target, `https://other.example.test/org/repo/settings?github_sync=callback&code=${brokerState}&state=${brokerState}`],
+    ['missing state', target, `${href}?github_sync=callback&code=${brokerState}`],
+    ['provider denial', target, `${href}?github_sync=callback&error=access_denied&state=${brokerState}`],
   ])('rejects %s before code exchange', async (_label, callbackTarget, callbackUrl) => {
     await authorize()
     expect(() => takeGitHubSyncCallback(callbackTarget, callbackUrl)).toThrow()
@@ -51,21 +53,21 @@ describe('GitHub sync setup', () => {
     await authorize()
     const now = Date.now()
     vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60 * 1000)
-    expect(() => takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=test-code&state=signed-state`)).toThrow()
+    expect(() => takeGitHubSyncCallback(target, `${href}?github_sync=callback&code=${brokerState}&state=${brokerState}`)).toThrow()
   })
 
   it('does not navigate to an unexpected authorization host', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ githubAuthUrl: { url: 'https://untrusted.example/authorize?state=x', state: 'x' } })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ githubSyncAuthUrl: { url: 'https://untrusted.example/authorize?state=x', state: 'x' } })))
     await expect(beginGitHubSyncOAuth(target, href)).rejects.toThrow('Invalid GitHub authorization response')
     expect(sessionStorage.getItem('library-client:github-sync-oauth')).toBeNull()
   })
 
-  it('uses the organization context for token exchange', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response({ githubExchangeToken: { connected: true } }))
+  it('uses the organization context and browser proof for broker completion', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ githubSyncCompleteOauth: { connected: true } }))
     vi.stubGlobal('fetch', fetchMock)
-    await completeGitHubSyncOAuth(target, { code: 'test-code', state: 'signed-state' })
+    await completeGitHubSyncOAuth(target, { session: brokerState, codeVerifier: 'b'.repeat(64) })
     expect(fetchMock.mock.calls[0][1].headers['x-operator-id']).toBe('tn_test')
-    expect(requestBody(fetchMock, 0).variables).toEqual({ code: 'test-code', state: 'signed-state' })
+    expect(requestBody(fetchMock, 0).variables).toEqual({ session: brokerState, codeVerifier: expect.stringMatching(/^[a-f0-9]{64}$/) })
   })
 
   it('verifies remote access before connecting and creates a reviewed Markdown binding', async () => {

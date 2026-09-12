@@ -330,26 +330,64 @@ activation. No GitHub file has been created during this checkpoint.
   accessible. After the user completed GitHub administrator reauthentication,
   the Client IDs of all four Apps owned by `quantum-box` were compared; none
   matched the configured ID. The signed-in personal account has no GitHub Apps.
-  This does not prove global deletion or exclude another owner. No GitHub
-  registration or permissions were changed, and no actual OAuth code was exchanged.
-- Prepared (not submitted) a private `Library GitHub Sync Preview` App form under
-  `quantum-box`: Contents read/write, Pull requests read, mandatory Metadata read,
-  the exact shared callback with wildcard matching off, expiring user tokens,
-  and App webhooks off. Registration is awaiting user approval; repository
-  installation and client-secret provisioning are subsequent actions.
+  This does not prove global deletion or exclude another owner. That inspection
+  did not change existing Apps, and no actual OAuth code was exchanged.
+- After the user's explicit approval, registered the private
+  `Library GitHub Sync Preview` App under `quantum-box` (App ID `4919004`, public
+  Client ID `Iv23li7ynxvi6z7hrk8y`). GitHub displayed registration success.
+  Permissions are Contents read/write, Pull requests read, and mandatory Metadata
+  read; the exact shared callback has wildcard matching off, user tokens expire,
+  and App webhooks are off. Only `quantum-box` can install the App.
+- Saved the new public Client ID as `LIBRARY_GITHUB_OAUTH_CLIENT_ID` with Target
+  `Preview` in the Library API's persisted environment settings. Prepared
+  `LIBRARY_GITHUB_OAUTH_CLIENT_SECRET` with Target `Preview` and Secret checked,
+  leaving its value and submission for the user. No new secret was generated,
+  read, or copied by the agent. GitHub requires a private key before installation;
+  key provisioning and installation into the dedicated repository remain pending.
+  A Preview redeployment after credential provisioning is still required.
+- The user then requested reusing Tachyon's existing GitHub App through the
+  integration API instead of provisioning another App. Removed only the public
+  Preview Client ID added above and confirmed neither deployment credential
+  override is saved. Closed the unsubmitted secret form; the dedicated App
+  remains registered but uninstalled. Secret/private-key provisioning is paused.
 - Added deployment-specific `LIBRARY_GITHUB_OAUTH_CLIENT_ID` and
   `LIBRARY_GITHUB_OAUTH_CLIENT_SECRET` overrides, paired with `GITHUB_REDIRECT_URI`.
   State signing, code exchange, and refresh share the same resolver. Partial or
   blank credentials fail instead of mixing with another App's IaC credentials;
   a redirect-only override retains existing behavior. Added two regression tests
   for CI. Per the user's instruction, local Rust verification is limited to
-  formatting; these new tests have not yet run.
+  formatting. For `d840d59`, CI formatting, check, and Clippy passed; Rust tests,
+  client tests, and the API build were still running at this checkpoint.
 - The registered callback `https://library.n1.tachy.one/oauth/github/callback`
   currently serves the v1 SPA without forwarding to Preview. The shared callback
   `https://api.n1.tachy.one/v1/integrations/callback/github` returned HTTP 307 to
   the exact dedicated Preview settings URL with a synthetic code and state.
   This proves forwarding only. GitHub's acceptance of the callback, actual user
   authorization, code exchange, and connection persistence remain unverified.
+
+### Shared Tachyon App investigation on 2026-09-12
+
+- Tachyon's `packages/integration/src/adapter/axum/callback_handler.rs`
+  `handle_github_oauth_proxy` already forwards GitHub's code and state to the
+  base64 JSON `returnUrl`. It does not exchange or refresh GitHub user tokens.
+  Library's `github_exchange_token` currently performs the exchange locally and
+  saves the result through Tachyon's auth API.
+- Tachyon's `POST /v1/integrations/{id}/connect` takes the GitHub App installation
+  path for GitHub. Its internal installation-token endpoint is not a user OAuth
+  code-exchange endpoint. Reusing the existing App without giving Library its
+  client secret therefore requires a tenant-authorized OAuth broker in Tachyon,
+  plus Library call-site and refresh changes.
+- Proposed flow: Library initiates a tenant/user-bound session; Tachyon builds
+  authorization using its existing App, verifies signed expiring state and the
+  registered return destination at callback, exchanges/stores the token, and
+  redirects to Library with an opaque completion reference. Library verifies
+  completion in its existing authenticated context. No token belongs in the
+  return URL, and GitHub refresh remains with the credential owner.
+- The previously inspected Tachyon Cloud App has an `app.n1.tachy.one` callback;
+  that host did not resolve from this machine during the follow-up probe. The
+  working `api.n1.tachy.one` callback and the existing App's registered callback
+  still need to be aligned before a live shared-App authorization test. No
+  existing GitHub App settings or Tachyon implementation were changed here.
 
 ### Dedicated repository verification still required
 
@@ -392,3 +430,27 @@ Production remains inactive until all of these gates pass. The Tachyon CLI's
 standalone `compute apps sync-secrets` operation currently rejects Lambda and
 Worker apps as Pages-only; the normal Cloud App apply/build path remains the
 deployment gate for the registered secret references.
+
+## Shared Tachyon GitHub App implementation — 2026-09-12
+
+The Preview setup now starts a broker session in Tachyon integration-api using
+the signed-in caller, operator, Library platform, exact return URL and a browser
+SHA-256 proof. Tachyon exchanges the GitHub code, keeps App/refresh secrets, and
+returns an opaque session. The original browser confirms it once via the new
+`githubSyncAuthUrl` and `githubSyncCompleteOauth` GraphQL mutations.
+
+`LIBRARY_GITHUB_OAUTH_BROKER_ENABLED=true` selects broker token reads/deletes;
+it remains off until the Tachyon broker is deployed and the Preview consumer
+origin is registered. Legacy token APIs remain available to other consumers.
+The abandoned deployment-specific Client ID/Secret override was removed from
+code and the Preview environment; the separately registered Preview App has no
+credential configured or installation used by this flow.
+
+- Focused client tests: 28 passed (OAuth proof/callback and setup dialog).
+- Client TypeScript: passed.
+- Rust: local formatting and diff checks only, as requested. Added CI regressions
+  for caller/tenant forwarding, refresh-secret exclusion, no retry on uncertain
+  rotation, and 404/error distinction.
+- Generated GraphQL SDL, Rust CI and Preview build: pending this commit's build.
+- Real authorization / repository round trip: pending broker rollout. No live
+  OAuth or sync completion is claimed; production sync flags remain off.

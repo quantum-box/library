@@ -1234,6 +1234,60 @@ impl LibraryMutation {
 
     // ==================== GitHub OAuth ====================
 
+    /// Start user authorization using Tachyon's shared GitHub App.
+    #[tracing::instrument(name = "github_sync_auth_url", skip_all)]
+    async fn github_sync_auth_url(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        return_url: String,
+        code_challenge: String,
+    ) -> Result<GitHubAuthUrl> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let result = sdk
+            .start_github_oauth(
+                executor,
+                tenancy,
+                &return_url,
+                &code_challenge,
+            )
+            .await
+            .map_err(|e| e.extend())?;
+        Ok(GitHubAuthUrl {
+            url: result.authorization_url,
+            state: result.state,
+        })
+    }
+
+    /// Confirm the browser-bound broker session without exposing tokens.
+    #[tracing::instrument(name = "github_sync_complete_oauth", skip_all)]
+    async fn github_sync_complete_oauth(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        session: String,
+        code_verifier: String,
+    ) -> Result<GitHubConnection> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let result = sdk
+            .complete_github_oauth(
+                executor,
+                tenancy,
+                &session,
+                &code_verifier,
+            )
+            .await
+            .map_err(|e| e.extend())?;
+        Ok(GitHubConnection {
+            connected: result.connected,
+            username: Some(result.username),
+            connected_at: None,
+            expires_at: Some(result.expires_at),
+        })
+    }
+
     /// [LIBRARY-API] Get GitHub OAuth authorization URL
     ///
     /// Signs the state parameter with HMAC-SHA256 for CSRF protection.
