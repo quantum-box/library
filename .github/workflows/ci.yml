@@ -79,6 +79,16 @@ jobs:
       - name: Install protoc
         run: scripts/ci/apt-install.sh protobuf-compiler
       - run: cargo check --workspace
+      - name: Generate API schemas
+        run: cargo run -p library-api --bin library_codegen
+      - name: Upload generated GraphQL schema
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-graphql-schema
+          path: apps/api/schema.graphql
+          retention-days: 7
+      - name: Verify committed GraphQL schema
+        run: git diff --exit-code -- apps/api/schema.graphql
 
   rust-workspace-cycles:
     runs-on: ubuntu-latest
