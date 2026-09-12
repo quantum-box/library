@@ -92,6 +92,10 @@ spec:
             engine: mysql
             envVar: DATABASE_URL
           envVars:
+            # Keep the OAuth provider lookup on Library's platform tenant.
+            # Preview otherwise fell back to the historical development ID.
+            - name: LIBRARY_TENANT_ID
+              value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
             - name: LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS
               value: "true"
             - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
