@@ -483,3 +483,18 @@ both credentials and verifies that the refresh secret is never returned.
 Tachyon separately verifies the process service account against its consumer
 registry. Existing `library-api-service` was found through CLI; its runtime token
 identity must match before activating Preview.
+
+
+### Platform credential preflight
+
+The persisted Preview server credential verifies as `library-api-service`
+(`sa_01kr0ggcbt50j4bjryhgs9ewqs`) in the Library platform. Authentication in the
+child organization failed with 401 because public API keys are tenant scoped.
+The corrected SDK checks the original caller in the organization, then reads
+through its process credential with the platform as acting tenant and the
+organization as the broker's typed `tenant_id` query. Background reads/deletes
+use the same delegation. Tachyon verifies the registered reader and actual
+platform ancestry. The runtime policy manifest adds Get/Save/DeleteOAuthToken;
+its live policy currently denies these actions and must be applied before
+Preview activation. Local Rust verification remains formatting only; CI and
+real authorization on the corrected path are pending.

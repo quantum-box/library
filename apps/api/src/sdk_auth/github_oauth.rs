@@ -132,20 +132,23 @@ impl SdkAuthApp {
             ));
         }
         let config = self.github_broker_tenant(
-            &tenancy.get_operator_id()?,
+            &crate::domain::LIBRARY_TENANT,
             &self.service_auth_token,
         )?;
-        Self::github_broker_token(&config).await
+        Self::github_broker_token(&config, &tenancy.get_operator_id()?)
+            .await
     }
 
     pub(super) async fn github_broker_token(
         config: &Configuration,
+        tenant: &TenantId,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
         // The broker may rotate a near-expiry token. Allow its bounded provider
         // request to finish and do not retry an uncertain rotation from here.
         let response = config
             .client
             .get(format!("{}{}", config.base_path, TOKEN_PATH))
+            .query(&[("tenant_id", tenant.as_str())])
             .timeout(Duration::from_secs(25))
             .send()
             .await
@@ -224,9 +227,10 @@ mod tests {
                         axum::Json(serde_json::json!({"results":allowed.map(|value| vec![serde_json::json!({"action":"auth:GetOAuthToken","allowed":value,"error":null})]).unwrap_or_default()}))
                     }
                 }))
-                .route(TOKEN_PATH, axum::routing::get(move |headers: axum::http::HeaderMap| {
+                .route(TOKEN_PATH, axum::routing::get(move |headers: axum::http::HeaderMap, axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>| {
                     let capture = token_capture.clone();
                     async move {
+                        assert_eq!(query.get("tenant_id").map(String::as_str), Some("tn_01hy91qw3362djx6z9jerr34v4"));
                         capture.lock().unwrap().push(headers);
                         axum::Json(serde_json::json!({"provider_user_id":"octocat","access_token":"test-access","refresh_token":"must-not-forward","expires_at":"2030-01-01T00:00:00Z"}))
                     }
@@ -263,7 +267,11 @@ mod tests {
                     seen[1]["authorization"],
                     "Bearer process-secret"
                 );
-                assert_eq!(seen[1]["x-operator-id"], operator.as_str());
+                assert_eq!(seen[0]["x-operator-id"], operator.as_str());
+                assert_eq!(
+                    seen[1]["x-operator-id"],
+                    crate::domain::LIBRARY_TENANT.as_str()
+                );
                 assert_eq!(
                     seen[1]["x-platform-id"],
                     crate::domain::LIBRARY_TENANT.as_str()
@@ -312,7 +320,11 @@ mod tests {
                 client: reqwest::Client::new(),
                 ..Default::default()
             };
-            let result = SdkAuthApp::github_broker_token(&config).await;
+            let result = SdkAuthApp::github_broker_token(
+                &config,
+                &crate::domain::LIBRARY_TENANT,
+            )
+            .await;
             server.abort();
             assert_eq!(requests.load(Ordering::SeqCst), 1);
             if status == axum::http::StatusCode::NOT_FOUND {

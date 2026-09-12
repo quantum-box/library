@@ -28,6 +28,15 @@
         effect: allow
       - action: auth:AttachUserPolicy
         effect: allow
+      # The OAuth broker authorizes the platform service, then verifies
+      # tenant_id is its descendant and the reader is registered in IaC.
+      # User-triggered reads first check the original caller separately.
+      - action: auth:GetOAuthToken
+        effect: allow
+      - action: auth:SaveOAuthToken
+        effect: allow
+      - action: auth:DeleteOAuthToken
+        effect: allow
       # Record body images live in Tachyon storage inside each
       # organization's own tenant, keyed `{org_tenant}/library/images/…`.
       # The service account's credential verifies only in this platform

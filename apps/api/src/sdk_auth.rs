@@ -2944,12 +2944,16 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
             && github_oauth_broker_enabled()
         {
             let config = self.sdk.github_broker_tenant(
-                &sdk_tenant_id,
+                &crate::domain::LIBRARY_TENANT,
                 &self.sdk.service_auth_token,
             )?;
-            return Ok(SdkAuthApp::github_broker_token(&config)
-                .await?
-                .map(|token| inbound_sync_domain::StoredOAuthToken {
+            return Ok(SdkAuthApp::github_broker_token(
+                &config,
+                &sdk_tenant_id,
+            )
+            .await?
+            .map(|token| {
+                inbound_sync_domain::StoredOAuthToken {
                     id: String::new(),
                     tenant_id: tenant_id.clone(),
                     provider,
@@ -2962,7 +2966,8 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
                     external_account_name: None,
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
-                }));
+                }
+            }));
         }
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
@@ -3006,12 +3011,15 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
             && github_oauth_broker_enabled()
         {
             let config = self.sdk.github_broker_tenant(
-                &sdk_tenant_id,
+                &crate::domain::LIBRARY_TENANT,
                 &self.sdk.service_auth_token,
             )?;
             return SdkAuthApp::rest_delete(
                 &config,
-                github_oauth::TOKEN_PATH,
+                &format!(
+                    "{}?tenant_id={sdk_tenant_id}",
+                    github_oauth::TOKEN_PATH
+                ),
             )
             .await;
         }
