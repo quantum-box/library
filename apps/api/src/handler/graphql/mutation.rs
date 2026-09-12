@@ -140,101 +140,6 @@ fn verify_github_oauth_callback(
     Ok(())
 }
 
-#[cfg(test)]
-mod github_oauth_state_tests {
-    use super::*;
-
-    fn proxy_state() -> String {
-        let payload = base64::engine::general_purpose::STANDARD.encode(
-            serde_json::json!({
-                "returnUrl": "https://preview.example.test/org/repo/settings?github_sync=callback",
-                "operatorId": "tn_test", "nonce": "test-nonce", "expiresAt": 1500
-            }).to_string(),
-        );
-        wrap_github_oauth_state(
-            &payload,
-            &sign_oauth_state(&payload, "test-secret").unwrap(),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn github_oauth_proxy_state_is_base64_json_and_signed() {
-        let state = proxy_state();
-        let decoded = decode_github_oauth_state(&state).unwrap();
-        assert!(decoded["returnUrl"]
-            .as_str()
-            .unwrap()
-            .starts_with("https://preview.example.test/"));
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_test",
-            1000
-        )
-        .is_ok());
-        assert!(verify_github_oauth_callback(
-            &state,
-            "wrong-secret",
-            "tn_test",
-            1000
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn github_oauth_proxy_rejects_other_tenant_expiry_and_modified_redirect(
-    ) {
-        let state = proxy_state();
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_other",
-            1000
-        )
-        .is_err());
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_test",
-            1500
-        )
-        .is_err());
-        let mut envelope = decode_github_oauth_state(&state).unwrap();
-        envelope["returnUrl"] =
-            serde_json::json!("https://other.example.test");
-        let changed = base64::engine::general_purpose::STANDARD
-            .encode(envelope.to_string());
-        assert!(verify_github_oauth_callback(
-            &changed,
-            "test-secret",
-            "tn_test",
-            1000
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn github_oauth_keeps_legacy_signed_state_support() {
-        let state =
-            sign_oauth_state("legacy-payload", "test-secret").unwrap();
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_test",
-            1000
-        )
-        .is_ok());
-        assert!(verify_github_oauth_callback(
-            "untrusted",
-            "test-secret",
-            "tn_test",
-            1000
-        )
-        .is_err());
-    }
-}
-
 /// Get OAuth state secret from the IaC configuration or an environment
 /// variable.
 ///
@@ -1425,7 +1330,7 @@ impl LibraryMutation {
         verify_github_oauth_callback(
             &state,
             &secret,
-            &multi_tenancy.get_operator_id()?.to_string(),
+            multi_tenancy.get_operator_id()?.as_ref(),
             chrono::Utc::now().timestamp(),
         )
         .map_err(|e| {
@@ -2930,5 +2835,100 @@ mod select_option_input_tests {
             .expect_err("Select type changes must retain option identity");
 
         assert!(error.to_string().contains("type cannot be changed"));
+    }
+}
+
+#[cfg(test)]
+mod github_oauth_state_tests {
+    use super::*;
+
+    fn proxy_state() -> String {
+        let payload = base64::engine::general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "returnUrl": "https://preview.example.test/org/repo/settings?github_sync=callback",
+                "operatorId": "tn_test", "nonce": "test-nonce", "expiresAt": 1500
+            }).to_string(),
+        );
+        wrap_github_oauth_state(
+            &payload,
+            &sign_oauth_state(&payload, "test-secret").unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn github_oauth_proxy_state_is_base64_json_and_signed() {
+        let state = proxy_state();
+        let decoded = decode_github_oauth_state(&state).unwrap();
+        assert!(decoded["returnUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://preview.example.test/"));
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_ok());
+        assert!(verify_github_oauth_callback(
+            &state,
+            "wrong-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn github_oauth_proxy_rejects_other_tenant_expiry_and_modified_redirect(
+    ) {
+        let state = proxy_state();
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_other",
+            1000
+        )
+        .is_err());
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1500
+        )
+        .is_err());
+        let mut envelope = decode_github_oauth_state(&state).unwrap();
+        envelope["returnUrl"] =
+            serde_json::json!("https://other.example.test");
+        let changed = base64::engine::general_purpose::STANDARD
+            .encode(envelope.to_string());
+        assert!(verify_github_oauth_callback(
+            &changed,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn github_oauth_keeps_legacy_signed_state_support() {
+        let state =
+            sign_oauth_state("legacy-payload", "test-secret").unwrap();
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_ok());
+        assert!(verify_github_oauth_callback(
+            "untrusted",
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
     }
 }
