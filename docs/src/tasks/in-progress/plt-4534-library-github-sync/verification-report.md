@@ -318,8 +318,32 @@ activation. No GitHub file has been created during this checkpoint.
   have been applied. After the user's approval and administrator sign-in, the
   Library API environment settings confirmed `LIBRARY_TENANT_ID` existed only
   for production. Added both declared values with Target `Preview`, and the
-  saved rows showed the intended values and target. Re-deployment and a live
-  authorization probe are still required to verify their runtime effect.
+  saved rows showed the intended values and target.
+- Preview API build `bld_01m2ac30zq03a10ytbxcw5p9tr` deployed `eaef41d`
+  successfully. A fresh synthetic authorization probe returned no errors, an
+  authorization URL on `github.com`, and the configured shared callback. The
+  live Library button also navigated to GitHub, confirming the runtime repair.
+  Rust and client CI passed for this head, including Photon Live E2E.
+- GitHub returned its 404 page at the authorization endpoint. This is distinct
+  from the earlier Library configuration error; App registration and callback
+  validity are not yet established. The organization GitHub Apps list is
+  accessible. After the user completed GitHub administrator reauthentication,
+  the Client IDs of all four Apps owned by `quantum-box` were compared; none
+  matched the configured ID. The signed-in personal account has no GitHub Apps.
+  This does not prove global deletion or exclude another owner. No GitHub
+  registration or permissions were changed, and no actual OAuth code was exchanged.
+- Prepared (not submitted) a private `Library GitHub Sync Preview` App form under
+  `quantum-box`: Contents read/write, Pull requests read, mandatory Metadata read,
+  the exact shared callback with wildcard matching off, expiring user tokens,
+  and App webhooks off. Registration is awaiting user approval; repository
+  installation and client-secret provisioning are subsequent actions.
+- Added deployment-specific `LIBRARY_GITHUB_OAUTH_CLIENT_ID` and
+  `LIBRARY_GITHUB_OAUTH_CLIENT_SECRET` overrides, paired with `GITHUB_REDIRECT_URI`.
+  State signing, code exchange, and refresh share the same resolver. Partial or
+  blank credentials fail instead of mixing with another App's IaC credentials;
+  a redirect-only override retains existing behavior. Added two regression tests
+  for CI. Per the user's instruction, local Rust verification is limited to
+  formatting; these new tests have not yet run.
 - The registered callback `https://library.n1.tachy.one/oauth/github/callback`
   currently serves the v1 SPA without forwarding to Preview. The shared callback
   `https://api.n1.tachy.one/v1/integrations/callback/github` returned HTTP 307 to
