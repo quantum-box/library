@@ -7,10 +7,10 @@ if ! command -v rustup >/dev/null 2>&1; then
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs -o "$installer"
-  sh "$installer" -y --profile minimal --default-toolchain stable --no-modify-path
+  sh "$installer" -y --profile minimal --default-toolchain nightly-2026-06-04 --no-modify-path
 fi
-rustup toolchain install stable --profile minimal --no-self-update
-rustup target add wasm32-unknown-unknown --toolchain stable
+rustup toolchain install nightly-2026-06-04 --profile minimal --no-self-update
+rustup target add wasm32-unknown-unknown --toolchain nightly-2026-06-04
 if ! command -v worker-build >/dev/null 2>&1 || [ "$(worker-build --version)" != '0.8.5' ]; then
-  cargo +stable install worker-build --version 0.8.5 --locked
+  cargo +nightly-2026-06-04 install worker-build --version 0.8.5 --locked
 fi
