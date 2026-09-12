@@ -1490,6 +1490,7 @@ type Mutation {
 		State parameter containing encoded return URL
 		"""
 		state: String!
+		proxyCompatible: Boolean! = false
 	): GitHubAuthUrl!
 	"""
 	[LIBRARY-API] Exchange GitHub OAuth code for token
@@ -1543,6 +1544,11 @@ type Mutation {
 	[LIBRARY-API] Import Markdown files from GitHub
 	"""
 	importMarkdownFromGithub(input: ImportMarkdownFromGitHubInput!): ImportMarkdownResult!
+	"""
+	Attach this organization's saved GitHub OAuth account to external sync.
+	Repeated calls preserve the existing connection identity and metadata.
+	"""
+	connectGithubSync: GqlConnection!
 	createExternalSyncBinding(input: CreateExternalSyncBindingInput!): GqlExternalSyncBinding!
 	updateExternalSyncBindingStatus(bindingId: String!, status: GqlExternalSyncBindingStatus!): GqlExternalSyncBinding!
 	decideInboundChangeSet(changeSetId: String!, accept: Boolean!, note: String): GqlInboundChangeSet!
