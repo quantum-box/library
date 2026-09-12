@@ -149,18 +149,16 @@ fn verify_github_oauth_callback(
 async fn get_oauth_state_secret(
     oauth_bootstrap: &crate::oauth_bootstrap::OAuthBootstrap,
 ) -> errors::Result<String> {
-    if let Some(secret) = oauth_bootstrap.github_client_secret().await {
-        return Ok(secret);
-    }
+    let configuration_error =
+        match oauth_bootstrap.github_client_secret().await {
+            Ok(secret) => return Ok(secret),
+            Err(error) => error,
+        };
 
     // Fall back to environment variables
     std::env::var("OAUTH_STATE_SECRET")
         .or_else(|_| std::env::var("GITHUB_CLIENT_SECRET"))
-        .map_err(|_| {
-            errors::Error::internal_server_error(
-                "GitHub OAuth not configured. Please configure GitHub provider in IAC manifest.",
-            )
-        })
+        .map_err(|_| configuration_error)
 }
 
 #[derive(Default)]
