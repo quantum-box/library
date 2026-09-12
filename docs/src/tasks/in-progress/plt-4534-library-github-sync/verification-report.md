@@ -454,3 +454,20 @@ credential configured or installation used by this flow.
 - Generated GraphQL SDL, Rust CI and Preview build: pending this commit's build.
 - Real authorization / repository round trip: pending broker rollout. No live
   OAuth or sync completion is claimed; production sync flags remain off.
+
+### Broker verification update
+
+- Implementation commit `2a722b8`: GitHub CI Rust check, Clippy, formatting and
+  Rust tests passed. Tachyon API Preview build `bld_01m2ag3k906z2n1fp7437hhrch`
+  succeeded.
+- CI run `34687045912` generated the GraphQL SDL. Its only schema change is the
+  two broker mutations with the exact names/arguments used by the client. The
+  generated artifact (not a manual SDL edit) is committed with this update.
+- A permanent CI check now regenerates the API SDL and checks the committed
+  schema, with an artifact to make future drift reviewable.
+- Shared App inspection: the ROOT_ID public Client ID matches Tachyon Cloud;
+  user token expiration is enabled; Contents and Pull requests already have
+  read/write access. The broker uses its own server-owned callback setting so
+  the shared IaC localhost callback and existing App callback are not replaced.
+- Tachyon PR #9795 adds the authenticated public API proxy as well as broker
+  storage and configuration. Actual OAuth remains pending its reviewed rollout.

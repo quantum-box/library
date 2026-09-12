@@ -1480,6 +1480,14 @@ type Mutation {
 	"""
 	updateGlobalIdMapping(input: UpdateGlobalIdMappingInput!): GlobalIdMapping!
 	"""
+	Start user authorization using Tachyon's shared GitHub App.
+	"""
+	githubSyncAuthUrl(returnUrl: String!, codeChallenge: String!): GitHubAuthUrl!
+	"""
+	Confirm the browser-bound broker session without exposing tokens.
+	"""
+	githubSyncCompleteOauth(session: String!, codeVerifier: String!): GitHubConnection!
+	"""
 	[LIBRARY-API] Get GitHub OAuth authorization URL
 	
 	Signs the state parameter with HMAC-SHA256 for CSRF protection.
