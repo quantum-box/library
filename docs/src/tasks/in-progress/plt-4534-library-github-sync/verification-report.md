@@ -284,12 +284,48 @@ activation. No GitHub file has been created during this checkpoint.
 - After API rollout, authorization still failed. A credential-free probe of
   the authorization-URL endpoint returned `GitHub OAuth not configured. Please
   configure GitHub provider in IAC manifest.` No token was exchanged and no
-  live binding was created. The configured bootstrap reads the Library platform
-  tenant's IaC provider, whose missing or unresolved credentials must be repaired
-  before a real OAuth round trip. No client secret was requested or copied.
+  live binding was created. This generic error did not establish that credentials
+  were missing; the subsequent diagnosis below identifies a tenant mismatch.
+  No client secret was requested or copied.
 - This setup step does not configure GitHub webhooks, create a Library webhook
   receiver, import documents, or prove provider delivery. Those operations and
   the dedicated provider round trip remain subsequent verification gates.
+
+### Direct Library authorization diagnosis on 2026-09-12
+
+- Authorization URLs now percent-encode the state so `+` in signed/base64 state
+  survives query parsing. The provider regression test also verifies that
+  reserved characters cannot alter the requested scope or URL fragment.
+  `cargo test -p github_provider --lib --locked`: 1 passed; formatting passed.
+- The intended user flow is Library settings → GitHub authorization → the same
+  Library settings page. A Tachyon administrator session is needed only to repair
+  the Preview deployment configuration, not for each Library user's connection.
+- The Library platform tenant `tn_01j91h09tpj5ehwbwfwfxpak2b` has a GitHub provider
+  with all required fields populated. The configuration probe recorded only
+  provider names, field presence/types, and the public callback URL; no secret
+  values were printed or stored. The initial missing-credentials diagnosis was
+  incorrect.
+- Bootstrap now preserves safe error context and retries an empty provider
+  response instead of caching it for the Lambda lifetime. Five focused bootstrap
+  tests passed. Preview then reported that it was looking up the historical
+  fallback tenant `tn_01j702qf86pc2j35s0kv0gv3gy`, which lacks a GitHub provider.
+- Explicit Preview `LIBRARY_TENANT_ID` and `GITHUB_REDIRECT_URI` values are in
+  `tachyon.yaml`. API build, IaC check, Preview deployment, and Rust CI succeeded
+  for `1f139e1` (client CI also passed), but the serving API still reported the old tenant. Tachyon's
+  deployment source explains why: Preview builds run IaC **plan**, and Lambda
+  deployment reads persisted environment variables rather than the branch's
+  manifest overlay. Deployment success therefore does not prove those values
+  have been applied. After the user's approval and administrator sign-in, the
+  Library API environment settings confirmed `LIBRARY_TENANT_ID` existed only
+  for production. Added both declared values with Target `Preview`, and the
+  saved rows showed the intended values and target. Re-deployment and a live
+  authorization probe are still required to verify their runtime effect.
+- The registered callback `https://library.n1.tachy.one/oauth/github/callback`
+  currently serves the v1 SPA without forwarding to Preview. The shared callback
+  `https://api.n1.tachy.one/v1/integrations/callback/github` returned HTTP 307 to
+  the exact dedicated Preview settings URL with a synthetic code and state.
+  This proves forwarding only. GitHub's acceptance of the callback, actual user
+  authorization, code exchange, and connection persistence remain unverified.
 
 ### Dedicated repository verification still required
 
