@@ -24,6 +24,7 @@ import {
   type OutboundDelivery,
 } from '../lib/externalSyncApi'
 import { useI18n } from '../i18n'
+import { GitHubSyncSetupDialog } from './GitHubSyncSetupDialog'
 
 interface ExternalSyncSectionProps {
   repositoryId: string
@@ -63,6 +64,7 @@ export function ExternalSyncSection({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [setupOpen, setSetupOpen] = useState(() => new URLSearchParams(window.location.search).get('github_sync') === 'callback')
 
   const load = useCallback(async () => {
     const revision = ++loadRevision.current
@@ -110,9 +112,9 @@ export function ExternalSyncSection({
       aria-labelledby="external-sync-heading"
       data-testid="external-sync-section"
     >
-      <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface px-4 py-3">
         <RotateCw className="size-4 text-primary" aria-hidden="true" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1 basis-48">
           <h2 id="external-sync-heading" className="text-sm font-semibold">
             {t('externalSync.title')}
           </h2>
@@ -121,6 +123,9 @@ export function ExternalSyncSection({
         <Badge variant={activeCount > 0 ? 'success' : 'neutral'} className="ml-auto">
           {activeCount > 0 ? t('externalSync.active') : t('externalSync.inactive')}
         </Badge>
+        <Button size="sm" variant="secondary" disabled={readOnly || !operatorId} onClick={() => setSetupOpen(true)}>
+          {t('githubSetup.title')}
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -251,6 +256,7 @@ export function ExternalSyncSection({
           />
         </div>
       ) : null}
+      {setupOpen ? <GitHubSyncSetupDialog key={`${operatorId}:${repositoryId}`} open target={target} readOnly={readOnly} onClose={() => setSetupOpen(false)} onSaved={load} /> : null}
     </section>
   )
 }

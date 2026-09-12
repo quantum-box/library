@@ -222,9 +222,54 @@ Verification:
   isolation for this browser session.
 
 These checks do not establish a GitHub provider round trip or production
-activation. No fixture repository or GitHub file was created during this
-checkpoint. The private Preview fixture form was prepared as
-`test333/plt-4534-github-sync-e2e`; execution is pending.
+activation. No GitHub file has been created during this checkpoint.
+
+### Preview fixture created on 2026-09-12
+
+- Existing `test333` appeared in the platform organization list, but repository
+  creation returned `NotFoundError: organization not found in create repo`:
+  the organization was not registered in the Preview Library database.
+- Created the empty, dedicated `GitHub Sync Test` organization with the user's
+  authorization. Its slug is `github-sync-test-20260912`, and its operator ID is
+  `tn_01m2a44pskazsq0b0nzns9nqxs`. No existing organization was imported.
+- With explicit approval for this new destination, created the private Library
+  repository
+  [`github-sync-test-20260912/plt-4534-github-sync-e2e`](https://pr360--library-client.txcloud.app/github-sync-test-20260912/plt-4534-github-sync-e2e),
+  ID `rp_01m2a4f5szabzzvtjhg999czne`. The overview showed zero records; the
+  settings page loaded the saved synthetic-data description and private visibility.
+- The external-sync query loaded successfully and showed no configured binding.
+  At this checkpoint the primary-client section supported existing-binding operations but
+  exposes no action to connect GitHub or create an initial binding. Connection
+  setup and provider round-trip verification remain outstanding.
+
+### Primary-client connection setup on 2026-09-12
+
+- Added the repository-settings `Connect GitHub` dialog, with the runtime gate,
+  account authorization, repository/ref validation against GitHub, an optional
+  file pattern, and creation of the reviewed Markdown binding. Existing scopes
+  are reused when retrying after a lost response. Missing organization context
+  never falls back to the platform tenant.
+- The shared GitHub callback proxy expects base64 JSON with a `returnUrl`.
+  The opt-in `proxyCompatible` authorization mode wraps the signed payload in
+  that format. Exchange verifies the signature, matching return URL, tenant,
+  and expiry; the client also matches the exact saved state, repository, and
+  origin and consumes it once. The code is removed from browser history before
+  exchange. Legacy signed callbacks remain supported.
+- `connectGithubSync` checks the caller's setup policy and the runtime gate,
+  requires an unexpired OAuth token for this tenant, and creates or resumes the
+  tenant's connection without replacing its ID or metadata. Credentials remain
+  on the API side. The desktop flow opens the corresponding web settings page
+  for authorization and allows refreshing the connection on return.
+- Local browser verification used synthetic responses only. The Japanese
+  connection form rendered correctly, rejected an empty repository, saved the
+  selected scope, and showed that GitHub webhook setup remains necessary.
+- Focused client tests: 117 passed across six files, including 22 setup API /
+  OAuth checks, six setup dialog tests, existing sync/settings tests, and i18n.
+  TypeScript and the production client build passed. The build reported existing
+  dependency warnings for PGlite `eval` and the PDF.js import split.
+- This setup step does not configure GitHub webhooks, create a Library webhook
+  receiver, import documents, or prove provider delivery. Those operations and
+  the dedicated provider round trip remain subsequent verification gates.
 
 ### Dedicated repository verification still required
 

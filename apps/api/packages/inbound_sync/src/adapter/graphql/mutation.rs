@@ -96,6 +96,57 @@ pub struct SendTestWebhookOutput {
 
 #[Object]
 impl LibrarySyncMutation {
+    /// Attach this organization's saved GitHub OAuth account to external sync.
+    /// Repeated calls preserve the existing connection identity and metadata.
+    async fn connect_github_sync(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<GqlConnection> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let tenant = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncRegisterWebhookEndpoint",
+        )
+        .await?;
+        inbound_sync_domain::Provider::Github.ensure_runtime_available()?;
+        let tokens = ctx
+            .data::<Arc<dyn inbound_sync_domain::OAuthTokenRepository>>()?;
+        let token = tokens
+            .find_by_tenant_and_provider(
+                &tenant,
+                inbound_sync_domain::OAuthProvider::Github,
+            )
+            .await?
+            .filter(|token| !token.is_expired())
+            .ok_or_else(|| {
+                async_graphql::Error::new(
+                    "An active GitHub OAuth account is required",
+                )
+            })?;
+        let integration_id = IntegrationId::new("int_github");
+        let mut connection = state
+            .connection_repository
+            .find_by_tenant_and_integration(&tenant, &integration_id)
+            .await?
+            .unwrap_or_else(|| {
+                Connection::create(
+                    ConnectionId::generate(),
+                    tenant,
+                    integration_id,
+                    inbound_sync_domain::OAuthProvider::Github,
+                )
+            });
+        connection.set_external_account(
+            token.external_account_id,
+            token.external_account_name,
+        );
+        connection.set_token_expires_at(token.expires_at);
+        connection.resume();
+        state.connection_repository.save(&connection).await?;
+        Ok(connection.into())
+    }
+
     async fn create_external_sync_binding(
         &self,
         ctx: &Context<'_>,
