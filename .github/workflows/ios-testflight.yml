@@ -81,9 +81,10 @@ jobs:
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly-2026-06-04
+        uses: dtolnay/rust-toolchain@nightly
         with:
+          toolchain: nightly-2026-06-04
           targets: aarch64-apple-ios
 
       - uses: Swatinem/rust-cache@v2

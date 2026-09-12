@@ -15,18 +15,18 @@ Tauri workspaces so their native dependencies do not enter the Wasm build.
 
 ## Build and verify
 
-From `apps/client`, with Rust stable and Node 22 installed:
+From `apps/client`, with Rust `nightly-2026-06-04` and Node 22 installed:
 
 ```sh
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-unknown-unknown --toolchain nightly-2026-06-04
 cargo install worker-build --version 0.8.5 --locked
 npm ci
 npm run build:worker
 npm run build:public-docs
 npm run test:worker
 npm run type-check:worker
-cargo fmt --manifest-path workers/Cargo.toml --all --check
-cargo clippy --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown --workspace --locked -- -D warnings
+cargo +nightly-2026-06-04 fmt --manifest-path workers/Cargo.toml --all --check
+cargo +nightly-2026-06-04 clippy --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown --workspace --locked -- -D warnings
 npm run test:e2e:live
 ```
 
