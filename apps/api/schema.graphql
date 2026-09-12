@@ -1489,8 +1489,7 @@ type Mutation {
 		"""
 		State parameter containing encoded return URL
 		"""
-		state: String!
-		proxyCompatible: Boolean! = false
+		state: String!,		proxyCompatible: Boolean! = false
 	): GitHubAuthUrl!
 	"""
 	[LIBRARY-API] Exchange GitHub OAuth code for token
