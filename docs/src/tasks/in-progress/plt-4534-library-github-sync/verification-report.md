@@ -418,8 +418,8 @@ but must be labeled separately from provider-originated webhook delivery.
 - Production sync Worker deployment `dep_01m28pfcy57e5mhpg2gq09zjkb` is active,
   and `/api/health` returned HTTP 200. Library `0.1.54` was published, and the
   public updater metadata reports `0.1.54` for every supported platform.
-- Dedicated GitHub OAuth, webhook, outbound commit, conflict, rename, and delete
-  round trip, including authenticated browser state after reload
+- Retry, independent concurrent-edit conflict recovery, rename, and delete round
+  trip, including authenticated browser state after reload
 - Provider-originated webhook delivery requires a governance-managed GitHub
   repository setting; an endpoint-specific signed Preview simulation must be
   recorded separately and must not be reported as provider delivery.
@@ -656,7 +656,53 @@ made a direct scanner call authenticate: it returned HTTP 200 with zero newly
 registered events, zero processed/retried events, and zero retried provider
 deliveries. Production configuration and activation were not changed.
 
-This proves the deployed scanner's authentication and empty-batch path, but not
-the Library-to-GitHub delivery. A fresh post-repair edit and a retained-token
-scan are required to distinguish a missed Record outbox event from a previously
-consumed event whose delivery is no longer actionable.
+The zero-count result was not a previously consumed delivery. The primary
+client's GraphQL `updateData` mutation still used Database Manager's compatibility
+update port, which persists the requested values but deliberately does not create
+a versioned Record event. There was therefore nothing for the transactional
+outbox scanner to register. Commit `68f38a0` selects the versioned CAS mutation
+boundary only while the external-sync engine is enabled. Provider-originated
+inbound writes retain their direct compatibility path and cannot emit an outbound
+echo. `cargo check -p library-api --lib --locked` and the focused architecture
+regression passed locally.
+
+
+### Preview outbound round trip verified on 2026-09-13
+
+API Preview build `bld_01m2d26sxha7xaxac2k88wwwea` deployed `68f38a0`
+successfully. Its first build attempt,
+`bld_01m2d223skx5ncn7xkan5t7pfj`, failed while restoring the shared Cargo
+registry cache because an existing `.cargo-ok` file could not be unpacked; the
+retry used the same commit and succeeded.
+
+Changing the accepted fixture to `scenario=outbound-review-4` survived a full
+Library reload and produced GitHub commit
+`e317f2f2fad8fbe3d57e8dfe3b4b16e79ec0ad58`. The commit's parent is the accepted
+inbound revision `4db2cb0e3dda6ea482c7f54ab3ca9bfdd2889a8b`; its message is
+`chore(library): sync PLT-4534 external sync fixture`, and the remote Markdown
+contains both the saved scenario and verification paragraph. GitHub delivery
+`74adcfcc-af58-11f1-8f92-b61929f92953` returned HTTP 200 in 1.65 seconds.
+The settings page showed no actionable outbound delivery.
+
+That first round trip exposed a review-mode loop-prevention gap: the outbound
+delivery correctly advanced `ExternalObjectLink.last_accepted_external_revision`,
+but the reviewed inbound sink did not use that revision to suppress its own
+webhook echo and created a conflict ChangeSet. Commit `a1f1a5c` skips ChangeSet
+creation when the incoming revision already equals the link's accepted external
+revision. Its focused `inbound_sync` regression passed locally, and API Preview
+build `bld_01m2d2y5xz39xr1x0tc78xzn4b` succeeded.
+
+After dismissing only the fixture's stale review rows, the settings page showed
+zero inbound reviews and zero actionable outbound deliveries. Changing the
+fixture to `scenario=outbound-review-5` produced GitHub commit
+`282f5eab638c04482a6e7987227cf3ff42e90c1b`, whose parent is `e317f2f2...`.
+The remote Markdown contains `scenario: outbound-review-5`; GitHub delivery
+`f538469e-af59-11f1-84e2-2eebcb7b5daf` returned HTTP 200 in 1.68 seconds.
+After that provider-originated echo completed, the authenticated settings page
+still showed zero inbound reviews and zero actionable outbound deliveries. A
+fresh Library reload retained `outbound-review-5` and its 19:00 update time.
+
+This verifies the dedicated Preview path from a Library edit through a
+broker-backed GitHub commit and provider webhook, including review-mode echo
+suppression. It does not verify retry exhaustion, an independent concurrent
+remote conflict, rename, tombstone acceptance, or production activation.
