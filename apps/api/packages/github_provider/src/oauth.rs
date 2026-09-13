@@ -161,10 +161,10 @@ impl OAuthProvider for GitHub {
         let url = format!(
             "{}?client_id={}&redirect_uri={}&scope={}&state={}",
             GITHUB_AUTHORIZE_URL,
-            oauth.client_id,
+            urlencoding::encode(&oauth.client_id),
             urlencoding::encode(&oauth.redirect_uri),
             urlencoding::encode(&scope_str),
-            state
+            urlencoding::encode(state)
         );
 
         Ok(url)
@@ -703,5 +703,51 @@ impl GitHub {
             .text()
             .await
             .map_err(|e| errors::Error::http_request_error(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod authorization_url_tests {
+    use super::*;
+    use crate::{OAuthConfig, OAuthConfigSource};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct TestConfig;
+
+    #[async_trait::async_trait]
+    impl OAuthConfigSource for TestConfig {
+        async fn github_oauth_config(&self) -> Option<OAuthConfig> {
+            Some(OAuthConfig {
+                client_id: "synthetic-client".to_string(),
+                client_secret: "synthetic-secret".to_string(),
+                redirect_uri: "https://example.com/callback?flow=github"
+                    .to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_query_preserves_signed_state() {
+        let github = GitHub::new(Some(Arc::new(TestConfig)));
+        for state in ["a+b/c==.signed", "state&scope=admin#fragment"] {
+            let authorization = github
+                .authorization_url(&DEFAULT_SCOPES, state)
+                .await
+                .unwrap();
+            let url = reqwest::Url::parse(&authorization).unwrap();
+            let query = url
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(query.len(), 4);
+            assert_eq!(query["state"], state);
+            assert_eq!(query["scope"], "repo read:user");
+            assert_eq!(
+                query["redirect_uri"],
+                "https://example.com/callback?flow=github"
+            );
+            assert!(url.fragment().is_none());
+            assert!(!authorization.contains("synthetic-secret"));
+        }
     }
 }

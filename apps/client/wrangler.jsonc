@@ -30,6 +30,12 @@
   "triggers": {
     "crons": ["* * * * *"]
   },
+  "services": [
+    {
+      "binding": "TXCLOUD_PROXY",
+      "service": "txcloud-proxy"
+    }
+  ],
   "observability": {
     "enabled": true
   },

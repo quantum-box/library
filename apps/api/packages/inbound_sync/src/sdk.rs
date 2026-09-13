@@ -186,6 +186,60 @@ impl OAuthTokenProvider for AuthAppTokenProvider {
     }
 }
 
+/// Stored-token repository backed OAuth token provider.
+///
+/// Background jobs such as webhook processing do not have an end-user
+/// executor. This provider uses the server-side token repository, which can
+/// authenticate to provider brokers with the application's service identity.
+#[derive(Debug, Clone)]
+pub struct RepositoryOAuthTokenProvider {
+    repository: Arc<dyn inbound_sync_domain::OAuthTokenRepository>,
+}
+
+impl RepositoryOAuthTokenProvider {
+    /// Create a token provider backed by the stored-token repository.
+    pub fn new(
+        repository: Arc<dyn inbound_sync_domain::OAuthTokenRepository>,
+    ) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl OAuthTokenProvider for RepositoryOAuthTokenProvider {
+    async fn get_token(
+        &self,
+        tenant_id: &TenantId,
+        provider: &str,
+    ) -> errors::Result<Option<ProviderToken>> {
+        let provider = provider
+            .parse::<inbound_sync_domain::OAuthProvider>()
+            .map_err(|_| {
+                errors::Error::invalid(format!(
+                    "Unsupported OAuth provider: {provider}"
+                ))
+            })?;
+
+        Ok(self
+            .repository
+            .find_by_tenant_and_provider(tenant_id, provider)
+            .await?
+            .map(|token| ProviderToken {
+                provider: token.provider.to_string(),
+                provider_user_id: token
+                    .external_account_id
+                    .unwrap_or_else(|| "unknown".to_string()),
+                access_token: token.access_token,
+                refresh_token: token.refresh_token,
+                // Some providers issue non-expiring tokens. Model those as
+                // valid indefinitely for callers that require a concrete time.
+                expires_at: token
+                    .expires_at
+                    .unwrap_or(DateTime::<Utc>::MAX_UTC),
+            }))
+    }
+}
+
 /// System executor for internal operations.
 ///
 /// Used when processing webhooks (system-triggered operations)
@@ -321,6 +375,10 @@ impl OAuthTokenProvider for StaticTokenProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interface_adapter::InMemoryOAuthTokenRepository;
+    use inbound_sync_domain::{
+        OAuthProvider, OAuthTokenRepository, StoredOAuthToken,
+    };
 
     fn test_tenant_id() -> TenantId {
         "tn_01hjryxysgey07h5jz5wagqj0m".parse().unwrap()
@@ -391,6 +449,52 @@ mod tests {
             .await
             .unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_repository_token_provider() {
+        let tenant_id = test_tenant_id();
+        let repository = Arc::new(InMemoryOAuthTokenRepository::default());
+        repository
+            .save(&StoredOAuthToken {
+                id: "token_123".to_string(),
+                tenant_id: tenant_id.clone(),
+                provider: OAuthProvider::Github,
+                access_token: "github_token".to_string(),
+                refresh_token: None,
+                token_type: "Bearer".to_string(),
+                expires_at: None,
+                scopes: vec![],
+                external_account_id: Some("github_user".to_string()),
+                external_account_name: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let provider = RepositoryOAuthTokenProvider::new(repository);
+        let token = provider
+            .get_token(&tenant_id, "github")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(token.provider, "github");
+        assert_eq!(token.provider_user_id, "github_user");
+        assert_eq!(token.access_token, "github_token");
+        assert_eq!(token.expires_at, DateTime::<Utc>::MAX_UTC);
+    }
+
+    #[tokio::test]
+    async fn test_repository_token_provider_rejects_unknown_provider() {
+        let repository = Arc::new(InMemoryOAuthTokenRepository::default());
+        let provider = RepositoryOAuthTokenProvider::new(repository);
+
+        let result =
+            provider.get_token(&test_tenant_id(), "unsupported").await;
+
+        assert!(result.is_err());
     }
 
     #[tokio::test]

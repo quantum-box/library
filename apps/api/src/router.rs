@@ -48,7 +48,9 @@ use inbound_sync::providers::{
     GitHubEventProcessor, HubSpotEventProcessor, LinearEventProcessor,
     NotionEventProcessor, SquareEventProcessor, StripeEventProcessor,
 };
-use inbound_sync::sdk::AuthAppTokenProvider;
+use inbound_sync::sdk::{
+    AuthAppTokenProvider, RepositoryOAuthTokenProvider,
+};
 use inbound_sync::usecase::{
     EventProcessorRegistry, ProcessWebhookEvent, WebhookEventWorker,
 };
@@ -286,8 +288,9 @@ pub async fn router(
         sync_state_repo.clone(),
         database_manager_db.clone(),
     ));
-    let github_token_provider =
-        Arc::new(AuthAppTokenProvider::new(auth_app_trait.clone()));
+    let github_token_provider = Arc::new(
+        RepositoryOAuthTokenProvider::new(oauth_token_repo.clone()),
+    );
     let github_client: Arc<
         dyn inbound_sync::providers::github::GitHubClient,
     > = Arc::new(OAuthGitHubClient::new(github_token_provider));

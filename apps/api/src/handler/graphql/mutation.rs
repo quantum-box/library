@@ -14,12 +14,14 @@ use crate::usecase::{self};
 use async_graphql::{
     ErrorExtensions, InputObject, Object, OneofObject, Result,
 };
+use base64::Engine as _;
 use database_manager::domain::SelectItemId;
 use github_provider::OAuthProvider;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tachyon_sdk::auth::{
     AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
+    MultiTenancyAction,
 };
 use value_object::{
     IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, TenantId, Text,
@@ -58,15 +60,84 @@ fn verify_oauth_state(
         .map_err(|e| errors::Error::internal_server_error(e.to_string()))?;
     mac.update(state.as_bytes());
 
-    let expected_signature = hex::encode(mac.finalize().into_bytes());
-
-    if signature != expected_signature {
-        return Err(errors::Error::bad_request(
+    let signature = hex::decode(signature).map_err(|_| {
+        errors::Error::bad_request("Invalid OAuth state signature")
+    })?;
+    mac.verify_slice(&signature).map_err(|_| {
+        errors::Error::bad_request(
             "Invalid OAuth state: signature mismatch",
-        ));
-    }
+        )
+    })?;
 
     Ok(state.to_string())
+}
+
+// The shared GitHub callback proxy reads a base64 JSON returnUrl. Keep the
+// signed payload inside that envelope instead of appending a non-base64 suffix.
+fn wrap_github_oauth_state(
+    original: &str,
+    signed: &str,
+) -> errors::Result<String> {
+    let payload = decode_github_oauth_state(original)?;
+    let return_url = payload["returnUrl"].as_str().ok_or_else(|| {
+        errors::Error::bad_request("Missing OAuth return URL")
+    })?;
+    let url = url::Url::parse(return_url).map_err(|_| {
+        errors::Error::bad_request("Invalid OAuth return URL")
+    })?;
+    if !matches!(url.scheme(), "https" | "http")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(errors::Error::bad_request("Invalid OAuth return URL"));
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(
+        serde_json::to_vec(&serde_json::json!({"returnUrl": return_url, "signedState": signed}))
+            .map_err(|_| errors::Error::bad_request("Invalid OAuth state"))?,
+    ))
+}
+
+fn decode_github_oauth_state(
+    encoded: &str,
+) -> errors::Result<serde_json::Value> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| {
+        errors::Error::bad_request("Invalid OAuth state")
+    })?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| errors::Error::bad_request("Invalid OAuth state"))
+}
+
+fn verify_github_oauth_callback(
+    state: &str,
+    secret: &str,
+    operator: &str,
+    now: i64,
+) -> errors::Result<()> {
+    if state.contains('.') {
+        // Existing v1 clients still send the original signed format.
+        verify_oauth_state(state, secret)?;
+        return Ok(());
+    }
+    let envelope = decode_github_oauth_state(state)?;
+    let signed = envelope["signedState"].as_str().ok_or_else(|| {
+        errors::Error::bad_request("Missing signed OAuth state")
+    })?;
+    let original = verify_oauth_state(signed, secret)?;
+    let payload = decode_github_oauth_state(&original)?;
+    if payload["returnUrl"].as_str().is_none()
+        || payload["returnUrl"] != envelope["returnUrl"]
+        || payload["operatorId"].as_str() != Some(operator)
+        || !payload["expiresAt"]
+            .as_i64()
+            .is_some_and(|expiry| expiry > now && expiry <= now + 900)
+    {
+        return Err(errors::Error::bad_request(
+            "Expired or mismatched OAuth state",
+        ));
+    }
+    Ok(())
 }
 
 /// Get OAuth state secret from the IaC configuration or an environment
@@ -78,18 +149,16 @@ fn verify_oauth_state(
 async fn get_oauth_state_secret(
     oauth_bootstrap: &crate::oauth_bootstrap::OAuthBootstrap,
 ) -> errors::Result<String> {
-    if let Some(secret) = oauth_bootstrap.github_client_secret().await {
-        return Ok(secret);
-    }
+    let configuration_error =
+        match oauth_bootstrap.github_client_secret().await {
+            Ok(secret) => return Ok(secret),
+            Err(error) => error,
+        };
 
     // Fall back to environment variables
     std::env::var("OAUTH_STATE_SECRET")
         .or_else(|_| std::env::var("GITHUB_CLIENT_SECRET"))
-        .map_err(|_| {
-            errors::Error::internal_server_error(
-                "GitHub OAuth not configured. Please configure GitHub provider in IAC manifest.",
-            )
-        })
+        .map_err(|_| configuration_error)
 }
 
 #[derive(Default)]
@@ -1165,16 +1234,71 @@ impl LibraryMutation {
 
     // ==================== GitHub OAuth ====================
 
+    /// Start user authorization using Tachyon's shared GitHub App.
+    #[tracing::instrument(name = "github_sync_auth_url", skip_all)]
+    async fn github_sync_auth_url(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        return_url: String,
+        code_challenge: String,
+    ) -> Result<GitHubAuthUrl> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let result = sdk
+            .start_github_oauth(
+                executor,
+                tenancy,
+                &return_url,
+                &code_challenge,
+            )
+            .await
+            .map_err(|e| e.extend())?;
+        Ok(GitHubAuthUrl {
+            url: result.authorization_url,
+            state: result.state,
+        })
+    }
+
+    /// Confirm the browser-bound broker session without exposing tokens.
+    #[tracing::instrument(name = "github_sync_complete_oauth", skip_all)]
+    async fn github_sync_complete_oauth(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        session: String,
+        code_verifier: String,
+    ) -> Result<GitHubConnection> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let result = sdk
+            .complete_github_oauth(
+                executor,
+                tenancy,
+                &session,
+                &code_verifier,
+            )
+            .await
+            .map_err(|e| e.extend())?;
+        Ok(GitHubConnection {
+            connected: result.connected,
+            username: Some(result.username),
+            connected_at: None,
+            expires_at: Some(result.expires_at),
+        })
+    }
+
     /// [LIBRARY-API] Get GitHub OAuth authorization URL
     ///
     /// Signs the state parameter with HMAC-SHA256 for CSRF protection.
     /// The signed state will be validated in github_exchange_token.
-    #[tracing::instrument(name = "github_auth_url", skip(self, ctx))]
+    #[tracing::instrument(name = "github_auth_url", skip(self, ctx, state))]
     async fn github_auth_url(
         &self,
         ctx: &async_graphql::Context<'_>,
         #[graphql(desc = "State parameter containing encoded return URL")]
         state: String,
+        #[graphql(default = false)] proxy_compatible: bool,
     ) -> Result<GitHubAuthUrl> {
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
         let oauth_bootstrap =
@@ -1196,6 +1320,12 @@ impl LibraryMutation {
                 e.extend()
             })?;
 
+        let signed_state = if proxy_compatible {
+            wrap_github_oauth_state(&state, &signed_state)
+                .map_err(|e| e.extend())?
+        } else {
+            signed_state
+        };
         let url = github
             .authorization_url(
                 &github_provider::DEFAULT_SCOPES,
@@ -1222,7 +1352,7 @@ impl LibraryMutation {
     /// exchanging the code.
     #[tracing::instrument(
         name = "github_exchange_token",
-        skip(self, ctx, code)
+        skip(self, ctx, code, state)
     )]
     async fn github_exchange_token(
         &self,
@@ -1249,11 +1379,16 @@ impl LibraryMutation {
             })?;
 
         // Verify OAuth state signature for CSRF protection
-        let _original_state =
-            verify_oauth_state(&state, &secret).map_err(|e| {
-                tracing::warn!("OAuth state verification failed: {:?}", e);
-                e.extend()
-            })?;
+        verify_github_oauth_callback(
+            &state,
+            &secret,
+            multi_tenancy.get_operator_id()?.as_ref(),
+            chrono::Utc::now().timestamp(),
+        )
+        .map_err(|e| {
+            tracing::warn!("OAuth state verification failed: {:?}", e);
+            e.extend()
+        })?;
 
         // Exchange code for token
         let token = github.exchange_token(&code).await.map_err(|e| {
@@ -2752,5 +2887,100 @@ mod select_option_input_tests {
             .expect_err("Select type changes must retain option identity");
 
         assert!(error.to_string().contains("type cannot be changed"));
+    }
+}
+
+#[cfg(test)]
+mod github_oauth_state_tests {
+    use super::*;
+
+    fn proxy_state() -> String {
+        let payload = base64::engine::general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "returnUrl": "https://preview.example.test/org/repo/settings?github_sync=callback",
+                "operatorId": "tn_test", "nonce": "test-nonce", "expiresAt": 1500
+            }).to_string(),
+        );
+        wrap_github_oauth_state(
+            &payload,
+            &sign_oauth_state(&payload, "test-secret").unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn github_oauth_proxy_state_is_base64_json_and_signed() {
+        let state = proxy_state();
+        let decoded = decode_github_oauth_state(&state).unwrap();
+        assert!(decoded["returnUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://preview.example.test/"));
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_ok());
+        assert!(verify_github_oauth_callback(
+            &state,
+            "wrong-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn github_oauth_proxy_rejects_other_tenant_expiry_and_modified_redirect(
+    ) {
+        let state = proxy_state();
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_other",
+            1000
+        )
+        .is_err());
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1500
+        )
+        .is_err());
+        let mut envelope = decode_github_oauth_state(&state).unwrap();
+        envelope["returnUrl"] =
+            serde_json::json!("https://other.example.test");
+        let changed = base64::engine::general_purpose::STANDARD
+            .encode(envelope.to_string());
+        assert!(verify_github_oauth_callback(
+            &changed,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn github_oauth_keeps_legacy_signed_state_support() {
+        let state =
+            sign_oauth_state("legacy-payload", "test-secret").unwrap();
+        assert!(verify_github_oauth_callback(
+            &state,
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_ok());
+        assert!(verify_github_oauth_callback(
+            "untrusted",
+            "test-secret",
+            "tn_test",
+            1000
+        )
+        .is_err());
     }
 }
