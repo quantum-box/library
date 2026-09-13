@@ -343,13 +343,16 @@ spec:
       readinessProof:
         path: /api/health
       # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # Scanner bearer は Preview だけで検証中。production の scanner/cron を
-      # 有効化するまでは Preview credential を production に流用しない。
+      # Scanner bearer と cron activation は Preview だけで検証する。
+      # production の scanner/cron を有効化するまでは Preview credential を
+      # production に流用しない。
       environments:
         production:
           envVars: []
         preview:
           envVars:
+            - name: EXTERNAL_SYNC_SCANNER_ENABLED
+              value: "true"
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
               type: credential
               valueFrom:
