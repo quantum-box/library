@@ -34,6 +34,11 @@ use crate::usecase::{
 };
 use database_manager::usecase::UpsertOutcome;
 
+pub(crate) fn external_sync_engine_enabled() -> bool {
+    std::env::var("LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED")
+        .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
+}
+
 /// Shared writeback logic used by the Add/Update decorators.
 pub struct GithubWritebackDispatch {
     sync_data: Arc<dyn SyncDataInputPort>,
@@ -102,9 +107,7 @@ impl GithubWritebackDispatch {
             return;
         }
 
-        if std::env::var("LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED")
-            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
-        {
+        if external_sync_engine_enabled() {
             if let Some(outbox) = &self.external_outbox {
                 if let Err(error) = outbox
                     .capture_and_deliver(
