@@ -35,7 +35,8 @@ pub async fn run(env: &Env) -> Result<()> {
         )
         .into());
     }
-    let summary = response_json(&mut response, 16 * 1024).await?;
+    let summary: serde_json::Value =
+        response_json(&mut response, 16 * 1024).await?;
     console_log!("external sync scanner completed: {summary}");
     Ok(())
 }
