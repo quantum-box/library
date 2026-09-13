@@ -81,6 +81,17 @@ fn callback_request(job: &DispatchJob, action: &str) -> Result<Request> {
     )
 }
 
+async fn callback_fetch(
+    request: Request,
+    env: &Env,
+    timeout_ms: u32,
+) -> Result<Response> {
+    if let Ok(proxy) = env.service("TXCLOUD_PROXY") {
+        return proxy.fetch_request(request).await;
+    }
+    fetch_timeout(request, timeout_ms).await
+}
+
 pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
     if request.method() != Method::Post {
         return Response::error("Method not allowed", 405);
@@ -111,15 +122,16 @@ pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
         callback_url: callback_url.trim_end_matches('/').into(),
         attempt: 0,
     };
-    let validation =
-        match fetch_timeout(callback_request(&job, "validate")?, 10_000)
-            .await
-        {
-            Ok(response) => response,
-            Err(_) => {
-                return Response::error("Validation unavailable", 503)
-            }
-        };
+    let validation = match callback_fetch(
+        callback_request(&job, "validate")?,
+        env,
+        10_000,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => return Response::error("Validation unavailable", 503),
+    };
     if validation.status_code() != 204 {
         return Response::error(
             "Dispatch capability was not accepted",
@@ -156,6 +168,7 @@ pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
 #[durable_object]
 pub struct ExternalSyncDispatcher {
     state: State,
+    env: Env,
 }
 
 impl ExternalSyncDispatcher {
@@ -174,8 +187,8 @@ impl ExternalSyncDispatcher {
 }
 
 impl DurableObject for ExternalSyncDispatcher {
-    fn new(state: State, _env: Env) -> Self {
-        Self { state }
+    fn new(state: State, env: Env) -> Self {
+        Self { state, env }
     }
 
     async fn fetch(&self, mut request: Request) -> Result<Response> {
@@ -213,8 +226,12 @@ impl DurableObject for ExternalSyncDispatcher {
             storage.delete_alarm().await?;
             return Response::empty();
         };
-        match fetch_timeout(callback_request(&job, "process")?, 30_000)
-            .await
+        match callback_fetch(
+            callback_request(&job, "process")?,
+            &self.env,
+            30_000,
+        )
+        .await
         {
             Ok(response)
                 if (200..300).contains(&response.status_code()) =>

@@ -581,3 +581,26 @@ pending creation as busy and disable opening the temporary ID. The shared
 selection handler also rejects temporary IDs from other views. A regression
 test exercises mouse and keyboard activation before and after the canonical ID
 arrives; the record/context suites passed 22 tests.
+
+
+### Provider delivery exposed a Worker-to-API routing failure
+
+The GitHub endpoint accepted its registration ping with HTTP 200, but both the
+first fixture push and a fresh push after the latest Preview deployment timed
+out after ten seconds. Directly probing the durable dispatcher with a validly
+shaped but unknown event reproduced `Validation unavailable` after its ten
+second callback deadline. The same validation request reached the Preview API
+from a normal client in under one second, while the sync Worker's existing
+Engine proxy returned the Cloudflare block page when it fetched either the
+Preview or production `*.txcloud.app` API URL. The webhook endpoint therefore
+persisted the event and dispatch job, then waited for a callback route that the
+Worker could not use; this was not a GitHub signature or endpoint-key failure.
+
+The sync Worker now binds the account-owned `txcloud-proxy` service and uses the
+binding for its durable validation and processing callbacks. The callback URL
+allowlist remains restricted to the Library API production host and numeric PR
+preview hosts. Local execution without the binding retains the existing direct
+fetch fallback. This avoids the public Cloudflare security boundary while still
+routing through the same proxy logic and Lambda origin authentication. A fresh
+Preview deployment must prove a fast GitHub response, durable processing, and a
+single pending ChangeSet before the inbound acceptance test can continue.
