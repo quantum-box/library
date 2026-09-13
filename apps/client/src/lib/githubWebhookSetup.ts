@@ -50,3 +50,13 @@ export async function prepareGitHubWebhook(target: ExternalSyncTarget, binding: 
     } })
   return data.createWebhookEndpoint
 }
+
+export async function rotateGitHubWebhookSecret(target: ExternalSyncTarget, binding: ExternalSyncBinding, endpointId: string) {
+  const endpoint = await findGitHubWebhook(target, binding)
+  if (endpoint?.id !== endpointId) throw new Error('Webhook scope changed')
+  const result = await externalSyncRequest<{ rotateGithubWebhookSecret: { endpoint: GitHubWebhookEndpoint; secret: string } }>(target,
+    `mutation RotateGitHubWebhookSecret($endpointId: String!) {
+      rotateGithubWebhookSecret(endpointId: $endpointId) { endpoint { ${fields} } secret }
+    }`, { endpointId })
+  return result.rotateGithubWebhookSecret
+}

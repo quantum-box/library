@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExternalSyncBinding } from './externalSyncApi'
 vi.mock('./auth', async (original) => ({ ...await original<typeof import('./auth')>(), getValidAuthTokens: vi.fn(async () => null) }))
-import { findGitHubWebhook, prepareGitHubWebhook } from './githubWebhookSetup'
+import { findGitHubWebhook, prepareGitHubWebhook, rotateGitHubWebhookSecret } from './githubWebhookSetup'
 
 const target = { operatorId: 'tn_test', repositoryId: 'rp_test' }
 const binding = { id: 'esb_test', repositoryId: 'rp_test', provider: 'GITHUB', externalScope: JSON.stringify({ repository: 'quantum-box/library-sample', ref: 'e2e/test', path_pattern: 'external-sync/*.md' }) } as ExternalSyncBinding
@@ -49,5 +49,12 @@ describe('GitHub webhook setup', () => {
     await expect(prepareGitHubWebhook({ repositoryId: 'rp_test' }, binding)).rejects.toThrow()
     await expect(prepareGitHubWebhook(target, { ...binding, repositoryId: 'rp_other' })).rejects.toThrow()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses to rotate an endpoint outside the saved scope', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ webhookEndpoints: [endpoint] }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(rotateGitHubWebhookSecret(target, binding, 'whe_other')).rejects.toThrow('Webhook scope changed')
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

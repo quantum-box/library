@@ -555,3 +555,17 @@ sync API suites. Rust compilation and tests are delegated to CI; locally only
 the changed Rust file is formatted, per the user's resource constraint.
 Actual GitHub delivery, accept/reject, outbound, conflict, rename, and tombstone
 verification remain pending deployment of this repair.
+
+
+### Copy and signing-key recovery follow-up
+
+The c674047 Preview created endpoint `whe_01m2cpzgf9qcmmacxnz8j4t8m3`
+with the intended organization, repo and scope. The live form exposed a missing
+copy action: a masked input alone is insufficient to transfer the signing key.
+The client now has an explicit clipboard button and reports clipboard failures.
+If a key is lost, an explicit two-step rotation invalidates it and returns a new
+key for updating GitHub. Rotation is tenant-owned, uses the existing endpoint
+update permission, and changes only the key with compare-and-swap; concurrent
+settings edits cannot restore the old key. A database regression covers a
+foreign tenant, successful rotation, stale rotation and preserved endpoint data.
+No real GitHub webhook or file write occurred before this follow-up.

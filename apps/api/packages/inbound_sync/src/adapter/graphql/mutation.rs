@@ -352,6 +352,37 @@ impl LibrarySyncMutation {
         })
     }
 
+    /// Replace a GitHub endpoint signing key. Returned only by this mutation.
+    async fn rotate_github_webhook_secret(
+        &self,
+        ctx: &Context<'_>,
+        endpoint_id: String,
+    ) -> Result<CreateWebhookEndpointOutput> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let output = state
+            .update_endpoint
+            .execute(UpdateWebhookEndpointInputData {
+                executor,
+                multi_tenancy,
+                endpoint_id: WebhookEndpointId::from(endpoint_id),
+                update: WebhookEndpointUpdate::RotateGitHubSecret,
+            })
+            .await?;
+        let secret = output.endpoint.secret_hash().to_owned();
+        let webhook_url = output.endpoint.webhook_url(&state.base_url);
+        Ok(CreateWebhookEndpointOutput {
+            endpoint: GqlWebhookEndpoint::from_domain(
+                output.endpoint,
+                &state.base_url,
+            ),
+            webhook_url,
+            secret,
+        })
+    }
+
     /// Update webhook endpoint status.
     async fn update_webhook_endpoint_status(
         &self,

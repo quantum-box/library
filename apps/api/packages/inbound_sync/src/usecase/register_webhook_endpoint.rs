@@ -218,6 +218,8 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
 /// Update field specification for webhook endpoint.
 #[derive(Debug, Clone)]
 pub enum WebhookEndpointUpdate {
+    /// Generate a new endpoint-specific GitHub signing key.
+    RotateGitHubSecret,
     /// Update status
     Status(EndpointStatus),
     /// Update events filter
@@ -308,6 +310,25 @@ impl UpdateWebhookEndpointInputPort for UpdateWebhookEndpoint {
 
         // 4. Apply update
         match input.update {
+            WebhookEndpointUpdate::RotateGitHubSecret => {
+                if *endpoint.provider() != Provider::Github {
+                    return Err(errors::Error::bad_request(
+                        "Signing key rotation is supported only for GitHub",
+                    ));
+                }
+                Provider::Github.ensure_runtime_available()?;
+                let key = hash_secret(&generate_secret());
+                self.repository
+                    .rotate_secret(
+                        &tenant_id,
+                        endpoint.id(),
+                        endpoint.secret_hash(),
+                        &key,
+                    )
+                    .await?;
+                endpoint.set_secret_hash(key);
+                return Ok(UpdateWebhookEndpointOutputData { endpoint });
+            }
             WebhookEndpointUpdate::Status(status) => {
                 endpoint.set_status(status);
                 tracing::info!(

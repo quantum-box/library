@@ -1568,6 +1568,10 @@ type Mutation {
 	"""
 	createWebhookEndpoint(input: CreateWebhookEndpointInput!): CreateWebhookEndpointOutput!
 	"""
+	Replace a GitHub endpoint signing key. Returned only by this mutation.
+	"""
+	rotateGithubWebhookSecret(endpointId: String!): CreateWebhookEndpointOutput!
+	"""
 	Update webhook endpoint status.
 	"""
 	updateWebhookEndpointStatus(input: UpdateEndpointStatusInput!): GqlWebhookEndpoint!
