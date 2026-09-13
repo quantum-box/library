@@ -25,6 +25,7 @@ import { useI18n } from '../i18n'
 import { Kbd, KbdGroup } from './Kbd'
 import { useIsMobileViewport } from '../lib/ui/useIsMobileViewport'
 import type { RecordPropertyKey } from '../lib/databaseViews/types'
+import { isPendingRecordId } from '../lib/pendingRecordId'
 
 interface TableViewProps {
   records: DatabaseRecord[]
@@ -386,6 +387,7 @@ function MobileRecordCard({
   visibleProperties?: RecordPropertyKey[]
 }) {
   const { formatDate } = useI18n()
+  const pending = isPendingRecordId(record.id)
   const isVisible = (property: RecordPropertyKey) =>
     !visibleProperties || visibleProperties.includes(property)
 
@@ -393,17 +395,19 @@ function MobileRecordCard({
     <div
       data-testid="mobile-record-card"
       role="button"
-      tabIndex={0}
+      tabIndex={pending ? -1 : 0}
+      aria-disabled={pending}
+      aria-busy={pending}
       className={`w-full rounded-md border p-3 text-left transition-colors ${
         isSelected
           ? 'border-accent bg-surface-hover'
           : 'border-border bg-surface hover:bg-surface-hover'
       }`}
-      onClick={() => onSelectRecord(record)}
+      onClick={() => { if (!pending) onSelectRecord(record) }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onSelectRecord(record)
+          if (!pending) onSelectRecord(record)
         }
       }}
     >
@@ -791,7 +795,9 @@ export function TableView({
                         : 'hover:bg-surface'
                     }`}
                     style={{ height: ROW_HEIGHT }}
-                    onClick={() => onSelectRecord(row.original)}
+                    aria-disabled={isPendingRecordId(row.original.id)}
+                    aria-busy={isPendingRecordId(row.original.id)}
+                    onClick={() => { if (!isPendingRecordId(row.original.id)) onSelectRecord(row.original) }}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td

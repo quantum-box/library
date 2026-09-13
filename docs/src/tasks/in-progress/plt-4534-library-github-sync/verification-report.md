@@ -569,3 +569,15 @@ update permission, and changes only the key with compare-and-swap; concurrent
 settings edits cannot restore the old key. A database regression covers a
 foreign tenant, successful rotation, stale rotation and preserved endpoint data.
 No real GitHub webhook or file write occurred before this follow-up.
+
+
+### Mobile navigation regression exposed by CI
+
+CI run `34742373854` passed Rust and deployed all three Previews, but its mobile
+workspace test opened an `optimistic-record-*` ID before the created record
+projection settled. The captured page showed Data not found; the reported CSS
+mismatch was a consequence of that empty state. Table cards/rows now mark
+pending creation as busy and disable opening the temporary ID. The shared
+selection handler also rejects temporary IDs from other views. A regression
+test exercises mouse and keyboard activation before and after the canonical ID
+arrives; the record/context suites passed 22 tests.
