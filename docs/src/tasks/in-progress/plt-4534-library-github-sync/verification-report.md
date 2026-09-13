@@ -706,3 +706,34 @@ This verifies the dedicated Preview path from a Library edit through a
 broker-backed GitHub commit and provider webhook, including review-mode echo
 suppression. It does not verify retry exhaustion, an independent concurrent
 remote conflict, rename, tombstone acceptance, or production activation.
+
+
+### Bidirectional Preview smoke verification on 2026-09-13
+
+A fresh authenticated smoke test repeated both directions against the same
+synthetic fixture after the final documentation head `14140eb` deployed.
+
+- Editing the Library record's `scenario` to `sync-smoke-library-6` survived the
+  client save and produced GitHub commit
+  `419be5309b3516b242b8b5aa02b915dd76db163d`, whose parent is the prior accepted
+  revision `282f5eab638c04482a6e7987227cf3ff42e90c1b`. The remote Markdown contained
+  the saved value. GitHub delivery `f8ab5af2-af5c-11f1-9c8b-4b45b0ca9cb2`
+  returned HTTP 200 in 2.15 seconds, after which the settings page showed zero
+  inbound reviews and zero actionable outbound deliveries.
+- Editing the GitHub fixture to `scenario: sync-smoke-github-7` created commit
+  `163ca8779a0cc72f57b08cb6367b9cb5e7e73d6b`. Delivery
+  `3974aa20-af5d-11f1-9da4-1455d5d5e555` returned HTTP 200 in 1.93 seconds and
+  created one reviewed inbound change. Before acceptance, Library still showed
+  `sync-smoke-library-6`. Accepting the change cleared the review count, changed
+  the same Library data ID to `sync-smoke-github-7`, and a full reload retained
+  that value. No actionable outbound delivery was created by the accepted
+  provider write.
+- Latest Tachyon builds for `14140eb` were successful: API
+  `bld_01m2d3g4fb6h42zpsvzx0ebzqs`, client
+  `bld_01m2d3fxctj8qv2kjw0e15rmte`, and sync Worker
+  `bld_01m2d3fp5d45bs4ta5n91bzj5s`.
+
+This repeat confirms normal cron-driven Library-to-GitHub delivery, reviewed
+GitHub-to-Library acceptance, persistence after reload, and echo suppression.
+Retry exhaustion, an independent concurrent-edit conflict, rename, tombstone
+acceptance, and production activation remain separate gates.
