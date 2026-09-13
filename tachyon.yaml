@@ -104,6 +104,11 @@ spec:
               value: "true"
             - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
               value: "true"
+            # GitHub OAuth is brokered by Tachyon. Preview must opt in on every
+            # isolated deployment; relying on a one-off runtime override makes
+            # a fresh PR unable to create or reuse its connection.
+            - name: LIBRARY_GITHUB_OAUTH_BROKER_ENABLED
+              value: "true"
             - name: LIBRARY_EXTERNAL_SYNC_OUTBOX_SCAN_AFTER
               value: "2026-09-11T00:00:00Z"
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
