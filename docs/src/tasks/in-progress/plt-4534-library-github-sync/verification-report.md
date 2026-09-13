@@ -498,3 +498,28 @@ platform ancestry. The runtime policy manifest adds Get/Save/DeleteOAuthToken;
 its live policy currently denies these actions and must be applied before
 Preview activation. Local Rust verification remains formatting only; CI and
 real authorization on the corrected path are pending.
+
+## Shared App callback and organization hydration on 2026-09-13
+
+- Saved the API callback on the existing Tachyon Cloud GitHub App after GitHub
+  identity confirmation. The App settings reported a successful update; the
+  existing callback remained unchanged and wildcard matching is disabled for
+  the new `https://api.n1.tachy.one/v1/integrations/callback/github` entry.
+- The Preview browser now reaches the Tachyon Cloud authorization screen and
+  returns to the original Library repository settings. The previous
+  `redirect_uri` mismatch is resolved.
+- Live verification then exposed a client initialization race: the repository
+  settings can render before workspace organization metadata is available.
+  Consuming the callback at that point removes its one-use browser proof before
+  the expected organization can be checked. The broker consequently has no
+  completed connection.
+- Added a regression that first renders the callback without an operator ID,
+  then hydrates the expected organization. It failed before the fix. The dialog
+  now preserves the callback until the organization is available and completes
+  it once under StrictMode.
+- Focused setup, scope/proof, and repository-settings tests: 49 passed.
+  TypeScript, focused ESLint, and whitespace checks passed. No local Rust
+  compilation was run. Desktop version is 0.1.57.
+- A fresh Preview OAuth completion and repository synchronization remain to be
+  verified after this client fix is deployed. Library main merge and production
+  synchronization activation remain outside this rollout.

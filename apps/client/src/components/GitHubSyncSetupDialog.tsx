@@ -46,6 +46,9 @@ export function GitHubSyncSetupDialog({ open, target, readOnly, onClose, onSaved
 
   useEffect(() => {
     if (!open) { loadTask.current = null; return }
+    // Workspace data can hydrate after the repository page. Keep the one-use
+    // callback intact until its organization can be checked against the proof.
+    if (!target.operatorId) { setLoading(true); return }
     let current = true
     setLoading(true)
     setError(null)

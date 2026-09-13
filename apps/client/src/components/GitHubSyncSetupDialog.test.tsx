@@ -93,4 +93,23 @@ describe('GitHubSyncSetupDialog', () => {
     expect(mocks.completeGitHubSyncOAuth).not.toHaveBeenCalled()
     expect(window.location.search).toBe('')
   })
+
+  it('preserves the callback until the organization has loaded', async () => {
+    window.history.replaceState({}, '', '/org/repo/settings?github_sync=callback&code=test-code&state=test-state')
+    const pendingTarget = { repositoryId: target.repositoryId }
+    const first = render(<StrictMode><GitHubSyncSetupDialog open target={pendingTarget} readOnly={false} onSaved={onSaved} onClose={onClose} /></StrictMode>)
+
+    expect(mocks.takeGitHubSyncCallback).not.toHaveBeenCalled()
+    expect(mocks.completeGitHubSyncOAuth).not.toHaveBeenCalled()
+    expect(mocks.fetchGitHubSyncSetup).not.toHaveBeenCalled()
+    expect(window.location.search).toContain('github_sync=callback')
+
+    first.rerender(<StrictMode><GitHubSyncSetupDialog open target={target} readOnly={false} onSaved={onSaved} onClose={onClose} /></StrictMode>)
+    await screen.findByLabelText('GitHub repository')
+    expect(mocks.takeGitHubSyncCallback).toHaveBeenCalledTimes(1)
+    expect(mocks.takeGitHubSyncCallback).toHaveBeenCalledWith(target, expect.stringContaining('github_sync=callback'))
+    expect(mocks.completeGitHubSyncOAuth).toHaveBeenCalledTimes(1)
+    expect(mocks.fetchGitHubSyncSetup).toHaveBeenCalledTimes(1)
+    expect(window.location.search).toBe('')
+  })
 })
