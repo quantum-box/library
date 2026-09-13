@@ -14,6 +14,14 @@ use inbound_sync_domain::{ConnectionRepository, SyncStateRepository};
 
 use super::{GitHubChangeSetInput, GitHubChangeSetSink};
 
+fn is_webhook_echo(
+    link: Option<&ExternalObjectLink>,
+    external_revision: &str,
+) -> bool {
+    link.and_then(ExternalObjectLink::last_accepted_external_revision)
+        .is_some_and(|revision| revision == external_revision)
+}
+
 pub fn github_external_scope(
     repository: &str,
     branch: &str,
@@ -163,6 +171,14 @@ impl GitHubChangeSetSink for DefaultGitHubChangeSetSink {
                 link = Some(migrated);
             }
         }
+        if is_webhook_echo(link.as_ref(), input.external_revision) {
+            tracing::debug!(
+                path = input.path,
+                revision = input.external_revision,
+                "skipping external sync webhook echo"
+            );
+            return Ok(false);
+        }
         let change_type = if input.previous_path.is_some() {
             ExternalChangeType::Rename
         } else if input.content.is_some() {
@@ -200,5 +216,32 @@ impl GitHubChangeSetSink for DefaultGitHubChangeSetSink {
         }
         self.change_sets.save(&change_set).await?;
         Ok(link.is_none())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use integration_domain::{
+        ExternalObjectLink, ExternalSyncBindingId, LibraryDataId,
+    };
+
+    use super::is_webhook_echo;
+
+    #[test]
+    fn accepted_external_revision_identifies_webhook_echo() {
+        let link = ExternalObjectLink::new(
+            ExternalSyncBindingId::generate(),
+            LibraryDataId::parse("data_01m2cwdray4z9e24srvmnwm9v1")
+                .expect("data id"),
+            "external-sync/plt-4534.md",
+            Some("outbound-commit".to_string()),
+            Some("2".to_string()),
+            None,
+        )
+        .expect("link");
+
+        assert!(is_webhook_echo(Some(&link), "outbound-commit"));
+        assert!(!is_webhook_echo(Some(&link), "next-provider-commit"));
+        assert!(!is_webhook_echo(None, "outbound-commit"));
     }
 }
