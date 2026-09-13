@@ -57,8 +57,9 @@ pub use outbound_sync_domain::*;
 
 // Re-export usecase types
 pub use usecase::sync_data::{
-    DeleteDataInputData, SyncData, SyncDataInputData, SyncDataInputPort,
-    SyncDataResult,
+    DeleteDataInputData, RepositorySyncOAuthTokenProvider, SyncData,
+    SyncDataInputData, SyncDataInputPort, SyncDataResult, SyncOAuthToken,
+    SyncOAuthTokenProvider,
 };
 
 // Re-export provider types

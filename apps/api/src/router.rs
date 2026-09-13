@@ -134,6 +134,17 @@ pub async fn router(
         Arc::new(outbound_sync::SyncData::new(
             auth_app_trait.clone(),
             sync_config_repo.clone(),
+            sync_provider_registry.clone(),
+        ));
+    // Durable external-sync work has no end-user executor. Resolve its token
+    // through the broker-aware repository while the public SyncData path above
+    // retains caller-authorized AuthApp lookups.
+    let external_sync_data: Arc<dyn outbound_sync::SyncDataInputPort> =
+        Arc::new(outbound_sync::SyncData::new_with_token_provider(
+            Arc::new(outbound_sync::RepositorySyncOAuthTokenProvider::new(
+                oauth_token_repo.clone(),
+            )),
+            sync_config_repo.clone(),
             sync_provider_registry,
         ));
 
@@ -527,7 +538,7 @@ pub async fn router(
             external_sync_bindings.clone(),
             external_object_links.clone(),
             external_sync_lifecycle.clone(),
-            sync_data.clone(),
+            external_sync_data,
         ));
     let external_sync_scanner_router =
         crate::handler::external_sync_scanner::create_router(

@@ -604,3 +604,59 @@ fetch fallback. This avoids the public Cloudflare security boundary while still
 routing through the same proxy logic and Lambda origin authentication. A fresh
 Preview deployment must prove a fast GitHub response, durable processing, and a
 single pending ChangeSet before the inbound acceptance test can continue.
+
+
+### Provider-originated inbound round trip verified on 2026-09-13
+
+The PR #360 Preview completed the dedicated GitHub inbound path after three
+runtime defects were corrected:
+
+- The Worker's API callbacks use the `TXCLOUD_PROXY` service binding.
+- A newly scheduled durable job is also kicked with `State::wait_until`; its
+  alarm remains the at-least-once recovery path. Scheduling the first alarm one
+  second in the future alone did not reliably wake the newly created Durable
+  Object in this deployment.
+- Background webhook processing retrieves the repository OAuth token through
+  `RepositoryOAuthTokenProvider`. The user-triggered policy check remains on the
+  original caller, while the registered Library service identity performs the
+  broker read. The Linear adapter retains its existing auth-app provider.
+
+GitHub commit `4db2cb0e3dda6ea482c7f54ab3ca9bfdd2889a8b` changed only the
+synthetic `external-sync/plt-4534.md` fixture on branch
+`e2e/plt-4534-external-sync`. GitHub delivery
+`dd136f28-af48-11f1-97ac-f27aa4d73c09` returned HTTP 200 in 1.63 seconds.
+Library event `wev_01m2cwc6817gb88srkj1p1ry0q` reached `COMPLETED` with no
+retry and created one reviewed ChangeSet. The authenticated settings page showed
+exactly that pending change at revision `4db2cb0e`; accepting it removed the
+pending item and created Library data `data_01m2cwdray4z9e24srvmnwm9v1` with
+the expected title, properties, and Markdown content. A full page reload retained
+the accepted content.
+
+Sync Worker build `bld_01m2cx7w4mqxrmddtn19ap0xn5` succeeded with the
+immediate durable dispatch and scanner-summary logging. The earlier
+`bld_01m2cx4gzhtkh9gwwzj9p5pfrc` failure was a compile-time type inference
+error in that logging only and is superseded. Events left pending while their
+callback target was being redeployed are deployment-collision noise; they are
+not counted as successful provider deliveries.
+
+
+### Preview outbound scan investigation on 2026-09-13
+
+The accepted fixture was edited in Library and reloaded successfully with an
+additional verification paragraph and `scenario=outbound-review`. The GitHub
+branch remained at `4db2cb0e`, and the settings page showed no actionable
+outbound delivery.
+
+The Worker manifest deployed its `* * * * *` schedule and the Preview-only
+`EXTERNAL_SYNC_SCANNER_ENABLED=true` flag. Tachyon's persisted Preview metadata
+held separate app-secret records for the API and Worker even though the manifest
+declares the same `library-api/EXTERNAL_SYNC_SCANNER_TOKEN` source. Re-registering
+one random value for both Preview targets and explicitly rebuilding both services
+made a direct scanner call authenticate: it returned HTTP 200 with zero newly
+registered events, zero processed/retried events, and zero retried provider
+deliveries. Production configuration and activation were not changed.
+
+This proves the deployed scanner's authentication and empty-batch path, but not
+the Library-to-GitHub delivery. A fresh post-repair edit and a retained-token
+scan are required to distinguish a missed Record outbox event from a previously
+consumed event whose delivery is no longer actionable.

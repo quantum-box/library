@@ -98,9 +98,11 @@ async fn callback_fetch(
 }
 
 async fn process_callback(job: &DispatchJob, env: &Env) -> Result<u16> {
-    Ok(callback_fetch(callback_request(job, "process")?, env, 30_000)
-        .await?
-        .status_code())
+    Ok(
+        callback_fetch(callback_request(job, "process")?, env, 30_000)
+            .await?
+            .status_code(),
+    )
 }
 
 pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {

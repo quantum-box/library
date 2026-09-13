@@ -8,12 +8,12 @@ license.workspace = true
 [dependencies]
 outbound_sync_domain = { path = "domain" }
 errors = { path = "../../../../packages/errors" }
+integration_domain = { path = "../../../../packages/integration_domain" }
 value_object = { path = "../../../../packages/value_object" }
 tachyon-sdk = { path = "../../../../sdk/rust", features = ["auth"] }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
-derive-new = "0.6"
 derive-getters = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
