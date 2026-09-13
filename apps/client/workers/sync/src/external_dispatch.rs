@@ -9,6 +9,7 @@ use worker::*;
 const JOB: &str = "external-sync:job";
 const MAX_BODY: usize = 4 * 1024;
 const MAX_DELAY_MS: i64 = 5 * 60 * 1000;
+const INITIAL_DELAY_MS: i64 = 1_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DispatchJob {
@@ -65,6 +66,10 @@ fn endpoint(job: &DispatchJob, action: &str) -> String {
         "{}/internal/external-sync/{action}",
         job.callback_url.trim_end_matches('/')
     )
+}
+
+fn initial_alarm_at(now_ms: i64) -> i64 {
+    now_ms.saturating_add(INITIAL_DELAY_MS)
 }
 
 fn callback_request(job: &DispatchJob, action: &str) -> Result<Request> {
@@ -214,7 +219,9 @@ impl DurableObject for ExternalSyncDispatcher {
         self.state
             .storage()
             .set_alarm(ScheduledTime::new(js_sys::Date::new(
-                &wasm_bindgen::JsValue::from_f64(now() as f64),
+                &wasm_bindgen::JsValue::from_f64(
+                    initial_alarm_at(now()) as f64
+                ),
             )))
             .await?;
         json(&value!({"status": "scheduled"}), 202)
@@ -272,5 +279,11 @@ mod tests {
             "https://library-api.txcloud.app.evil.test"
         ));
         assert!(!valid_callback("https://library-api.txcloud.app/path"));
+    }
+
+    #[test]
+    fn initial_alarm_is_in_the_future() {
+        assert_eq!(initial_alarm_at(1_000), 2_000);
+        assert_eq!(initial_alarm_at(i64::MAX), i64::MAX);
     }
 }
