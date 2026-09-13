@@ -233,7 +233,9 @@ impl OAuthTokenProvider for RepositoryOAuthTokenProvider {
                 refresh_token: token.refresh_token,
                 // Some providers issue non-expiring tokens. Model those as
                 // valid indefinitely for callers that require a concrete time.
-                expires_at: token.expires_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
+                expires_at: token
+                    .expires_at
+                    .unwrap_or(DateTime::<Utc>::MAX_UTC),
             }))
     }
 }
@@ -489,9 +491,8 @@ mod tests {
         let repository = Arc::new(InMemoryOAuthTokenRepository::default());
         let provider = RepositoryOAuthTokenProvider::new(repository);
 
-        let result = provider
-            .get_token(&test_tenant_id(), "unsupported")
-            .await;
+        let result =
+            provider.get_token(&test_tenant_id(), "unsupported").await;
 
         assert!(result.is_err());
     }
