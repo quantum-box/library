@@ -9,7 +9,7 @@ use worker::*;
 const JOB: &str = "external-sync:job";
 const MAX_BODY: usize = 4 * 1024;
 const MAX_DELAY_MS: i64 = 5 * 60 * 1000;
-const INITIAL_DELAY_MS: i64 = 1_000;
+const INITIAL_DELAY_MS: i64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DispatchJob {
@@ -97,6 +97,12 @@ async fn callback_fetch(
     fetch_timeout(request, timeout_ms).await
 }
 
+async fn process_callback(job: &DispatchJob, env: &Env) -> Result<u16> {
+    Ok(callback_fetch(callback_request(job, "process")?, env, 30_000)
+        .await?
+        .status_code())
+}
+
 pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
     if request.method() != Method::Post {
         return Response::error("Method not allowed", 405);
@@ -177,6 +183,46 @@ pub struct ExternalSyncDispatcher {
 }
 
 impl ExternalSyncDispatcher {
+    fn dispatch_immediately(&self, job: DispatchJob) {
+        let env = self.env.clone();
+        let storage = self.state.storage();
+        self.state.wait_until(async move {
+            match process_callback(&job, &env).await {
+                Ok(status) if (200..300).contains(&status) => {
+                    if let Err(error) = storage.delete_alarm().await {
+                        console_warn!(
+                            "external sync fallback alarm cleanup failed for {}: {}",
+                            job.event_id,
+                            error
+                        );
+                        return;
+                    }
+                    if let Err(error) = storage.delete_all().await {
+                        console_warn!(
+                            "external sync dispatch cleanup failed for {}: {}",
+                            job.event_id,
+                            error
+                        );
+                    }
+                }
+                Ok(status) => {
+                    console_warn!(
+                        "immediate external sync callback returned HTTP {} for {}",
+                        status,
+                        job.event_id
+                    );
+                }
+                Err(error) => {
+                    console_warn!(
+                        "immediate external sync callback failed for {}: {}",
+                        job.event_id,
+                        error
+                    );
+                }
+            }
+        });
+    }
+
     async fn reschedule(&self, mut job: DispatchJob) -> Result<()> {
         job.attempt = job.attempt.saturating_add(1);
         self.state.storage().put(JOB, &job).await?;
@@ -224,6 +270,7 @@ impl DurableObject for ExternalSyncDispatcher {
                 ),
             )))
             .await?;
+        self.dispatch_immediately(job);
         json(&value!({"status": "scheduled"}), 202)
     }
 
@@ -233,22 +280,14 @@ impl DurableObject for ExternalSyncDispatcher {
             storage.delete_alarm().await?;
             return Response::empty();
         };
-        match callback_fetch(
-            callback_request(&job, "process")?,
-            &self.env,
-            30_000,
-        )
-        .await
-        {
-            Ok(response)
-                if (200..300).contains(&response.status_code()) =>
-            {
+        match process_callback(&job, &self.env).await {
+            Ok(status) if (200..300).contains(&status) => {
                 storage.delete_all().await?;
             }
-            Ok(response) => {
+            Ok(status) => {
                 console_warn!(
                     "external sync callback returned HTTP {} for {}",
-                    response.status_code(),
+                    status,
                     job.event_id
                 );
                 self.reschedule(job).await?;
@@ -283,7 +322,7 @@ mod tests {
 
     #[test]
     fn initial_alarm_is_in_the_future() {
-        assert_eq!(initial_alarm_at(1_000), 2_000);
+        assert_eq!(initial_alarm_at(1_000), 31_000);
         assert_eq!(initial_alarm_at(i64::MAX), i64::MAX);
     }
 }
