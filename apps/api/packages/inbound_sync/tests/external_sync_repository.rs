@@ -64,6 +64,7 @@ async fn repositories_round_trip_and_enforce_tenant_scope(
         )
         .execute(&pool)
         .await?;
+        verify_webhook_secret_rotation(&pool).await?;
         sqlx::raw_sql(include_str!(
             "../../../migrations/20260911000000_create_external_sync_model.up.sql"
         ))
@@ -316,4 +317,50 @@ async fn repositories_round_trip_and_enforce_tenant_scope(
         .await?;
     admin.close().await;
     test_result
+}
+
+async fn verify_webhook_secret_rotation(
+    pool: &sqlx::MySqlPool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use inbound_sync::interface_adapter::SqlxWebhookEndpointRepository;
+    use inbound_sync_domain::WebhookEndpointRepository;
+
+    sqlx::query(
+        "CREATE TABLE webhook_endpoints (id VARCHAR(30) PRIMARY KEY, \
+         tenant_id VARCHAR(29) NOT NULL, secret_hash VARCHAR(64) NOT NULL, \
+         name VARCHAR(255) NOT NULL, updated_at DATETIME(6) NOT NULL)",
+    )
+    .execute(pool)
+    .await?;
+    let tenant: value_object::TenantId =
+        "tn_01j91h09tpj5ehwbwfwfxpak2b".parse()?;
+    let other: value_object::TenantId =
+        "tn_01j91h09tpj5ehwbwfwfxpak2c".parse()?;
+    let id = inbound_sync_domain::WebhookEndpointId::default();
+    sqlx::query(
+        "INSERT INTO webhook_endpoints VALUES (?, ?, 'old-test-key', 'preserved', NOW(6))",
+    )
+    .bind(id.to_string())
+    .bind(tenant.to_string())
+    .execute(pool)
+    .await?;
+    let repo = SqlxWebhookEndpointRepository::new(Arc::new(pool.clone()));
+    assert!(repo
+        .rotate_secret(&other, &id, "old-test-key", "wrong-tenant")
+        .await
+        .is_err());
+    repo.rotate_secret(&tenant, &id, "old-test-key", "new-test-key")
+        .await?;
+    assert!(repo
+        .rotate_secret(&tenant, &id, "old-test-key", "stale-write")
+        .await
+        .is_err());
+    let row: (String, String) = sqlx::query_as(
+        "SELECT secret_hash, name FROM webhook_endpoints WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .fetch_one(pool)
+    .await?;
+    assert_eq!(row, ("new-test-key".into(), "preserved".into()));
+    Ok(())
 }

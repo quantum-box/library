@@ -27,6 +27,9 @@ use tachyon_sdk::auth::{
 use tachyon_sdk::auth::UserPolicy;
 use tachyon_sdk::auth::UserQuery;
 
+mod github_oauth;
+pub use github_oauth::github_oauth_broker_enabled;
+
 /// Budgets for GET requests to tachyon-api.
 ///
 /// Sized from what the slowest GET actually costs. `/v1/me` answers an
@@ -407,6 +410,8 @@ pub struct SdkAuthApp {
     /// original JWT. For the base instance, this is a
     /// fallback token (e.g. dummy-token for dev).
     auth_token: String,
+    /// Process credential retained when creating a caller-scoped instance.
+    service_auth_token: String,
 }
 
 /// Where and as whom the service calls tachyon-api for its own work.
@@ -498,10 +503,12 @@ impl SdkAuthApp {
         default_operator_id: &TenantId,
         auth_token: impl Into<String>,
     ) -> Self {
+        let auth_token = auth_token.into();
         Self {
             base_url: base_url.into(),
             default_operator_id: default_operator_id.as_str().to_string(),
-            auth_token: auth_token.into(),
+            service_auth_token: auth_token.clone(),
+            auth_token,
         }
     }
 
@@ -514,6 +521,7 @@ impl SdkAuthApp {
             base_url: self.base_url.clone(),
             default_operator_id: self.default_operator_id.clone(),
             auth_token: token.to_string(),
+            service_auth_token: self.service_auth_token.clone(),
         }
     }
 
@@ -528,7 +536,7 @@ impl SdkAuthApp {
         ServiceEndpoint {
             base_url: self.base_url.clone(),
             operator_id: self.default_operator_id.clone(),
-            auth_token: self.auth_token.clone(),
+            auth_token: self.service_auth_token.clone(),
         }
     }
 
@@ -2193,6 +2201,14 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::GetOAuthTokenByProviderInput<'a>,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
+        if input.provider == "github" && github_oauth_broker_enabled() {
+            return self
+                .authorized_github_broker_token(
+                    input.executor,
+                    input.multi_tenancy,
+                )
+                .await;
+        }
         let config = self
             .sdk_config_with_context(input.executor, input.multi_tenancy);
         let path = format!("/v1/auth/oauth-tokens/{}", input.provider);
@@ -2242,6 +2258,14 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::DeleteOAuthTokenInput<'a>,
     ) -> errors::Result<()> {
+        if input.provider == "github" && github_oauth_broker_enabled() {
+            let config = self.github_broker_context(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+            return Self::rest_delete(&config, github_oauth::TOKEN_PATH)
+                .await;
+        }
         let config = self
             .sdk_config_with_context(input.executor, input.multi_tenancy);
         let path = format!("/v1/auth/oauth-tokens/{}", input.provider);
@@ -2872,6 +2896,13 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         &self,
         token: &inbound_sync_domain::StoredOAuthToken,
     ) -> errors::Result<()> {
+        if token.provider == inbound_sync_domain::OAuthProvider::Github
+            && github_oauth_broker_enabled()
+        {
+            return Err(errors::Error::bad_request(
+                "GitHub tokens are managed by Tachyon OAuth broker",
+            ));
+        }
         let expires_in = token
             .expires_at
             .map(|exp| (exp - chrono::Utc::now()).num_seconds().max(0))
@@ -2909,6 +2940,35 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<Option<inbound_sync_domain::StoredOAuthToken>> {
         let sdk_tenant_id = TenantId::new(tenant_id.as_ref())?;
+        if provider == inbound_sync_domain::OAuthProvider::Github
+            && github_oauth_broker_enabled()
+        {
+            let config = self.sdk.github_broker_tenant(
+                &crate::domain::LIBRARY_TENANT,
+                &self.sdk.service_auth_token,
+            )?;
+            return Ok(SdkAuthApp::github_broker_token(
+                &config,
+                &sdk_tenant_id,
+            )
+            .await?
+            .map(|token| {
+                inbound_sync_domain::StoredOAuthToken {
+                    id: String::new(),
+                    tenant_id: tenant_id.clone(),
+                    provider,
+                    access_token: token.access_token,
+                    refresh_token: None,
+                    token_type: "Bearer".into(),
+                    expires_at: Some(token.expires_at),
+                    scopes: vec![],
+                    external_account_id: Some(token.provider_user_id),
+                    external_account_name: None,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                }
+            }));
+        }
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         match SdkAuthApp::rest_get::<RestOAuthTokenDetail>(&config, &path)
@@ -2947,6 +3007,22 @@ impl inbound_sync_domain::OAuthTokenRepository for SdkOAuthTokenRepository {
         provider: inbound_sync_domain::OAuthProvider,
     ) -> errors::Result<()> {
         let sdk_tenant_id = TenantId::new(tenant_id.as_ref())?;
+        if provider == inbound_sync_domain::OAuthProvider::Github
+            && github_oauth_broker_enabled()
+        {
+            let config = self.sdk.github_broker_tenant(
+                &crate::domain::LIBRARY_TENANT,
+                &self.sdk.service_auth_token,
+            )?;
+            return SdkAuthApp::rest_delete(
+                &config,
+                &format!(
+                    "{}?tenant_id={sdk_tenant_id}",
+                    github_oauth::TOKEN_PATH
+                ),
+            )
+            .await;
+        }
         let config = self.sdk.sdk_config_for_tenant(&sdk_tenant_id);
         let path = format!("/v1/auth/oauth-tokens/{}", provider);
         SdkAuthApp::rest_delete(&config, &path).await

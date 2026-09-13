@@ -92,6 +92,14 @@ spec:
             engine: mysql
             envVar: DATABASE_URL
           envVars:
+            # Keep the OAuth provider lookup on Library's platform tenant.
+            # Preview otherwise fell back to the historical development ID.
+            - name: LIBRARY_TENANT_ID
+              value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
+            # The shared callback forwards the signed state to this Preview.
+            # The old Library callback URL currently serves the v1 SPA.
+            - name: GITHUB_REDIRECT_URI
+              value: "https://api.n1.tachy.one/v1/integrations/callback/github"
             - name: LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS
               value: "true"
             - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
@@ -335,13 +343,16 @@ spec:
       readinessProof:
         path: /api/health
       # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # Scanner bearer は Preview だけで検証中。production の scanner/cron を
-      # 有効化するまでは Preview credential を production に流用しない。
+      # Scanner bearer と cron activation は Preview だけで検証する。
+      # production の scanner/cron を有効化するまでは Preview credential を
+      # production に流用しない。
       environments:
         production:
           envVars: []
         preview:
           envVars:
+            - name: EXTERNAL_SYNC_SCANNER_ENABLED
+              value: "true"
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
               type: credential
               valueFrom:

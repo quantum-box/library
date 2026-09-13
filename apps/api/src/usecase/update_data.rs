@@ -1,4 +1,9 @@
-use database_manager::usecase::FindAllPropertiesInputData;
+use database_manager::{
+    domain::{RecordMutationDecision, RecordOperationId},
+    usecase::{
+        FindAllPropertiesInputData, GetDataInputData, PatchRecordInputData,
+    },
+};
 
 use crate::usecase::{UpdateDataInputData, UpdateDataInputPort};
 use std::sync::Arc;
@@ -13,6 +18,7 @@ pub struct UpdateData {
     get_repo_by_username: Arc<dyn crate::usecase::GetRepoByUsernameQuery>,
     auth: Arc<dyn AuthApp>,
     database: Arc<database_manager::App>,
+    versioned_record_mutation: bool,
 }
 
 impl std::fmt::Debug for UpdateData {
@@ -37,6 +43,30 @@ impl UpdateData {
             get_repo_by_username,
             auth,
             database,
+            versioned_record_mutation: false,
+        })
+    }
+
+    /// Use the CAS mutation boundary that persists the Record event in the
+    /// same transaction as the update. External-sync delivery is derived from
+    /// that durable event; inbound provider writes intentionally keep using
+    /// Database Manager's compatibility update port and cannot echo back out.
+    pub fn new_with_versioned_record_mutation(
+        get_org_by_username: Arc<
+            dyn crate::usecase::GetOrganizationByUsernameQuery,
+        >,
+        get_repo_by_username: Arc<
+            dyn crate::usecase::GetRepoByUsernameQuery,
+        >,
+        auth: Arc<dyn AuthApp>,
+        database: Arc<database_manager::App>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            get_org_by_username,
+            get_repo_by_username,
+            auth,
+            database,
+            versioned_record_mutation: true,
         })
     }
 }
@@ -111,19 +141,72 @@ impl UpdateDataInputPort for UpdateData {
             })
             .collect::<errors::Result<Vec<_>>>()?;
 
-        let data = self
-            .database
-            .update_data_usecase()
-            .execute(database_manager::UpdateDataInputData {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                tenant_id: org.id(),
-                database_id: &database_id,
-                data_id: &input.data_id.parse()?,
-                name: input.data_name,
-                data: property_data,
-            })
-            .await?;
+        let data_id = input.data_id.parse()?;
+        let data = if self.versioned_record_mutation {
+            let current = self
+                .database
+                .get_data_usecase()
+                .execute(&GetDataInputData {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    tenant_id: org.id(),
+                    database_id: &database_id,
+                    data_id: &data_id,
+                })
+                .await?;
+            let operation_id = RecordOperationId::default();
+            let decision = self
+                .database
+                .patch_record_usecase()
+                .execute(PatchRecordInputData {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    tenant_id: org.id(),
+                    database_id: &database_id,
+                    data_id: &data_id,
+                    operation_id: &operation_id,
+                    expected_version: *current.record_version(),
+                    name: Some(input.data_name),
+                    properties: property_data,
+                })
+                .await?;
+            match decision {
+                RecordMutationDecision::Accepted { .. } => {}
+                RecordMutationDecision::Conflict { .. } => {
+                    return Err(errors::Error::conflict(
+                        "data was modified concurrently",
+                    ));
+                }
+                RecordMutationDecision::Rejected { code, .. } => {
+                    return Err(errors::Error::business_logic(format!(
+                        "record update was rejected: {code:?}"
+                    )));
+                }
+            }
+            self.database
+                .get_data_usecase()
+                .execute(&GetDataInputData {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    tenant_id: org.id(),
+                    database_id: &database_id,
+                    data_id: &data_id,
+                })
+                .await?
+        } else {
+            self.database
+                .update_data_usecase()
+                .execute(database_manager::UpdateDataInputData {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    tenant_id: org.id(),
+                    database_id: &database_id,
+                    data_id: &data_id,
+                    name: input.data_name,
+                    data: property_data,
+                })
+                .await?
+        };
 
         Ok((data, properties))
     }
@@ -142,5 +225,20 @@ mod architecture_tests {
             assert!(!implementation.contains("outbound_sync"));
             assert!(!implementation.contains("ext_github"));
         }
+    }
+
+    #[test]
+    fn external_sync_wiring_uses_the_transactional_record_boundary() {
+        let update_source = include_str!("update_data.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation");
+        let app_source = include_str!("../app.rs");
+
+        assert!(update_source.contains(".patch_record_usecase()"));
+        assert!(update_source.contains("RecordOperationId::default()"));
+        assert!(app_source
+            .contains("UpdateData::new_with_versioned_record_mutation"));
+        assert!(app_source.contains("external_sync_engine_enabled"));
     }
 }

@@ -94,6 +94,31 @@ impl TryFrom<WebhookEndpointRow> for WebhookEndpoint {
 
 #[async_trait]
 impl WebhookEndpointRepository for SqlxWebhookEndpointRepository {
+    async fn rotate_secret(
+        &self,
+        tenant_id: &TenantId,
+        id: &WebhookEndpointId,
+        expected_key: &str,
+        new_key: &str,
+    ) -> errors::Result<()> {
+        let result = sqlx::query(
+            "UPDATE webhook_endpoints SET secret_hash = ?, updated_at = NOW(6) \
+             WHERE tenant_id = ? AND id = ? AND secret_hash = ?",
+        )
+        .bind(new_key)
+        .bind(tenant_id.to_string())
+        .bind(id.to_string())
+        .bind(expected_key)
+        .execute(self.pool.as_ref())
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(errors::Error::conflict(
+                "Webhook signing key changed; reload before retrying",
+            ));
+        }
+        Ok(())
+    }
+
     async fn save(&self, endpoint: &WebhookEndpoint) -> errors::Result<()> {
         let config_json = serde_json::to_value(endpoint.config())
             .map_err(|e| errors::Error::invalid(e.to_string()))?;

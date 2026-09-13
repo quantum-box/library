@@ -166,6 +166,12 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
                 secret_value.as_ref().expect("secret should be available");
             hash_secret(secret)
         });
+        let returned_secret = registration_secret(
+            input.provider,
+            &secret_hash,
+            secret_value.unwrap_or_default(),
+            return_secret,
+        );
 
         // 5. Create the endpoint
         let mut endpoint = WebhookEndpoint::create(
@@ -200,11 +206,7 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
         Ok(RegisterWebhookEndpointOutputData {
             endpoint,
             webhook_url,
-            secret: if return_secret {
-                secret_value.unwrap_or_default()
-            } else {
-                String::new()
-            },
+            secret: returned_secret,
         })
     }
 }
@@ -216,6 +218,8 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
 /// Update field specification for webhook endpoint.
 #[derive(Debug, Clone)]
 pub enum WebhookEndpointUpdate {
+    /// Generate a new endpoint-specific GitHub signing key.
+    RotateGitHubSecret,
     /// Update status
     Status(EndpointStatus),
     /// Update events filter
@@ -306,6 +310,25 @@ impl UpdateWebhookEndpointInputPort for UpdateWebhookEndpoint {
 
         // 4. Apply update
         match input.update {
+            WebhookEndpointUpdate::RotateGitHubSecret => {
+                if *endpoint.provider() != Provider::Github {
+                    return Err(errors::Error::bad_request(
+                        "Signing key rotation is supported only for GitHub",
+                    ));
+                }
+                Provider::Github.ensure_runtime_available()?;
+                let key = hash_secret(&generate_secret());
+                self.repository
+                    .rotate_secret(
+                        &tenant_id,
+                        endpoint.id(),
+                        endpoint.secret_hash(),
+                        &key,
+                    )
+                    .await?;
+                endpoint.set_secret_hash(key);
+                return Ok(UpdateWebhookEndpointOutputData { endpoint });
+            }
             WebhookEndpointUpdate::Status(status) => {
                 endpoint.set_status(status);
                 tracing::info!(
@@ -442,6 +465,26 @@ impl DeleteWebhookEndpointInputPort for DeleteWebhookEndpoint {
 // Helper functions
 // =============================================================================
 
+fn registration_secret(
+    provider: Provider,
+    verification_key: &str,
+    original_secret: String,
+    return_secret: bool,
+) -> String {
+    if !return_secret {
+        return String::new();
+    }
+    if provider == Provider::Github {
+        // Endpoint-specific GitHub verification uses the legacy secret_hash
+        // column as its HMAC key. Return that same random-derived key, not
+        // its discarded preimage: GitHub cannot sign with a different key.
+        // This column is secret material, never a public credential digest.
+        verification_key.to_owned()
+    } else {
+        original_secret
+    }
+}
+
 /// Generate a cryptographically secure random secret.
 fn generate_secret() -> String {
     use rand::Rng;
@@ -471,6 +514,33 @@ fn hash_secret(secret: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_registration_key_verifies_a_provider_signed_payload() {
+        use crate::webhook_verifier::{GitHubVerifier, WebhookVerifier};
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let seed = generate_secret();
+        let stored_key = hash_secret(&seed);
+        let returned_key =
+            registration_secret(Provider::Github, &stored_key, seed, true);
+        let payload = br#"{"ref":"refs/heads/test"}"#;
+        let mut signer =
+            Hmac::<Sha256>::new_from_slice(returned_key.as_bytes())
+                .unwrap();
+        signer.update(payload);
+        let signature = format!(
+            "sha256={}",
+            hex::encode(signer.finalize().into_bytes())
+        );
+        assert!(GitHubVerifier
+            .verify(payload, &signature, &stored_key, None)
+            .unwrap());
+        assert!(!GitHubVerifier
+            .verify(b"tampered", &signature, &stored_key, None)
+            .unwrap());
+    }
 
     #[test]
     fn test_generate_secret() {

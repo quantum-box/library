@@ -143,6 +143,9 @@ impl LibraryApp {
         sync_state_repo: Arc<dyn inbound_sync_domain::SyncStateRepository>,
         external_outbox: Option<Arc<usecase::ExternalSyncOutboxDispatch>>,
     ) -> Self {
+        let external_sync_engine_enabled = external_outbox.is_some()
+            && usecase::external_sync_engine_enabled();
+
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
 
@@ -318,14 +321,24 @@ impl LibraryApp {
             get_repo_by_username.clone(),
             database_app.clone(),
         );
+        let update_data_inner = if external_sync_engine_enabled {
+            usecase::UpdateData::new_with_versioned_record_mutation(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                auth_app.clone(),
+                database_app.clone(),
+            )
+        } else {
+            usecase::UpdateData::new(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                auth_app.clone(),
+                database_app.clone(),
+            )
+        };
         let update_data: Arc<dyn usecase::UpdateDataInputPort> =
             usecase::UpdateDataWithGithubWriteback::new(
-                usecase::UpdateData::new(
-                    get_organization_by_username.clone(),
-                    get_repo_by_username.clone(),
-                    auth_app.clone(),
-                    database_app.clone(),
-                ),
+                update_data_inner,
                 github_writeback.clone(),
             );
         let upsert_data: Arc<dyn usecase::UpsertDataInputPort> =

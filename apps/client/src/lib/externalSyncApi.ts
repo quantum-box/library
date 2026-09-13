@@ -66,7 +66,7 @@ export class ExternalSyncApiError extends Error {
   }
 }
 
-async function request<T>(
+export async function externalSyncRequest<T>(
   target: ExternalSyncTarget,
   query: string,
   variables: Record<string, unknown>,
@@ -98,7 +98,9 @@ async function request<T>(
   return payload.data
 }
 
-const BINDING_FIELDS = `
+const request = externalSyncRequest
+
+export const BINDING_FIELDS = `
   id repositoryId provider connectionId externalScope objectType
   inboundPolicy outboundPolicy deletePolicy status updatedAt
 `

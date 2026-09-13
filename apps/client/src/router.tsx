@@ -33,6 +33,7 @@ import { DatabaseViewSettingsPanel } from './components/DatabaseViewSettingsPane
 import { DetailPanel } from './components/DetailPanel'
 import { DataEditorPage } from './components/DataEditorPage'
 import { CreateRecordModal } from './components/CreateRecordModal'
+import { isPendingRecordId } from './lib/pendingRecordId'
 import { LibraryHome } from './components/LibraryHome'
 import { OrganizationOverview } from './components/OrganizationOverview'
 import { RepositoryOverview } from './components/RepositoryOverview'
@@ -1273,6 +1274,8 @@ function DataWorkspace({
 
   const handleSelectRecord = useCallback(
     (record: DatabaseRecord) => {
+      // A temporary ID disappears when the creation response is projected.
+      if (isPendingRecordId(record.id)) return
       if (selectedRecord?.id === record.id) {
         void navigateToData(navigate, database, { view: canonicalViewParam })
       } else {

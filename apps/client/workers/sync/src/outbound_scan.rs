@@ -1,5 +1,7 @@
 use crate::auth;
-use library_worker_common::{api_request, fetch_timeout, variable};
+use library_worker_common::{
+    api_request, fetch_timeout, response_json, variable,
+};
 use serde_json::json;
 use worker::*;
 
@@ -25,7 +27,7 @@ pub async fn run(env: &Env) -> Result<()> {
         headers,
         Some(&json!({})),
     )?;
-    let response = fetch_timeout(request, 55_000).await?;
+    let mut response = fetch_timeout(request, 55_000).await?;
     if !(200..300).contains(&response.status_code()) {
         return Err(format!(
             "scanner API returned HTTP {}",
@@ -33,5 +35,8 @@ pub async fn run(env: &Env) -> Result<()> {
         )
         .into());
     }
+    let summary: serde_json::Value =
+        response_json(&mut response, 16 * 1024).await?;
+    console_log!("external sync scanner completed: {summary}");
     Ok(())
 }

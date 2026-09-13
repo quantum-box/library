@@ -28,6 +28,7 @@ import {
 } from '../data/mock'
 import { appKitConfig } from '../app/kitConfig'
 import { t } from '../i18n'
+import { createPendingRecordId } from '../lib/pendingRecordId'
 
 export interface CreateRecordData {
   title: string
@@ -206,15 +207,10 @@ function serverUpdateForField(
   }
 }
 
-function optimisticRecordId() {
-  const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `optimistic-record-${randomId}`
-}
-
 function createOptimisticDatabaseRecord(data: CreateRecordData): DatabaseRecord {
   const now = new Date().toISOString()
   return {
-    id: optimisticRecordId(),
+    id: createPendingRecordId(),
     identifier: `${appKitConfig.records.identifierPrefix}-NEW`,
     title: data.title,
     status: data.status ?? 'todo',

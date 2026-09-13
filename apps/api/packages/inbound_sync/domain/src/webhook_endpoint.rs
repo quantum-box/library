@@ -322,6 +322,19 @@ pub trait WebhookEndpointRepository: Send + Sync + Debug {
     /// Save a webhook endpoint.
     async fn save(&self, endpoint: &WebhookEndpoint) -> errors::Result<()>;
 
+    /// Atomically replace a signing key without overwriting endpoint settings.
+    async fn rotate_secret(
+        &self,
+        _tenant_id: &TenantId,
+        _id: &WebhookEndpointId,
+        _expected_key: &str,
+        _new_key: &str,
+    ) -> errors::Result<()> {
+        Err(errors::Error::service_unavailable(
+            "Webhook signing key rotation is unavailable",
+        ))
+    }
+
     /// Find by ID.
     async fn find_by_id(
         &self,

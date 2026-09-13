@@ -147,6 +147,22 @@ Preview surface で別 gate として記録する。
   output buffer を超えた。GitHub CLI 側で release summary へ射影してから Node に渡し、
   release history の増加で prepare が失敗しないようにする。
 
+### 2026-09-12 Verification follow-up
+
+- PR #360 の Preview API は `/health` が HTTP 200、認証なしの
+  `/internal/external-sync/outbound-scan` が HTTP 401。ブラウザでサインインし、
+  API 通信先が `pr360--library-api.txcloud.app` であることを確認した。
+- 回帰テストで再現した3つの不具合を修正した。
+  - accepted / rejected ChangeSet の再承認は、Data や link を変更する前に拒否する。
+  - review 経路の GitHub 取得 / ChangeSet 保存エラーは durable consumer へ返し、
+    再試行対象にする。処理済みのファイルの再配送は既存の冪等保存で吸収する。
+  - push / merged PR の本文は通知の commit SHA から取得する。遅延や再試行で
+    branch HEAD が進んでも、別の本文を古い revision に結び付けない。
+- Rust 関連 unit 141件、client の同期 / 設定 / 翻訳68件と TypeScript check が合格。
+  追加した8件のRustテストのうち6件は修正前のコードで失敗することを確認した。
+- API 1.11.8 / desktop 0.1.55。実 GitHub 往復と本番 engine / scanner の有効化は
+  引き続き未完了。詳細は [verification report](verification-report.md) に記録する。
+
 ## 完了条件
 
 - GA / experimental 表示が実際の runtime 保証と一致する。

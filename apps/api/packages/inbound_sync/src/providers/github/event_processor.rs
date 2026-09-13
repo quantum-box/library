@@ -139,6 +139,9 @@ impl GitHubEventProcessor {
                             stats.skipped += 1;
                         }
                         Err(e) => {
+                            if self.change_set_sink.is_some() {
+                                return Err(e);
+                            }
                             tracing::error!(
                                 file = %file.path,
                                 error = %e,
@@ -167,6 +170,9 @@ impl GitHubEventProcessor {
                             }
                         }
                         Err(e) => {
+                            if self.change_set_sink.is_some() {
+                                return Err(e);
+                            }
                             tracing::error!(
                                 file = %file.path,
                                 error = %e,
@@ -198,9 +204,16 @@ impl GitHubEventProcessor {
         commit_sha: &str,
     ) -> errors::Result<Option<bool>> {
         if let Some(sink) = &self.change_set_sink {
+            // Bind reviewed content to the event's immutable revision. The
+            // branch can advance before the durable consumer runs or retries.
             let content = self
                 .github_client
-                .get_file_content(endpoint.tenant_id(), repo, path, branch)
+                .get_file_content(
+                    endpoint.tenant_id(),
+                    repo,
+                    path,
+                    commit_sha,
+                )
                 .await?;
             let captured = sink
                 .capture(GitHubChangeSetInput {
@@ -457,6 +470,9 @@ impl GitHubEventProcessor {
                             stats.skipped += 1;
                         }
                         Err(e) => {
+                            if self.change_set_sink.is_some() {
+                                return Err(e);
+                            }
                             tracing::error!(
                                 file = %file.filename,
                                 error = %e,
@@ -489,6 +505,9 @@ impl GitHubEventProcessor {
                             }
                         }
                         Err(e) => {
+                            if self.change_set_sink.is_some() {
+                                return Err(e);
+                            }
                             tracing::error!(
                                 file = %file.filename,
                                 error = %e,
@@ -512,7 +531,13 @@ impl GitHubEventProcessor {
                                 endpoint.tenant_id(),
                                 repo,
                                 &file.filename,
-                                branch,
+                                pr_event
+                                    .pull_request
+                                    .merge_commit_sha
+                                    .as_deref()
+                                    .unwrap_or(
+                                        &pr_event.pull_request.head.sha,
+                                    ),
                             )
                             .await?;
                         let captured = sink
@@ -1004,5 +1029,213 @@ mod tests {
 
         assert_eq!(result, Some(true));
         assert_eq!(handler.upserts.load(Ordering::SeqCst), 1);
+    }
+
+    #[derive(Debug)]
+    struct RecordingGitHubClient {
+        revisions: std::sync::Mutex<Vec<String>>,
+        fail_reads: bool,
+        pr_status: Option<&'static str>,
+    }
+
+    #[async_trait::async_trait]
+    impl GitHubClient for RecordingGitHubClient {
+        async fn get_file_content(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _path: &str,
+            revision: &str,
+        ) -> errors::Result<String> {
+            self.revisions.lock().unwrap().push(revision.into());
+            if self.fail_reads {
+                return Err(errors::Error::service_unavailable(
+                    "temporary GitHub failure",
+                ));
+            }
+            Ok("# Reviewed revision".into())
+        }
+        async fn get_pr_files(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _pr_number: u64,
+        ) -> errors::Result<Vec<PullRequestFile>> {
+            Ok(self
+                .pr_status
+                .map(|status| PullRequestFile {
+                    filename: "docs/a.md".into(),
+                    status: status.into(),
+                    additions: 1,
+                    deletions: 1,
+                    changes: 2,
+                    previous_filename: Some("docs/before.md".into()),
+                })
+                .into_iter()
+                .collect())
+        }
+        async fn list_repository_contents(
+            &self,
+            _tenant_id: &TenantId,
+            _repo: &str,
+            _branch: &str,
+            _pattern: Option<&str>,
+        ) -> errors::Result<Vec<RepositoryContent>> {
+            Ok(vec![])
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestChangeSetSink {
+        fail_capture: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl super::GitHubChangeSetSink for TestChangeSetSink {
+        async fn capture(
+            &self,
+            input: super::GitHubChangeSetInput<'_>,
+        ) -> errors::Result<bool> {
+            assert_eq!(input.branch, "main");
+            assert_eq!(input.external_revision, "event-commit");
+            if self.fail_capture {
+                Err(errors::Error::service_unavailable(
+                    "temporary persistence failure",
+                ))
+            } else {
+                Ok(true)
+            }
+        }
+    }
+
+    fn review_processor(
+        client: Arc<RecordingGitHubClient>,
+        fail_capture: bool,
+    ) -> GitHubEventProcessor {
+        GitHubEventProcessor::new(
+            client,
+            Arc::new(SeededSyncStateRepo {
+                state: std::sync::Mutex::new(None),
+            }),
+            Arc::new(CountingDataHandler::default()),
+        )
+        .with_change_set_sink(Arc::new(TestChangeSetSink { fail_capture }))
+    }
+
+    fn review_push(removed: bool) -> super::PushEvent {
+        serde_json::from_value(serde_json::json!({
+            "ref":"refs/heads/main", "before":"previous-commit", "after":"event-commit",
+            "repository": { "id":1, "name":"repo", "full_name":"owner/repo",
+                "default_branch":"main", "html_url":"https://github.com/owner/repo",
+                "clone_url":"https://github.com/owner/repo.git", "private":true,
+                "owner":{"login":"owner", "id":1, "type":"Organization"}},
+            "pusher":{"name":"fixture", "email":"fixture@example.invalid"},
+            "commits":[{"id":"event-commit", "tree_id":"tree", "message":"test",
+                "timestamp":"2026-09-12T00:00:00Z", "url":"https://github.com/owner/repo/commit/event-commit",
+                "author":{"name":"fixture", "email":"fixture@example.invalid"},
+                "committer":{"name":"fixture", "email":"fixture@example.invalid"},
+                "modified":if removed { vec![] } else { vec!["docs/a.md"] },
+                "removed":if removed { vec!["docs/a.md"] } else { vec![] }}]
+        })).unwrap()
+    }
+
+    #[tokio::test]
+    async fn review_reads_the_event_commit_even_after_the_branch_moves() {
+        let client = Arc::new(RecordingGitHubClient {
+            revisions: Default::default(),
+            fail_reads: false,
+            pr_status: None,
+        });
+        let processor = review_processor(client.clone(), false);
+        processor
+            .process_push(&review_push(false), &test_endpoint())
+            .await
+            .unwrap();
+        assert_eq!(*client.revisions.lock().unwrap(), vec!["event-commit"]);
+    }
+
+    #[tokio::test]
+    async fn review_capture_failures_propagate_for_upserts_and_deletions() {
+        for removed in [false, true] {
+            let client = Arc::new(RecordingGitHubClient {
+                revisions: Default::default(),
+                fail_reads: false,
+                pr_status: None,
+            });
+            let processor = review_processor(client, true);
+            assert!(
+                processor
+                    .process_push(&review_push(removed), &test_endpoint())
+                    .await
+                    .is_err(),
+                "failed capture must keep the durable job retryable"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn review_github_read_failure_keeps_the_webhook_retryable() {
+        let client = Arc::new(RecordingGitHubClient {
+            revisions: Default::default(),
+            fail_reads: true,
+            pr_status: None,
+        });
+        let processor = review_processor(client, false);
+        assert!(processor
+            .process_push(&review_push(false), &test_endpoint())
+            .await
+            .is_err());
+    }
+
+    fn review_pr() -> super::PullRequestEvent {
+        serde_json::from_value(serde_json::json!({
+            "action":"closed", "number":1,
+            "repository":review_push(false).repository,
+            "sender":{"login":"fixture", "id":1, "type":"User"},
+            "pull_request": { "id":1, "number":1, "state":"closed", "title":"fixture",
+                "merged":true, "merge_commit_sha":"event-commit",
+                "html_url":"https://github.com/owner/repo/pull/1",
+                "head":{"ref":"feature", "sha":"feature-commit"},
+                "base":{"ref":"main", "sha":"previous-commit"},
+                "user":{"login":"fixture", "id":1, "type":"User"},
+                "created_at":"2026-09-12T00:00:00Z", "updated_at":"2026-09-12T00:00:00Z" }
+        })).unwrap()
+    }
+
+    #[tokio::test]
+    async fn review_pr_reads_the_merge_commit_for_modifications_and_renames(
+    ) {
+        for status in ["modified", "renamed"] {
+            let client = Arc::new(RecordingGitHubClient {
+                revisions: Default::default(),
+                fail_reads: false,
+                pr_status: Some(status),
+            });
+            let processor = review_processor(client.clone(), false);
+            processor
+                .process_pull_request(&review_pr(), &test_endpoint())
+                .await
+                .unwrap();
+            assert_eq!(
+                *client.revisions.lock().unwrap(),
+                vec!["event-commit"]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn review_pr_capture_failure_keeps_all_change_types_retryable() {
+        for status in ["modified", "removed", "renamed"] {
+            let client = Arc::new(RecordingGitHubClient {
+                revisions: Default::default(),
+                fail_reads: false,
+                pr_status: Some(status),
+            });
+            let processor = review_processor(client, true);
+            assert!(processor
+                .process_pull_request(&review_pr(), &test_endpoint())
+                .await
+                .is_err());
+        }
     }
 }

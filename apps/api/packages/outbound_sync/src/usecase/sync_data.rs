@@ -5,8 +5,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use derive_new::new;
+use chrono::{DateTime, Utc};
+use integration_domain::{OAuthProvider, OAuthTokenRepository};
 use tachyon_sdk::auth::{AuthApp, ExecutorAction, MultiTenancyAction};
+use value_object::TenantId;
 
 use outbound_sync_domain::{
     DataId, RemoteData, SyncAuth, SyncConfig, SyncConfigRepository,
@@ -76,18 +78,140 @@ pub trait SyncDataInputPort: Send + Sync {
     ) -> errors::Result<SyncDataResult>;
 }
 
-/// Sync data use case implementation
-#[derive(new)]
-pub struct SyncData {
+/// Provider token normalized across caller-authorized and background reads.
+#[derive(Debug, Clone)]
+pub struct SyncOAuthToken {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl SyncOAuthToken {
+    fn is_expired(&self) -> bool {
+        self.expires_at
+            .is_some_and(|expires_at| expires_at <= Utc::now())
+    }
+}
+
+/// Resolves a provider credential for one outbound attempt.
+#[async_trait]
+pub trait SyncOAuthTokenProvider: Send + Sync + std::fmt::Debug {
+    async fn get_token(
+        &self,
+        executor: &dyn ExecutorAction,
+        multi_tenancy: &dyn MultiTenancyAction,
+        provider: &str,
+    ) -> errors::Result<Option<SyncOAuthToken>>;
+}
+
+/// Caller-authorized token lookup retained by the public sync use case.
+#[derive(Debug, Clone)]
+struct AuthAppSyncOAuthTokenProvider {
     auth_app: Arc<dyn AuthApp>,
+}
+
+#[async_trait]
+impl SyncOAuthTokenProvider for AuthAppSyncOAuthTokenProvider {
+    async fn get_token(
+        &self,
+        executor: &dyn ExecutorAction,
+        multi_tenancy: &dyn MultiTenancyAction,
+        provider: &str,
+    ) -> errors::Result<Option<SyncOAuthToken>> {
+        Ok(self
+            .auth_app
+            .get_oauth_token_by_provider(
+                &tachyon_sdk::auth::GetOAuthTokenByProviderInput {
+                    executor,
+                    multi_tenancy,
+                    provider,
+                },
+            )
+            .await?
+            .map(|token| SyncOAuthToken {
+                access_token: token.access_token,
+                refresh_token: token.refresh_token,
+                expires_at: Some(token.expires_at),
+            }))
+    }
+}
+
+/// Server-side token lookup for durable/background outbound work.
+#[derive(Debug, Clone)]
+pub struct RepositorySyncOAuthTokenProvider {
+    repository: Arc<dyn OAuthTokenRepository>,
+}
+
+impl RepositorySyncOAuthTokenProvider {
+    pub fn new(repository: Arc<dyn OAuthTokenRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl SyncOAuthTokenProvider for RepositorySyncOAuthTokenProvider {
+    async fn get_token(
+        &self,
+        _executor: &dyn ExecutorAction,
+        multi_tenancy: &dyn MultiTenancyAction,
+        provider: &str,
+    ) -> errors::Result<Option<SyncOAuthToken>> {
+        let tenant_id: TenantId =
+            multi_tenancy.get_operator_id()?.to_string().parse()?;
+        let provider = provider.parse::<OAuthProvider>().map_err(|_| {
+            errors::Error::invalid(format!(
+                "Unsupported OAuth provider: {provider}"
+            ))
+        })?;
+        Ok(self
+            .repository
+            .find_by_tenant_and_provider(&tenant_id, provider)
+            .await?
+            .map(|token| SyncOAuthToken {
+                access_token: token.access_token,
+                refresh_token: token.refresh_token,
+                expires_at: token.expires_at,
+            }))
+    }
+}
+
+/// Sync data use case implementation
+pub struct SyncData {
+    token_provider: Arc<dyn SyncOAuthTokenProvider>,
     sync_config_repo: Arc<dyn SyncConfigRepository>,
     provider_registry: Arc<SyncProviderRegistry>,
+}
+
+impl SyncData {
+    pub fn new(
+        auth_app: Arc<dyn AuthApp>,
+        sync_config_repo: Arc<dyn SyncConfigRepository>,
+        provider_registry: Arc<SyncProviderRegistry>,
+    ) -> Self {
+        Self::new_with_token_provider(
+            Arc::new(AuthAppSyncOAuthTokenProvider { auth_app }),
+            sync_config_repo,
+            provider_registry,
+        )
+    }
+
+    pub fn new_with_token_provider(
+        token_provider: Arc<dyn SyncOAuthTokenProvider>,
+        sync_config_repo: Arc<dyn SyncConfigRepository>,
+        provider_registry: Arc<SyncProviderRegistry>,
+    ) -> Self {
+        Self {
+            token_provider,
+            sync_config_repo,
+            provider_registry,
+        }
+    }
 }
 
 impl std::fmt::Debug for SyncData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SyncData")
-            .field("auth_app", &"<AuthApp>")
+            .field("token_provider", &self.token_provider)
             .field("sync_config_repo", &self.sync_config_repo)
             .field("provider_registry", &self.provider_registry)
             .finish()
@@ -118,17 +242,11 @@ impl SyncDataInputPort for SyncData {
             "Using sync provider"
         );
 
-        // 2. Get OAuth token via AuthApp
+        // 2. Get an OAuth token through the use-case-specific provider.
         let operator_id = input.multi_tenancy.get_operator_id()?;
         let token = self
-            .auth_app
-            .get_oauth_token_by_provider(
-                &tachyon_sdk::auth::GetOAuthTokenByProviderInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    provider: &input.provider,
-                },
-            )
+            .token_provider
+            .get_token(input.executor, input.multi_tenancy, &input.provider)
             .await?
             .ok_or_else(|| {
                 errors::Error::not_found(format!(
@@ -248,16 +366,10 @@ impl SyncDataInputPort for SyncData {
             "Using sync provider for deletion"
         );
 
-        // 2. Get OAuth token via AuthApp
+        // 2. Get an OAuth token through the use-case-specific provider.
         let token = self
-            .auth_app
-            .get_oauth_token_by_provider(
-                &tachyon_sdk::auth::GetOAuthTokenByProviderInput {
-                    executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
-                    provider: &input.provider,
-                },
-            )
+            .token_provider
+            .get_token(input.executor, input.multi_tenancy, &input.provider)
             .await?
             .ok_or_else(|| {
                 errors::Error::not_found(format!(
@@ -350,6 +462,41 @@ fn calculate_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use integration_domain::{OAuthTokenResponse, StoredOAuthToken};
+    use tachyon_sdk::auth::{Executor, MultiTenancy, OperatorId};
+
+    #[derive(Debug)]
+    struct StaticTokenRepository {
+        token: StoredOAuthToken,
+    }
+
+    #[async_trait]
+    impl OAuthTokenRepository for StaticTokenRepository {
+        async fn save(
+            &self,
+            _token: &StoredOAuthToken,
+        ) -> errors::Result<()> {
+            Ok(())
+        }
+
+        async fn find_by_tenant_and_provider(
+            &self,
+            tenant_id: &TenantId,
+            provider: OAuthProvider,
+        ) -> errors::Result<Option<StoredOAuthToken>> {
+            Ok((self.token.tenant_id == *tenant_id
+                && self.token.provider == provider)
+                .then(|| self.token.clone()))
+        }
+
+        async fn delete(
+            &self,
+            _tenant_id: &TenantId,
+            _provider: OAuthProvider,
+        ) -> errors::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_calculate_diff_new_file() {
@@ -379,5 +526,41 @@ mod tests {
         assert!(diff.contains("+++ new"));
         assert!(diff.contains("-World!"));
         assert!(diff.contains("+New World!"));
+    }
+
+    #[tokio::test]
+    async fn repository_provider_reads_background_broker_token() {
+        let tenant_id = TenantId::default();
+        let token = StoredOAuthToken::from_response(
+            "oauth-test".to_string(),
+            tenant_id.clone(),
+            OAuthProvider::Github,
+            OAuthTokenResponse {
+                access_token: "github-access".to_string(),
+                refresh_token: Some("github-refresh".to_string()),
+                token_type: "Bearer".to_string(),
+                expires_in: None,
+                scope: None,
+            },
+        );
+        let provider = RepositorySyncOAuthTokenProvider::new(Arc::new(
+            StaticTokenRepository { token },
+        ));
+        let operator_id: OperatorId =
+            tenant_id.to_string().parse().unwrap();
+        let multi_tenancy = MultiTenancy::new_operator(operator_id);
+
+        let resolved = provider
+            .get_token(&Executor::SystemUser, &multi_tenancy, "github")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved.access_token, "github-access");
+        assert_eq!(
+            resolved.refresh_token.as_deref(),
+            Some("github-refresh")
+        );
+        assert!(resolved.expires_at.is_none());
     }
 }

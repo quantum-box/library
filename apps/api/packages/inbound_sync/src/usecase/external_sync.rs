@@ -76,8 +76,11 @@ impl DecideInboundChangeSet {
                 change_set.reject(note)?;
             }
             InboundChangeSetDecision::Accept => {
-                self.apply_github_change(tenant_id, &change_set).await?;
+                // Validate the transition before applying content. A duplicate
+                // accept must never overwrite later Library edits or a rejected
+                // change before reporting its terminal-decision conflict.
                 change_set.accept(note)?;
+                self.apply_github_change(tenant_id, &change_set).await?;
             }
         }
         self.change_sets.save(&change_set).await?;
@@ -217,3 +220,7 @@ impl DecideInboundChangeSet {
         self.links.save(tenant_id, &link).await
     }
 }
+
+#[cfg(test)]
+#[path = "external_sync_tests.rs"]
+mod tests;

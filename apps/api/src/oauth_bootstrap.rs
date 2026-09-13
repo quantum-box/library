@@ -49,25 +49,52 @@ impl OAuthBootstrap {
     /// OAuth flows until the container was replaced. Here the next
     /// caller tries again.
     pub async fn get(&self) -> Option<&OAuthBootstrapConfig> {
+        self.resolve().await.ok()
+    }
+
+    async fn resolve(&self) -> errors::Result<&OAuthBootstrapConfig> {
         self.config
             .get_or_try_init(|| async {
-                self.sdk.fetch_oauth_config(&self.tenant).await.inspect_err(
-                    |error| {
-                        tracing::warn!(
-                            %error,
-                            "failed to fetch OAuth config",
-                        );
-                    },
-                )
+                let config = self
+                    .sdk
+                    .fetch_oauth_config(&self.tenant)
+                    .await
+                    .map_err(|error| {
+                        errors::Error::service_unavailable(format!(
+                            "OAuth configuration could not be loaded \
+                             for Library platform {}: {error}",
+                            self.tenant
+                        ))
+                    })?;
+                if config.github_credentials.is_none()
+                    && config.linear_credentials.is_none()
+                {
+                    // IaC may temporarily omit providers while resolving secrets.
+                    // Do not retain an empty result for the Lambda's lifetime.
+                    return Err(errors::Error::service_unavailable(format!(
+                        "No OAuth providers available for Library platform {}",
+                        self.tenant
+                    )));
+                }
+                Ok(config)
             })
             .await
-            .ok()
+            .inspect_err(|error| {
+                tracing::warn!(%error, "failed to resolve OAuth config")
+            })
     }
 
     /// The GitHub client secret, used to sign OAuth CSRF state.
-    pub async fn github_client_secret(&self) -> Option<String> {
-        let credentials = self.get().await?.github_credentials.as_ref()?;
-        Some(credentials.client_secret.clone())
+    pub async fn github_client_secret(&self) -> errors::Result<String> {
+        let config = self.resolve().await?;
+        let credentials =
+            config.github_credentials.as_ref().ok_or_else(|| {
+                errors::Error::service_unavailable(format!(
+                "GitHub OAuth provider unavailable for Library platform {}",
+                self.tenant
+            ))
+            })?;
+        Ok(credentials.client_secret.clone())
     }
 }
 
@@ -134,6 +161,13 @@ mod tests {
     async fn bootstrap_against_tachyon(
         failures: usize,
     ) -> (Arc<OAuthBootstrap>, Arc<AtomicUsize>) {
+        bootstrap_with_empty_responses(failures, 0).await
+    }
+
+    async fn bootstrap_with_empty_responses(
+        failures: usize,
+        empty_responses: usize,
+    ) -> (Arc<OAuthBootstrap>, Arc<AtomicUsize>) {
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = hits.clone();
 
@@ -146,6 +180,11 @@ mod tests {
                         return Err(
                             axum::http::StatusCode::SERVICE_UNAVAILABLE,
                         );
+                    }
+                    if seen < failures + empty_responses {
+                        return Ok(axum::Json(
+                            serde_json::json!({"providers": []}),
+                        ));
                     }
                     Ok(axum::Json(serde_json::json!({
                         "providers": [{
@@ -213,14 +252,33 @@ mod tests {
         // are — so one failing request fails one `get`.
         let (bootstrap, _) = bootstrap_against_tachyon(1).await;
 
-        assert!(
-            bootstrap.credentials(OAuthProvider::Github).await.is_none(),
-            "the first resolution fails"
-        );
+        let error = bootstrap
+            .github_client_secret()
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("could not be loaded"));
+        assert!(error.contains(TEST_TENANT_ID));
+        assert!(!error.contains("client-secret"));
         assert!(
             bootstrap.credentials(OAuthProvider::Github).await.is_some(),
             "the next one tries again rather than serving the failure"
         );
+    }
+
+    #[tokio::test]
+    async fn retries_after_temporarily_empty_provider_configuration() {
+        let (bootstrap, hits) = bootstrap_with_empty_responses(0, 1).await;
+        let error = bootstrap
+            .github_client_secret()
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("No OAuth providers available"));
+        assert!(!bootstrap.config.initialized());
+        assert!(bootstrap.github_client_secret().await.is_ok());
+        assert!(bootstrap.github_client_secret().await.is_ok());
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
     }
 
     /// A provider tachyon does not report is simply not configured.

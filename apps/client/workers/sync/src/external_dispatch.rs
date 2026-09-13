@@ -9,6 +9,7 @@ use worker::*;
 const JOB: &str = "external-sync:job";
 const MAX_BODY: usize = 4 * 1024;
 const MAX_DELAY_MS: i64 = 5 * 60 * 1000;
+const INITIAL_DELAY_MS: i64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DispatchJob {
@@ -67,6 +68,10 @@ fn endpoint(job: &DispatchJob, action: &str) -> String {
     )
 }
 
+fn initial_alarm_at(now_ms: i64) -> i64 {
+    now_ms.saturating_add(INITIAL_DELAY_MS)
+}
+
 fn callback_request(job: &DispatchJob, action: &str) -> Result<Request> {
     let headers = Headers::new();
     headers.set("content-type", "application/json")?;
@@ -78,6 +83,25 @@ fn callback_request(job: &DispatchJob, action: &str) -> Result<Request> {
             "event_id": job.event_id,
             "capability": job.capability,
         })),
+    )
+}
+
+async fn callback_fetch(
+    request: Request,
+    env: &Env,
+    timeout_ms: u32,
+) -> Result<Response> {
+    if let Ok(proxy) = env.service("TXCLOUD_PROXY") {
+        return proxy.fetch_request(request).await;
+    }
+    fetch_timeout(request, timeout_ms).await
+}
+
+async fn process_callback(job: &DispatchJob, env: &Env) -> Result<u16> {
+    Ok(
+        callback_fetch(callback_request(job, "process")?, env, 30_000)
+            .await?
+            .status_code(),
     )
 }
 
@@ -111,15 +135,16 @@ pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
         callback_url: callback_url.trim_end_matches('/').into(),
         attempt: 0,
     };
-    let validation =
-        match fetch_timeout(callback_request(&job, "validate")?, 10_000)
-            .await
-        {
-            Ok(response) => response,
-            Err(_) => {
-                return Response::error("Validation unavailable", 503)
-            }
-        };
+    let validation = match callback_fetch(
+        callback_request(&job, "validate")?,
+        env,
+        10_000,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => return Response::error("Validation unavailable", 503),
+    };
     if validation.status_code() != 204 {
         return Response::error(
             "Dispatch capability was not accepted",
@@ -156,9 +181,50 @@ pub async fn enqueue(mut request: Request, env: &Env) -> Result<Response> {
 #[durable_object]
 pub struct ExternalSyncDispatcher {
     state: State,
+    env: Env,
 }
 
 impl ExternalSyncDispatcher {
+    fn dispatch_immediately(&self, job: DispatchJob) {
+        let env = self.env.clone();
+        let storage = self.state.storage();
+        self.state.wait_until(async move {
+            match process_callback(&job, &env).await {
+                Ok(status) if (200..300).contains(&status) => {
+                    if let Err(error) = storage.delete_alarm().await {
+                        console_warn!(
+                            "external sync fallback alarm cleanup failed for {}: {}",
+                            job.event_id,
+                            error
+                        );
+                        return;
+                    }
+                    if let Err(error) = storage.delete_all().await {
+                        console_warn!(
+                            "external sync dispatch cleanup failed for {}: {}",
+                            job.event_id,
+                            error
+                        );
+                    }
+                }
+                Ok(status) => {
+                    console_warn!(
+                        "immediate external sync callback returned HTTP {} for {}",
+                        status,
+                        job.event_id
+                    );
+                }
+                Err(error) => {
+                    console_warn!(
+                        "immediate external sync callback failed for {}: {}",
+                        job.event_id,
+                        error
+                    );
+                }
+            }
+        });
+    }
+
     async fn reschedule(&self, mut job: DispatchJob) -> Result<()> {
         job.attempt = job.attempt.saturating_add(1);
         self.state.storage().put(JOB, &job).await?;
@@ -174,8 +240,8 @@ impl ExternalSyncDispatcher {
 }
 
 impl DurableObject for ExternalSyncDispatcher {
-    fn new(state: State, _env: Env) -> Self {
-        Self { state }
+    fn new(state: State, env: Env) -> Self {
+        Self { state, env }
     }
 
     async fn fetch(&self, mut request: Request) -> Result<Response> {
@@ -201,9 +267,12 @@ impl DurableObject for ExternalSyncDispatcher {
         self.state
             .storage()
             .set_alarm(ScheduledTime::new(js_sys::Date::new(
-                &wasm_bindgen::JsValue::from_f64(now() as f64),
+                &wasm_bindgen::JsValue::from_f64(
+                    initial_alarm_at(now()) as f64
+                ),
             )))
             .await?;
+        self.dispatch_immediately(job);
         json(&value!({"status": "scheduled"}), 202)
     }
 
@@ -213,18 +282,14 @@ impl DurableObject for ExternalSyncDispatcher {
             storage.delete_alarm().await?;
             return Response::empty();
         };
-        match fetch_timeout(callback_request(&job, "process")?, 30_000)
-            .await
-        {
-            Ok(response)
-                if (200..300).contains(&response.status_code()) =>
-            {
+        match process_callback(&job, &self.env).await {
+            Ok(status) if (200..300).contains(&status) => {
                 storage.delete_all().await?;
             }
-            Ok(response) => {
+            Ok(status) => {
                 console_warn!(
                     "external sync callback returned HTTP {} for {}",
-                    response.status_code(),
+                    status,
                     job.event_id
                 );
                 self.reschedule(job).await?;
@@ -255,5 +320,11 @@ mod tests {
             "https://library-api.txcloud.app.evil.test"
         ));
         assert!(!valid_callback("https://library-api.txcloud.app/path"));
+    }
+
+    #[test]
+    fn initial_alarm_is_in_the_future() {
+        assert_eq!(initial_alarm_at(1_000), 31_000);
+        assert_eq!(initial_alarm_at(i64::MAX), i64::MAX);
     }
 }

@@ -1480,6 +1480,14 @@ type Mutation {
 	"""
 	updateGlobalIdMapping(input: UpdateGlobalIdMappingInput!): GlobalIdMapping!
 	"""
+	Start user authorization using Tachyon's shared GitHub App.
+	"""
+	githubSyncAuthUrl(returnUrl: String!, codeChallenge: String!): GitHubAuthUrl!
+	"""
+	Confirm the browser-bound broker session without exposing tokens.
+	"""
+	githubSyncCompleteOauth(session: String!, codeVerifier: String!): GitHubConnection!
+	"""
 	[LIBRARY-API] Get GitHub OAuth authorization URL
 	
 	Signs the state parameter with HMAC-SHA256 for CSRF protection.
@@ -1489,7 +1497,7 @@ type Mutation {
 		"""
 		State parameter containing encoded return URL
 		"""
-		state: String!
+		state: String!,		proxyCompatible: Boolean! = false
 	): GitHubAuthUrl!
 	"""
 	[LIBRARY-API] Exchange GitHub OAuth code for token
@@ -1543,6 +1551,11 @@ type Mutation {
 	[LIBRARY-API] Import Markdown files from GitHub
 	"""
 	importMarkdownFromGithub(input: ImportMarkdownFromGitHubInput!): ImportMarkdownResult!
+	"""
+	Attach this organization's saved GitHub OAuth account to external sync.
+	Repeated calls preserve the existing connection identity and metadata.
+	"""
+	connectGithubSync: GqlConnection!
 	createExternalSyncBinding(input: CreateExternalSyncBindingInput!): GqlExternalSyncBinding!
 	updateExternalSyncBindingStatus(bindingId: String!, status: GqlExternalSyncBindingStatus!): GqlExternalSyncBinding!
 	decideInboundChangeSet(changeSetId: String!, accept: Boolean!, note: String): GqlInboundChangeSet!
@@ -1554,6 +1567,10 @@ type Mutation {
 	**Important**: The secret is only returned once. Store it securely.
 	"""
 	createWebhookEndpoint(input: CreateWebhookEndpointInput!): CreateWebhookEndpointOutput!
+	"""
+	Replace a GitHub endpoint signing key. Returned only by this mutation.
+	"""
+	rotateGithubWebhookSecret(endpointId: String!): CreateWebhookEndpointOutput!
 	"""
 	Update webhook endpoint status.
 	"""

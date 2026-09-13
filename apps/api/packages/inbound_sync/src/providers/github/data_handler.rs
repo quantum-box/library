@@ -540,11 +540,11 @@ This is the body."#;
     fn test_apply_transform_to_bool() {
         let value = JsonValue::String("true".to_string());
         let result = apply_transform(&value, &Transform::ToBool);
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
 
         let value2 = JsonValue::String("false".to_string());
         let result2 = apply_transform(&value2, &Transform::ToBool);
-        assert_eq!(result2.as_bool().unwrap(), false);
+        assert!(!result2.as_bool().unwrap());
     }
 
     #[test]
