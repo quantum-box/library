@@ -523,3 +523,35 @@ real authorization on the corrected path are pending.
 - A fresh Preview OAuth completion and repository synchronization remain to be
   verified after this client fix is deployed. Library main merge and production
   synchronization activation remain outside this rollout.
+
+
+## Shared App connection verified; webhook setup repair — 2026-09-13
+
+Preview head `1193c89f97976010d8fd1e1cf0daeff5c3c51aff` passed all CI and
+deployed. The real browser completed Library → shared Tachyon Cloud GitHub App
+→ Tachyon callback → Library, showed the connected GitHub account, and retained
+the connection after a full reload. The saved scope is
+`quantum-box/library-sample`, `e2e/plt-4534-external-sync`, `external-sync/*.md`.
+Saving that scope again retained exactly one binding. Production remains off.
+
+Preparing the remaining provider delivery test exposed a pre-existing signing
+key mismatch: registration returned a random seed, while endpoint verification
+used its SHA-256 digest from the legacy `secret_hash` column as the HMAC key.
+New GitHub registrations now return the same random-derived verification key.
+The column is secret key material, not a publicly safe password digest. Existing
+keys and other provider registrations are unchanged. A regression test signs
+a payload with the registration result, verifies against the stored key, and
+rejects a modified body. The Preview has no global GitHub webhook secret override.
+
+The client now exposes notification setup per saved binding. It loads the exact
+organization/repository/branch/path scope, reconciles existing endpoints before
+creating one, and presents the payload URL plus a masked, one-session signing
+key. Instructions keep TLS verification enabled and subscribe only to push and
+pull request events. Endpoint creation explicitly does not claim delivery success
+or import data. Reopening does not reveal the key or create another endpoint.
+
+Focused client tests: 39 passed across GitHub OAuth, webhook setup, and external
+sync API suites. Rust compilation and tests are delegated to CI; locally only
+the changed Rust file is formatted, per the user's resource constraint.
+Actual GitHub delivery, accept/reject, outbound, conflict, rename, and tombstone
+verification remain pending deployment of this repair.

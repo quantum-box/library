@@ -25,6 +25,7 @@ import {
 } from '../lib/externalSyncApi'
 import { useI18n } from '../i18n'
 import { GitHubSyncSetupDialog } from './GitHubSyncSetupDialog'
+import { GitHubWebhookDialog } from './GitHubWebhookDialog'
 
 interface ExternalSyncSectionProps {
   repositoryId: string
@@ -65,6 +66,7 @@ export function ExternalSyncSection({
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(() => new URLSearchParams(window.location.search).get('github_sync') === 'callback')
+  const [webhookBinding, setWebhookBinding] = useState<ExternalSyncBinding | null>(null)
 
   const load = useCallback(async () => {
     const revision = ++loadRevision.current
@@ -204,6 +206,7 @@ export function ExternalSyncSection({
                         {scope.path_pattern ?? t('externalSync.allPaths')} · {binding.objectType}
                       </p>
                     </div>
+                    {binding.provider === 'GITHUB' ? <Button size="sm" variant="secondary" disabled={readOnly || !operatorId} onClick={() => setWebhookBinding(binding)}>{t('githubWebhook.title')}</Button> : null}
                     {binding.status !== 'REAUTHORIZATION_REQUIRED' ? (
                       <Button
                         size="sm"
@@ -257,6 +260,7 @@ export function ExternalSyncSection({
         </div>
       ) : null}
       {setupOpen ? <GitHubSyncSetupDialog key={`${operatorId}:${repositoryId}`} open target={target} readOnly={readOnly} onClose={() => setSetupOpen(false)} onSaved={load} /> : null}
+      {webhookBinding ? <GitHubWebhookDialog key={`${operatorId}:${repositoryId}:${webhookBinding.id}`} target={target} binding={webhookBinding} readOnly={readOnly} onClose={() => setWebhookBinding(null)} /> : null}
     </section>
   )
 }
