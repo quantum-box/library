@@ -29,6 +29,7 @@ use crate::handler::library_executor_extractor::{
 use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::library_client_url::{data_url, share_url};
 use crate::usecase::markdown_composer::compose_markdown;
+use crate::usecase::markdown_mutation;
 use crate::usecase::{
     AddDataInputData, AddPropertyInputData, ChangeRepoUsernameInputData,
     CreateOrganizationInputData, CreateRepoInputData,
@@ -186,7 +187,12 @@ struct GetDataArgs {
 struct CreateDataArgs {
     org: String,
     repo: String,
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
+    /// A Markdown document with YAML frontmatter, in the shape `get_data`
+    /// returns.
+    #[serde(default)]
+    markdown: Option<String>,
     #[serde(default)]
     property_data: Vec<CreateDataPropertyArgs>,
 }
@@ -204,7 +210,12 @@ struct UpdateDataArgs {
     org: String,
     repo: String,
     data_id: String,
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
+    /// A Markdown document with YAML frontmatter, in the shape `get_data`
+    /// returns.
+    #[serde(default)]
+    markdown: Option<String>,
     #[serde(default)]
     property_data: Vec<CreateDataPropertyArgs>,
 }
@@ -924,6 +935,19 @@ async fn upsert_data(
     let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
+    let write = data_write_input(
+        &library_app,
+        &executor,
+        &library_org,
+        DataWriteRequest {
+            org: &args.org,
+            repo: &args.repo,
+            name: args.name,
+            markdown: args.markdown,
+            property_args: args.property_data,
+        },
+    )
+    .await?;
     let (data, properties, outcome) = library_app
         .upsert_data
         .execute(UpsertDataInputData {
@@ -933,8 +957,8 @@ async fn upsert_data(
             org_username: &args.org,
             repo_username: &args.repo,
             data_id: &args.data_id,
-            data_name: &args.name,
-            property_data: property_data_from_args(args.property_data)?,
+            data_name: &write.name,
+            property_data: write.property_data,
         })
         .await
         .map_err(tool_execution_error)?;
@@ -942,9 +966,11 @@ async fn upsert_data(
         database_manager::usecase::UpsertOutcome::Created => "created",
         database_manager::usecase::UpsertOutcome::Updated => "updated",
     };
-    Ok(
-        json!({ "data": data_to_mcp(&data, &properties, &args.org, &args.repo), "outcome": outcome }),
-    )
+    Ok(json!({
+        "data": data_to_mcp(&data, &properties, &args.org, &args.repo),
+        "outcome": outcome,
+        "warnings": write.warnings,
+    }))
 }
 
 /// The one place a share token is ever visible.
@@ -1543,7 +1569,19 @@ async fn create_data(
     let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
-    let property_data = property_data_from_args(args.property_data)?;
+    let write = data_write_input(
+        &library_app,
+        &executor,
+        &library_org,
+        DataWriteRequest {
+            org: &args.org,
+            repo: &args.repo,
+            name: args.name,
+            markdown: args.markdown,
+            property_args: args.property_data,
+        },
+    )
+    .await?;
 
     let input = AddDataInputData {
         executor: &executor,
@@ -1551,8 +1589,8 @@ async fn create_data(
         actor: executor.get_id(),
         org_username: &args.org,
         repo_username: &args.repo,
-        data_name: &args.name,
-        property_data,
+        data_name: &write.name,
+        property_data: write.property_data,
     };
 
     let (data, properties) = library_app
@@ -1569,7 +1607,7 @@ async fn create_data(
     ))
     .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
     response["property_count"] = json!(properties.len());
-    Ok(json!({ "data": response }))
+    Ok(json!({ "data": response, "warnings": write.warnings }))
 }
 
 async fn update_data(
@@ -1581,7 +1619,19 @@ async fn update_data(
     let library_org = resolve_library_org(&library_app, &args.org)
         .await
         .map_err(tool_execution_error)?;
-    let property_data = property_data_from_args(args.property_data)?;
+    let write = data_write_input(
+        &library_app,
+        &executor,
+        &library_org,
+        DataWriteRequest {
+            org: &args.org,
+            repo: &args.repo,
+            name: args.name,
+            markdown: args.markdown,
+            property_args: args.property_data,
+        },
+    )
+    .await?;
     let input = UpdateDataInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -1589,8 +1639,8 @@ async fn update_data(
         org_username: &args.org,
         repo_username: &args.repo,
         data_id: &args.data_id,
-        data_name: &args.name,
-        property_data,
+        data_name: &write.name,
+        property_data: write.property_data,
     };
     let (data, properties) = library_app
         .update_data
@@ -1606,7 +1656,7 @@ async fn update_data(
     ))
     .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
     response["property_count"] = json!(properties.len());
-    Ok(json!({ "data": response }))
+    Ok(json!({ "data": response, "warnings": write.warnings }))
 }
 
 async fn delete_data(
@@ -1843,6 +1893,90 @@ fn require_executor(
             -32001,
             format!("Authentication required for {tool_name}"),
         )
+    })
+}
+
+/// What a caller asked a data write to store, before the repository's
+/// properties have had a say.
+struct DataWriteRequest<'a> {
+    org: &'a str,
+    repo: &'a str,
+    name: Option<String>,
+    markdown: Option<String>,
+    property_args: Vec<CreateDataPropertyArgs>,
+}
+
+/// A data write's record name and property values, once any Markdown
+/// document has been read against the repository's properties.
+struct DataWriteInput {
+    name: String,
+    property_data: Vec<PropertyDataInputData>,
+    warnings: Vec<Value>,
+}
+
+/// Resolve what a `create_data` / `update_data` / `upsert_data` call writes.
+///
+/// With `markdown`, frontmatter keys name properties and the body goes to
+/// the record's body property -- the shape `get_data` returns, so a record
+/// can be fetched, edited and written back. A key naming no property is
+/// reported in `warnings` and skipped rather than failing the write.
+/// Explicit `property_data` still wins, so one value can be corrected in
+/// the same call that posts a document.
+async fn data_write_input(
+    library_app: &LibraryApp,
+    executor: &LibraryExecutor,
+    library_org: &LibraryOrg,
+    request: DataWriteRequest<'_>,
+) -> Result<DataWriteInput, Value> {
+    let mut property_data = Vec::new();
+    let mut warnings = Vec::new();
+    let mut title = None;
+
+    if let Some(markdown) = request.markdown {
+        let properties = library_app
+            .get_properties
+            .execute(GetPropertiesInputData {
+                executor,
+                multi_tenancy: library_org,
+                org_username: request.org.to_string(),
+                repo_username: request.repo.to_string(),
+            })
+            .await
+            .map_err(tool_execution_error)?;
+        let mutation = markdown_mutation::read_markdown_mutation(
+            &markdown,
+            &properties,
+        )
+        .map_err(tool_execution_error)?;
+        title = mutation.title;
+        property_data = mutation.property_data;
+        warnings = mutation
+            .warnings
+            .into_iter()
+            .map(|warning| {
+                json!({ "key": warning.key, "reason": warning.reason })
+            })
+            .collect();
+    }
+
+    for property in property_data_from_args(request.property_args)? {
+        property_data.retain(|existing| {
+            existing.property_id != property.property_id
+        });
+        property_data.push(property);
+    }
+
+    let name = request.name.or(title).ok_or_else(|| {
+        json_rpc_error(
+            -32602,
+            "name is required unless markdown frontmatter carries a title",
+        )
+    })?;
+
+    Ok(DataWriteInput {
+        name,
+        property_data,
+        warnings,
     })
 }
 
@@ -2272,8 +2406,8 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             }),
             json!({
                 "name": "upsert_data",
-                "description": "Create or update a record at a caller-supplied valid data_id. Reusing the same id avoids duplicate records on retry; this is not a compare-and-swap operation.",
-                "inputSchema": data_write_schema(["org", "repo", "data_id", "name"])
+                "description": "Create or update a record at a caller-supplied valid data_id, from typed property_data or from a Markdown document with YAML frontmatter. Reusing the same id avoids duplicate records on retry; this is not a compare-and-swap operation.",
+                "inputSchema": data_write_schema(["org", "repo", "data_id"])
             }),
             json!({
                 "name": "create_share_link",
@@ -2382,13 +2516,13 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             }),
             json!({
                 "name": "create_data",
-                "description": "Create a Library data record.",
-                "inputSchema": data_write_schema(["org", "repo", "name"])
+                "description": "Create a Library data record, from typed property_data or from a Markdown document with YAML frontmatter.",
+                "inputSchema": data_write_schema(["org", "repo"])
             }),
             json!({
                 "name": "update_data",
-                "description": "Update a Library data record.",
-                "inputSchema": data_write_schema(["org", "repo", "data_id", "name"])
+                "description": "Update a Library data record. Send the Markdown get_data returned, edited, to rewrite frontmatter properties and the body without assembling typed values.",
+                "inputSchema": data_write_schema(["org", "repo", "data_id"])
             }),
             json!({
                 "name": "delete_data",
@@ -2547,7 +2681,8 @@ fn output_schema_for_tool(name: &str) -> Value {
                 "outcome": {
                     "type": "string",
                     "enum": ["created", "updated"]
-                }
+                },
+                "warnings": mcp_write_warnings_schema()
             }),
             &["data", "outcome"],
         ),
@@ -2574,7 +2709,10 @@ fn output_schema_for_tool(name: &str) -> Value {
             &["organization"],
         ),
         "create_data" | "update_data" => schema_object(
-            json!({ "data": mcp_data_with_property_count_schema() }),
+            json!({
+                "data": mcp_data_with_property_count_schema(),
+                "warnings": mcp_write_warnings_schema()
+            }),
             &["data"],
         ),
         "delete_repo" | "delete_data" | "delete_source" => {
@@ -2589,6 +2727,17 @@ fn output_schema_for_tool(name: &str) -> Value {
         ),
         _ => panic!("missing MCP output schema for tool {name}"),
     }
+}
+
+/// Frontmatter keys a Markdown write read but did not apply.
+fn mcp_write_warnings_schema() -> Value {
+    schema_array(schema_object(
+        json!({
+            "key": { "type": "string" },
+            "reason": { "type": "string" }
+        }),
+        &["key", "reason"],
+    ))
 }
 
 fn schema_object(properties: Value, required: &[&str]) -> Value {
@@ -2880,7 +3029,11 @@ fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
             "org": { "type": "string" },
             "repo": { "type": "string" },
             "data_id": { "type": "string" },
-            "name": { "type": "string" },
+            "name": { "type": "string", "description": "Record title. Optional when markdown frontmatter carries a title." },
+            "markdown": {
+                "type": "string",
+                "description": "A Markdown document with YAML frontmatter, in the shape get_data returns: frontmatter keys are property names, the body is the record body. Fetch, edit and send back rather than assembling property_data by hand. A key naming no property is skipped and reported in warnings; an empty body leaves the body property untouched."
+            },
             "property_data": {
                 "type": "array",
                 "items": {
@@ -4219,7 +4372,14 @@ mod tests {
             ("rename_repo", json!({ "repo": repo.clone() })),
             (
                 "upsert_data",
-                json!({ "data": data.clone(), "outcome": "updated" }),
+                json!({
+                    "data": data.clone(),
+                    "outcome": "updated",
+                    "warnings": [{
+                        "key": "reviewer",
+                        "reason": "no property with this name; value skipped"
+                    }]
+                }),
             ),
             (
                 "create_share_link",
@@ -4250,11 +4410,17 @@ mod tests {
             ("delete_repo", json!({ "deleted": true })),
             (
                 "create_data",
-                json!({ "data": data_with_property_count.clone() }),
+                json!({
+                    "data": data_with_property_count.clone(),
+                    "warnings": []
+                }),
             ),
             (
                 "update_data",
-                json!({ "data": data_with_property_count.clone() }),
+                json!({
+                    "data": data_with_property_count.clone(),
+                    "warnings": []
+                }),
             ),
             ("delete_data", json!({ "deleted": true })),
             ("create_property", json!({ "property": property.clone() })),
@@ -4563,6 +4729,30 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(names.contains(&"create_data"));
+    }
+
+    /// A record fetched as Markdown has to be writable the same way, and
+    /// its title comes from the document, so `name` cannot be required.
+    #[test]
+    fn data_writes_accept_a_markdown_document_instead_of_typed_values() {
+        let result = tools_list_result(true);
+        let tools = result["tools"].as_array().expect("tools list");
+
+        for name in ["create_data", "update_data", "upsert_data"] {
+            let schema = &tools
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap_or_else(|| panic!("missing tool {name}"))
+                ["inputSchema"];
+            assert_eq!(
+                schema["properties"]["markdown"]["type"], "string",
+                "{name}"
+            );
+            let required = schema["required"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name} required"));
+            assert!(!required.contains(&json!("name")), "{name}");
+        }
     }
 
     #[test]

@@ -37,6 +37,7 @@ mod library_org;
 mod list_api_keys;
 mod list_github_directory;
 pub mod markdown_composer;
+pub mod markdown_mutation;
 mod private_repo_access;
 pub(crate) mod property_value_adapter;
 mod published_languages;

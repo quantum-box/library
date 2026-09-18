@@ -230,9 +230,29 @@ Data を作成する。認証必須。
 
 `value_type` は省略時 `string`。対応値は `string`, `integer`, `html`, `markdown`, `rich_text`, `relation`, `select`, `multi_select`, `date`, `image`, `boolean`, `id`, `location`。locationは`{"latitude":35.0,"longitude":139.0}`形式。自動生成Idは変更不可。
 
+### Markdown での書き込み
+
+`create_data` / `update_data` / `upsert_data` は `property_data` の代わりに `markdown` を受け取る。`get_data` が返すのと同じ、YAML frontmatter 付きの Markdown 文書全文を渡す形。
+
+```json
+{
+  "org": "org-slug",
+  "repo": "repo-slug",
+  "data_id": "data_xxx",
+  "markdown": "---\ntitle: Release note\nslug: v1-shipped\nstatus: shipped\n---\n\n# Body\n\nHello Library\n"
+}
+```
+
+- frontmatterのキーはProperty**名**（一致しなければ大文字小文字を無視、最後にProperty id）で解決し、Propertyの型に合わせた値に変換する。selectはオプションidのほかkey / 表示名でも書ける。
+- 本文はbody Propertyに入る。宛先は`get_data`の組み立てと同じ順序（名前が`content`→`RichText`→`Markdown`→`Html`）。RichTextにはBlockNote文書へ変換して書き込む。
+- `title`はレコード名になる。`markdown`にtitleがあれば`name`は省略できる。`id` / `url`は`get_data`が出力する予約キーで、同名Propertyが無ければ黙って捨てる。
+- **どのPropertyにも一致しないキーは`warnings`に載せて省略する**（書き込み自体は成功する）。逆に、一致したPropertyが受け取れない値はエラーにして書き込まない。
+- 本文が空の文書はbody Propertyに触らない。frontmatterだけ直したい呼び出しが本文を持ち回らずに済む。
+- `property_data`を併用した場合は、同じPropertyについては`property_data`が勝つ。
+
 ### Data update / upsert
 
-- `update_data`: 必須`org`, `repo`, `data_id`, `name`。`property_data`に指定したPropertyだけを更新し、他の値は保持する。
+- `update_data`: 必須`org`, `repo`, `data_id`。`name`は`markdown`のtitleがあれば省略可。`property_data`に指定したPropertyだけを更新し、他の値は保持する。
 - `upsert_data`: 同じ引数で、指定した有効な`data_id`のレコードを作成または更新する。戻り値の`outcome`は`created` / `updated`。同じIDへの再試行で別レコードを作らないが、再書き込みや同時更新の競合を防ぐものではない。
 - write後のData結果にも型付き値・URL・revisionを含む。`record_version`は保存済みの版番号を参考情報として返す。現行MCP CRUDはlegacy経路で、この番号を増加させない。変更の検知・競合確認には使えず、条件付き更新の引数もない。変更内容は再取得して確認する。
 
