@@ -607,6 +607,35 @@ mod tests {
         assert!(document.contains("heading"), "{document}");
     }
 
+    /// Only one rich text property can hold the body, so a second one is
+    /// written from frontmatter -- still as Markdown, not as a block
+    /// document the caller had to build.
+    #[test]
+    fn a_rich_text_property_in_frontmatter_also_takes_markdown() {
+        let mut fixture = Fixture::new();
+        let content = fixture.property("content", PropertyType::RichText);
+        let summary = fixture.property("summary", PropertyType::RichText);
+
+        let mutation = read_markdown_mutation(
+            "---\nsummary: |\n  # Summary\n\n  One line.\n---\n\n# Body\n",
+            &fixture.properties,
+        )
+        .expect("document should read");
+
+        let Some(PropertyDataValueInputData::RichText(document)) =
+            value_for(&mutation, &summary)
+        else {
+            panic!("a rich text property must take Markdown text");
+        };
+        assert!(document.contains("heading"), "{document}");
+        assert!(document.contains("Summary"), "{document}");
+        assert!(matches!(
+            value_for(&mutation, &content),
+            Some(PropertyDataValueInputData::RichText(_))
+        ));
+        assert!(mutation.warnings.is_empty(), "{:?}", mutation.warnings);
+    }
+
     #[test]
     fn frontmatter_may_not_write_the_property_the_body_owns() {
         let mut fixture = Fixture::new();
