@@ -1,6 +1,6 @@
 {
   "name": "library",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Search Library data, manage repositories, properties, and sources, and publish HTML artifacts through MCP.",
   "author": {
     "name": "Quantum Box株式会社",

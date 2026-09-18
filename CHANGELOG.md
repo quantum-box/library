@@ -27,6 +27,9 @@
   `id` と `url` は読み出しが出す予約キーで、同名 Property が無ければ捨てる。
 - `markdown` と `property_data` を併用した場合、同じ Property については
   `property_data` が勝つ。文書を投げたうえで 1 項目だけ直せる。
+- plugin を `0.6.0` にした（Claude / Codex とも）。`library` スキルに
+  Markdown で書き戻す手順を足したため。サーバー側は 2026-09-18 以降の
+  `library-api` が要る。
 
 ## 2026-09-09 - iOS アプリの UI 修正
 
