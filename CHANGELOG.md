@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-09-18 - MCP の書き込みを frontmatter 付き Markdown で
+
+- `create_data` / `update_data` / `upsert_data` に `markdown` を追加した。
+  `get_data` が返すのと同じ YAML frontmatter 付きの文書をそのまま書き戻せる。
+  これまで本文を 1 行直すのにも `list_properties` で id を引き、型を当て、
+  `property_data` の配列を組む 3 手が必要だった。
+- frontmatter のキーは Property **名**で解決する。完全一致 → 大文字小文字を
+  無視 → Property id の順。値は Property の型に合わせて変換するので、
+  `value_type` を呼び出し側が指定しなくてよい。
+- select は option id だけでなく key と表示名でも書ける。読み出しは id を
+  出すので往復には要らないが、人が手で直す文書は見えている方を書くため。
+- 本文は body Property に入る。宛先の選び方は読み出し側と同じ
+  （名前が `content` → `RichText` → `Markdown` → `Html`）。RichText へは
+  BlockNote 文書へ変換して書く。
+- **どの Property にも一致しないキーは `warnings` に載せて省略する。**
+  書き込み自体は成功する。古いスキーマ相手に書かれた文書でも、当たる分は
+  当たってほしい。逆に、一致した Property が受け取れない値は
+  エラーにして何も書かない。存在する Property への明示的な指示を、
+  黙って捨てたり別の形で書いたりしないため。
+- 本文が空の文書は body Property に触らない。frontmatter だけ直す呼び出しが
+  本文を持ち回らずに済む。文書末尾の改行は落とす。読み出しが本文の後に
+  改行を 1 つ足すので、そのまま保存すると往復のたびに増えるため。
+- `title` はレコード名になる。`markdown` に title があれば `name` は省略でき、
+  `create_data` / `update_data` / `upsert_data` の必須引数から外した。
+  `id` と `url` は読み出しが出す予約キーで、同名 Property が無ければ捨てる。
+- `markdown` と `property_data` を併用した場合、同じ Property については
+  `property_data` が勝つ。文書を投げたうえで 1 項目だけ直せる。
+
 ## 2026-09-09 - iOS アプリの UI 修正
 
 シミュレータ実機（iPhone 17 Pro / iOS 26）で一通り触って見つかった 7 件。
