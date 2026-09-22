@@ -79,10 +79,6 @@ spec:
               type: credential
               valueFrom:
                 secret: library-api/OPENAI_APPS_CHALLENGE_TOKEN
-            - name: EXTERNAL_SYNC_SCANNER_TOKEN
-              type: credential
-              valueFrom:
-                secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
