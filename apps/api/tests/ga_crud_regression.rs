@@ -166,6 +166,8 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
     })).await?;
     let data_id = created["data"]["id"].as_str().unwrap();
     assert_eq!(created["data"]["record_version"], "1");
+    assert_eq!(created["url"], created["data"]["url"]);
+    assert!(created["url"].as_str().unwrap().contains(data_id));
 
     for name in ["get_data", "list_data", "search_data"] {
         let arguments = json!({"org":org,"repo":repo,"data_id":data_id,"query":"MCP test record"});
@@ -209,6 +211,8 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
     // Legacy CRUD does not advance the versioned mutation counter. MCP
     // exposes the stored value, not a concurrency token for these writes.
     assert_eq!(updated["data"]["record_version"], "1");
+    assert_eq!(updated["url"], updated["data"]["url"]);
+    assert!(updated["url"].as_str().unwrap().contains(data_id));
     let read = mcp_call(
         &client,
         &server,
@@ -298,6 +302,9 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
     assert_eq!(first["outcome"], "created");
     assert_eq!(retried["outcome"], "updated");
     assert_eq!(first["data"]["id"], retried["data"]["id"]);
+    assert_eq!(first["url"], first["data"]["url"]);
+    assert_eq!(retried["url"], retried["data"]["url"]);
+    assert_eq!(first["url"], retried["url"]);
     let listed = mcp_call(
         &client,
         &server,
