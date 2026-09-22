@@ -664,7 +664,7 @@ impl LibrarySyncMutation {
             let result = validator
                 .validate(integration.provider(), api_key)
                 .await
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+                .map_err(|e| e.extend())?;
 
             if !result.is_valid {
                 return Err(async_graphql::Error::new(
