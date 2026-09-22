@@ -1,6 +1,8 @@
 //! GraphQL mutation resolvers for library sync.
 
-use async_graphql::{Context, Object, Result, SimpleObject};
+use async_graphql::{
+    Context, ErrorExtensions, Object, Result, SimpleObject,
+};
 use integration_domain::{
     ExternalScope, ExternalSyncBinding, ExternalSyncBindingId,
     ExternalSyncBindingRepository, InboundChangeSetId, LibraryRepoId,
@@ -164,8 +166,15 @@ impl LibrarySyncMutation {
         let runtime_provider: inbound_sync_domain::Provider =
             provider.into();
         runtime_provider.ensure_runtime_available()?;
-        let scope_value: serde_json::Value =
-            serde_json::from_str(&input.external_scope)?;
+        let scope_value: serde_json::Value = serde_json::from_str(
+            &input.external_scope,
+        )
+        .map_err(|error| {
+            errors::Error::bad_request(format!(
+                "Invalid external scope: {error}"
+            ))
+            .extend()
+        })?;
         let external_scope = if provider
             == inbound_sync_domain::OAuthProvider::Github
         {
@@ -206,7 +215,12 @@ impl LibrarySyncMutation {
             ConnectionId::new(input.connection_id),
             external_scope,
             input.object_type,
-            serde_json::from_str(&input.mapping)?,
+            serde_json::from_str(&input.mapping).map_err(|error| {
+                errors::Error::bad_request(format!(
+                    "Invalid external sync mapping: {error}"
+                ))
+                .extend()
+            })?,
         )?;
         state.external_sync_bindings.save(&binding).await?;
         Ok(binding.into())

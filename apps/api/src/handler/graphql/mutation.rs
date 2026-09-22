@@ -214,7 +214,13 @@ impl LibraryMutation {
 
         let user = library_app
             .sign_in
-            .execute(platform_id.parse()?, access_token, allow_sign_up)
+            .execute(
+                platform_id
+                    .parse()
+                    .map_err(|e| errors::Error::from(e).extend())?,
+                access_token,
+                allow_sign_up,
+            )
             .await
             .map_err(|e| {
                 super::log_graphql_operation_error("library_mutation", &e);
@@ -446,8 +452,11 @@ impl LibraryMutation {
 
         let platform_id = platform_id
             .map(|value| value.parse::<PlatformId>())
-            .transpose()?;
-        let tenant_id = tenant_id.parse::<OperatorId>()?;
+            .transpose()
+            .map_err(|e| errors::Error::from(e).extend())?;
+        let tenant_id = tenant_id
+            .parse::<OperatorId>()
+            .map_err(|e| errors::Error::from(e).extend())?;
         let invitee = to_value_id_or_email(invitee)?;
 
         let output = app
@@ -486,8 +495,14 @@ impl LibraryMutation {
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
-        let tenant_id = input.tenant_id.parse::<OperatorId>()?;
-        let target_user_id = input.user_id.parse::<UserId>()?;
+        let tenant_id = input
+            .tenant_id
+            .parse::<OperatorId>()
+            .map_err(|e| errors::Error::from(e).extend())?;
+        let target_user_id = input
+            .user_id
+            .parse::<UserId>()
+            .map_err(|e| errors::Error::from(e).extend())?;
 
         let output = app
             .change_org_member_role
@@ -566,9 +581,14 @@ impl LibraryMutation {
             tags,
         } = input;
 
-        let name = name.map(|value| value.parse()).transpose()?;
-        let description =
-            description.map(|value| value.parse()).transpose()?;
+        let name = name
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(|e| errors::Error::from(e).extend())?;
+        let description = description
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(|e| errors::Error::from(e).extend())?;
         let tags = tags
             .map(|values| {
                 values
@@ -576,7 +596,8 @@ impl LibraryMutation {
                     .map(|value| value.parse())
                     .collect::<Result<Vec<Text>, _>>()
             })
-            .transpose()?;
+            .transpose()
+            .map_err(|e| errors::Error::from(e).extend())?;
 
         Ok(ctx
             .data::<Arc<LibraryApp>>()?
@@ -1076,17 +1097,25 @@ impl LibraryMutation {
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
-        let source_id = input.source_id.parse()?;
+        let source_id = input
+            .source_id
+            .parse()
+            .map_err(|e| errors::Error::from(e).extend())?;
 
         // TODO: add English comment
         let name = input
             .name
             .map(|name_str| name_str.parse::<Text>())
-            .transpose()?;
+            .transpose()
+            .map_err(|e| errors::Error::from(e).extend())?;
 
         let url = match input.url {
             Some(url_opt) => Some(match url_opt {
-                Some(url_str) => Some(url_str.parse::<Url>()?),
+                Some(url_str) => Some(
+                    url_str
+                        .parse::<Url>()
+                        .map_err(|e| errors::Error::from(e).extend())?,
+                ),
                 None => None,
             }),
             None => None,
@@ -1124,7 +1153,9 @@ impl LibraryMutation {
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         // TODO: add English comment
-        let source_id_parsed = source_id.parse()?;
+        let source_id_parsed = source_id
+            .parse()
+            .map_err(|e| errors::Error::from(e).extend())?;
 
         // TODO: add English comment
         app.delete_source

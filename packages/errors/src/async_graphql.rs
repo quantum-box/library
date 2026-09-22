@@ -1,6 +1,14 @@
 use crate::Error;
 use async_graphql::ErrorExtensions;
 
+/// Route implicit `?` conversions through the same public-error redaction as
+/// explicit `ErrorExtensions::extend()` calls.
+impl From<Error> for async_graphql::Error {
+    fn from(error: Error) -> Self {
+        error.extend()
+    }
+}
+
 impl ErrorExtensions for Error {
     fn extend(&self) -> async_graphql::Error {
         // Log at appropriate level based on error type
@@ -41,6 +49,22 @@ impl ErrorExtensions for Error {
                 }
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn implicit_conversion_hides_internal_error_details() {
+        let error = Error::internal_server_error(
+            "error returned from database: 1045 (28000): Access denied for user 'secret'@'10.0.0.1'",
+        );
+
+        let graphql_error: async_graphql::Error = error.into();
+
+        assert_eq!(graphql_error.message, "Internal server error");
     }
 }
 

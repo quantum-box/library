@@ -7,7 +7,7 @@ license.workspace = true
 [features]
 default = ["sqlx"]
 axum-extension = ["axum", "serde", "utoipa"]
-graphql = ["async-graphql"]
+graphql = ["async-graphql", "async-graphql/custom-error-conversion"]
 sqlx = ["dep:sqlx"]
 
 [dependencies]
