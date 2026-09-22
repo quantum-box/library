@@ -64,6 +64,10 @@ pub enum Error {
 }
 
 impl Error {
+    const PUBLIC_INTERNAL_SERVER_ERROR: &'static str =
+        "Internal server error";
+    const PUBLIC_SERVICE_UNAVAILABLE: &'static str = "Service unavailable";
+
     fn capture_backtrace() -> Backtrace {
         Backtrace::capture()
     }
@@ -156,6 +160,30 @@ impl Error {
         matches!(self, Error::BadRequest { .. })
     }
 
+    /// Return the message that is safe to expose to API consumers.
+    ///
+    /// Server-side errors often wrap infrastructure errors (for example,
+    /// database connection failures) whose details can contain credentials,
+    /// hostnames, or other internal topology. Keep those details available on
+    /// the error for server-side logging, but never include them in a public
+    /// response.
+    pub(crate) fn public_message(&self) -> &str {
+        match self {
+            Error::InternalServerError { .. } => {
+                Self::PUBLIC_INTERNAL_SERVER_ERROR
+            }
+            Error::ServiceUnavailable { .. } => {
+                Self::PUBLIC_SERVICE_UNAVAILABLE
+            }
+            Error::NotFound { message, .. }
+            | Error::BadRequest { message, .. }
+            | Error::Unauthorized { message, .. }
+            | Error::Forbidden { message, .. }
+            | Error::Conflict { message, .. }
+            | Error::PaymentRequired { message, .. } => message,
+        }
+    }
+
     pub fn business_logic(message: impl ToString) -> Error {
         Self::bad_request_raw(Self::format_message(
             "BusinessLogicError",
@@ -224,6 +252,29 @@ impl Error {
 
     pub fn not_supported(message: impl ToString) -> Error {
         Self::bad_request_raw(Self::format_message("NotSupported", message))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+
+    #[test]
+    fn hides_internal_server_error_details_from_public_messages() {
+        let error = Error::internal_server_error(
+            "error returned from database: 1045 (28000): Access denied for user 'secret'@'10.0.0.1'",
+        );
+
+        assert_eq!(error.public_message(), "Internal server error");
+        assert!(!error.public_message().contains("Access denied"));
+        assert!(error.to_string().contains("Access denied"));
+    }
+
+    #[test]
+    fn preserves_client_facing_error_messages() {
+        let error = Error::bad_request("Invalid input");
+
+        assert_eq!(error.public_message(), "BadRequest: Invalid input");
     }
 }
 
