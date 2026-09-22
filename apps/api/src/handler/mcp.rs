@@ -966,8 +966,11 @@ async fn upsert_data(
         database_manager::usecase::UpsertOutcome::Created => "created",
         database_manager::usecase::UpsertOutcome::Updated => "updated",
     };
+    let data = data_to_mcp(&data, &properties, &args.org, &args.repo);
+    let url = data.url.clone();
     Ok(json!({
-        "data": data_to_mcp(&data, &properties, &args.org, &args.repo),
+        "data": data,
+        "url": url,
         "outcome": outcome,
         "warnings": write.warnings,
     }))
@@ -1599,15 +1602,12 @@ async fn create_data(
         .await
         .map_err(tool_execution_error)?;
 
-    let mut response = serde_json::to_value(data_to_mcp(
-        &data,
-        &properties,
-        &args.org,
-        &args.repo,
-    ))
-    .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
+    let data = data_to_mcp(&data, &properties, &args.org, &args.repo);
+    let url = data.url.clone();
+    let mut response = serde_json::to_value(data)
+        .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
     response["property_count"] = json!(properties.len());
-    Ok(json!({ "data": response, "warnings": write.warnings }))
+    Ok(json!({ "data": response, "url": url, "warnings": write.warnings }))
 }
 
 async fn update_data(
@@ -1648,15 +1648,12 @@ async fn update_data(
         .await
         .map_err(tool_execution_error)?;
 
-    let mut response = serde_json::to_value(data_to_mcp(
-        &data,
-        &properties,
-        &args.org,
-        &args.repo,
-    ))
-    .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
+    let data = data_to_mcp(&data, &properties, &args.org, &args.repo);
+    let url = data.url.clone();
+    let mut response = serde_json::to_value(data)
+        .map_err(|err| json_rpc_error(-32603, err.to_string()))?;
     response["property_count"] = json!(properties.len());
-    Ok(json!({ "data": response, "warnings": write.warnings }))
+    Ok(json!({ "data": response, "url": url, "warnings": write.warnings }))
 }
 
 async fn delete_data(
@@ -2678,13 +2675,14 @@ fn output_schema_for_tool(name: &str) -> Value {
         "upsert_data" => schema_object(
             json!({
                 "data": mcp_data_schema(),
+                "url": { "type": "string" },
                 "outcome": {
                     "type": "string",
                     "enum": ["created", "updated"]
                 },
                 "warnings": mcp_write_warnings_schema()
             }),
-            &["data", "outcome"],
+            &["data", "url", "outcome"],
         ),
         "create_share_link" => schema_object(
             json!({
@@ -2711,9 +2709,10 @@ fn output_schema_for_tool(name: &str) -> Value {
         "create_data" | "update_data" => schema_object(
             json!({
                 "data": mcp_data_with_property_count_schema(),
+                "url": { "type": "string" },
                 "warnings": mcp_write_warnings_schema()
             }),
-            &["data"],
+            &["data", "url"],
         ),
         "delete_repo" | "delete_data" | "delete_source" => {
             deleted_output_schema()
@@ -4374,6 +4373,7 @@ mod tests {
                 "upsert_data",
                 json!({
                     "data": data.clone(),
+                    "url": "https://library.example.test/example/notes/data_01example",
                     "outcome": "updated",
                     "warnings": [{
                         "key": "reviewer",
@@ -4412,6 +4412,7 @@ mod tests {
                 "create_data",
                 json!({
                     "data": data_with_property_count.clone(),
+                    "url": "https://library.example.test/example/notes/data_01example",
                     "warnings": []
                 }),
             ),
@@ -4419,6 +4420,7 @@ mod tests {
                 "update_data",
                 json!({
                     "data": data_with_property_count.clone(),
+                    "url": "https://library.example.test/example/notes/data_01example",
                     "warnings": []
                 }),
             ),

@@ -15,8 +15,8 @@ PLT-4345では、Claude Code / Codexから「所属先を探す → repository�
 | repo slug変更 | `rename_repo` | CLI / REST / GraphQLにあった操作をMCPにも追加 |
 | Data一覧・検索・取得 | `list_data`, `search_data`, `get_data` | 認証済みexecutorと実org IDを渡すよう修正。private repoの既存read権限を評価 |
 | 型付きData読み取り | `get_data` | Markdownを維持したまま、`property_data`, `url`, `record_version` を追加。型付き編集に利用可能 |
-| Data作成・編集・削除 | `create_data`, `update_data`, `delete_data` | 既存。write結果にもURL・型付き値・revisionを追加。`update_data`は指定Propertyだけをpatch。`property_data`の代わりにfrontmatter付き`markdown`でも書ける（未知キーは`warnings`に出して省略） |
-| 指定IDへのData保存 | `upsert_data` | RESTのupsert usecaseを公開。ID再利用で重複作成を防ぐ。同時更新の競合は防がない |
+| Data作成・編集・削除 | `create_data`, `update_data`, `delete_data` | 既存。write結果にも最上位のURL（`data.url`にも互換維持）・型付き値・revisionを追加。`update_data`は指定Propertyだけをpatch。`property_data`の代わりにfrontmatter付き`markdown`でも書ける（未知キーは`warnings`に出して省略） |
+| 指定IDへのData保存 | `upsert_data` | RESTのupsert usecaseを公開。結果には最上位の正規URL（`data.url`にも互換維持）を返す。ID再利用で重複作成を防ぐ。同時更新の競合は防がない |
 | Property CRUD | `list_properties`, `get_property`, `create_property`, `update_property`, `delete_property` | 既存。Dataの入力にも欠けていた`id` / `location`を追加 |
 | Source CRUD | `list_sources`, `get_source`, `create_source`, `update_source`, `delete_source` | 既存。URL省略と明示nullが区別されず解除できなかった不具合を修正 |
 | 共有リンク | `create_share_link`, `list_share_links`, `revoke_share_link` | private Dataの外部閲覧用リンクを作成・一覧・失効。`list_share_links`は状態を変更しないread tool |

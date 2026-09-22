@@ -42,6 +42,7 @@ Use the client's own artifact tool only when the user explicitly asks for a Clau
 - `update_org` preserves omitted fields; `description: null` or `website: null` clears that field. `update_source` preserves an omitted URL and accepts `url: null` to clear it. Use null only when clearing was requested.
 - `rename_repo` changes the repository slug. Use the returned username for subsequent calls.
 - For a workflow with a known stable Data ID, use `upsert_data` to create or update that same record and inspect `outcome`. Retrying with the same ID avoids duplicate records but still writes again and can overwrite a concurrent edit. Do not invent IDs where the user intends an update to an existing record.
+- `create_data`, `update_data`, and `upsert_data` return the canonical Data URL at the top-level `url` (and also as `data.url` for compatibility). Hand that URL back verbatim after the write.
 - Create/delete organizations, repositories, properties, or sources only when the user's scope includes that change. Do not treat install or login as authorization to alter content.
 - After a write, report the returned ID and result. Re-read when the operation is readable through this connection. If a create times out, reconcile the target before retrying: the MCP API has no advertised idempotency key and a blind retry can duplicate data.
 - Re-read private writes using the same connection. Distinguish a write result from successful read-back; a separate read permission denial is not proof that the write failed.
