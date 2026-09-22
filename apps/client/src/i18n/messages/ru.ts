@@ -27,6 +27,7 @@ export const ru: LocaleMessages = {
   'common.close': 'Закрыть',
   'common.save': 'Сохранить',
   'common.saving': 'Сохранение…',
+  'common.showingCachedCopy': 'Показана копия, сохранённая на этом устройстве. Она может быть устаревшей.',
   'common.saved': 'Сохранено',
   'common.create': 'Создать',
   'common.creating': 'Создание…',

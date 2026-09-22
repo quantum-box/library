@@ -24,6 +24,7 @@ export const ko: LocaleMessages = {
   'common.close': '닫기',
   'common.save': '저장',
   'common.saving': '저장 중…',
+  'common.showingCachedCopy': '이 기기에 저장된 사본을 표시하고 있습니다. 최신이 아닐 수 있습니다.',
   'common.saved': '저장됨',
   'common.create': '만들기',
   'common.creating': '만드는 중…',

@@ -98,6 +98,15 @@ const engineDataDir = `${LEGACY_ENGINE_DATA_DIR}-v2`
 let clientPromise: Promise<PhotonClient> | null = null
 
 /**
+ * The same client, once `clientPromise` has settled on one.
+ *
+ * Held so a read can be answered in the render that asks for it. A screen
+ * that awaits even an in-memory answer draws one frame of "loading" first,
+ * and a screen that is revisited is exactly the one that should not.
+ */
+let builtClient: PhotonClient | null = null
+
+/**
  * The carry-over, running alongside the client rather than in front of it.
  *
  * `migrateLegacyEngineData` never rejects, so awaiting this adds no failure
@@ -119,12 +128,23 @@ interface EngineOverrides {
 let overrides: EngineOverrides | null = null
 
 async function engine(): Promise<PhotonClient> {
-  clientPromise ??= build().catch((error: unknown) => {
-    // Do not memoize a failure: a transient WASM fetch or a locked data
-    // directory should stay retryable.
-    clientPromise = null
-    throw error
-  })
+  if (!clientPromise) {
+    const building = build().then(
+      (client) => {
+        // A reset while this was building has already moved on to another
+        // client, or to none.
+        if (clientPromise === building) builtClient = client
+        return client
+      },
+      (error: unknown) => {
+        // Do not memoize a failure: a transient WASM fetch or a locked data
+        // directory should stay retryable.
+        if (clientPromise === building) clientPromise = null
+        throw error
+      }
+    )
+    clientPromise = building
+  }
   return clientPromise
 }
 
@@ -378,6 +398,32 @@ export async function getClientEngineRecord<T>(
 ): Promise<PhotonEngineRecord<T> | null> {
   const client = await engineFor(collection)
   await client.hydrateCollection(collection)
+  const query = client.liveRecord<T>(collection, recordId)
+  try {
+    const record = query.getSnapshot().data
+    if (!record || record.deletedAt != null) return null
+    return toEngineRecord<T>(record)
+  } finally {
+    query.destroy()
+  }
+}
+
+/**
+ * A record, read without waiting — or null when that would mean waiting.
+ *
+ * Answers only from a client that is already built, and only for a
+ * collection whose records are already in the projection. Anything else
+ * (the first read of a session, a carried collection still being carried)
+ * is reported as absent rather than awaited: this is for drawing what is
+ * already known in the render that asks, and `getClientEngineRecord` is the
+ * read for everything else.
+ */
+export function peekClientEngineRecord<T>(
+  collection: string,
+  recordId: string
+): PhotonEngineRecord<T> | null {
+  const client = builtClient
+  if (!client || isCarriedCollection(collection)) return null
   const query = client.liveRecord<T>(collection, recordId)
   try {
     const record = query.getSnapshot().data
@@ -669,6 +715,7 @@ export const __testOnly = {
   async reset(): Promise<void> {
     const existing = clientPromise
     clientPromise = null
+    builtClient = null
     legacyCarryOver = null
     overrides = null
     if (!existing) return

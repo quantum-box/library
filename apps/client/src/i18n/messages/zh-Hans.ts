@@ -24,6 +24,7 @@ export const zhHans: LocaleMessages = {
   'common.close': '关闭',
   'common.save': '保存',
   'common.saving': '正在保存…',
+  'common.showingCachedCopy': '正在显示保存在此设备上的副本，可能不是最新的。',
   'common.saved': '已保存',
   'common.create': '创建',
   'common.creating': '正在创建…',

@@ -24,6 +24,7 @@ export const zhHant: LocaleMessages = {
   'common.close': '關閉',
   'common.save': '儲存',
   'common.saving': '儲存中…',
+  'common.showingCachedCopy': '正在顯示儲存在此裝置上的副本，可能不是最新的。',
   'common.saved': '已儲存',
   'common.create': '建立',
   'common.creating': '建立中…',

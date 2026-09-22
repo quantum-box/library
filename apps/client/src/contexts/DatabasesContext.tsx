@@ -12,6 +12,7 @@ import {
   type LibraryRepository,
 } from '../lib/recordsApi'
 import { deleteRepository as deleteLibraryRepository } from '../lib/repositorySettingsApi'
+import { readWorkspace, rememberWorkspace } from '../lib/libraryReadCache'
 import { t } from '../i18n'
 import {
   loadSelectedOrganization,
@@ -162,6 +163,30 @@ export function DatabasesProvider({
   const repositoriesRequestGeneration = useRef(0)
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
+  /**
+   * What is on screen: nothing yet, the lists this device remembers, or the
+   * lists a request has returned. A remembered list is only ever drawn over
+   * nothing, and a failed request leaves it where it is.
+   */
+  const listsSource = useRef<'none' | 'cached' | 'listed'>('none')
+
+  const showLists = useCallback((repos: LibraryRepository[], orgs: LibraryOrganization[]) => {
+    setOrganizations(uniqueOrganizations(orgs))
+    const routeOrganizationId = organizationIdForUsername(
+      routeOrganizationUsername.current,
+      orgs.map((org) => ({ id: org.id, username: org.operatorName })),
+      repos,
+    )
+    setSelectedOrganizationIdState((current) =>
+      resolveSelectedOrganizationId(
+        orgs,
+        current,
+        selectionIntent.current ?? { kind: 'unset' },
+        routeOrganizationId,
+      ),
+    )
+    setDatabases(repos.map(repoToDatabase))
+  }, [])
 
   const refreshRepositories = useCallback(async () => {
     const requestGeneration = ++repositoriesRequestGeneration.current
@@ -173,25 +198,15 @@ export function DatabasesProvider({
         fetchLibraryOrganizations(),
       ])
       if (requestGeneration !== repositoriesRequestGeneration.current) return
-      const nextOrganizations = uniqueOrganizations(orgs)
-      setOrganizations(nextOrganizations)
-      const routeOrganizationId = organizationIdForUsername(
-        routeOrganizationUsername.current,
-        orgs.map((org) => ({ id: org.id, username: org.operatorName })),
-        repos,
-      )
-      setSelectedOrganizationIdState((current) =>
-        resolveSelectedOrganizationId(
-          orgs,
-          current,
-          selectionIntent.current ?? { kind: 'unset' },
-          routeOrganizationId,
-        ),
-      )
-      setDatabases(repos.map(repoToDatabase))
+      listsSource.current = 'listed'
+      showLists(repos, orgs)
+      rememberWorkspace({ repositories: repos, organizations: orgs })
     } catch (error: unknown) {
       if (requestGeneration !== repositoriesRequestGeneration.current) return
       console.warn('Failed to load Library repositories', error)
+      // The remembered lists stay up rather than an error in their place: a
+      // repository URL still resolves, and the sidebar still leads somewhere.
+      if (listsSource.current === 'cached') return
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
       // Load failures are transient; keep the persisted choice for the retry.
@@ -202,7 +217,30 @@ export function DatabasesProvider({
         setRepositoriesLoading(false)
       }
     }
-  }, [])
+  }, [showLists])
+
+  /**
+   * The lists this device remembers, drawn while the request for them is out.
+   *
+   * Only over nothing: once any request has answered, what it said is newer
+   * than anything remembered. The loading flag drops with them, because it is
+   * what every repository-scoped screen waits on before it can resolve its URL.
+   */
+  useEffect(() => {
+    let cancelled = false
+    void readWorkspace().then((cached) => {
+      if (cancelled || !cached || listsSource.current !== 'none') return
+      listsSource.current = 'cached'
+      showLists(cached.repositories, cached.organizations)
+      setRepositoriesLoading(false)
+      // A request that failed before these arrived: the lists take the
+      // error's place, as they would have had they arrived first.
+      setRepositoriesError(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showLists])
 
   // The user's pick outlives the page: it is written through to localStorage
   // so a reload (or a Tauri window relaunch) reopens the same organization.
@@ -288,6 +326,18 @@ export function DatabasesProvider({
     repositoriesRequestGeneration.current += 1
     setRepositoriesLoading(false)
     setRepositoriesError(null)
+    // Nor may the remembered lists, on the next start.
+    void readWorkspace().then((cached) => {
+      if (!cached) return
+      rememberWorkspace({
+        ...cached,
+        repositories: cached.repositories.filter(
+          (repository) => !(
+            repository.orgUsername === orgUsername && repository.username === repoUsername
+          ),
+        ),
+      })
+    })
     setDatabases((current) => current.filter(
       (database) => !(
         database.orgUsername === orgUsername && database.repoUsername === repoUsername

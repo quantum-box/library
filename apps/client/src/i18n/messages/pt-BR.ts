@@ -24,6 +24,7 @@ export const ptBR: LocaleMessages = {
   'common.close': 'Fechar',
   'common.save': 'Salvar',
   'common.saving': 'Salvando…',
+  'common.showingCachedCopy': 'Mostrando a cópia salva neste dispositivo. Ela pode estar desatualizada.',
   'common.saved': 'Salvo',
   'common.create': 'Criar',
   'common.creating': 'Criando…',
