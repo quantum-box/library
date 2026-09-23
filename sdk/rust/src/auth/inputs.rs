@@ -133,6 +133,13 @@ pub struct DeleteServiceAccountInput<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct FindAllServiceAccountsInput<'a> {
+    pub executor: &'a dyn ExecutorAction,
+    pub multi_tenancy: &'a dyn MultiTenancyAction,
+    pub tenant_id: &'a TenantId,
+}
+
+#[derive(Debug, Clone)]
 pub struct GetServiceAccountByNameInput<'a> {
     pub executor: &'a dyn ExecutorAction,
     pub multi_tenancy: &'a dyn MultiTenancyAction,

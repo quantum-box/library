@@ -41,6 +41,29 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
     Some(PolicyId::new(id))
 }
 
+/// Companion policy granting what issuing an API key with repository
+/// access needs on the tachyon side: `auth:AttachServiceAccountPolicy` to
+/// grant the key's own service account its role, and
+/// `auth:DeleteServiceAccount` to remove that account when the key goes.
+/// Neither is in LibraryUserPolicy or LibraryRepoOwnerPolicy, and both are
+/// system policies the API cannot amend, so the actions live in this
+/// custom policy (`library:ApiKeyIssuer` in
+/// .tachyon/manifests/library-api-runtime.yml). It is shared with the
+/// organizations under the Library platform and attached in the
+/// organization's tenant, which is the only scope a check made there
+/// reads. Its applied id is injected per environment.
+///
+/// `None` when the environment does not configure it; issuing then
+/// proceeds without the grant, which works for tenant administrators only.
+pub fn library_api_key_issuer_policy_id() -> Option<PolicyId> {
+    let id = std::env::var("LIBRARY_API_KEY_ISSUER_POLICY_ID").ok()?;
+    let id = id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(PolicyId::new(id))
+}
+
 /// Tachyon's built-in tenant administrator policy.
 ///
 /// This is the grant that actually makes someone an administrator of a

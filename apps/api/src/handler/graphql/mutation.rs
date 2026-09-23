@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::input;
 use super::model::{
     ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, GlobalIdMapping,
-    Operator, Organization, Property, PropertyType, Repo,
+    Operator, Organization, Property, PropertyType, PublicApiKey, Repo,
     SeedLibraryTenantPayload, Source, SyncResult, User,
 };
 use crate::app::LibraryApp;
@@ -977,13 +977,12 @@ impl LibraryMutation {
                 multi_tenancy,
                 org_name: &input.organization_username.parse()?,
                 name: &input.name,
-                service_account_name: input.service_account_name.as_deref(),
+                role: input.role,
             })
             .await?;
 
         Ok(ApiKeyResponse {
-            api_key: result.api_key.into(),
-            service_account: result.service_account.into(),
+            api_key: PublicApiKey::with_role(result.api_key, result.role),
         })
     }
 
@@ -1005,7 +1004,6 @@ impl LibraryMutation {
                 multi_tenancy,
                 org_name: &input.organization_username.parse()?,
                 api_key_id: &input.api_key_id,
-                service_account_name: input.service_account_name.as_deref(),
             })
             .await
             .map_err(|e| {

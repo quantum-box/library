@@ -11,22 +11,41 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { CreateApiKeyMutation } from '@/gen/graphql'
+import type { ApiKeyRole, CreateApiKeyMutation } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { Copy, Plus } from 'lucide-react'
 import { useState } from 'react'
+import {
+	API_KEY_ROLE_CHOICES,
+	type ApiKeyRoleChoice,
+	NO_ROLE,
+	apiKeyRoleDescription,
+	apiKeyRoleLabel,
+} from './api-key-role'
 
 export function ApiKeyDialog({
 	orgUsername,
 	onCreate,
 }: {
 	orgUsername: string
-	onCreate: (orgUsername: string, name: string) => Promise<CreateApiKeyMutation>
+	onCreate: (
+		orgUsername: string,
+		name: string,
+		role: ApiKeyRole | null,
+	) => Promise<CreateApiKeyMutation>
 }) {
 	const { t } = useTranslation()
 	const [open, setOpen] = useState(false)
 	const [name, setName] = useState('')
+	const [role, setRole] = useState<ApiKeyRoleChoice>(NO_ROLE)
 	const [loading, setLoading] = useState(false)
 	const [apiKey, setApiKey] = useState<string | null>(null)
 	const { toast } = useToast()
@@ -36,7 +55,11 @@ export function ApiKeyDialog({
 
 		setLoading(true)
 		try {
-			const result = await onCreate(orgUsername, name)
+			const result = await onCreate(
+				orgUsername,
+				name,
+				role === NO_ROLE ? null : role,
+			)
 
 			setApiKey(result.createApiKey.apiKey.value)
 			toast({
@@ -68,6 +91,7 @@ export function ApiKeyDialog({
 	const handleClose = () => {
 		setOpen(false)
 		setName('')
+		setRole(NO_ROLE)
 		setApiKey(null)
 	}
 
@@ -101,6 +125,31 @@ export function ApiKeyDialog({
 								className='col-span-3'
 								placeholder={t.v1beta.apiKeyDialog.namePlaceholder}
 							/>
+						</div>
+						<div className='grid grid-cols-4 items-start gap-4'>
+							<Label htmlFor='role' className='text-right pt-2'>
+								{t.v1beta.apiKeyDialog.role}
+							</Label>
+							<div className='col-span-3 grid gap-2'>
+								<Select
+									value={role}
+									onValueChange={value => setRole(value as ApiKeyRoleChoice)}
+								>
+									<SelectTrigger id='role'>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{API_KEY_ROLE_CHOICES.map(choice => (
+											<SelectItem key={choice} value={choice}>
+												{apiKeyRoleLabel(choice, t.v1beta.apiKeyDialog)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								<p className='text-xs text-muted-foreground'>
+									{apiKeyRoleDescription(role, t.v1beta.apiKeyDialog)}
+								</p>
+							</div>
 						</div>
 					</div>
 				) : (

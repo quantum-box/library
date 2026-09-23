@@ -1,3 +1,4 @@
+mod api_key_role;
 pub mod global_id_mapping;
 mod organization;
 pub mod policy;
@@ -8,6 +9,7 @@ pub mod share_link;
 // enough that pulling them into `domain::*` would be confusing.
 pub mod translation;
 
+pub use api_key_role::*;
 pub use global_id_mapping::*;
 pub use organization::*;
 pub use policy::*;

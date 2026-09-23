@@ -40,12 +40,14 @@ pub struct CreateOrganizationInput {
 
 #[derive(InputObject, Debug)]
 pub struct CreateApiKeyInput {
-    /// TODO: add English documentation
+    /// Organization the key is issued for.
     pub organization_username: String,
-    /// TODO: add English documentation
+    /// Display name, to tell keys apart when listing or revoking.
     pub name: String,
-    /// TODO: add English documentation
-    pub service_account_name: Option<String>,
+    /// Repository access for the key, across every repository of the
+    /// organization. Omit for a key that reaches public repositories only.
+    /// Requires `library:ManageRepoPolicy`.
+    pub role: Option<crate::domain::ApiKeyRole>,
 }
 
 #[derive(InputObject, Debug, Clone)]
@@ -54,8 +56,6 @@ pub struct RevokeApiKeyInput {
     pub organization_username: String,
     /// Identifier of the key to revoke, as returned by `apiKeys`.
     pub api_key_id: String,
-    /// Service account holding the key. Defaults to `default`.
-    pub service_account_name: Option<String>,
 }
 
 #[derive(InputObject, Debug, Clone)]

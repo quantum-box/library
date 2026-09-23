@@ -1,6 +1,7 @@
 mod add_data;
 mod add_property;
 mod analyze_frontmatter;
+mod api_key_issuer;
 mod boundary;
 mod bulk_sync_ext_github;
 mod change_org_member_role;

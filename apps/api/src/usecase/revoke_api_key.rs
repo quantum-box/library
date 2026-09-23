@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
 use derive_new::new;
+use futures_util::future::try_join_all;
 use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyInput, GetServiceAccountByNameInput,
+    AuthApp, CheckPolicyInput, DeleteServiceAccountInput,
+    FindAllPublicApiKeyInput, FindAllServiceAccountsInput, PolicyId,
     PublicApiKeyId, RevokePublicApiKeyInput,
 };
-use value_object::Identifier;
+use value_object::{Identifier, TenantId};
 
+use super::api_key_issuer::grant_api_key_issuer;
 use super::GetOrganizationByUsernameQuery;
+use crate::domain::ApiKeyServiceAccount;
 
 #[derive(Debug, Clone)]
 pub struct RevokeApiKeyInputData<'a> {
@@ -16,13 +20,14 @@ pub struct RevokeApiKeyInputData<'a> {
 
     pub org_name: &'a Identifier,
     pub api_key_id: &'a str,
-    pub service_account_name: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, new)]
 pub struct RevokeApiKey {
     auth_app: Arc<dyn AuthApp>,
     get_org_by_name: Arc<dyn GetOrganizationByUsernameQuery>,
+    /// See `library_api_key_issuer_policy_id`.
+    api_key_issuer_policy_id: Option<PolicyId>,
 }
 
 #[async_trait::async_trait]
@@ -48,33 +53,61 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             })
             .await?;
 
-        // The key belongs to the organization named in the request, so
-        // the operator it is revoked under is resolved the same way
-        // issuing resolves it.
         let organization = self
             .get_org_by_name
             .execute(&input.org_name.to_string().parse()?)
             .await?
             .ok_or(errors::not_found!("Organization not found"))?;
+        let tenant_id: TenantId = organization.id().to_string().parse()?;
+        let api_key_id = PublicApiKeyId::new(input.api_key_id);
 
-        let service_account_name =
-            input.service_account_name.unwrap_or("default");
-
-        // Keys hang off a service account, and an organization that
-        // never issued one has no key to revoke either. Missing here is
-        // therefore not-found rather than a reason to create one.
-        let service_account = self
+        // Upstream revoke succeeds silently for a key the named account
+        // does not hold, so the account holding it is found first.
+        let service_accounts = self
             .auth_app
-            .get_service_account_by_name(&GetServiceAccountByNameInput {
+            .find_all_service_accounts(&FindAllServiceAccountsInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                tenant_id: organization.id(),
-                name: service_account_name,
+                tenant_id: &tenant_id,
             })
-            .await?
-            .ok_or(errors::not_found!("Service account not found"))?;
-
-        let api_key_id = PublicApiKeyId::new(input.api_key_id);
+            .await?;
+        let holders = try_join_all(
+            service_accounts
+                .iter()
+                .filter_map(|service_account| {
+                    ApiKeyServiceAccount::from_name(service_account.name())
+                        .map(|account| (service_account, account))
+                })
+                .map(|(service_account, account)| {
+                    let api_key_id = &api_key_id;
+                    let organization = &organization;
+                    async move {
+                        let holds_key = self
+                            .auth_app
+                            .find_all_public_api_key(
+                                &FindAllPublicApiKeyInput {
+                                    executor: input.executor,
+                                    multi_tenancy: input.multi_tenancy,
+                                    operator_id: organization.id(),
+                                    service_account_id: service_account
+                                        .id(),
+                                },
+                            )
+                            .await?
+                            .iter()
+                            .any(|key| key.id() == api_key_id);
+                        Ok::<_, errors::Error>(
+                            holds_key.then_some((service_account, account)),
+                        )
+                    }
+                }),
+        )
+        .await?;
+        let (service_account, account) = holders
+            .into_iter()
+            .flatten()
+            .next()
+            .ok_or(errors::not_found!("API key not found"))?;
 
         self.auth_app
             .revoke_public_api_key(&RevokePublicApiKeyInput {
@@ -84,7 +117,58 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 service_account_id: service_account.id(),
                 api_key_id: &api_key_id,
             })
-            .await
+            .await?;
+
+        // A key's own account has nothing left to authenticate. Removing
+        // it is tidying, not revocation: the key is already refused, so a
+        // failure here is logged rather than reported.
+        if let ApiKeyServiceAccount::Dedicated(_) = account {
+            // Removing an account is authorized upstream as the caller;
+            // owners get the grant that allows it (see
+            // `grant_api_key_issuer`). Anyone else revokes the key only.
+            if self
+                .auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:ManageRepoPolicy",
+                })
+                .await
+                .is_ok()
+            {
+                if let Err(error) = grant_api_key_issuer(
+                    self.auth_app.as_ref(),
+                    self.api_key_issuer_policy_id.as_ref(),
+                    input.executor,
+                    input.multi_tenancy,
+                    &tenant_id,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        error = %error,
+                        "api key issuer grant failed before removing a revoked key's service account"
+                    );
+                }
+            }
+            if let Err(error) = self
+                .auth_app
+                .delete_service_account(&DeleteServiceAccountInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    service_account_id: service_account.id(),
+                })
+                .await
+            {
+                tracing::warn!(
+                    service_account = %service_account.id(),
+                    error = %error,
+                    "revoked key's service account was not removed"
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -96,12 +180,12 @@ mod tests {
     use async_trait::async_trait;
     use mockall::mock;
     use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
     use tachyon_sdk::auth::{
-        test_helper::{create_test_executor, create_test_multi_tenancy},
-        MockAuthApp, ServiceAccount, ServiceAccountId,
+        test_helper::create_test_multi_tenancy, MockAuthApp, PublicApiKey,
+        PublicApiKeyValue, ServiceAccount,
     };
-    use value_object::{TenantId, Text};
+    use value_object::Text;
 
     mock! {
         #[derive(Debug)]
@@ -122,21 +206,35 @@ mod tests {
         )
     }
 
-    fn service_account(tenant_id: &TenantId) -> ServiceAccount {
-        ServiceAccount {
-            id: ServiceAccountId::new("sa_01test").unwrap(),
-            tenant_id: tenant_id.clone(),
-            name: "default".to_string(),
-            created_at: chrono::Utc::now(),
-        }
+    /// A signed-in person: the issuer grant is given to users only.
+    fn user_executor() -> tachyon_sdk::auth::Executor {
+        let now = chrono::Utc::now();
+        tachyon_sdk::auth::Executor::User(Box::new(
+            tachyon_sdk::auth::User {
+                id: tachyon_sdk::auth::UserId::new(
+                    "us_01hs2yepy5hw4rz8pdq2wywnwt",
+                )
+                .unwrap(),
+                username: "owner".to_string(),
+                tenants: vec![TenantId::default()],
+                email: None,
+                name: None,
+                email_verified: None,
+                image: None,
+                role: tachyon_sdk::auth::DefaultRole::Owner,
+                metadata: None,
+                created_at: now,
+                updated_at: now,
+            },
+        ))
     }
 
-    #[tokio::test]
-    async fn revoking_targets_the_key_under_the_organization_that_issued_it(
-    ) {
-        let tenant_id = TenantId::default();
-        let calls = Arc::new(Mutex::new(Vec::new()));
+    type Calls = Arc<Mutex<Vec<String>>>;
 
+    /// An organization with a legacy shared account holding `pak_legacy`
+    /// and a reader key `pak_reader` on its own account.
+    fn auth(calls: &Calls, owner: bool) -> MockAuthApp {
+        let tenant_id = TenantId::default();
         let mut auth = MockAuthApp::new();
         auth.expect_check_policy().returning({
             let calls = calls.clone();
@@ -145,100 +243,172 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push(format!("policy:{}", input.action));
+                let denied =
+                    !owner && input.action == "library:ManageRepoPolicy";
+                Box::pin(async move {
+                    if denied {
+                        Err(errors::Error::forbidden("denied"))
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        });
+        auth.expect_attach_user_policy().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls
+                    .lock()
+                    .unwrap()
+                    .push(format!("grant:{}", input.policy_id));
                 Box::pin(async { Ok(()) })
             }
         });
-        auth.expect_get_service_account_by_name().returning({
+        auth.expect_find_all_service_accounts().returning({
             let tenant_id = tenant_id.clone();
             move |_| {
-                let sa = service_account(&tenant_id);
-                Box::pin(async move { Ok(Some(sa)) })
+                let accounts = [
+                    ("sa_01legacy", "default"),
+                    ("sa_01reader", "library-api-key-reader-aaa"),
+                ]
+                .map(|(id, name)| ServiceAccount {
+                    id: id.to_string().into(),
+                    tenant_id: tenant_id.clone(),
+                    name: name.to_string(),
+                    created_at: chrono::Utc::now(),
+                })
+                .to_vec();
+                Box::pin(async move { Ok(accounts) })
+            }
+        });
+        auth.expect_find_all_public_api_key().returning({
+            let tenant_id = tenant_id.clone();
+            move |input| {
+                let key_id = match input.service_account_id.as_str() {
+                    "sa_01legacy" => "pak_legacy",
+                    _ => "pak_reader",
+                };
+                let key = PublicApiKey {
+                    id: PublicApiKeyId::new(key_id),
+                    tenant_id: tenant_id.clone(),
+                    service_account_id: input.service_account_id.clone(),
+                    name: "key".to_string(),
+                    value: PublicApiKeyValue::new("pk_****"),
+                    created_at: chrono::Utc::now(),
+                };
+                Box::pin(async move { Ok(vec![key]) })
             }
         });
         auth.expect_revoke_public_api_key().returning({
             let calls = calls.clone();
             move |input| {
                 calls.lock().unwrap().push(format!(
-                    "revoke:{}:{}:{}",
-                    input.operator_id,
+                    "revoke:{}:{}",
                     input.service_account_id.as_str(),
                     input.api_key_id.as_str(),
                 ));
                 Box::pin(async { Ok(()) })
             }
         });
-
-        let mut org_query = MockGetOrgByUsername::new();
-        org_query.expect_execute().returning({
-            let tenant_id = tenant_id.clone();
-            move |_| {
-                let organization = org(&tenant_id);
-                Ok(Some(organization))
+        auth.expect_delete_service_account().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls.lock().unwrap().push(format!(
+                    "delete-sa:{}",
+                    input.service_account_id.as_str()
+                ));
+                Box::pin(async { Ok(()) })
             }
         });
+        auth
+    }
 
-        let usecase =
-            RevokeApiKey::new(Arc::new(auth), Arc::new(org_query));
-        let executor = create_test_executor();
+    async fn revoke(
+        auth: MockAuthApp,
+        api_key_id: &str,
+    ) -> errors::Result<()> {
+        let mut org_query = MockGetOrgByUsername::new();
+        org_query
+            .expect_execute()
+            .returning(|_| Ok(Some(org(&TenantId::default()))));
+        let executor = user_executor();
         let multi_tenancy = create_test_multi_tenancy();
+        RevokeApiKey::new(
+            Arc::new(auth),
+            Arc::new(org_query),
+            Some(PolicyId::new("pol_01issuer")),
+        )
+        .execute(&RevokeApiKeyInputData {
+            executor: &executor,
+            multi_tenancy: &multi_tenancy,
+            org_name: &Identifier::from_str("test-org").unwrap(),
+            api_key_id,
+        })
+        .await
+    }
 
-        usecase
-            .execute(&RevokeApiKeyInputData {
-                executor: &executor,
-                multi_tenancy: &multi_tenancy,
-                org_name: &Identifier::from_str("test-org").unwrap(),
-                api_key_id: "pak_01test",
-                service_account_name: None,
-            })
-            .await
-            .unwrap();
+    #[tokio::test]
+    async fn revoking_a_key_removes_its_own_account_too() {
+        let calls = Calls::default();
+        revoke(auth(&calls, true), "pak_reader").await.unwrap();
 
         assert_eq!(
             calls.lock().unwrap().as_slice(),
-            &[
-                "policy:library:RevokeApiKey".to_string(),
-                format!("revoke:{tenant_id}:sa_01test:pak_01test"),
+            [
+                "policy:library:RevokeApiKey",
+                "revoke:sa_01reader:pak_reader",
+                "policy:library:ManageRepoPolicy",
+                "grant:pol_01issuer",
+                "delete-sa:sa_01reader",
+            ]
+        );
+    }
+
+    /// Someone who may revoke but not manage repository policy gets no
+    /// grant; the account is still asked to go, and if that is refused
+    /// the key stays revoked regardless.
+    #[tokio::test]
+    async fn a_non_owner_revokes_without_being_granted_anything() {
+        let calls = Calls::default();
+        revoke(auth(&calls, false), "pak_reader").await.unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "policy:library:RevokeApiKey",
+                "revoke:sa_01reader:pak_reader",
+                "policy:library:ManageRepoPolicy",
+                "delete-sa:sa_01reader",
+            ]
+        );
+    }
+
+    /// The legacy account is shared by every older key, so only the key
+    /// goes.
+    #[tokio::test]
+    async fn revoking_a_legacy_key_keeps_the_shared_account() {
+        let calls = Calls::default();
+        revoke(auth(&calls, true), "pak_legacy").await.unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "policy:library:RevokeApiKey",
+                "revoke:sa_01legacy:pak_legacy",
             ]
         );
     }
 
     #[tokio::test]
-    async fn a_missing_service_account_is_not_created_to_revoke_against() {
-        let tenant_id = TenantId::default();
-
-        let mut auth = MockAuthApp::new();
-        auth.expect_check_policy()
-            .returning(|_| Box::pin(async { Ok(()) }));
-        auth.expect_get_service_account_by_name()
-            .returning(|_| Box::pin(async { Ok(None) }));
-        auth.expect_create_service_account().never();
-        auth.expect_revoke_public_api_key().never();
-
-        let mut org_query = MockGetOrgByUsername::new();
-        org_query.expect_execute().returning({
-            let tenant_id = tenant_id.clone();
-            move |_| {
-                let organization = org(&tenant_id);
-                Ok(Some(organization))
-            }
-        });
-
-        let usecase =
-            RevokeApiKey::new(Arc::new(auth), Arc::new(org_query));
-        let executor = create_test_executor();
-        let multi_tenancy = create_test_multi_tenancy();
-
-        let result = usecase
-            .execute(&RevokeApiKeyInputData {
-                executor: &executor,
-                multi_tenancy: &multi_tenancy,
-                org_name: &Identifier::from_str("test-org").unwrap(),
-                api_key_id: "pak_01test",
-                service_account_name: None,
-            })
-            .await;
+    async fn an_unknown_key_is_not_found_and_nothing_is_revoked() {
+        let calls = Calls::default();
+        let result = revoke(auth(&calls, true), "pak_missing").await;
 
         assert!(matches!(result, Err(errors::Error::NotFound { .. })));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["policy:library:RevokeApiKey"]
+        );
     }
 
     #[tokio::test]
@@ -247,26 +417,10 @@ mod tests {
         auth.expect_check_policy().returning(|_| {
             Box::pin(async { Err(errors::Error::forbidden("denied")) })
         });
-        auth.expect_get_service_account_by_name().never();
+        auth.expect_find_all_service_accounts().never();
         auth.expect_revoke_public_api_key().never();
 
-        let mut org_query = MockGetOrgByUsername::new();
-        org_query.expect_execute().never();
-
-        let usecase =
-            RevokeApiKey::new(Arc::new(auth), Arc::new(org_query));
-        let executor = create_test_executor();
-        let multi_tenancy = create_test_multi_tenancy();
-
-        let result = usecase
-            .execute(&RevokeApiKeyInputData {
-                executor: &executor,
-                multi_tenancy: &multi_tenancy,
-                org_name: &Identifier::from_str("test-org").unwrap(),
-                api_key_id: "pak_01test",
-                service_account_name: None,
-            })
-            .await;
+        let result = revoke(auth, "pak_reader").await;
 
         assert!(matches!(result, Err(errors::Error::Forbidden { .. })));
     }

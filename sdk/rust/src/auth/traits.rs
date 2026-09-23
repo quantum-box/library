@@ -105,6 +105,12 @@ pub trait AuthApp: Debug + Send + Sync + 'static {
         input: &GetServiceAccountByNameInput<'a>,
     ) -> errors::Result<Option<ServiceAccount>>;
 
+    /// List every service account in a tenant.
+    async fn find_all_service_accounts<'a>(
+        &self,
+        input: &FindAllServiceAccountsInput<'a>,
+    ) -> errors::Result<Vec<ServiceAccount>>;
+
     /// Delete a service account.
     async fn delete_service_account<'a>(
         &self,

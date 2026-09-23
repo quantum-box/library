@@ -174,7 +174,7 @@ async fn test_create_api_key() -> anyhow::Result<()> {
             multi_tenancy: &multi_tenancy,
             org_name: &organization.username().to_string().parse().unwrap(),
             name: "Test API Key",
-            service_account_name: Some("default"),
+            role: None,
         })
         .await?;
 
@@ -183,7 +183,12 @@ async fn test_create_api_key() -> anyhow::Result<()> {
     // TODO: add English comment
     assert!(!result.api_key.value().to_string().is_empty());
     assert_eq!(result.api_key.name().to_string(), "Test API Key");
-    assert_eq!(result.service_account.name().to_string(), "default");
+    assert_eq!(
+        library_api::domain::ApiKeyServiceAccount::from_name(
+            result.service_account.name()
+        ),
+        Some(library_api::domain::ApiKeyServiceAccount::Dedicated(None))
+    );
 
     Ok(())
 }
@@ -430,7 +435,7 @@ async fn test_api_key_access_control() -> anyhow::Result<()> {
                 .parse()
                 .unwrap(),
             name: "Test API Key",
-            service_account_name: Some("default"),
+            role: None,
         })
         .await?;
     println!(
