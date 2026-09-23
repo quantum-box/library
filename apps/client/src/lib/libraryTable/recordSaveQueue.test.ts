@@ -56,7 +56,37 @@ describe('RecordSaveQueue', () => {
     await expect(urgent).resolves.toBe(true)
     await expect(b).resolves.toBe(true)
     await expect(after).resolves.toBe(true)
-    expect(sent).toEqual(['a', 'urgent', 'after'])
+    // It overtook 'a', so it is written once more after it, then 'after'.
+    expect(sent).toEqual(['a', 'urgent', 'urgent', 'after'])
+  })
+
+  it('sends an urgent save that overtook one under way again once both settle', async () => {
+    const queue = new RecordSaveQueue()
+    const sent: string[] = []
+    const older = deferred()
+    void queue.push(() => { sent.push('older'); return older.promise })
+    await flush()
+    let settled = false
+    const urgent = queue.push(() => { sent.push('newest'); return Promise.resolve(true) }, { urgent: true })
+    void urgent.then(() => { settled = true })
+    // Sent at once, but the older one may still be applied after it on the
+    // server: not saved yet.
+    expect(sent).toEqual(['older', 'newest'])
+    await flush()
+    expect(settled).toBe(false)
+
+    older.resolve(true)
+    await expect(urgent).resolves.toBe(true)
+    expect(sent).toEqual(['older', 'newest', 'newest'])
+  })
+
+  it('does not send an urgent save twice when nothing was under way', async () => {
+    const queue = new RecordSaveQueue()
+    const sent: string[] = []
+    await queue.push(() => { sent.push('earlier'); return Promise.resolve(true) })
+    await queue.push(() => { sent.push('urgent'); return Promise.resolve(true) }, { urgent: true })
+    await queue.push(() => { sent.push('later'); return Promise.resolve(true) })
+    expect(sent).toEqual(['earlier', 'urgent', 'later'])
   })
 
   it('reports a superseded save as failed when the urgent one fails', async () => {

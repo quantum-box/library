@@ -348,6 +348,37 @@ describe('Photon Live provider', () => {
     }
   })
 
+  it('sends a flushed body waiting behind a checkpoint with its acknowledgement', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    vi.useFakeTimers()
+    try {
+      fixture.provider.queueCheckpoint('first body')
+      fixture.provider.flushCheckpoint()
+      const first = sentJson(socket).find((frame) => frame.type === 'live-checkpoint')!
+      // The page is hidden right after the last edit.
+      fixture.provider.queueCheckpoint('last body before switching away')
+      fixture.provider.flushCheckpoint()
+      expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1)
+
+      // No timer runs: a hidden page may be suspended before a debounce fires.
+      socket.message(jsonFrame({ type: 'live-saved', version: 3, record_version: '2', operation_id: first.operation_id }))
+      await flushMicrotasks()
+      const checkpoints = sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')
+      expect(checkpoints).toHaveLength(2)
+      expect(checkpoints[1]).toMatchObject({ body: 'last body before switching away', version: 3 })
+    } finally {
+      vi.useRealTimers()
+      fixture.provider.destroy()
+    }
+  })
+
   it('fails a checkpoint too large for the worker to read instead of waiting forever', async () => {
     const fixture = createFixture()
     await waitFor(() => expect(fixture.getSocket()).toBeDefined())

@@ -303,10 +303,11 @@ export function DataEditorPage({
     setSaveState('saving')
     setSaveError(null)
 
-    // The unloading save starts now rather than behind network work the page
-    // may not outlive. It may overtake the queue because a save carrying the
-    // body is built from the whole record as last known, so it holds every
-    // earlier save's change too; one leaving the body out does not.
+    // A save made as the page is hidden or unloads starts now rather than
+    // behind network work the page may not outlive. It may overtake the queue
+    // because a save carrying the body is built from the whole record as last
+    // known, so it holds every earlier save's change too; one leaving the body
+    // out does not.
     const urgent = carriesBody && Boolean(options?.keepalive)
     return saveQueue.push(() => updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
       .then((saved) => {

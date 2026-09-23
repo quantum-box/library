@@ -154,6 +154,12 @@ export class LiveBodySession {
   private disposed = false
   /** The last body known to be durable, as serialized by the editor. */
   private durable: string | null = null
+  /**
+   * The newest ordinary save `durable` reflects. A save the page sent later
+   * may overtake an earlier one (see `flush`), so an older one settling last
+   * must not move `durable` back.
+   */
+  private durableRestSeq = 0
   /** The room the editor is bound to, healthy or not. Null while on the draft. */
   private bound: { provider: PhotonLiveProvider; unsubscribe: () => void } | null = null
   private candidate: Candidate | null = null
@@ -325,20 +331,33 @@ export class LiveBodySession {
   /**
    * Save what can be saved now.
    *
-   * - `hidden`: the page may come back. A room sends its checkpoint; edits
-   *   held for a room go through the ordinary body.
-   * - `leaving`: this editor unmounts in a page that stays. As `hidden`, and
-   *   a disconnected room's body is saved normally; a connected room is kept
-   *   open until it acknowledges (see `drain`).
+   * - `hidden`: the page may come back -- or be discarded without another
+   *   event, as mobile browsers do. A room sends its checkpoint at once.
+   *   Edits held for a room are saved normally, in a request that outlives
+   *   the page.
+   * - `leaving`: this editor unmounts in a page that stays. As `hidden`, in
+   *   ordinary requests, and a disconnected room's body is saved normally; a
+   *   connected room is kept open until it acknowledges (see `drain`).
    * - `unloading`: the page is going away and its socket with it, whether or
    *   not the room received the last body. Anything the room has not
    *   acknowledged is saved normally too, in a request that outlives the page.
+   *
+   * A room's body is not saved normally while the page is only hidden, even
+   * when it is reconnecting. That save is unconditional: it would change the
+   * canonical body under the room -- possibly to a document still missing
+   * what peers saved meanwhile -- and restart the room for everyone in it,
+   * on a mere switch away from the tab. Updates made while connected are in
+   * the room already, and its next checkpoint saves them. Updates made while
+   * reconnecting are only in this page's document until a socket opens again
+   * and sends its whole state; a page discarded before then loses them.
+   * Online, a room that stays away past the stall timeout is left and the
+   * body saved normally.
    *
    * Never while the body may conflict with one changed elsewhere.
    */
   flush({ reason = 'hidden' }: { reason?: FlushReason } = {}): void {
     if (this.disposed) return
-    const keepalive = reason === 'unloading'
+    const keepalive = reason !== 'leaving'
     if (this.mode === 'live' && this.bound) {
       const provider = this.bound.provider
       if (provider.destroyed) {
@@ -360,9 +379,9 @@ export class LiveBodySession {
     if (this.canonicalConflict) return
     const body = this.held
     if (body === null) {
-      // The newest body may be on its way in an ordinary save, which the
-      // unloading page cancels. The same body again cannot undo anything
-      // whichever of the two lands last.
+      // The newest body may be on its way in an ordinary save, which a page
+      // that is unloaded or discarded cancels. The same body again cannot
+      // undo anything whichever of the two lands last.
       if (keepalive && this.restPending !== null) this.commitRest(this.restPending, { keepalive })
       return
     }
@@ -514,7 +533,10 @@ export class LiveBodySession {
     }
     void Promise.resolve(result)
       .then((saved) => {
-        if (saved !== false) this.durable = body
+        if (saved !== false && seq > this.durableRestSeq) {
+          this.durable = body
+          this.durableRestSeq = seq
+        }
       }, () => undefined)
       .finally(() => {
         this.restInFlight -= 1
@@ -634,6 +656,7 @@ export class LiveBodySession {
     if (state.saveStatus === 'saved' && !state.hasUnackedChanges && this.lastQueued !== null) {
       // A save this room acknowledged: the room works, and this is durable.
       this.durable = this.lastQueued
+      this.durableRestSeq = this.restSeq
       this.checkpointErrors = 0
       this.permanentFailures = 0
       this.retryDelay = this.timing.retryBaseMs
@@ -781,6 +804,11 @@ export class LiveBodySession {
     this.canonicalConflict = false
     this.clearTimer('graceTimer')
     this.clearTimer('retryTimer')
+    // A room that let this editor in ends the run of refusals: isolated ones
+    // across later rejoins must not add up to giving up on Live. Rejected
+    // checkpoints keep counting -- they are about this body, not the join.
+    this.permanentFailures = 0
+    this.retryDelay = this.timing.retryBaseMs
     this.held = null
     this.heldFromRoom = false
     this.binding = true
@@ -803,6 +831,7 @@ export class LiveBodySession {
       // rewrite the stored body through a lossy serialization, and bump its
       // version, just because a page was opened.
       this.durable = onScreen
+      this.durableRestSeq = this.restSeq
       this.lastQueued = null
     } else if (!this.same(onScreen, this.durable)) {
       this.queueCheckpoint(onScreen)

@@ -66,6 +66,48 @@ describe('libraryDataCrud', () => {
     ).resolves.toMatchObject({ name: 'Updated' })
   })
 
+  describe('saving while the page goes away', () => {
+    const properties = [{ id: 'prop-1', name: 'Body', typ: 'String' }] as const
+    const updated = () => Response.json({
+      data: { updateData: { id: 'data-1', name: 'Doc', propertyData: [] } },
+    })
+    const save = (value: string) => updateLibraryData(
+      { org: 'acme', repo: 'docs' },
+      [...properties],
+      { id: 'data-1', name: 'Doc', propertyData: [{ propertyId: 'prop-1', value: { string: value } }] },
+      { keepalive: true },
+    )
+
+    it('sends the save in a request that outlives the page', async () => {
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => updated())
+      vi.stubGlobal('fetch', fetchMock)
+      await save('last edit')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBe(true)
+    })
+
+    it('sends a body too large for keepalive as an ordinary request', async () => {
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => updated())
+      vi.stubGlobal('fetch', fetchMock)
+      await save('x'.repeat(70 * 1024))
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBeFalsy()
+    })
+
+    it('sends a keepalive request the browser refuses again as an ordinary one', async () => {
+      // Over the quota shared with the page's other keepalive requests.
+      const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.keepalive) throw new TypeError('Failed to fetch')
+        return updated()
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(save('last edit')).resolves.toMatchObject({ id: 'data-1' })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock.mock.calls[1]?.[1]?.keepalive).toBeFalsy()
+      expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(fetchMock.mock.calls[0]?.[1]?.body)
+    })
+  })
+
   it('deletes data via GraphQL deleteData', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       Response.json({

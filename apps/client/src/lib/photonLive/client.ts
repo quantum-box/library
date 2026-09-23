@@ -424,6 +424,8 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null
+  /** flushCheckpoint was asked for a body that has not been sent yet. */
+  private flushRequested = false
   private checkpointRetryTimer: ReturnType<typeof setTimeout> | null = null
   private checkpointRetryDelay = INITIAL_BACKOFF_MS
   private attempt: LiveAttempt | null = null
@@ -581,6 +583,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       globalThis.clearTimeout(this.checkpointTimer)
       this.checkpointTimer = null
     }
+    if (this.pendingCheckpoint) this.flushRequested = true
     // A retry waiting out its backoff would otherwise never be sent: the
     // page is going away.
     if (this.checkpointRetryTimer !== null && this.inFlight) {
@@ -1229,6 +1232,14 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private scheduleCheckpoint(): void {
     if (this.checkpointTimer !== null) globalThis.clearTimeout(this.checkpointTimer)
+    this.checkpointTimer = null
+    if (this.flushRequested) {
+      // The page asked for this body while another was in flight, and may
+      // be suspended or discarded before a debounce fires: it goes out with
+      // that one's answer.
+      this.sendPendingCheckpoint()
+      return
+    }
     this.checkpointTimer = globalThis.setTimeout(() => {
       this.checkpointTimer = null
       this.sendPendingCheckpoint()
@@ -1254,6 +1265,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       return
     }
     this.pendingCheckpoint = null
+    this.flushRequested = false
     this.inFlight = { ...pending, version: this.version }
     this.setSaveStatus('saving')
     this.sendCheckpoint(this.inFlight)

@@ -146,6 +146,27 @@ function keepaliveFor(body: string, keepalive: boolean | undefined): boolean {
   return Boolean(keepalive) && new TextEncoder().encode(body).byteLength <= KEEPALIVE_BODY_LIMIT
 }
 
+/**
+ * `fetch`, in a request that outlives the page when asked for and allowed.
+ *
+ * The 64 KiB is a quota over all of a page's keepalive requests in flight,
+ * so one can also be refused for the others still on their way. That says
+ * nothing about this request, and the page is evidently still here: it is
+ * sent again as an ordinary one.
+ */
+async function fetchOutlivingPage(
+  url: string,
+  init: RequestInit & { body: string },
+  keepalive: boolean | undefined,
+): Promise<Response> {
+  if (!keepaliveFor(init.body, keepalive)) return fetch(url, init)
+  try {
+    return await fetch(url, { ...init, keepalive: true })
+  } catch {
+    return fetch(url, init)
+  }
+}
+
 async function requestLibraryGraphQL<TData>(
   query: string,
   variables: Record<string, unknown>,
@@ -162,12 +183,11 @@ async function requestLibraryGraphQL<TData>(
   let response: Response
   const body = JSON.stringify({ query, variables })
   try {
-    response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
+    response = await fetchOutlivingPage(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
       method: 'POST',
       headers,
       body,
-      keepalive: keepaliveFor(body, options?.keepalive),
-    })
+    }, options?.keepalive)
   } catch (error: unknown) {
     const detail = error instanceof Error ? `: ${error.message}` : ''
     throw new RecordApiError(
@@ -472,14 +492,14 @@ export async function updateLibraryData(
     name: item.name,
     property_data: restPropertyPayload(properties, propertyData),
   })
-  const response = await fetch(
+  const response = await fetchOutlivingPage(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${item.id}`,
     {
       method: 'PUT',
       headers: await libraryRestHeaders(target.operatorId),
       body: restBody,
-      keepalive: keepaliveFor(restBody, options?.keepalive),
-    }
+    },
+    options?.keepalive,
   )
   if (!response.ok) {
     throw new RecordApiError(`Library REST data update failed: ${response.status}`, response.status)

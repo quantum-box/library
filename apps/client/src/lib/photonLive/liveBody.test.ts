@@ -403,6 +403,33 @@ describe('LiveBodySession', () => {
     expect(h.session.getView().mode).toBe('live')
   })
 
+  it('keeps the newest saved body when an older save settles after it', async () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base saved')
+    h.rooms[0].ack()
+    h.type('Base saved and a draft')
+    h.rooms[0].set({ status: 'failed', saveStatus: 'conflict' })
+    h.seedRooms((room) => setBody(room.fragment, 'External body'))
+    vi.advanceTimersByTime(1_000)
+    h.rooms[1].ready()
+    expect(h.session.getView().mode).toBe('conflict')
+
+    const saves: Array<(saved: boolean) => void> = []
+    h.session.setCommitRest(() => new Promise<boolean>((resolve) => saves.push(resolve)))
+    h.type('Base resolved')
+    // Typed on and switched away: the newer save may overtake the first.
+    setBody(h.boundTo, 'Base resolved, then more')
+    h.session.commit('Base resolved, then more', { keepalive: true })
+    saves[1](true)
+    await vi.advanceTimersByTimeAsync(0)
+    saves[0](true)
+    await vi.advanceTimersByTimeAsync(0)
+    // What is on screen is saved, so the conflict is over.
+    expect(h.session.getView().mode).toBe('rejoining')
+  })
+
   it('does not save a debounce that lands after a canonical change over it', () => {
     const h = harness()
     h.session.start()
@@ -548,12 +575,81 @@ describe('LiveBodySession', () => {
     expect(h.session.getView().mode).toBe('unavailable')
   })
 
+  it('starts counting refusals again once a room lets the editor in', () => {
+    const h = harness()
+    h.session.start()
+    const refuse = () => h.rooms.at(-1)!.set({
+      status: 'failed',
+      error: new PhotonLiveError('forbidden', 'unauthorized', 403),
+    })
+    refuse()
+    vi.advanceTimersByTime(1_000)
+    refuse()
+    vi.advanceTimersByTime(2_000)
+    h.rooms[2].ready()
+    expect(h.session.getView().mode).toBe('live')
+
+    // The room goes away; the next one is opened without the old backoff.
+    refuse()
+    expect(h.session.getView().mode).toBe('rejoining')
+    vi.advanceTimersByTime(999)
+    expect(h.rooms).toHaveLength(3)
+    vi.advanceTimersByTime(1)
+    expect(h.rooms).toHaveLength(4)
+    // One refusal after a successful join is not the third in a row.
+    refuse()
+    expect(h.session.getView().mode).toBe('rejoining')
+  })
+
   it('flushes held edits through the ordinary body when the page goes away', () => {
     const h = harness()
     h.session.start()
     h.type('Base unmounted early')
     h.session.flush()
     expect(h.rest).toEqual(['Base unmounted early'])
+  })
+
+  it('saves held edits in a request that outlives the page when it is hidden', () => {
+    const h = harness()
+    const calls: Array<{ body: string; keepalive?: boolean }> = []
+    h.session.setCommitRest((body, options) => {
+      calls.push({ body, keepalive: options?.keepalive })
+      return true
+    })
+    h.session.start()
+    h.type('Base typed before switching away')
+    // A mobile browser may discard a hidden page without firing pagehide.
+    h.session.flush({ reason: 'hidden' })
+    expect(calls).toEqual([{ body: 'Base typed before switching away', keepalive: true }])
+  })
+
+  it('only flushes a connected room when the page is hidden', () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base last edit')
+    h.session.flush({ reason: 'hidden' })
+    expect(h.rooms[0].flushed).toBe(1)
+    // Saving it normally would restart the room on every switch away.
+    expect(h.rest).toEqual([])
+  })
+
+  it('does not save a reconnecting room normally when the page is only hidden', () => {
+    const h = harness()
+    const calls: Array<{ body: string; keepalive?: boolean }> = []
+    h.session.setCommitRest((body, options) => {
+      calls.push({ body, keepalive: options?.keepalive })
+      return true
+    })
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base typed while reconnecting')
+    h.rooms[0].set({ status: 'connecting' })
+    h.session.flush({ reason: 'hidden' })
+    expect(h.rooms[0].flushed).toBe(1)
+    // The room has the Yjs updates and merges them on reconnect. A normal
+    // save would overwrite what peers saved meanwhile and restart the room.
+    expect(calls).toEqual([])
   })
 
   it('flushes a connected room instead of saving normally when the editor unmounts', () => {

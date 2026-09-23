@@ -418,7 +418,9 @@ function BlockRecordBodyEditor({
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
     }
-    commitPendingValueRef.current(reason === 'unloading' ? { keepalive: true } : undefined)
+    // A hidden page may be discarded without another event, so what is saved
+    // normally then has to outlive it as surely as on unload.
+    commitPendingValueRef.current(reason === 'leaving' ? undefined : { keepalive: true })
     liveRef.current?.flush({ reason })
   }, [])
 
