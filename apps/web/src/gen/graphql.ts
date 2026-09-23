@@ -53,7 +53,24 @@ export type AddDataInputData = {
 export type ApiKeyResponse = {
   __typename?: 'ApiKeyResponse';
   apiKey: PublicApiKey;
-  serviceAccount: ServiceAccount;
+};
+
+/** Repository access granted to every repository of the organization. */
+export enum ApiKeyRole {
+  /**
+   * Everything a writer can do, plus deleting repositories and
+   * managing their members.
+   */
+  Owner = 'OWNER',
+  /** Read private repositories. */
+  Reader = 'READER',
+  /** Read private repositories and write their data. */
+  Writer = 'WRITER'
+}
+
+export type BooleanValue = {
+  __typename?: 'BooleanValue';
+  boolean: Scalars['Boolean']['output'];
 };
 
 /** Input for bulk syncing ext_github property */
@@ -116,12 +133,25 @@ export type ConnectIntegrationInput = {
 };
 
 export type CreateApiKeyInput = {
-  /** TODO: add English documentation */
+  /** Display name, to tell keys apart when listing or revoking. */
   name: Scalars['String']['input'];
-  /** TODO: add English documentation */
+  /** Organization the key is issued for. */
   organizationUsername: Scalars['String']['input'];
-  /** TODO: add English documentation */
-  serviceAccountName?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Repository access for the key, across every repository of the
+   * organization. Omit for a key that reaches public repositories only.
+   * Requires `library:ManageRepoPolicy`.
+   */
+  role?: InputMaybe<ApiKeyRole>;
+};
+
+export type CreateExternalSyncBindingInput = {
+  connectionId: Scalars['String']['input'];
+  externalScope: Scalars['String']['input'];
+  mapping: Scalars['String']['input'];
+  objectType: Scalars['String']['input'];
+  provider: GqlProvider;
+  repositoryId: Scalars['String']['input'];
 };
 
 export type CreateGlobalIdMappingInput = {
@@ -472,6 +502,53 @@ export enum GqlEndpointStatus {
   Paused = 'PAUSED'
 }
 
+export type GqlExternalSyncBinding = {
+  __typename?: 'GqlExternalSyncBinding';
+  connectionId: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  deletePolicy: Scalars['String']['output'];
+  externalScope: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  inboundPolicy: Scalars['String']['output'];
+  mapping: Scalars['String']['output'];
+  objectType: Scalars['String']['output'];
+  outboundPolicy: Scalars['String']['output'];
+  provider: GqlProvider;
+  repositoryId: Scalars['String']['output'];
+  status: GqlExternalSyncBindingStatus;
+  tenantId: Scalars['String']['output'];
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export enum GqlExternalSyncBindingStatus {
+  Active = 'ACTIVE',
+  Paused = 'PAUSED',
+  ReauthorizationRequired = 'REAUTHORIZATION_REQUIRED'
+}
+
+export type GqlInboundChangeSet = {
+  __typename?: 'GqlInboundChangeSet';
+  baseExternalRevision?: Maybe<Scalars['String']['output']>;
+  bindingId: Scalars['String']['output'];
+  changeType: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  dataId?: Maybe<Scalars['String']['output']>;
+  decidedAt?: Maybe<Scalars['DateTime']['output']>;
+  decisionNote?: Maybe<Scalars['String']['output']>;
+  externalObjectId: Scalars['String']['output'];
+  externalRevision: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  payload: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+};
+
+export enum GqlInboundChangeSetStatus {
+  Accepted = 'ACCEPTED',
+  Conflict = 'CONFLICT',
+  Pending = 'PENDING',
+  Rejected = 'REJECTED'
+}
+
 /** Integration available in the marketplace. */
 export type GqlIntegration = {
   __typename?: 'GqlIntegration';
@@ -542,6 +619,32 @@ export type GqlOAuthConfig = {
   /** OAuth token URL */
   tokenUrl: Scalars['String']['output'];
 };
+
+export type GqlOutboundDelivery = {
+  __typename?: 'GqlOutboundDelivery';
+  attemptCount: Scalars['Int']['output'];
+  baseExternalRevision?: Maybe<Scalars['String']['output']>;
+  bindingId: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  dataId: Scalars['String']['output'];
+  deliveryUrl?: Maybe<Scalars['String']['output']>;
+  externalObjectId: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  lastErrorCategory?: Maybe<Scalars['String']['output']>;
+  libraryRevision: Scalars['String']['output'];
+  nextAttemptAt: Scalars['DateTime']['output'];
+  remoteRevision?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export enum GqlOutboundDeliveryStatus {
+  Conflict = 'CONFLICT',
+  Delivered = 'DELIVERED',
+  Failed = 'FAILED',
+  Pending = 'PENDING',
+  Retrying = 'RETRYING'
+}
 
 /** Processing stats GraphQL type. */
 export type GqlProcessingStats = {
@@ -689,7 +792,7 @@ export type ImportMarkdownFromGitHubInput = {
   /** Property name for markdown content */
   contentPropertyName: Scalars['String']['input'];
   /**
-   * Whether to enable GitHub sync. GitHub sync/writeback is Non-GA and is
+   * Whether to enable GitHub sync. GitHub sync/writeback is experimental and is
    * rejected when true; omit or pass false for one-shot Markdown import.
    */
   enableGithubSync?: InputMaybe<Scalars['Boolean']['input']>;
@@ -905,6 +1008,11 @@ export type Mutation = {
    */
   completeGithubInstall: GqlConnection;
   /**
+   * Attach this organization's saved GitHub OAuth account to external sync.
+   * Repeated calls preserve the existing connection identity and metadata.
+   */
+  connectGithubSync: GqlConnection;
+  /**
    * Connect to an integration.
    *
    * Creates a new connection to the specified integration.
@@ -921,6 +1029,7 @@ export type Mutation = {
   createApiKey: ApiKeyResponse;
   /** TODO: add English documentation */
   createData: Data;
+  createExternalSyncBinding: GqlExternalSyncBinding;
   /** Create a `global_id_mapping` row for the caller's tenant. */
   createGlobalIdMapping: GlobalIdMapping;
   /** [AUTH] Create operator via SDK REST call */
@@ -938,6 +1047,7 @@ export type Mutation = {
    * **Important**: The secret is only returned once. Store it securely.
    */
   createWebhookEndpoint: CreateWebhookEndpointOutput;
+  decideInboundChangeSet: GqlInboundChangeSet;
   /** Delete a connection permanently. */
   deleteConnection: Scalars['Boolean']['output'];
   /** TODO: add English documentation */
@@ -978,6 +1088,10 @@ export type Mutation = {
    * exchanging the code.
    */
   githubExchangeToken: GitHubConnection;
+  /** Start user authorization using Tachyon's shared GitHub App. */
+  githubSyncAuthUrl: GitHubAuthUrl;
+  /** Confirm the browser-bound broker session without exposing tokens. */
+  githubSyncCompleteOauth: GitHubConnection;
   /** [LIBRARY-API] Import Markdown files from GitHub */
   importMarkdownFromGithub: ImportMarkdownResult;
   /**
@@ -998,10 +1112,13 @@ export type Mutation = {
   inviteUser: User;
   /** [LIBRARY-API] Remove a user from a repository */
   removeRepoMember: Scalars['Boolean']['output'];
+  retryOutboundDelivery: GqlOutboundDelivery;
   /** Retry a failed webhook event. */
   retryWebhookEvent: GqlWebhookEvent;
   /** [LIBRARY-API] Revoke an API key so it stops authenticating. */
   revokeApiKey: Scalars['Boolean']['output'];
+  /** Replace a GitHub endpoint signing key. Returned only by this mutation. */
+  rotateGithubWebhookSecret: CreateWebhookEndpointOutput;
   /** [LIBRARY-API] Seed a tachyon tenant into Library organizations. */
   seedLibraryTenant: SeedLibraryTenantPayload;
   /** Send a test webhook to an endpoint. */
@@ -1022,6 +1139,7 @@ export type Mutation = {
   updateConnection: GqlConnection;
   /** TODO: add English documentation */
   updateData: Data;
+  updateExternalSyncBindingStatus: GqlExternalSyncBinding;
   /**
    * Update a `global_id_mapping` row's `name`. Other fields are immutable
    * in Phase 1; mutation of `system` / `system_code` / `global_id` awaits
@@ -1100,6 +1218,11 @@ export type MutationCreateDataArgs = {
 };
 
 
+export type MutationCreateExternalSyncBindingArgs = {
+  input: CreateExternalSyncBindingInput;
+};
+
+
 export type MutationCreateGlobalIdMappingArgs = {
   input: CreateGlobalIdMappingInput;
 };
@@ -1127,6 +1250,13 @@ export type MutationCreateSourceArgs = {
 
 export type MutationCreateWebhookEndpointArgs = {
   input: CreateWebhookEndpointInput;
+};
+
+
+export type MutationDecideInboundChangeSetArgs = {
+  accept: Scalars['Boolean']['input'];
+  changeSetId: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -1188,6 +1318,7 @@ export type MutationExchangeOauthCodeArgs = {
 
 
 export type MutationGithubAuthUrlArgs = {
+  proxyCompatible?: Scalars['Boolean']['input'];
   state: Scalars['String']['input'];
 };
 
@@ -1195,6 +1326,18 @@ export type MutationGithubAuthUrlArgs = {
 export type MutationGithubExchangeTokenArgs = {
   code: Scalars['String']['input'];
   state: Scalars['String']['input'];
+};
+
+
+export type MutationGithubSyncAuthUrlArgs = {
+  codeChallenge: Scalars['String']['input'];
+  returnUrl: Scalars['String']['input'];
+};
+
+
+export type MutationGithubSyncCompleteOauthArgs = {
+  codeVerifier: Scalars['String']['input'];
+  session: Scalars['String']['input'];
 };
 
 
@@ -1227,6 +1370,11 @@ export type MutationRemoveRepoMemberArgs = {
 };
 
 
+export type MutationRetryOutboundDeliveryArgs = {
+  deliveryId: Scalars['String']['input'];
+};
+
+
 export type MutationRetryWebhookEventArgs = {
   eventId: Scalars['String']['input'];
 };
@@ -1234,6 +1382,11 @@ export type MutationRetryWebhookEventArgs = {
 
 export type MutationRevokeApiKeyArgs = {
   input: RevokeApiKeyInput;
+};
+
+
+export type MutationRotateGithubWebhookSecretArgs = {
+  endpointId: Scalars['String']['input'];
 };
 
 
@@ -1278,6 +1431,12 @@ export type MutationUpdateConnectionArgs = {
 
 export type MutationUpdateDataArgs = {
   input: UpdateDataInputData;
+};
+
+
+export type MutationUpdateExternalSyncBindingStatusArgs = {
+  bindingId: Scalars['String']['input'];
+  status: GqlExternalSyncBindingStatus;
 };
 
 
@@ -1433,21 +1592,22 @@ export type PropertyDataInputData = {
   value: PropertyDataValueInputData;
 };
 
-export type PropertyDataValue = DateValue | HtmlValue | IdValue | ImageValue | IntegerValue | LocationValue | MarkdownValue | MultiSelectValue | RelationValue | RichTextValue | SelectValue | StringValue;
+export type PropertyDataValue = BooleanValue | DateValue | HtmlValue | IdValue | ImageValue | IntegerValue | LocationValue | MarkdownValue | MultiSelectValue | RelationValue | RichTextValue | SelectValue | StringValue;
 
 export type PropertyDataValueInputData =
-  { date: Scalars['String']['input']; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html: Scalars['String']['input']; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image: Scalars['String']['input']; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer: Scalars['String']['input']; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location: Location; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown: Scalars['String']['input']; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect: Array<Scalars['String']['input']>; relation?: never; richText?: never; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation: Array<Scalars['String']['input']>; richText?: never; select?: never; string?: never; }
+  { boolean: Scalars['Boolean']['input']; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date: Scalars['String']['input']; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html: Scalars['String']['input']; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image: Scalars['String']['input']; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer: Scalars['String']['input']; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location: Location; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown: Scalars['String']['input']; multiSelect?: never; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect: Array<Scalars['String']['input']>; relation?: never; richText?: never; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation: Array<Scalars['String']['input']>; richText?: never; select?: never; string?: never; }
   |  /** A block document, carried as JSON text. */
-  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText: Scalars['String']['input']; select?: never; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select: Scalars['String']['input']; string?: never; }
-  |  { date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string: Scalars['String']['input']; };
+  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText: Scalars['String']['input']; select?: never; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select: Scalars['String']['input']; string?: never; }
+  |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string: Scalars['String']['input']; };
 
 export type PropertyInput = {
   meta?: InputMaybe<PropertyMetaInput>;
@@ -1482,6 +1642,7 @@ export type PropertyMetaInput =
   { id?: never; json?: never; multiSelect?: never; relation?: never; select: Array<OptionInput>; };
 
 export enum PropertyType {
+  Boolean = 'BOOLEAN',
   Date = 'DATE',
   /** A whole HTML document rendered as a sandboxed artifact. */
   Html = 'HTML',
@@ -1504,7 +1665,11 @@ export type PublicApiKey = {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['String']['output'];
   name: Scalars['String']['output'];
-  serviceAccountId: Scalars['String']['output'];
+  /**
+   * Repository access the key has. `null` reaches public repositories
+   * only.
+   */
+  role?: Maybe<ApiKeyRole>;
   tenantId: Scalars['String']['output'];
   value: Scalars['String']['output'];
 };
@@ -1527,6 +1692,7 @@ export type Query = {
   data: Data;
   dataList: DataList;
   errTest: Scalars['String']['output'];
+  externalSyncBindings: Array<GqlExternalSyncBinding>;
   /** [LIBRARY-API] Analyze frontmatter across multiple files */
   githubAnalyzeFrontmatter: FrontmatterAnalysis;
   /** [LIBRARY-API] Get GitHub connection status */
@@ -1547,6 +1713,7 @@ export type Query = {
    * optionally filtered by `system`.
    */
   globalIdMappings: Array<GlobalIdMapping>;
+  inboundChangeSets: Array<GqlInboundChangeSet>;
   /** Get a single integration by ID. */
   integration?: Maybe<GqlIntegration>;
   /** Get an integration by provider. */
@@ -1561,6 +1728,7 @@ export type Query = {
   linearListTeams: Array<LinearTeam>;
   me: User;
   organization: Organization;
+  outboundDeliveries: Array<GqlOutboundDelivery>;
   properties: Array<Property>;
   repo: Repo;
   source: Source;
@@ -1611,6 +1779,11 @@ export type QueryDataListArgs = {
 };
 
 
+export type QueryExternalSyncBindingsArgs = {
+  repositoryId: Scalars['String']['input'];
+};
+
+
 export type QueryGithubAnalyzeFrontmatterArgs = {
   input: GetMarkdownPreviewsInput;
 };
@@ -1644,6 +1817,13 @@ export type QueryGlobalIdMappingsArgs = {
 };
 
 
+export type QueryInboundChangeSetsArgs = {
+  bindingId: Scalars['String']['input'];
+  limit?: Scalars['Int']['input'];
+  status?: InputMaybe<GqlInboundChangeSetStatus>;
+};
+
+
 export type QueryIntegrationArgs = {
   id: Scalars['String']['input'];
 };
@@ -1673,6 +1853,13 @@ export type QueryLinearListProjectsArgs = {
 
 export type QueryOrganizationArgs = {
   username: Scalars['String']['input'];
+};
+
+
+export type QueryOutboundDeliveriesArgs = {
+  bindingId: Scalars['String']['input'];
+  limit?: Scalars['Int']['input'];
+  status?: InputMaybe<GqlOutboundDeliveryStatus>;
 };
 
 
@@ -1829,8 +2016,6 @@ export type RevokeApiKeyInput = {
   apiKeyId: Scalars['String']['input'];
   /** Organization that owns the key. */
   organizationUsername: Scalars['String']['input'];
-  /** Service account holding the key. Defaults to `default`. */
-  serviceAccountName?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type RichTextValue = {
@@ -1851,8 +2036,25 @@ export type RichTextValue = {
    * represent, so clients that edit must round-trip `richText`.
    */
   markdown: Scalars['String']['output'];
-  /** The block document as JSON. Authoritative. */
+  /**
+   * The document's leading text, capped at `limit` characters.
+   *
+   * What a listing should select: it is bounded, and the walk that
+   * produces it stops at the cap rather than reading the whole body.
+   */
+  preview: TextPreview;
+  /**
+   * The block document as JSON. Authoritative.
+   *
+   * This is the whole body. Select it on a single record, not on a
+   * listing.
+   */
   richText: Scalars['String']['output'];
+};
+
+
+export type RichTextValuePreviewArgs = {
+  limit?: Scalars['Int']['input'];
 };
 
 export type SeedLibraryTenantPayload = {
@@ -1886,14 +2088,6 @@ export type SendTestWebhookOutput = {
   eventId?: Maybe<Scalars['String']['output']>;
   /** Whether the test was sent successfully */
   success: Scalars['Boolean']['output'];
-};
-
-export type ServiceAccount = {
-  __typename?: 'ServiceAccount';
-  createdAt: Scalars['DateTime']['output'];
-  id: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  tenantId: Scalars['String']['output'];
 };
 
 export type Source = {
@@ -1984,6 +2178,15 @@ export type TenantSeedCandidate = {
   staffCount?: Maybe<Scalars['Int']['output']>;
   tenantId: Scalars['String']['output'];
   username: Scalars['String']['output'];
+};
+
+/** A capped plain-text rendering of a body. */
+export type TextPreview = {
+  __typename?: 'TextPreview';
+  /** The leading text, at most the requested number of characters. */
+  text: Scalars['String']['output'];
+  /** Whether the body holds more text than `text` shows. */
+  truncated: Scalars['Boolean']['output'];
 };
 
 /** Input for triggering on-demand sync. */
@@ -2143,14 +2346,14 @@ export type DataDetailPageQueryVariables = Exact<{
 }>;
 
 
-export type DataDetailPageQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
+export type DataDetailPageQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType', json: string } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType', databaseId: string } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> }, repo: { __typename?: 'Repo', policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string }> } };
 
 export type UpdateDataMutationVariables = Exact<{
   input: UpdateDataInputData;
 }>;
 
 
-export type UpdateDataMutation = { __typename?: 'Mutation', updateData: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> } };
+export type UpdateDataMutation = { __typename?: 'Mutation', updateData: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> } };
 
 export type DataOgpMetaQueryVariables = Exact<{
   orgUsername: Scalars['String']['input'];
@@ -2159,7 +2362,7 @@ export type DataOgpMetaQueryVariables = Exact<{
 }>;
 
 
-export type DataOgpMetaQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue' } | { __typename?: 'HtmlValue' } | { __typename?: 'IdValue' } | { __typename?: 'ImageValue' } | { __typename?: 'IntegerValue' } | { __typename?: 'LocationValue' } | { __typename?: 'MarkdownValue' } | { __typename?: 'MultiSelectValue' } | { __typename?: 'RelationValue' } | { __typename?: 'RichTextValue' } | { __typename?: 'SelectValue' } | { __typename?: 'StringValue', string: string } }> } };
+export type DataOgpMetaQuery = { __typename?: 'Query', data: { __typename?: 'Data', id: string, name: string, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue' } | { __typename?: 'HtmlValue' } | { __typename?: 'IdValue' } | { __typename?: 'ImageValue' } | { __typename?: 'IntegerValue' } | { __typename?: 'LocationValue' } | { __typename?: 'MarkdownValue' } | { __typename?: 'MultiSelectValue' } | { __typename?: 'RelationValue' } | { __typename?: 'RichTextValue' } | { __typename?: 'SelectValue' } | { __typename?: 'StringValue', string: string } }> } };
 
 export type NewDataQueryVariables = Exact<{
   orgUsername: Scalars['String']['input'];
@@ -2174,7 +2377,7 @@ export type AddDataMutationVariables = Exact<{
 }>;
 
 
-export type AddDataMutation = { __typename?: 'Mutation', addData: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> } };
+export type AddDataMutation = { __typename?: 'Mutation', addData: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> } };
 
 export type RepoOgpMetaQueryVariables = Exact<{
   org: Scalars['String']['input'];
@@ -2224,7 +2427,7 @@ export type RepositoryPageWithTagsQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageWithTagsQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, tags: Array<string>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
@@ -2236,13 +2439,13 @@ export type RepositoryPageQueryVariables = Exact<{
 }>;
 
 
-export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
+export type RepositoryPageQuery = { __typename?: 'Query', repo: { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, dataList: { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> }>, paginator: { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number } }, properties: Array<{ __typename?: 'Property', id: string, name: string, typ: PropertyType, meta?: { __typename?: 'IdType', autoGenerate: boolean } | { __typename?: 'JsonType' } | { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | { __typename?: 'RelationType' } | { __typename?: 'SelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> } | null }>, sources: Array<{ __typename?: 'Source', id: string, name: string, url?: string | null }>, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> } };
 
 export type RepoFieldOnRepoPageWithoutTagsFragment = { __typename?: 'Repo', id: string, name: string, description?: string | null, isPublic: boolean, policies: Array<{ __typename?: 'RepoPolicy', userId: string, role: string, user?: { __typename?: 'User', id: string, username?: string | null, name?: string | null, image?: string | null } | null }> };
 
 export type SourceFieldOnRepoPageFragment = { __typename?: 'Source', id: string, name: string, url?: string | null };
 
-export type DataFieldOnRepoPageFragment = { __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
+export type DataFieldOnRepoPageFragment = { __typename?: 'Data', id: string, name: string, createdAt: any, updatedAt: any, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', dataIds: Array<string>, databaseId: string } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
 
 export type PaginationFieldFragment = { __typename?: 'Paginator', currentPage: number, totalItems: number, itemsPerPage: number, totalPages: number };
 
@@ -2354,16 +2557,16 @@ export type CreateApiKeyMutationVariables = Exact<{
 }>;
 
 
-export type CreateApiKeyMutation = { __typename?: 'Mutation', createApiKey: { __typename?: 'ApiKeyResponse', apiKey: { __typename?: 'PublicApiKey', id: string, value: string, name: string }, serviceAccount: { __typename?: 'ServiceAccount', id: string } } };
+export type CreateApiKeyMutation = { __typename?: 'Mutation', createApiKey: { __typename?: 'ApiKeyResponse', apiKey: { __typename?: 'PublicApiKey', id: string, value: string, name: string, role?: ApiKeyRole | null } } };
 
 export type GetApiKeysQueryVariables = Exact<{
   orgUsername: Scalars['String']['input'];
 }>;
 
 
-export type GetApiKeysQuery = { __typename?: 'Query', apiKeys: Array<{ __typename?: 'PublicApiKey', id: string, name: string, createdAt: any }> };
+export type GetApiKeysQuery = { __typename?: 'Query', apiKeys: Array<{ __typename?: 'PublicApiKey', id: string, name: string, createdAt: any, role?: ApiKeyRole | null }> };
 
-export type ApiKeyItemFragment = { __typename?: 'PublicApiKey', id: string, name: string, createdAt: any };
+export type ApiKeyItemFragment = { __typename?: 'PublicApiKey', id: string, name: string, createdAt: any, role?: ApiKeyRole | null };
 
 export type RevokeApiKeyMutationVariables = Exact<{
   input: RevokeApiKeyInput;
@@ -2499,7 +2702,7 @@ export type SyncDataToGithubMutationVariables = Exact<{
 
 export type SyncDataToGithubMutation = { __typename?: 'Mutation', syncDataToGithub: { __typename?: 'SyncResult', success: boolean, status: SyncStatus, resultId?: string | null, url?: string | null, diff?: string | null } };
 
-export type DataForDataDetailFragment = { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
+export type DataForDataDetailFragment = { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> };
 
 export type DataListForDataListCardFragment = { __typename?: 'DataList', items: Array<{ __typename?: 'Data', id: string, name: string }> };
 
@@ -2540,7 +2743,7 @@ export type SelectTypeMetaForPropertiesUiFragment = { __typename?: 'SelectType',
 
 export type MultiSelectTypeMetaForPropertiesUiFragment = { __typename?: 'MultiSelectType', options: Array<{ __typename?: 'SelectItem', id: string, key: string, name: string }> };
 
-export type PropertyDataForEditorFragment = { __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } };
+export type PropertyDataForEditorFragment = { __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } };
 
 export type IdValueForEditorFragment = { __typename?: 'IdValue', id: string };
 
@@ -2791,6 +2994,7 @@ export const ApiKeyItemFragmentDoc = gql`
   id
   name
   createdAt
+  role
 }
     `;
 export const OrganizationFormFragmentDoc = gql`
@@ -3417,9 +3621,7 @@ export const CreateApiKeyDocument = gql`
       id
       value
       name
-    }
-    serviceAccount {
-      id
+      role
     }
   }
 }
@@ -3430,6 +3632,7 @@ export const GetApiKeysDocument = gql`
     id
     name
     createdAt
+    role
   }
 }
     `;
@@ -3828,6 +4031,8 @@ export const isDefinedNonNullAny = (v: any): v is definedNonNullAny => v !== und
 
 export const definedNonNullAnySchema = z.any().refine((v) => isDefinedNonNullAny(v));
 
+export const ApiKeyRoleSchema = z.nativeEnum(ApiKeyRole);
+
 export const DefaultRoleSchema = z.nativeEnum(DefaultRole);
 
 export const GqlConnectionActionSchema = z.nativeEnum(GqlConnectionAction);
@@ -3836,9 +4041,15 @@ export const GqlConnectionStatusSchema = z.nativeEnum(GqlConnectionStatus);
 
 export const GqlEndpointStatusSchema = z.nativeEnum(GqlEndpointStatus);
 
+export const GqlExternalSyncBindingStatusSchema = z.nativeEnum(GqlExternalSyncBindingStatus);
+
+export const GqlInboundChangeSetStatusSchema = z.nativeEnum(GqlInboundChangeSetStatus);
+
 export const GqlIntegrationCategorySchema = z.nativeEnum(GqlIntegrationCategory);
 
 export const GqlIntegrationReadinessSchema = z.nativeEnum(GqlIntegrationReadiness);
+
+export const GqlOutboundDeliveryStatusSchema = z.nativeEnum(GqlOutboundDeliveryStatus);
 
 export const GqlProcessingStatusSchema = z.nativeEnum(GqlProcessingStatus);
 
@@ -3915,7 +4126,18 @@ export function CreateApiKeyInputSchema(): z.ZodObject<Properties<CreateApiKeyIn
   return z.object({
     name: z.string().min(1),
     organizationUsername: z.string().min(1),
-    serviceAccountName: z.string().nullish()
+    role: ApiKeyRoleSchema.nullish()
+  })
+}
+
+export function CreateExternalSyncBindingInputSchema(): z.ZodObject<Properties<CreateExternalSyncBindingInput>> {
+  return z.object({
+    connectionId: z.string().min(1),
+    externalScope: z.string().min(1),
+    mapping: z.string().min(1),
+    objectType: z.string().min(1),
+    provider: GqlProviderSchema,
+    repositoryId: z.string().min(1)
   })
 }
 
@@ -4100,6 +4322,7 @@ export function PropertyDataInputDataSchema(): z.ZodObject<Properties<PropertyDa
 
 export function PropertyDataValueInputDataSchema(): z.ZodObject<Properties<PropertyDataValueInputData>> {
   return z.object({
+    boolean: z.boolean().nullish(),
     date: z.string().nullish(),
     html: z.string().nullish(),
     image: z.string().nullish(),
@@ -4153,8 +4376,7 @@ export function RemoveRepoMemberInputSchema(): z.ZodObject<Properties<RemoveRepo
 export function RevokeApiKeyInputSchema(): z.ZodObject<Properties<RevokeApiKeyInput>> {
   return z.object({
     apiKeyId: z.string().min(1),
-    organizationUsername: z.string().min(1),
-    serviceAccountName: z.string().nullish()
+    organizationUsername: z.string().min(1)
   })
 }
 

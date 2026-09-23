@@ -517,7 +517,12 @@ impl LibraryQuery {
                 e.extend()
             })?;
 
-        Ok(api_keys.into_iter().map(PublicApiKey::from).collect())
+        Ok(api_keys
+            .into_iter()
+            .map(|listed| {
+                PublicApiKey::with_role(listed.api_key, listed.role)
+            })
+            .collect())
     }
 
     /// [LIBRARY-API] Get GitHub connection status

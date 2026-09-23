@@ -10,6 +10,11 @@ import {
   DialogTitle,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@tachyon-sdk/native-ui'
 import { Link } from '@tanstack/react-router'
 import {
@@ -36,6 +41,7 @@ import {
   fetchApiKeys,
   isApiKeyPermissionError,
   revokeApiKey,
+  type ApiKeyRole,
   type ApiKeySummary,
   type ApiKeyTarget,
   type CreatedApiKey,
@@ -47,7 +53,7 @@ import {
   EndpointsCard,
   QuickStartCard,
 } from './ApiUsageSection'
-import { useI18n, t as translate, type I18nContextValue } from '../i18n'
+import { useI18n, t as translate, type I18nContextValue, type MessageKey } from '../i18n'
 
 interface ApiKeysViewProps {
   organization: string
@@ -68,6 +74,25 @@ function formatCreatedAt(createdAt: string, formatDate: I18nContextValue['format
   return formatDate(createdAt, { dateStyle: 'medium', timeStyle: 'short' }) ?? createdAt
 }
 
+/** The select needs a value for "no role"; the API takes `null`. */
+const NO_ROLE = 'none'
+type RoleChoice = ApiKeyRole | typeof NO_ROLE
+const ROLE_CHOICES: RoleChoice[] = [NO_ROLE, 'READER', 'WRITER', 'OWNER']
+
+const ROLE_LABEL: Record<RoleChoice, MessageKey> = {
+  none: 'apiKeys.roleNone',
+  READER: 'apiKeys.roleReader',
+  WRITER: 'apiKeys.roleWriter',
+  OWNER: 'apiKeys.roleOwner',
+}
+
+const ROLE_DESCRIPTION: Record<RoleChoice, MessageKey> = {
+  none: 'apiKeys.roleNoneDescription',
+  READER: 'apiKeys.roleReaderDescription',
+  WRITER: 'apiKeys.roleWriterDescription',
+  OWNER: 'apiKeys.roleOwnerDescription',
+}
+
 export function ApiKeysView({ organization, repository, operatorId }: ApiKeysViewProps) {
   const { t, tPlural, formatDate } = useI18n()
   const target = useMemo<ApiKeyTarget>(
@@ -82,6 +107,7 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
 
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [createRole, setCreateRole] = useState<RoleChoice>(NO_ROLE)
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [issued, setIssued] = useState<CreatedApiKey | null>(null)
@@ -128,12 +154,17 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
     setCreateError(null)
     setNotice(null)
     try {
-      const created = await createApiKey(target, name)
+      const created = await createApiKey(
+        target,
+        name,
+        createRole === NO_ROLE ? null : createRole,
+      )
       // The value is readable only in this response, so a second dialog
       // holds it until the reader dismisses it.
       setIssued(created)
       setCreateOpen(false)
       setCreateName('')
+      setCreateRole(NO_ROLE)
       await loadApiKeys()
     } catch (error) {
       setCreateError(errorMessage(error))
@@ -338,6 +369,10 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                             <span className="shrink-0">
                               {formatCreatedAt(apiKey.createdAt, formatDate)}
                             </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="shrink-0">
+                              {t(ROLE_LABEL[apiKey.role ?? NO_ROLE])}
+                            </span>
                           </div>
                         </div>
                         <Button
@@ -390,6 +425,28 @@ export function ApiKeysView({ organization, repository, operatorId }: ApiKeysVie
                 placeholder="ci-pipeline"
                 autoFocus
               />
+              <Label htmlFor="api-key-role" className="mt-2">
+                {t('apiKeys.roleLabel')}
+              </Label>
+              <Select
+                value={createRole}
+                onValueChange={(value) => setCreateRole(value as RoleChoice)}
+                disabled={createBusy}
+              >
+                <SelectTrigger id="api-key-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_CHOICES.map((choice) => (
+                    <SelectItem key={choice} value={choice}>
+                      {t(ROLE_LABEL[choice])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-2xs text-muted-foreground">
+                {t(ROLE_DESCRIPTION[createRole])}
+              </p>
               {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
             </div>
             <DialogFooter>

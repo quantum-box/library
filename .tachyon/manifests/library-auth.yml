@@ -22,7 +22,7 @@
 # Note what the roles below are and are not. They read as the grant surface,
 # but the policy library-api actually attaches at sign-in is
 # `pol_01libraryuserpolicy` (LibraryUserPolicy), a system policy that the
-# API cannot amend -- which is why `library:org-creator` exists as a
+# API cannot amend -- which is why `library:OrgCreator` exists as a
 # companion in library-api-runtime.yml. `library:reader` / `member` /
 # `admin` exist upstream with no owner tenant and are not attached from
 # this codebase; the names also do duty in the web UI as repository member

@@ -1,6 +1,17 @@
 # Permissions the library-api service account needs for the work it does
 # on nobody's behalf.
 #
+# `tachyon manifest apply` skips this ActionSet/Policy shape as
+# unsupported (see library-auth.yml), so this file is a record of what was
+# applied, not the thing that applies it. The two policies were registered
+# under their former names, `library:api-runtime` and
+# `library:org-creator`; the names here are the spelling to use if they
+# are ever re-registered, and renaming them for real means applying the
+# new name, carrying the new id into `LIBRARY_ORG_CREATOR_POLICY_ID`, and
+# attaching the new `library:ApiRuntime` to the `library-api-service`
+# service account. The applied form of a policy lives in a manifest the
+# CLI reads, as library-api-key-policies.yml does for the API key ones.
+#
 # Everything a signed-in user asks for is authorized as that user, using
 # the caller's own credential (see `sdk_config_with_context`). What is
 # left is provisioning the API performs itself, and this policy covers
@@ -19,7 +30,7 @@
 - apiVersion: auth.tachyon.io/v1
   kind: Policy
   metadata:
-    name: library:api-runtime
+    name: library:ApiRuntime
     namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
   spec:
     description: Library API service runtime permissions (operator lookup and user policy attachment)
@@ -76,7 +87,7 @@
 - apiVersion: auth.tachyon.io/v1
   kind: Policy
   metadata:
-    name: library:org-creator
+    name: library:OrgCreator
     namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
   spec:
     description: Allow Library platform users to create organizations (operators)
