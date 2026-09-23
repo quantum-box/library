@@ -53,6 +53,29 @@ export const LEGACY_LIBRARY_RECORDS_COLLECTION = 'library_data_records'
  */
 export const LIBRARY_REPOSITORIES_COLLECTION = 'library_repositories'
 
+/**
+ * What each screen last drew, for `libraryReadCache`.
+ *
+ * Named here rather than there because the client has to know them when it
+ * is built, and `client` never imports what reads through it.
+ */
+export const LIBRARY_READ_TABLES_COLLECTION = 'library_read_tables'
+export const LIBRARY_READ_DETAILS_COLLECTION = 'library_read_details'
+export const LIBRARY_READ_WORKSPACE_COLLECTION = 'library_read_workspace'
+
+/**
+ * Collections the client loads when something first reads them, not at start.
+ *
+ * The read caches hold whole tables and whole record bodies. Loading them with
+ * everything else would put every record this device has ever opened between
+ * the app starting and its first screen -- the very wait they exist to remove.
+ */
+export const LAZY_LIBRARY_COLLECTIONS: readonly string[] = [
+  LIBRARY_READ_TABLES_COLLECTION,
+  LIBRARY_READ_DETAILS_COLLECTION,
+  LIBRARY_READ_WORKSPACE_COLLECTION,
+]
+
 const COLLECTION_PREFIX = 'data:'
 
 /** The collection holding one repository's records. */

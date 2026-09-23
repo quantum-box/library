@@ -24,6 +24,13 @@ import {
   type LibraryProperty,
 } from '../lib/recordsApi'
 import {
+  forgetData,
+  peekDataDetail,
+  readDataDetail,
+  rememberDataDetail,
+  type CachedDataDetail,
+} from '../lib/libraryReadCache'
+import {
   bodyPropertyFormat,
   bodyPropertyValue,
   getBodyProperty,
@@ -59,6 +66,8 @@ interface DataEditorPageProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** The repository's immutable id, which names its cached pages when known. */
+  databaseId?: string
   /** Open with the title selected, as a record that was just created does. */
   autoFocusTitle?: boolean
   onBack: () => void
@@ -78,11 +87,13 @@ function formatEditorDate(value: string | undefined, i18n: I18nContextValue) {
 
 function PageTitle({
   value,
+  disabled = false,
   onCommit,
   autoFocus = false,
   onContinue,
 }: {
   value: string
+  disabled?: boolean
   onCommit: (value: string) => void
   autoFocus?: boolean
   /** Enter moves on to whatever comes after the title. */
@@ -99,12 +110,15 @@ function PageTitle({
    */
   const settledRef = useRef(false)
 
+  // Also when it stops being disabled: a record opened for its title can be
+  // drawn from memory first, read-only, and the input only exists once the
+  // record is confirmed.
   useEffect(() => {
-    if (!editing) return
+    if (!editing || disabled) return
     settledRef.current = false
     inputRef.current?.focus()
     inputRef.current?.select()
-  }, [editing])
+  }, [disabled, editing])
 
   const commit = () => {
     if (settledRef.current) return
@@ -113,6 +127,17 @@ function PageTitle({
     setEditing(false)
     if (next && next !== value) onCommit(next)
     else setDraft(value)
+  }
+
+  if (disabled) {
+    return (
+      <h1
+        data-testid="data-editor-title"
+        className="-mx-1 px-1 text-3xl font-semibold tracking-tight md:text-4xl"
+      >
+        {value}
+      </h1>
+    )
   }
 
   if (editing) {
@@ -158,12 +183,23 @@ function PageTitle({
   )
 }
 
-export function DataEditorPage({
+/**
+ * One page per record.
+ *
+ * Keyed, so that opening another record starts from what this device
+ * remembers of *that* record rather than from the last one's page.
+ */
+export function DataEditorPage(props: DataEditorPageProps) {
+  return <RecordPage key={`${props.databaseId ?? ''}:${props.org}/${props.repo}/${props.dataId}`} {...props} />
+}
+
+function RecordPage({
   dataId,
   org,
   repo,
   operatorId,
   repoLabel,
+  databaseId,
   autoFocusTitle = false,
   onBack,
 }: DataEditorPageProps) {
@@ -176,10 +212,32 @@ export function DataEditorPage({
   // Read once: the flag is cleared from history as soon as the page opens,
   // and the title mounts only after the record has loaded.
   const [focusTitleOnOpen] = useState(autoFocusTitle)
-  const [item, setItem] = useState<LibraryDataItem | null>(null)
-  const [properties, setProperties] = useState<LibraryProperty[]>([])
-  const [loading, setLoading] = useState(true)
+  /** What names this record's remembered pages. */
+  const cacheTarget = useMemo(() => ({ org, repo, databaseId }), [databaseId, org, repo])
+  // Read in the render that mounts the page, so a record this device has
+  // shown before -- or has a row for, in the table it was opened from -- is
+  // on screen in the first frame.
+  const [cached] = useState<CachedDataDetail | null>(() => peekDataDetail(cacheTarget, dataId))
+  const [item, setItem] = useState<LibraryDataItem | null>(() => cached?.item ?? null)
+  const [properties, setProperties] = useState<LibraryProperty[]>(() => cached?.properties ?? [])
+  /** Nothing on screen yet, and a request out for it. */
+  const [loading, setLoading] = useState(() => !cached)
   const [loadError, setLoadError] = useState<string | null>(null)
+  /**
+   * Whether what is on screen is what the detail request returned.
+   *
+   * Until then the page is this device's memory of the record, and it is
+   * read-only: a save sends the whole record, so a save made from a
+   * remembered one would put back every value someone has changed since.
+   */
+  const [confirmed, setConfirmed] = useState(false)
+  /**
+   * Whether the body on screen is the body.
+   *
+   * A page drawn from a listing row has a preview of it instead, which is
+   * neither shown nor -- worse -- handed to the editor to save.
+   */
+  const [bodyKnown, setBodyKnown] = useState(() => cached?.complete ?? false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -187,9 +245,9 @@ export function DataEditorPage({
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
-  const itemRef = useRef<LibraryDataItem | null>(null)
+  const itemRef = useRef<LibraryDataItem | null>(cached?.item ?? null)
   const bodyRef = useRef<HTMLElement>(null)
-  const propertiesRef = useRef<LibraryProperty[]>([])
+  const propertiesRef = useRef<LibraryProperty[]>(cached?.properties ?? [])
   const [saveQueue] = useState(() => new RecordSaveQueue())
   const revisionRef = useRef(0)
   /** Record versions this page's own writes produced. */
@@ -228,8 +286,18 @@ export function DataEditorPage({
     }
   }, [dataId, repoTarget])
 
+  /** The detail request has said what the record is, or that there is none. */
+  const answered = useRef(false)
+  /**
+   * Set once the record is deleted. A detail request or a save still in flight
+   * then answers about a record that is gone, and must not put it back in the
+   * cache -- the table, and this URL, would draw it again.
+   */
+  const deletedRef = useRef(false)
+
   const reload = useCallback(async () => {
-    setLoading(true)
+    // A page with something on it stays up while the record is asked for.
+    if (!itemRef.current) setLoading(true)
     setLoadError(null)
     try {
       // The record itself, not the row it appears in. The listing carries a
@@ -250,23 +318,65 @@ export function DataEditorPage({
           throw error
         }
       )
+      if (deletedRef.current) return
+      answered.current = true
+      // The cache is brought in line before the page is: the table this page
+      // goes back to draws from it in its first frame, and must draw the
+      // record as it now is -- or, gone upstream, not at all.
+      if (payload.item) {
+        await rememberDataDetail(cacheTarget, dataId, {
+          item: payload.item,
+          properties: payload.properties,
+        })
+      } else {
+        await forgetData(cacheTarget, dataId)
+      }
+      if (deletedRef.current) return
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
       setItem(payload.item)
       itemRef.current = payload.item
-      if (!payload.item) setLoadError(`${dataId} is not available in ${org}/${repo}.`)
+      if (payload.item) {
+        setConfirmed(true)
+        setBodyKnown(true)
+      } else {
+        setLoadError(`${dataId} is not available in ${org}/${repo}.`)
+      }
     } catch (error: unknown) {
+      // Whatever is on screen stays, read-only, under the error.
       setLoadError(error instanceof Error ? error.message : translate('route.recordLoadFailed'))
-      setItem(null)
-      itemRef.current = null
     } finally {
       setLoading(false)
     }
-  }, [dataId, loadDetailByIdentifier, org, repo, repoTarget])
+  }, [cacheTarget, dataId, loadDetailByIdentifier, org, repo, repoTarget])
 
   useEffect(() => {
     void reload()
   }, [reload])
+
+  /**
+   * The remembered record, for the mount that could not have it at once.
+   *
+   * `peekDataDetail` answers only once the store is open. Whichever of this
+   * and the detail request lands first is drawn, and the request always wins:
+   * a record it has reported missing is not brought back from memory.
+   */
+  useEffect(() => {
+    if (itemRef.current) return
+    let cancelled = false
+    void readDataDetail(cacheTarget, dataId).then((remembered) => {
+      if (cancelled || !remembered || answered.current || itemRef.current) return
+      setProperties(remembered.properties)
+      propertiesRef.current = remembered.properties
+      setItem(remembered.item)
+      itemRef.current = remembered.item
+      setBodyKnown(remembered.complete)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [cacheTarget, dataId])
 
   /**
    * Save the record. Resolves `true` once this save is durable, `false` if it
@@ -313,7 +423,7 @@ export function DataEditorPage({
     // out does not.
     const urgent = carriesBody && Boolean(options?.keepalive)
     return saveQueue.push(() => updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
-      .then((saved) => {
+      .then(async (saved) => {
         if (saved.recordVersion) ownVersionsRef.current.add(saved.recordVersion)
         // Durable even when a newer save has been queued behind it; only the
         // page state below belongs to the newest one.
@@ -331,6 +441,16 @@ export function DataEditorPage({
           : saved
         itemRef.current = savedWithBody
         setItem(savedWithBody)
+        // Saved means saved everywhere this record is drawn from, the cached
+        // table row included: going back straight after must not draw the
+        // edit undone.
+        if (!deletedRef.current) {
+          await rememberDataDetail(cacheTarget, dataId, {
+            item: savedWithBody,
+            properties: propertiesRef.current,
+          })
+        }
+        if (revision !== revisionRef.current) return true
         setSaveState('saved')
         return true
       })
@@ -341,7 +461,7 @@ export function DataEditorPage({
         }
         return false
       }), { urgent })
-  }, [repoTarget, saveQueue])
+  }, [cacheTarget, dataId, repoTarget, saveQueue])
 
   /**
    * A Live body checkpointed as the page goes away while its room is out of
@@ -390,6 +510,10 @@ export function DataEditorPage({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, item.id)
+      deletedRef.current = true
+      // Before leaving: the table this goes back to draws from the cache in
+      // its first frame, and the row must be gone from it by then.
+      await forgetData(cacheTarget, item.id)
       setDeleteOpen(false)
       onBack()
     } catch (error: unknown) {
@@ -397,11 +521,11 @@ export function DataEditorPage({
     } finally {
       setDeleteBusy(false)
     }
-  }, [item, onBack, repoTarget])
+  }, [cacheTarget, item, onBack, repoTarget])
 
   useDocumentTitle(item?.name)
 
-  if (loading || !item) {
+  if (!item) {
     return (
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background" data-testid="data-editor-page">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
@@ -444,7 +568,9 @@ export function DataEditorPage({
     bodyProperty &&
     (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText'),
   )
-  const bodyValue = bodyProperty
+  // A preview is not the body, so a page drawn from a listing row has none
+  // to show yet; see `bodyKnown`.
+  const bodyValue = bodyProperty && bodyKnown
     ? propertyValueEditText(bodyProperty, getLibraryDataPropertyValue(item, bodyProperty.id) ?? {}) ?? ''
     : ''
   const pageProperties = properties.filter((property) => property.id !== bodyProperty?.id)
@@ -466,14 +592,26 @@ export function DataEditorPage({
       aria-labelledby="data-page-body"
     >
     <h2 id="data-page-body" className="sr-only">{t('detail.body')}</h2>
-    {bodyProperty ? (
+    {bodyProperty && !bodyKnown ? (
+    <div className="space-y-2.5 py-1" data-testid="data-editor-body-pending" aria-busy="true">
+    <span className="sr-only">{t('detail.openingHint')}</span>
+    <div className="h-4 w-11/12 animate-pulse rounded bg-muted motion-reduce:animate-none" aria-hidden="true" />
+    <div className="h-4 w-4/5 animate-pulse rounded bg-muted motion-reduce:animate-none" aria-hidden="true" />
+    <div className="h-4 w-2/3 animate-pulse rounded bg-muted motion-reduce:animate-none" aria-hidden="true" />
+    </div>
+    ) : bodyProperty ? (
     <RecordBodyEditor
-    key={`${item.id}:${bodyProperty.id}`}
+    // Remounted when the record is confirmed: a seeded editor keeps its own
+    // document from then on, so the remembered body it showed read-only
+    // would otherwise stay in front of the one the request returned.
+    key={`${item.id}:${bodyProperty.id}:${confirmed ? 'confirmed' : 'remembered'}`}
     value={bodyValue}
     format={bodyPropertyFormat(bodyProperty)}
+    editable={confirmed}
     surface={artifact ? 'fill' : 'page'}
     imageTarget={{ org, repo, operatorId }}
     liveTarget={
+    confirmed &&
     appKitConfig.dataLive.baseUrl &&
     (bodyProperty.typ === 'Markdown' || bodyProperty.typ === 'RichText')
     ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
@@ -507,6 +645,7 @@ export function DataEditorPage({
     <>
     <PageTitle
     value={item.name}
+    disabled={!confirmed}
     onCommit={(name) => persistItem({ ...itemRef.current!, name })}
     autoFocus={focusTitleOnOpen}
     onContinue={() => {
@@ -530,6 +669,7 @@ export function DataEditorPage({
     <LibraryPropertyEditableCell
     item={item}
     property={property}
+    disabled={!confirmed}
     activation="single"
     relationLoader={relationLoader}
     onCommit={(next) => persistItem(next)}
@@ -561,13 +701,14 @@ export function DataEditorPage({
     ))}
     </div>
     ) : null}
-    <label className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-selected hover:text-primary">
+    <label className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground ${confirmed ? 'cursor-pointer hover:bg-selected hover:text-primary' : 'cursor-default opacity-50'}`}>
     <Paperclip className="size-3.5" aria-hidden="true" />
     {attachments.length > 0 ? t('common.add') : t('dataEditor.attachFile')}
     <input
     data-testid="record-attach-file"
     type="file"
     multiple
+    disabled={!confirmed}
     accept={appKitConfig.attachments.acceptedTypes}
     className="hidden"
     onChange={(event) => {
@@ -664,6 +805,9 @@ export function DataEditorPage({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground"
+            // Every action that writes waits for the record to be confirmed:
+            // the one on screen may be a memory of a record since deleted.
+            disabled={!confirmed}
             onClick={() => setShareOpen(true)}
             aria-label={t('share.shareData')}
             title={t('share.shareData')}
@@ -674,6 +818,7 @@ export function DataEditorPage({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground hover:text-destructive"
+            disabled={!confirmed}
             onClick={() => setDeleteOpen(true)}
             aria-label={t('dataEditor.deleteData')}
             title={t('dataEditor.deleteData')}
@@ -682,6 +827,29 @@ export function DataEditorPage({
           </Button>
         </div>
       </header>
+
+      {loadError ? (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground md:px-4"
+          data-testid="data-editor-stale-notice"
+        >
+          <TriangleAlert className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+          <p className="min-w-0 flex-1">
+            <span className="text-destructive">{loadError}</span>
+            {confirmed ? null : ` ${t('common.showingCachedCopy')}`}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0"
+            onClick={() => void reload()}
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+            {t('common.tryAgain')}
+          </Button>
+        </div>
+      ) : null}
 
       {artifact ? (
         <div className="flex min-h-0 flex-1 flex-col" data-testid="data-editor-artifact">

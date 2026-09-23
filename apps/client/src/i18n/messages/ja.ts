@@ -27,6 +27,7 @@ export const ja: LocaleMessages = {
   'common.close': '閉じる',
   'common.save': '保存',
   'common.saving': '保存中…',
+  'common.showingCachedCopy': 'この端末に保存されたコピーを表示しています。最新ではない可能性があります。',
   'common.saved': '保存済み',
   'common.create': '作成',
   'common.creating': '作成中…',

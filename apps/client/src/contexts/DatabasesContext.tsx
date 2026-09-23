@@ -12,6 +12,8 @@ import {
   type LibraryRepository,
 } from '../lib/recordsApi'
 import { deleteRepository as deleteLibraryRepository } from '../lib/repositorySettingsApi'
+import { readWorkspace, rememberWorkspace } from '../lib/libraryReadCache'
+import { loadStoredAuthIdentity } from '../lib/auth'
 import { t } from '../i18n'
 import {
   loadSelectedOrganization,
@@ -27,6 +29,8 @@ export interface WorkspaceDatabase {
   orgUsername?: string
   repoUsername?: string
   operatorId?: string
+  /** The repository's immutable Library id; its username can be renamed or reused. */
+  databaseId?: string
 }
 
 export interface WorkspaceOrganization {
@@ -76,6 +80,7 @@ function repoToDatabase(repo: LibraryRepository): WorkspaceDatabase {
     orgUsername: repo.orgUsername,
     repoUsername: repo.username,
     operatorId: repo.operatorId,
+    databaseId: repo.id,
   }
 }
 
@@ -127,6 +132,10 @@ export function resolveSelectedOrganizationId(
   return orgs.find((org) => org.repos.length > 0)?.id ?? orgs[0]?.id ?? null
 }
 
+function currentViewer(): string | null {
+  return loadStoredAuthIdentity()?.userId ?? null
+}
+
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
   return t('errors.loadRepositories')
@@ -162,6 +171,32 @@ export function DatabasesProvider({
   const repositoriesRequestGeneration = useRef(0)
   const [repositoriesLoading, setRepositoriesLoading] = useState(true)
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null)
+  /**
+   * What is on screen: nothing yet, the lists this device remembers, or the
+   * lists a request has returned. A remembered list is only ever drawn over
+   * nothing, and a failed request leaves it where it is.
+   */
+  const listsSource = useRef<'none' | 'cached' | 'listed'>('none')
+  /** Whose lists those are: a failed refresh keeps only the same account's. */
+  const listsViewer = useRef<string | null>(null)
+
+  const showLists = useCallback((repos: LibraryRepository[], orgs: LibraryOrganization[]) => {
+    setOrganizations(uniqueOrganizations(orgs))
+    const routeOrganizationId = organizationIdForUsername(
+      routeOrganizationUsername.current,
+      orgs.map((org) => ({ id: org.id, username: org.operatorName })),
+      repos,
+    )
+    setSelectedOrganizationIdState((current) =>
+      resolveSelectedOrganizationId(
+        orgs,
+        current,
+        selectionIntent.current ?? { kind: 'unset' },
+        routeOrganizationId,
+      ),
+    )
+    setDatabases(repos.map(repoToDatabase))
+  }, [])
 
   const refreshRepositories = useCallback(async () => {
     const requestGeneration = ++repositoriesRequestGeneration.current
@@ -173,25 +208,18 @@ export function DatabasesProvider({
         fetchLibraryOrganizations(),
       ])
       if (requestGeneration !== repositoriesRequestGeneration.current) return
-      const nextOrganizations = uniqueOrganizations(orgs)
-      setOrganizations(nextOrganizations)
-      const routeOrganizationId = organizationIdForUsername(
-        routeOrganizationUsername.current,
-        orgs.map((org) => ({ id: org.id, username: org.operatorName })),
-        repos,
-      )
-      setSelectedOrganizationIdState((current) =>
-        resolveSelectedOrganizationId(
-          orgs,
-          current,
-          selectionIntent.current ?? { kind: 'unset' },
-          routeOrganizationId,
-        ),
-      )
-      setDatabases(repos.map(repoToDatabase))
+      listsSource.current = 'listed'
+      listsViewer.current = currentViewer()
+      showLists(repos, orgs)
+      rememberWorkspace({ repositories: repos, organizations: orgs })
     } catch (error: unknown) {
       if (requestGeneration !== repositoriesRequestGeneration.current) return
       console.warn('Failed to load Library repositories', error)
+      // The lists on screen stay up rather than an error in their place --
+      // remembered or listed, a repository URL still resolves and the sidebar
+      // still leads somewhere. Only the same account's, though: after an
+      // account change they are someone else's, and go as before.
+      if (listsSource.current !== 'none' && listsViewer.current === currentViewer()) return
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
       // Load failures are transient; keep the persisted choice for the retry.
@@ -202,7 +230,31 @@ export function DatabasesProvider({
         setRepositoriesLoading(false)
       }
     }
-  }, [])
+  }, [showLists])
+
+  /**
+   * The lists this device remembers, drawn while the request for them is out.
+   *
+   * Only over nothing: once any request has answered, what it said is newer
+   * than anything remembered. The loading flag drops with them, because it is
+   * what every repository-scoped screen waits on before it can resolve its URL.
+   */
+  useEffect(() => {
+    let cancelled = false
+    void readWorkspace().then((cached) => {
+      if (cancelled || !cached || listsSource.current !== 'none') return
+      listsSource.current = 'cached'
+      listsViewer.current = currentViewer()
+      showLists(cached.repositories, cached.organizations)
+      setRepositoriesLoading(false)
+      // A request that failed before these arrived: the lists take the
+      // error's place, as they would have had they arrived first.
+      setRepositoriesError(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showLists])
 
   // The user's pick outlives the page: it is written through to localStorage
   // so a reload (or a Tauri window relaunch) reopens the same organization.
@@ -216,6 +268,31 @@ export function DatabasesProvider({
 
   // Creating an organization and importing an existing tenant both end with a
   // new organization the user should land on, so they share the reconciliation.
+  /**
+   * Add what was just created to the remembered lists.
+   *
+   * The refresh after a creation is what normally remembers it, but it is
+   * allowed to fail -- and the creation, having succeeded, is on screen all
+   * the same. Remembered here too, it is still there on an offline start.
+   */
+  const rememberCreated = useCallback((created: {
+    repository?: LibraryRepository
+    organization?: LibraryOrganization
+  }) => {
+    void readWorkspace().then((cached) => {
+      const workspace = cached ?? { repositories: [], organizations: [] }
+      const { repository, organization } = created
+      rememberWorkspace({
+        repositories: repository && !workspace.repositories.some((known) => known.id === repository.id)
+          ? [...workspace.repositories, repository]
+          : workspace.repositories,
+        organizations: organization && !workspace.organizations.some((known) => known.id === organization.id)
+          ? [...workspace.organizations, organization]
+          : workspace.organizations,
+      })
+    })
+  }, [])
+
   const adoptOrganization = useCallback(async (created: CreatedLibraryOrganization) => {
     await refreshRepositories()
     const organization = {
@@ -223,12 +300,15 @@ export function DatabasesProvider({
       label: created.username,
       platformTenantId: '',
     }
+    rememberCreated({
+      organization: { id: created.id, operatorName: created.username, platformTenantId: '', repos: [] },
+    })
     setOrganizations((current) => current.some((candidate) => candidate.id === created.id)
       ? current
       : [...current, organization])
     setSelectedOrganizationId(created.id)
     return organization
-  }, [refreshRepositories, setSelectedOrganizationId])
+  }, [refreshRepositories, rememberCreated, setSelectedOrganizationId])
 
   const createOrganization = useCallback(
     async (name: string, username: string) =>
@@ -263,18 +343,20 @@ export function DatabasesProvider({
       isPublic,
     })
     await refreshRepositories()
-    const database = repoToDatabase({
+    const repository: LibraryRepository = {
       ...created,
       orgUsername: created.orgUsername || orgUsername,
       operatorId: organization.id,
       platformTenantId: organization.platformTenantId,
-    })
+    }
+    rememberCreated({ repository })
+    const database = repoToDatabase(repository)
     setDatabases((current) => current.some((candidate) => candidate.id === database.id)
       ? current
       : [...current, database])
     setSelectedOrganizationId(organization.id)
     return database
-  }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
+  }, [databases, organizations, refreshRepositories, rememberCreated, setSelectedOrganizationId])
 
   const deleteRepository = useCallback(async (
     orgUsername: string,
@@ -288,6 +370,23 @@ export function DatabasesProvider({
     repositoriesRequestGeneration.current += 1
     setRepositoriesLoading(false)
     setRepositoriesError(null)
+    // Nor may the remembered lists, on the next start.
+    void readWorkspace().then((cached) => {
+      if (!cached) return
+      const gone = (repository: LibraryRepository, owner = repository.orgUsername) =>
+        owner === orgUsername && repository.username === repoUsername
+      rememberWorkspace({
+        repositories: cached.repositories.filter((repository) => !gone(repository)),
+        // Each organization carries its own list too, and an organization left
+        // holding a deleted repository reads as non-empty when choosing one.
+        organizations: cached.organizations.map((organization) => ({
+          ...organization,
+          repos: organization.repos.filter(
+            (repository) => !gone(repository, repository.orgUsername ?? organization.operatorName),
+          ),
+        })),
+      })
+    })
     setDatabases((current) => current.filter(
       (database) => !(
         database.orgUsername === orgUsername && database.repoUsername === repoUsername
