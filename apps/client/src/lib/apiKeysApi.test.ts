@@ -99,6 +99,32 @@ describe('apiKeysApi', () => {
     })
   })
 
+  it('asks for the role the key should be issued with', async () => {
+    const fetchMock = vi.fn(async () =>
+      graphqlResponse({
+        data: {
+          createApiKey: {
+            apiKey: {
+              id: 'pk_3',
+              name: 'reader',
+              value: 'pk_secret',
+              createdAt: '2026-08-26T00:00:00Z',
+              role: 'READER',
+            },
+          },
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const created = await createApiKey(target, 'reader', 'READER')
+
+    expect(created.role).toBe('READER')
+    expect(requestOf(fetchMock).body.variables).toEqual({
+      input: { organizationUsername: 'quantum-box', name: 'reader', role: 'READER' },
+    })
+  })
+
   it('sends the key id the listing reported when revoking', async () => {
     const fetchMock = vi.fn(async () =>
       graphqlResponse({ data: { revokeApiKey: true } }),

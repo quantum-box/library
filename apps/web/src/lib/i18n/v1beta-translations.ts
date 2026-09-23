@@ -341,6 +341,19 @@ export const v1betaTranslations = {
 			failedCreate: 'Failed to create API key',
 			copiedToClipboard: 'Copied to clipboard',
 			apiKeyCopied: 'API key copied to clipboard',
+			role: 'Access',
+			roleNone: 'Public repositories only',
+			roleReader: 'Reader',
+			roleWriter: 'Writer',
+			roleOwner: 'Owner',
+			roleNoneDescription:
+				'Reads public repositories only. Private repositories are refused.',
+			roleReaderDescription:
+				'Reads every repository in this organization, including private ones.',
+			roleWriterDescription:
+				'Reader access, plus creating and updating data in every repository.',
+			roleOwnerDescription:
+				'Writer access, plus deleting repositories and managing their members.',
 		},
 		apiKeyList: {
 			apiKey: 'API Key',
@@ -360,6 +373,7 @@ export const v1betaTranslations = {
 			cancel: 'Cancel',
 			revoked: 'API key revoked',
 			failedRevoke: 'Failed to revoke API key',
+			role: 'Access',
 		},
 		githubImport: {
 			importFromGitHub: 'Import from GitHub',
@@ -1186,6 +1200,19 @@ export const v1betaTranslations = {
 			failedCreate: 'APIキーの作成に失敗しました',
 			copiedToClipboard: 'コピーしました',
 			apiKeyCopied: 'APIキーをクリップボードにコピーしました',
+			role: '権限',
+			roleNone: '公開リポジトリのみ',
+			roleReader: 'Reader',
+			roleWriter: 'Writer',
+			roleOwner: 'Owner',
+			roleNoneDescription:
+				'公開リポジトリのみ読み取れます。非公開リポジトリは拒否されます。',
+			roleReaderDescription:
+				'この組織のすべてのリポジトリ（非公開を含む）を読み取れます。',
+			roleWriterDescription:
+				'Reader の権限に加え、すべてのリポジトリでデータの作成・更新ができます。',
+			roleOwnerDescription:
+				'Writer の権限に加え、リポジトリの削除とメンバー管理ができます。',
 		},
 		apiKeyList: {
 			apiKey: 'APIキー',
@@ -1205,6 +1232,7 @@ export const v1betaTranslations = {
 			cancel: 'キャンセル',
 			revoked: 'APIキーを失効しました',
 			failedRevoke: 'APIキーの失効に失敗しました',
+			role: '権限',
 		},
 		githubImport: {
 			importFromGitHub: 'GitHubからインポート',

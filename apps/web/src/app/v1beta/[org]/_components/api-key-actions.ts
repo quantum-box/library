@@ -1,5 +1,9 @@
 import { platformAction } from '@/app/v1beta/_lib/platform-action'
-import type { CreateApiKeyMutation, GetApiKeysQuery } from '@/gen/graphql'
+import type {
+	ApiKeyRole,
+	CreateApiKeyMutation,
+	GetApiKeysQuery,
+} from '@/gen/graphql'
 
 /**
  * API keys are issued per organization, so every call names the
@@ -15,15 +19,17 @@ export async function fetchApiKeys(
 	})
 }
 
+/** `role` omitted issues a key that reaches public repositories only. */
 export async function createApiKey(
 	orgUsername: string,
 	name: string,
+	role: ApiKeyRole | null,
 	accessToken?: string,
 ): Promise<CreateApiKeyMutation> {
 	return platformAction(
 		sdk =>
 			sdk.createAPIKey({
-				input: { organizationUsername: orgUsername, name },
+				input: { organizationUsername: orgUsername, name, role },
 			}),
 		{ accessToken },
 	)
