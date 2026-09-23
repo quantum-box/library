@@ -131,6 +131,26 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         let (service_account_id, account, keys_on_account) =
             holder.ok_or(errors::not_found!("API key not found"))?;
 
+        // Taking a key's repository access away is managing repository
+        // access, the same as handing it out. It also has to be an
+        // owner's to do for a plainer reason: revoking the key leaves its
+        // account holding the role, and creating a key on an account is
+        // authorized upstream without Library in the way, so anyone left
+        // able to do that could mint the access back.
+        let key_carries_a_role = matches!(
+            account,
+            Some(ApiKeyServiceAccount::Dedicated(Some(_)))
+        );
+        if key_carries_a_role {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: &org_scope,
+                    action: "library:ManageRepoPolicy",
+                })
+                .await?;
+        }
+
         self.auth_app
             .revoke_public_api_key(&RevokePublicApiKeyInput {
                 executor: input.executor,
@@ -156,15 +176,16 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             // and the account stays: it holds nothing, so it authenticates
             // nobody, and asking upstream to remove it would only be
             // refused.
-            let may_manage = self
-                .auth_app
-                .check_policy(&CheckPolicyInput {
-                    executor: input.executor,
-                    multi_tenancy: &org_scope,
-                    action: "library:ManageRepoPolicy",
-                })
-                .await
-                .is_ok();
+            let may_manage = key_carries_a_role
+                || self
+                    .auth_app
+                    .check_policy(&CheckPolicyInput {
+                        executor: input.executor,
+                        multi_tenancy: &org_scope,
+                        action: "library:ManageRepoPolicy",
+                    })
+                    .await
+                    .is_ok();
 
             if may_manage {
                 grant_api_key_policy(
@@ -306,6 +327,9 @@ mod tests {
                     // A key's own account that somehow holds a second
                     // key: it is not spent when one of them goes.
                     ("sa_01shared", "library-api-key-writer-fedcba9876543210fedcba9876543210"),
+                    // A key issued with no repository access, on an
+                    // account of its own.
+                    ("sa_01public", "library-api-key-public-00112233445566778899aabbccddeeff"),
                     // Named by whoever issued the key, back when the
                     // API took a service account name.
                     ("sa_01custom", "ci-bot"),
@@ -327,6 +351,7 @@ mod tests {
                     match input.service_account_id.as_str() {
                         "sa_01legacy" => &["pak_legacy"],
                         "sa_01custom" => &["pak_custom"],
+                        "sa_01public" => &["pak_public"],
                         "sa_01shared" => &["pak_shared", "pak_other"],
                         _ => &["pak_reader"],
                     };
@@ -403,8 +428,9 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 "policy:library:RevokeApiKey",
-                "revoke:sa_01reader:pak_reader",
+                // Taking repository access away is an owner's to do.
                 "policy:library:ManageRepoPolicy",
+                "revoke:sa_01reader:pak_reader",
                 "grant:pol_01issuer",
                 "delete-sa:sa_01reader",
             ]
@@ -416,15 +442,33 @@ mod tests {
     /// it emptied is left for an owner rather than asking upstream for
     /// something it will refuse.
     #[tokio::test]
-    async fn a_non_owner_revokes_the_key_and_leaves_the_account() {
+    async fn a_non_owner_revokes_a_key_without_a_role() {
         let calls = Calls::default();
-        revoke(auth(&calls, false), "pak_reader").await.unwrap();
+        revoke(auth(&calls, false), "pak_public").await.unwrap();
 
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
                 "policy:library:RevokeApiKey",
-                "revoke:sa_01reader:pak_reader",
+                "revoke:sa_01public:pak_public",
+                "policy:library:ManageRepoPolicy",
+            ]
+        );
+    }
+
+    /// Revoking leaves the account holding the role, and creating a key
+    /// on an account is authorized upstream with Library out of the way,
+    /// so anyone who could do both could mint the access back.
+    #[tokio::test]
+    async fn a_non_owner_cannot_revoke_a_key_that_carries_a_role() {
+        let calls = Calls::default();
+        let result = revoke(auth(&calls, false), "pak_reader").await;
+
+        assert!(matches!(result, Err(errors::Error::Forbidden { .. })));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "policy:library:RevokeApiKey",
                 "policy:library:ManageRepoPolicy",
             ]
         );
@@ -440,6 +484,7 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 "policy:library:RevokeApiKey",
+                "policy:library:ManageRepoPolicy",
                 "revoke:sa_01shared:pak_shared",
             ]
         );
