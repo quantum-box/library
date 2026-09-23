@@ -133,9 +133,14 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
             "updated user role in organization"
         );
 
-        // 4. Upgrading to Owner - attach repo owner policy. The other
-        //    direction was handled before the role changed.
-        if new_role == OrgRole::Owner && old_role != OrgRole::Owner {
+        // 4. An owner holds the repo owner policy, whether or not this
+        //    request is what made them one. The attachment is idempotent
+        //    upstream, and asking for it every time is what repairs a
+        //    downgrade that stopped halfway: setting the role back to
+        //    Owner returns the grant the failed attempt took. The other
+        //    direction was handled before the role changed, and repeats
+        //    the same way.
+        if new_role == OrgRole::Owner {
             self.attach_repo_owner_policy(
                 input.executor,
                 input.multi_tenancy,
