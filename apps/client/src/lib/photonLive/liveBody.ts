@@ -153,6 +153,7 @@ export class LiveBodySession {
   private readonly options: LiveBodySessionOptions
   private readonly timing: LiveBodyTiming
   private commitRestImpl: CommitRest
+  private checkpointOutlivingPageImpl: LiveBodySessionOptions['checkpointOutlivingPage']
   private readonly listeners = new Set<(view: LiveBodyView) => void>()
   private port: LiveBodyEditorPort | null = null
   private mode: LiveBodyMode = 'joining'
@@ -211,6 +212,7 @@ export class LiveBodySession {
 
   constructor(options: LiveBodySessionOptions) {
     this.options = options
+    this.checkpointOutlivingPageImpl = options.checkpointOutlivingPage
     this.draft = options.draft
     this.timing = { ...DEFAULT_TIMING, ...options.timing }
     this.retryDelay = this.timing.retryBaseMs
@@ -218,6 +220,11 @@ export class LiveBodySession {
   }
 
   /** The ordinary body save, which the caller may replace on every render. */
+  /** Replace how a body is checkpointed as the page goes away. */
+  setCheckpointOutlivingPage(checkpoint: LiveBodySessionOptions['checkpointOutlivingPage']): void {
+    this.checkpointOutlivingPageImpl = checkpoint
+  }
+
   setCommitRest(commitRest: CommitRest): void {
     this.commitRestImpl = commitRest
   }
@@ -478,7 +485,7 @@ export class LiveBodySession {
   }
 
   private checkpointOutlivingPage(body: string, expectedRecordVersion: string): void {
-    const checkpoint = this.options.checkpointOutlivingPage
+    const checkpoint = this.checkpointOutlivingPageImpl
     if (!checkpoint) return
     const key = `${expectedRecordVersion}\n${body}`
     if (key === this.lastPageCheckpoint) return

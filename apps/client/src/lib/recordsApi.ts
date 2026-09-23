@@ -194,6 +194,8 @@ export interface LibraryDataItem {
   name: string
   createdAt?: string
   updatedAt?: string
+  /** Decimal record version, when the response carried one. */
+  recordVersion?: string
   propertyData: Array<{
     propertyId: string
     value: LibraryPropertyDataValue

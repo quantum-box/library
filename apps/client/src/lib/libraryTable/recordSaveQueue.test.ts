@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RecordSaveQueue } from './recordSaveQueue'
+import { RecordSaveQueue, versionAfterOwnWrites } from './recordSaveQueue'
 
 function deferred() {
   let resolve!: (value: boolean) => void
@@ -78,6 +78,32 @@ describe('RecordSaveQueue', () => {
     older.resolve(true)
     await expect(urgent).resolves.toBe(true)
     expect(sent).toEqual(['older', 'newest', 'newest'])
+  })
+
+  it('keeps the saves queued before an urgent write that does not carry the record', async () => {
+    const queue = new RecordSaveQueue()
+    const sent: string[] = []
+    const title = deferred()
+    void queue.push(() => { sent.push('title'); return title.promise })
+    await flush()
+    const property = queue.push(() => { sent.push('property'); return Promise.resolve(true) })
+    const checkpoint = queue.push(
+      () => { sent.push('checkpoint'); return Promise.resolve(true) },
+      { urgent: true, supersedes: false },
+    )
+    expect(sent).toEqual(['title', 'checkpoint'])
+    title.resolve(true)
+    await expect(property).resolves.toBe(true)
+    await expect(checkpoint).resolves.toBe(true)
+    // The queued save still went, and the checkpoint again after it.
+    expect(sent).toEqual(['title', 'checkpoint', 'property', 'checkpoint'])
+  })
+
+  it('moves a version past the writes this page made, and no others', () => {
+    expect(versionAfterOwnWrites('7', new Set())).toBe('7')
+    expect(versionAfterOwnWrites('7', new Set(['8', '9']))).toBe('9')
+    // 8 was someone else's: the compare-and-set on 7 must fail.
+    expect(versionAfterOwnWrites('7', new Set(['9']))).toBe('7')
   })
 
   it('does not send an urgent save twice when nothing was under way', async () => {

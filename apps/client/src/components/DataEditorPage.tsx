@@ -30,6 +30,7 @@ import {
   isArtifactHtml,
 } from '../lib/libraryTable/bodyProperty'
 import {
+  checkpointLiveBodyOutlivingPage,
   deleteLibraryData,
   updateLibraryData,
   type LibraryRepoTarget,
@@ -38,7 +39,7 @@ import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libra
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { createLibraryRelationRecordLoader } from '../lib/libraryTable/relationRecords'
-import { RecordSaveQueue } from '../lib/libraryTable/recordSaveQueue'
+import { RecordSaveQueue, versionAfterOwnWrites } from '../lib/libraryTable/recordSaveQueue'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
@@ -191,6 +192,8 @@ export function DataEditorPage({
   const propertiesRef = useRef<LibraryProperty[]>([])
   const [saveQueue] = useState(() => new RecordSaveQueue())
   const revisionRef = useRef(0)
+  /** Record versions this page's own writes produced. */
+  const ownVersionsRef = useRef(new Set<string>())
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
   const repoTarget = useMemo<LibraryRepoTarget>(
@@ -311,6 +314,7 @@ export function DataEditorPage({
     const urgent = carriesBody && Boolean(options?.keepalive)
     return saveQueue.push(() => updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
       .then((saved) => {
+        if (saved.recordVersion) ownVersionsRef.current.add(saved.recordVersion)
         // Durable even when a newer save has been queued behind it; only the
         // page state below belongs to the newest one.
         if (revision !== revisionRef.current) return true
@@ -338,6 +342,32 @@ export function DataEditorPage({
         return false
       }), { urgent })
   }, [repoTarget, saveQueue])
+
+  /**
+   * A Live body checkpointed as the page goes away while its room is out of
+   * reach. It is compare-and-set on the version the room last saw, and this
+   * page's own title and property saves move that version too: so it goes
+   * through the save queue, on the version as moved by those writes. Sent at
+   * once, and again after any of them still on their way.
+   */
+  const checkpointLiveBody = useCallback((
+    propertyId: string,
+    format: 'markdown' | 'richText',
+    body: string,
+    roomVersion: string,
+  ) => saveQueue.push(async () => {
+    const produced = await checkpointLiveBodyOutlivingPage(
+      { org: repoTarget.org, repo: repoTarget.repo, dataId, operatorId: repoTarget.operatorId },
+      {
+        propertyId,
+        expectedRecordVersion: versionAfterOwnWrites(roomVersion, ownVersionsRef.current),
+        format,
+        body,
+      },
+    )
+    if (produced) ownVersionsRef.current.add(produced)
+    return produced !== null
+  }, { urgent: true, supersedes: false }), [dataId, repoTarget, saveQueue])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
@@ -449,6 +479,12 @@ export function DataEditorPage({
     ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
     : undefined
     }
+    onLiveCheckpoint={(value, expectedRecordVersion) => checkpointLiveBody(
+    bodyProperty.id,
+    bodyProperty.typ === 'RichText' ? 'richText' : 'markdown',
+    value,
+    expectedRecordVersion,
+    )}
     onCommit={(value, options) => {
     const current = itemRef.current
     if (!current) return Promise.resolve(false)

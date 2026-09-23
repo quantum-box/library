@@ -141,7 +141,7 @@ describe('libraryDataCrud', () => {
     await expect(checkpointLiveBodyOutlivingPage(
       { org: 'acme', repo: 'docs', dataId: 'data-1' },
       { propertyId: 'body', expectedRecordVersion: '7', format: 'markdown', body: '# Last edit' },
-    )).resolves.toBe(false)
+    )).resolves.toBeNull()
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toContain('/v1beta/repos/acme/docs/data/data-1/live/checkpoint')
     expect(init?.method).toBe('POST')
@@ -153,6 +153,34 @@ describe('libraryDataCrud', () => {
       body: '# Last edit',
       operation_id: expect.any(String),
     })
+  })
+
+  it('reports the record version an accepted Live checkpoint produced', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ record_version: '8' })))
+    await expect(checkpointLiveBodyOutlivingPage(
+      { org: 'acme', repo: 'docs', dataId: 'data-1' },
+      { propertyId: 'body', expectedRecordVersion: '7', format: 'markdown', body: '# Last edit' },
+    )).resolves.toBe('8')
+  })
+
+  it('sends an unloading save straight to REST once GraphQL update is known to be absent', async () => {
+    vi.resetModules()
+    const crud = await import('./libraryDataCrud')
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) =>
+      String(url).endsWith('/v1/graphql')
+        ? new Response('not found', { status: 404 })
+        : Response.json({ id: 'data-1', name: 'Doc', record_version: '5', items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const item = { id: 'data-1', name: 'Doc', propertyData: [] }
+    await expect(crud.updateLibraryData({ org: 'acme', repo: 'docs' }, [], item))
+      .resolves.toMatchObject({ recordVersion: '5' })
+    fetchMock.mockClear()
+
+    // The page may not live to run a fallback after a GraphQL answer.
+    await crud.updateLibraryData({ org: 'acme', repo: 'docs' }, [], item, { keepalive: true })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1beta/repos/acme/docs/data/data-1')
+    expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBe(true)
   })
 
   it('deletes data via GraphQL deleteData', async () => {

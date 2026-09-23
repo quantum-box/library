@@ -77,6 +77,13 @@ export interface RecordBodyEditorProps {
    * failed.
    */
   onCommit: (value: string, options?: { keepalive?: boolean }) => void | Promise<boolean>
+  /**
+   * Save a Live body only if the record is still at `expectedRecordVersion`,
+   * in a request that outlives the page (see LiveBodySession). A page that
+   * also saves the record itself provides this, to order the two; without
+   * it the checkpoint is sent directly.
+   */
+  onLiveCheckpoint?: (value: string, expectedRecordVersion: string) => unknown
   editable?: boolean
   surface?: 'panel' | 'page' | 'fill'
   /** Pin the read-only public reader independently of the OS theme. */
@@ -134,7 +141,7 @@ export function RecordBodyEditor(props: RecordBodyEditorProps) {
 function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   format: PhotonLiveFormat
 }) {
-  const { liveTarget, format, value, onCommit } = props
+  const { liveTarget, format, value, onCommit, onLiveCheckpoint } = props
 
   // One session per mount. Callers key this component by record and body
   // property, which is the scope a room is authorized for.
@@ -150,13 +157,6 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
           format,
           seedUpdate,
         }),
-        checkpointOutlivingPage: (body, expectedRecordVersion) =>
-          checkpointLiveBodyOutlivingPage(liveTarget!, {
-            propertyId: liveTarget!.propertyId,
-            expectedRecordVersion,
-            format,
-            body,
-          }),
       }),
       initialBinding: { fragment: draft, user: defaultUser() },
     }
@@ -166,6 +166,16 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   useEffect(() => {
     session.setCommitRest(onCommit)
   }, [onCommit, session])
+
+  useEffect(() => {
+    session.setCheckpointOutlivingPage(onLiveCheckpoint ?? ((body, expectedRecordVersion) =>
+      checkpointLiveBodyOutlivingPage(liveTarget!, {
+        propertyId: liveTarget!.propertyId,
+        expectedRecordVersion,
+        format,
+        body,
+      })))
+  }, [format, liveTarget, onLiveCheckpoint, session])
 
   useEffect(() => {
     const unsubscribe = session.subscribe(setView)

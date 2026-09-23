@@ -32,6 +32,7 @@ interface LibraryDeleteDataResponse {
 interface LibraryRestDataResponse {
   id: string
   name: string
+  record_version?: string
   items: Array<{
     property_id: string
     key: string
@@ -73,6 +74,7 @@ const libraryUpdateDataMutation = `
     updateData(input: $input) {
       id
       name
+      recordVersion
       createdAt
       updatedAt
       propertyData {
@@ -300,6 +302,7 @@ function restResponseToLibraryDataItem(payload: LibraryRestDataResponse): Librar
   return {
     id: payload.id,
     name: payload.name,
+    ...(payload.record_version ? { recordVersion: payload.record_version } : {}),
     propertyData: payload.items.map((entry) => ({
       propertyId: entry.property_id,
       value: restValueToLibraryPropertyDataValue(entry.value),
@@ -469,6 +472,13 @@ export async function addLibraryData(
   return restResponseToLibraryDataItem(payload)
 }
 
+/**
+ * Set once this API has answered that it has no GraphQL update. A save that
+ * must outlive the page then goes straight to REST: the page may not live to
+ * run the fallback after the GraphQL answer.
+ */
+let graphqlUpdateUnavailable = false
+
 export async function updateLibraryData(
   target: LibraryRepoTarget,
   properties: LibraryProperty[],
@@ -477,31 +487,36 @@ export async function updateLibraryData(
   options?: { keepalive?: boolean }
 ): Promise<LibraryDataItem> {
   const propertyData = knownPropertyData(properties, item.propertyData, 'update')
-  try {
-    const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
-      libraryUpdateDataMutation,
-      {
-        input: {
-          actor: configuredLibraryActor(),
-          orgUsername: target.org,
-          repoUsername: target.repo,
-          dataId: item.id,
-          dataName: item.name,
-          propertyData: graphqlPropertyPayload(properties, propertyData),
+  if (!(options?.keepalive && graphqlUpdateUnavailable)) {
+    try {
+      const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
+        libraryUpdateDataMutation,
+        {
+          input: {
+            actor: configuredLibraryActor(),
+            orgUsername: target.org,
+            repoUsername: target.repo,
+            dataId: item.id,
+            dataName: item.name,
+            propertyData: graphqlPropertyPayload(properties, propertyData),
+          },
         },
-      },
-      { operatorId: target.operatorId, keepalive: options?.keepalive }
-    )
-    if (!payload.updateData) {
-      throw new RecordApiError(
-        'Library API did not return updated data',
-        500,
-        'invalid-response'
+        { operatorId: target.operatorId, keepalive: options?.keepalive }
       )
+      if (!payload.updateData) {
+        throw new RecordApiError(
+          'Library API did not return updated data',
+          500,
+          'invalid-response'
+        )
+      }
+      return payload.updateData
+    } catch (error: unknown) {
+      if (error instanceof RecordApiError && error.kind === 'endpoint-unavailable') {
+        graphqlUpdateUnavailable = true
+      }
+      if (!shouldFallbackLibraryRequest(error, 'update')) throw error
     }
-    return payload.updateData
-  } catch (error: unknown) {
-    if (!shouldFallbackLibraryRequest(error, 'update')) throw error
   }
 
   const restBody = JSON.stringify({
@@ -531,7 +546,8 @@ export async function updateLibraryData(
  * For a page that goes away while its room is out of reach: the body is
  * written through the same version-checked checkpoint a room uses, so it
  * never replaces anything saved since that version -- if the record moved
- * on, nothing is written. Resolves `true` when it was accepted.
+ * on, nothing is written. Resolves with the record version it produced
+ * when it was accepted, `null` otherwise.
  */
 export async function checkpointLiveBodyOutlivingPage(
   target: { org: string; repo: string; dataId: string; operatorId?: string },
@@ -541,7 +557,7 @@ export async function checkpointLiveBodyOutlivingPage(
     format: 'markdown' | 'richText'
     body: string
   },
-): Promise<boolean> {
+): Promise<string | null> {
   const body = JSON.stringify({
     property_id: checkpoint.propertyId,
     operation_id: globalThis.crypto?.randomUUID?.() ??
@@ -556,9 +572,11 @@ export async function checkpointLiveBodyOutlivingPage(
       { method: 'POST', headers: await libraryRestHeaders(target.operatorId, true), body },
       true,
     )
-    return response.ok
+    if (!response.ok) return null
+    const payload = await response.json().catch(() => null) as { record_version?: unknown } | null
+    return typeof payload?.record_version === 'string' ? payload.record_version : ''
   } catch {
-    return false
+    return null
   }
 }
 

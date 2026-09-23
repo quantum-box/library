@@ -22,6 +22,7 @@ export class RecordSaveQueue {
   private supersededBefore = 0
   private superseding: Promise<boolean> = Promise.resolve(true)
   private running = 0
+  private waiting = 0
 
   /**
    * Queue `send`, which settles `true` once its save is durable and `false`
@@ -29,24 +30,36 @@ export class RecordSaveQueue {
    * urgent save that overtook another, the result of sending it again -- or
    * with the result of the first attempt of the urgent save that took its
    * place.
+   *
+   * `supersedes: false` is for an urgent write that does not carry the whole
+   * record (a body checkpoint): the saves queued before it still go, and it
+   * is sent again after them. `send` is called afresh each time, so it can
+   * build its request from what those saves returned.
    */
-  push(send: () => Promise<boolean>, { urgent = false }: { urgent?: boolean } = {}): Promise<boolean> {
+  push(
+    send: () => Promise<boolean>,
+    { urgent = false, supersedes = true }: { urgent?: boolean; supersedes?: boolean } = {},
+  ): Promise<boolean> {
     const sequence = ++this.sequence
     if (urgent) {
-      const overtook = this.running > 0
+      const overtook = this.running > 0 || (!supersedes && this.waiting > 0)
       const first = this.run(send)
       // Whatever comes after still waits for the saves already under way.
       const settled = Promise.allSettled([this.tail, first])
       const saving = overtook ? settled.then(() => this.run(send)) : first
-      this.supersededBefore = sequence
-      // Its first attempt: the tail the re-send waits for includes them.
-      this.superseding = first
+      if (supersedes) {
+        this.supersededBefore = sequence
+        // Its first attempt: the tail the re-send waits for includes them.
+        this.superseding = first
+      }
       this.tail = overtook ? saving : settled
       return saving
     }
-    const saving = this.tail.catch(() => undefined).then(() =>
-      sequence < this.supersededBefore ? this.superseding : this.run(send),
-    )
+    this.waiting += 1
+    const saving = this.tail.catch(() => undefined).then(() => {
+      this.waiting -= 1
+      return sequence < this.supersededBefore ? this.superseding : this.run(send)
+    })
     this.tail = saving
     return saving
   }
@@ -57,4 +70,16 @@ export class RecordSaveQueue {
       this.running -= 1
     })
   }
+}
+
+/**
+ * `version` moved on by this page's own writes: while the next version is one
+ * a write from here produced, that transition was ours. Every write advances
+ * a record by exactly one, so a version anyone else produced is never among
+ * them, and a compare-and-set on the result still refuses anyone else's.
+ */
+export function versionAfterOwnWrites(version: string, own: ReadonlySet<string>): string {
+  let current = BigInt(version)
+  while (own.has(String(current + 1n))) current += 1n
+  return String(current)
 }
