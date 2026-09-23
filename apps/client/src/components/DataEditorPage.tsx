@@ -38,6 +38,7 @@ import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libra
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { createLibraryRelationRecordLoader } from '../lib/libraryTable/relationRecords'
+import { RecordSaveQueue } from '../lib/libraryTable/recordSaveQueue'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
@@ -159,7 +160,7 @@ export function DataEditorPage({
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const itemRef = useRef<LibraryDataItem | null>(null)
   const propertiesRef = useRef<LibraryProperty[]>([])
-  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const [saveQueue] = useState(() => new RecordSaveQueue())
   const revisionRef = useRef(0)
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
@@ -273,10 +274,13 @@ export function DataEditorPage({
     setSaveState('saving')
     setSaveError(null)
 
-    const saving = saveQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
+    // The unloading save starts now rather than behind network work the page
+    // may not outlive. It may overtake the queue because a save carrying the
+    // body is built from the whole record as last known, so it holds every
+    // earlier save's change too; one leaving the body out does not.
+    const urgent = carriesBody && Boolean(options?.keepalive)
+    return saveQueue.push(() => updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
+      .then((saved) => {
         // Durable even when a newer save has been queued behind it; only the
         // page state below belongs to the newest one.
         if (revision !== revisionRef.current) return true
@@ -302,10 +306,8 @@ export function DataEditorPage({
           setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
         }
         return false
-      })
-    saveQueueRef.current = saving
-    return saving
-  }, [repoTarget])
+      }), { urgent })
+  }, [repoTarget, saveQueue])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
