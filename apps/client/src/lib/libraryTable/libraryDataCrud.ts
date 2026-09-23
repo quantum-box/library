@@ -34,7 +34,8 @@ interface LibraryDeleteDataResponse {
 interface LibraryRestDataResponse {
   id: string
   name: string
-  record_version?: string
+  /** The response is camelCased at the top level; its items are not. */
+  recordVersion?: string
   items: Array<{
     property_id: string
     key: string
@@ -305,7 +306,7 @@ function restResponseToLibraryDataItem(payload: LibraryRestDataResponse): Librar
   return {
     id: payload.id,
     name: payload.name,
-    ...(payload.record_version ? { recordVersion: payload.record_version } : {}),
+    ...(payload.recordVersion ? { recordVersion: payload.recordVersion } : {}),
     propertyData: payload.items.map((entry) => ({
       propertyId: entry.property_id,
       value: restValueToLibraryPropertyDataValue(entry.value),

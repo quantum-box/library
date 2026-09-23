@@ -205,7 +205,7 @@ describe('libraryDataCrud', () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) =>
       String(url).endsWith('/v1/graphql')
         ? new Response('not found', { status: 404 })
-        : Response.json({ id: 'data-1', name: 'Doc', record_version: '5', items: [] }))
+        : Response.json({ id: 'data-1', name: 'Doc', recordVersion: '5', items: [] }))
     vi.stubGlobal('fetch', fetchMock)
     const item = { id: 'data-1', name: 'Doc', propertyData: [] }
     await expect(crud.updateLibraryData({ org: 'acme', repo: 'docs' }, [], item))
