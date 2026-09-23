@@ -1311,10 +1311,14 @@ function DataWorkspace({
   const handleCreateAndOpenRecord = useCallback(
     async (data: Parameters<typeof handleCreateRecord>[0]) => {
       const title = data.title.trim()
-      const record = await handleCreateRecordInDatabase({
+      const { record, delivered } = await handleCreateRecordInDatabase({
         ...data,
         title: title || translate('common.untitled'),
       })
+      // The editor reads the record from library-api. One created offline is
+      // queued and not there yet, so it stays in the list the form was
+      // opened over, where the local copy is shown, until it is delivered.
+      if (!delivered) return
       if (!record.orgUsername || !record.repoUsername || isPendingRecordId(record.id)) return
       // Closed before leaving: a repository table reads an open form as a
       // request to create, and would make a second record on the way back.

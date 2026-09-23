@@ -31,6 +31,7 @@ import {
   createLibraryRecordsResource,
   createLibraryRepository,
   createServerRecord,
+  createServerRecordWithDelivery,
   deleteServerRecord,
   fetchLibraryOrganizations,
   fetchAllLibraryRepoTableData,
@@ -526,6 +527,32 @@ describe('recordsApi', () => {
     expect(created).toMatchObject({ status: 'todo', priority: 'none' })
     // ...and the write went out rather than being refused for them.
     expect(photonEngine.upsertAndPushClientEngineRecord).toHaveBeenCalled()
+
+    libraryCollections.reset()
+  })
+
+  /**
+   * A create made offline is kept and queued. It is a success, but not one
+   * library-api can answer for yet, so a caller about to read it back from
+   * the API has to be told it has not been delivered.
+   */
+  it('reports whether the server has accepted a created record', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'acme')
+    vi.stubEnv('VITE_LIBRARY_REPO', 'docs')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    rememberLibraryRepositories([{ databaseId: 'repo-docs', org: 'acme', repo: 'docs' }])
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { properties: [] } })))
+
+    vi.mocked(photonEngine.upsertAndPushClientEngineRecord)
+      .mockResolvedValueOnce({ status: 'queued', record: null })
+    const queued = await createServerRecordWithDelivery({ title: 'Offline' })
+    expect(queued.delivered).toBe(false)
+    expect(queued.record).toMatchObject({ title: 'Offline', orgUsername: 'acme', repoUsername: 'docs' })
+
+    vi.mocked(photonEngine.upsertAndPushClientEngineRecord)
+      .mockResolvedValueOnce({ status: 'accepted', record: null })
+    const accepted = await createServerRecordWithDelivery({ title: 'Online' })
+    expect(accepted.delivered).toBe(true)
 
     libraryCollections.reset()
   })

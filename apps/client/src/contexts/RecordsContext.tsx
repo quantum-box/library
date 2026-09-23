@@ -13,12 +13,13 @@ import * as Y from 'yjs'
 import { ydoc, recordsArray } from '../lib/yjs/yjsProvider'
 import { useYjsRecords } from '../lib/yjs/useYjsRecords'
 import {
-  createServerRecord,
+  createServerRecordWithDelivery,
   deleteServerRecord,
   fetchServerRecords,
   pendingLibraryRecordIds,
   subscribeRecordSettlements,
   updateServerRecord,
+  type CreatedServerRecord,
   type ServerUpdateRecordData,
 } from '../lib/recordsApi'
 import {
@@ -47,8 +48,8 @@ interface RecordsContextValue {
   records: DatabaseRecord[]
   handleMoveRecord: (recordId: string, newStatus: Status) => void
   handleUpdateRecord: (recordId: string, field: keyof DatabaseRecord, value: string) => void
-  /** Resolves with the record as the server stored it. */
-  handleCreateRecord: (data: CreateRecordData) => Promise<DatabaseRecord>
+  /** Resolves with the stored record and whether the server has it yet. */
+  handleCreateRecord: (data: CreateRecordData) => Promise<CreatedServerRecord>
   handleDeleteRecord: (recordId: string) => void
   syncRecord: (record: DatabaseRecord) => void
   beginRecordsSnapshot: () => RecordsSnapshotToken
@@ -479,19 +480,19 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       upsertYDatabaseRecord(optimisticRecord)
     })
 
-    return createServerRecord({
+    return createServerRecordWithDelivery({
       ...data,
       assignee: data.assignee ?? null,
       labels: data.labels ?? [],
       project: data.project ?? appKitConfig.records.defaultProject,
     })
-      .then((serverRecord) => {
+      .then((created) => {
         pendingOptimisticRecordIdsRef.current.delete(optimisticRecord.id)
         transactProjection(() => {
           removeYDatabaseRecord(optimisticRecord.id)
-          upsertYDatabaseRecord(serverRecord)
+          upsertYDatabaseRecord(created.record)
         })
-        return serverRecord
+        return created
       })
       .catch((error: unknown) => {
         console.warn('Failed to persist created record', error)
