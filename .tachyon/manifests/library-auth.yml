@@ -7,9 +7,10 @@
 #   - Every ActionSet entry uses the reserved `library` context. Registering
 #     one through `POST /v1/auth/actions` is refused, so new library actions
 #     must be added upstream in tachyon-apps.
-#   - The Policy documents are tenant-scoped through `metadata.namespace`.
-#     Applying them would reconcile tenant-owned policy records; it does not
-#     update the system LibraryUserPolicy attached by the API at sign-in.
+#   - The Policy documents are ownerless upstream records, represented with
+#     `spec.global: true`. Applying them would reconcile globally visible
+#     policies; it does not update the system LibraryUserPolicy attached by
+#     the API at sign-in.
 #
 # Adding an action therefore means: add it here so the intent is recorded,
 # and have it registered upstream as a system action.
@@ -206,8 +207,8 @@ apiVersion: auth.tachyon.io/v1
 kind: Policy
 metadata:
   name: library:reader
-  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
+  global: true
   description: Library reader policy for read-only API and repository access
   actions:
     - action: library:ViewRepo
@@ -231,8 +232,8 @@ apiVersion: auth.tachyon.io/v1
 kind: Policy
 metadata:
   name: library:member
-  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
+  global: true
   description: Library member policy for normal read and write workflows
   actions:
     - action: library:CreateApiKey
@@ -294,8 +295,8 @@ apiVersion: auth.tachyon.io/v1
 kind: Policy
 metadata:
   name: library:admin
-  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
 spec:
+  global: true
   description: Library admin policy for repository, member, and policy administration
   # One pattern now covers everything: repository-database and
   # inbound-sync actions moved into the library context, so the two
