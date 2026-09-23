@@ -418,6 +418,18 @@ export async function getClientEngineRecord<T>(
 }
 
 /**
+ * Load a lazily hydrated collection into the projection, without reading it.
+ *
+ * For a screen that will want to `peekClientEngineRecord` from it soon: the
+ * peek only answers once the collection is in, and this is how it gets there
+ * before it is asked rather than after.
+ */
+export async function hydrateClientEngineCollection(collection: string): Promise<void> {
+  const client = await engineFor(collection)
+  await client.hydrateCollection(collection)
+}
+
+/**
  * A record, read without waiting — or null when that would mean waiting.
  *
  * Answers only from a client that is already built, and only for a

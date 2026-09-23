@@ -41,6 +41,7 @@ const cache = vi.hoisted(() => ({
   rememberRepoTable: vi.fn(),
   forgetData: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
   forgetDataPages: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
+  warmDataDetails: vi.fn(),
 }))
 
 vi.mock('../lib/libraryReadCache', () => cache)
@@ -583,6 +584,14 @@ describe('LibraryTableView', () => {
         expect(screen.getByTestId('library-table-empty')).toBeInTheDocument()
       })
     })
+  })
+
+  it('loads the record pages its rows open onto', () => {
+    render(
+      <LibraryTableView org="quantum-box" repo="docs" onSelectData={() => undefined} />
+    )
+
+    expect(cache.warmDataDetails).toHaveBeenCalled()
   })
 
   it('remembers the listed table for the next visit', async () => {

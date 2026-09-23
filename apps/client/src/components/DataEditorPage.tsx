@@ -357,15 +357,19 @@ function RecordPage({
   /**
    * The remembered record, for the mount that could not have it at once.
    *
-   * `peekDataDetail` answers only once the store is open. Whichever of this
-   * and the detail request lands first is drawn, and the request always wins:
-   * a record it has reported missing is not brought back from memory.
+   * `peekDataDetail` answers only once the store is open, and from the record
+   * pages only once they are loaded -- until then it may have had the table
+   * row, which is everything but the body. Whichever of this and the detail
+   * request lands first is drawn, and the request always wins: a record it has
+   * reported missing is not brought back from memory.
    */
   useEffect(() => {
-    if (itemRef.current) return
+    if (cached?.complete) return
     let cancelled = false
     void readDataDetail(cacheTarget, dataId).then((remembered) => {
-      if (cancelled || !remembered || answered.current || itemRef.current) return
+      if (cancelled || !remembered || answered.current || deletedRef.current) return
+      // Over the row only with the record itself: the row is already drawn.
+      if (itemRef.current && !remembered.complete) return
       setProperties(remembered.properties)
       propertiesRef.current = remembered.properties
       setItem(remembered.item)
@@ -376,7 +380,7 @@ function RecordPage({
     return () => {
       cancelled = true
     }
-  }, [cacheTarget, dataId])
+  }, [cacheTarget, cached, dataId])
 
   /**
    * Save the record. Resolves `true` once this save is durable, `false` if it

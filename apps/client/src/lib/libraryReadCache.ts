@@ -25,6 +25,7 @@ import { loadStoredAuthIdentity } from './auth'
 import { getBodyProperty } from './libraryTable/bodyProperty'
 import {
   getClientEngineRecord,
+  hydrateClientEngineCollection,
   ingestClientEngineRecords,
   listClientEngineRecords,
   peekClientEngineRecord,
@@ -219,6 +220,18 @@ export function peekDataDetail(
     peek<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, dataId)) ??
     rowAsDetail(peekRepoTable(target), dataId)
   )
+}
+
+/**
+ * Load the remembered record pages, so that `peekDataDetail` has them.
+ *
+ * They are loaded on the first read, and the first read is otherwise the
+ * record page's own -- by when the page has drawn from the table row, whose
+ * body is a preview it cannot show. The table calls this so that the row a
+ * user opens from it is drawn as the record, body and all, in its first frame.
+ */
+export function warmDataDetails(): void {
+  void hydrateClientEngineCollection(DETAILS_COLLECTION).catch(() => undefined)
 }
 
 /** The record's page, waiting for the store if it has to. */

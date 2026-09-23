@@ -404,4 +404,56 @@ describe('DataEditorPage', () => {
     })
     expect(cache.readDataDetail).toHaveBeenCalledWith({ org: 'acme', repo: 'docs' }, 'data-1')
   })
+
+  it('draws the remembered record over the row it opened on, body and all', async () => {
+    // The record pages were not loaded yet when the page mounted, so the peek
+    // found only the table row; the store has the record itself.
+    cache.peekDataDetail.mockReturnValue({
+      item: record('Row title', 'a preview, not the body'),
+      properties,
+      complete: false,
+    })
+    cache.readDataDetail.mockResolvedValue({
+      item: record('Remembered title', 'remembered body'),
+      properties,
+      complete: true,
+    })
+    deferredDetail()
+    renderPage()
+
+    expect(screen.getByTestId('data-editor-body-pending')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('body-editor')).toHaveTextContent('remembered body')
+    })
+    expect(screen.getByText('Remembered title')).toBeInTheDocument()
+    // Still a memory: read-only until the request confirms it.
+    expect(screen.getByTestId('body-editor')).toHaveAttribute('data-editable', 'false')
+  })
+
+  it('does not trade the row it opened on for the same row', async () => {
+    const row = { item: record('Row title', 'a preview, not the body'), properties, complete: false }
+    cache.peekDataDetail.mockReturnValue(row)
+    cache.readDataDetail.mockResolvedValue(row)
+    deferredDetail()
+    renderPage()
+
+    await waitFor(() => {
+      expect(cache.readDataDetail).toHaveBeenCalled()
+    })
+    await Promise.resolve()
+    expect(screen.getByTestId('data-editor-body-pending')).toBeInTheDocument()
+    expect(screen.queryByText('a preview, not the body')).not.toBeInTheDocument()
+  })
+
+  it('does not read the store again for a record it already drew whole', () => {
+    cache.peekDataDetail.mockReturnValue({
+      item: record('Remembered title', 'remembered body'),
+      properties,
+      complete: true,
+    })
+    deferredDetail()
+    renderPage()
+
+    expect(cache.readDataDetail).not.toHaveBeenCalled()
+  })
 })
