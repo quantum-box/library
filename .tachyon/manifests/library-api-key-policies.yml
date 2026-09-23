@@ -50,10 +50,16 @@ policies:
   # holder is not an owner and gets nothing else. Separate from the issuer
   # policy because an account created alone carries no policy, while
   # attaching one to it is an owner's to do.
+  #
+  # `auth:CreatePublicApiKey` is here for the account an owner key acts
+  # as: a person already holds that one, a service account does not, and
+  # an owner key issues keys (`library api-key create`).
   - name: library:ApiKeyAccounts
     namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
     description: Allow Library organization members to create the service account behind an API key they issue
     shared: true
     actions:
       - action: auth:CreateServiceAccount
+        effect: allow
+      - action: auth:CreatePublicApiKey
         effect: allow

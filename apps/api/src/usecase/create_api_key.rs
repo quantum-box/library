@@ -61,14 +61,6 @@ impl CreateApiKeyInputPort for CreateApiKey {
         &self,
         input: &CreateApiKeyInputData<'a>,
     ) -> errors::Result<CreateApiKeyOutputData> {
-        self.auth_app
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:CreateApiKey",
-            })
-            .await?;
-
         let organization = self
             .get_org_by_name
             .execute(&input.org_name.to_string().parse()?)
@@ -88,11 +80,12 @@ impl CreateApiKeyInputPort for CreateApiKey {
             Some(tenant_id.clone()),
         );
 
-        // Handing a key repository access is granting repository
-        // permissions, which only those who manage repository policy may
-        // do. Checked before anything is created so a refusal leaves
-        // nothing behind.
-        if input.role.is_some() {
+        // A key issuing a key is a key acting for whoever holds it, and
+        // `library:CreateApiKey` is a person's permission: an owner key
+        // is recognised by the repository policy it carries instead. It
+        // may issue any role, being the widest itself. Checked before
+        // anything is created so a refusal leaves nothing behind.
+        if input.executor.is_service_account() {
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
@@ -100,6 +93,29 @@ impl CreateApiKeyInputPort for CreateApiKey {
                     action: "library:ManageRepoPolicy",
                 })
                 .await?;
+        } else {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:CreateApiKey",
+                })
+                .await?;
+        }
+
+        // Handing a key repository access is granting repository
+        // permissions, which only those who manage repository policy may
+        // do.
+        if input.role.is_some() {
+            if !input.executor.is_service_account() {
+                self.auth_app
+                    .check_policy(&CheckPolicyInput {
+                        executor: input.executor,
+                        multi_tenancy: &org_scope,
+                        action: "library:ManageRepoPolicy",
+                    })
+                    .await?;
+            }
 
             // Granting the key's account its role is authorized on the
             // tachyon side as the caller, who needs the issuer grant for
@@ -226,6 +242,26 @@ impl CreateApiKey {
                     policy_id: &role.policy_id(),
                 })
                 .await?;
+
+            // An owner key issues keys of its own (see the check in
+            // `execute`), which upstream authorizes as the key: the
+            // account it acts as needs what that takes, the way a person
+            // is granted it on use.
+            if role == ApiKeyRole::Owner {
+                for policy_id in [
+                    library_api_key_accounts_policy_id(),
+                    library_api_key_issuer_policy_id(),
+                ] {
+                    self.auth_app
+                        .attach_sa_policy(&AttachSaPolicyInput {
+                            executor: input.executor,
+                            multi_tenancy: org_scope,
+                            service_account_id: service_account.id(),
+                            policy_id: &policy_id,
+                        })
+                        .await?;
+                }
+            }
         }
 
         self.auth_app
@@ -473,6 +509,20 @@ mod tests {
         auth
     }
 
+    /// A key acting for whoever holds it.
+    fn key_executor() -> tachyon_sdk::auth::Executor {
+        tachyon_sdk::auth::Executor::ServiceAccount(Box::new(
+            ServiceAccount {
+                id: "sa_01owner".to_string().into(),
+                tenant_id: org_tenant(),
+                name:
+                    "library-api-key-owner-0123456789abcdef0123456789abcdef"
+                        .to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ))
+    }
+
     /// The tenant the request names, which the v1 web client sets to the
     /// Library platform rather than to the organization.
     const CALLER_TENANT: &str = "tn_01hjryxysgey07h5jz5wagqj0m";
@@ -485,6 +535,14 @@ mod tests {
         auth: MockAuthApp,
         role: Option<ApiKeyRole>,
     ) -> errors::Result<CreateApiKeyOutputData> {
+        create_as(auth, role, user_executor()).await
+    }
+
+    async fn create_as(
+        auth: MockAuthApp,
+        role: Option<ApiKeyRole>,
+        executor: tachyon_sdk::auth::Executor,
+    ) -> errors::Result<CreateApiKeyOutputData> {
         let mut get_org = MockGetOrgByUsername::new();
         get_org.expect_execute().returning(|_| {
             Ok(Some(Organization::new(
@@ -495,7 +553,6 @@ mod tests {
                 None,
             )))
         });
-        let executor = user_executor();
         let multi_tenancy = create_test_multi_tenancy();
         CreateApiKey::new(Arc::new(auth), Arc::new(get_org))
             .execute(&CreateApiKeyInputData {
@@ -565,6 +622,64 @@ mod tests {
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
             ]
+        );
+    }
+
+    /// A key issues keys when it carries the owner role, which is what
+    /// the repository policy check recognises; `library:CreateApiKey`
+    /// belongs to people. The account it makes gets what issuing takes,
+    /// so a key it issues as an owner can issue in turn.
+    #[tokio::test]
+    async fn an_owner_key_issues_keys_of_its_own() {
+        let calls = Calls::default();
+        let output = create_as(
+            auth(&calls, None),
+            Some(ApiKeyRole::Owner),
+            key_executor(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(output.role, Some(ApiKeyRole::Owner));
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.first().unwrap(),
+            &format!("policy:library:ManageRepoPolicy@{}", org_tenant())
+        );
+        assert!(!calls
+            .iter()
+            .any(|call| call.contains("library:CreateApiKey")));
+        // A key cannot attach a policy to itself, so nothing is granted
+        // to it; what it needs is on the account it acts as already.
+        assert!(!calls.iter().any(|call| call.starts_with("grant:")));
+        assert!(calls.iter().any(|call| call
+            == &format!(
+                "attach:sa_01key:{LIBRARY_API_KEY_ACCOUNTS_POLICY_ID}@{}",
+                org_tenant()
+            )));
+        assert!(calls.iter().any(|call| call
+            == &format!(
+                "attach:sa_01key:{LIBRARY_API_KEY_ISSUER_POLICY_ID}@{}",
+                org_tenant()
+            )));
+    }
+
+    /// A key that carries no repository policy is refused, which is every
+    /// key but an owner's.
+    #[tokio::test]
+    async fn a_key_without_the_owner_role_issues_nothing() {
+        let calls = Calls::default();
+        let result = create_as(
+            auth(&calls, Some("library:ManageRepoPolicy")),
+            None,
+            key_executor(),
+        )
+        .await;
+
+        assert!(matches!(result, Err(errors::Error::Forbidden { .. })));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [format!("policy:library:ManageRepoPolicy@{}", org_tenant())]
         );
     }
 

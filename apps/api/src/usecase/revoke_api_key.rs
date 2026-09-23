@@ -47,14 +47,6 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         &self,
         input: &RevokeApiKeyInputData<'a>,
     ) -> errors::Result<()> {
-        self.auth_app
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:RevokeApiKey",
-            })
-            .await?;
-
         let organization = self
             .get_org_by_name
             .execute(&input.org_name.to_string().parse()?)
@@ -71,6 +63,27 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             Some(LIBRARY_TENANT.clone()),
             Some(tenant_id.clone()),
         );
+
+        // `library:RevokeApiKey` is a person's permission; a key acting
+        // for whoever holds it is recognised by the repository policy it
+        // carries, as when it issues one.
+        if input.executor.is_service_account() {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: &org_scope,
+                    action: "library:ManageRepoPolicy",
+                })
+                .await?;
+        } else {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:RevokeApiKey",
+                })
+                .await?;
+        }
 
         // Upstream revoke succeeds silently for a key the named account
         // does not hold, so the account holding it is found first. Every
@@ -141,7 +154,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             account,
             Some(ApiKeyServiceAccount::Dedicated(Some(_)))
         );
-        if key_carries_a_role {
+        if key_carries_a_role && !input.executor.is_service_account() {
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
@@ -177,6 +190,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             // nobody, and asking upstream to remove it would only be
             // refused.
             let may_manage = key_carries_a_role
+                || input.executor.is_service_account()
                 || self
                     .auth_app
                     .check_policy(&CheckPolicyInput {

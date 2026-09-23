@@ -9,8 +9,10 @@ use tachyon_sdk::auth::{
 };
 use value_object::{Identifier, TenantId};
 
+use tachyon_sdk::auth::MultiTenancy;
+
 use super::GetOrganizationByUsernameQuery;
-use crate::domain::{ApiKeyRole, ApiKeyServiceAccount};
+use crate::domain::{ApiKeyRole, ApiKeyServiceAccount, LIBRARY_TENANT};
 
 #[derive(Debug, Clone)]
 pub struct ListApiKeysInputData<'a> {
@@ -48,20 +50,37 @@ impl ListApiKeysInputPort for ListApiKeys {
         &self,
         input: &ListApiKeysInputData<'a>,
     ) -> errors::Result<Vec<ListedApiKey>> {
-        self.auth_app
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:ListApiKeys",
-            })
-            .await?;
-
         let organization = self
             .get_org_by_name
             .execute(&input.org_name.to_string().parse()?)
             .await?
             .ok_or(errors::not_found!("Organization not found"))?;
         let tenant_id: TenantId = organization.id().to_string().parse()?;
+
+        // `library:ListApiKeys` is a person's permission; a key acting
+        // for whoever holds it is recognised by the repository policy it
+        // carries, in the organization's own tenant, as when it issues a
+        // key.
+        if input.executor.is_service_account() {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: &MultiTenancy::new(
+                        Some(LIBRARY_TENANT.clone()),
+                        Some(tenant_id.clone()),
+                    ),
+                    action: "library:ManageRepoPolicy",
+                })
+                .await?;
+        } else {
+            self.auth_app
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: "library:ListApiKeys",
+                })
+                .await?;
+        }
 
         let service_accounts = self
             .auth_app
