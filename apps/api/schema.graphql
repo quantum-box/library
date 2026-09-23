@@ -26,7 +26,25 @@ input AddDataInputData {
 
 type ApiKeyResponse {
 	apiKey: PublicApiKey!
-	serviceAccount: ServiceAccount!
+}
+
+"""
+Repository access granted to every repository of the organization.
+"""
+enum ApiKeyRole {
+	"""
+	Read private repositories.
+	"""
+	READER
+	"""
+	Read private repositories and write their data.
+	"""
+	WRITER
+	"""
+	Everything a writer can do, plus deleting repositories and
+	managing their members.
+	"""
+	OWNER
 }
 
 type BooleanValue {
@@ -135,17 +153,19 @@ input ConnectIntegrationInput {
 
 input CreateApiKeyInput {
 	"""
-	TODO: add English documentation
+	Organization the key is issued for.
 	"""
 	organizationUsername: String!
 	"""
-	TODO: add English documentation
+	Display name, to tell keys apart when listing or revoking.
 	"""
 	name: String!
 	"""
-	TODO: add English documentation
+	Repository access for the key, across every repository of the
+	organization. Omit for a key that reaches public repositories only.
+	Requires `library:ManageRepoPolicy`.
 	"""
-	serviceAccountName: String
+	role: ApiKeyRole
 }
 
 input CreateExternalSyncBindingInput {
@@ -1865,10 +1885,14 @@ union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | 
 type PublicApiKey {
 	id: String!
 	tenantId: String!
-	serviceAccountId: String!
 	name: String!
 	value: String!
 	createdAt: DateTime!
+	"""
+	Repository access the key has. `null` reaches public repositories
+	only.
+	"""
+	role: ApiKeyRole
 }
 
 type Query {
@@ -2112,10 +2136,6 @@ input RevokeApiKeyInput {
 	Identifier of the key to revoke, as returned by `apiKeys`.
 	"""
 	apiKeyId: String!
-	"""
-	Service account holding the key. Defaults to `default`.
-	"""
-	serviceAccountName: String
 }
 
 type RichTextValue {
@@ -2183,13 +2203,6 @@ type SendTestWebhookOutput {
 	ID of the created event
 	"""
 	eventId: String
-}
-
-type ServiceAccount {
-	id: String!
-	tenantId: String!
-	name: String!
-	createdAt: DateTime!
 }
 
 type Source {

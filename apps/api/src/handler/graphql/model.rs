@@ -65,43 +65,29 @@ impl From<auth_domain::Operator> for Operator {
 }
 
 #[derive(SimpleObject, Debug, Clone)]
-pub struct ServiceAccount {
-    pub id: String,
-    pub tenant_id: String,
-    pub name: String,
-    pub created_at: DateTime<Utc>,
-}
-
-impl From<auth_domain::ServiceAccount> for ServiceAccount {
-    fn from(value: auth_domain::ServiceAccount) -> Self {
-        Self {
-            id: value.id().to_string(),
-            tenant_id: value.tenant_id().to_string(),
-            name: value.name().to_string(),
-            created_at: *value.created_at(),
-        }
-    }
-}
-
-#[derive(SimpleObject, Debug, Clone)]
 pub struct PublicApiKey {
     pub id: String,
     pub tenant_id: String,
-    pub service_account_id: String,
     pub name: String,
     pub value: String,
     pub created_at: DateTime<Utc>,
+    /// Repository access the key has. `null` reaches public repositories
+    /// only.
+    pub role: Option<crate::domain::ApiKeyRole>,
 }
 
-impl From<auth_domain::PublicApiKey> for PublicApiKey {
-    fn from(value: auth_domain::PublicApiKey) -> Self {
+impl PublicApiKey {
+    pub fn with_role(
+        value: auth_domain::PublicApiKey,
+        role: Option<crate::domain::ApiKeyRole>,
+    ) -> Self {
         Self {
             id: value.id().to_string(),
             tenant_id: value.tenant_id().to_string(),
-            service_account_id: value.service_account_id().to_string(),
             name: value.name().to_string(),
             value: value.value().to_string(),
             created_at: *value.created_at(),
+            role,
         }
     }
 }
@@ -769,7 +755,6 @@ pub struct DataList {
 #[derive(SimpleObject, Debug, Clone)]
 pub struct ApiKeyResponse {
     pub api_key: PublicApiKey,
-    pub service_account: ServiceAccount,
 }
 
 // ==================== GitHub Sync Types ====================

@@ -164,7 +164,7 @@ steps:
     method: POST
     url: /v1/graphql
     body:
-      query: "mutation CreateApiKey($input: CreateApiKeyInput!) {\n  createApiKey(input: $input) {\n    apiKey { id name value }\n    serviceAccount { id name }\n  }\n}\n"
+      query: "mutation CreateApiKey($input: CreateApiKeyInput!) {\n  createApiKey(input: $input) {\n    apiKey { id name value role }\n  }\n}\n"
       variables:
         input:
           organizationUsername: org-{{vars.timestamp}}s
@@ -187,7 +187,7 @@ steps:
     method: POST
     url: /v1/graphql
     body:
-      query: "query ApiKeys($org: String!) {\n  apiKeys(orgUsername: $org) { id name }\n}\n"
+      query: "query ApiKeys($org: String!) {\n  apiKeys(orgUsername: $org) { id name role }\n}\n"
       variables:
         org: org-{{vars.timestamp}}s
   expect:

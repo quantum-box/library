@@ -4,11 +4,18 @@ import {
   type LibraryGraphqlError,
 } from './libraryGraphql'
 
+/**
+ * Repository access a key has across every repository of its organization.
+ * `null` reaches public repositories only.
+ */
+export type ApiKeyRole = 'READER' | 'WRITER' | 'OWNER'
+
 /** A key as it can be listed: everything except the secret itself. */
 export interface ApiKeySummary {
   id: string
   name: string
   createdAt: string
+  role: ApiKeyRole | null
 }
 
 /** A key as it comes back from creation, the one time `value` is readable. */
@@ -55,6 +62,7 @@ const LIST_QUERY = `
       id
       name
       createdAt
+      role
     }
   }
 `
@@ -67,6 +75,7 @@ const CREATE_MUTATION = `
         name
         value
         createdAt
+        role
       }
     }
   }
@@ -92,14 +101,18 @@ export async function fetchApiKeys(
 export async function createApiKey(
   target: ApiKeyTarget,
   name: string,
+  role: ApiKeyRole | null = null,
 ): Promise<CreatedApiKey> {
+  // Left out rather than sent as null when there is no role, so the request
+  // stays valid against an API that predates roles.
+  const input = {
+    organizationUsername: target.orgUsername,
+    name,
+    ...(role ? { role } : {}),
+  }
   const data = await requestApiKeysGraphQL<{
     createApiKey: { apiKey: CreatedApiKey }
-  }>(
-    CREATE_MUTATION,
-    { input: { organizationUsername: target.orgUsername, name } },
-    target,
-  )
+  }>(CREATE_MUTATION, { input }, target)
   return data.createApiKey.apiKey
 }
 

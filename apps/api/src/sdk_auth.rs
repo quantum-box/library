@@ -393,6 +393,53 @@ impl From<SdkRequestError> for errors::Error {
     }
 }
 
+/// Envelope of a tachyon-api GraphQL response. GraphQL reports failures
+/// in `errors` with a `200`, so the HTTP status alone says nothing.
+#[derive(Debug, Deserialize)]
+struct GraphqlResp {
+    #[serde(default)]
+    errors: Vec<GraphqlRespError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlRespError {
+    #[serde(default)]
+    extensions: Option<serde_json::Value>,
+}
+
+impl GraphqlRespError {
+    fn code(&self) -> Option<&str> {
+        self.extensions.as_ref()?.get("code")?.as_str()
+    }
+
+    /// Like `SdkRequestError::into_public_error`, keep the upstream
+    /// message out of the response and map only the error class.
+    fn into_public_error(self) -> errors::Error {
+        match self.code() {
+            Some("UNAUTHORIZED") => errors::Error::unauthorized(
+                "Upstream authentication rejected",
+            ),
+            Some("FORBIDDEN") => {
+                errors::Error::forbidden("Upstream authorization rejected")
+            }
+            Some("NOT_FOUND") => {
+                errors::Error::not_found("Upstream resource not found")
+            }
+            Some("BAD_REQUEST") => {
+                errors::Error::bad_request("Upstream request rejected")
+            }
+            Some("SERVICE_UNAVAILABLE") => {
+                errors::Error::service_unavailable(
+                    "Upstream dependency unavailable",
+                )
+            }
+            _ => errors::Error::internal_server_error(
+                "Upstream protocol error",
+            ),
+        }
+    }
+}
+
 /// AuthApp implementation that delegates to tachyon-api
 /// REST endpoints via the tachyon-sdk.
 ///
@@ -2325,6 +2372,27 @@ impl AuthApp for SdkAuthApp {
         Ok(None)
     }
 
+    async fn find_all_service_accounts<'a>(
+        &self,
+        input: &auth::FindAllServiceAccountsInput<'a>,
+    ) -> errors::Result<Vec<ServiceAccount>> {
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+
+        let resp =
+            tachyon_sdk::apis::auth_service_accounts_api::list_service_accounts(
+                &config,
+                input.tenant_id.as_ref(),
+            )
+            .await
+            .map_err(sdk_api_err)?;
+
+        resp.service_accounts
+            .iter()
+            .map(service_account_from_sdk)
+            .collect()
+    }
+
     async fn delete_service_account<'a>(
         &self,
         input: &auth::DeleteServiceAccountInput<'a>,
@@ -2678,11 +2746,89 @@ impl AuthApp for SdkAuthApp {
 
     async fn attach_sa_policy<'a>(
         &self,
-        _input: &auth::AttachSaPolicyInput<'a>,
+        input: &auth::AttachSaPolicyInput<'a>,
     ) -> errors::Result<()> {
-        Err(errors::Error::internal_server_error(
-            "attach_sa_policy not implemented in SdkAuthApp".to_string(),
-        ))
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+        // tachyon-api exposes this grant only as a GraphQL mutation; there
+        // is no REST route for attaching a policy to an existing service
+        // account. The attachment is idempotent upstream.
+        let body = serde_json::json!({
+            "query": "mutation AttachServiceAccountPolicy($input: AttachServiceAccountPolicyInput!) { attachServiceAccountPolicy(input: $input) { success } }",
+            "variables": {
+                "input": {
+                    "serviceAccountId": input.service_account_id.to_string(),
+                    "policyId": input.policy_id.to_string(),
+                }
+            },
+        });
+
+        let resp: GraphqlResp =
+            Self::rest_post_observed(&config, "/v1/graphql", &body)
+                .await
+                .map_err(|failure| {
+                    observe_sdk_request_failure(
+                        "attach_sa_policy",
+                        failure.error,
+                        failure.correlation_id.as_deref(),
+                    );
+                    failure.error.into_public_error()
+                })?;
+
+        if let Some(error) = resp.errors.into_iter().next() {
+            tracing::warn!(
+                service_account = %input.service_account_id,
+                policy = %input.policy_id,
+                code = ?error.code(),
+                "attach_sa_policy rejected upstream"
+            );
+            return Err(error.into_public_error());
+        }
+
+        Ok(())
+    }
+
+    async fn detach_sa_policy<'a>(
+        &self,
+        input: &auth::AttachSaPolicyInput<'a>,
+    ) -> errors::Result<()> {
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+        // The counterpart of `attach_sa_policy`, and GraphQL-only for the
+        // same reason.
+        let body = serde_json::json!({
+            "query": "mutation DetachServiceAccountPolicy($input: DetachServiceAccountPolicyInput!) { detachServiceAccountPolicy(input: $input) { success } }",
+            "variables": {
+                "input": {
+                    "serviceAccountId": input.service_account_id.to_string(),
+                    "policyId": input.policy_id.to_string(),
+                }
+            },
+        });
+
+        let resp: GraphqlResp =
+            Self::rest_post_observed(&config, "/v1/graphql", &body)
+                .await
+                .map_err(|failure| {
+                    observe_sdk_request_failure(
+                        "detach_sa_policy",
+                        failure.error,
+                        failure.correlation_id.as_deref(),
+                    );
+                    failure.error.into_public_error()
+                })?;
+
+        if let Some(error) = resp.errors.into_iter().next() {
+            tracing::warn!(
+                service_account = %input.service_account_id,
+                policy = %input.policy_id,
+                code = ?error.code(),
+                "detach_sa_policy rejected upstream"
+            );
+            return Err(error.into_public_error());
+        }
+
+        Ok(())
     }
 
     async fn create_oauth2_client<'a>(
@@ -3918,6 +4064,91 @@ mod tests {
             HTTP_CLIENTS.get(&key).is_some(),
             "the built client is kept for the next caller"
         );
+    }
+
+    /// Serve one GraphQL response and hand back the request it answered.
+    async fn attach_sa_policy_against(
+        response_body: serde_json::Value,
+    ) -> (errors::Result<()>, String) {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 8192];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let body = response_body.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "pk_test_service_token",
+        );
+        let executor = auth::test_helper::create_test_executor();
+        let multi_tenancy = auth::test_helper::create_test_multi_tenancy();
+        let result = AuthApp::attach_sa_policy(
+            &sdk,
+            &auth::AttachSaPolicyInput {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                service_account_id: &"sa_01libraryreader"
+                    .to_string()
+                    .into(),
+                policy_id: &PolicyId::new("pol_01libraryreporeader"),
+            },
+        )
+        .await;
+
+        (result, server.await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn attach_sa_policy_sends_the_graphql_mutation() {
+        let (result, request) = attach_sa_policy_against(serde_json::json!({
+            "data": { "attachServiceAccountPolicy": { "success": true } }
+        }))
+        .await;
+
+        result.unwrap();
+        assert!(request.starts_with("POST /v1/graphql "), "{request}");
+        assert!(
+            request.contains("attachServiceAccountPolicy"),
+            "{request}"
+        );
+        assert!(
+            request.contains(r#""serviceAccountId":"sa_01libraryreader""#),
+            "{request}"
+        );
+        assert!(
+            request.contains(r#""policyId":"pol_01libraryreporeader""#),
+            "{request}"
+        );
+    }
+
+    /// GraphQL refuses with a 200 and an `errors` entry; that must not
+    /// read as success.
+    #[tokio::test]
+    async fn attach_sa_policy_surfaces_a_graphql_refusal() {
+        let (result, _) = attach_sa_policy_against(serde_json::json!({
+            "data": null,
+            "errors": [{
+                "message": "Forbidden: auth:AttachServiceAccountPolicy",
+                "extensions": { "code": "FORBIDDEN" }
+            }]
+        }))
+        .await;
+
+        assert_eq!(public_error_class(&result.unwrap_err()), "forbidden");
     }
 }
 

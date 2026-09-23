@@ -131,6 +131,64 @@ impl LibraryClient {
         Ok(text)
     }
 
+    /// Call the GraphQL endpoint, which is where API key operations live.
+    ///
+    /// `/v1/graphql` names no organization in its path, so a `pk_…` key
+    /// is verified against the organization the header states. The caller
+    /// passes the one it resolved, unless the profile already names it.
+    pub async fn graphql(
+        &self,
+        query: &str,
+        variables: Value,
+        operator_id: Option<&str>,
+    ) -> Result<Value> {
+        let url = format!("{}/v1/graphql", self.config.api_base_url);
+        let mut request = self
+            .http
+            .post(&url)
+            .json(&json!({ "query": query, "variables": variables }));
+
+        if let Some(api_key) = &self.config.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        if let Some(operator_id) =
+            operator_id.or(self.config.operator_id.as_deref())
+        {
+            request = request.header("x-operator-id", operator_id);
+        }
+
+        let response = request.send().await.with_context(|| {
+            format!("POST {url} failed to reach the Library API")
+        })?;
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            bail!(describe_failure(Method::POST, &url, status, &text));
+        }
+
+        let payload: Value =
+            serde_json::from_str(&text).with_context(|| {
+                format!("POST {url} returned a body that is not JSON")
+            })?;
+
+        // GraphQL reports a refusal with a 200 and an `errors` entry, so
+        // the status says nothing on its own.
+        if let Some(message) = payload
+            .get("errors")
+            .and_then(Value::as_array)
+            .and_then(|errors| errors.first())
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+        {
+            bail!("{message}");
+        }
+
+        payload
+            .get("data")
+            .cloned()
+            .ok_or_else(|| anyhow!("{url} returned no data"))
+    }
+
     pub async fn post(&self, path: &str, body: Value) -> Result<Value> {
         self.request(Method::POST, path, &[], Some(body)).await
     }

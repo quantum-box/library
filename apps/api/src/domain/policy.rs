@@ -41,6 +41,66 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
     Some(PolicyId::new(id))
 }
 
+/// Companion policy granting what issuing an API key with repository
+/// access needs on the tachyon side: `auth:AttachServiceAccountPolicy` to
+/// grant the key's own service account its role,
+/// `auth:DeleteServiceAccount` to remove that account when the key goes,
+/// and `auth:CreatePublicApiKey`, which is here rather than in
+/// [`library_api_key_accounts_policy_id`] because someone able to put a
+/// key on an account they did not make could put one on an account that
+/// carries a role.
+/// Neither is in LibraryUserPolicy or LibraryRepoOwnerPolicy, and both are
+/// system policies the API cannot amend, so the actions live in this
+/// custom policy (`library:ApiKeyIssuer` in
+/// .tachyon/manifests/library-api-key-policies.yml). It is shared with the
+/// organizations under the Library platform and attached in the
+/// organization's tenant, which is the only scope a check made there
+/// reads.
+///
+/// The id is the one the manifest was applied under, like the repository
+/// policies above: Library has one platform tenant, so there is no second
+/// id for the same policy. `LIBRARY_API_KEY_ISSUER_POLICY_ID` overrides
+/// it, for an environment where the policy was applied separately.
+pub const LIBRARY_API_KEY_ISSUER_POLICY_ID: &str =
+    "pol_01m36cfejtbmqgmk9pwccjjhn5";
+
+pub fn library_api_key_issuer_policy_id() -> PolicyId {
+    policy_id_from_env_or(
+        "LIBRARY_API_KEY_ISSUER_POLICY_ID",
+        LIBRARY_API_KEY_ISSUER_POLICY_ID,
+    )
+}
+
+/// Companion policy granting `auth:CreateServiceAccount` alone, which
+/// issuing any key needs now that each key has a service account of its
+/// own
+/// (`library:ApiKeyAccounts` in
+/// .tachyon/manifests/library-api-key-policies.yml). Separate from
+/// [`library_api_key_issuer_policy_id`] because a key without repository
+/// access is issued by members who are not owners, and an account created
+/// on its own carries no policy.
+/// `LIBRARY_API_KEY_ACCOUNTS_POLICY_ID` overrides it, as above.
+pub const LIBRARY_API_KEY_ACCOUNTS_POLICY_ID: &str =
+    "pol_01m36cff1vb3eftr27p4f12t1a";
+
+pub fn library_api_key_accounts_policy_id() -> PolicyId {
+    policy_id_from_env_or(
+        "LIBRARY_API_KEY_ACCOUNTS_POLICY_ID",
+        LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+    )
+}
+
+/// The applied id is the same in every environment Library runs, so it is
+/// compiled in; the variable is the way out of that if one ever is not.
+fn policy_id_from_env_or(variable: &str, applied: &str) -> PolicyId {
+    let configured = std::env::var(variable).ok();
+    let configured = configured
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    PolicyId::new(configured.unwrap_or(applied))
+}
+
 /// Tachyon's built-in tenant administrator policy.
 ///
 /// This is the grant that actually makes someone an administrator of a

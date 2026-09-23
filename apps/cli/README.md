@@ -62,6 +62,7 @@ repository を取る引数はすべて `org/repo` の形で指定します。
 | `data` | `list` `search` `get` `create` `update` `upsert` `delete` |
 | `property` | `list` `get` `create` `update` `delete` |
 | `source` | `list` `get` `create` `update` `delete` |
+| `api-key` | `create` `list` `revoke` |
 | `mcp` | `info` `tools` `call` `config` |
 
 各コマンドの引数は `library <group> <command> --help` で確認できます。
@@ -71,6 +72,27 @@ repository を取る引数はすべて `org/repo` の形で指定します。
 `data update` は指定した property だけを書き換える patch で、指定しなかった property は保持されます。record が無ければ 404 で失敗します。
 
 `data upsert <org/repo> <data-id>` は呼び出し側が決めた ID に record を作成し、既にあれば `update` と同じ patch で更新します。違いは record が無いときに作成する点だけです。同じ ID で再実行しても record と URL は変わらないので、生成したページを何度も公開し直す用途（Claude artifact の代わりに Library を使う流れ）に向いています。ID は `data_` に小文字を続けた形式で、通常は `data_` + 小文字の ULID にします。text 出力では先頭に `created` / `updated` を表示します。
+
+### API キー
+
+```bash
+library api-key create acme --name ci --role reader
+library api-key list acme
+library api-key revoke acme pak_01xxxx
+```
+
+`--role` は組織のすべての repository に対する権限です。省略すると公開 repository しか読めません。
+
+| `--role` | できること |
+| --- | --- |
+| （省略） | 公開 repository の読み取り |
+| `reader` | 非公開を含む全 repository の読み取り |
+| `writer` | `reader` に加えて record の作成・更新 |
+| `owner` | `writer` に加えて repository の削除・メンバー管理・**API キーの発行と失効** |
+
+発行と失効は organization の owner の操作です。CLI が使う `pk_` キーでこれを行うには、そのキー自体が `--role owner` で発行されている必要があります。それ以外のキーは record の読み書きはできますが、キーの発行はできません。
+
+`create` の出力にだけキーの値が入ります。`list` は値を返しません。
 
 ### 削除の確認
 

@@ -22,6 +22,7 @@ import type { ApiKeyItemFragment } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { apiKeyRoleLabel } from './api-key-role'
 
 export function ApiKeyList({
 	apiKeys,
@@ -71,6 +72,7 @@ export function ApiKeyList({
 			<TableHeader>
 				<TableRow>
 					<TableHead>{t.v1beta.apiKeyList.name}</TableHead>
+					<TableHead>{t.v1beta.apiKeyList.role}</TableHead>
 					<TableHead>{t.v1beta.apiKeyList.id}</TableHead>
 					<TableHead>{t.v1beta.apiKeyList.created}</TableHead>
 					<TableHead className='w-1' />
@@ -80,6 +82,9 @@ export function ApiKeyList({
 				{apiKeys.map(apiKey => (
 					<TableRow key={apiKey.id}>
 						<TableCell className='font-medium'>{apiKey.name}</TableCell>
+						<TableCell className='text-sm'>
+							{apiKeyRoleLabel(apiKey.role, t.v1beta.apiKeyDialog)}
+						</TableCell>
 						<TableCell className='font-mono text-xs text-muted-foreground'>
 							{apiKey.id}
 						</TableCell>
