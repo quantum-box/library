@@ -30,6 +30,7 @@ import { loadPhotonKernel } from '@quantum-box/photon/wasm'
 
 import { appKitConfig } from '../../app/kitConfig'
 import {
+  LAZY_LIBRARY_COLLECTIONS,
   LIBRARY_REPOSITORIES_COLLECTION,
   type LibraryRecordsRepository,
   rememberLibraryRepositories,
@@ -194,6 +195,14 @@ async function build(): Promise<PhotonClient> {
     // named when the client is built. The resolver is asked for each one as it
     // is encountered instead. See `libraryCollections`.
     resolveCollection: resolveLibraryCollection,
+    // Declared by name, not resolved: `bootstrap` can only skip a lazy
+    // collection it knows the name of before it starts.
+    collections: Object.fromEntries(
+      LAZY_LIBRARY_COLLECTIONS.map((collection) => [
+        collection,
+        { mode: 'engine-native', hydration: 'lazy' } as const,
+      ])
+    ),
     // Sync runs when a caller asks for it, as it did before — except while
     // something is queued, which `followQueue` handles.
     sync: { autoStart: false },

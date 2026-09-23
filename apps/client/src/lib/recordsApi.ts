@@ -1549,7 +1549,14 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
           }
         })
       )
-    } catch {
+    } catch (error: unknown) {
+      // Neither GraphQL answer arrived, so the REST listing is the only word
+      // on what the caller has. With nothing there either, the API was not
+      // reached at all: "no organizations" would be a claim nobody made, and
+      // the workspace acts on it by emptying itself -- the sidebar, the
+      // remembered lists, and every cached record the records projection
+      // reconciles against it. Failing lets each fall back to what it has.
+      if (restRepos.length === 0) throw error
       return hydrateOrganizationsFromRestRepositories(restRepos)
     }
   }
@@ -2932,6 +2939,12 @@ export interface LibraryRecordsResource extends RestResource<DatabaseRecord> {
    */
   upsert(recordId: string, value: DatabaseRecord): Promise<DatabaseRecord>
   update(recordId: string, fields: Partial<DatabaseRecord>): Promise<DatabaseRecord>
+  /**
+   * Declared without the operation context Photon passes (0.4+), like the
+   * methods above: the Library API needs none of it, so a caller of this
+   * resource does not have to invent one.
+   */
+  remove(recordId: string): Promise<void>
 }
 
 /**

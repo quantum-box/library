@@ -15,11 +15,10 @@
  * Keyed by the signed-in user as well as by what was shown, because the store
  * outlives a sign-out and the next account must not open onto this one's rows.
  *
- * How long this lasts is Photon's to decide. In `@quantum-box/photon` 0.3,
- * `ingest` keeps rows in the projection only, so today this carries a screen
- * across navigation but not across a reload. It is written against the store
- * rather than around it so that it carries across a reload as soon as
- * ingested rows are durable, with nothing here changing.
+ * Photon stores ingested rows (from 0.5), so this carries a screen across a
+ * reload and an app restart as well as across navigation. The collections are
+ * lazy -- see `LAZY_LIBRARY_COLLECTIONS` -- so the first read of a session
+ * waits for the store to load them, and `peek*` answers from then on.
  */
 
 import { loadStoredAuthIdentity } from './auth'
@@ -27,8 +26,14 @@ import { getBodyProperty } from './libraryTable/bodyProperty'
 import {
   getClientEngineRecord,
   ingestClientEngineRecords,
+  listClientEngineRecords,
   peekClientEngineRecord,
 } from './photonEngine/client'
+import {
+  LIBRARY_READ_DETAILS_COLLECTION as DETAILS_COLLECTION,
+  LIBRARY_READ_TABLES_COLLECTION as TABLES_COLLECTION,
+  LIBRARY_READ_WORKSPACE_COLLECTION as WORKSPACE_COLLECTION,
+} from './photonEngine/libraryCollections'
 import type {
   LibraryDataItem,
   LibraryOrganization,
@@ -36,9 +41,18 @@ import type {
   LibraryRepository,
 } from './recordsApi'
 
-const TABLES_COLLECTION = 'library_read_tables'
-const DETAILS_COLLECTION = 'library_read_details'
-const WORKSPACE_COLLECTION = 'library_read_workspace'
+/**
+ * How many record pages to keep, and how many to let pile up before trimming.
+ *
+ * Tables and the workspace lists are bounded by what exists; record pages are
+ * bounded by nothing but how long the device has been in use, and each holds a
+ * whole body. The slack keeps the trim from running on every visit.
+ */
+const DETAILS_KEPT = 200
+const DETAILS_TRIM_AT = 250
+/** Check the count on the first page remembered in a session, then every so often. */
+const DETAILS_TRIM_CHECK_EVERY = 25
+let detailsRememberedThisSession = 0
 
 /** A repository, as far as naming its cached screens goes. */
 export interface ReadCacheRepository {
@@ -66,6 +80,12 @@ export interface CachedDataDetail {
    * alone save -- the body it holds.
    */
   complete: boolean
+  /**
+   * Every name this page is remembered under: its id, and the identifier a
+   * route asked for it by. Forgetting the record has to reach all of them, or
+   * the URL that was not the one deleted from keeps drawing it.
+   */
+  ids?: string[]
 }
 
 /** The repositories and organizations the workspace shell last listed. */
@@ -194,12 +214,15 @@ export function rememberDataDetail(
   requestedId: string,
   detail: { item: LibraryDataItem; properties: LibraryProperty[] }
 ): void {
-  const value: CachedDataDetail = { ...detail, complete: true }
   const ids = new Set([requestedId, detail.item.id])
+  const value: CachedDataDetail = { ...detail, complete: true, ids: [...ids] }
   remember(
     DETAILS_COLLECTION,
     [...ids].map((dataId) => ({ recordId: detailKey(target, dataId), value }))
   )
+  if (detailsRememberedThisSession++ % DETAILS_TRIM_CHECK_EVERY === 0) {
+    void trimDetails()
+  }
 
   const table = peekRepoTable(target)
   const row = table?.items.find((candidate) => candidate.id === detail.item.id)
@@ -219,21 +242,57 @@ export function rememberDataDetail(
 }
 
 /**
+ * Keep the most recently remembered record pages, and drop the rest.
+ *
+ * By when each was remembered, which is the version Photon stamped it with.
+ * A complete listing is the one way to remove rows that are not operations,
+ * so the kept pages are listed again and everything else goes. Listing a page
+ * Photon already holds unchanged writes nothing, so this costs the deletes.
+ */
+async function trimDetails(): Promise<void> {
+  try {
+    const pages = await listClientEngineRecords<CachedDataDetail>(DETAILS_COLLECTION)
+    if (pages.length <= DETAILS_TRIM_AT) return
+    const kept = pages
+      .sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt))
+      .slice(0, DETAILS_KEPT)
+    await ingestClientEngineRecords(
+      DETAILS_COLLECTION,
+      kept.map((page) => ({ recordId: page.recordId, value: page.value })),
+      { complete: true }
+    )
+  } catch (error: unknown) {
+    console.warn(`Failed to trim ${DETAILS_COLLECTION}`, error)
+  }
+}
+
+/**
  * Forget a record that has been deleted, so that no screen draws it again.
  *
  * Its row goes too: the table would otherwise open on it next time and keep
  * it on screen until the listing came back without it.
  */
 export function forgetData(target: ReadCacheRepository, dataId: string): void {
-  remember(DETAILS_COLLECTION, [
-    { recordId: detailKey(target, dataId), value: null, deleted: true },
-  ])
-  const table = peekRepoTable(target)
-  if (table?.items.some((row) => row.id === dataId)) {
+  void forgetDataNow(target, dataId)
+}
+
+async function forgetDataNow(target: ReadCacheRepository, dataId: string): Promise<void> {
+  // Read, not peeked: the page may be on disk and not yet in memory, and its
+  // other names are only known from it.
+  const page = await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, dataId))
+  const ids = new Set([dataId, ...(page?.ids ?? []), ...(page ? [page.item.id] : [])])
+  remember(
+    DETAILS_COLLECTION,
+    [...ids].map((id) => ({ recordId: detailKey(target, id), value: null, deleted: true }))
+  )
+  const table = await readRepoTable(target)
+  if (table?.items.some((row) => ids.has(row.id))) {
+    const items = table.items.filter((row) => !ids.has(row.id))
+    const removed = table.items.length - items.length
     rememberRepoTable(target, {
       ...table,
-      items: table.items.filter((row) => row.id !== dataId),
-      totalItems: table.totalItems === null ? null : Math.max(0, table.totalItems - 1),
+      items,
+      totalItems: table.totalItems === null ? null : Math.max(0, table.totalItems - removed),
     })
   }
 }
@@ -251,4 +310,9 @@ export function readWorkspace(): Promise<CachedWorkspace | null> {
 
 export function rememberWorkspace(workspace: CachedWorkspace): void {
   remember(WORKSPACE_COLLECTION, [{ recordId: workspaceKey(), value: workspace }])
+}
+
+export const __testOnly = {
+  trimDetails,
+  DETAILS_KEPT,
 }

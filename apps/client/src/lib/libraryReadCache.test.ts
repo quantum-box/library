@@ -2,16 +2,19 @@
  * The read cache, against the real engine: what a screen remembers is what
  * the next visit to it can draw, synchronously once the store is open.
  */
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { createPGliteStore } from '@quantum-box/photon/store-pglite'
 import { loadPhotonKernel, setPhotonKernelSource } from '@quantum-box/photon/wasm'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { __testOnly as engine } from './photonEngine/client'
+import { __testOnly as engine, listClientEngineRecords } from './photonEngine/client'
+import { LIBRARY_READ_DETAILS_COLLECTION } from './photonEngine/libraryCollections'
 import type { LibraryDataItem, LibraryProperty } from './recordsApi'
 import {
+  __testOnly as readCache,
   forgetData,
   peekDataDetail,
   peekRepoTable,
@@ -153,11 +156,27 @@ describe('record pages', () => {
     await settle()
 
     forgetData(target, 'd1')
+    await vi.waitFor(() => {
+      expect(peekDataDetail(target, 'd1')).toBeNull()
+    })
     await settle()
-
-    expect(peekDataDetail(target, 'd1')).toBeNull()
     expect(peekRepoTable(target)?.items.map((item) => item.id)).toEqual(['d2'])
     expect(peekRepoTable(target)?.totalItems).toBe(1)
+  })
+})
+
+describe('forgetting a record opened by its identifier', () => {
+  it('forgets it under every name, whichever one the deletion used', async () => {
+    rememberRepoTable(target, { items: [row('d1', 'todo', ''), row('d2', 'todo', '')], properties, nextPage: null, totalItems: 2 })
+    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await settle()
+
+    forgetData(target, 'DOC-1')
+    await vi.waitFor(async () => {
+      expect(await readDataDetail(target, 'd1')).toBeNull()
+    })
+    expect(await readDataDetail(target, 'DOC-1')).toBeNull()
+    expect((await readRepoTable(target))?.items.map((item) => item.id)).toEqual(['d2'])
   })
 })
 
@@ -172,5 +191,53 @@ describe('workspace lists', () => {
     expect((await readWorkspace())?.repositories.map((repository) => repository.id)).toEqual(['r1'])
     auth.userId = 'user-b'
     expect(await readWorkspace()).toBeNull()
+  })
+})
+
+/**
+ * The reason the cache is in Photon rather than in memory: the first screen
+ * after an app restart can draw what the last session saw.
+ */
+describe('across a restart', () => {
+  it('draws what was remembered before the store was closed', async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'library-read-cache-'))
+    const open = async () => {
+      await engine.reset()
+      engine.configure({
+        storage: await createPGliteStore({ dataDir }),
+        kernel: await loadPhotonKernel(),
+        skipLegacyMigration: true,
+      })
+    }
+    try {
+      await open()
+      rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
+      rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'the whole body'), properties })
+      await settle()
+
+      await open()
+      expect((await readRepoTable(target))?.items.map((item) => item.id)).toEqual(['d1'])
+      expect(peekRepoTable(target)?.totalItems).toBe(1)
+      expect((await readDataDetail(target, 'd1'))?.complete).toBe(true)
+    } finally {
+      await engine.reset()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('record page trimming', () => {
+  it('keeps the most recently remembered pages and drops the rest', async () => {
+    const count = readCache.DETAILS_KEPT + 60
+    for (let index = 0; index < count; index += 1) {
+      rememberDataDetail(target, `d${index}`, { item: row(`d${index}`, 'todo', ''), properties })
+    }
+    await settle()
+
+    await readCache.trimDetails()
+
+    const kept = await listClientEngineRecords(LIBRARY_READ_DETAILS_COLLECTION)
+    expect(kept).toHaveLength(readCache.DETAILS_KEPT)
+    expect(kept.some((page) => page.recordId.endsWith(`:d${count - 1}`))).toBe(true)
   })
 })

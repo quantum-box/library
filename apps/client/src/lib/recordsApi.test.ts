@@ -849,6 +849,29 @@ describe('recordsApi', () => {
     )
   })
 
+  /**
+   * "No organizations" is an answer, and an unreachable API did not give one.
+   * Reporting it as empty is what emptied the workspace on an offline start.
+   */
+  it('fails rather than reporting no organizations when the API cannot be reached', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }))
+
+    await expect(fetchLibraryOrganizations()).rejects.toThrow()
+    await expect(fetchLibraryRepositories()).rejects.toThrow()
+  })
+
   it('lists no organizations while signed out instead of every repository the API returns', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
     vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
