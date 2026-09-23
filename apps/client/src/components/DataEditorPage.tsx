@@ -57,6 +57,8 @@ interface DataEditorPageProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** Open with the title selected, as a record that was just created does. */
+  autoFocusTitle?: boolean
   onBack: () => void
 }
 
@@ -75,12 +77,17 @@ function formatEditorDate(value: string | undefined, i18n: I18nContextValue) {
 function PageTitle({
   value,
   onCommit,
+  autoFocus = false,
+  onContinue,
 }: {
   value: string
   onCommit: (value: string) => void
+  autoFocus?: boolean
+  /** Enter moves on to whatever comes after the title. */
+  onContinue?: () => void
 }) {
   const { t } = useI18n()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(autoFocus)
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -106,7 +113,14 @@ function PageTitle({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') commit()
+          // Enter also confirms an IME conversion; that one is not the
+          // reader finishing the title.
+          if (event.nativeEvent.isComposing) return
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+            onContinue?.()
+          }
           if (event.key === 'Escape') {
             setDraft(value)
             setEditing(false)
@@ -138,6 +152,7 @@ export function DataEditorPage({
   repo,
   operatorId,
   repoLabel,
+  autoFocusTitle = false,
   onBack,
 }: DataEditorPageProps) {
   const relationLoader = useMemo(
@@ -158,6 +173,7 @@ export function DataEditorPage({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const itemRef = useRef<LibraryDataItem | null>(null)
+  const bodyRef = useRef<HTMLElement>(null)
   const propertiesRef = useRef<LibraryProperty[]>([])
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const revisionRef = useRef(0)
@@ -383,6 +399,7 @@ export function DataEditorPage({
   // Same body in both layouts; only the box around it changes.
   const bodySection = (
     <section
+      ref={bodyRef}
       className={artifact ? 'flex min-h-0 flex-1 flex-col' : 'mt-6'}
       aria-labelledby="data-page-body"
     >
@@ -423,6 +440,12 @@ export function DataEditorPage({
     <PageTitle
     value={item.name}
     onCommit={(name) => persistItem({ ...itemRef.current!, name })}
+    autoFocus={autoFocusTitle}
+    onContinue={() => {
+      bodyRef.current
+        ?.querySelector<HTMLElement>('[contenteditable="true"], textarea')
+        ?.focus()
+    }}
     />
 
     <section className="mt-8" aria-labelledby="data-page-properties">

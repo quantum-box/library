@@ -516,6 +516,35 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('library-editable-cell-prop-status')).toHaveText('Empty')
   })
 
+  test('creates a blank data page and opens it with the title ready to type', async ({ page }) => {
+    const title = `E2E new page ${Date.now()}`
+
+    await page.goto('/quantum-box/photon-core/data')
+    await page.getByTestId('library-table-add-row').click()
+
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\/[^/?]+/)
+    await expect(page.getByTestId('data-editor-page')).toBeVisible()
+    const titleInput = page.getByTestId('data-editor-title-input')
+    await expect(titleInput).toBeFocused()
+    await expect(titleInput).toHaveValue('Untitled')
+
+    // The placeholder name is selected, so typing replaces it.
+    await page.keyboard.type(title)
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Back to data' }).click()
+    await page.getByTestId('library-table-global-filter').fill(title)
+    await expect(page.getByText(title)).toBeVisible()
+
+    // The shortcut takes the same path from a repository table.
+    await page.getByTestId('library-table-global-filter').blur()
+    await page.keyboard.press('c')
+    await expect(page.getByTestId('data-editor-title-input')).toBeFocused()
+    await expect(page.getByTestId('create-record-modal')).toHaveCount(0)
+  })
+
   test('opens Properties from the repository tabs and navigates back out of settings', async ({ page }) => {
     await page.goto('/quantum-box/photon-core')
 
