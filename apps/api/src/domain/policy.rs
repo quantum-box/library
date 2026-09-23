@@ -48,7 +48,7 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
 /// Neither is in LibraryUserPolicy or LibraryRepoOwnerPolicy, and both are
 /// system policies the API cannot amend, so the actions live in this
 /// custom policy (`library:ApiKeyIssuer` in
-/// .tachyon/manifests/library-api-runtime.yml). It is shared with the
+/// .tachyon/manifests/library-api-key-policies.yml). It is shared with the
 /// organizations under the Library platform and attached in the
 /// organization's tenant, which is the only scope a check made there
 /// reads. Its applied id is injected per environment.
@@ -67,7 +67,7 @@ pub fn library_api_key_issuer_policy_id() -> Option<PolicyId> {
 /// Companion policy granting `auth:CreateServiceAccount`, which issuing
 /// any key needs now that each key has a service account of its own
 /// (`library:ApiKeyAccounts` in
-/// .tachyon/manifests/library-api-runtime.yml). Separate from
+/// .tachyon/manifests/library-api-key-policies.yml). Separate from
 /// [`library_api_key_issuer_policy_id`] because a key without repository
 /// access is issued by members who are not owners, and an account created
 /// on its own carries no policy.

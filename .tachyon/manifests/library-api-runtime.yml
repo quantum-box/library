@@ -1,15 +1,16 @@
 # Permissions the library-api service account needs for the work it does
 # on nobody's behalf.
 #
-# Apply matches a policy by name, so renaming one here registers a second
-# policy rather than renaming the first: the one already applied keeps its
-# id and stays attached to whoever holds it. `library:ApiRuntime` and
-# `library:OrgCreator` were applied under their former names
-# (`library:api-runtime`, `library:org-creator`), so after the rename is
-# applied the new `library:OrgCreator` id belongs in
-# `LIBRARY_ORG_CREATOR_POLICY_ID` and the new `library:ApiRuntime` has to
-# be attached to the `library-api-service` service account. Until then the
-# old policies are what is in force; nothing breaks in the meantime.
+# `tachyon manifest apply` skips this ActionSet/Policy shape as
+# unsupported (see library-auth.yml), so this file is a record of what was
+# applied, not the thing that applies it. The two policies were registered
+# under their former names, `library:api-runtime` and
+# `library:org-creator`; the names here are the spelling to use if they
+# are ever re-registered, and renaming them for real means applying the
+# new name, carrying the new id into `LIBRARY_ORG_CREATOR_POLICY_ID`, and
+# attaching the new `library:ApiRuntime` to the `library-api-service`
+# service account. The applied form of a policy lives in a manifest the
+# CLI reads, as library-api-key-policies.yml does for the API key ones.
 #
 # Everything a signed-in user asks for is authorized as that user, using
 # the caller's own credential (see `sdk_config_with_context`). What is
@@ -92,53 +93,4 @@
     description: Allow Library platform users to create organizations (operators)
     actions:
       - action: auth:CreateOperator
-        effect: allow
-
-# Organization owners may issue API keys that carry repository access.
-# Each key has a service account of its own, and the key's role is a
-# Library repository policy attached to that account; removing the key
-# removes the account. Tachyon authorizes both as the caller, and neither
-# action is in LibraryUserPolicy or LibraryRepoOwnerPolicy, so they live in
-# this companion policy.
-#
-# `shared: true` lets organizations under the Library platform use it: a
-# check made in an organization reads only the policies attached in that
-# organization's tenant, so library-api attaches this one there, to an
-# owner, when they issue or revoke such a key
-# (`LIBRARY_API_KEY_ISSUER_POLICY_ID` names its applied id).
-#
-# Upstream confines both actions to the calling tenant: the service
-# account and the policy have to belong to, or be visible from, the
-# organization. The grant is as strong as the auth:AttachUserPolicy owners
-# already hold through LibraryRepoOwnerPolicy.
-- apiVersion: auth.tachyon.io/v1
-  kind: Policy
-  metadata:
-    name: library:ApiKeyIssuer
-    namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
-  spec:
-    description: Allow Library organization owners to grant and remove the service accounts behind their API keys
-    shared: true
-    actions:
-      - action: auth:AttachServiceAccountPolicy
-        effect: allow
-      - action: auth:DeleteServiceAccount
-        effect: allow
-
-# Every key Library issues gets a service account of its own, so creating
-# one is part of issuing any key -- including a key with no repository
-# access, whose holder is not an owner and gets nothing else. An account
-# created this way carries no policy until `library:ApiKeyIssuer` attaches
-# one, which is why this is separate from that grant rather than part of
-# it. Attached to the caller in the organization's tenant, like the other.
-- apiVersion: auth.tachyon.io/v1
-  kind: Policy
-  metadata:
-    name: library:ApiKeyAccounts
-    namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
-  spec:
-    description: Allow Library organization members to create the service account behind an API key they issue
-    shared: true
-    actions:
-      - action: auth:CreateServiceAccount
         effect: allow
