@@ -45,22 +45,34 @@ export function isDataListPath(pathname: string): boolean {
   )
 }
 
+declare module '@tanstack/history' {
+  interface HistoryState {
+    /**
+     * Set when a record was just created to be opened: its editor starts
+     * with the title selected. History state rather than a search param, so
+     * it never reaches a URL someone copies.
+     */
+    focusDataTitle?: boolean
+  }
+}
+
 type NavigateFn = ReturnType<typeof useNavigate>
 
 export function navigateToData(
   navigate: NavigateFn,
   database: string | undefined,
   search: DataViewSearch = {},
-  opts: { replace?: boolean; recordId?: string } = {}
+  opts: { replace?: boolean; recordId?: string; focusTitle?: boolean } = {}
 ) {
   const repo = splitRepoDatabaseId(database)
-  const { replace, recordId } = opts
+  const { replace, recordId, focusTitle } = opts
   if (repo && recordId) {
     return navigate({
       to: '/$organization/$repository/data/$recordId',
       params: { ...repo, recordId },
       search,
       replace,
+      ...(focusTitle ? { state: (prev) => ({ ...prev, focusDataTitle: true }) } : {}),
     })
   }
   if (repo) {

@@ -335,6 +335,21 @@ describe('trimming alongside other page writes', () => {
   })
 })
 
+describe('an identifier handed to another record', () => {
+  it('moves the name to the new record and leaves the old one without it', async () => {
+    await rememberDataDetail(target, 'DOC-1', { item: row('a', 'todo', 'A'), properties })
+    await rememberDataDetail(target, 'DOC-1', { item: row('b', 'todo', 'B'), properties })
+
+    expect((await readDataDetail(target, 'DOC-1'))?.item.id).toBe('b')
+    expect((await readDataDetail(target, 'a'))?.ids).toEqual(['a'])
+    expect((await readDataDetail(target, 'b'))?.ids).toEqual(expect.arrayContaining(['DOC-1', 'b']))
+
+    await forgetData(target, 'a')
+    expect(await readDataDetail(target, 'a')).toBeNull()
+    expect((await readDataDetail(target, 'DOC-1'))?.item.id).toBe('b')
+  })
+})
+
 describe('workspace lists', () => {
   it('round-trips per account', async () => {
     rememberWorkspace({

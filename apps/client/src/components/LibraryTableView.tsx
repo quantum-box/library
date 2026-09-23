@@ -111,6 +111,12 @@ interface LibraryTableViewProps {
   repoLabel?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
+  /** Called with a blank record the moment "New" has created it, so the
+   *  caller can open it for editing instead of leaving it in the list. */
+  onDataCreated?: (item: LibraryDataItem) => void
+  /** Create a record the way "New" does, as the keyboard shortcut asks. */
+  createRequested?: boolean
+  onCreateRequestHandled?: () => void
   onDataDeleted?: (dataId: string) => void
   globalFilter?: string
   onGlobalFilterChange?: (value: string) => void
@@ -243,6 +249,9 @@ function RepositoryTable({
   repoLabel,
   selectedDataId,
   onSelectData,
+  onDataCreated,
+  createRequested = false,
+  onCreateRequestHandled,
   onDataDeleted,
   globalFilter: controlledGlobalFilter,
   onGlobalFilterChange,
@@ -313,7 +322,6 @@ function RepositoryTable({
   const [propertyWritesDenied, setPropertyWritesDenied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
-  const [newRowName, setNewRowName] = useState('')
   const [pendingDelete, setPendingDelete] = useState<LibraryDataItem | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -323,7 +331,6 @@ function RepositoryTable({
   const setGlobalFilter = onGlobalFilterChange ?? setInternalGlobalFilter
   const parentRef = useRef<HTMLDivElement>(null)
   const cardScrollRef = useRef<HTMLDivElement>(null)
-  const newRowInputRef = useRef<HTMLInputElement>(null)
   const isMobileViewport = useIsMobileViewport()
 
   const repoTarget = useMemo(
@@ -469,12 +476,6 @@ function RepositoryTable({
     return () => window.removeEventListener('library-auth-change', handleAuthChange)
   }, [reload])
 
-  useEffect(() => {
-    if (creatingRow && newRowInputRef.current) {
-      newRowInputRef.current.focus()
-    }
-  }, [creatingRow])
-
   const persistItem = useCallback(
     async (item: LibraryDataItem) => {
       setSaving(true)
@@ -512,29 +513,41 @@ function RepositoryTable({
     [persistItem]
   )
 
+  /**
+   * Create a blank record and hand it straight to the editor.
+   *
+   * Asking for a name first made "New" a form to fill in before there was
+   * anything to write in; a record named "Untitled" that opens with its title
+   * selected asks for the same name where the rest of it gets written.
+   */
   const handleCreateRow = useCallback(async () => {
-    const trimmed = newRowName.trim()
-    if (!trimmed) {
-      setCreatingRow(false)
-      setNewRowName('')
-      return
-    }
-    setSaving(true)
+    if (creatingRow) return
+    setCreatingRow(true)
     setMutationError(null)
     try {
       const created = await addLibraryData(repoTarget, properties, {
-        name: trimmed,
+        name: translate('common.untitled'),
         propertyData: [],
       })
       setItems((current) => [created, ...current])
-      setCreatingRow(false)
-      setNewRowName('')
+      onDataCreated?.(created)
     } catch (createError: unknown) {
       setMutationError(repositoryLoadErrorMessage(createError))
     } finally {
-      setSaving(false)
+      setCreatingRow(false)
     }
-  }, [newRowName, properties, repoTarget])
+  }, [creatingRow, onDataCreated, properties, repoTarget])
+
+  // Only a new request creates: `handleCreateRow` changes while it runs, and
+  // re-running this effect for that must not create a second record.
+  const createRequestSeen = useRef(false)
+  useEffect(() => {
+    if (createRequested === createRequestSeen.current) return
+    createRequestSeen.current = createRequested
+    if (!createRequested) return
+    onCreateRequestHandled?.()
+    void handleCreateRow()
+  }, [createRequested, handleCreateRow, onCreateRequestHandled])
 
   const handleConfirmDelete = useCallback(async () => {
     if (!pendingDelete) return
@@ -995,13 +1008,13 @@ function RepositoryTable({
             variant="primary"
             size="sm"
             className="h-8"
-            disabled={loading || rowWritesLocked}
-            onClick={() => {
-              setCreatingRow(true)
-              setNewRowName('')
-            }}
+            disabled={loading || rowWritesLocked || creatingRow}
+            aria-busy={creatingRow}
+            onClick={() => void handleCreateRow()}
           >
-            <Plus aria-hidden="true" />
+            {creatingRow
+              ? <RefreshCw className="animate-spin" aria-hidden="true" />
+              : <Plus aria-hidden="true" />}
             {t('data.new')}
           </Button>
         </div>
@@ -1032,47 +1045,6 @@ function RepositoryTable({
           >
             <RefreshCw className="size-3.5" aria-hidden="true" />
             {t('common.retry')}
-          </Button>
-        </div>
-      )}
-
-      {creatingRow && (
-        <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2 md:px-4">
-          <input
-            ref={newRowInputRef}
-            data-testid="library-table-new-row-name"
-            type="text"
-            value={newRowName}
-            placeholder={t('createRecord.nameLabel')}
-            onChange={(event) => setNewRowName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void handleCreateRow()
-              if (event.key === 'Escape') {
-                setCreatingRow(false)
-                setNewRowName('')
-              }
-            }}
-            className="h-8 min-w-0 flex-1 rounded-md border border-border-strong bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-primary"
-          />
-          <Button
-            size="sm"
-            variant="primary"
-            className="h-8"
-            disabled={saving || !newRowName.trim()}
-            onClick={() => void handleCreateRow()}
-          >
-            {t('common.create')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8"
-            onClick={() => {
-              setCreatingRow(false)
-              setNewRowName('')
-            }}
-          >
-            {t('common.cancel')}
           </Button>
         </div>
       )}
@@ -1286,7 +1258,7 @@ function RepositoryTable({
             </tbody>
           </table>
 
-          {rows.length === 0 && !creatingRow && (
+          {rows.length === 0 && (
             <div
               className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
               data-testid="library-table-empty"
@@ -1302,7 +1274,7 @@ function RepositoryTable({
       )}
 
       {/* The card list has no header to hang the empty message under. */}
-      {!loading && !listingFailed && isMobileViewport && rows.length === 0 && !creatingRow && (
+      {!loading && !listingFailed && isMobileViewport && rows.length === 0 && (
         <div
           className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
           data-testid="library-table-empty"

@@ -255,10 +255,18 @@ async function rememberDataDetailNow(
   // opening it by its id must not drop the identifier it was opened by
   // before, or deleting it by id would leave that URL drawing it. Read, not
   // peeked -- straight after start the pages may not be loaded from disk yet.
+  //
+  // Only this record's names, though. An identifier is a Property value and
+  // can be handed to another record; a page under this name that belongs to
+  // someone else is that record's, and this name is taken off it.
   const ids = new Set([requestedId, detail.item.id])
   for (const known of [requestedId, detail.item.id]) {
-    for (const id of (await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, known)))?.ids ?? []) {
-      ids.add(id)
+    const page = await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, known))
+    if (!page) continue
+    if (page.item.id === detail.item.id) {
+      for (const id of page.ids ?? []) ids.add(id)
+    } else {
+      await detachAlias(target, page, known)
     }
   }
   const value: CachedDataDetail = {
@@ -307,6 +315,26 @@ async function updateCachedRow(
       items: table.items.map((candidate) => (candidate.id === row.id ? updated : candidate)),
     },
   }])
+}
+
+/**
+ * Take a name off the record it used to belong to.
+ *
+ * The record's other pages still list the name; rewritten without it, the
+ * name now belongs to whichever record is remembered under it next, and
+ * forgetting the old record no longer takes the new one's page with it.
+ */
+async function detachAlias(
+  target: ReadCacheRepository,
+  page: CachedDataDetail,
+  alias: string
+): Promise<void> {
+  const ids = (page.ids ?? [page.item.id]).filter((id) => id !== alias)
+  const value: CachedDataDetail = { ...page, ids }
+  await remember(
+    DETAILS_COLLECTION,
+    ids.map((id) => ({ recordId: detailKey(target, id), value }))
+  )
 }
 
 /**

@@ -36,7 +36,7 @@ const cache = vi.hoisted(() => ({
   readDataDetail: vi.fn<(target: unknown, dataId: string) => Promise<CachedDataDetail | null>>(
     async () => null
   ),
-  rememberDataDetail: vi.fn(),
+  rememberDataDetail: vi.fn<(target: unknown, dataId: string, detail: unknown) => Promise<void>>(async () => undefined),
   forgetData: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
 }))
 
@@ -326,6 +326,37 @@ describe('DataEditorPage', () => {
     late.resolve({ item: record('Title', 'body'), properties })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(cache.rememberDataDetail).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * Saved means the cached table row has the edit too: going back straight
+   * after must not draw the edit undone.
+   */
+  it('reports a save done only once the cache has the edit', async () => {
+    mocks.fetchLibraryDataDetail.mockResolvedValue({ item: record('Title', 'body'), properties })
+    mocks.updateLibraryData.mockImplementation(async (_target: unknown, _properties: unknown, item: LibraryDataItem) => item)
+    renderPage()
+    await waitFor(() => {
+      expect(cache.rememberDataDetail).toHaveBeenCalledTimes(1)
+    })
+    let remembered!: () => void
+    cache.rememberDataDetail.mockReturnValue(new Promise<void>((resolve) => {
+      remembered = resolve
+    }))
+
+    fireEvent.click(screen.getByTestId('data-editor-title'))
+    fireEvent.change(screen.getByTestId('data-editor-title-input'), { target: { value: 'Renamed' } })
+    fireEvent.keyDown(screen.getByTestId('data-editor-title-input'), { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(cache.rememberDataDetail).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.getByText('Saving')).toBeInTheDocument()
+
+    remembered()
+    await waitFor(() => {
+      expect(screen.queryByText('Saving')).not.toBeInTheDocument()
+    })
   })
 
   it('reads the store when the record could not be had at once', async () => {

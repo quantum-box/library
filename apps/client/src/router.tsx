@@ -1385,6 +1385,8 @@ function DataWorkspace({
   const showDataEditorPage = Boolean(
     selectedIdentifier && effectiveView.type !== 'workflow' && (!database || selectedDatabase)
   )
+  const showLibraryRepoTable =
+    !showSignedInDashboard && effectiveView.type === 'table' && useLibraryRepoTable
 
   // While repositories are still loading, a repo-scoped URL cannot resolve
   // its repository yet. Without this branch the render falls through to the
@@ -1470,7 +1472,9 @@ function DataWorkspace({
               organizationCount={organizations.length}
               repositoryCount={visibleDatabases.length}
             />
-          ) : effectiveView.type === 'table' && useLibraryRepoTable ? (
+          ) : showLibraryRepoTable ? (
+            // A repository table creates a blank record and opens it, so the
+            // "new data" shortcut asks it to rather than opening the form.
             <LibraryTableView
               org={selectedDatabase!.orgUsername!}
               repo={selectedDatabase!.repoUsername!}
@@ -1487,6 +1491,16 @@ function DataWorkspace({
                   database,
                   { view: canonicalViewParam },
                   { recordId: item.id }
+                )
+              }}
+              createRequested={createModalOpen}
+              onCreateRequestHandled={() => setCreateModalOpen(false)}
+              onDataCreated={(item) => {
+                void navigateToData(
+                  navigate,
+                  database,
+                  { view: canonicalViewParam },
+                  { recordId: item.id, focusTitle: true }
                 )
               }}
               globalFilter={effectiveView.filters.search}
@@ -1586,7 +1600,7 @@ function DataWorkspace({
         />
       ) : null}
       <CreateRecordModal
-        open={createModalOpen}
+        open={createModalOpen && !showLibraryRepoTable}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateRecordInDatabase}
         repositories={visibleDatabases}
@@ -1716,6 +1730,21 @@ function RecordDetailPanel({
 
   const closeEditor = () =>
     void navigateToData(navigate, database, { view })
+  const focusTitle = useRouterState({
+    select: (state) => state.location.state.focusDataTitle === true,
+  })
+  // One-shot: once the editor has read it, drop it from this history entry
+  // so a reload or back/forward does not select the title again.
+  useEffect(() => {
+    if (!focusTitle) return
+    void navigate({
+      to: '.',
+      search: (prev) => prev,
+      params: (prev) => prev,
+      replace: true,
+      state: (prev) => ({ ...prev, focusDataTitle: undefined }),
+    })
+  }, [focusTitle, navigate])
 
   if (
     useLibraryEditor &&
@@ -1724,11 +1753,13 @@ function RecordDetailPanel({
   ) {
     return (
       <DataEditorPage
+        key={recordId}
         dataId={record?.id ?? recordId}
         org={selectedDatabase.orgUsername}
         repo={selectedDatabase.repoUsername}
         operatorId={selectedDatabase.operatorId}
         repoLabel={selectedDatabase.label}
+        autoFocusTitle={focusTitle}
         onBack={closeEditor}
       />
     )

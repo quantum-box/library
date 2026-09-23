@@ -64,6 +64,8 @@ interface DataEditorPageProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** Open with the title selected, as a record that was just created does. */
+  autoFocusTitle?: boolean
   onBack: () => void
 }
 
@@ -83,23 +85,40 @@ function PageTitle({
   value,
   disabled = false,
   onCommit,
+  autoFocus = false,
+  onContinue,
 }: {
   value: string
   disabled?: boolean
   onCommit: (value: string) => void
+  autoFocus?: boolean
+  /** Enter moves on to whatever comes after the title. */
+  onContinue?: () => void
 }) {
   const { t } = useI18n()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(autoFocus)
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
+  /**
+   * Set once this edit has been committed or abandoned. Enter moves focus to
+   * the body before the input unmounts, and the blur that causes must not
+   * save the title a second time.
+   */
+  const settledRef = useRef(false)
 
+  // Also when it stops being disabled: a record opened for its title can be
+  // drawn from memory first, read-only, and the input only exists once the
+  // record is confirmed.
   useEffect(() => {
-    if (!editing) return
+    if (!editing || disabled) return
+    settledRef.current = false
     inputRef.current?.focus()
     inputRef.current?.select()
-  }, [editing])
+  }, [disabled, editing])
 
   const commit = () => {
+    if (settledRef.current) return
+    settledRef.current = true
     const next = draft.trim()
     setEditing(false)
     if (next && next !== value) onCommit(next)
@@ -126,8 +145,16 @@ function PageTitle({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') commit()
+          // Enter also confirms an IME conversion; that one is not the
+          // reader finishing the title.
+          if (event.nativeEvent.isComposing) return
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+            onContinue?.()
+          }
           if (event.key === 'Escape') {
+            settledRef.current = true
             setDraft(value)
             setEditing(false)
           }
@@ -168,6 +195,7 @@ function RecordPage({
   repo,
   operatorId,
   repoLabel,
+  autoFocusTitle = false,
   onBack,
 }: DataEditorPageProps) {
   const relationLoader = useMemo(
@@ -176,6 +204,9 @@ function RecordPage({
   )
   const i18n = useI18n()
   const { t } = i18n
+  // Read once: the flag is cleared from history as soon as the page opens,
+  // and the title mounts only after the record has loaded.
+  const [focusTitleOnOpen] = useState(autoFocusTitle)
   // Read in the render that mounts the page, so a record this device has
   // shown before -- or has a row for, in the table it was opened from -- is
   // on screen in the first frame.
@@ -208,6 +239,7 @@ function RecordPage({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const itemRef = useRef<LibraryDataItem | null>(cached?.item ?? null)
+  const bodyRef = useRef<HTMLElement>(null)
   const propertiesRef = useRef<LibraryProperty[]>(cached?.properties ?? [])
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const revisionRef = useRef(0)
@@ -382,12 +414,17 @@ function RecordPage({
           : saved
         itemRef.current = savedWithBody
         setItem(savedWithBody)
+        // Saved means saved everywhere this record is drawn from, the cached
+        // table row included: going back straight after must not draw the
+        // edit undone.
+        if (!deletedRef.current) {
+          await rememberDataDetail({ org, repo }, dataId, {
+            item: savedWithBody,
+            properties: propertiesRef.current,
+          })
+        }
+        if (revision !== revisionRef.current) return
         setSaveState('saved')
-        if (deletedRef.current) return
-        void rememberDataDetail({ org, repo }, dataId, {
-          item: savedWithBody,
-          properties: propertiesRef.current,
-        })
       })
       .catch((error: unknown) => {
         if (revision !== revisionRef.current) return
@@ -494,6 +531,7 @@ function RecordPage({
   // Same body in both layouts; only the box around it changes.
   const bodySection = (
     <section
+      ref={bodyRef}
       className={artifact ? 'flex min-h-0 flex-1 flex-col' : 'mt-6'}
       aria-labelledby="data-page-body"
     >
@@ -547,6 +585,12 @@ function RecordPage({
     value={item.name}
     disabled={!confirmed}
     onCommit={(name) => persistItem({ ...itemRef.current!, name })}
+    autoFocus={focusTitleOnOpen}
+    onContinue={() => {
+      bodyRef.current
+        ?.querySelector<HTMLElement>('[contenteditable="true"], textarea')
+        ?.focus()
+    }}
     />
 
     <section className="mt-8" aria-labelledby="data-page-properties">

@@ -11,6 +11,14 @@ const mocks = vi.hoisted(() => ({
   createRepositoryProperty: vi.fn(),
   updateRepositoryProperty: vi.fn(),
   deleteRepositoryProperty: vi.fn(),
+  addLibraryData: vi.fn(),
+  deleteLibraryData: vi.fn(),
+}))
+
+vi.mock('../lib/libraryTable/libraryDataCrud', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/libraryTable/libraryDataCrud')>()),
+  addLibraryData: mocks.addLibraryData,
+  deleteLibraryData: mocks.deleteLibraryData,
 }))
 
 vi.mock('../lib/repositorySettingsApi', () => ({
@@ -33,14 +41,6 @@ const cache = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/libraryReadCache', () => cache)
-
-const crud = vi.hoisted(() => ({
-  addLibraryData: vi.fn(),
-  deleteLibraryData: vi.fn(),
-  updateLibraryData: vi.fn(),
-}))
-
-vi.mock('../lib/libraryTable/libraryDataCrud', () => crud)
 
 vi.mock('../lib/recordsApi', () => ({
   fetchLibraryRepoTableData: mocks.fetchLibraryRepoTableData,
@@ -110,6 +110,72 @@ describe('LibraryTableView', () => {
     })
     expect(screen.getByText('Title')).toBeInTheDocument()
     expect(screen.getByText('Alpha')).toBeInTheDocument()
+  })
+
+  it('creates an untitled record and hands it over to be opened', async () => {
+    const created = { id: 'data-new', name: 'Untitled', propertyData: [] }
+    mocks.addLibraryData.mockResolvedValue(created)
+    const onDataCreated = vi.fn()
+    render(
+      <LibraryTableView
+        org="quantum-box"
+        repo="docs"
+        onSelectData={() => undefined}
+        onDataCreated={onDataCreated}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('First item')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('library-table-add-row'))
+
+    await waitFor(() => {
+      expect(onDataCreated).toHaveBeenCalledWith(created)
+    })
+    expect(mocks.addLibraryData).toHaveBeenCalledTimes(1)
+    expect(mocks.addLibraryData.mock.calls[0][2]).toEqual({
+      name: 'Untitled',
+      propertyData: [],
+    })
+    // Nothing asks for a name first; the editor does that.
+    expect(screen.queryByTestId('library-table-new-row-name')).not.toBeInTheDocument()
+  })
+
+  it('creates a record when one is requested from outside', async () => {
+    const created = { id: 'data-new', name: 'Untitled', propertyData: [] }
+    mocks.addLibraryData.mockResolvedValue(created)
+    const onDataCreated = vi.fn()
+    const onCreateRequestHandled = vi.fn()
+    const { rerender } = render(
+      <LibraryTableView
+        org="quantum-box"
+        repo="docs"
+        onSelectData={() => undefined}
+        onDataCreated={onDataCreated}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('First item')).toBeInTheDocument()
+    })
+    expect(mocks.addLibraryData).not.toHaveBeenCalled()
+
+    rerender(
+      <LibraryTableView
+        org="quantum-box"
+        repo="docs"
+        onSelectData={() => undefined}
+        onDataCreated={onDataCreated}
+        createRequested
+        onCreateRequestHandled={onCreateRequestHandled}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onDataCreated).toHaveBeenCalledWith(created)
+    })
+    expect(mocks.addLibraryData).toHaveBeenCalledTimes(1)
+    expect(onCreateRequestHandled).toHaveBeenCalled()
   })
 
   it('offers no next page when the first one was the last', async () => {
@@ -537,7 +603,7 @@ describe('LibraryTableView', () => {
    * so the deletion does not read as done until the cache has forgotten it.
    */
   it('forgets a deleted row before the deletion reads as done', async () => {
-    crud.deleteLibraryData.mockResolvedValue(undefined)
+    mocks.deleteLibraryData.mockResolvedValue(undefined)
     let forgotten!: () => void
     cache.forgetData.mockReturnValue(new Promise<void>((resolve) => {
       forgotten = resolve
