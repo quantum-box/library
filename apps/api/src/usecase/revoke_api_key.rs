@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use derive_new::new;
-use futures_util::future::try_join_all;
+use futures_util::{StreamExt, TryStreamExt};
 use tachyon_sdk::auth::{
     AuthApp, CheckPolicyInput, DeleteServiceAccountInput,
     FindAllPublicApiKeyInput, FindAllServiceAccountsInput, PolicyId,
@@ -85,47 +85,59 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 tenant_id: &tenant_id,
             })
             .await?;
-        let holders =
-            try_join_all(service_accounts.iter().map(|service_account| {
-                let account =
-                    ApiKeyServiceAccount::from_name(service_account.name());
-                let api_key_id = &api_key_id;
-                let organization = &organization;
-                async move {
-                    let api_keys = self
-                        .auth_app
-                        .find_all_public_api_key(
-                            &FindAllPublicApiKeyInput {
-                                executor: input.executor,
-                                multi_tenancy: input.multi_tenancy,
-                                operator_id: organization.id(),
-                                service_account_id: service_account.id(),
-                            },
-                        )
-                        .await?;
-                    let holds_key =
-                        api_keys.iter().any(|key| key.id() == api_key_id);
-                    Ok::<_, errors::Error>(holds_key.then_some((
-                        service_account,
-                        account,
-                        api_keys.len(),
-                    )))
-                }
-            }))
-            .await?;
-        let (service_account, account, keys_on_account) = holders
-            .into_iter()
-            .flatten()
-            .next()
-            .ok_or(errors::not_found!("API key not found"))?;
+        // A few accounts are asked about at a time, and the search stops
+        // at the account that holds the key: an organization has as many
+        // accounts as keys, and asking about all of them at once would be
+        // as many upstream requests as it has keys.
+        let candidates: Vec<_> = service_accounts
+            .iter()
+            .map(|service_account| {
+                (
+                    service_account.id().clone(),
+                    ApiKeyServiceAccount::from_name(service_account.name()),
+                )
+            })
+            .collect();
+        let organization = &organization;
+        let api_key_id = &api_key_id;
+        let mut lookups = futures_util::stream::iter(candidates)
+            .map(|(service_account_id, account)| async move {
+                let api_keys = self
+                    .auth_app
+                    .find_all_public_api_key(&FindAllPublicApiKeyInput {
+                        executor: input.executor,
+                        multi_tenancy: input.multi_tenancy,
+                        operator_id: organization.id(),
+                        service_account_id: &service_account_id,
+                    })
+                    .await?;
+                let holds_key =
+                    api_keys.iter().any(|key| key.id() == api_key_id);
+                Ok::<_, errors::Error>(holds_key.then_some((
+                    service_account_id,
+                    account,
+                    api_keys.len(),
+                )))
+            })
+            .buffered(super::api_key_issuer::CONCURRENT_ACCOUNT_LOOKUPS);
+
+        let mut holder = None;
+        while let Some(found) = lookups.try_next().await? {
+            if found.is_some() {
+                holder = found;
+                break;
+            }
+        }
+        let (service_account_id, account, keys_on_account) =
+            holder.ok_or(errors::not_found!("API key not found"))?;
 
         self.auth_app
             .revoke_public_api_key(&RevokePublicApiKeyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
                 operator_id: organization.id(),
-                service_account_id: service_account.id(),
-                api_key_id: &api_key_id,
+                service_account_id: &service_account_id,
+                api_key_id,
             })
             .await?;
 
@@ -171,19 +183,19 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                     .delete_service_account(&DeleteServiceAccountInput {
                         executor: input.executor,
                         multi_tenancy: &org_scope,
-                        service_account_id: service_account.id(),
+                        service_account_id: &service_account_id,
                     })
                     .await
                 {
                     tracing::warn!(
-                        service_account = %service_account.id(),
+                        service_account = %service_account_id,
                         error = %error,
                         "revoked key's service account was not removed"
                     );
                 }
             } else {
                 tracing::info!(
-                    service_account = %service_account.id(),
+                    service_account = %service_account_id,
                     "left the revoked key's service account to an owner"
                 );
             }

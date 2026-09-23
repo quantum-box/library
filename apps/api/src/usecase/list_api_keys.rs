@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use derive_new::new;
-use futures_util::future::try_join_all;
+use futures_util::{StreamExt, TryStreamExt};
 use tachyon_sdk::auth::PublicApiKey;
 use tachyon_sdk::auth::{
     AuthApp, CheckPolicyInput, FindAllPublicApiKeyInput,
@@ -72,37 +72,45 @@ impl ListApiKeysInputPort for ListApiKeys {
             })
             .await?;
 
-        // Keys live one per account (see `ApiKeyServiceAccount`), so their
-        // lists are fetched side by side rather than one after another.
-        let per_account = try_join_all(
-            service_accounts
-                .iter()
-                .filter_map(|service_account| {
-                    ApiKeyServiceAccount::from_name(service_account.name())
-                        .map(|account| (service_account, account.role()))
+        // Keys live one per account (see `ApiKeyServiceAccount`), so an
+        // organization has as many accounts to ask about as it has keys.
+        // A few requests run at a time: one after another would be as
+        // slow as the key count, all at once as many upstream requests as
+        // it has keys.
+        let library_accounts: Vec<_> = service_accounts
+            .iter()
+            .filter_map(|service_account| {
+                ApiKeyServiceAccount::from_name(service_account.name()).map(
+                    |account| {
+                        (service_account.id().clone(), account.role())
+                    },
+                )
+            })
+            .collect();
+        let organization = &organization;
+        let per_account: Vec<_> =
+            futures_util::stream::iter(library_accounts)
+                .map(|(service_account_id, role)| async move {
+                    let api_keys = self
+                        .auth_app
+                        .find_all_public_api_key(
+                            &FindAllPublicApiKeyInput {
+                                executor: input.executor,
+                                multi_tenancy: input.multi_tenancy,
+                                operator_id: organization.id(),
+                                service_account_id: &service_account_id,
+                            },
+                        )
+                        .await?;
+                    Ok::<_, errors::Error>(
+                        api_keys.into_iter().map(move |api_key| {
+                            ListedApiKey { api_key, role }
+                        }),
+                    )
                 })
-                .map(|(service_account, role)| {
-                    let organization = &organization;
-                    async move {
-                        let api_keys = self
-                            .auth_app
-                            .find_all_public_api_key(
-                                &FindAllPublicApiKeyInput {
-                                    executor: input.executor,
-                                    multi_tenancy: input.multi_tenancy,
-                                    operator_id: organization.id(),
-                                    service_account_id: service_account
-                                        .id(),
-                                },
-                            )
-                            .await?;
-                        Ok::<_, errors::Error>(api_keys.into_iter().map(
-                            move |api_key| ListedApiKey { api_key, role },
-                        ))
-                    }
-                }),
-        )
-        .await?;
+                .buffered(super::api_key_issuer::CONCURRENT_ACCOUNT_LOOKUPS)
+                .try_collect()
+                .await?;
 
         let mut listed: Vec<_> =
             per_account.into_iter().flatten().collect();

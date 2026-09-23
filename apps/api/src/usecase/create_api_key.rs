@@ -199,12 +199,25 @@ impl CreateApiKey {
     /// Best effort: an account left behind holds no key, so it is neither
     /// listed nor usable, and the caller's error is the one worth
     /// reporting.
+    ///
+    /// Removing an account is an owner's to do, and only a key with a
+    /// role has established that the caller is one. Without that, asking
+    /// upstream would only be refused, so the empty account is left
+    /// behind and said so.
     async fn discard_service_account<'a>(
         &self,
         input: &CreateApiKeyInputData<'a>,
         org_scope: &MultiTenancy,
         service_account: &ServiceAccount,
     ) {
+        if input.role.is_none() {
+            tracing::info!(
+                service_account = %service_account.id(),
+                "left the empty service account of a key that was not issued"
+            );
+            return;
+        }
+
         if let Err(error) = self
             .auth_app
             .delete_service_account(&DeleteServiceAccountInput {

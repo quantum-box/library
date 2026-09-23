@@ -10,6 +10,11 @@ use tachyon_sdk::auth::{
 };
 use value_object::TenantId;
 
+/// How many accounts Library asks about at once when it has to look
+/// through an organization's accounts for keys. Every key has an account
+/// of its own, so the number to ask about grows with the key count.
+pub(crate) const CONCURRENT_ACCOUNT_LOOKUPS: usize = 8;
+
 /// Attach one of those policies to the calling user in the organization's
 /// tenant, which is the only scope a check made there reads.
 ///
