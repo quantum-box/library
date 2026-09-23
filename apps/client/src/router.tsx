@@ -1303,6 +1303,36 @@ function DataWorkspace({
     [handleCreateRecord, selectedDatabase]
   )
 
+  /**
+   * The "new data" form creates into a repository and then opens the record,
+   * so what is left to write gets written in its editor. A record created
+   * without a name is named "Untitled" and opens with that title selected.
+   */
+  const handleCreateAndOpenRecord = useCallback(
+    async (data: Parameters<typeof handleCreateRecord>[0]) => {
+      const title = data.title.trim()
+      const { record, delivered } = await handleCreateRecordInDatabase({
+        ...data,
+        title: title || translate('common.untitled'),
+      })
+      // The editor reads the record from library-api. One created offline is
+      // queued and not there yet, so it stays in the list the form was
+      // opened over, where the local copy is shown, until it is delivered.
+      if (!delivered) return
+      if (!record.orgUsername || !record.repoUsername || isPendingRecordId(record.id)) return
+      // Closed before leaving: a repository table reads an open form as a
+      // request to create, and would make a second record on the way back.
+      setCreateModalOpen(false)
+      await navigateToData(
+        navigate,
+        `${record.orgUsername}/${record.repoUsername}`,
+        {},
+        { recordId: record.id, focusTitle: !title }
+      )
+    },
+    [handleCreateRecordInDatabase, navigate, setCreateModalOpen]
+  )
+
   const handleSaveView = useCallback(() => {
     updateDatabaseView(effectiveView)
     clearDatabaseViewDraft(savedSelectedView)
@@ -1522,7 +1552,7 @@ function DataWorkspace({
               selectedRecordId={selectedRecord?.id ?? null}
               onSelectRecord={handleSelectRecord}
               onUpdateRecord={handleUpdateRecord}
-              onCreateRecord={handleCreateRecordInDatabase}
+              onRequestCreate={() => setCreateModalOpen(true)}
               sorting={sorting}
               onSortingChange={handleSortingChange}
               globalFilter={effectiveView.filters.search}
@@ -1602,7 +1632,7 @@ function DataWorkspace({
       <CreateRecordModal
         open={createModalOpen && !showLibraryRepoTable}
         onClose={() => setCreateModalOpen(false)}
-        onCreate={handleCreateRecordInDatabase}
+        onCreate={handleCreateAndOpenRecord}
         repositories={visibleDatabases}
         initialRepositoryId={selectedDatabase?.id}
         requireRepository

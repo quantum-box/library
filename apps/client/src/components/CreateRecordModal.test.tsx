@@ -249,4 +249,46 @@ describe('CreateRecordModal', () => {
       operatorId: 'op_library',
     })))
   })
+
+  it('creates repository data without a name, leaving it to the editor', async () => {
+    const onCreate = vi.fn()
+    render(
+      <CreateRecordModal
+        open
+        onClose={vi.fn()}
+        onCreate={onCreate}
+        requireRepository
+        repositories={[
+          {
+            id: 'quantum-box/library',
+            label: 'quantum-box / library',
+            orgUsername: 'quantum-box',
+            repoUsername: 'library',
+          },
+        ]}
+      />
+    )
+
+    // The only repository is chosen already, so the form is ready as it opens.
+    expect(screen.getByTestId('create-record-title')).not.toBeRequired()
+    expect(screen.getByTestId('create-record-submit')).toBeEnabled()
+    fireEvent.keyDown(screen.getByTestId('create-record-title'), { key: 'Enter' })
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      title: '',
+      orgUsername: 'quantum-box',
+      repoUsername: 'library',
+    })))
+  })
+
+  it('does not submit on the Enter that confirms an IME conversion', () => {
+    const onCreate = vi.fn()
+    render(<CreateRecordModal open onClose={vi.fn()} onCreate={onCreate} />)
+
+    const title = screen.getByTestId('create-record-title')
+    fireEvent.change(title, { target: { value: 'にほんご' } })
+    fireEvent.keyDown(title, { key: 'Enter', isComposing: true })
+
+    expect(onCreate).not.toHaveBeenCalled()
+  })
 })

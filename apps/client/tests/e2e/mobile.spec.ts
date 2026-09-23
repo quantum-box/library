@@ -26,6 +26,11 @@ test.describe('Library mobile shell', () => {
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
 
+    // Created data opens in its editor; the list is one step back.
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByTestId('mobile-record-card')).toHaveCount(1)
     await expect(page.getByTestId('mobile-record-card').getByText(title)).toBeVisible()
