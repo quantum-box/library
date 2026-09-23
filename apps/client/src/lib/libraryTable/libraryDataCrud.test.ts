@@ -94,6 +94,27 @@ describe('libraryDataCrud', () => {
       expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBeFalsy()
     })
 
+    it('starts with the current token instead of waiting for a refresh', async () => {
+      // Two minutes left: inside the window where a refresh is due.
+      localStorage.setItem('library_auth', JSON.stringify({
+        accessToken: 'still-valid',
+        refreshToken: 'refresh',
+        expiresAt: Date.now() / 1000 + 120,
+        userId: 'user-1',
+        email: 'aoi@example.test',
+        username: 'aoi',
+      }))
+      vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'cognito-client-id')
+      // The refresh never answers: the page may be gone before it would.
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) =>
+        String(url).includes('cognito-idp') ? new Promise<Response>(() => {}) : Promise.resolve(updated()))
+      vi.stubGlobal('fetch', fetchMock)
+      await save('last edit')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/graphql')
+      expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer still-valid' })
+    })
+
     it('sends a keepalive request the browser refuses again as an ordinary one', async () => {
       // Over the quota shared with the page's other keepalive requests.
       const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {

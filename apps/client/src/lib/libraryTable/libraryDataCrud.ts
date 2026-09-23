@@ -5,7 +5,7 @@ import {
   type LibraryProperty,
   type LibraryPropertyDataValue,
 } from '../recordsApi'
-import { getValidAuthTokens, loadStoredAuthIdentity } from '../auth'
+import { getValidAuthTokens, loadStoredAuthIdentity, unexpiredAuthTokens } from '../auth'
 import {
   libraryPropertyValueToGraphqlInput,
 } from './libraryPropertyInput'
@@ -125,13 +125,29 @@ function configuredLibraryActor(): string {
   )
 }
 
-async function libraryRestHeaders(operatorId?: string): Promise<Record<string, string>> {
+/**
+ * The access token for a request. One that must outlive the page starts
+ * with the token it has while that still works, instead of waiting on a
+ * refresh the page may not live through.
+ */
+async function libraryAccessToken(keepalive?: boolean): Promise<string | undefined> {
+  if (keepalive) {
+    const current = unexpiredAuthTokens()
+    if (current) return current.accessToken
+  }
+  return (await getValidAuthTokens())?.accessToken
+}
+
+async function libraryRestHeaders(
+  operatorId?: string,
+  keepalive?: boolean,
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = (await getValidAuthTokens())?.accessToken
+  const token = await libraryAccessToken(keepalive)
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
 }
@@ -177,7 +193,7 @@ async function requestLibraryGraphQL<TData>(
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = (await getValidAuthTokens())?.accessToken
+  const token = await libraryAccessToken(options?.keepalive)
   if (token) headers.Authorization = `Bearer ${token}`
 
   let response: Response
@@ -496,7 +512,7 @@ export async function updateLibraryData(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${item.id}`,
     {
       method: 'PUT',
-      headers: await libraryRestHeaders(target.operatorId),
+      headers: await libraryRestHeaders(target.operatorId, options?.keepalive),
       body: restBody,
     },
     options?.keepalive,
