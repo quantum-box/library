@@ -1,20 +1,15 @@
 # Actions and roles the library apps authorize against.
 #
-# This file is a record, not something applied from a developer machine.
-# Two things prevent that:
+# This file records upstream authorization resources; it is not a source to
+# apply from a developer machine. Tachyon recognizes each YAML document here,
+# so applying it can have side effects:
 #
-#   - The `library` context is reserved for system actions. Registering one
-#     through `POST /v1/auth/actions` is refused with "Context 'library' is
-#     reserved for system actions", so a new library action has to be added
-#     upstream in tachyon-apps rather than from here.
-#   - The other contexts here (`database`, `inbound_sync`) are NOT reserved,
-#     and their actions already exist upstream with no owning platform. An
-#     apply from a developer profile does not recognise those as the same
-#     action and registers a second copy owned by the caller's platform.
-#
-# `tachyon manifest apply` reads a flat `actions:`/`policies:` document and
-# skips this ActionSet/Policy shape as unsupported, which is what has kept
-# that from happening so far. Keep the shape as it is.
+#   - Every ActionSet entry uses the reserved `library` context. Registering
+#     one through `POST /v1/auth/actions` is refused, so new library actions
+#     must be added upstream in tachyon-apps.
+#   - The Policy documents are tenant-scoped through `metadata.namespace`.
+#     Applying them would reconcile tenant-owned policy records; it does not
+#     update the system LibraryUserPolicy attached by the API at sign-in.
 #
 # Adding an action therefore means: add it here so the intent is recorded,
 # and have it registered upstream as a system action.
@@ -29,283 +24,283 @@
 # roles, which map to `pol_01libraryrepo{owner,writer,reader}` instead. So
 # granting a newly registered action to real users means editing
 # LibraryUserPolicy upstream, not editing these.
-- apiVersion: auth.tachyon.io/v1
-  kind: ActionSet
-  metadata:
-    name: library-actions
-  spec:
-    actions:
-      - context: library
-        name: CreateApiKey
-        description: Create library API key
-        resource_pattern: trn:library:api-key:*
-      - context: library
-        name: ListApiKeys
-        description: List library API keys
-        resource_pattern: trn:library:api-key:*
-      - context: library
-        name: RevokeApiKey
-        description: Revoke library API key
-        resource_pattern: trn:library:api-key:*
-      - context: library
-        name: CreateOrganization
-        description: Create library organization
-        resource_pattern: trn:library:org:*
-      - context: library
-        name: UpdateOrganization
-        description: Update library organization
-        resource_pattern: trn:library:org:*
-      - context: library
-        name: ChangeOrgMemberRole
-        description: Change organization member role (OWNER/MANAGER/GENERAL)
-        resource_pattern: trn:library:org:*
-      - context: library
-        name: InviteOrgMember
-        description: Invite a member to an organization
-        resource_pattern: trn:library:org:*
-      - context: library
-        name: CreateRepo
-        description: Create library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: ViewPrivateRepo
-        description: View private repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: ViewRepo
-        description: View library repository (resource-based access)
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: UpdateRepo
-        description: Update library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: DeleteRepo
-        description: Delete library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: ManageRepoPolicy
-        description: Manage library repository policy
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: InviteRepoMember
-        description: Invite a user to a library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: RemoveRepoMember
-        description: Remove a user from a library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: ChangeRepoMemberRole
-        description: Change a user's role in a library repository
-        resource_pattern: trn:library:repo:*
-      - context: library
-        name: CreateSource
-        description: Create library source
-        resource_pattern: trn:library:source:*
-      - context: library
-        name: GetSource
-        description: Get library source
-        resource_pattern: trn:library:source:*
-      - context: library
-        name: UpdateSource
-        description: Update library source
-        resource_pattern: trn:library:source:*
-      - context: library
-        name: DeleteSource
-        description: Delete library source
-        resource_pattern: trn:library:source:*
-      - context: library
-        name: FindSources
-        description: Find library sources
-        resource_pattern: trn:library:source:*
-      - context: library
-        name: ViewData
-        description: View library data
-        resource_pattern: trn:library:data:*
-      - context: library
-        name: CreateData
-        description: Create library data (import from GitHub)
-        resource_pattern: trn:tachyon-apps:library:*:*:data:*
-      - context: library
-        name: DeleteData
-        description: Delete library data
-        resource_pattern: trn:library:data:*
-      - context: library
-        name: AddProperty
-        description: Add library property
-        resource_pattern: trn:library:property:*
-      - context: library
-        name: UpdateProperty
-        description: Update library property
-        resource_pattern: trn:library:property:*
-      - context: library
-        name: DeleteProperty
-        description: Delete library property
-        resource_pattern: trn:library:property:*
-      - context: library
-        name: CreateGlobalIdMapping
-        description: Create Global ID mapping (system-of-record write)
-        resource_pattern: trn:library:global-id-mapping:*
-      - context: library
-        name: UpdateGlobalIdMapping
-        description: Update Global ID mapping
-        resource_pattern: trn:library:global-id-mapping:*
-      - context: library
-        name: DeleteGlobalIdMapping
-        description: Delete Global ID mapping (logical)
-        resource_pattern: trn:library:global-id-mapping:*
-      - context: library
-        name: ReadGlobalIdMapping
-        description: Read Global ID mapping (bakuure SA Phase 1 read-only)
-        resource_pattern: trn:library:global-id-mapping:*
-      # Repository databases and inbound sync were their own contexts
-      # until they moved here. Neither is reserved, so anything holding a
-      # tenant could register an action into them, and an apply from a
-      # developer machine did exactly that -- registering a second copy of
-      # all ten alongside the originals. Under `library` the reservation
-      # refuses that write, and `library:admin` reaches these through the
-      # same `library:*` pattern as everything else.
-      - context: library
-        name: DatabaseAddProperty
-        description: Add property to repository database
-        resource_pattern: trn:library:database-property:*
-      - context: library
-        name: DatabaseUpdateProperty
-        description: Update property of repository database
-        resource_pattern: trn:library:database-property:*
-      - context: library
-        name: DatabaseDeleteProperty
-        description: Delete property from repository database
-        resource_pattern: trn:library:database-property:*
-      - context: library
-        name: InboundSyncListIntegrations
-        description: List available integrations
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncListConnections
-        description: List tenant connections
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncRegisterWebhookEndpoint
-        description: Register a new webhook endpoint
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncUpdateWebhookEndpoint
-        description: Update a webhook endpoint
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncDeleteWebhookEndpoint
-        description: Delete a webhook endpoint
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncInitialSync
-        description: Execute initial sync
-        resource_pattern: trn:library:inbound-sync:*
-      - context: library
-        name: InboundSyncOnDemandPull
-        description: Execute on-demand pull sync
-        resource_pattern: trn:library:inbound-sync:*
-
-- apiVersion: auth.tachyon.io/v1
-  kind: Policy
-  metadata:
-    name: library:reader
-    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
-  spec:
-    description: Library reader policy for read-only API and repository access
-    actions:
-      - action: library:ViewRepo
-        effect: allow
-      - action: library:ViewPrivateRepo
-        effect: allow
-      - action: library:GetSource
-        effect: allow
-      - action: library:FindSources
-        effect: allow
-      - action: library:ViewData
-        effect: allow
-      - action: library:ReadGlobalIdMapping
-        effect: allow
-      - action: library:InboundSyncListIntegrations
-        effect: allow
-      - action: library:InboundSyncListConnections
-        effect: allow
-
-- apiVersion: auth.tachyon.io/v1
-  kind: Policy
-  metadata:
-    name: library:member
-    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
-  spec:
-    description: Library member policy for normal read and write workflows
-    actions:
-      - action: library:CreateApiKey
-        effect: allow
-      - action: library:ListApiKeys
-        effect: allow
-      - action: library:RevokeApiKey
-        effect: allow
-      - action: library:CreateOrganization
-        effect: allow
-      - action: library:UpdateOrganization
-        effect: allow
-      - action: library:CreateRepo
-        effect: allow
-      - action: library:ViewRepo
-        effect: allow
-      - action: library:ViewPrivateRepo
-        effect: allow
-      - action: library:UpdateRepo
-        effect: allow
-      - action: library:CreateSource
-        effect: allow
-      - action: library:GetSource
-        effect: allow
-      - action: library:UpdateSource
-        effect: allow
-      - action: library:FindSources
-        effect: allow
-      - action: library:ViewData
-        effect: allow
-      - action: library:CreateData
-        effect: allow
-      - action: library:AddProperty
-        effect: allow
-      - action: library:UpdateProperty
-        effect: allow
-      - action: library:ReadGlobalIdMapping
-        effect: allow
-      - action: library:DatabaseAddProperty
-        effect: allow
-      - action: library:DatabaseUpdateProperty
-        effect: allow
-      - action: library:DatabaseDeleteProperty
-        effect: allow
-      - action: library:InboundSyncListIntegrations
-        effect: allow
-      - action: library:InboundSyncListConnections
-        effect: allow
-      - action: library:InboundSyncRegisterWebhookEndpoint
-        effect: allow
-      - action: library:InboundSyncUpdateWebhookEndpoint
-        effect: allow
-      - action: library:InboundSyncInitialSync
-        effect: allow
-      - action: library:InboundSyncOnDemandPull
-        effect: allow
-
-- apiVersion: auth.tachyon.io/v1
-  kind: Policy
-  metadata:
-    name: library:admin
-    ownerTenant: tn_01j702qf86pc2j35s0kv0gv3gy
-  spec:
-    description: Library admin policy for repository, member, and policy administration
-    # One pattern now covers everything: repository-database and
-    # inbound-sync actions moved into the library context, so the two
-    # extra patterns they needed are gone with them.
-    action_patterns:
-      - context_pattern: library
-        name_pattern: "*"
-        effect: allow
+apiVersion: auth.tachyon.io/v1
+kind: ActionSet
+metadata:
+  name: library-actions
+spec:
+  actions:
+    - context: library
+      name: CreateApiKey
+      description: Create library API key
+      resource_pattern: trn:library:api-key:*
+    - context: library
+      name: ListApiKeys
+      description: List library API keys
+      resource_pattern: trn:library:api-key:*
+    - context: library
+      name: RevokeApiKey
+      description: Revoke library API key
+      resource_pattern: trn:library:api-key:*
+    - context: library
+      name: CreateOrganization
+      description: Create library organization
+      resource_pattern: trn:library:org:*
+    - context: library
+      name: UpdateOrganization
+      description: Update library organization
+      resource_pattern: trn:library:org:*
+    - context: library
+      name: ChangeOrgMemberRole
+      description: Change organization member role (OWNER/MANAGER/GENERAL)
+      resource_pattern: trn:library:org:*
+    - context: library
+      name: InviteOrgMember
+      description: Invite a member to an organization
+      resource_pattern: trn:library:org:*
+    - context: library
+      name: CreateRepo
+      description: Create library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: ViewPrivateRepo
+      description: View private repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: ViewRepo
+      description: View library repository (resource-based access)
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: UpdateRepo
+      description: Update library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: DeleteRepo
+      description: Delete library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: ManageRepoPolicy
+      description: Manage library repository policy
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: InviteRepoMember
+      description: Invite a user to a library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: RemoveRepoMember
+      description: Remove a user from a library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: ChangeRepoMemberRole
+      description: Change a user's role in a library repository
+      resource_pattern: trn:library:repo:*
+    - context: library
+      name: CreateSource
+      description: Create library source
+      resource_pattern: trn:library:source:*
+    - context: library
+      name: GetSource
+      description: Get library source
+      resource_pattern: trn:library:source:*
+    - context: library
+      name: UpdateSource
+      description: Update library source
+      resource_pattern: trn:library:source:*
+    - context: library
+      name: DeleteSource
+      description: Delete library source
+      resource_pattern: trn:library:source:*
+    - context: library
+      name: FindSources
+      description: Find library sources
+      resource_pattern: trn:library:source:*
+    - context: library
+      name: ViewData
+      description: View library data
+      resource_pattern: trn:library:data:*
+    - context: library
+      name: CreateData
+      description: Create library data (import from GitHub)
+      resource_pattern: trn:tachyon-apps:library:*:*:data:*
+    - context: library
+      name: DeleteData
+      description: Delete library data
+      resource_pattern: trn:library:data:*
+    - context: library
+      name: AddProperty
+      description: Add library property
+      resource_pattern: trn:library:property:*
+    - context: library
+      name: UpdateProperty
+      description: Update library property
+      resource_pattern: trn:library:property:*
+    - context: library
+      name: DeleteProperty
+      description: Delete library property
+      resource_pattern: trn:library:property:*
+    - context: library
+      name: CreateGlobalIdMapping
+      description: Create Global ID mapping (system-of-record write)
+      resource_pattern: trn:library:global-id-mapping:*
+    - context: library
+      name: UpdateGlobalIdMapping
+      description: Update Global ID mapping
+      resource_pattern: trn:library:global-id-mapping:*
+    - context: library
+      name: DeleteGlobalIdMapping
+      description: Delete Global ID mapping (logical)
+      resource_pattern: trn:library:global-id-mapping:*
+    - context: library
+      name: ReadGlobalIdMapping
+      description: Read Global ID mapping (bakuure SA Phase 1 read-only)
+      resource_pattern: trn:library:global-id-mapping:*
+    # Repository databases and inbound sync were their own contexts
+    # until they moved here. Neither is reserved, so anything holding a
+    # tenant could register an action into them, and an apply from a
+    # developer machine did exactly that -- registering a second copy of
+    # all ten alongside the originals. Under `library` the reservation
+    # refuses that write, and `library:admin` reaches these through the
+    # same `library:*` pattern as everything else.
+    - context: library
+      name: DatabaseAddProperty
+      description: Add property to repository database
+      resource_pattern: trn:library:database-property:*
+    - context: library
+      name: DatabaseUpdateProperty
+      description: Update property of repository database
+      resource_pattern: trn:library:database-property:*
+    - context: library
+      name: DatabaseDeleteProperty
+      description: Delete property from repository database
+      resource_pattern: trn:library:database-property:*
+    - context: library
+      name: InboundSyncListIntegrations
+      description: List available integrations
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncListConnections
+      description: List tenant connections
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncRegisterWebhookEndpoint
+      description: Register a new webhook endpoint
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncUpdateWebhookEndpoint
+      description: Update a webhook endpoint
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncDeleteWebhookEndpoint
+      description: Delete a webhook endpoint
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncInitialSync
+      description: Execute initial sync
+      resource_pattern: trn:library:inbound-sync:*
+    - context: library
+      name: InboundSyncOnDemandPull
+      description: Execute on-demand pull sync
+      resource_pattern: trn:library:inbound-sync:*
+---
+apiVersion: auth.tachyon.io/v1
+kind: Policy
+metadata:
+  name: library:reader
+  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
+spec:
+  description: Library reader policy for read-only API and repository access
+  actions:
+    - action: library:ViewRepo
+      effect: allow
+    - action: library:ViewPrivateRepo
+      effect: allow
+    - action: library:GetSource
+      effect: allow
+    - action: library:FindSources
+      effect: allow
+    - action: library:ViewData
+      effect: allow
+    - action: library:ReadGlobalIdMapping
+      effect: allow
+    - action: library:InboundSyncListIntegrations
+      effect: allow
+    - action: library:InboundSyncListConnections
+      effect: allow
+---
+apiVersion: auth.tachyon.io/v1
+kind: Policy
+metadata:
+  name: library:member
+  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
+spec:
+  description: Library member policy for normal read and write workflows
+  actions:
+    - action: library:CreateApiKey
+      effect: allow
+    - action: library:ListApiKeys
+      effect: allow
+    - action: library:RevokeApiKey
+      effect: allow
+    - action: library:CreateOrganization
+      effect: allow
+    - action: library:UpdateOrganization
+      effect: allow
+    - action: library:CreateRepo
+      effect: allow
+    - action: library:ViewRepo
+      effect: allow
+    - action: library:ViewPrivateRepo
+      effect: allow
+    - action: library:UpdateRepo
+      effect: allow
+    - action: library:CreateSource
+      effect: allow
+    - action: library:GetSource
+      effect: allow
+    - action: library:UpdateSource
+      effect: allow
+    - action: library:FindSources
+      effect: allow
+    - action: library:ViewData
+      effect: allow
+    - action: library:CreateData
+      effect: allow
+    - action: library:AddProperty
+      effect: allow
+    - action: library:UpdateProperty
+      effect: allow
+    - action: library:ReadGlobalIdMapping
+      effect: allow
+    - action: library:DatabaseAddProperty
+      effect: allow
+    - action: library:DatabaseUpdateProperty
+      effect: allow
+    - action: library:DatabaseDeleteProperty
+      effect: allow
+    - action: library:InboundSyncListIntegrations
+      effect: allow
+    - action: library:InboundSyncListConnections
+      effect: allow
+    - action: library:InboundSyncRegisterWebhookEndpoint
+      effect: allow
+    - action: library:InboundSyncUpdateWebhookEndpoint
+      effect: allow
+    - action: library:InboundSyncInitialSync
+      effect: allow
+    - action: library:InboundSyncOnDemandPull
+      effect: allow
+---
+apiVersion: auth.tachyon.io/v1
+kind: Policy
+metadata:
+  name: library:admin
+  namespace: tn_01j702qf86pc2j35s0kv0gv3gy
+spec:
+  description: Library admin policy for repository, member, and policy administration
+  # One pattern now covers everything: repository-database and
+  # inbound-sync actions moved into the library context, so the two
+  # extra patterns they needed are gone with them.
+  action_patterns:
+    - context_pattern: library
+      name_pattern: "*"
+      effect: allow
