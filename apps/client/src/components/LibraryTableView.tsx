@@ -542,7 +542,9 @@ function RepositoryTable({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, pendingDelete.id)
-      void forgetData({ org, repo }, pendingDelete.id)
+      // Before the deletion reads as done: the record's page, opened next,
+      // draws from the cache in its first frame.
+      await forgetData({ org, repo }, pendingDelete.id)
       setItems((current) => current.filter((row) => row.id !== pendingDelete.id))
       onDataDeleted?.(pendingDelete.id)
       setPendingDelete(null)

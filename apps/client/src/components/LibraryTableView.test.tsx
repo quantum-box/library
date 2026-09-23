@@ -29,10 +29,18 @@ const cache = vi.hoisted(() => ({
   peekRepoTable: vi.fn<(target: unknown) => CachedRepoTable | null>(() => null),
   readRepoTable: vi.fn<(target: unknown) => Promise<CachedRepoTable | null>>(async () => null),
   rememberRepoTable: vi.fn(),
-  forgetData: vi.fn(),
+  forgetData: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
 }))
 
 vi.mock('../lib/libraryReadCache', () => cache)
+
+const crud = vi.hoisted(() => ({
+  addLibraryData: vi.fn(),
+  deleteLibraryData: vi.fn(),
+  updateLibraryData: vi.fn(),
+}))
+
+vi.mock('../lib/libraryTable/libraryDataCrud', () => crud)
 
 vi.mock('../lib/recordsApi', () => ({
   fetchLibraryRepoTableData: mocks.fetchLibraryRepoTableData,
@@ -522,5 +530,43 @@ describe('LibraryTableView', () => {
         })
       )
     })
+  })
+
+  /**
+   * The record's page, opened next, draws from the cache in its first frame,
+   * so the deletion does not read as done until the cache has forgotten it.
+   */
+  it('forgets a deleted row before the deletion reads as done', async () => {
+    crud.deleteLibraryData.mockResolvedValue(undefined)
+    let forgotten!: () => void
+    cache.forgetData.mockReturnValue(new Promise<void>((resolve) => {
+      forgotten = resolve
+    }))
+    const onDataDeleted = vi.fn()
+    render(
+      <LibraryTableView
+        org="quantum-box"
+        repo="docs"
+        onSelectData={() => undefined}
+        onDataDeleted={onDataDeleted}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('First item')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('library-table-delete-data-1'))
+    fireEvent.click(screen.getByTestId('library-delete-dialog-confirm'))
+    await waitFor(() => {
+      expect(cache.forgetData).toHaveBeenCalledWith({ org: 'quantum-box', repo: 'docs' }, 'data-1')
+    })
+    expect(onDataDeleted).not.toHaveBeenCalled()
+    expect(screen.getByTestId('library-table-row-data-1')).toBeInTheDocument()
+
+    forgotten()
+    await waitFor(() => {
+      expect(onDataDeleted).toHaveBeenCalledWith('data-1')
+    })
+    expect(screen.queryByTestId('library-table-row-data-1')).not.toBeInTheDocument()
   })
 })
