@@ -56,6 +56,21 @@ let detailsRememberedThisSession = 0
 /** Off only in tests that trim by hand at a moment of their choosing. */
 let autoTrim = true
 
+/**
+ * Every write to the record pages, one at a time.
+ *
+ * Trimming lists the pages and then lists back the ones it keeps as the whole
+ * collection; a page written in between would not be in that list, and the
+ * complete listing would delete it. Queued with the other page writes, a trim
+ * sees everything written before it and nothing is written during it.
+ */
+let detailWrites: Promise<unknown> = Promise.resolve()
+function queueDetailWrite<T>(write: () => Promise<T>): Promise<T> {
+  const queued = detailWrites.then(write)
+  detailWrites = queued.catch(() => undefined)
+  return queued
+}
+
 /** A repository, as far as naming its cached screens goes. */
 export interface ReadCacheRepository {
   org: string
@@ -94,6 +109,12 @@ export interface CachedDataDetail {
    * its clock without advancing it, so it says nothing about recency.
    */
   rememberedAt?: number
+  /**
+   * Whose page this is, and in which repository -- the part of its key before
+   * the record's name. Held in the value because a name may itself contain
+   * the separator, so the key cannot be taken apart again.
+   */
+  owner?: string
 }
 
 /** The repositories and organizations the workspace shell last listed. */
@@ -222,7 +243,7 @@ export function rememberDataDetail(
   requestedId: string,
   detail: { item: LibraryDataItem; properties: LibraryProperty[] }
 ): Promise<void> {
-  return rememberDataDetailNow(target, requestedId, detail)
+  return queueDetailWrite(() => rememberDataDetailNow(target, requestedId, detail))
 }
 
 async function rememberDataDetailNow(
@@ -240,7 +261,13 @@ async function rememberDataDetailNow(
       ids.add(id)
     }
   }
-  const value: CachedDataDetail = { ...detail, complete: true, ids: [...ids], rememberedAt: Date.now() }
+  const value: CachedDataDetail = {
+    ...detail,
+    complete: true,
+    ids: [...ids],
+    rememberedAt: Date.now(),
+    owner: tableKey(target),
+  }
   await remember(
     DETAILS_COLLECTION,
     [...ids].map((dataId) => ({ recordId: detailKey(target, dataId), value }))
@@ -290,7 +317,11 @@ async function updateCachedRow(
  * so the kept pages are listed again and everything else goes. Listing a page
  * Photon already holds unchanged writes nothing, so this costs the deletes.
  */
-async function trimDetails(): Promise<void> {
+function trimDetails(): Promise<void> {
+  return queueDetailWrite(trimDetailsNow)
+}
+
+async function trimDetailsNow(): Promise<void> {
   try {
     const pages = await listClientEngineRecords<CachedDataDetail>(DETAILS_COLLECTION)
     if (pages.length <= DETAILS_TRIM_AT) return
@@ -299,7 +330,7 @@ async function trimDetails(): Promise<void> {
     // by id -- which starts from that entry -- can no longer find it.
     const records = new Map<string, { pages: typeof pages; latest: number }>()
     for (const page of pages) {
-      const record = `${page.recordId.slice(0, page.recordId.lastIndexOf(':'))}\u0000${page.value.item.id}`
+      const record = `${page.value.owner ?? ''}\u0000${page.value.item.id}`
       const group = records.get(record) ?? { pages: [], latest: 0 }
       group.pages.push(page)
       group.latest = Math.max(group.latest, page.value.rememberedAt ?? 0)
@@ -330,7 +361,7 @@ async function trimDetails(): Promise<void> {
  * it on screen until the listing came back without it.
  */
 export function forgetData(target: ReadCacheRepository, dataId: string): Promise<void> {
-  return forgetDataNow(target, dataId)
+  return queueDetailWrite(() => forgetDataNow(target, dataId))
 }
 
 async function forgetDataNow(target: ReadCacheRepository, dataId: string): Promise<void> {

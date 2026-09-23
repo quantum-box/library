@@ -294,6 +294,47 @@ describe('a record opened straight after start', () => {
   })
 })
 
+describe('trimming alongside other page writes', () => {
+  afterEach(() => {
+    readCache.setAutoTrim(true)
+  })
+
+  /** A trim lists back what it keeps as the whole collection; nothing may land in between. */
+  it('does not trim away a page remembered while it runs', async () => {
+    readCache.setAutoTrim(false)
+    for (let index = 0; index < readCache.DETAILS_KEPT + 60; index += 1) {
+      await rememberDataDetail(target, `d${index}`, { item: row(`d${index}`, 'todo', ''), properties })
+    }
+
+    await Promise.all([
+      readCache.trimDetails(),
+      rememberDataDetail(target, 'fresh', { item: row('fresh', 'todo', ''), properties }),
+    ])
+
+    expect(await readDataDetail(target, 'fresh')).not.toBeNull()
+  })
+
+  /** A name may contain the key separator; the record's names still go together. */
+  it('keeps a record whose identifier contains a colon with its id', async () => {
+    readCache.setAutoTrim(false)
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 5))
+    for (let index = 0; index < 60; index += 1) {
+      await rememberDataDetail(target, `old${index}`, { item: row(`old${index}`, 'todo', ''), properties })
+    }
+    await pause()
+    await rememberDataDetail(target, 'DOC:1', { item: row('d1', 'todo', 'body'), properties })
+    await pause()
+    for (let index = 0; index < readCache.DETAILS_KEPT - 1; index += 1) {
+      await rememberDataDetail(target, `new${index}`, { item: row(`new${index}`, 'todo', ''), properties })
+    }
+
+    await readCache.trimDetails()
+
+    expect(await readDataDetail(target, 'DOC:1')).not.toBeNull()
+    expect(await readDataDetail(target, 'd1')).not.toBeNull()
+  })
+})
+
 describe('workspace lists', () => {
   it('round-trips per account', async () => {
     rememberWorkspace({
