@@ -4,7 +4,8 @@ use derive_new::new;
 use tachyon_sdk::auth::{
     AttachSaPolicyInput, AuthApp, CheckPolicyInput,
     CreatePublicApiKeyInput, CreateServiceAccountInput,
-    DeleteServiceAccountInput, ServiceAccount,
+    DeleteServiceAccountInput, GetServiceAccountByNameInput,
+    ServiceAccount,
 };
 use tachyon_sdk::auth::{PolicyId, PublicApiKey};
 use value_object::{Identifier, TenantId};
@@ -13,7 +14,10 @@ use tachyon_sdk::auth::MultiTenancy;
 
 use super::api_key_issuer::grant_api_key_policy;
 use super::GetOrganizationByUsernameQuery;
-use crate::domain::{ApiKeyRole, ApiKeyServiceAccount, LIBRARY_TENANT};
+use crate::domain::{
+    ApiKeyRole, ApiKeyServiceAccount, LEGACY_API_KEY_SERVICE_ACCOUNT_NAME,
+    LIBRARY_TENANT,
+};
 
 #[derive(Debug, Clone)]
 pub struct CreateApiKeyInputData<'a> {
@@ -128,13 +132,7 @@ impl CreateApiKeyInputPort for CreateApiKey {
         // Every key gets an account of its own, so what is granted here
         // reaches this key and no other (see `ApiKeyServiceAccount`).
         let service_account = self
-            .auth_app
-            .create_service_account(&CreateServiceAccountInput {
-                executor: input.executor,
-                multi_tenancy: &org_scope,
-                tenant_id: &tenant_id,
-                name: &ApiKeyServiceAccount::new_name(input.role),
-            })
+            .service_account_for_key(input, &org_scope, &tenant_id)
             .await?;
 
         match self
@@ -165,6 +163,54 @@ impl CreateApiKeyInputPort for CreateApiKey {
 }
 
 impl CreateApiKey {
+    /// The account the key is issued on: its own, or, for a key that
+    /// carries no access and whose holder may not make one, the shared
+    /// account every key used to be issued on.
+    ///
+    /// Creating an account is an organization owner's to do, and a key
+    /// without a role is not. Such a key grants nothing, so where it
+    /// lives decides nothing either, and the shared account -- which
+    /// carries no policy -- is where keys like it have always gone. A key
+    /// with a role never falls back: its access has to reach that key
+    /// alone.
+    async fn service_account_for_key<'a>(
+        &self,
+        input: &CreateApiKeyInputData<'a>,
+        org_scope: &MultiTenancy,
+        tenant_id: &TenantId,
+    ) -> errors::Result<ServiceAccount> {
+        let own = self
+            .auth_app
+            .create_service_account(&CreateServiceAccountInput {
+                executor: input.executor,
+                multi_tenancy: org_scope,
+                tenant_id,
+                name: &ApiKeyServiceAccount::new_name(input.role),
+            })
+            .await;
+
+        let error = match own {
+            Ok(service_account) => return Ok(service_account),
+            Err(error) if input.role.is_some() => return Err(error),
+            Err(error) => error,
+        };
+
+        tracing::info!(
+            error = %error,
+            "no account of its own for a key without a role; using the shared one"
+        );
+
+        self.auth_app
+            .get_service_account_by_name(&GetServiceAccountByNameInput {
+                executor: input.executor,
+                multi_tenancy: org_scope,
+                tenant_id,
+                name: LEGACY_API_KEY_SERVICE_ACCOUNT_NAME,
+            })
+            .await?
+            .ok_or(error)
+    }
+
     /// Grant before issuing, so a refused grant never hands out a key
     /// without the access it promised.
     async fn grant_and_issue<'a>(
@@ -211,9 +257,11 @@ impl CreateApiKey {
         service_account: &ServiceAccount,
     ) {
         if input.role.is_none() {
+            // It may be the shared account, which is not this key's to
+            // remove, and an account of its own is empty and inert.
             tracing::info!(
                 service_account = %service_account.id(),
-                "left the empty service account of a key that was not issued"
+                "left the service account of a key that was not issued"
             );
             return;
         }
@@ -332,6 +380,23 @@ mod tests {
                 })
             }
         });
+        auth.expect_get_service_account_by_name().returning({
+            let calls = calls.clone();
+            let tenant_id = tenant_id.clone();
+            move |input| {
+                calls
+                    .lock()
+                    .unwrap()
+                    .push(format!("find-sa:{}", input.name));
+                let sa = ServiceAccount {
+                    id: "sa_01default".to_string().into(),
+                    tenant_id: tenant_id.clone(),
+                    name: input.name.to_string(),
+                    created_at: chrono::Utc::now(),
+                };
+                Box::pin(async move { Ok(Some(sa)) })
+            }
+        });
         auth.expect_create_service_account().returning({
             let calls = calls.clone();
             let tenant_id = tenant_id.clone();
@@ -340,6 +405,11 @@ mod tests {
                 let role = ApiKeyServiceAccount::from_name(input.name)
                     .and_then(ApiKeyServiceAccount::role);
                 calls.lock().unwrap().push(format!("sa:{role:?}"));
+                if deny == Some("sa") {
+                    return Box::pin(async {
+                        Err(errors::Error::forbidden("denied"))
+                    });
+                }
                 let sa = ServiceAccount {
                     id: "sa_01key".to_string().into(),
                     tenant_id: tenant_id.clone(),
@@ -506,6 +576,41 @@ mod tests {
             .unwrap()
             .iter()
             .any(|call| call.starts_with("key:")));
+    }
+
+    /// Making an account is an owner's to do, and a key without a role is
+    /// not: it goes where keys like it have always gone, which grants it
+    /// nothing it would not have had.
+    #[tokio::test]
+    async fn a_key_without_a_role_falls_back_to_the_shared_account() {
+        let calls = Calls::default();
+        let output = create(auth(&calls, Some("sa")), None).await.unwrap();
+
+        assert_eq!(output.role, None);
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("grant:pol_01accounts@{}", org_tenant()),
+                "sa:None".to_string(),
+                "find-sa:default".to_string(),
+                "key:sa_01default".to_string(),
+            ]
+        );
+    }
+
+    /// A key with a role has to reach that key alone, so it never shares.
+    #[tokio::test]
+    async fn a_role_key_is_refused_rather_than_sharing_an_account() {
+        let calls = Calls::default();
+        let result =
+            create(auth(&calls, Some("sa")), Some(ApiKeyRole::Writer))
+                .await;
+
+        assert!(matches!(result, Err(errors::Error::Forbidden { .. })));
+        let calls = calls.lock().unwrap();
+        assert!(!calls.iter().any(|call| call.starts_with("find-sa:")));
+        assert!(!calls.iter().any(|call| call.starts_with("key:")));
     }
 
     #[tokio::test]
