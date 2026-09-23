@@ -51,18 +51,21 @@ policies:
   # Applied 2026-09-23 as pol_01m36cff1vb3eftr27p4f12t1a
   # (`LIBRARY_API_KEY_ACCOUNTS_POLICY_ID` overrides it).
   #
-  # Every key gets a service account of its own, so creating one is part
-  # of issuing any key -- including a key with no repository access, whose
-  # holder is not an owner and gets nothing else. Separate from the issuer
-  # policy because an account created alone carries no policy, while
-  # attaching one to it is an owner's to do.
+  # Every key with a role gets a service account of its own, and creating
+  # one is part of issuing it. Separate from the issuer policy because an
+  # account created alone carries no policy, while attaching one to it is
+  # an owner's to do -- but granted after the same
+  # `library:ManageRepoPolicy` check, because an account is what a role is
+  # attached to. A member issuing a key without a role is given nothing,
+  # and their key goes on the shared account, as it always did.
   #
-  # Creating an account is all this carries: an account made alone holds
-  # no policy and authenticates nobody until a key is issued on it, and
-  # issuing that key is authorized separately.
+  # An apply updates a policy's actions but does not remove what an
+  # earlier manifest declared (the CLI says as much), so an action taken
+  # out of this list stays attached upstream until someone removes it by
+  # hand. `auth:CreatePublicApiKey` was here and is one of those.
   - name: library:ApiKeyAccounts
     namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
-    description: Allow Library organization members to create the service account behind an API key they issue
+    description: Allow Library organization owners to create the service account behind an API key they issue
     shared: true
     actions:
       - action: auth:CreateServiceAccount
