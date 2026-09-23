@@ -24,6 +24,7 @@ import {
   rememberDataDetail,
   rememberRepoTable,
   rememberWorkspace,
+  warmDataDetails,
 } from './libraryReadCache'
 
 const auth = vi.hoisted(() => ({ userId: 'user-a' as string | null }))
@@ -399,6 +400,38 @@ describe('across a restart', () => {
       expect((await readRepoTable(target))?.items.map((item) => item.id)).toEqual(['d1'])
       expect(peekRepoTable(target)?.totalItems).toBe(1)
       expect((await readDataDetail(target, 'd1'))?.complete).toBe(true)
+    } finally {
+      await engine.reset()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('has the record, not its row, to peek once the table has warmed the pages', async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'library-read-cache-'))
+    const open = async () => {
+      await engine.reset()
+      engine.configure({
+        storage: await createPGliteStore({ dataDir }),
+        kernel: await loadPhotonKernel(),
+        skipLegacyMigration: true,
+      })
+    }
+    try {
+      await open()
+      rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
+      await rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'the whole body'), properties })
+      await settle()
+
+      await open()
+      // The table has been drawn; the record pages have not been read yet.
+      await readRepoTable(target)
+      expect(peekDataDetail(target, 'd1')?.complete).toBe(false)
+
+      warmDataDetails()
+
+      await vi.waitFor(() => {
+        expect(peekDataDetail(target, 'd1')?.complete).toBe(true)
+      })
     } finally {
       await engine.reset()
       await rm(dataDir, { recursive: true, force: true })

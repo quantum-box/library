@@ -49,6 +49,7 @@ import {
   peekRepoTable,
   readRepoTable,
   rememberRepoTable,
+  warmDataDetails,
   type CachedRepoTable,
 } from '../lib/libraryReadCache'
 import {
@@ -389,6 +390,11 @@ function RepositoryTable({
       if (token === listing.current) setRefreshing(false)
     }
   }, [repoTarget, setSource])
+
+  // The rows here open onto record pages; have theirs ready to draw.
+  useEffect(() => {
+    warmDataDetails()
+  }, [])
 
   /**
    * The remembered table, for the mount that could not have it at once.
