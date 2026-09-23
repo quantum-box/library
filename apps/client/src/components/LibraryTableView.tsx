@@ -542,7 +542,7 @@ function RepositoryTable({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, pendingDelete.id)
-      forgetData({ org, repo }, pendingDelete.id)
+      void forgetData({ org, repo }, pendingDelete.id)
       setItems((current) => current.filter((row) => row.id !== pendingDelete.id))
       onDataDeleted?.(pendingDelete.id)
       setPendingDelete(null)

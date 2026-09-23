@@ -116,8 +116,8 @@ function detailKey(target: ReadCacheRepository, dataId: string): string {
 function remember<T>(
   collection: string,
   items: readonly { recordId: string; value: T; deleted?: boolean }[]
-): void {
-  void ingestClientEngineRecords(collection, items).catch((error: unknown) => {
+): Promise<void> {
+  return ingestClientEngineRecords(collection, items).catch((error: unknown) => {
     console.warn(`Failed to cache ${collection}`, error)
   })
 }
@@ -152,7 +152,7 @@ export function rememberRepoTable(
   target: ReadCacheRepository,
   table: CachedRepoTable
 ): void {
-  remember(TABLES_COLLECTION, [{ recordId: tableKey(target), value: table }])
+  void remember(TABLES_COLLECTION, [{ recordId: tableKey(target), value: table }])
 }
 
 /**
@@ -216,7 +216,7 @@ export function rememberDataDetail(
 ): void {
   const ids = new Set([requestedId, detail.item.id])
   const value: CachedDataDetail = { ...detail, complete: true, ids: [...ids] }
-  remember(
+  void remember(
     DETAILS_COLLECTION,
     [...ids].map((dataId) => ({ recordId: detailKey(target, dataId), value }))
   )
@@ -269,11 +269,14 @@ async function trimDetails(): Promise<void> {
 /**
  * Forget a record that has been deleted, so that no screen draws it again.
  *
+ * Resolves once no screen can: a caller about to navigate to the table the
+ * record was in waits for this, or the table would open on the row.
+ *
  * Its row goes too: the table would otherwise open on it next time and keep
  * it on screen until the listing came back without it.
  */
-export function forgetData(target: ReadCacheRepository, dataId: string): void {
-  void forgetDataNow(target, dataId)
+export function forgetData(target: ReadCacheRepository, dataId: string): Promise<void> {
+  return forgetDataNow(target, dataId)
 }
 
 async function forgetDataNow(target: ReadCacheRepository, dataId: string): Promise<void> {
@@ -281,7 +284,7 @@ async function forgetDataNow(target: ReadCacheRepository, dataId: string): Promi
   // other names are only known from it.
   const page = await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, dataId))
   const ids = new Set([dataId, ...(page?.ids ?? []), ...(page ? [page.item.id] : [])])
-  remember(
+  await remember(
     DETAILS_COLLECTION,
     [...ids].map((id) => ({ recordId: detailKey(target, id), value: null, deleted: true }))
   )
@@ -289,11 +292,11 @@ async function forgetDataNow(target: ReadCacheRepository, dataId: string): Promi
   if (table?.items.some((row) => ids.has(row.id))) {
     const items = table.items.filter((row) => !ids.has(row.id))
     const removed = table.items.length - items.length
-    rememberRepoTable(target, {
+    await remember(TABLES_COLLECTION, [{ recordId: tableKey(target), value: {
       ...table,
       items,
       totalItems: table.totalItems === null ? null : Math.max(0, table.totalItems - removed),
-    })
+    } }])
   }
 }
 
@@ -309,7 +312,7 @@ export function readWorkspace(): Promise<CachedWorkspace | null> {
 }
 
 export function rememberWorkspace(workspace: CachedWorkspace): void {
-  remember(WORKSPACE_COLLECTION, [{ recordId: workspaceKey(), value: workspace }])
+  void remember(WORKSPACE_COLLECTION, [{ recordId: workspaceKey(), value: workspace }])
 }
 
 export const __testOnly = {

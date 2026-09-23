@@ -37,7 +37,7 @@ const cache = vi.hoisted(() => ({
     async () => null
   ),
   rememberDataDetail: vi.fn(),
-  forgetData: vi.fn(),
+  forgetData: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
 }))
 
 vi.mock('../lib/libraryReadCache', () => cache)
@@ -229,6 +229,36 @@ describe('DataEditorPage', () => {
       expect(screen.queryByText('Remembered title')).not.toBeInTheDocument()
     })
     expect(cache.forgetData).toHaveBeenCalledWith({ org: 'acme', repo: 'docs' }, 'data-1')
+  })
+
+  /**
+   * The table a deletion goes back to draws from the cache in its first frame,
+   * so the record has to be gone from the cache before the page leaves.
+   */
+  it('forgets a deleted record before leaving the page', async () => {
+    mocks.fetchLibraryDataDetail.mockResolvedValue({ item: record('Title', 'body'), properties })
+    mocks.deleteLibraryData.mockResolvedValue(undefined)
+    let forgotten!: () => void
+    cache.forgetData.mockReturnValue(new Promise<void>((resolve) => {
+      forgotten = resolve
+    }))
+    const onBack = vi.fn()
+    render(<DataEditorPage dataId="data-1" org="acme" repo="docs" onBack={onBack} />)
+    await waitFor(() => {
+      expect(screen.getByText('Title')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete data' }))
+    fireEvent.click(screen.getByTestId('library-delete-dialog-confirm'))
+    await waitFor(() => {
+      expect(cache.forgetData).toHaveBeenCalledWith({ org: 'acme', repo: 'docs' }, 'data-1')
+    })
+    expect(onBack).not.toHaveBeenCalled()
+
+    forgotten()
+    await waitFor(() => {
+      expect(onBack).toHaveBeenCalled()
+    })
   })
 
   it('reads the store when the record could not be had at once', async () => {

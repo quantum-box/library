@@ -285,7 +285,7 @@ function RecordPage({
         })
       } else {
         // Gone upstream, so nothing may draw it from memory again.
-        forgetData({ org, repo }, dataId)
+        void forgetData({ org, repo }, dataId)
         setLoadError(`${dataId} is not available in ${org}/${repo}.`)
       }
     } catch (error: unknown) {
@@ -405,7 +405,9 @@ function RecordPage({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, item.id)
-      forgetData({ org, repo }, item.id)
+      // Before leaving: the table this goes back to draws from the cache in
+      // its first frame, and the row must be gone from it by then.
+      await forgetData({ org, repo }, item.id)
       setDeleteOpen(false)
       onBack()
     } catch (error: unknown) {

@@ -13,6 +13,7 @@ import {
 } from '../lib/recordsApi'
 import { deleteRepository as deleteLibraryRepository } from '../lib/repositorySettingsApi'
 import { readWorkspace, rememberWorkspace } from '../lib/libraryReadCache'
+import { loadStoredAuthIdentity } from '../lib/auth'
 import { t } from '../i18n'
 import {
   loadSelectedOrganization,
@@ -128,6 +129,10 @@ export function resolveSelectedOrganizationId(
   return orgs.find((org) => org.repos.length > 0)?.id ?? orgs[0]?.id ?? null
 }
 
+function currentViewer(): string | null {
+  return loadStoredAuthIdentity()?.userId ?? null
+}
+
 function repositoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
   return t('errors.loadRepositories')
@@ -169,6 +174,8 @@ export function DatabasesProvider({
    * nothing, and a failed request leaves it where it is.
    */
   const listsSource = useRef<'none' | 'cached' | 'listed'>('none')
+  /** Whose lists those are: a failed refresh keeps only the same account's. */
+  const listsViewer = useRef<string | null>(null)
 
   const showLists = useCallback((repos: LibraryRepository[], orgs: LibraryOrganization[]) => {
     setOrganizations(uniqueOrganizations(orgs))
@@ -199,14 +206,17 @@ export function DatabasesProvider({
       ])
       if (requestGeneration !== repositoriesRequestGeneration.current) return
       listsSource.current = 'listed'
+      listsViewer.current = currentViewer()
       showLists(repos, orgs)
       rememberWorkspace({ repositories: repos, organizations: orgs })
     } catch (error: unknown) {
       if (requestGeneration !== repositoriesRequestGeneration.current) return
       console.warn('Failed to load Library repositories', error)
-      // The remembered lists stay up rather than an error in their place: a
-      // repository URL still resolves, and the sidebar still leads somewhere.
-      if (listsSource.current === 'cached') return
+      // The lists on screen stay up rather than an error in their place --
+      // remembered or listed, a repository URL still resolves and the sidebar
+      // still leads somewhere. Only the same account's, though: after an
+      // account change they are someone else's, and go as before.
+      if (listsSource.current !== 'none' && listsViewer.current === currentViewer()) return
       setRepositoriesError(repositoryLoadErrorMessage(error))
       setOrganizations([])
       // Load failures are transient; keep the persisted choice for the retry.
@@ -231,6 +241,7 @@ export function DatabasesProvider({
     void readWorkspace().then((cached) => {
       if (cancelled || !cached || listsSource.current !== 'none') return
       listsSource.current = 'cached'
+      listsViewer.current = currentViewer()
       showLists(cached.repositories, cached.organizations)
       setRepositoriesLoading(false)
       // A request that failed before these arrived: the lists take the

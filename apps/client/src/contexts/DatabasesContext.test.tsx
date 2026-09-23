@@ -279,6 +279,32 @@ describe('DatabasesProvider', () => {
     })
   })
 
+  /**
+   * A refresh that fails -- a token refresh blip, a dropped connection -- must
+   * not take away lists the same account already has on screen.
+   */
+  it('keeps listed repositories when a later refresh fails', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+    })
+
+    mocks.fetchLibraryRepositories.mockRejectedValueOnce(new Error('GraphQL unavailable'))
+    await act(async () => {
+      screen.getByTestId('refresh').click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false')
+    })
+    expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+    expect(screen.getByTestId('error')).toHaveTextContent('')
+  })
+
   it('surfaces load errors and retries with fetchLibraryRepositories', async () => {
     mocks.fetchLibraryRepositories
       .mockRejectedValueOnce(new Error('GraphQL unavailable'))
