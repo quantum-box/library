@@ -32,7 +32,8 @@ interface TableViewProps {
   selectedRecordId: string | null
   onSelectRecord: (record: DatabaseRecord) => void
   onUpdateRecord: (recordId: string, field: keyof DatabaseRecord, value: string) => void
-  onCreateRecord: (data: { title: string }) => void
+  /** "New data": the caller asks where it goes and opens it once created. */
+  onRequestCreate: () => void
   sorting?: SortingState
   onSortingChange?: OnChangeFn<SortingState>
   globalFilter?: string
@@ -477,7 +478,7 @@ export function TableView({
   selectedRecordId,
   onSelectRecord,
   onUpdateRecord,
-  onCreateRecord,
+  onRequestCreate,
   sorting: controlledSorting,
   onSortingChange: controlledOnSortingChange,
   globalFilter: controlledGlobalFilter,
@@ -492,17 +493,8 @@ export function TableView({
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('')
   const globalFilter = controlledGlobalFilter ?? internalGlobalFilter
   const setGlobalFilter = controlledOnGlobalFilterChange ?? setInternalGlobalFilter
-  const [creatingDatabaseRecord, setCreatingDatabaseRecord] = useState(false)
-  const [newRecordTitle, setNewRecordTitle] = useState('')
   const parentRef = useRef<HTMLDivElement>(null)
-  const newRecordInputRef = useRef<HTMLInputElement>(null)
   const isMobileViewport = useIsMobileViewport()
-
-  useEffect(() => {
-    if (creatingDatabaseRecord && newRecordInputRef.current) {
-      newRecordInputRef.current.focus()
-    }
-  }, [creatingDatabaseRecord])
 
   const columns = useMemo(
     () => [
@@ -640,15 +632,6 @@ export function TableView({
     overscan: 20,
   })
 
-  const handleCreateSubmit = useCallback(() => {
-    const trimmed = newRecordTitle.trim()
-    if (trimmed) {
-      onCreateRecord({ title: trimmed })
-      setNewRecordTitle('')
-      setCreatingDatabaseRecord(false)
-    }
-  }, [newRecordTitle, onCreateRecord])
-
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -689,37 +672,13 @@ export function TableView({
                 visibleProperties={visibleProperties}
               />
             ))}
-            {creatingDatabaseRecord ? (
-              <input
-                ref={newRecordInputRef}
-                type="text"
-                value={newRecordTitle}
-                onChange={(e) => setNewRecordTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreateSubmit()
-                  if (e.key === 'Escape') {
-                    setCreatingDatabaseRecord(false)
-                    setNewRecordTitle('')
-                  }
-                }}
-                onBlur={() => {
-                  if (!newRecordTitle.trim()) {
-                    setCreatingDatabaseRecord(false)
-                    setNewRecordTitle('')
-                  }
-                }}
-                placeholder={t('table.newRecordPlaceholder')}
-                className="w-full rounded-md border border-accent bg-canvas px-3 py-2 text-sm text-foreground outline-none"
-              />
-            ) : (
-              <button
-                className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border px-3 py-3 text-xs text-subtle transition-colors hover:border-accent hover:text-foreground"
-                onClick={() => setCreatingDatabaseRecord(true)}
-              >
-                <span>+</span>
-                <span>{t('data.new')}</span>
-              </button>
-            )}
+            <button
+              className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border px-3 py-3 text-xs text-subtle transition-colors hover:border-accent hover:text-foreground"
+              onClick={onRequestCreate}
+            >
+              <span>+</span>
+              <span>{t('data.new')}</span>
+            </button>
           </div>
         </div>
       )}
@@ -831,37 +790,13 @@ export function TableView({
               {/* New data row */}
               <tr className="border-b border-border" style={{ height: ROW_HEIGHT }}>
                 <td colSpan={table.getVisibleLeafColumns().length} className="px-3 py-1.5">
-                  {creatingDatabaseRecord ? (
-                    <input
-                      ref={newRecordInputRef}
-                      type="text"
-                      value={newRecordTitle}
-                      onChange={(e) => setNewRecordTitle(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleCreateSubmit()
-                        if (e.key === 'Escape') {
-                          setCreatingDatabaseRecord(false)
-                          setNewRecordTitle('')
-                        }
-                      }}
-                      onBlur={() => {
-                        if (!newRecordTitle.trim()) {
-                          setCreatingDatabaseRecord(false)
-                          setNewRecordTitle('')
-                        }
-                      }}
-                      placeholder={t('table.newRecordPlaceholder')}
-                      className="w-full px-2 py-1 rounded text-sm outline-none bg-canvas border border-accent text-foreground max-w-lg"
-                    />
-                  ) : (
-                    <button
-                      className="flex items-center gap-1 text-xs cursor-pointer transition-colors text-subtle hover:text-foreground"
-                      onClick={() => setCreatingDatabaseRecord(true)}
-                    >
-                      <span>+</span>
-                      <span>{t('data.new')}</span>
-                    </button>
-                  )}
+                  <button
+                    className="flex items-center gap-1 text-xs cursor-pointer transition-colors text-subtle hover:text-foreground"
+                    onClick={onRequestCreate}
+                  >
+                    <span>+</span>
+                    <span>{t('data.new')}</span>
+                  </button>
                 </td>
               </tr>
             </tbody>

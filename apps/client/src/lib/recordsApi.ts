@@ -2735,7 +2735,9 @@ async function seedLibraryRecord(
  * repository it is showing. The environment only stands in for a build pinned
  * to a single repository.
  */
-export async function createServerRecord(data: ServerCreateRecordData): Promise<DatabaseRecord> {
+export async function createServerRecordWithDelivery(
+  data: ServerCreateRecordData
+): Promise<CreatedServerRecord> {
   const requested: LibraryRepoTarget | undefined =
     data.orgUsername && data.repoUsername
       ? { org: data.orgUsername, repo: data.repoUsername, operatorId: data.operatorId }
@@ -2775,14 +2777,15 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
       operatorId: target.operatorId,
     }
 
-    return settleRecordWrite(
-      await upsertAndPushClientEngineRecord<DatabaseRecord>(
-        libraryRecordsCollection(repository.databaseId),
-        recordId,
-        record
-      ),
+    const outcome = await upsertAndPushClientEngineRecord<DatabaseRecord>(
+      libraryRecordsCollection(repository.databaseId),
+      recordId,
       record
     )
+    return {
+      record: settleRecordWrite(outcome, record),
+      delivered: outcome.status === 'accepted',
+    }
   }
 
   const records = (await listClientEngineRecords<DatabaseRecord>('records')).map((record) => record.value)
@@ -2804,7 +2807,22 @@ export async function createServerRecord(data: ServerCreateRecordData): Promise<
     operatorId: data.operatorId,
   }
   const storedRecord = await upsertClientEngineRecord('records', record.id, record)
-  return storedRecord.value
+  return { record: storedRecord.value, delivered: false }
+}
+
+export interface CreatedServerRecord {
+  record: DatabaseRecord
+  /**
+   * Whether library-api has accepted the record. A create made offline is
+   * kept and queued, so it is on screen but not yet something the API can
+   * answer for -- a page that reads the record from the API has to wait.
+   */
+  delivered: boolean
+}
+
+/** {@link createServerRecordWithDelivery}, for callers that only need the record. */
+export async function createServerRecord(data: ServerCreateRecordData): Promise<DatabaseRecord> {
+  return (await createServerRecordWithDelivery(data)).record
 }
 
 /**
