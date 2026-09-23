@@ -647,13 +647,18 @@ function withUniqueBlockIds(blocks: BodyEditor['document']): BodyEditor['documen
  * visible changes -- no remount, no lost caret, no broken composition.
  */
 /** BlockNote's YUndoExtension, on a given undo manager. */
-const RoomUndoExtension = createExtension(({ options }: { options: { undoManager: Y.UndoManager } }) => ({
-  key: 'yUndo',
-  prosemirrorPlugins: [yUndoPlugin({ undoManager: options.undoManager })],
-  dependsOn: ['yCursor', 'ySync'],
-  undoCommand,
-  redoCommand,
-} as const))
+function roomUndoExtension(undoManager: Y.UndoManager): ReturnType<typeof YUndoExtension> {
+  // Same shape as YUndoExtension; typed as it, since BlockNote's source and
+  // built typings disagree on this overload's arity.
+  const factory = createExtension({
+    key: 'yUndo',
+    prosemirrorPlugins: [yUndoPlugin({ undoManager })],
+    dependsOn: ['yCursor', 'ySync'],
+    undoCommand,
+    redoCommand,
+  } as const) as unknown as typeof YUndoExtension
+  return factory()
+}
 
 function bindEditorToRoom(
   editor: BodyEditor,
@@ -669,7 +674,7 @@ function bindEditorToRoom(
       provider: { awareness: provider.awareness },
       showCursorLabels: 'activity',
     }),
-    undoManager ? RoomUndoExtension({ undoManager }) : YUndoExtension(),
+    undoManager ? roomUndoExtension(undoManager) : YUndoExtension(),
   ])
 }
 
