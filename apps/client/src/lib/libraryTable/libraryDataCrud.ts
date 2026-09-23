@@ -136,10 +136,20 @@ async function libraryRestHeaders(operatorId?: string): Promise<Record<string, s
   return headers
 }
 
+/**
+ * Browsers refuse a keepalive request whose body exceeds 64 KiB. Past this,
+ * the request goes out as an ordinary one, which an unloading page may cut.
+ */
+const KEEPALIVE_BODY_LIMIT = 60 * 1024
+
+function keepaliveFor(body: string, keepalive: boolean | undefined): boolean {
+  return Boolean(keepalive) && new TextEncoder().encode(body).byteLength <= KEEPALIVE_BODY_LIMIT
+}
+
 async function requestLibraryGraphQL<TData>(
   query: string,
   variables: Record<string, unknown>,
-  options?: { operatorId?: string }
+  options?: { operatorId?: string; keepalive?: boolean }
 ): Promise<TData> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
@@ -150,11 +160,13 @@ async function requestLibraryGraphQL<TData>(
   if (token) headers.Authorization = `Bearer ${token}`
 
   let response: Response
+  const body = JSON.stringify({ query, variables })
   try {
     response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, variables }),
+      body,
+      keepalive: keepaliveFor(body, options?.keepalive),
     })
   } catch (error: unknown) {
     const detail = error instanceof Error ? `: ${error.message}` : ''
@@ -424,7 +436,9 @@ export async function addLibraryData(
 export async function updateLibraryData(
   target: LibraryRepoTarget,
   properties: LibraryProperty[],
-  item: LibraryDataItem
+  item: LibraryDataItem,
+  /** `keepalive`: the page is unloading; let the request outlive it. */
+  options?: { keepalive?: boolean }
 ): Promise<LibraryDataItem> {
   const propertyData = knownPropertyData(properties, item.propertyData, 'update')
   try {
@@ -440,7 +454,7 @@ export async function updateLibraryData(
           propertyData: graphqlPropertyPayload(properties, propertyData),
         },
       },
-      { operatorId: target.operatorId }
+      { operatorId: target.operatorId, keepalive: options?.keepalive }
     )
     if (!payload.updateData) {
       throw new RecordApiError(
@@ -454,15 +468,17 @@ export async function updateLibraryData(
     if (!shouldFallbackLibraryRequest(error, 'update')) throw error
   }
 
+  const restBody = JSON.stringify({
+    name: item.name,
+    property_data: restPropertyPayload(properties, propertyData),
+  })
   const response = await fetch(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${item.id}`,
     {
       method: 'PUT',
       headers: await libraryRestHeaders(target.operatorId),
-      body: JSON.stringify({
-        name: item.name,
-        property_data: restPropertyPayload(properties, propertyData),
-      }),
+      body: restBody,
+      keepalive: keepaliveFor(restBody, options?.keepalive),
     }
   )
   if (!response.ok) {

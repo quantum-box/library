@@ -88,7 +88,13 @@ const MAX_PERMANENT_FAILURES = 3
 /** Checkpoints rejected in a row before the body is saved normally instead. */
 const MAX_CHECKPOINT_ERRORS = 2
 
-export type CommitRest = (body: string) => Promise<boolean> | boolean | void
+export type CommitRest = (
+  body: string,
+  options?: { keepalive?: boolean },
+) => Promise<boolean> | boolean | void
+
+/** Why the editor is flushing: see `LiveBodySession.flush`. */
+export type FlushReason = 'hidden' | 'leaving' | 'unloading'
 
 export interface LiveBodySessionOptions {
   /** Owned by the session: the local document the editor starts on. */
@@ -311,29 +317,45 @@ export class LiveBodySession {
   }
 
   /**
-   * Save what can be saved now: the page is hidden or going away. A room
-   * sends its checkpoint; edits held for a room go through the ordinary body,
-   * except while they may conflict with a body changed elsewhere.
+   * Save what can be saved now.
+   *
+   * - `hidden`: the page may come back. A room sends its checkpoint; edits
+   *   held for a room go through the ordinary body.
+   * - `leaving`: this editor unmounts in a page that stays. As `hidden`, and
+   *   a disconnected room's body is saved normally; a connected room is kept
+   *   open until it acknowledges (see `drain`).
+   * - `unloading`: the page is going away and its socket with it, whether or
+   *   not the room received the last body. Anything the room has not
+   *   acknowledged is saved normally too, in a request that outlives the page.
+   *
+   * Never while the body may conflict with one changed elsewhere.
    */
-  flush({ leaving = false }: { leaving?: boolean } = {}): void {
+  flush({ reason = 'hidden' }: { reason?: FlushReason } = {}): void {
     if (this.disposed) return
+    const keepalive = reason === 'unloading'
     if (this.mode === 'live' && this.bound) {
       const provider = this.bound.provider
       if (provider.destroyed) {
         // Gone before its last body was acknowledged; it cannot send it now.
         const onScreen = this.bodyOnScreen()
-        if (onScreen !== null && !this.same(onScreen, this.durable)) this.commitRest(onScreen)
+        if (onScreen !== null && !this.same(onScreen, this.durable)) {
+          this.commitRest(onScreen, { keepalive })
+        }
         return
       }
       provider.flushCheckpoint()
       const unsent = provider.unsentBody()
-      // A room that is not connected cannot take it before the page is gone.
-      if (leaving && unsent !== null && provider.getState().status !== 'connected') {
-        this.commitRest(this.lastQueued ?? unsent)
+      if (unsent === null || reason === 'hidden') return
+      if (reason === 'unloading' || provider.getState().status !== 'connected') {
+        this.commitRest(this.lastQueued ?? unsent, { keepalive })
       }
       return
     }
-    if (!this.canonicalConflict) this.releaseHold()
+    if (this.canonicalConflict) return
+    const body = this.held
+    if (body === null) return
+    this.dropHold()
+    this.commitRest(body, { keepalive })
   }
 
   /** A binding deferred for an open composition can happen now. */
@@ -462,7 +484,7 @@ export class LiveBodySession {
     this.graceExpired = false
   }
 
-  private commitRest(body: string): void {
+  private commitRest(body: string, options?: { keepalive?: boolean }): void {
     if (body === this.durable && this.restInFlight === 0) return
     // Leaving can reach this twice for one body (the page's flush, then the
     // room's drain). One save of it in flight is enough.
@@ -472,7 +494,7 @@ export class LiveBodySession {
     this.restPending = body
     let result: ReturnType<CommitRest>
     try {
-      result = this.commitRestImpl(body)
+      result = this.commitRestImpl(body, options)
     } catch {
       result = false
     }

@@ -556,12 +556,12 @@ describe('LiveBodySession', () => {
     expect(h.rest).toEqual(['Base unmounted early'])
   })
 
-  it('flushes a connected room instead of saving normally when the page is hidden', () => {
+  it('flushes a connected room instead of saving normally when the editor unmounts', () => {
     const h = harness()
     h.session.start()
     h.rooms[0].ready()
     h.type('Base last edit')
-    h.session.flush({ leaving: true })
+    h.session.flush({ reason: 'leaving' })
     expect(h.rooms[0].flushed).toBe(1)
     expect(h.rest).toEqual([])
   })
@@ -573,9 +573,34 @@ describe('LiveBodySession', () => {
     // The provider's own pagehide handler ran first.
     h.rooms[0].destroy()
     h.type('Base typed just before closing')
-    h.session.flush({ leaving: true })
+    h.session.flush({ reason: 'leaving' })
     expect(h.rooms[0].queued).toEqual([])
     expect(h.rest).toEqual(['Base typed just before closing'])
+  })
+
+  it('also saves an unacknowledged body normally when the page unloads', () => {
+    const h = harness()
+    const calls: Array<{ body: string; keepalive?: boolean }> = []
+    h.session.setCommitRest((body, options) => {
+      calls.push({ body, keepalive: options?.keepalive })
+      return true
+    })
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base sent but not acknowledged')
+    h.session.flush({ reason: 'unloading' })
+    expect(h.rooms[0].flushed).toBe(1)
+    expect(calls).toEqual([{ body: 'Base sent but not acknowledged', keepalive: true }])
+  })
+
+  it('does not save normally on unload once the room acknowledged the body', () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base acknowledged')
+    h.rooms[0].ack()
+    h.session.flush({ reason: 'unloading' })
+    expect(h.rest).toEqual([])
   })
 
   it('saves normally when leaving while the room is disconnected', () => {
@@ -584,7 +609,7 @@ describe('LiveBodySession', () => {
     h.rooms[0].ready()
     h.type('Base typed offline')
     h.rooms[0].set({ status: 'disconnected' })
-    h.session.flush({ leaving: true })
+    h.session.flush({ reason: 'leaving' })
     expect(h.rest).toEqual(['Base typed offline'])
   })
 
@@ -643,7 +668,7 @@ describe('LiveBodySession', () => {
     h.rooms[0].ready()
     h.type('Base typed offline')
     h.rooms[0].set({ status: 'disconnected' })
-    h.session.flush({ leaving: true })
+    h.session.flush({ reason: 'leaving' })
     h.session.release()
     vi.advanceTimersByTime(0)
     expect(h.rooms[0].destroyed).toBe(true)

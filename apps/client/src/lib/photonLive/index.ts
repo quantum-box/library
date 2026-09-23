@@ -20,6 +20,7 @@ export {
 export {
   LiveBodySession,
   type CommitRest,
+  type FlushReason,
   type LiveBodyEditorPort,
   type LiveBodyMode,
   type LiveBodySessionOptions,

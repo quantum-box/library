@@ -243,7 +243,7 @@ describe('RecordBodyEditor with Photon Live', () => {
     }))
     type('Typed after Live refused')
     await debounce()
-    expect(onCommit).toHaveBeenCalledWith('Typed after Live refused')
+    expect(onCommit).toHaveBeenCalledWith('Typed after Live refused', undefined)
     expect(getByTestId('data-editor-live-status').textContent).toBe(
       'Shared editing is unavailable. Edits are saved normally',
     )
@@ -270,7 +270,7 @@ describe('RecordBodyEditor with Photon Live', () => {
 
     type('Draft in the room, kept')
     await debounce()
-    expect(onCommit).toHaveBeenCalledWith('Draft in the room, kept')
+    expect(onCommit).toHaveBeenCalledWith('Draft in the room, kept', undefined)
   })
 
   it('says nothing while the room is healthy and idle', async () => {

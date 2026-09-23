@@ -240,7 +240,11 @@ export function DataEditorPage({
    * failed. The Live body session waits on this before opening a room: a
    * room authorized before the save lands would still hold the older body.
    */
-  const persistItem = useCallback((next: LibraryDataItem, carriesBody = false): Promise<boolean> => {
+  const persistItem = useCallback((
+    next: LibraryDataItem,
+    carriesBody = false,
+    options?: { keepalive?: boolean },
+  ): Promise<boolean> => {
     const bodyProperty = getBodyProperty(propertiesRef.current)
     const liveBodyConfigured = Boolean(
       appKitConfig.dataLive.baseUrl &&
@@ -272,7 +276,7 @@ export function DataEditorPage({
     const saving = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext)
+        const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
         // Durable even when a newer save has been queued behind it; only the
         // page state below belongs to the newest one.
         if (revision !== revisionRef.current) return true
@@ -412,14 +416,14 @@ export function DataEditorPage({
     ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
     : undefined
     }
-    onCommit={(value) => {
+    onCommit={(value, options) => {
     const current = itemRef.current
     if (!current) return Promise.resolve(false)
     return persistItem(mergeLibraryDataProperty(
     current,
     bodyProperty.id,
     bodyPropertyValue(bodyProperty, value),
-    ), true)
+    ), true, options)
     }}
     />
     ) : (

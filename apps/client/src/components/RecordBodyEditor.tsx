@@ -9,6 +9,7 @@ import {
 } from '@blocknote/core'
 import { blocksToYDoc, blocksToYXmlFragment, yXmlFragmentToBlocks } from '@blocknote/core/yjs'
 import { merge3 } from '../lib/photonLive/merge3'
+import { comparableBody } from '../lib/photonLive/comparable'
 import {
   SuggestionMenuController,
   getDefaultReactSlashMenuItems,
@@ -74,7 +75,7 @@ export interface RecordBodyEditorProps {
    * so a caller that can tell resolves `true` once it is, `false` if it
    * failed.
    */
-  onCommit: (value: string) => void | Promise<boolean>
+  onCommit: (value: string, options?: { keepalive?: boolean }) => void | Promise<boolean>
   editable?: boolean
   surface?: 'panel' | 'page' | 'fill'
   /** Pin the read-only public reader independently of the OS theme. */
@@ -406,7 +407,11 @@ function BlockRecordBodyEditor({
     liveRef.current = live
   }, [live])
 
-  const flushNow = useCallback((leaving: boolean) => {
+  /**
+   * `hidden`: the page may come back. `leaving`: this editor is unmounting
+   * in a page that stays. `unloading`: the page itself is going away.
+   */
+  const flushNow = useCallback((reason: 'hidden' | 'leaving' | 'unloading') => {
     if (composing.current) {
       // The live composition is not safe to persist, but an ordinary edit may
       // already have been waiting in the debounce when composition started.
@@ -414,18 +419,20 @@ function BlockRecordBodyEditor({
       pendingValue.current = valueBeforeComposition.current
     }
     commitPendingValueRef.current()
-    liveRef.current?.flush({ leaving })
+    liveRef.current?.flush({ reason })
   }, [])
 
-  useEffect(() => () => flushNow(true), [flushNow])
+  useEffect(() => () => flushNow('leaving'), [flushNow])
 
   useEffect(() => {
     if (!live) return
     // Closing a tab, reloading or quitting the app never unmounts React, and
     // a hidden page may never run again. Hand the body over while it can go.
-    const onPageHide = () => flushNow(true)
+    // A page kept in the back/forward cache comes back as it was.
+    const onPageHide = (event: PageTransitionEvent) =>
+      flushNow(event.persisted ? 'hidden' : 'unloading')
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') flushNow(false)
+      if (document.visibilityState === 'hidden') flushNow('hidden')
     }
     // Capture phase: at the window, capturing listeners run before the
     // room's own pagehide listener, which destroys it on unload and would
@@ -572,43 +579,6 @@ function serializeBlocks(
   return editor.blocksToMarkdownLossy(
     withImageWidthFragments(blocks) as typeof blocks,
   )
-}
-
-/**
- * A body as content only, for deciding whether two copies are the same.
- *
- * Seeding a rich text body gives blocks without stored ids fresh random ids,
- * separately in every copy, and BlockNote keeps a trailing empty block with
- * an id of its own. Neither is content. Markdown carries no ids.
- */
-function comparableBody(body: string, format: RecordBodyFormat): string {
-  if (format !== 'richText') return body.replace(/\s+$/, '')
-  let blocks: unknown
-  try {
-    blocks = JSON.parse(body)
-  } catch {
-    return body
-  }
-  if (!Array.isArray(blocks)) return body
-  const content = blocks.map(withoutIds)
-  while (content.length > 0 && isEmptyParagraph(content[content.length - 1])) content.pop()
-  return JSON.stringify(content)
-}
-
-function withoutIds(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutIds)
-  if (!value || typeof value !== 'object') return value
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([key]) => key !== 'id')
-    .map(([key, entry]) => [key, withoutIds(entry)] as const)
-  return Object.fromEntries(entries)
-}
-
-function isEmptyParagraph(block: unknown): boolean {
-  const { type, content, children } = block as { type?: unknown; content?: unknown; children?: unknown }
-  return type === 'paragraph' &&
-    (!Array.isArray(content) || content.length === 0) &&
-    (!Array.isArray(children) || children.length === 0)
 }
 
 /** Parsed body blocks with every default filled in, as a document holds them. */
