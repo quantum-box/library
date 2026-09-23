@@ -194,6 +194,40 @@ describe('remembering a record under more than one name', () => {
   })
 })
 
+describe('trimming a record remembered under two names', () => {
+  afterEach(() => {
+    readCache.setAutoTrim(true)
+  })
+
+  it('keeps or drops its names together', async () => {
+    // Trimmed by hand below, at the one moment that splits the record's names
+    // under an entry-by-entry trim: its two entries straddle the cut.
+    readCache.setAutoTrim(false)
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 5))
+    for (let index = 0; index < 60; index += 1) {
+      rememberDataDetail(target, `old${index}`, { item: row(`old${index}`, 'todo', ''), properties })
+    }
+    await settle()
+    await pause()
+    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await settle()
+    await pause()
+    for (let index = 0; index < readCache.DETAILS_KEPT - 1; index += 1) {
+      rememberDataDetail(target, `new${index}`, { item: row(`new${index}`, 'todo', ''), properties })
+    }
+    await settle()
+
+    await readCache.trimDetails()
+
+    const kept = new Set((await listClientEngineRecords(LIBRARY_READ_DETAILS_COLLECTION)).map((page) => page.recordId))
+    const names = [...kept].filter((key) => key.endsWith(':DOC-1') || key.endsWith(':d1'))
+    expect(names).toHaveLength(2)
+    // The most recent kept, the oldest gone.
+    expect([...kept].filter((key) => /:new\d+$/.test(key))).toHaveLength(readCache.DETAILS_KEPT - 1)
+    expect([...kept].some((key) => /:old\d+$/.test(key))).toBe(false)
+  })
+})
+
 describe('workspace lists', () => {
   it('round-trips per account', async () => {
     rememberWorkspace({
