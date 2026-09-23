@@ -17,6 +17,14 @@ const DOC_REMOTE_ORIGIN = 'photon-live-remote'
 const AWARENESS_REMOTE_ORIGIN = 'photon-live-awareness-remote'
 const MAX_BACKOFF_MS = 30_000
 const INITIAL_BACKOFF_MS = 1_000
+/**
+ * The largest text frame the worker parses (`MAX_TEXT` in
+ * workers/sync/src/model.rs), in UTF-8 bytes. A larger one is refused
+ * before its operation id can be read, so it has to be caught here.
+ */
+const MAX_TEXT_FRAME_BYTES = 4 * 1024 * 1024 + 32 * 1024
+/** What the worker answers a text frame it could not parse at all. */
+const UNPARSED_FRAME_MESSAGE = 'Invalid Live message'
 
 interface LiveReadyMessage {
   type: 'live-ready'
@@ -360,7 +368,8 @@ function randomOperationId(): string {
     `live-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function defaultUser(): { name: string; color: string } {
+/** How this person appears to others in a room. */
+export function defaultUser(): { name: string; color: string } {
   const identity = loadStoredAuthIdentity()
   return {
     name: identity?.username || identity?.email || 'Library user',
@@ -396,6 +405,12 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   get session(): PhotonLiveSession | null {
     return this._session
   }
+  get roomGeneration(): string | null {
+    return this.initialized ? this.validatedGeneration : null
+  }
+  get destroyed(): boolean {
+    return this.disposed
+  }
 
   private readonly target: PhotonLiveRecordTarget
   private readonly format: PhotonLiveFormat
@@ -409,6 +424,10 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null
+  /** flushCheckpoint was asked for a body that has not been sent yet. */
+  private flushRequested = false
+  private checkpointRetryTimer: ReturnType<typeof setTimeout> | null = null
+  private checkpointRetryDelay = INITIAL_BACKOFF_MS
   private attempt: LiveAttempt | null = null
   private _session: PhotonLiveSession | null = null
   private connectionStatus: PhotonLiveConnectionStatus = 'authorizing'
@@ -427,7 +446,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   /** The server rejected this generation after an external canonical body change. */
   private reconnectSuppressed = false
   /** Generation identity learned from the first modern Live-ready frame. */
-  private roomGeneration: string | null = null
+  private validatedGeneration: string | null = null
   private offline = typeof navigator !== 'undefined' && navigator.onLine === false
   /**
    * True once a transaction that is not the server's own snapshot has reached
@@ -485,6 +504,10 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     this.listeners.add(listener)
     listener(this.getState())
     return () => this.listeners.delete(listener)
+  }
+
+  unsentBody(): string | null {
+    return this.pendingCheckpoint?.body ?? this.inFlight?.body ?? null
   }
 
   subscribeSave(listener: (state: PhotonLiveState) => void): () => void {
@@ -548,6 +571,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (this.checkpointTimer !== null) globalThis.clearTimeout(this.checkpointTimer)
     this.reconnectTimer = null
     this.checkpointTimer = null
+    this.clearCheckpointRetry()
     const socket = this.socket
     this.socket = null
     socket?.close()
@@ -558,6 +582,14 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (this.checkpointTimer !== null) {
       globalThis.clearTimeout(this.checkpointTimer)
       this.checkpointTimer = null
+    }
+    if (this.pendingCheckpoint) this.flushRequested = true
+    // A retry waiting out its backoff would otherwise never be sent: the
+    // page is going away.
+    if (this.checkpointRetryTimer !== null && this.inFlight) {
+      globalThis.clearTimeout(this.checkpointRetryTimer)
+      this.checkpointRetryTimer = null
+      this.sendCheckpoint(this.inFlight)
     }
     this.sendPendingCheckpoint()
   }
@@ -575,6 +607,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     this.reconnectTimer = null
     this.handshakeTimer = null
     this.checkpointTimer = null
+    this.clearCheckpointRetry()
     this.doc.off('update', this.handleDocUpdate)
     this.awareness.off('update', this.handleAwarenessUpdate)
     if (typeof window !== 'undefined') {
@@ -731,7 +764,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
         socket.close()
         return
       }
-      this.backoff = INITIAL_BACKOFF_MS
+      // The backoff is reset once the room is actually ready, not here: a
+      // worker that accepts the upgrade and closes straight away would
+      // otherwise be retried about once a second forever.
       this.setConnectionStatus('connecting')
     })
     socket.addEventListener('message', (event) => {
@@ -931,6 +966,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (attempt.initializationSent && !attempt.initializationEchoed) return
     if (!this.applyBufferedUpdates(attempt)) return
     this.clearHandshakeTimer()
+    this.backoff = INITIAL_BACKOFF_MS
     this.initialized = true
     this.setConnectionStatus('connected', null)
     this.sendCurrentState()
@@ -964,6 +1000,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       return
     }
     this.inFlight = null
+    this.clearCheckpointRetry()
     if (this.pendingCheckpoint) {
       this.setSaveStatus('saving')
       this.scheduleCheckpoint()
@@ -986,6 +1023,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
     if (!this.inFlight || message.operation_id !== this.inFlight.operationId) return
     if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
     this.inFlight = null
+    this.clearCheckpointRetry()
     const error = new PhotonLiveError(
       message.message ?? 'Photon Live checkpoint conflicted with another change',
       'conflict',
@@ -999,10 +1037,15 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       message.message ?? 'Photon Live rejected the checkpoint',
       'server',
     )
-    if (!this.inFlight || (
-      message.operation_id !== undefined &&
-      message.operation_id !== this.inFlight.operationId
-    )) return
+    if (!this.inFlight) return
+    if (message.operation_id === undefined) {
+      // Most errors without an operation id are about some other frame (an
+      // awareness update). A frame the worker could not parse at all is the
+      // one kind a checkpoint can cause without its id being readable.
+      if (message.message === UNPARSED_FRAME_MESSAGE) this.failInFlight(error)
+      return
+    }
+    if (message.operation_id !== this.inFlight.operationId) return
     if (message.code === 'CHECKPOINT_STALE' && message.operation_id === this.inFlight.operationId) {
       // The worker rejected this operation before reserving/writing it. The
       // working document advanced while authorization was in flight; this is
@@ -1010,6 +1053,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       // never stamp a pre-merge body with the newer room version.
       const stale = this.inFlight
       this.inFlight = null
+      this.clearCheckpointRetry()
       if (!this.pendingCheckpoint && stale.generation === this.docGeneration) {
         this.pendingCheckpoint = {
           body: stale.body,
@@ -1021,9 +1065,22 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       if (this.pendingCheckpoint) this.scheduleCheckpoint()
       return
     }
-    if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
-    this.inFlight = null
-    this.setSaveStatus('error', error)
+    if (message.code === 'CHECKPOINT_RETRY' && message.operation_id === this.inFlight.operationId) {
+      // The worker could not reach the API (a timeout, a 5xx) and kept this
+      // operation. Resend it unchanged -- same id, version and body -- so a
+      // save that did commit is recognized rather than applied twice. A
+      // newer body waits behind it exactly as it would behind the first try.
+      const retry = this.inFlight
+      this.setSaveStatus('saving', null)
+      if (this.checkpointRetryTimer !== null) globalThis.clearTimeout(this.checkpointRetryTimer)
+      this.checkpointRetryTimer = globalThis.setTimeout(() => {
+        this.checkpointRetryTimer = null
+        if (this.inFlight === retry) this.sendCheckpoint(retry)
+      }, this.checkpointRetryDelay)
+      this.checkpointRetryDelay = Math.min(this.checkpointRetryDelay * 2, MAX_BACKOFF_MS)
+      return
+    }
+    this.failInFlight(error)
   }
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
@@ -1147,7 +1204,17 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private handleAuthChange = (event: Event): void => {
     const reason = (event as CustomEvent<{ reason?: unknown }>).detail?.reason
-    if (reason === 'signed-out' || reason === 'expired') this.destroy()
+    if (reason !== 'signed-out' && reason !== 'expired') return
+    // The cursor has to leave while the socket still counts as connected.
+    this.leaveRoom()
+    // Say so before going quiet: whoever is routing this body's saves through
+    // the room has to stop handing them to a provider that drops them.
+    this.setConnectionStatus('failed', new PhotonLiveError(
+      'Photon Live stopped because the session ended',
+      'unauthorized',
+      401,
+    ))
+    this.destroy()
   }
 
   private sendAwarenessUpdate(clientIds: number[]): void {
@@ -1165,6 +1232,14 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private scheduleCheckpoint(): void {
     if (this.checkpointTimer !== null) globalThis.clearTimeout(this.checkpointTimer)
+    this.checkpointTimer = null
+    if (this.flushRequested) {
+      // The page asked for this body while another was in flight, and may
+      // be suspended or discarded before a debounce fires: it goes out with
+      // that one's answer.
+      this.sendPendingCheckpoint()
+      return
+    }
     this.checkpointTimer = globalThis.setTimeout(() => {
       this.checkpointTimer = null
       this.sendPendingCheckpoint()
@@ -1190,6 +1265,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       return
     }
     this.pendingCheckpoint = null
+    this.flushRequested = false
     this.inFlight = { ...pending, version: this.version }
     this.setSaveStatus('saving')
     this.sendCheckpoint(this.inFlight)
@@ -1202,7 +1278,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       !socket ||
       socket.readyState !== WebSocket.OPEN
     ) return
-    this.sendJson(socket, {
+    const frame = JSON.stringify({
       type: 'live-checkpoint',
       // Reconnects replay the exact operation and room version. New
       // checkpoints get their version in sendPendingCheckpoint above.
@@ -1210,6 +1286,31 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       body: checkpoint.body,
       operation_id: checkpoint.operationId,
     })
+    if (new TextEncoder().encode(frame).byteLength > MAX_TEXT_FRAME_BYTES) {
+      // JSON escaping can push a body under the worker's body limit over
+      // its frame limit. Sent, it would be refused without an operation id
+      // and this checkpoint would wait for an answer that never comes.
+      this.failInFlight(new PhotonLiveError(
+        'Photon Live checkpoint is too large to send',
+        'server',
+      ))
+      return
+    }
+    socket.send(frame)
+  }
+
+  /** The in-flight checkpoint was refused for good. */
+  private failInFlight(error: PhotonLiveError): void {
+    if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
+    this.inFlight = null
+    this.clearCheckpointRetry()
+    this.setSaveStatus('error', error)
+  }
+
+  private clearCheckpointRetry(): void {
+    if (this.checkpointRetryTimer !== null) globalThis.clearTimeout(this.checkpointRetryTimer)
+    this.checkpointRetryTimer = null
+    this.checkpointRetryDelay = INITIAL_BACKOFF_MS
   }
 
   private clearHandshakeTimer(): void {
@@ -1254,8 +1355,8 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
 
   private validateRoomGeneration(value: unknown): boolean {
     const generation = typeof value === 'string' && value.trim() ? value.trim() : null
-    if (this.roomGeneration !== null) return generation === this.roomGeneration
-    if (generation !== null) this.roomGeneration = generation
+    if (this.validatedGeneration !== null) return generation === this.validatedGeneration
+    if (generation !== null) this.validatedGeneration = generation
     // A missing generation is accepted only until a modern worker gives us a
     // stable identity. Once remembered, every reconnect must carry it.
     return true
@@ -1264,6 +1365,12 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   private handleSocketFailure(error: PhotonLiveError): void {
     if (this.disposed) return
     this.clearHandshakeTimer()
+    // The reconnect resends the in-flight checkpoint once the room is ready;
+    // a retry timer left running would send it a second time.
+    if (this.checkpointRetryTimer !== null) {
+      globalThis.clearTimeout(this.checkpointRetryTimer)
+      this.checkpointRetryTimer = null
+    }
     this.socket = null
     this.setConnectionStatus('disconnected', error)
     if (this.initialized) this.hasUnackedChanges = this.hasUnackedChanges || Boolean(this.inFlight || this.pendingCheckpoint)

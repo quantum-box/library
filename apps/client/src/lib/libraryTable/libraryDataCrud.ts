@@ -1,11 +1,13 @@
 import {
   RecordApiError,
+  libraryGraphqlAvailability,
+  noteLibraryGraphqlResponse,
   shouldFallbackLibraryRequest,
   type LibraryDataItem,
   type LibraryProperty,
   type LibraryPropertyDataValue,
 } from '../recordsApi'
-import { getValidAuthTokens, loadStoredAuthIdentity } from '../auth'
+import { getValidAuthTokens, loadStoredAuthIdentity, unexpiredAuthTokens } from '../auth'
 import {
   libraryPropertyValueToGraphqlInput,
 } from './libraryPropertyInput'
@@ -32,6 +34,8 @@ interface LibraryDeleteDataResponse {
 interface LibraryRestDataResponse {
   id: string
   name: string
+  /** The response is camelCased at the top level; its items are not. */
+  recordVersion?: string
   items: Array<{
     property_id: string
     key: string
@@ -73,6 +77,7 @@ const libraryUpdateDataMutation = `
     updateData(input: $input) {
       id
       name
+      recordVersion
       createdAt
       updatedAt
       propertyData {
@@ -125,37 +130,85 @@ function configuredLibraryActor(): string {
   )
 }
 
-async function libraryRestHeaders(operatorId?: string): Promise<Record<string, string>> {
+/**
+ * The access token for a request. One that must outlive the page starts
+ * with the token it has while that still works, instead of waiting on a
+ * refresh the page may not live through.
+ */
+async function libraryAccessToken(keepalive?: boolean): Promise<string | undefined> {
+  if (keepalive) {
+    const current = unexpiredAuthTokens()
+    if (current) return current.accessToken
+  }
+  return (await getValidAuthTokens())?.accessToken
+}
+
+async function libraryRestHeaders(
+  operatorId?: string,
+  keepalive?: boolean,
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = (await getValidAuthTokens())?.accessToken
+  const token = await libraryAccessToken(keepalive)
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
+}
+
+/**
+ * Browsers refuse a keepalive request whose body exceeds 64 KiB. Past this,
+ * the request goes out as an ordinary one, which an unloading page may cut.
+ */
+const KEEPALIVE_BODY_LIMIT = 60 * 1024
+
+function keepaliveFor(body: string, keepalive: boolean | undefined): boolean {
+  return Boolean(keepalive) && new TextEncoder().encode(body).byteLength <= KEEPALIVE_BODY_LIMIT
+}
+
+/**
+ * `fetch`, in a request that outlives the page when asked for and allowed.
+ *
+ * The 64 KiB is a quota over all of a page's keepalive requests in flight,
+ * so one can also be refused for the others still on their way. That says
+ * nothing about this request, and the page is evidently still here: it is
+ * sent again as an ordinary one.
+ */
+async function fetchOutlivingPage(
+  url: string,
+  init: RequestInit & { body: string },
+  keepalive: boolean | undefined,
+): Promise<Response> {
+  if (!keepaliveFor(init.body, keepalive)) return fetch(url, init)
+  try {
+    return await fetch(url, { ...init, keepalive: true })
+  } catch {
+    return fetch(url, init)
+  }
 }
 
 async function requestLibraryGraphQL<TData>(
   query: string,
   variables: Record<string, unknown>,
-  options?: { operatorId?: string }
+  options?: { operatorId?: string; keepalive?: boolean }
 ): Promise<TData> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
-  const token = (await getValidAuthTokens())?.accessToken
+  const token = await libraryAccessToken(options?.keepalive)
   if (token) headers.Authorization = `Bearer ${token}`
 
   let response: Response
+  const body = JSON.stringify({ query, variables })
   try {
-    response = await fetch(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
+    response = await fetchOutlivingPage(`${configuredLibraryApiBaseUrl()}/v1/graphql`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, variables }),
-    })
+      body,
+    }, options?.keepalive)
   } catch (error: unknown) {
     const detail = error instanceof Error ? `: ${error.message}` : ''
     throw new RecordApiError(
@@ -164,6 +217,7 @@ async function requestLibraryGraphQL<TData>(
       'transport'
     )
   }
+  noteLibraryGraphqlResponse(response.status)
   if (!response.ok) {
     throw new RecordApiError(
       `Library GraphQL request failed: ${response.status}`,
@@ -252,6 +306,7 @@ function restResponseToLibraryDataItem(payload: LibraryRestDataResponse): Librar
   return {
     id: payload.id,
     name: payload.name,
+    ...(payload.recordVersion ? { recordVersion: payload.recordVersion } : {}),
     propertyData: payload.items.map((entry) => ({
       propertyId: entry.property_id,
       value: restValueToLibraryPropertyDataValue(entry.value),
@@ -421,55 +476,123 @@ export async function addLibraryData(
   return restResponseToLibraryDataItem(payload)
 }
 
+/**
+ * Whether a save that must outlive the page goes straight to REST. The page
+ * may not live to run a fallback after a GraphQL answer, so REST is taken
+ * when GraphQL is known to be absent -- or not yet known either way and REST
+ * can carry every value (it cannot carry some typed Properties).
+ */
+function unloadingSaveUsesRest(
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData'],
+): boolean {
+  const graphql = libraryGraphqlAvailability()
+  if (graphql === 'available') return false
+  if (graphql === 'unavailable') return true
+  try {
+    restPropertyPayload(properties, propertyData)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function updateLibraryData(
   target: LibraryRepoTarget,
   properties: LibraryProperty[],
-  item: LibraryDataItem
+  item: LibraryDataItem,
+  /** `keepalive`: the page is unloading; let the request outlive it. */
+  options?: { keepalive?: boolean }
 ): Promise<LibraryDataItem> {
   const propertyData = knownPropertyData(properties, item.propertyData, 'update')
-  try {
-    const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
-      libraryUpdateDataMutation,
-      {
-        input: {
-          actor: configuredLibraryActor(),
-          orgUsername: target.org,
-          repoUsername: target.repo,
-          dataId: item.id,
-          dataName: item.name,
-          propertyData: graphqlPropertyPayload(properties, propertyData),
+  if (!(options?.keepalive && unloadingSaveUsesRest(properties, propertyData))) {
+    try {
+      const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
+        libraryUpdateDataMutation,
+        {
+          input: {
+            actor: configuredLibraryActor(),
+            orgUsername: target.org,
+            repoUsername: target.repo,
+            dataId: item.id,
+            dataName: item.name,
+            propertyData: graphqlPropertyPayload(properties, propertyData),
+          },
         },
-      },
-      { operatorId: target.operatorId }
-    )
-    if (!payload.updateData) {
-      throw new RecordApiError(
-        'Library API did not return updated data',
-        500,
-        'invalid-response'
+        { operatorId: target.operatorId, keepalive: options?.keepalive }
       )
+      if (!payload.updateData) {
+        throw new RecordApiError(
+          'Library API did not return updated data',
+          500,
+          'invalid-response'
+        )
+      }
+      return payload.updateData
+    } catch (error: unknown) {
+      if (!shouldFallbackLibraryRequest(error, 'update')) throw error
     }
-    return payload.updateData
-  } catch (error: unknown) {
-    if (!shouldFallbackLibraryRequest(error, 'update')) throw error
   }
 
-  const response = await fetch(
+  const restBody = JSON.stringify({
+    name: item.name,
+    property_data: restPropertyPayload(properties, propertyData),
+  })
+  const response = await fetchOutlivingPage(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${item.id}`,
     {
       method: 'PUT',
-      headers: await libraryRestHeaders(target.operatorId),
-      body: JSON.stringify({
-        name: item.name,
-        property_data: restPropertyPayload(properties, propertyData),
-      }),
-    }
+      headers: await libraryRestHeaders(target.operatorId, options?.keepalive),
+      body: restBody,
+    },
+    options?.keepalive,
   )
   if (!response.ok) {
     throw new RecordApiError(`Library REST data update failed: ${response.status}`, response.status)
   }
   const payload = await response.json() as LibraryRestDataResponse
   return restResponseToLibraryDataItem(payload)
+}
+
+/**
+ * Save a Live body only if the record is still at `expectedRecordVersion`,
+ * in a request that outlives the page.
+ *
+ * For a page that goes away while its room is out of reach: the body is
+ * written through the same version-checked checkpoint a room uses, so it
+ * never replaces anything saved since that version -- if the record moved
+ * on, nothing is written. Resolves with the record version it produced
+ * when it was accepted, `null` otherwise.
+ */
+export async function checkpointLiveBodyOutlivingPage(
+  target: { org: string; repo: string; dataId: string; operatorId?: string },
+  checkpoint: {
+    propertyId: string
+    expectedRecordVersion: string
+    format: 'markdown' | 'richText'
+    body: string
+  },
+): Promise<string | null> {
+  const body = JSON.stringify({
+    property_id: checkpoint.propertyId,
+    operation_id: globalThis.crypto?.randomUUID?.() ??
+      `live-page-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    expected_record_version: checkpoint.expectedRecordVersion,
+    format: checkpoint.format,
+    body: checkpoint.body,
+  })
+  try {
+    const response = await fetchOutlivingPage(
+      `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${target.dataId}/live/checkpoint`,
+      { method: 'POST', headers: await libraryRestHeaders(target.operatorId, true), body },
+      true,
+    )
+    if (!response.ok) return null
+    const payload = await response.json().catch(() => null) as { record_version?: unknown } | null
+    return typeof payload?.record_version === 'string' ? payload.record_version : ''
+  } catch {
+    return null
+  }
 }
 
 export async function deleteLibraryData(

@@ -208,9 +208,11 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
         "org":org,"repo":repo,"data_id":data_id,"name":"MCP test record",
         "property_data":[{"property_id":body_id,"value_type":"markdown","value":"# Updated"}]
     })).await?;
-    // Legacy CRUD does not advance the versioned mutation counter. MCP
-    // exposes the stored value, not a concurrency token for these writes.
-    assert_eq!(updated["data"]["record_version"], "1");
+    // MCP writes use the legacy (non-CAS) path, which still advances the
+    // stored version once per write: Live and other versioned readers treat
+    // an unchanged version as an unchanged record. It is a change marker,
+    // not a concurrency token MCP accepts.
+    assert_eq!(updated["data"]["record_version"], "2");
     assert_eq!(updated["url"], updated["data"]["url"]);
     assert!(updated["url"].as_str().unwrap().contains(data_id));
     let read = mcp_call(
@@ -301,6 +303,9 @@ async fn mcp_authenticated_core_workflow_is_stable() -> anyhow::Result<()> {
         mcp_call(&client, &server, "upsert_data", upsert_args).await?;
     assert_eq!(first["outcome"], "created");
     assert_eq!(retried["outcome"], "updated");
+    // A retried upsert is a second write, even with identical content.
+    assert_eq!(first["data"]["record_version"], "1");
+    assert_eq!(retried["data"]["record_version"], "2");
     assert_eq!(first["data"]["id"], retried["data"]["id"]);
     assert_eq!(first["url"], first["data"]["url"]);
     assert_eq!(retried["url"], retried["data"]["url"]);
@@ -652,7 +657,8 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         data_updated["name"],
         format!("GA REST Data Updated {suffix}")
     );
-    assert_eq!(data_updated["recordVersion"], "1");
+    // REST PUT uses the legacy writer, which advances the version once.
+    assert_eq!(data_updated["recordVersion"], "2");
 
     let data_view = get_json(
         &client,
@@ -660,7 +666,7 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         StatusCode::OK,
     )
     .await?;
-    assert_eq!(data_view["recordVersion"], "1");
+    assert_eq!(data_view["recordVersion"], "2");
 
     let data_list = get_json(
         &client,
@@ -676,7 +682,7 @@ async fn rest_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         .ok_or_else(|| {
             anyhow::anyhow!("REST data list is missing record")
         })?;
-    assert_eq!(listed_data["recordVersion"], "1");
+    assert_eq!(listed_data["recordVersion"], "2");
 
     delete(
         &client,
@@ -1002,7 +1008,8 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         data_update["updateData"]["name"],
         format!("GA GraphQL Data Updated {suffix}")
     );
-    assert_eq!(data_update["updateData"]["recordVersion"], "1");
+    // GraphQL updateData uses the same legacy writer as REST PUT.
+    assert_eq!(data_update["updateData"]["recordVersion"], "2");
 
     let data_list = graphql(
         &client,
@@ -1025,7 +1032,7 @@ async fn graphql_core_crud_lifecycle_is_stable() -> anyhow::Result<()> {
         .ok_or_else(|| {
             anyhow::anyhow!("GraphQL data list is missing record")
         })?;
-    assert_eq!(listed_data["recordVersion"], "1");
+    assert_eq!(listed_data["recordVersion"], "2");
 
     let deleted_data = graphql(
         &client,

@@ -7,6 +7,20 @@ import worker, {
   ExternalSyncDispatcher as ExternalDispatch,
 } from '../sync/build/index.js'
 export default worker
+// Test-only transport faults. The Rust Worker calls the global fetch, so this
+// wrapper can make one checkpoint request reject the way an abort timeout or a
+// dropped connection does, without waiting out the Worker's 15s timeout.
+// 'after-commit' delivers the request first: the API committed, the ACK is lost.
+let transportFault = null
+const upstreamFetch = globalThis.fetch
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url
+  const fault = url.endsWith('/live/checkpoint') ? transportFault : null
+  if (!fault) return upstreamFetch(input, init)
+  transportFault = null
+  if (fault === 'after-commit') await (await upstreamFetch(input, init)).arrayBuffer()
+  throw new TypeError('Network connection lost')
+}
 function decode(value) {
   if (value && typeof value === 'object' && '$bytes' in value) {
     return Uint8Array.from(atob(value.$bytes), (c) => c.charCodeAt(0)).buffer
@@ -35,6 +49,7 @@ function fixture(Base) {
       if (path === '/__test/state') return Response.json(encode(Object.fromEntries(await this.fixtureState.storage.list())))
       if (path === '/__test/alarm-state') return Response.json({ alarm: await this.fixtureState.storage.getAlarm(), now: Date.now(), sockets: this.fixtureState.getWebSockets().map((s) => ({ state: s.readyState, attachment: s.deserializeAttachment() })) })
       if (path === '/__test/alarm') { await super.alarm(); return Response.json({ ok: true }) }
+      if (path === '/__test/transport-fault') { transportFault = (await request.json()).mode; return Response.json({ ok: true }) }
       return super.fetch(request)
     }
   }

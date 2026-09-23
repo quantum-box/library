@@ -530,8 +530,14 @@ async fn delete_property(
     definition: &PropertyDefinition,
 ) -> errors::Result<()> {
     let field_num = definition.property_num();
+    // Same contract as the plain Property delete: every Record of the
+    // Database loses this value, so every Record advances its version once
+    // per removed Property. A self-Relation that removes both sides
+    // advances them twice; versioned readers need a newer version, not a
+    // step of exactly one.
     sqlx::query(&format!(
-        "UPDATE data SET value{field_num} = NULL \
+        "UPDATE data SET value{field_num} = NULL, \
+         record_version = record_version + 1 \
          WHERE tenant_id = ? AND object_id = ?"
     ))
     .bind(definition.tenant_id().to_string())

@@ -6,7 +6,9 @@ use database_manager::domain::{
 use database_manager::property_value_rollout::PropertyValueStorageMode;
 use database_manager::{
     AddDataInputData, AddPropertyInputData, CreateDatabaseInputData,
-    PatchRecordInputData, PropertyDataInputData,
+    DeletePropertyInputData, GetDataInputData, PatchRecordInputData,
+    PropertyDataInputData, UpdateDataInputData, UpsertDataInputData,
+    UpsertOutcome,
 };
 use sqlx::types::Json;
 use sqlx::Row;
@@ -1482,6 +1484,323 @@ async fn record_patch_decision_is_atomic_cas_idempotent_and_fail_closed(
         .await?;
         assert_eq!(decision_kind, "REJECTED");
     }
+
+    Ok(())
+}
+
+async fn record_state(
+    pool: &sqlx::MySqlPool,
+    tenant_id: &TenantId,
+    database_id: &DatabaseId,
+    record: &Data,
+    legacy_column: &str,
+) -> anyhow::Result<(String, u64, String)> {
+    let row = sqlx::query(&format!(
+        "SELECT name, record_version, {legacy_column} AS legacy_value \
+         FROM data WHERE tenant_id = ? AND object_id = ? AND id = ?"
+    ))
+    .bind(tenant_id.to_string())
+    .bind(database_id.to_string())
+    .bind(record.id().to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok((
+        row.try_get("name")?,
+        row.try_get("record_version")?,
+        row.try_get("legacy_value")?,
+    ))
+}
+
+async fn record_event_versions(
+    pool: &sqlx::MySqlPool,
+    tenant_id: &TenantId,
+    record: &Data,
+) -> anyhow::Result<Vec<u64>> {
+    Ok(sqlx::query_scalar::<_, u64>(
+        "SELECT aggregate_version FROM domain_outbox_events \
+         WHERE tenant_id = ? AND aggregate_type = 'RECORD' \
+           AND aggregate_id = ? \
+         ORDER BY aggregate_version",
+    )
+    .bind(tenant_id.to_string())
+    .bind(record.id().to_string())
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Ordinary saves (GraphQL/REST/MCP updates, upserts, inbound sync) use the
+/// compatibility writer. It is not a CAS port, but it must still advance
+/// `record_version`: Live authorize and checkpoints treat an unchanged
+/// version as an unchanged record, so a body saved without a bump made the
+/// Live room reject every join as a same-version divergence.
+#[tokio::test]
+#[ignore = "requires a MySQL database configured by DEV_DATABASE_URL"]
+async fn legacy_record_writes_advance_version_without_record_events(
+) -> anyhow::Result<()> {
+    let dsn = database_url()?;
+    let db = persistence::Db::new(dsn.to_string()).await;
+    sqlx::migrate!("./migrations")
+        .run(db.pool().as_ref())
+        .await?;
+    let app = database_manager::factory_client_with_property_value_mode(
+        dsn.to_string(),
+        PropertyValueStorageMode::DualWriteLegacyRead,
+    )
+    .await?;
+    let pool = db.pool();
+    let tenant_id = TenantId::default();
+    let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
+    let executor = &auth::Executor::SystemUser;
+    let user = TenantUserExecutor {
+        id: "legacy-record-editor".to_string(),
+        tenant_id: tenant_id.clone(),
+    };
+
+    let database = app
+        .create_database()
+        .execute(CreateDatabaseInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            database_id: None,
+            tenant_id: &tenant_id,
+            name: "legacy-record-version",
+        })
+        .await?;
+    let body = app
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            name: "body",
+            property_type: PropertyType::String,
+        })
+        .await?;
+    let legacy_column = format!("value{}", body.property_num());
+    let record = add_string_record(
+        &app,
+        &tenant_id,
+        database.id(),
+        &body,
+        "before",
+        "before",
+    )
+    .await?;
+    assert_eq!(*record.record_version(), RecordVersion::INITIAL);
+
+    // A legacy update advances the version by exactly one, and the
+    // response agrees with a re-read instead of echoing the loaded version.
+    let updated = app
+        .update_data_usecase()
+        .execute(UpdateDataInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            data_id: record.id(),
+            name: "legacy-name",
+            data: vec![PropertyDataInputData {
+                property_id: body.id().clone(),
+                value: PropertyValueCommand::String(
+                    "legacy-body".to_string(),
+                ),
+            }],
+        })
+        .await?;
+    assert_eq!(updated.record_version().get(), 2);
+    let reread = app
+        .get_data_usecase()
+        .execute(&GetDataInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            data_id: record.id(),
+        })
+        .await?;
+    assert_eq!(reread.record_version(), updated.record_version());
+    assert_eq!(
+        record_state(
+            pool.as_ref(),
+            &tenant_id,
+            database.id(),
+            &record,
+            &legacy_column
+        )
+        .await?,
+        ("legacy-name".to_string(), 2, "legacy-body".to_string())
+    );
+    // Inbound provider writes share this path; emitting a Record event here
+    // would let them be re-derived as outbound deliveries and echo back.
+    assert!(record_event_versions(pool.as_ref(), &tenant_id, &record)
+        .await?
+        .is_empty());
+
+    // A versioned caller still holding the pre-save version is stale.
+    let stale_operation = test_operation_id(&tenant_id, "legacy-stale")?;
+    let stale = patch_string_record(
+        &app,
+        &user,
+        &multi_tenancy,
+        &tenant_id,
+        database.id(),
+        &record,
+        &body,
+        &stale_operation,
+        RecordVersion::INITIAL,
+        "stale-name",
+        "stale-body",
+    )
+    .await?;
+    match &stale {
+        RecordMutationDecision::Conflict { current, .. } => {
+            assert_eq!(current.record_version().get(), 2);
+        }
+        other => panic!("expected CONFLICT, got {other:?}"),
+    }
+    assert_eq!(
+        record_state(
+            pool.as_ref(),
+            &tenant_id,
+            database.id(),
+            &record,
+            &legacy_column
+        )
+        .await?,
+        ("legacy-name".to_string(), 2, "legacy-body".to_string())
+    );
+
+    // The version the legacy save reported is a usable CAS base.
+    let fresh_operation = test_operation_id(&tenant_id, "legacy-fresh")?;
+    let fresh = patch_string_record(
+        &app,
+        &user,
+        &multi_tenancy,
+        &tenant_id,
+        database.id(),
+        &record,
+        &body,
+        &fresh_operation,
+        *updated.record_version(),
+        "versioned-name",
+        "versioned-body",
+    )
+    .await?;
+    assert!(matches!(
+        fresh,
+        RecordMutationDecision::Accepted { record_version, .. }
+            if record_version.get() == 3
+    ));
+
+    // An upsert of an existing record continues from the stored version,
+    // not from a version the caller never saw.
+    let (upserted, outcome) = app
+        .upsert_data_usecase()
+        .execute(UpsertDataInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            data_id: record.id(),
+            name: "upserted-name",
+            data: vec![PropertyDataInputData {
+                property_id: body.id().clone(),
+                value: PropertyValueCommand::String(
+                    "upserted-body".to_string(),
+                ),
+            }],
+        })
+        .await?;
+    assert_eq!(outcome, UpsertOutcome::Updated);
+    assert_eq!(upserted.record_version().get(), 4);
+    assert_eq!(
+        record_event_versions(pool.as_ref(), &tenant_id, &record).await?,
+        vec![3],
+        "only the versioned patch may emit a Record event"
+    );
+
+    // Removing a Property changes every Record of the Database.
+    let removable = app
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            name: "removable",
+            property_type: PropertyType::String,
+        })
+        .await?;
+    app.delete_property_usecase()
+        .execute(&DeletePropertyInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: tenant_id.as_ref(),
+            database_id: database.id().as_ref(),
+            property_id: removable.id().as_ref(),
+        })
+        .await?;
+    assert_eq!(
+        record_state(
+            pool.as_ref(),
+            &tenant_id,
+            database.id(),
+            &record,
+            &legacy_column
+        )
+        .await?,
+        ("upserted-name".to_string(), 5, "upserted-body".to_string())
+    );
+
+    // Exhaustion is a Conflict before any value changes; it never wraps.
+    sqlx::query(
+        "UPDATE data SET record_version = ? WHERE tenant_id = ? \
+         AND object_id = ? AND id = ?",
+    )
+    .bind(u64::MAX)
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .bind(record.id().to_string())
+    .execute(pool.as_ref())
+    .await?;
+    let exhausted = app
+        .update_data_usecase()
+        .execute(UpdateDataInputData {
+            executor,
+            multi_tenancy: &multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            data_id: record.id(),
+            name: "exhausted-name",
+            data: vec![PropertyDataInputData {
+                property_id: body.id().clone(),
+                value: PropertyValueCommand::String(
+                    "exhausted-body".to_string(),
+                ),
+            }],
+        })
+        .await
+        .expect_err("an exhausted version must not accept a legacy write");
+    assert!(
+        matches!(exhausted, errors::Error::Conflict { .. }),
+        "unexpected error: {exhausted:?}"
+    );
+    assert_eq!(
+        record_state(
+            pool.as_ref(),
+            &tenant_id,
+            database.id(),
+            &record,
+            &legacy_column
+        )
+        .await?,
+        (
+            "upserted-name".to_string(),
+            u64::MAX,
+            "upserted-body".to_string()
+        )
+    );
 
     Ok(())
 }

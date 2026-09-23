@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Check, CloudOff, RefreshCw, TriangleAlert, WifiOff } from 'lucide-react'
 import { useI18n } from '../i18n'
-import type { PhotonLiveError, PhotonLiveState } from '../lib/photonLive'
+import type { PhotonLiveState } from '../lib/photonLive'
 
 /**
  * What the body editor says about Live.
@@ -13,22 +13,14 @@ import type { PhotonLiveError, PhotonLiveState } from '../lib/photonLive'
  * carrying the body. Everything else renders nothing at all, taking no
  * layout above the document.
  */
-export function PhotonLiveStatus({
-  state,
-  initialError,
-}: {
-  state: PhotonLiveState | null
-  initialError?: PhotonLiveError | null
-}) {
+export function PhotonLiveStatus({ state }: { state: PhotonLiveState | null }) {
   const { t } = useI18n()
   if (!state) return null
 
   // A rejected checkpoint is a room that has stopped carrying this body, not
   // a save still in progress -- without it the line would sit on "saving"
   // forever over an edit the room already refused.
-  const failed = state.status === 'failed' ||
-    state.saveStatus === 'error' ||
-    initialError !== null
+  const failed = state.status === 'failed' || state.saveStatus === 'error'
   const conflict = state.saveStatus === 'conflict'
   const saving = state.saveStatus === 'saving' || state.hasUnackedChanges
 

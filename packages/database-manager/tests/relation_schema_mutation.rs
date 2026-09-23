@@ -331,6 +331,14 @@ async fn versioned_mutation_owns_inverse_and_guards_public_property_writes(
         errors::Error::Conflict { .. }
     ));
 
+    // Deleting the Relation clears a value on every Record of both sides,
+    // so a versioned caller holding an older version must see it as stale.
+    let source_record =
+        insert_record(db.as_ref(), &tenant_id, source.id(), "source")
+            .await?;
+    let target_record =
+        insert_record(db.as_ref(), &tenant_id, target.id(), "target")
+            .await?;
     mutation
         .delete(DeleteRelationDefinitionInputData {
             executor: &auth::Executor::SystemUser,
@@ -354,6 +362,20 @@ async fn versioned_mutation_owns_inverse_and_guards_public_property_writes(
         .fetch_one(db.pool().as_ref())
         .await?;
         assert_eq!(count, 0);
+    }
+    for (database_id, data_id) in
+        [(source.id(), &source_record), (target.id(), &target_record)]
+    {
+        let version = sqlx::query_scalar::<_, u64>(
+            "SELECT record_version FROM data \
+             WHERE tenant_id = ? AND object_id = ? AND id = ?",
+        )
+        .bind(tenant_id.to_string())
+        .bind(database_id.to_string())
+        .bind(data_id.to_string())
+        .fetch_one(db.pool().as_ref())
+        .await?;
+        assert_eq!(version, 2, "record {data_id} must advance once");
     }
     Ok(())
 }

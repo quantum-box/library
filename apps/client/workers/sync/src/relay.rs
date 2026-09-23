@@ -37,20 +37,28 @@ pub fn text(state: &State, sender: &WebSocket, text: &str) {
         }
     }
 }
-pub fn error(
-    ws: &WebSocket,
+/// `code` is one of the recoverable `CHECKPOINT_*` codes; `None` is terminal.
+pub fn error_frame(
     message: &str,
     operation: Option<&str>,
-    stale: bool,
-) {
+    code: Option<&str>,
+) -> Value {
     let mut frame = json!({"type":"live-error","message":message});
     if let Some(id) = operation {
         frame["operation_id"] = json!(id)
     }
-    if stale {
-        frame["code"] = json!("CHECKPOINT_STALE")
+    if let Some(code) = code {
+        frame["code"] = json!(code)
     }
-    send(ws, &frame);
+    frame
+}
+pub fn error(
+    ws: &WebSocket,
+    message: &str,
+    operation: Option<&str>,
+    code: Option<&str>,
+) {
+    send(ws, &error_frame(message, operation, code));
 }
 
 #[durable_object]

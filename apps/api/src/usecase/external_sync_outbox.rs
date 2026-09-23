@@ -34,6 +34,8 @@ type ClaimableDeliveryRow = (
     Option<DateTime<Utc>>,
 );
 
+type CaptureEventRow = (Vec<u8>, String, String, Vec<u8>, String, u64);
+
 type ClaimableOutboundDeliveryRow = (
     String,
     String,
@@ -87,6 +89,45 @@ fn decode_ascii_column(
             "outbox {column} is not valid ASCII: {error}"
         ))
     })
+}
+
+/// The Record event a request-path capture delivers under: the latest one
+/// at or below the version the caller holds, not an exact match.
+///
+/// Legacy compatibility writes (upsert, inbound sync, Property deletes)
+/// advance `record_version` without writing an event, so a record read
+/// after one of them is ahead of its last event. Before those writes
+/// advanced the version, an exact match found this same event; `<=` keeps
+/// that outcome instead of failing every capture that follows a legacy
+/// write.
+async fn find_capture_event_id(
+    pool: &MySqlPool,
+    tenant_id: &value_object::TenantId,
+    database_id: &DatabaseId,
+    data_id: &DataId,
+    record_version: u64,
+) -> errors::Result<Option<String>> {
+    let event_row: Option<CaptureEventRow> = sqlx::query_as(
+        r#"
+        SELECT event_id, tenant_id, database_id, aggregate_type,
+               aggregate_id, aggregate_version
+        FROM domain_outbox_events
+        WHERE tenant_id = ? AND database_id = ?
+          AND aggregate_type = 'RECORD' AND aggregate_id = ?
+          AND aggregate_version <= ?
+        ORDER BY aggregate_version DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(database_id.to_string())
+    .bind(data_id.to_string())
+    .bind(record_version)
+    .fetch_optional(pool)
+    .await?;
+    event_row
+        .map(|row| decode_ascii_column(row.0, "event_id"))
+        .transpose()
 }
 
 async fn register_record_events(
@@ -376,30 +417,19 @@ impl ExternalSyncOutboxDispatch {
         data: &Data,
         properties: &[Property],
     ) -> errors::Result<()> {
-        let event_row: (Vec<u8>, String, String, Vec<u8>, String, u64) =
-            sqlx::query_as(
-            r#"
-            SELECT event_id, tenant_id, database_id, aggregate_type,
-                   aggregate_id, aggregate_version
-            FROM domain_outbox_events
-            WHERE tenant_id = ? AND database_id = ?
-              AND aggregate_type = 'RECORD' AND aggregate_id = ?
-              AND aggregate_version = ? LIMIT 1
-            "#,
+        let event_id = find_capture_event_id(
+            self.source_pool.as_ref(),
+            data.tenant_id(),
+            data.database_id(),
+            data.id(),
+            data.record_version().get(),
         )
-        .bind(data.tenant_id().to_string())
-        .bind(data.database_id().to_string())
-        .bind(data.id().to_string())
-        .bind(data.record_version().get())
-            .fetch_optional(self.source_pool.as_ref())
-            .await?
-            .ok_or_else(|| {
-                errors::Error::service_unavailable(
-                    "Transactional record outbox event is not available yet",
-                )
-            })?;
-        let event_id = event_row.0;
-        let event_id = decode_ascii_column(event_id, "event_id")?;
+        .await?
+        .ok_or_else(|| {
+            errors::Error::service_unavailable(
+                "Transactional record outbox event is not available yet",
+            )
+        })?;
         self.capture_and_deliver_event(
             executor,
             multi_tenancy,
@@ -657,6 +687,11 @@ impl ExternalSyncOutboxDispatch {
                 data_id: &data_id,
             })
             .await?;
+        // A record that moved past this event is left to the newer write.
+        // Legacy compatibility writes also move it but emit no event, so an
+        // event the request path failed to capture is dropped here if one
+        // lands before the scan. Preview-only; routing legacy writers
+        // through the versioned boundary before cutover closes it.
         if data.record_version().get() != event.aggregate_version {
             return Ok(());
         }
@@ -1221,8 +1256,9 @@ mod scanner_database_tests {
     use value_object::TenantId;
 
     use super::{
-        claim_record_events, complete_record_event, register_record_events,
-        retry_record_event, OUTBOX_CONSUMER, OUTBOX_MAX_ATTEMPTS,
+        claim_record_events, complete_record_event, find_capture_event_id,
+        register_record_events, retry_record_event, OUTBOX_CONSUMER,
+        OUTBOX_MAX_ATTEMPTS,
     };
 
     #[tokio::test]
@@ -1431,6 +1467,137 @@ mod scanner_database_tests {
         .bind(operation_id.to_string())
         .execute(&pool)
         .await?;
+        pool.close().await;
+        admin.close().await;
+        Ok(())
+    }
+
+    /// Legacy compatibility writes advance `record_version` without an
+    /// event. A capture after one must still find the event the record
+    /// last had, not fail because nothing sits at the exact version.
+    #[tokio::test]
+    #[ignore = "requires MySQL configured by DEV_DATABASE_URL"]
+    async fn capture_lookup_tolerates_versions_without_events(
+    ) -> anyhow::Result<()> {
+        dotenvy::dotenv().ok();
+        let base_url =
+            std::env::var("DEV_DATABASE_URL").unwrap_or_else(|_| {
+                "mysql://root:@127.0.0.1:15000/library".to_string()
+            });
+        let admin = MySqlPool::connect_with(
+            MySqlConnectOptions::from_str(&base_url)?.database("mysql"),
+        )
+        .await?;
+        sqlx::query(
+            "CREATE DATABASE IF NOT EXISTS `tachyon_apps_database_manager`",
+        )
+        .execute(&admin)
+        .await?;
+        let pool = MySqlPool::connect_with(
+            MySqlConnectOptions::from_str(&base_url)?
+                .database("tachyon_apps_database_manager"),
+        )
+        .await?;
+        sqlx::migrate!("../../packages/database-manager/migrations")
+            .run(&pool)
+            .await?;
+
+        let tenant_id = TenantId::default();
+        let database_id = DatabaseId::default();
+        let data_id = DataId::default();
+        let mut fixtures = Vec::new();
+        for version in [1_u64, 3] {
+            let operation_id = RecordOperationId::default();
+            let event_id = RecordEventId::default();
+            sqlx::query(
+                r#"
+                INSERT INTO record_mutation_operations (
+                    operation_id, tenant_id, database_id, data_id,
+                    mutation_kind, actor_kind, actor_id, expected_version,
+                    fingerprint_version, request_fingerprint
+                ) VALUES (?, ?, ?, ?, 'PATCH', 'SYSTEM', 'capture-test',
+                          1, 1, ?)
+                "#,
+            )
+            .bind(operation_id.to_string())
+            .bind(tenant_id.to_string())
+            .bind(database_id.to_string())
+            .bind(data_id.to_string())
+            .bind(vec![0_u8; 32])
+            .execute(&pool)
+            .await?;
+            // Old enough that a concurrently running scanner test never
+            // registers these fixtures.
+            sqlx::query(
+                r#"
+                INSERT INTO domain_outbox_events (
+                    event_id, operation_id, event_sequence, tenant_id,
+                    database_id, aggregate_type, aggregate_id,
+                    aggregate_version, event_type, payload, occurred_at
+                ) VALUES (?, ?, 1, ?, ?, 'RECORD', ?, ?,
+                          'database.record.patched.v1', JSON_OBJECT(),
+                          '2000-01-01 00:00:00')
+                "#,
+            )
+            .bind(event_id.to_string())
+            .bind(operation_id.to_string())
+            .bind(tenant_id.to_string())
+            .bind(database_id.to_string())
+            .bind(data_id.to_string())
+            .bind(version)
+            .execute(&pool)
+            .await?;
+            fixtures.push((operation_id, event_id));
+        }
+        let first_event = fixtures[0].1.to_string();
+        let second_event = fixtures[1].1.to_string();
+
+        let lookup = |record_version: u64, data_id: DataId| {
+            let pool = pool.clone();
+            let tenant_id = tenant_id.clone();
+            let database_id = database_id.clone();
+            async move {
+                find_capture_event_id(
+                    &pool,
+                    &tenant_id,
+                    &database_id,
+                    &data_id,
+                    record_version,
+                )
+                .await
+            }
+        };
+        // Each versioned write is found at its own version.
+        assert_eq!(
+            lookup(1, data_id.clone()).await?,
+            Some(first_event.clone())
+        );
+        assert_eq!(
+            lookup(3, data_id.clone()).await?,
+            Some(second_event.clone())
+        );
+        // A legacy write after either one moves the record past it without
+        // an event; the capture still resolves to that versioned write.
+        assert_eq!(lookup(2, data_id.clone()).await?, Some(first_event));
+        assert_eq!(lookup(5, data_id.clone()).await?, Some(second_event));
+        // Another record's events are never borrowed.
+        assert_eq!(lookup(5, DataId::default()).await?, None);
+
+        for (operation_id, event_id) in &fixtures {
+            sqlx::query(
+                "DELETE FROM domain_outbox_events WHERE event_id = ?",
+            )
+            .bind(event_id.to_string())
+            .execute(&pool)
+            .await?;
+            sqlx::query(
+                "DELETE FROM record_mutation_operations \
+                 WHERE operation_id = ?",
+            )
+            .bind(operation_id.to_string())
+            .execute(&pool)
+            .await?;
+        }
         pool.close().await;
         admin.close().await;
         Ok(())

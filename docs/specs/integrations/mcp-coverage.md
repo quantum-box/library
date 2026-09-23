@@ -34,7 +34,7 @@ PLT-4345では、Claude Code / Codexから「所属先を探す → repository�
 - MCP HTTPとSSEで検証済みcaller tokenを同じように引き継ぐ。API keyのpolicy評価も呼び出し元のcredentialを使う。内部SystemUserの処理は従来のservice credentialを維持する。
 - `page`は1以上、`page_size`は1〜100。無効値は`-32602`。結果のないページは空配列と要求したページ番号を返す。
 - `search_data`は現行のDB queryに合わせた **Data名の完全一致**。空queryなら一覧になる。以前のtool説明にあった「indexed content検索」は実装と一致しないため訂正した。全文検索やorg横断検索は提供しない。
-- `record_version`は保存済みの版番号の参考情報。現行MCP CRUDが使うlegacy経路はこの番号を増加させないため、更新検知や競合防止には使えない。変更内容は再取得で確認する。
+- `record_version`は保存済みの版番号。MCP CRUDが使うlegacy経路を含め、レコードへの書き込みごとに1増加するため、読み取り時からの変更検知に使える。MCPのwriteは条件付き更新ではない（期待versionの引数がない）ため、同時更新の上書き防止には使えない。
 - `upsert_data`は有効なData IDが必要。固定IDを再利用できるが、compare-and-swapや副作用を含めたexactly-once処理を提供するものではない。
 - Property値は読み取りと書き込みで同じ`property_id` / `value_type` / `value`形式を使う。relationは対象Data IDの配列、locationは`latitude` / `longitude`、rich_textはJSON。自動生成Idは変更しない。
 - nullableな文字列系Propertyは明示nullでクリアできる。booleanのnullもクリア、relationのnullは空配列、multi_selectのnullは選択解除。locationのnullクリアは現行usecaseにないため未対応であり、無効入力として拒否する。

@@ -19,10 +19,9 @@ otherAuthState.origins[0].localStorage[0].value = JSON.stringify({
 /**
  * Wait until the Live room is actually carrying the body.
  *
- * The editor now mounts immediately and only joins a room while the body is
- * still untouched, so typing before the handshake deliberately keeps the
- * ordinary editor for the rest of that mount. Every shared-editing assertion
- * below has to let the room attach first.
+ * The editor mounts immediately on a local draft and joins a room once one
+ * answers, so text on screen no longer proves a room is carrying it. Every
+ * shared-editing assertion below lets the room attach first.
  */
 async function liveRoomAttached(page: Page) {
   await expect(page.locator('.record-body-blocknote')).toHaveAttribute('data-live-collab', 'on')
@@ -152,9 +151,8 @@ for (const format of ['markdown', 'richText'] as const) {
       unrelatedDoc.destroy()
 
       await other.reload()
-      // This page types again below, so it has to be back in the room first:
-      // a keystroke before the handshake keeps the ordinary editor for the
-      // rest of the mount and nothing shared would reach it.
+      // This page types again below and then goes offline, so the room has
+      // to be carrying its body first.
       await liveRoomAttached(other)
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Aoi contribution.')
       await expect(other.locator('.record-body-blocknote [contenteditable="true"]').first()).toContainText('Ren contribution.')
@@ -489,5 +487,188 @@ test('keeps recovering when an external write restores an earlier body', async (
     } finally {
       await context.close()
     }
+  }
+})
+
+test('an edit typed before the room answers reaches a participant already in it', async ({ browser, page }) => {
+  const early = ' Typed before the room answered.'
+  const otherContext = await browser.newContext({ storageState: otherAuthState })
+  const canonicalBody = async (): Promise<string> => {
+    const state = await (await page.request.get(`${api}/__e2e/state`)).json()
+    return state.data.find((item: { id: string }) => item.id === 'seed-data-201')
+      .propertyData.find((entry: { propertyId: string }) => entry.propertyId === 'prop-description').value.markdown
+  }
+  try {
+    const other = await otherContext.newPage()
+    await other.goto(route)
+    await liveRoomAttached(other)
+    const otherEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(otherEditor).toContainText(seed)
+
+    // Hold this page's room until it has typed -- what anyone who opens a
+    // record and starts typing straight away does before the room answers.
+    let releaseRoom = () => {}
+    const roomHeld = new Promise<void>((resolve) => {
+      releaseRoom = resolve
+    })
+    await page.route('**/live/session', async (route) => {
+      await roomHeld
+      await route.continue()
+    })
+    await page.goto(route)
+    const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(editor).toContainText(seed)
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.insertText(early)
+    await expect(editor).toContainText(early.trim())
+    await expect(page.locator('.record-body-blocknote')).not.toHaveAttribute('data-live-collab', 'on')
+    releaseRoom()
+
+    // The room answers after the keystroke, and the page still joins it,
+    // bringing the early edit with it instead of saving around the room.
+    await liveRoomAttached(page)
+    await expect(otherEditor).toContainText(early.trim())
+    await expect(other.locator('.record-body-blocknote')).toHaveAttribute('data-live-collab', 'on')
+    expect((await editor.innerText()).split(seed)).toHaveLength(2)
+    expect((await otherEditor.innerText()).split(early.trim())).toHaveLength(2)
+
+    await otherEditor.click()
+    await other.keyboard.press('ControlOrMeta+End')
+    await other.keyboard.insertText(' Reply from the room.')
+    await expect(editor).toContainText('Reply from the room.')
+    await expect.poll(canonicalBody).toContain('Reply from the room.')
+    expect(await canonicalBody()).toContain(early.trim())
+    for (const participant of [page, other]) {
+      await expect(participant.getByTestId('data-editor-live-status')).toHaveText('Saved')
+    }
+  } finally {
+    await otherContext.close()
+  }
+})
+
+test('an edit typed before the room answers can still be undone after joining', async ({ page }) => {
+  const early = ' Typed before the room answered.'
+  let releaseRoom = () => {}
+  const roomHeld = new Promise<void>((resolve) => {
+    releaseRoom = resolve
+  })
+  await page.route('**/live/session', async (route) => {
+    await roomHeld
+    await route.continue()
+  })
+  await page.goto(route)
+  const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
+  await expect(editor).toContainText(seed)
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.insertText(early)
+  await expect(editor).toContainText(early.trim())
+  releaseRoom()
+
+  // Joining switches the editor onto the room's document and undo history;
+  // the typing it carried in is still this person's to undo.
+  await liveRoomAttached(page)
+  await expect(editor).toContainText(early.trim())
+  await editor.click()
+  // The editor's shortcut follows the platform the page reports.
+  const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.platform))
+  await page.keyboard.press(mac ? 'Meta+z' : 'Control+z')
+  await expect(editor).not.toContainText(early.trim())
+  await expect(editor).toContainText(seed)
+})
+
+test('a participant is moved onto the new body when an ordinary save replaces it', async ({ browser, page }) => {
+  const replacement = 'Replaced by an ordinary save.'
+  const otherContext = await browser.newContext({ storageState: otherAuthState })
+  try {
+    await page.goto(route)
+    await liveRoomAttached(page)
+    const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(editor).toContainText(seed)
+
+    // Anything that saves the body outside the room: another client, the
+    // API, MCP, a sync. The next session sees the newer canonical body.
+    const update = await page.request.post(`${api}/v1/graphql`, {
+      data: {
+        query: 'mutation LibraryClientUpdateData { updateData { id } }',
+        variables: { input: {
+          orgUsername: 'quantum-box', repoUsername: 'photon-core', dataId: 'seed-data-201',
+          propertyData: [{ propertyId: 'prop-description', value: { markdown: replacement } }],
+        } },
+      },
+    })
+    expect(update.ok()).toBe(true)
+    const other = await otherContext.newPage()
+    await other.goto(route)
+    await liveRoomAttached(other)
+    const otherEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(otherEditor).toContainText(replacement)
+
+    // The page that was idle in the replaced room follows the body into the
+    // new one instead of being stranded outside it.
+    await expect(editor).toContainText(replacement)
+    await expect(editor).not.toContainText(seed)
+    await liveRoomAttached(page)
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.insertText(' Still shared.')
+    await expect(otherEditor).toContainText('Still shared.')
+  } finally {
+    await otherContext.close()
+  }
+})
+
+test('an edit typed before the room answers is merged with what the room gained meanwhile', async ({ browser, page }) => {
+  const early = ' Typed before the room answered.'
+  const meanwhile = 'Written in the room meanwhile.'
+  const otherContext = await browser.newContext({ storageState: otherAuthState })
+  const canonicalBody = async (): Promise<string> => {
+    const state = await (await page.request.get(`${api}/__e2e/state`)).json()
+    return state.data.find((item: { id: string }) => item.id === 'seed-data-201')
+      .propertyData.find((entry: { propertyId: string }) => entry.propertyId === 'prop-description').value.markdown
+  }
+  try {
+    const other = await otherContext.newPage()
+    await other.goto(route)
+    await liveRoomAttached(other)
+    const otherEditor = other.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(otherEditor).toContainText(seed)
+
+    let releaseRoom = () => {}
+    const roomHeld = new Promise<void>((resolve) => {
+      releaseRoom = resolve
+    })
+    await page.route('**/live/session', async (route) => {
+      await roomHeld
+      await route.continue()
+    })
+    await page.goto(route)
+    const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
+    await expect(editor).toContainText(seed)
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.insertText(early)
+
+    // While this page waits for its room, the room gains a new paragraph.
+    await otherEditor.click()
+    await other.keyboard.press('ControlOrMeta+End')
+    await other.keyboard.press('Enter')
+    await other.keyboard.insertText(meanwhile)
+    await expect.poll(canonicalBody).toContain(meanwhile)
+    releaseRoom()
+
+    // Both survive, on both pages and in the saved body; nothing is doubled.
+    await liveRoomAttached(page)
+    for (const target of [editor, otherEditor]) {
+      await expect(target).toContainText(early.trim())
+      await expect(target).toContainText(meanwhile)
+      expect((await target.innerText()).split(meanwhile)).toHaveLength(2)
+    }
+    await expect.poll(canonicalBody).toContain(early.trim())
+    expect(await canonicalBody()).toContain(meanwhile)
+    await expect(other.locator('.record-body-blocknote')).toHaveAttribute('data-live-collab', 'on')
+  } finally {
+    await otherContext.close()
   }
 })

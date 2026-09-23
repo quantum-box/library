@@ -410,8 +410,16 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .bind(property_id.to_string())
         .execute(&mut *transaction)
         .await?;
+        // Removing a Property changes every Record in the Database, so each
+        // one advances its version in the same statement. A versioned
+        // caller holding the pre-delete version must get a Conflict rather
+        // than patch a record whose shape moved underneath it. No Record
+        // event is emitted: this is a schema mutation, not a Record patch.
+        // A record already at u64::MAX makes the unsigned column reject the
+        // statement, so the delete rolls back instead of wrapping a version.
         sqlx::query(&format!(
-            "UPDATE data SET value{field_num} = NULL \
+            "UPDATE data SET value{field_num} = NULL, \
+             record_version = record_version + 1 \
              WHERE tenant_id = ? AND object_id = ?"
         ))
         .bind(tenant_id.to_string())

@@ -132,6 +132,20 @@ impl Data {
         Ok(())
     }
 
+    /// Mirrors the version a storage write assigned to this record.
+    ///
+    /// Version assignment belongs to the persistence boundary, which
+    /// increments inside the row lock so two writers can never produce the
+    /// same version. The entity only adopts the result after the write has
+    /// committed, so a response built from it carries the version a re-read
+    /// would return instead of the one the caller loaded before writing.
+    pub fn apply_persisted_version(
+        &mut self,
+        record_version: RecordVersion,
+    ) {
+        self.record_version = record_version;
+    }
+
     pub fn update_name(&mut self, name: &Text) {
         self.name = name.clone();
         self.updated_at = Utc::now();

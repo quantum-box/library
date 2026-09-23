@@ -373,10 +373,23 @@ impl RecordUnitOfWork for DataRepositoryImpl {
         Ok(())
     }
 
+    /// Legacy last-writer-wins patch that still advances `record_version`.
+    ///
+    /// The caller's snapshot is not compared (this is not a CAS port), but
+    /// every accepted write gets a fresh version so versioned readers can
+    /// tell that the stored record moved. Without the bump an ordinary save
+    /// changed the body while `/live/authorize` kept reporting the old
+    /// version, and the Live room treated the new body as an unexplained
+    /// divergence at the same version and refused every join.
+    ///
+    /// This path deliberately writes no `domain_outbox_events` row. Inbound
+    /// provider sync writes through it so its changes cannot be re-derived
+    /// as outbound deliveries and echo back to the provider; the versioned
+    /// boundaries remain the only producers of Record events.
     async fn patch_atomically(
         &self,
         command: &PatchRecordCommand,
-    ) -> errors::Result<()> {
+    ) -> errors::Result<RecordVersion> {
         Self::validate_changes(&command.changes)?;
         let record = &command.record;
         let mut transaction = self.db.pool().begin().await?;
@@ -387,9 +400,13 @@ impl RecordUnitOfWork for DataRepositoryImpl {
                 record.database_id(),
             )
             .await?;
-        let locked = sqlx::query_scalar::<_, String>(
+        // The base version comes from the locked row, not from the
+        // caller's earlier read: another legacy writer may have advanced
+        // it in between, and reusing a stale base would hand out a version
+        // that already exists.
+        let locked_version = sqlx::query_scalar::<_, u64>(
             r#"
-            SELECT id FROM data
+            SELECT record_version FROM data
             WHERE tenant_id = ? AND object_id = ? AND id = ?
             FOR UPDATE
             "#,
@@ -398,29 +415,43 @@ impl RecordUnitOfWork for DataRepositoryImpl {
         .bind(record.database_id().to_string())
         .bind(record.id().to_string())
         .fetch_optional(&mut *transaction)
-        .await?;
-        if locked.is_none() {
-            return Err(errors::Error::not_found("resource not found"));
-        }
-        sqlx::query(
+        .await?
+        .ok_or_else(|| errors::Error::not_found("resource not found"))?;
+        let previous_version = RecordVersion::new(locked_version)?;
+        // Exhaustion surfaces as the domain Conflict (409) before any value
+        // is written, rather than as a wrapped version or a CHECK failure.
+        let next_version = previous_version.checked_increment()?;
+        // The row lock already excludes other writers; the CAS predicate
+        // keeps the increment honest if that locking ever regresses, and
+        // matches the versioned boundary's single-increment statement.
+        let update = sqlx::query(
             r#"
-            UPDATE data SET name = ?, updated_at = ?
+            UPDATE data
+            SET name = ?, updated_at = ?, record_version = ?
             WHERE tenant_id = ? AND object_id = ? AND id = ?
+              AND record_version = ?
             "#,
         )
         .bind(record.name().to_string())
         .bind(record.updated_at())
+        .bind(next_version.get())
         .bind(record.tenant_id().to_string())
         .bind(record.database_id().to_string())
         .bind(record.id().to_string())
+        .bind(previous_version.get())
         .execute(&mut *transaction)
         .await?;
+        if update.rows_affected() != 1 {
+            return Err(errors::Error::internal_server_error(
+                "locked Record version update affected an unexpected row count",
+            ));
+        }
         for change in &command.changes {
             self.apply_change(&mut transaction, record, &fields, change)
                 .await?;
         }
         transaction.commit().await?;
-        Ok(())
+        Ok(next_version)
     }
 
     async fn delete_atomically(

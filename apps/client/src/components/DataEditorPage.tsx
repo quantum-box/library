@@ -37,6 +37,7 @@ import {
   isArtifactHtml,
 } from '../lib/libraryTable/bodyProperty'
 import {
+  checkpointLiveBodyOutlivingPage,
   deleteLibraryData,
   updateLibraryData,
   type LibraryRepoTarget,
@@ -45,6 +46,7 @@ import { getLibraryDataPropertyValue, propertyValueEditText } from '../lib/libra
 import { mergeLibraryDataProperty } from '../lib/libraryTable/libraryPropertyInput'
 import { LibraryPropertyEditableCell } from '../lib/libraryTable/libraryPropertyEditableCell'
 import { createLibraryRelationRecordLoader } from '../lib/libraryTable/relationRecords'
+import { RecordSaveQueue, versionAfterOwnWrites } from '../lib/libraryTable/recordSaveQueue'
 import { useWorkspaceAttachments } from '../lib/attachments/useWorkspaceAttachments'
 import { useDocumentTitle } from '../lib/ui/useDocumentTitle'
 import { toFileAttachment } from '../lib/attachments/presentation'
@@ -246,8 +248,10 @@ function RecordPage({
   const itemRef = useRef<LibraryDataItem | null>(cached?.item ?? null)
   const bodyRef = useRef<HTMLElement>(null)
   const propertiesRef = useRef<LibraryProperty[]>(cached?.properties ?? [])
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const [saveQueue] = useState(() => new RecordSaveQueue())
   const revisionRef = useRef(0)
+  /** Record versions this page's own writes produced. */
+  const ownVersionsRef = useRef(new Set<string>())
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
   const repoTarget = useMemo<LibraryRepoTarget>(
@@ -374,7 +378,16 @@ function RecordPage({
     }
   }, [cacheTarget, dataId])
 
-  const persistItem = useCallback((next: LibraryDataItem, carriesBody = false) => {
+  /**
+   * Save the record. Resolves `true` once this save is durable, `false` if it
+   * failed. The Live body session waits on this before opening a room: a
+   * room authorized before the save lands would still hold the older body.
+   */
+  const persistItem = useCallback((
+    next: LibraryDataItem,
+    carriesBody = false,
+    options?: { keepalive?: boolean },
+  ): Promise<boolean> => {
     const bodyProperty = getBodyProperty(propertiesRef.current)
     const liveBodyConfigured = Boolean(
       appKitConfig.dataLive.baseUrl &&
@@ -403,11 +416,18 @@ function RecordPage({
     setSaveState('saving')
     setSaveError(null)
 
-    saveQueueRef.current = saveQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext)
-        if (revision !== revisionRef.current) return
+    // A save made as the page is hidden or unloads starts now rather than
+    // behind network work the page may not outlive. It may overtake the queue
+    // because a save carrying the body is built from the whole record as last
+    // known, so it holds every earlier save's change too; one leaving the body
+    // out does not.
+    const urgent = carriesBody && Boolean(options?.keepalive)
+    return saveQueue.push(() => updateLibraryData(repoTarget, propertiesRef.current, durableNext, options)
+      .then(async (saved) => {
+        if (saved.recordVersion) ownVersionsRef.current.add(saved.recordVersion)
+        // Durable even when a newer save has been queued behind it; only the
+        // page state below belongs to the newest one.
+        if (revision !== revisionRef.current) return true
         // A patch response may omit the body field. Preserve the local value
         // for the page state while the Live editor remains the source of truth.
         const nextBody = next.propertyData.find(
@@ -430,15 +450,44 @@ function RecordPage({
             properties: propertiesRef.current,
           })
         }
-        if (revision !== revisionRef.current) return
+        if (revision !== revisionRef.current) return true
         setSaveState('saved')
+        return true
       })
       .catch((error: unknown) => {
-        if (revision !== revisionRef.current) return
-        setSaveState('failed')
-        setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
-      })
-  }, [cacheTarget, dataId, repoTarget])
+        if (revision === revisionRef.current) {
+          setSaveState('failed')
+          setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
+        }
+        return false
+      }), { urgent })
+  }, [cacheTarget, dataId, repoTarget, saveQueue])
+
+  /**
+   * A Live body checkpointed as the page goes away while its room is out of
+   * reach. It is compare-and-set on the version the room last saw, and this
+   * page's own title and property saves move that version too: so it goes
+   * through the save queue, on the version as moved by those writes. Sent at
+   * once, and again after any of them still on their way.
+   */
+  const checkpointLiveBody = useCallback((
+    propertyId: string,
+    format: 'markdown' | 'richText',
+    body: string,
+    roomVersion: string,
+  ) => saveQueue.push(async () => {
+    const produced = await checkpointLiveBodyOutlivingPage(
+      { org: repoTarget.org, repo: repoTarget.repo, dataId, operatorId: repoTarget.operatorId },
+      {
+        propertyId,
+        expectedRecordVersion: versionAfterOwnWrites(roomVersion, ownVersionsRef.current),
+        format,
+        body,
+      },
+    )
+    if (produced) ownVersionsRef.current.add(produced)
+    return produced !== null
+  }, { urgent: true, supersedes: false }), [dataId, repoTarget, saveQueue])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
@@ -568,14 +617,20 @@ function RecordPage({
     ? { org, repo, dataId: item.id, propertyId: bodyProperty.id, operatorId }
     : undefined
     }
-    onCommit={(value) => {
+    onLiveCheckpoint={(value, expectedRecordVersion) => checkpointLiveBody(
+    bodyProperty.id,
+    bodyProperty.typ === 'RichText' ? 'richText' : 'markdown',
+    value,
+    expectedRecordVersion,
+    )}
+    onCommit={(value, options) => {
     const current = itemRef.current
-    if (!current) return
-    persistItem(mergeLibraryDataProperty(
+    if (!current) return Promise.resolve(false)
+    return persistItem(mergeLibraryDataProperty(
     current,
     bodyProperty.id,
     bodyPropertyValue(bodyProperty, value),
-    ), true)
+    ), true, options)
     }}
     />
     ) : (

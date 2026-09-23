@@ -24,6 +24,70 @@ struct Initialization {
     record_version: String,
 }
 
+/// Browsers only see a failed upgrade as close 1006, so every refused join is
+/// logged for `wrangler tail` with its status and a fixed reason. Never log
+/// tickets, session ids, bodies or authorization values here.
+fn refuse(status: u16, reason: &str, message: &str) -> Result<Response> {
+    console_warn!(
+        "{{\"event\":\"live_join_refused\",\"status\":{status},\"reason\":\"{reason}\"}}"
+    );
+    Response::error(message, status)
+}
+/// A 409 naming another generation is a hop the edge follows, not a refusal.
+fn redirect(
+    reason: &str,
+    message: &str,
+    generation: &str,
+) -> Result<Response> {
+    console_log!(
+        "{{\"event\":\"live_join_redirected\",\"reason\":\"{reason}\"}}"
+    );
+    let mut response = Response::error(message, 409)?;
+    response.headers_mut().set(GENERATION, generation)?;
+    Ok(response)
+}
+/// Why a session may not join, follow or replace a room state holding
+/// `body_hash` at `record_version`: a stale ticket must never roll a room
+/// back, and two bodies at one version cannot be ordered. `None` when the
+/// session holds the same body or a strictly newer version.
+fn refusal(
+    session: &Session,
+    record_version: &str,
+    body_hash: &str,
+) -> Option<&'static str> {
+    if session.body_hash == body_hash
+        || newer(&session.record_version, Some(record_version))
+    {
+        None
+    } else if newer(record_version, Some(&session.record_version)) {
+        Some("stale_ticket")
+    } else {
+        Some("unordered_version")
+    }
+}
+/// Transient API answers. 401 recovers as well: the socket closes at its
+/// session expiry and the reconnect presents a fresh credential. Other 4xx
+/// (invalid body, permission, missing record, rejected patch) repeat for the
+/// same operation id, so they stay terminal instead of retrying forever.
+fn retryable(status: u16) -> bool {
+    matches!(status, 401 | 408 | 429 | 500..=599)
+}
+/// A checkpoint whose outcome is unknown or transiently failed. The client
+/// resends the identical frame; see `CHECKPOINT_RETRY`.
+fn retry(
+    sender: &WebSocket,
+    message: &str,
+    id: Option<&str>,
+    reason: &str,
+    status: Option<u16>,
+) {
+    let status = status.map_or_else(|| "null".into(), |s| s.to_string());
+    console_warn!(
+        "{{\"event\":\"live_checkpoint_retry\",\"reason\":\"{reason}\",\"status\":{status}}}"
+    );
+    relay::error(sender, message, id, Some(CHECKPOINT_RETRY));
+}
+
 #[durable_object]
 pub struct PhotonLiveRoom {
     state: State,
@@ -121,55 +185,115 @@ impl PhotonLiveRoom {
         })
         .await
     }
+    /// Commits a generation for the session's body in the base room's pointer.
+    /// Returns the room the pointer names afterwards (a newer session may
+    /// already have moved it further), or the refusal when nothing committed.
     async fn rotate(
         &self,
         session: &Session,
         target: &str,
-    ) -> Result<Response> {
+    ) -> Result<std::result::Result<String, Response>> {
         let generation = generation(session);
         if !generated(&generation) {
-            return Response::error("Invalid room generation", 409);
+            return refuse(
+                409,
+                "invalid_generation",
+                "Invalid room generation",
+            )
+            .map(Err);
         }
-        let accepted = if target == session.identity.room_id {
+        if target == session.identity.room_id {
             let _guard = self.doc.lock().await;
-            self.accept_pointer(session, generation).await?
-        } else {
-            let headers = Headers::new();
-            headers.set(INTERNAL, "1")?;
-            headers.set(SESSION, &session.header())?;
-            let request = api_request(
-                "https://live.internal/live/internal-pointer",
-                Method::Post,
-                headers,
-                Some(
-                    &value!({"room_id":generation,"body_hash":session.body_hash,"record_version":session.record_version}),
-                ),
-            )?;
-            let mut response = self
-                .env
-                .durable_object("PHOTON_LIVE_ROOMS")?
-                .get_by_name(&session.identity.room_id)?
-                .fetch_with_request(request)
-                .await?;
-            if response.status_code() != 200 {
-                return Response::error(
-                    "Live room generation unavailable",
-                    503,
-                );
-            }
-            let pointer: Pointer =
-                response_json(&mut response, 64 * 1024).await?;
-            if !pointer.valid() {
-                return Response::error(
-                    "Live room generation unavailable",
-                    503,
-                );
-            }
-            pointer.room_id
+            return self.accept_pointer(session, generation).await.map(Ok);
+        }
+        let headers = Headers::new();
+        headers.set(INTERNAL, "1")?;
+        headers.set(SESSION, &session.header())?;
+        let request = api_request(
+            "https://live.internal/live/internal-pointer",
+            Method::Post,
+            headers,
+            Some(
+                &value!({"room_id":generation,"body_hash":session.body_hash,"record_version":session.record_version}),
+            ),
+        )?;
+        let mut response = self
+            .env
+            .durable_object("PHOTON_LIVE_ROOMS")?
+            .get_by_name(&session.identity.room_id)?
+            .fetch_with_request(request)
+            .await?;
+        if response.status_code() != 200 {
+            return refuse(
+                503,
+                "pointer_unavailable",
+                "Live room generation unavailable",
+            )
+            .map(Err);
+        }
+        let pointer: Pointer =
+            response_json(&mut response, 64 * 1024).await?;
+        if !pointer.valid() {
+            return refuse(
+                503,
+                "pointer_invalid",
+                "Live room generation unavailable",
+            )
+            .map(Err);
+        }
+        Ok(Ok(pointer.room_id))
+    }
+    /// Replaces this room with a generation seeded from the session's newer
+    /// canonical body. Dirty rooms rotate too, otherwise one external write
+    /// makes the room unjoinable forever. Unsaved Yjs edits stay in this
+    /// generation's storage and are never merged into the successor; every
+    /// connected client also still holds them in its own Y.Doc when the 4410
+    /// close tells it the canonical body changed.
+    async fn replace(
+        &self,
+        session: &Session,
+        target: &str,
+    ) -> Result<Response> {
+        let accepted = match self.rotate(session, target).await? {
+            Ok(accepted) => accepted,
+            Err(refusal) => return Ok(refusal),
         };
-        let mut response = Response::error("Live body changed", 409)?;
-        response.headers_mut().set(GENERATION, &accepted)?;
-        Ok(response)
+        if accepted == target {
+            // The pointer names this very room for the session's body, so
+            // its metadata disagrees with the state it was named for. Only a
+            // worker from before 2026-09-23 seeded a generation from a stale
+            // ticket; the next canonical write moves the pointer past it.
+            return refuse(409, "generation_mismatch", "Live body changed");
+        }
+        // Peers are closed only after the pointer names another room. When
+        // the rotation fails they keep editing here instead of reconnecting
+        // into the same refusal.
+        self.retire(session, target, &accepted).await;
+        redirect("body_changed", "Live body changed", &accepted)
+    }
+    async fn retire(
+        &self,
+        session: &Session,
+        target: &str,
+        successor: &str,
+    ) {
+        // Under the room lock: a join that read the old pointer either sees
+        // the marker or is already accepted and closed below.
+        let _guard = self.doc.lock().await;
+        // The base room's pointer already redirects later joins.
+        if target != session.identity.room_id
+            && self.state.storage().put(RETIRED, successor).await.is_err()
+        {
+            console_warn!(
+                "{{\"event\":\"live_generation_retire_failed\"}}"
+            );
+        }
+        for ws in self.state.get_websockets() {
+            let _ = ws.close(
+                Some(4410),
+                Some("Live canonical body changed; reconnect required"),
+            );
+        }
     }
     async fn recover(
         &self,
@@ -219,12 +343,7 @@ impl PhotonLiveRoom {
             .await?
             .filter(|m| m.identity == session.identity)
         else {
-            relay::error(
-                sender,
-                "Live room identity mismatch",
-                None,
-                false,
-            );
+            relay::error(sender, "Live room identity mismatch", None, None);
             return Ok(());
         };
         let meta = self.recover(&mut doc, meta).await?;
@@ -258,7 +377,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Invalid or oversized Live update",
                 None,
-                false,
+                None,
             );
             return Ok(());
         }
@@ -268,12 +387,7 @@ impl PhotonLiveRoom {
             .await?
             .filter(|m| m.identity == session.identity)
         else {
-            relay::error(
-                sender,
-                "Live room identity mismatch",
-                None,
-                false,
-            );
+            relay::error(sender, "Live room identity mismatch", None, None);
             return Ok(());
         };
         if !meta.initialized {
@@ -281,12 +395,12 @@ impl PhotonLiveRoom {
                 sender,
                 "Live document is not initialized",
                 None,
-                false,
+                None,
             );
             return Ok(());
         }
         if meta.version >= MAX_SAFE {
-            relay::error(sender, "Live version limit reached", None, false);
+            relay::error(sender, "Live version limit reached", None, None);
             return Ok(());
         }
         meta.version += 1;
@@ -329,7 +443,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Live room identity mismatch",
                 Some(id),
-                false,
+                None,
             );
             return Ok(());
         };
@@ -344,7 +458,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Checkpoint operation was reused",
                 Some(id),
-                false,
+                None,
             );
             return Ok(());
         }
@@ -380,7 +494,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Live room identity mismatch",
                 Some(id),
-                false,
+                None,
             );
             return Ok(None);
         };
@@ -389,7 +503,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Live document is not initialized",
                 Some(id),
-                false,
+                None,
             );
             return Ok(None);
         }
@@ -405,14 +519,20 @@ impl PhotonLiveRoom {
                     sender,
                     "Checkpoint operation was reused",
                     Some(id),
-                    false,
+                    None,
                 );
                 return Ok(None);
             }
-            return Ok(Some((
-                p.clone(),
-                journal::read_body(&storage, p).await?,
-            )));
+            let body = journal::read_body(&storage, p).await?;
+            // This resend can commit as late as the first request could.
+            let p = journal::mark(
+                &storage,
+                p,
+                Some(now() + CHECKPOINT_IN_DOUBT),
+            )
+            .await?
+            .ok_or("Live checkpoint recovery failed")?;
+            return Ok(Some((p, body)));
         }
         let authorized =
             authorized.ok_or("Live checkpoint recovery failed")?;
@@ -421,6 +541,7 @@ impl PhotonLiveRoom {
         }
         let canonical_hash =
             body_hash(&authorized.identity.format, &authorized.body);
+        let proposed_hash = body_hash(&meta.identity.format, body);
         if let Some(p) = pending {
             // A replacement must describe the current working document. Never
             // erase the crash journal on a stale request.
@@ -429,11 +550,26 @@ impl PhotonLiveRoom {
                     sender,
                     "Checkpoint is behind the working version",
                     Some(id),
-                    version < meta.version,
+                    (version < meta.version).then_some(CHECKPOINT_STALE),
                 );
                 return Ok(None);
             }
             if authorized.record_version == p.expected_record_version {
+                // An unchanged version proves the reservation never committed
+                // only once no request for it can still be running at the
+                // API. Until then its owner's identical retry settles it
+                // through the API's idempotency; replacing it here could
+                // discard a save that commits a moment later.
+                if p.in_doubt() {
+                    retry(
+                        sender,
+                        "Another checkpoint is still being confirmed",
+                        Some(id),
+                        "reservation_in_doubt",
+                        None,
+                    );
+                    return Ok(None);
+                }
                 if canonical_hash != meta.body_hash {
                     journal::delete_pending(&storage, &p).await?;
                     self.conflict(id);
@@ -448,28 +584,72 @@ impl PhotonLiveRoom {
                         Some(authorized.record_version.clone())
                 }
                 meta.body_hash = canonical_hash;
-            } else {
-                if !newer(
+                journal::put_metadata(&storage, &meta).await?;
+            } else if journal::committed(
+                &p,
+                &canonical_hash,
+                &authorized.record_version,
+            ) {
+                // The reservation committed but its ACK was lost. Its owner's
+                // retry replays this result; the replacement continues
+                // against the committed body.
+                let saved = journal::settle(
+                    &storage,
+                    &mut meta,
+                    &p,
+                    &authorized.record_version,
+                )
+                .await?;
+                relay::broadcast(&self.state, &saved.frame());
+            } else if canonical_hash == meta.body_hash
+                && newer(
                     &authorized.record_version,
                     Some(&p.expected_record_version),
-                ) || canonical_hash != p.body_hash
+                )
+            {
+                // Only the record version moved (a title or property save):
+                // the body the reservation was based on is still canonical,
+                // so nothing conflicts. The reservation can never commit
+                // against its old version; its owner resends under a new
+                // operation id and this one continues at the new version.
+                journal::delete_pending(&storage, &p).await?;
+                relay::broadcast(
+                    &self.state,
+                    &relay::error_frame(
+                        "Record version changed; resend the checkpoint",
+                        Some(&p.operation_id),
+                        Some(CHECKPOINT_STALE),
+                    ),
+                );
+                if newer(
+                    &authorized.record_version,
+                    meta.record_version.as_deref(),
+                ) {
+                    meta.record_version =
+                        Some(authorized.record_version.clone())
+                }
+                journal::put_metadata(&storage, &meta).await?;
+            } else {
+                journal::delete_pending(&storage, &p).await?;
+                self.conflict(id);
+                return Ok(None);
+            }
+        } else {
+            if canonical_hash != meta.body_hash {
+                // This exact body is already canonical at a newer version:
+                // its own CAS committed after the reservation was replaced,
+                // or another writer stored the same body. Adopt it; it is
+                // reported saved below without a CAS.
+                if canonical_hash != proposed_hash
+                    || !newer(
+                        &authorized.record_version,
+                        meta.record_version.as_deref(),
+                    )
                 {
-                    journal::delete_pending(&storage, &p).await?;
                     self.conflict(id);
                     return Ok(None);
                 }
-                journal::delete_pending(&storage, &p).await?;
-                meta.record_version =
-                    Some(authorized.record_version.clone());
                 meta.body_hash = canonical_hash;
-                meta.saved_version =
-                    Some(meta.saved().max(p.version.min(meta.version)));
-            }
-            journal::put_metadata(&storage, &meta).await?;
-        } else {
-            if canonical_hash != meta.body_hash {
-                self.conflict(id);
-                return Ok(None);
             }
             if newer(
                 &authorized.record_version,
@@ -485,7 +665,7 @@ impl PhotonLiveRoom {
                 sender,
                 "Live document is not initialized",
                 Some(id),
-                false,
+                None,
             );
             return Ok(None);
         };
@@ -494,11 +674,10 @@ impl PhotonLiveRoom {
                 sender,
                 "Checkpoint is behind the working version",
                 Some(id),
-                version < meta.version,
+                (version < meta.version).then_some(CHECKPOINT_STALE),
             );
             return Ok(None);
         }
-        let proposed_hash = body_hash(&meta.identity.format, body);
         if proposed_hash == meta.body_hash {
             meta.saved_version = Some(meta.version);
             journal::put_metadata(&storage, &meta).await?;
@@ -522,6 +701,7 @@ impl PhotonLiveRoom {
             fingerprint,
             body_byte_length: body.len(),
             chunk_count: body.len().div_ceil(BODY_CHUNK),
+            in_doubt_until: Some(now() + CHECKPOINT_IN_DOUBT),
         };
         journal::reserve(&storage, pending.clone(), body.into()).await?;
         Ok(Some((pending, body.into())))
@@ -531,6 +711,98 @@ impl PhotonLiveRoom {
             &self.state,
             &value!({"type":"live-conflict","operation_id":id}),
         );
+    }
+    /// The API refused the CAS. That is not always a conflict: another writer
+    /// (e.g. the ordinary save fallback) may have stored the same body first,
+    /// or the API no longer had this operation's record, and a save that
+    /// left the body alone moves only the record version. Settle or rebase
+    /// those instead of reporting a conflict the participants cannot resolve.
+    async fn conflicted(
+        &self,
+        sender: &WebSocket,
+        session: &Session,
+        id: &str,
+        pending: &Pending,
+    ) -> Result<()> {
+        // No document/storage lock crosses a network boundary.
+        let current = auth::current(&self.env, session).await;
+        let storage = self.state.storage();
+        let _guard = self.doc.lock().await;
+        if let Some(result) = journal::read_result(&storage, id).await? {
+            // A join settled this reservation while the request was in flight.
+            relay::send(sender, &result.frame());
+            return Ok(());
+        }
+        let Some(current) = current else {
+            // A lost ACK cannot be ruled out without the canonical body; keep
+            // the reservation rather than report a conflict that may be false.
+            // The API has decided this operation, so it is no longer in doubt.
+            journal::mark(&storage, pending, None).await?;
+            retry(
+                sender,
+                "Live checkpoint failed",
+                Some(id),
+                "conflict_unverified",
+                Some(409),
+            );
+            return Ok(());
+        };
+        let Some(mut meta) = journal::metadata(&storage)
+            .await?
+            .filter(|m| m.identity == session.identity)
+        else {
+            return Ok(());
+        };
+        if let Some(p) =
+            journal::pending(&storage).await?.filter(|p| p == pending)
+        {
+            let canonical_hash =
+                body_hash(&current.identity.format, &current.body);
+            if journal::committed(
+                &p,
+                &canonical_hash,
+                &current.record_version,
+            ) {
+                let saved = journal::settle(
+                    &storage,
+                    &mut meta,
+                    &p,
+                    &current.record_version,
+                )
+                .await?;
+                relay::broadcast(&self.state, &saved.frame());
+                return Ok(());
+            }
+            journal::delete_pending(&storage, &p).await?;
+            if canonical_hash == meta.body_hash
+                && newer(
+                    &current.record_version,
+                    Some(&p.expected_record_version),
+                )
+            {
+                // Only the record version moved (a title or property save)
+                // while this request was out; the body it was based on is
+                // still canonical. The API recorded a conflict for this
+                // operation id, so the client resends its newest body under a
+                // new id against the adopted version.
+                if newer(
+                    &current.record_version,
+                    meta.record_version.as_deref(),
+                ) {
+                    meta.record_version = Some(current.record_version);
+                }
+                journal::put_metadata(&storage, &meta).await?;
+                relay::error(
+                    sender,
+                    "Record version changed; resend the checkpoint",
+                    Some(id),
+                    Some(CHECKPOINT_STALE),
+                );
+                return Ok(());
+            }
+        }
+        self.conflict(id);
+        Ok(())
     }
     async fn checkpoint(
         &self,
@@ -544,12 +816,7 @@ impl PhotonLiveRoom {
         let (Some(id), Some(version), Some(body)) =
             (id.as_deref(), version, body)
         else {
-            relay::error(
-                sender,
-                "Invalid checkpoint",
-                id.as_deref(),
-                false,
-            );
+            relay::error(sender, "Invalid checkpoint", id.as_deref(), None);
             return Ok(());
         };
         let _queue = self.checkpoints.lock().await;
@@ -568,7 +835,7 @@ impl PhotonLiveRoom {
                     sender,
                     "Live room identity mismatch",
                     Some(id),
-                    false,
+                    None,
                 );
                 return Ok(());
             };
@@ -577,7 +844,7 @@ impl PhotonLiveRoom {
                     sender,
                     "Live document is not initialized",
                     Some(id),
-                    false,
+                    None,
                 );
                 return Ok(());
             }
@@ -625,26 +892,64 @@ impl PhotonLiveRoom {
                 &value!({"property_id":session.identity.property,"operation_id":id,"expected_record_version":pending.expected_record_version,"format":session.identity.format,"body":body}),
             ),
         )?;
-        let mut response = match fetch_timeout(request, 15_000).await {
-            Ok(response) => response,
-            Err(_) => {
+        // From here on the CAS may have committed even when no answer comes
+        // back. The reservation is kept on every unknown outcome, in doubt
+        // until `CHECKPOINT_IN_DOUBT` has passed so no other operation replaces
+        // it meanwhile. The API records each operation id with its decision
+        // and replays that decision for an identical request, so resending
+        // the same operation (same expected version and body, re-read from
+        // this journal) returns the original `record_version`, not a conflict.
+        let mut response =
+            match fetch_timeout(request, CHECKPOINT_TIMEOUT).await {
+                Ok(response) => response,
+                Err(_) => {
+                    retry(
+                        sender,
+                        "Live checkpoint failed",
+                        Some(id),
+                        "timeout_or_network",
+                        None,
+                    );
+                    return Ok(());
+                }
+            };
+        let status = response.status_code();
+        if status == 409 {
+            return self.conflicted(sender, session, id, &pending).await;
+        }
+        if !(200..300).contains(&status) {
+            // A 5xx can come from a gateway while the API is still running the
+            // request, so the reservation stays in doubt. Any other status is
+            // the API's own answer, and it applied nothing.
+            if !(500..=599).contains(&status) {
+                let _guard = self.doc.lock().await;
+                if retryable(status) {
+                    journal::mark(&storage, &pending, None).await?;
+                } else {
+                    // The same operation repeats the same refusal: it never
+                    // commits, so nothing is left to recover.
+                    journal::delete_pending(&storage, &pending).await?;
+                }
+            }
+            if retryable(status) {
+                retry(
+                    sender,
+                    "Live checkpoint failed",
+                    Some(id),
+                    "api_status",
+                    Some(status),
+                );
+            } else {
+                console_warn!(
+                    "{{\"event\":\"live_checkpoint_failed\",\"status\":{status}}}"
+                );
                 relay::error(
                     sender,
                     "Live checkpoint failed",
                     Some(id),
-                    false,
+                    None,
                 );
-                return Ok(());
             }
-        };
-        if response.status_code() == 409 {
-            let _guard = self.doc.lock().await;
-            journal::delete_pending(&storage, &pending).await?;
-            self.conflict(id);
-            return Ok(());
-        }
-        if !(200..300).contains(&response.status_code()) {
-            relay::error(sender, "Live checkpoint failed", Some(id), false);
             return Ok(());
         }
         let record_version = response_json::<Value>(&mut response, MAX_API)
@@ -652,7 +957,13 @@ impl PhotonLiveRoom {
             .ok()
             .and_then(|v| canonical(&v, "record_version", "recordVersion"));
         let Some(record_version) = record_version else {
-            relay::error(sender, "Live checkpoint failed", Some(id), false);
+            retry(
+                sender,
+                "Live checkpoint failed",
+                Some(id),
+                "missing_record_version",
+                Some(status),
+            );
             return Ok(());
         };
         let result = Saved {
@@ -703,14 +1014,14 @@ impl DurableObject for PhotonLiveRoom {
     }
     async fn fetch(&self, mut request: Request) -> Result<Response> {
         if header(&request, INTERNAL).as_deref() != Some("1") {
-            return Response::error("Not found", 404);
+            return refuse(404, "not_internal", "Not found");
         }
         let Some(session) = self.resolve_reference(&request).await? else {
-            return Response::error("Unauthorized", 401);
+            return refuse(401, "unknown_session", "Unauthorized");
         };
         if request.path() == "/live/internal-pointer" {
             if request.method() != Method::Post {
-                return Response::error("Method not allowed", 405);
+                return refuse(405, "pointer_method", "Method not allowed");
             }
             let input = request_json(&mut request, 64 * 1024).await?;
             let candidate =
@@ -719,7 +1030,11 @@ impl DurableObject for PhotonLiveRoom {
                 || input["body_hash"] != session.body_hash
                 || input["record_version"] != session.record_version
             {
-                return Response::error("Invalid room pointer", 400);
+                return refuse(
+                    400,
+                    "invalid_pointer",
+                    "Invalid room pointer",
+                );
             }
             let _guard = self.doc.lock().await;
             let accepted = self
@@ -732,9 +1047,10 @@ impl DurableObject for PhotonLiveRoom {
                 .await?
                 .ok_or("Missing generation pointer")?;
             if accepted != pointer.room_id {
-                return Response::error(
-                    "Live room generation unavailable",
+                return refuse(
                     503,
+                    "pointer_unavailable",
+                    "Live room generation unavailable",
                 );
             }
             return json(&serde_json::to_value(pointer)?, 200);
@@ -742,60 +1058,129 @@ impl DurableObject for PhotonLiveRoom {
         if !header(&request, "upgrade")
             .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
         {
-            return Response::error("Expected WebSocket upgrade", 426);
+            return refuse(
+                426,
+                "not_websocket",
+                "Expected WebSocket upgrade",
+            );
         }
         let target = header(&request, TARGET)
             .filter(|s| bounded(s, 512))
             .unwrap_or_else(|| session.identity.room_id.clone());
         let mut doc = self.doc.lock().await;
         let storage = self.state.storage();
-        if target == session.identity.room_id {
-            let pointer: Option<Pointer> = storage.get(POINTER).await?;
-            if let Some(pointer) = pointer.filter(|p| {
-                p.valid() && p.room_id != session.identity.room_id
-            }) {
-                let mut response =
-                    Response::error("Live room generation changed", 409)?;
-                response.headers_mut().set(GENERATION, &pointer.room_id)?;
-                return Ok(response);
+        // The base room owns the generation pointer; a superseded generation
+        // remembers its successor. The edge follows either hop.
+        let successor = if target == session.identity.room_id {
+            storage
+                .get::<Pointer>(POINTER)
+                .await?
+                .filter(|p| p.valid() && p.room_id != target)
+                .map(|p| p.room_id)
+        } else {
+            storage
+                .get::<String>(RETIRED)
+                .await?
+                .filter(|s| generated(s) && *s != target)
+        };
+        if let Some(successor) = successor {
+            // The successor would refuse an older ticket; say so here.
+            if let Some(reason) = generation_state(&successor)
+                .and_then(|(_, v, h)| refusal(&session, &v, &h))
+            {
+                return refuse(409, reason, "Live body changed");
             }
+            return redirect(
+                "generation_changed",
+                "Live room generation changed",
+                &successor,
+            );
         }
         let mut meta = match journal::metadata(&storage).await? {
             Some(meta) if meta.identity == session.identity => meta,
-            Some(_) => return Response::error("Forbidden", 403),
+            Some(_) => {
+                return refuse(403, "identity_mismatch", "Forbidden")
+            }
             None => {
                 if get_raw(&storage, META).await?.is_some() {
-                    return Response::error("Forbidden", 403);
+                    return refuse(403, "invalid_metadata", "Forbidden");
                 }
-                let meta = Metadata {
+                // A generation starts from the canonical state it is named
+                // for, never from whichever session arrives first: a stale
+                // ticket that followed the pointer just after it moved must be
+                // refused, not seed the successor with its old body. Nothing
+                // is stored until a join is accepted.
+                let (record_version, body_hash) =
+                    if target == session.identity.room_id {
+                        (
+                            session.record_version.clone(),
+                            session.body_hash.clone(),
+                        )
+                    } else {
+                        match generation_state(&target) {
+                            Some((room, v, h))
+                                if room == session.identity.room_id =>
+                            {
+                                (v, h)
+                            }
+                            _ => {
+                                return refuse(
+                                    409,
+                                    "invalid_generation",
+                                    "Invalid room generation",
+                                )
+                            }
+                        }
+                    };
+                Metadata {
                     identity: session.identity.clone(),
                     initialized: false,
                     version: 0,
-                    record_version: Some(session.record_version.clone()),
+                    record_version: Some(record_version),
                     saved_version: Some(0),
-                    body_hash: session.body_hash.clone(),
-                };
-                journal::put_metadata(&storage, &meta).await?;
-                meta
+                    body_hash,
+                }
             }
         };
         if meta.body_hash != session.body_hash {
-            if meta.dirty()
-                || meta.record_version.as_ref().is_some_and(|v| {
-                    !newer(&session.record_version, Some(v))
-                })
-                || (meta.record_version.is_none() && meta.initialized)
-            {
-                return Response::error("Live body changed", 409);
+            // Only a strictly newer canonical version may replace this body;
+            // after a refusal the client re-requests a session (fresh body
+            // and version) and joins again.
+            let refused = match meta.record_version.as_deref() {
+                Some(v) => refusal(&session, v, &meta.body_hash),
+                // Legacy metadata without a version can be replaced only
+                // before it holds a document.
+                None if meta.initialized => Some("unversioned_room"),
+                None => None,
+            };
+            if let Some(reason) = refused {
+                return refuse(409, reason, "Live body changed");
             }
-            for ws in self.state.get_websockets() {
-                let _ = ws.close(
-                    Some(4410),
-                    Some("Live canonical body changed; reconnect required"),
+            // A reservation that is now canonical is this room's own
+            // checkpoint whose ACK was lost, not an external change. An
+            // unreadable journal cannot be settled; rotating leaves it here.
+            let committed =
+                journal::pending(&storage).await.ok().flatten().filter(
+                    |p| {
+                        journal::committed(
+                            p,
+                            &session.body_hash,
+                            &session.record_version,
+                        )
+                    },
                 );
-            }
-            drop(doc);
-            return self.rotate(&session, &target).await;
+            let Some(pending) = committed else {
+                drop(doc);
+                return self.replace(&session, &target).await;
+            };
+            let saved = journal::settle(
+                &storage,
+                &mut meta,
+                &pending,
+                &session.record_version,
+            )
+            .await?;
+            relay::broadcast(&self.state, &saved.frame());
         }
         if meta
             .record_version
@@ -840,7 +1225,7 @@ impl DurableObject for PhotonLiveRoom {
         match message {
             WebSocketIncomingMessage::Binary(bytes) => {
                 if self.update(&sender, &session, bytes).await.is_err() {
-                    relay::error(&sender, "Live update failed", None, false)
+                    relay::error(&sender, "Live update failed", None, None)
                 }
             }
             WebSocketIncomingMessage::String(text) => {
@@ -855,7 +1240,7 @@ impl DurableObject for PhotonLiveRoom {
                         &sender,
                         "Invalid Live message",
                         None,
-                        false,
+                        None,
                     );
                     return Ok(());
                 };
@@ -871,7 +1256,7 @@ impl DurableObject for PhotonLiveRoom {
                                 &sender,
                                 "Invalid awareness update",
                                 None,
-                                false,
+                                None,
                             );
                             return Ok(());
                         }
@@ -903,7 +1288,7 @@ impl DurableObject for PhotonLiveRoom {
                                         &sender,
                                         "Live initialization failed",
                                         None,
-                                        false,
+                                        None,
                                     )
                                 }
                             }
@@ -911,7 +1296,7 @@ impl DurableObject for PhotonLiveRoom {
                                 &sender,
                                 "Invalid initialization update",
                                 None,
-                                false,
+                                None,
                             ),
                         }
                     }
@@ -921,11 +1306,15 @@ impl DurableObject for PhotonLiveRoom {
                             .await
                             .is_err() =>
                     {
-                        relay::error(
+                        // Authorization or storage failed. A reservation is
+                        // removed only once its outcome is known, so the
+                        // identical frame is safe to retry.
+                        retry(
                             &sender,
                             "Live checkpoint recovery failed",
                             frame["operation_id"].as_str(),
-                            false,
+                            "recovery_failed",
+                            None,
                         )
                     }
                     _ => {}

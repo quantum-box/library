@@ -100,6 +100,9 @@
 `DataResponse.recordVersion` は Database BC の 1-origin record revision を
 10進文字列で返す。BIGINT を JavaScript number に変換してはならない。この
 expand/read 段階では更新要求に version を渡さず、write 時の CAS もまだ行わない。
+ただし PUT を含むレコードへの書き込みは、値の変更と同じトランザクションで
+`recordVersion` を1増やし、応答には書き込み後の値を返す。値が読み取り時と
+異なれば、その間にレコードが変更されている。
 
 `DataResponse.url` は当該ドキュメントを Library Client（`apps/client`）で
 開く絶対 URL。オリジンは環境変数 `LIBRARY_CLIENT_BASE_URL` から取得する

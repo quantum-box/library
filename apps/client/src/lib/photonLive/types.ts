@@ -75,7 +75,16 @@ export interface PhotonLiveProvider {
   readonly awareness: Awareness
   readonly user: { name: string; color: string }
   readonly session: PhotonLiveSession | null
+  /** The Durable Object generation of the joined room, once it is known. */
+  readonly roomGeneration: string | null
+  /** Destroyed, by its owner or by the page unloading: it sends nothing more. */
+  readonly destroyed: boolean
   getState(): PhotonLiveState
+  /**
+   * This client's own body that is queued or in flight but not saved yet.
+   * Peers' unsaved edits are theirs to save and do not count.
+   */
+  unsentBody(): string | null
   subscribe(listener: (state: PhotonLiveState) => void): () => void
   subscribeSave(listener: (state: PhotonLiveState) => void): () => void
   queueCheckpoint(body: string): void

@@ -404,6 +404,17 @@ export function loadStoredAuthIdentity(): AuthIdentity | null {
   }
 }
 
+/**
+ * The stored tokens while the access token has not expired, without
+ * refreshing them. For a request that has to start before the page goes
+ * away: a refresh is a network round trip the page may not outlive.
+ */
+export function unexpiredAuthTokens(): AuthTokens | null {
+  const tokens = readStoredAuthTokens()
+  if (!tokens || tokens.expiresAt - Date.now() / 1000 <= 0) return null
+  return tokens
+}
+
 export async function getValidAuthTokens(): Promise<AuthTokens | null> {
   const tokens = readStoredAuthTokens()
   if (!tokens) return null

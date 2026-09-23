@@ -148,3 +148,39 @@ Before public cutover, every legacy Record writer must either route through the
 new UoW or be feature-gated. Running a non-CAS writer beside the new boundary
 would preserve database validity but violate the optimistic concurrency and
 event completeness contract.
+
+Until then, the legacy writers keep `record_version` monotonic so the versioned
+boundary is never fooled by them. The compatibility patch
+(`RecordUnitOfWork::patch_atomically`, used by REST PUT, GraphQL `updateData`
+and MCP `update_data` unless the external sync engine routes them through this
+UoW, and always by upsert and inbound provider sync) locks the Record,
+CAS-increments `data.record_version` exactly once in the same transaction as
+the value change, and returns the stored version to its caller. A Property or
+Relation deletion advances every affected Record with
+`record_version = record_version + 1` in the statement that clears the value
+(once per removed Property, so twice for a self-Relation), and the operator
+rich-text migration advances each Record whose value it converts. A versioned
+caller holding an older version therefore receives a conflict instead of
+patching over a legacy write, and Live never sees a changed body at an
+unchanged version.
+
+`record_version` versions the whole Record, not one Property. A title rename,
+an edit to another Property, a same-content upsert, or a Property/Relation
+deletion advances it while the Live body stays byte-identical. A Live
+checkpoint reserved before such a write receives a CAS conflict that is not a
+body conflict. Consumers must re-read the canonical body before deciding: when
+it still equals the room's last saved body, adopt the newer version and resend
+the pending body as a new operation against it (the Worker's
+`CHECKPOINT_STALE` path); report a conflict only when the canonical body
+itself differs from both the saved and the reserved body.
+
+Legacy writes still insert no `domain_outbox_events` row: inbound provider
+writes rely on this so they cannot be re-derived as outbound deliveries, and
+event completeness remains the cutover requirement above. A Record can
+therefore be ahead of its latest event, so the preview external-sync capture
+looks up the latest Record event at or below the Record's version rather than
+an exact match. The recovery scanner still skips an event once the Record has
+moved past it; a legacy write landing before the scan drops an event whose
+request-path capture failed. Rolling the API back to a binary older than this
+behaviour reintroduces unchanged versions for changed bodies, so Live must be
+disabled before such a rollback.
