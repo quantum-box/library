@@ -13,12 +13,14 @@ const mocks = vi.hoisted(() => ({
   deleteRepositoryProperty: vi.fn(),
   addLibraryData: vi.fn(),
   deleteLibraryData: vi.fn(),
+  updateLibraryData: vi.fn(),
 }))
 
 vi.mock('../lib/libraryTable/libraryDataCrud', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/libraryTable/libraryDataCrud')>()),
   addLibraryData: mocks.addLibraryData,
   deleteLibraryData: mocks.deleteLibraryData,
+  updateLibraryData: mocks.updateLibraryData,
 }))
 
 vi.mock('../lib/repositorySettingsApi', () => ({
@@ -38,6 +40,7 @@ const cache = vi.hoisted(() => ({
   readRepoTable: vi.fn<(target: unknown) => Promise<CachedRepoTable | null>>(async () => null),
   rememberRepoTable: vi.fn(),
   forgetData: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
+  forgetDataPages: vi.fn<(target: unknown, dataId: string) => Promise<void>>(async () => undefined),
 }))
 
 vi.mock('../lib/libraryReadCache', () => cache)
@@ -634,5 +637,30 @@ describe('LibraryTableView', () => {
       expect(onDataDeleted).toHaveBeenCalledWith('data-1')
     })
     expect(screen.queryByTestId('library-table-row-data-1')).not.toBeInTheDocument()
+  })
+
+  /**
+   * A record's remembered page would be drawn in preference to its row, so an
+   * edit made in the table takes the page away and the record opens from the
+   * edited row.
+   */
+  it('forgets the record page an edit in the table makes out of date', async () => {
+    mocks.updateLibraryData.mockImplementation(async (_target: unknown, _properties: unknown, item: unknown) => item)
+    render(<LibraryTableView org="quantum-box" repo="docs" onSelectData={() => undefined} />)
+    await waitFor(() => {
+      expect(screen.getByText('First item')).toBeInTheDocument()
+    })
+
+    fireEvent.doubleClick(screen.getByText('First item'))
+    const input = screen.getByDisplayValue('First item')
+    fireEvent.change(input, { target: { value: 'Renamed item' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(cache.forgetDataPages).toHaveBeenCalledWith(
+        expect.objectContaining({ org: 'quantum-box', repo: 'docs' }),
+        'data-1'
+      )
+    })
   })
 })

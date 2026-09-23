@@ -386,6 +386,26 @@ async function trimDetailsNow(): Promise<void> {
 }
 
 /**
+ * Forget a record's pages, under every name, but not its row.
+ *
+ * For an edit made somewhere else -- the table -- that the pages do not have:
+ * the page would otherwise be preferred to the row and open on the old value.
+ * With the pages gone the record opens from its (edited) row until the
+ * request for it answers.
+ */
+export function forgetDataPages(target: ReadCacheRepository, dataId: string): Promise<void> {
+  return queueDetailWrite(async () => {
+    const page = await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, dataId))
+    if (!page) return
+    const ids = new Set([dataId, ...(page.item.id === dataId ? page.ids ?? [] : [])])
+    await remember(
+      DETAILS_COLLECTION,
+      [...ids].map((id) => ({ recordId: detailKey(target, id), value: null, deleted: true }))
+    )
+  })
+}
+
+/**
  * Forget a record that has been deleted, so that no screen draws it again.
  *
  * Resolves once no screen can: a caller about to navigate to the table the

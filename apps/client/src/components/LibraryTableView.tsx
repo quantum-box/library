@@ -45,6 +45,7 @@ import {
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
   forgetData,
+  forgetDataPages,
   peekRepoTable,
   readRepoTable,
   rememberRepoTable,
@@ -487,6 +488,9 @@ function RepositoryTable({
       setMutationError(null)
       try {
         const saved = await updateLibraryData(repoTarget, properties, item)
+        // The record's remembered page predates this edit and would be drawn
+        // in preference to the row; it goes, and the record opens from the row.
+        await forgetDataPages(cacheTarget, saved.id)
         setItems((current) => current.map((row) => (row.id === saved.id ? saved : row)))
         return saved
       } catch (saveError: unknown) {
@@ -496,7 +500,7 @@ function RepositoryTable({
         setSaving(false)
       }
     },
-    [properties, repoTarget]
+    [cacheTarget, properties, repoTarget]
   )
 
   const handlePropertyCommit = useCallback(

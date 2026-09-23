@@ -268,6 +268,31 @@ export function DatabasesProvider({
 
   // Creating an organization and importing an existing tenant both end with a
   // new organization the user should land on, so they share the reconciliation.
+  /**
+   * Add what was just created to the remembered lists.
+   *
+   * The refresh after a creation is what normally remembers it, but it is
+   * allowed to fail -- and the creation, having succeeded, is on screen all
+   * the same. Remembered here too, it is still there on an offline start.
+   */
+  const rememberCreated = useCallback((created: {
+    repository?: LibraryRepository
+    organization?: LibraryOrganization
+  }) => {
+    void readWorkspace().then((cached) => {
+      const workspace = cached ?? { repositories: [], organizations: [] }
+      const { repository, organization } = created
+      rememberWorkspace({
+        repositories: repository && !workspace.repositories.some((known) => known.id === repository.id)
+          ? [...workspace.repositories, repository]
+          : workspace.repositories,
+        organizations: organization && !workspace.organizations.some((known) => known.id === organization.id)
+          ? [...workspace.organizations, organization]
+          : workspace.organizations,
+      })
+    })
+  }, [])
+
   const adoptOrganization = useCallback(async (created: CreatedLibraryOrganization) => {
     await refreshRepositories()
     const organization = {
@@ -275,12 +300,15 @@ export function DatabasesProvider({
       label: created.username,
       platformTenantId: '',
     }
+    rememberCreated({
+      organization: { id: created.id, operatorName: created.username, platformTenantId: '', repos: [] },
+    })
     setOrganizations((current) => current.some((candidate) => candidate.id === created.id)
       ? current
       : [...current, organization])
     setSelectedOrganizationId(created.id)
     return organization
-  }, [refreshRepositories, setSelectedOrganizationId])
+  }, [refreshRepositories, rememberCreated, setSelectedOrganizationId])
 
   const createOrganization = useCallback(
     async (name: string, username: string) =>
@@ -315,18 +343,20 @@ export function DatabasesProvider({
       isPublic,
     })
     await refreshRepositories()
-    const database = repoToDatabase({
+    const repository: LibraryRepository = {
       ...created,
       orgUsername: created.orgUsername || orgUsername,
       operatorId: organization.id,
       platformTenantId: organization.platformTenantId,
-    })
+    }
+    rememberCreated({ repository })
+    const database = repoToDatabase(repository)
     setDatabases((current) => current.some((candidate) => candidate.id === database.id)
       ? current
       : [...current, database])
     setSelectedOrganizationId(organization.id)
     return database
-  }, [databases, organizations, refreshRepositories, setSelectedOrganizationId])
+  }, [databases, organizations, refreshRepositories, rememberCreated, setSelectedOrganizationId])
 
   const deleteRepository = useCallback(async (
     orgUsername: string,

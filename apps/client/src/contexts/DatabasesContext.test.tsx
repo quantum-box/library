@@ -338,6 +338,31 @@ describe('DatabasesProvider', () => {
     })
   })
 
+  /** A creation that succeeded is remembered even if the refresh after it fails. */
+  it('remembers a created repository when the refresh after it fails', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-count')).toHaveTextContent('1')
+    })
+    cache.readWorkspace.mockResolvedValue({ repositories: [], organizations: [] })
+    mocks.fetchLibraryRepositories.mockRejectedValueOnce(new Error('GraphQL unavailable'))
+
+    await act(async () => {
+      screen.getByTestId('create-repository').click()
+    })
+
+    await waitFor(() => {
+      expect(cache.rememberWorkspace).toHaveBeenLastCalledWith({
+        repositories: [expect.objectContaining({ id: 'repo-2', username: 'research-library' })],
+        organizations: [],
+      })
+    })
+  })
+
   it('surfaces load errors and retries with fetchLibraryRepositories', async () => {
     mocks.fetchLibraryRepositories
       .mockRejectedValueOnce(new Error('GraphQL unavailable'))
