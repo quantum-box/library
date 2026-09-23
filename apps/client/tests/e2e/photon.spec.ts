@@ -72,7 +72,7 @@ async function selectCreateRepository(page: Page) {
 }
 
 test.describe('Library shell', () => {
-  test('opens the database table and creates a new record', async ({ page }) => {
+  test('creates data from Home and opens it in its editor', async ({ page }) => {
     const title = `E2E smoke data ${Date.now()}`
 
     await page.goto('/')
@@ -84,16 +84,47 @@ test.describe('Library shell', () => {
     await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
     await expect(page.getByText(/\d+ data/)).toBeVisible()
 
+    // Only the repository is asked for; the name is written in the editor.
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
     await selectCreateRepository(page)
-
-    await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
 
     await expect(page.getByTestId('create-record-modal')).toBeHidden()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\/[^/?]+/)
+    const titleInput = page.getByTestId('data-editor-title-input')
+    await expect(titleInput).toBeFocused()
+    await expect(titleInput).toHaveValue('Untitled')
+    await page.keyboard.type(title)
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+
+    // Back in the repository table, nothing else gets created and opened.
+    const created = (await e2eFixtureData(page)).length
+    await page.getByRole('button', { name: 'Back to data' }).click()
+    await expect(page.getByTestId('library-table-view')).toBeVisible()
+    await expect(page.locator('tbody tr', { hasText: title })).toBeVisible()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data(\?|$)/)
+    expect((await e2eFixtureData(page)).length).toBe(created)
+
+    await page.goto('/databases')
     await page.getByPlaceholder('Filter data...').fill(title)
-    await expect(page.getByText(title)).toBeVisible()
-    await expect(page.locator('tbody tr', { hasText: 'DATA-103' })).toBeVisible()
+    await expect(page.locator('tbody tr', { hasText: title })).toBeVisible()
+  })
+
+  test('opens the new-data form from the All data table and names it there', async ({ page }) => {
+    const title = `E2E named data ${Date.now()}`
+
+    await page.goto('/databases')
+    await page.locator('tbody').getByRole('button', { name: /New data/ }).click()
+    await expect(page.getByTestId('create-record-modal')).toBeVisible()
+    await selectCreateRepository(page)
+    await page.getByLabel(/Data name/i).fill(title)
+    await page.getByLabel(/Data name/i).press('Enter')
+
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data\/[^/?]+/)
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await expect(page.getByTestId('data-editor-title-input')).toHaveCount(0)
   })
 
   test('switches between table, board, workflow, timeline, and chat views', async ({ page }) => {
@@ -715,6 +746,7 @@ test.describe('Library shell', () => {
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()
     await expect(page.getByTestId('create-record-modal')).toBeHidden()
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
 
     await expect(secondPage.getByText(title).first()).toBeVisible({ timeout: 60_000 })
 

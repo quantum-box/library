@@ -12,7 +12,7 @@ describe('pending record navigation', () => {
       status: 'todo', priority: 'none', assignee: null, labels: [], project: 'test',
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), description: '',
     }
-    const props = { records: [pending], selectedRecordId: null, onSelectRecord: select, onUpdateRecord: vi.fn(), onCreateRecord: vi.fn() }
+    const props = { records: [pending], selectedRecordId: null, onSelectRecord: select, onUpdateRecord: vi.fn(), onRequestCreate: vi.fn() }
     const view = render(<TableView {...props} />)
     const card = screen.getByTestId('mobile-record-card')
     expect(card).toHaveAttribute('aria-disabled', 'true')

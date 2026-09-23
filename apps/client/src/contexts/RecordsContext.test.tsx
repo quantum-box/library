@@ -452,7 +452,7 @@ describe('RecordsProvider server-accepted projection', () => {
       .mockReturnValueOnce(retryHydration.promise)
     mocks.createServerRecord.mockReturnValue(create.promise)
     let context: ReturnType<typeof useRecords> | null = null
-    let creation: Promise<void> | null = null
+    let creation: Promise<DatabaseRecord> | null = null
 
     render(
       <RecordsProvider>

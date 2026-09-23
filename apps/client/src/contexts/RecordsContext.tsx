@@ -47,7 +47,8 @@ interface RecordsContextValue {
   records: DatabaseRecord[]
   handleMoveRecord: (recordId: string, newStatus: Status) => void
   handleUpdateRecord: (recordId: string, field: keyof DatabaseRecord, value: string) => void
-  handleCreateRecord: (data: CreateRecordData) => Promise<void>
+  /** Resolves with the record as the server stored it. */
+  handleCreateRecord: (data: CreateRecordData) => Promise<DatabaseRecord>
   handleDeleteRecord: (recordId: string) => void
   syncRecord: (record: DatabaseRecord) => void
   beginRecordsSnapshot: () => RecordsSnapshotToken
@@ -478,7 +479,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       upsertYDatabaseRecord(optimisticRecord)
     })
 
-    await createServerRecord({
+    return createServerRecord({
       ...data,
       assignee: data.assignee ?? null,
       labels: data.labels ?? [],
@@ -490,6 +491,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
           removeYDatabaseRecord(optimisticRecord.id)
           upsertYDatabaseRecord(serverRecord)
         })
+        return serverRecord
       })
       .catch((error: unknown) => {
         console.warn('Failed to persist created record', error)
