@@ -18,8 +18,14 @@ use value_object::TenantId;
 /// attachment is idempotent upstream. A caller that is not a user (a key
 /// acting on its own behalf) gets nothing: the grant is for people.
 /// `policy_id` is `None` where the environment does not configure the
-/// policy, and the call then does nothing — issuing still works wherever
-/// the caller already holds what it needs.
+/// policy, and the call then does nothing.
+///
+/// A refusal is not an error either. Attaching a policy is itself
+/// something tachyon authorizes as the caller: an organization owner may
+/// (their operator-owner grant carries it), a member may not. Whether the
+/// caller needed the grant at all is answered by the operation it was for
+/// — which is refused on its own terms if they did — so a refusal here is
+/// reported by that, not by this.
 pub(crate) async fn grant_api_key_policy(
     auth_app: &dyn AuthApp,
     policy_id: Option<&PolicyId>,
@@ -37,7 +43,7 @@ pub(crate) async fn grant_api_key_policy(
         return Ok(());
     };
 
-    auth_app
+    if let Err(error) = auth_app
         .attach_user_policy(&AttachUserPolicyInput {
             executor,
             multi_tenancy,
@@ -46,4 +52,14 @@ pub(crate) async fn grant_api_key_policy(
             tenant_id,
         })
         .await
+    {
+        tracing::info!(
+            policy = %policy_id,
+            tenant = %tenant_id,
+            error = %error,
+            "api key policy was not granted to the caller"
+        );
+    }
+
+    Ok(())
 }

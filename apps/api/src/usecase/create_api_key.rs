@@ -102,7 +102,8 @@ impl CreateApiKeyInputPort for CreateApiKey {
 
             // Granting the key's account its role is authorized on the
             // tachyon side as the caller, who needs the issuer grant for
-            // it. The owner check above has passed by now.
+            // it. The owner check above has passed by now. Best effort:
+            // see `grant_api_key_policy`.
             grant_api_key_policy(
                 self.auth_app.as_ref(),
                 self.api_key_issuer_policy_id.as_ref(),
@@ -299,6 +300,7 @@ mod tests {
         auth.expect_attach_user_policy().returning({
             let calls = calls.clone();
             move |input| {
+                let denied = deny == Some("grant");
                 calls.lock().unwrap().push(format!(
                     "grant:{}@{}",
                     input.policy_id,
@@ -308,7 +310,13 @@ mod tests {
                         .map(|id| id.to_string())
                         .unwrap_or_default()
                 ));
-                Box::pin(async { Ok(()) })
+                Box::pin(async move {
+                    if denied {
+                        Err(errors::Error::forbidden("denied"))
+                    } else {
+                        Ok(())
+                    }
+                })
             }
         });
         auth.expect_create_service_account().returning({
@@ -468,6 +476,23 @@ mod tests {
                 "key:sa_01key".to_string(),
             ]
         );
+    }
+
+    /// Attaching a policy to oneself is itself an owner's to do, so a
+    /// member who may issue a key without a role is refused it. What they
+    /// may do is decided by the operation that follows, not by the grant.
+    #[tokio::test]
+    async fn a_refused_grant_does_not_stop_the_key() {
+        let calls = Calls::default();
+        let output =
+            create(auth(&calls, Some("grant")), None).await.unwrap();
+
+        assert_eq!(output.role, None);
+        assert!(calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.starts_with("key:")));
     }
 
     #[tokio::test]

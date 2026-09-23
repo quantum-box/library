@@ -88,7 +88,31 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
         let old_role: OrgRole = (*user.role()).into();
         let new_role = input.new_role;
 
-        // 2. Update user's role via REST
+        // 2. Take back what the old role carried, before the role
+        //    itself changes. A refusal here leaves the member an owner,
+        //    which the same request repeats; taking the role first and
+        //    failing here would leave a member holding an owner's
+        //    tachyon grants, with no downgrade left to retry.
+        let downgraded_from_owner =
+            old_role == OrgRole::Owner && new_role != OrgRole::Owner;
+        if downgraded_from_owner {
+            self.detach_repo_owner_policy(
+                input.executor,
+                input.multi_tenancy,
+                &user,
+                &tenant,
+            )
+            .await?;
+            self.detach_api_key_issuer_policy(
+                input.executor,
+                input.multi_tenancy,
+                &user,
+                &tenant,
+            )
+            .await?;
+        }
+
+        // 3. Update user's role via REST
         let auth_role: DefaultRole = new_role.into();
         let updated_user = self
             .sdk
@@ -109,26 +133,10 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
             "updated user role in organization"
         );
 
-        // 3. Handle repo owner policy based on role change
+        // 4. Upgrading to Owner - attach repo owner policy. The other
+        //    direction was handled before the role changed.
         if new_role == OrgRole::Owner && old_role != OrgRole::Owner {
-            // Upgrading to Owner - attach repo owner policy
             self.attach_repo_owner_policy(
-                input.executor,
-                input.multi_tenancy,
-                &updated_user,
-                &tenant,
-            )
-            .await?;
-        } else if old_role == OrgRole::Owner && new_role != OrgRole::Owner {
-            // Downgrading from Owner - detach repo owner
-            self.detach_repo_owner_policy(
-                input.executor,
-                input.multi_tenancy,
-                &updated_user,
-                &tenant,
-            )
-            .await?;
-            self.detach_api_key_issuer_policy(
                 input.executor,
                 input.multi_tenancy,
                 &updated_user,

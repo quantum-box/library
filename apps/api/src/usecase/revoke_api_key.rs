@@ -140,8 +140,11 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         if account_is_spent {
             // Removing an account is authorized upstream as the caller;
             // owners get the grant that allows it (see
-            // `grant_api_key_issuer`). Anyone else revokes the key only.
-            if self
+            // `grant_api_key_policy`). For anyone else the key is revoked
+            // and the account stays: it holds nothing, so it authenticates
+            // nobody, and asking upstream to remove it would only be
+            // refused.
+            let may_manage = self
                 .auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
@@ -149,36 +152,39 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                     action: "library:ManageRepoPolicy",
                 })
                 .await
-                .is_ok()
-            {
-                if let Err(error) = grant_api_key_policy(
+                .is_ok();
+
+            if may_manage {
+                grant_api_key_policy(
                     self.auth_app.as_ref(),
                     self.api_key_issuer_policy_id.as_ref(),
                     input.executor,
                     &org_scope,
                     &tenant_id,
                 )
-                .await
+                .await?;
+
+                // Tidying, not revocation: the key is already refused, so
+                // a failure here is logged rather than reported.
+                if let Err(error) = self
+                    .auth_app
+                    .delete_service_account(&DeleteServiceAccountInput {
+                        executor: input.executor,
+                        multi_tenancy: &org_scope,
+                        service_account_id: service_account.id(),
+                    })
+                    .await
                 {
                     tracing::warn!(
+                        service_account = %service_account.id(),
                         error = %error,
-                        "api key issuer grant failed before removing a revoked key's service account"
+                        "revoked key's service account was not removed"
                     );
                 }
-            }
-            if let Err(error) = self
-                .auth_app
-                .delete_service_account(&DeleteServiceAccountInput {
-                    executor: input.executor,
-                    multi_tenancy: &org_scope,
-                    service_account_id: service_account.id(),
-                })
-                .await
-            {
-                tracing::warn!(
+            } else {
+                tracing::info!(
                     service_account = %service_account.id(),
-                    error = %error,
-                    "revoked key's service account was not removed"
+                    "left the revoked key's service account to an owner"
                 );
             }
         }
@@ -393,11 +399,12 @@ mod tests {
         );
     }
 
-    /// Someone who may revoke but not manage repository policy gets no
-    /// grant; the account is still asked to go, and if that is refused
-    /// the key stays revoked regardless.
+    /// Someone who may revoke but not manage repository policy cannot
+    /// remove a service account either, so the key goes and the account
+    /// it emptied is left for an owner rather than asking upstream for
+    /// something it will refuse.
     #[tokio::test]
-    async fn a_non_owner_revokes_without_being_granted_anything() {
+    async fn a_non_owner_revokes_the_key_and_leaves_the_account() {
         let calls = Calls::default();
         revoke(auth(&calls, false), "pak_reader").await.unwrap();
 
@@ -407,7 +414,6 @@ mod tests {
                 "policy:library:RevokeApiKey",
                 "revoke:sa_01reader:pak_reader",
                 "policy:library:ManageRepoPolicy",
-                "delete-sa:sa_01reader",
             ]
         );
     }
