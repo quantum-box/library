@@ -4,6 +4,13 @@
 # library-auth.yml is skipped as unsupported, so those files record rather
 # than apply.)
 #
+# Deployment: apply this before library-api ships a build that grants
+# these, and remove `auth:CreatePublicApiKey` from `library:ApiKeyAccounts`
+# by hand (an apply cannot, see below). Nobody holds that grant today --
+# library-api has never run the code that hands it out -- so this is
+# closing a door rather than repairing a breach, but it stays open until
+# someone closes it.
+#
 # Apply from the Library platform tenant, whose id the namespaces name:
 #
 #   tachyon manifest apply \
@@ -29,7 +36,7 @@ policies:
   # neither action is in LibraryUserPolicy or LibraryRepoOwnerPolicy.
   # library-api grants this only after its own `library:ManageRepoPolicy`
   # check, so it reaches owners, and attaches it to the account behind an
-  # owner key, which issues keys as itself. `auth:CreatePublicApiKey` is
+  # owner key, which issues, lists and revokes keys as itself. `auth:CreatePublicApiKey` is
   # here rather than in the policy every member gets: a member who could
   # mint a key on an account they did not make could mint one on an
   # account that carries a role, which is the check above undone. Upstream confines both actions to the
@@ -43,9 +50,18 @@ policies:
     actions:
       - action: auth:AttachServiceAccountPolicy
         effect: allow
+      - action: auth:DetachServiceAccountPolicy
+        effect: allow
       - action: auth:DeleteServiceAccount
         effect: allow
       - action: auth:CreatePublicApiKey
+        effect: allow
+      # Finding the account a key is on, to list keys or to revoke one.
+      # A person has these already; the account behind an owner key,
+      # which does the same as itself, does not.
+      - action: auth:FindAllServiceAccounts
+        effect: allow
+      - action: auth:FindAllPublicApiKeys
         effect: allow
 
   # Applied 2026-09-23 as pol_01m36cff1vb3eftr27p4f12t1a
