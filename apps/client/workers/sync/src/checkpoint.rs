@@ -57,6 +57,8 @@ pub async fn read_body(
     }
     Ok(body)
 }
+/// The request is sent right after, so `pending` already carries its
+/// in-doubt deadline.
 pub async fn reserve(
     storage: &Storage,
     pending: Pending,
@@ -97,6 +99,74 @@ pub async fn delete_pending(
         .boxed_local()
     })
     .await
+}
+/// Sets or clears the reservation's in-doubt deadline if it is still the
+/// stored one. Returns the reservation as now stored, so later equality
+/// checks against the journal keep matching it.
+pub async fn mark(
+    storage: &Storage,
+    expected: &Pending,
+    until: Option<i64>,
+) -> Result<Option<Pending>> {
+    let expected = expected.clone();
+    transaction(storage, move |tx| {
+        async move {
+            let current: Option<Pending> = tx_get(&tx, PENDING).await?;
+            if current.as_ref() != Some(&expected) {
+                return Ok(None);
+            }
+            let marked = Pending {
+                in_doubt_until: until,
+                ..expected
+            };
+            tx_put(&tx, PENDING, &marked).await?;
+            Ok(Some(marked))
+        }
+        .boxed_local()
+    })
+    .await
+}
+/// The canonical body is exactly this reservation, at a record version newer
+/// than the one it was reserved against: its CAS committed although the room
+/// never saw the ACK (timeout, restart), or another writer stored the same
+/// body. Either way the reserved body is what Library now holds.
+pub fn committed(
+    pending: &Pending,
+    canonical_hash: &str,
+    record_version: &str,
+) -> bool {
+    pending.body_hash == canonical_hash
+        && newer(record_version, Some(&pending.expected_record_version))
+}
+/// Adopt a `committed` reservation as the room's saved state. The result is
+/// kept so a retry of the same operation id replays `live-saved` instead of
+/// reserving again. Metadata is written before the reservation is removed:
+/// an interruption in between leaves a journal the next checkpoint settles
+/// again, never a missing journal beside stale metadata.
+pub async fn settle(
+    storage: &Storage,
+    meta: &mut Metadata,
+    pending: &Pending,
+    record_version: &str,
+) -> Result<Saved> {
+    let result = Saved {
+        version: pending.version,
+        operation_id: pending.operation_id.clone(),
+        record_version: record_version.into(),
+        body_hash: pending.body_hash.clone(),
+        fingerprint: pending.fingerprint.clone(),
+        expires_at: now() + RESULT_TTL,
+    };
+    save_result(storage, result.clone()).await?;
+    if newer(record_version, meta.record_version.as_deref()) {
+        meta.record_version = Some(record_version.into());
+    }
+    meta.body_hash = pending.body_hash.clone();
+    meta.saved_version =
+        Some(meta.saved().max(pending.version.min(meta.version)));
+    put_metadata(storage, meta).await?;
+    delete_pending(storage, pending).await?;
+    Ok(result)
 }
 fn valid_entry(entry: &ResultEntry) -> bool {
     bounded(&entry.operation_id, 512)

@@ -65,6 +65,27 @@ continue during a save. Updates and their working-version metadata commit
 atomically. A pending initialization is replayed idempotently after restart.
 The checkpoint journal survives failures, preserves operation identity, pins
 results needed for ACK-loss recovery, and rejects stale or conflicting saves.
+A reservation whose body is already canonical at a newer record version is
+settled as saved (on join, on replacement and after an API 409) instead of
+being reported as a conflict. Transient or unknown checkpoint outcomes keep
+the reservation and answer `live-error` with `code: CHECKPOINT_RETRY`. A
+reservation whose request got no answer (timeout, transport failure, 5xx)
+stays in doubt for two minutes after it was sent: another participant's
+checkpoint is answered `CHECKPOINT_RETRY` instead of replacing it, because an
+unchanged record version does not yet prove it never committed. A record
+version that moved while the base body stayed canonical (a title or property
+save) rebases the reservation with `CHECKPOINT_STALE` instead of a conflict.
+
+A join whose canonical body differs at a strictly newer record version
+rotates the room to a new generation even when it has unsaved edits; those
+stay in the old generation's storage. Peers are closed with 4410 only after
+the base room's pointer commits, and a superseded generation keeps a marker
+that redirects late joins. A generation's metadata comes from the state its
+name encodes, never from the first session to arrive, so a stale ticket cannot
+seed it. Stale or same-version bodies are refused with 409, also at a pointer
+or retired-by hop instead of being forwarded.
+Every refused join is logged (`live_join_refused` / `live_open_refused`) with
+its status and a fixed reason, never a ticket, session or credential.
 
 Snapshot replay works in batches of 64 rows, folds at most 512 rows per pass,
 and continues on the next request or alarm. Snapshots use 96 KiB chunks;

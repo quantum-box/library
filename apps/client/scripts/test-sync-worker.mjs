@@ -19,6 +19,8 @@ const bodyHash = (body, format = 'markdown') => sha(`${format}\0${body}`)
 const resultKey = (id) => `live:checkpoint:result:${Buffer.from(id).toString('base64url')}`
 const asBytes = (bytes) => ({ $bytes: Buffer.from(bytes).toString('base64') })
 const operationBody = (id, version, body) => JSON.stringify({ type: 'live-checkpoint', operation_id: id, version, body })
+const pointerKey = 'live:room:current-generation:v1'
+const generationName = (recordVersion, body) => `live-generation:${Buffer.from(`${identity.roomId}\0${recordVersion}\0${bodyHash(body)}`).toString('base64url')}`
 async function until(predicate, message = 'condition', timeout = 8000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) { const value = await predicate(); if (value) return value; await new Promise((r) => setTimeout(r, 5)) }
@@ -29,13 +31,15 @@ function socket(response) {
   const ws = response.webSocket
   const doc = new Y.Doc()
   const messages = []
+  const closes = []
   let failure
   ws.addEventListener('message', ({ data }) => {
     try { if (typeof data === 'string') messages.push(JSON.parse(data)); else Y.applyUpdate(doc, new Uint8Array(data)) } catch (e) { failure = e }
   })
+  ws.addEventListener('close', ({ code }) => closes.push(code))
   ws.accept()
   return {
-    ws, doc, messages,
+    ws, doc, messages, closes,
     take: async (type, check = () => true) => until(() => {
       if (failure) throw failure
       const i = messages.findIndex((m) => m.type === type && check(m))
@@ -75,7 +79,7 @@ async function scenario(t, overrides = {}) {
       state.calls.push({ path: new URL(request.url).pathname, body, headers: Object.fromEntries(request.headers) })
       if (request.url.endsWith('/live/authorize')) {
         if (state.authorizeGate) await state.authorizeGate
-        return Response.json({ tenant: identity.tenant, database: identity.database, data: identity.data, property: identity.property, format: state.format ?? identity.format, actor_id: 'actor-test', room_id: identity.roomId, record_version: state.recordVersion, body: state.body }, { status: state.authorizationStatus })
+        return Response.json({ tenant: identity.tenant, database: identity.database, data: identity.data, property: identity.property, format: state.format ?? identity.format, actor_id: 'actor-test', room_id: state.roomId ?? identity.roomId, record_version: state.recordVersion, body: state.body }, { status: state.authorizationStatus })
       }
       if (request.url.endsWith('/live/checkpoint')) {
         if (state.checkpointGate) await state.checkpointGate
@@ -99,10 +103,22 @@ async function scenario(t, overrides = {}) {
   }
   const live = async () => { const ws = socket(await connect()); sockets.push(ws); await ws.take('live-ready'); return ws }
   const sync = async (room = 'records') => { const ws = socket(await fetch(`/ws?room=${room}`, { headers: { upgrade: 'websocket' } })); sockets.push(ws); await ws.take('presence'); return ws }
-  const stub = async (binding = 'PHOTON_LIVE_ROOMS', name = identity.roomId) => { const ns = await mf.getDurableObjectNamespace(binding); return ns.get(ns.idFromName(name)) }
+  const stub = async (binding = 'PHOTON_LIVE_ROOMS', name = state.roomId ?? identity.roomId) => { const ns = await mf.getDurableObjectNamespace(binding); return ns.get(ns.idFromName(name)) }
   const storage = async (binding, name) => (await (await stub(binding, name)).fetch('https://fixture/__test/state')).json()
   const seed = async (values, binding, name) => { const r = await (await stub(binding, name)).fetch('https://fixture/__test/seed', { method: 'POST', body: JSON.stringify(values) }); assert.equal(r.status, 200) }
-  return { state, fetch, issue, connect, live, sync, storage, seed, stub,
+  const pointer = async () => (await storage())['live:room:current-generation:v1']
+  // Delivers a stored session straight to one room, as the edge does after a hop.
+  const joinDirect = async (room, recordVersion) => {
+    const sessions = Object.values(await storage('PHOTON_LIVE_TICKETS', 'live-ticket-store'))
+    const { authorization, ...reference } = sessions.find((v) => v?.sessionId && v.recordVersion === recordVersion)
+    assert.ok(authorization)
+    return (await stub('PHOTON_LIVE_ROOMS', room)).fetch('https://live.internal/live/internal-ws', {
+      headers: { upgrade: 'websocket', 'x-photon-live-internal': '1', 'x-photon-live-target': room, 'x-photon-live-session': Buffer.from(JSON.stringify(reference)).toString('base64url') },
+    })
+  }
+  // Rejects the next checkpoint request like a timeout; see workers/tests/runtime.mjs.
+  const fault = async (mode) => { const r = await (await stub()).fetch('https://fixture/__test/transport-fault', { method: 'POST', body: JSON.stringify({ mode }) }); assert.equal(r.status, 200) }
+  return { state, fetch, issue, connect, live, sync, storage, seed, stub, pointer, fault, joinDirect,
     scheduled: async () => (await mf.getWorker()).scheduled(),
     restart: async () => { for (const ws of sockets) ws.close(); await mf.dispose(); mf = start() },
     initialize: async () => { const ws = await live(); ws.seed(state.body); await ws.take('live-ready', (m) => m.initialized); return ws },
@@ -178,12 +194,176 @@ test('unchanged body avoids CAS, changed body uses fresh version, replay is idem
   a.checkpoint('op-change', 1, 'Seed!'); await a.take('live-saved'); assert.equal(s.checkpoints().length, 1)
   a.checkpoint('op-change', 1, 'different'); assert.equal((await a.take('live-error')).message, 'Checkpoint operation was reused')
 })
-test('external body changes conflict without checkpoint mutation', async (t) => {
+test('external body changes conflict the checkpoint, then rotate a dirty room without merging its unsaved edits', async (t) => {
   const s = await scenario(t); const a = await s.initialize()
   a.edit('!'); await a.take('live-version'); s.state.body = 'external'; s.state.recordVersion = '2'
   a.checkpoint('op-conflict', 1, 'Seed!'); await a.take('live-conflict'); assert.equal(s.checkpoints().length, 0)
+  // A dirty room used to refuse every join with a header-less 409, forever.
+  const b = socket(await s.connect()); t.after(() => b.close())
+  const ready = await b.take('live-ready'); assert.equal(ready.initialized, false); assert.equal(ready.record_version, '2')
+  await until(() => a.closes.includes(4410), 'peer closed with 4410')
+  const pointer = await s.pointer(); assert.match(pointer.roomId, /^live-generation:/); assert.equal(pointer.recordVersion, '2')
+  b.seed('external'); await b.take('live-ready', (m) => m.initialized)
+  assert.equal(b.doc.getText('body').toString(), 'external')
+  // The unsaved edit stays in the old generation's storage and is never merged.
+  const old = (await s.storage())[metaKey]; assert.equal(old.version, 1); assert.equal(old.savedVersion, 0)
+  assert.equal((await s.storage('PHOTON_LIVE_ROOMS', pointer.roomId))[metaKey].version, 0)
+  assert.equal(s.checkpoints().length, 0)
+})
+test('peers are closed with 4410 only after the successor pointer commits', async (t) => {
+  // This room id is too long to name a generation, so rotation fails before
+  // any pointer write. Peers must keep editing instead of being disconnected.
+  const s = await scenario(t, { roomId: `live:${'x'.repeat(480)}` }); const a = await s.initialize(); const b = await s.live()
+  a.edit('!'); await b.take('live-version'); s.state.body = 'external'; s.state.recordVersion = '2'
   assert.equal((await s.connect()).status, 409)
-  assert.equal((await s.storage())[metaKey].version, 1)
+  a.edit('?'); await until(() => b.doc.getText('body').toString() === 'Seed!?')
+  assert.deepEqual(a.closes, []); assert.deepEqual(b.closes, []); assert.equal(await s.pointer(), undefined)
+})
+test('a join settles a reservation that is already canonical instead of rotating', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); a.edit(' committed'); await a.take('live-version')
+  const body = 'Seed committed'
+  await s.seed({
+    [pendingKey]: { version: 1, operationId: 'lost-ack', expectedRecordVersion: '1', bodyHash: bodyHash(body), fingerprint: sha(body), bodyByteLength: Buffer.byteLength(body), chunkCount: 1 },
+    'live:checkpoint:pending:body:000000': asBytes(Buffer.from(body)),
+  })
+  // The CAS committed, but this room never saw its ACK.
+  s.state.recordVersion = '2'; s.state.body = body
+  const b = await s.live()
+  const saved = await a.take('live-saved'); assert.equal(saved.operation_id, 'lost-ack'); assert.equal(saved.record_version, '2')
+  await until(() => b.doc.getText('body').toString() === body)
+  const stored = await s.storage(); const meta = stored[metaKey]
+  assert.equal(stored['live:room:current-generation:v1'], undefined); assert.equal(stored[pendingKey], undefined)
+  assert.equal(meta.recordVersion, '2'); assert.equal(meta.savedVersion, 1); assert.equal(meta.bodyHash, bodyHash(body))
+  // The owner's retry of the same operation replays the result without a CAS.
+  a.checkpoint('lost-ack', 1, body); assert.equal((await a.take('live-saved')).record_version, '2')
+  assert.equal(s.checkpoints().length, 0); assert.deepEqual(a.closes, [])
+})
+test('a different body at the same record version cannot be ordered and is refused', async (t) => {
+  const s = await scenario(t); const a = await s.initialize()
+  s.state.body = 'same version, different body'
+  assert.equal((await s.connect()).status, 409)
+  assert.equal(await s.pointer(), undefined); assert.equal((await s.storage())[metaKey].recordVersion, '1'); assert.deepEqual(a.closes, [])
+})
+test('recoverable checkpoint failures keep the reservation and ask for an identical retry', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); a.edit(' retry'); await a.take('live-version')
+  s.state.checkpointStatus = 500; a.checkpoint('op-500', 1, 'Seed retry')
+  const failed = await a.take('live-error'); assert.equal(failed.code, 'CHECKPOINT_RETRY'); assert.equal(failed.operation_id, 'op-500')
+  assert.equal((await s.storage())[pendingKey].operationId, 'op-500')
+  s.state.checkpointStatus = 200; a.checkpoint('op-500', 1, 'Seed retry')
+  assert.equal((await a.take('live-saved')).record_version, '2'); assert.equal(s.checkpoints().length, 2); assert.equal(s.state.body, 'Seed retry')
+  // Authorization failures surface through the recovery catch-all.
+  a.edit('!'); await a.take('live-version'); s.state.authorizationStatus = 500; a.checkpoint('op-auth', 2, 'Seed retry!')
+  const recovery = await a.take('live-error'); assert.equal(recovery.code, 'CHECKPOINT_RETRY'); assert.equal(recovery.message, 'Live checkpoint recovery failed')
+  s.state.authorizationStatus = 200; a.checkpoint('op-auth', 2, 'Seed retry!'); assert.equal((await a.take('live-saved')).record_version, '3')
+  // A rejected patch repeats identically for the same operation, so it stays terminal.
+  a.edit('?'); await a.take('live-version'); s.state.checkpointStatus = 422; a.checkpoint('op-422', 3, 'Seed retry!?')
+  assert.equal((await a.take('live-error')).code, undefined)
+})
+test('a checkpoint response lost after commit is retried with the same operation and replayed by the API', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); a.edit(' lost'); await a.take('live-version')
+  await s.fault('after-commit'); a.checkpoint('op-lost', 1, 'Seed lost')
+  assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  assert.equal(s.state.recordVersion, '2'); assert.equal((await s.storage())[pendingKey].operationId, 'op-lost')
+  a.checkpoint('op-lost', 1, 'Seed lost'); assert.equal((await a.take('live-saved')).record_version, '2')
+  assert.equal(s.state.recordVersion, '2'); assert.equal(s.checkpoints().length, 2); assert.equal((await s.storage())[pendingKey], undefined)
+  // A request that never left is retried the same way.
+  a.edit('!'); await a.take('live-version'); await s.fault('before-send'); a.checkpoint('op-offline', 2, 'Seed lost!')
+  assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  a.checkpoint('op-offline', 2, 'Seed lost!'); assert.equal((await a.take('live-saved')).record_version, '3')
+  assert.equal(a.messages.some((m) => m.type === 'live-conflict'), false)
+})
+test('a conflicting retry whose reservation is already canonical settles instead of conflicting', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); a.edit(' same'); await a.take('live-version')
+  s.state.checkpointStatus = 503; a.checkpoint('op-same', 1, 'Seed same'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  // Another writer stored the same body; the API has no record of this operation.
+  s.state.checkpointStatus = 200; s.state.body = 'Seed same'; s.state.recordVersion = '2'
+  a.checkpoint('op-same', 1, 'Seed same')
+  const saved = await a.take('live-saved'); assert.equal(saved.operation_id, 'op-same'); assert.equal(saved.record_version, '2')
+  assert.equal(a.messages.some((m) => m.type === 'live-conflict'), false)
+  const stored = await s.storage(); assert.equal(stored[pendingKey], undefined); assert.equal(stored[metaKey].savedVersion, 1)
+  // A different canonical body is a real conflict, but only once it is verified.
+  a.edit('!'); await a.take('live-version'); s.state.checkpointStatus = 503; a.checkpoint('op-other', 2, 'Seed same!')
+  assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  s.state.checkpointStatus = 200; s.state.body = 'someone else'; s.state.recordVersion = '3'; s.state.authorizationStatus = 500
+  a.checkpoint('op-other', 2, 'Seed same!'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  assert.equal((await s.storage())[pendingKey].operationId, 'op-other')
+  s.state.authorizationStatus = 200; a.checkpoint('op-other', 2, 'Seed same!'); await a.take('live-conflict', (m) => m.operation_id === 'op-other')
+  assert.equal((await s.storage())[pendingKey], undefined)
+})
+test('a stale ticket never seeds a generation, so the canonical join still gets in', async (t) => {
+  const s = await scenario(t); await s.initialize()
+  const stale = (await (await s.issue()).json()).ticket
+  s.state.body = 'external'; s.state.recordVersion = '2'
+  const g = generationName('2', 'external')
+  // The rotating join committed the pointer but has not reached its generation yet.
+  await s.seed({ [pointerKey]: { roomId: g, bodyHash: bodyHash('external'), recordVersion: '2' } })
+  const refused = await s.connect(stale)
+  assert.equal(refused.status, 409); assert.equal(refused.headers.get('x-photon-live-generation'), null)
+  // Even delivered straight to the unseeded generation it seeds nothing.
+  const direct = await s.joinDirect(g, '1')
+  assert.equal(direct.status, 409); assert.equal(direct.headers.get('x-photon-live-generation'), null)
+  assert.equal((await s.storage('PHOTON_LIVE_ROOMS', g))[metaKey], undefined)
+  await s.live()
+  const meta = (await s.storage('PHOTON_LIVE_ROOMS', g))[metaKey]
+  assert.equal(meta.recordVersion, '2'); assert.equal(meta.bodyHash, bodyHash('external'))
+  // A newer session that reaches an unseeded generation rotates past it.
+  const skipped = generationName('3', 'third')
+  await s.seed({ [pointerKey]: { roomId: skipped, bodyHash: bodyHash('third'), recordVersion: '3' } })
+  s.state.body = 'fourth'; s.state.recordVersion = '4'
+  const d = socket(await s.connect()); t.after(() => d.close()); assert.equal((await d.take('live-ready')).record_version, '4')
+  assert.equal((await s.pointer()).roomId, generationName('4', 'fourth'))
+  const retired = await s.storage('PHOTON_LIVE_ROOMS', skipped)
+  assert.equal(retired[metaKey], undefined); assert.equal(retired['live:room:retired-by:v1'], generationName('4', 'fourth'))
+})
+test('a record version bump that leaves the body alone rebases checkpoints instead of conflicting', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
+  a.edit(' x'); await b.take('live-version')
+  // A title save lands while the CAS is out: the API answers 409.
+  let release; s.state.checkpointGate = new Promise((r) => { release = r })
+  a.checkpoint('op-1', 1, 'Seed x'); await until(() => s.checkpoints().length === 1)
+  s.state.recordVersion = '2'; s.state.checkpointGate = undefined; release()
+  const rebased = await a.take('live-error'); assert.equal(rebased.code, 'CHECKPOINT_STALE'); assert.equal(rebased.operation_id, 'op-1')
+  let stored = await s.storage(); assert.equal(stored[pendingKey], undefined); assert.equal(stored[metaKey].recordVersion, '2')
+  a.checkpoint('op-1b', 1, 'Seed x'); assert.equal((await a.take('live-saved')).record_version, '3')
+  assert.equal(s.checkpoints().at(-1).body.expected_record_version, '2')
+  // A title save lands between a CHECKPOINT_RETRY and its identical resend.
+  a.edit('!'); await b.take('live-version'); s.state.checkpointStatus = 503
+  a.checkpoint('op-2', 2, 'Seed x!'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  s.state.checkpointStatus = 200; s.state.recordVersion = '4'
+  a.checkpoint('op-2', 2, 'Seed x!'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_STALE')
+  a.checkpoint('op-2b', 2, 'Seed x!'); assert.equal((await a.take('live-saved')).record_version, '5')
+  // A title save while a reservation is kept: another participant's checkpoint
+  // replaces it, and its owner is told to resend under a new operation id.
+  a.edit('?'); await b.take('live-version'); s.state.checkpointStatus = 503
+  a.checkpoint('op-3', 3, 'Seed x!?'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  s.state.checkpointStatus = 200; s.state.recordVersion = '6'
+  b.checkpoint('op-4', 3, 'Seed x!?'); assert.equal((await b.take('live-saved', (m) => m.operation_id === 'op-4')).record_version, '7')
+  const owner = await a.take('live-error'); assert.equal(owner.code, 'CHECKPOINT_STALE'); assert.equal(owner.operation_id, 'op-3')
+  stored = await s.storage(); assert.equal(stored[pendingKey], undefined); assert.equal(stored[metaKey].recordVersion, '7')
+  assert.equal(s.state.body, 'Seed x!?')
+  assert.equal([...a.messages, ...b.messages].some((m) => m.type === 'live-conflict'), false)
+})
+test('a checkpoint whose outcome is unknown is not replaced while it can still commit', async (t) => {
+  const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
+  a.edit(' x'); await b.take('live-version')
+  await s.fault('before-send'); a.checkpoint('op-1', 1, 'Seed x')
+  assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
+  b.edit('!'); await a.take('live-version', (m) => m.version === 2)
+  b.checkpoint('op-2', 2, 'Seed x!')
+  const held = await b.take('live-error'); assert.equal(held.code, 'CHECKPOINT_RETRY'); assert.equal(held.operation_id, 'op-2')
+  assert.equal((await s.storage())[pendingKey].operationId, 'op-1'); assert.equal(s.checkpoints().length, 0)
+  // The API commits op-1 after the room gave up on it.
+  s.state.body = 'Seed x'; s.state.recordVersion = '2'; s.state.operations = new Map([['op-1', '2']])
+  a.checkpoint('op-1', 1, 'Seed x'); assert.equal((await a.take('live-saved', (m) => m.operation_id === 'op-1')).record_version, '2')
+  b.checkpoint('op-2', 2, 'Seed x!'); assert.equal((await b.take('live-saved', (m) => m.operation_id === 'op-2')).record_version, '3')
+  assert.equal(s.state.body, 'Seed x!')
+  // A body that is already canonical at a newer version is saved without a CAS,
+  // even when no reservation for it is left (another writer stored it).
+  a.edit('?'); await b.take('live-version', (m) => m.version === 3)
+  s.state.body = 'Seed x!?'; s.state.recordVersion = '4'; const before = s.checkpoints().length
+  a.checkpoint('op-5', 3, 'Seed x!?'); assert.equal((await a.take('live-saved', (m) => m.operation_id === 'op-5')).record_version, '4')
+  assert.equal(s.checkpoints().length, before); assert.equal((await s.storage())[metaKey].savedVersion, 3)
+  assert.equal([...a.messages, ...b.messages].some((m) => m.type === 'live-conflict'), false)
 })
 test('Yjs updates remain responsive during authorization and checkpoint network waits', async (t) => {
   const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
@@ -201,10 +381,16 @@ test('Yjs updates remain responsive during authorization and checkpoint network 
 test('transient failed saves retain a journal and a new session safely replaces it after restart', async (t) => {
   const s = await scenario(t); const a = await s.initialize()
   a.edit(' pending'); await a.take('live-version'); s.state.checkpointStatus = 503
-  a.checkpoint('old-pending', 1, 'Seed pending'); await a.take('live-error')
+  a.checkpoint('old-pending', 1, 'Seed pending'); assert.equal((await a.take('live-error')).code, 'CHECKPOINT_RETRY')
   const before = await s.storage(); assert.equal(before[pendingKey].operationId, 'old-pending')
   assert.equal(before['live:checkpoint:pending:body:000000'].$bytes, Buffer.from('Seed pending').toString('base64'))
   await s.restart(); s.state.checkpointStatus = 200; const b = await s.live()
+  // A gateway 5xx leaves the outcome unknown: the API may still commit it, so
+  // an unchanged record version does not yet prove it never will.
+  b.checkpoint('replacement', 1, 'Seed pending')
+  const held = await b.take('live-error'); assert.equal(held.code, 'CHECKPOINT_RETRY'); assert.equal(held.operation_id, 'replacement')
+  assert.equal((await s.storage())[pendingKey].operationId, 'old-pending'); assert.equal(s.checkpoints().length, 1)
+  await s.seed({ [pendingKey]: { ...(await s.storage())[pendingKey], inDoubtUntil: Date.now() - 1 } })
   b.checkpoint('replacement', 1, 'Seed pending'); await b.take('live-saved')
   assert.equal(s.state.body, 'Seed pending'); assert.equal((await s.storage())[pendingKey], undefined)
 })
@@ -214,7 +400,6 @@ test('exact pending retry recovers a committed request after an ACK loss', async
   pending.bodyByteLength = Buffer.byteLength('Seed committed')
   await s.seed({ [pendingKey]: pending, 'live:checkpoint:pending:body:000000': asBytes(Buffer.from('Seed committed')) })
   s.state.recordVersion = '2'; s.state.body = 'Seed committed'; s.state.operations = new Map([['lost-ack', '2']])
-  // Existing session remains usable even though a new join would see the body conflict.
   a.checkpoint('lost-ack', 1, 'Seed committed'); assert.equal((await a.take('live-saved')).record_version, '2')
   assert.equal(s.state.recordVersion, '2'); assert.equal((await s.storage())[pendingKey], undefined)
 })
@@ -254,6 +439,15 @@ test('clean rooms rotate by canonical version, including returning to an older b
   const c = await s.live(); c.seed('Seed'); await c.take('live-ready', (m) => m.initialized)
   const secondPointer = (await s.storage())['live:room:current-generation:v1']
   assert.notEqual(secondPointer.roomId, firstPointer.roomId)
+  // The superseded generation closed its peers and redirects a join that read
+  // the old pointer just before it moved, instead of accepting it.
+  assert.equal((await s.storage('PHOTON_LIVE_ROOMS', firstPointer.roomId))['live:room:retired-by:v1'], secondPointer.roomId)
+  await until(() => b.closes.includes(4410), 'superseded peer closed')
+  const late = await s.joinDirect(firstPointer.roomId, '3')
+  assert.equal(late.status, 409); assert.equal(late.headers.get('x-photon-live-generation'), secondPointer.roomId)
+  // A ticket older than the successor is refused rather than forwarded.
+  const stale = await s.joinDirect(firstPointer.roomId, '2')
+  assert.equal(stale.status, 409); assert.equal(stale.headers.get('x-photon-live-generation'), null)
   await s.restart(); const d = await s.live(); await until(() => d.doc.getText('body').toString() === 'Seed')
 })
 test('uninitialized rooms retain versions, reject stale tickets, and legacy rooms can rotate', async (t) => {

@@ -258,14 +258,23 @@ async fn create(request: &mut Request, env: &Env) -> Result<Response> {
         200,
     )
 }
+/// Browsers only see a failed upgrade as close 1006, so each refusal is logged
+/// for `wrangler tail` with its status and a fixed reason. Never log the
+/// ticket, the session or its authorization.
+fn refuse(status: u16, reason: &str, message: &str) -> Result<Response> {
+    console_warn!(
+        "{{\"event\":\"live_open_refused\",\"status\":{status},\"reason\":\"{reason}\"}}"
+    );
+    json(&value!({ "error": message }), status)
+}
 async fn open(request: &Request, env: &Env) -> Result<Response> {
     if request.method() != Method::Get {
-        return json(&value!({"error":"Method not allowed"}), 405);
+        return refuse(405, "method", "Method not allowed");
     }
     if !header(request, "upgrade")
         .is_some_and(|s| s.eq_ignore_ascii_case("websocket"))
     {
-        return json(&value!({"error":"Expected WebSocket upgrade"}), 426);
+        return refuse(426, "not_websocket", "Expected WebSocket upgrade");
     }
     let ticket = request
         .url()?
@@ -274,27 +283,30 @@ async fn open(request: &Request, env: &Env) -> Result<Response> {
         .map(|(_, v)| v.into_owned())
         .unwrap_or_default();
     if !token(&ticket, 40, 64) {
-        return json(
-            &value!({"error":"Invalid or expired Live ticket"}),
+        return refuse(
             401,
+            "malformed_ticket",
+            "Invalid or expired Live ticket",
         );
     }
     let session =
         match tickets::call(env, "consume", &value!({"id":ticket})).await {
             Ok(v) => serde_json::from_value::<Session>(v).ok(),
             Err(_) => {
-                return json(
-                    &value!({"error":"Live session unavailable"}),
+                return refuse(
                     503,
+                    "ticket_store_unavailable",
+                    "Live session unavailable",
                 )
             }
         };
     let Some(session) =
         session.filter(|s| s.valid(false) && s.expires_at > now())
     else {
-        return json(
-            &value!({"error":"Invalid or expired Live ticket"}),
+        return refuse(
             401,
+            "unknown_ticket",
+            "Invalid or expired Live ticket",
         );
     };
     let headers = Headers::new();
@@ -302,7 +314,7 @@ async fn open(request: &Request, env: &Env) -> Result<Response> {
     headers.set(INTERNAL, "1")?;
     headers.set(SESSION, &session.header())?;
     let mut room = session.identity.room_id.clone();
-    for _ in 0..8 {
+    for hop in 0..8 {
         headers.set(TARGET, &room)?;
         let req = api_request(
             "https://live.internal/live/internal-ws",
@@ -315,7 +327,14 @@ async fn open(request: &Request, env: &Env) -> Result<Response> {
             .get_by_name(&room)?
             .fetch_with_request(req)
             .await?;
-        if response.status_code() != 409 {
+        let status = response.status_code();
+        if status != 409 {
+            if status != 101 {
+                // The room logged its own reason as live_join_refused.
+                console_warn!(
+                    "{{\"event\":\"live_open_refused\",\"status\":{status},\"reason\":\"room\",\"hops\":{hop}}}"
+                );
+            }
             return Ok(response);
         }
         let generation = response
@@ -324,8 +343,17 @@ async fn open(request: &Request, env: &Env) -> Result<Response> {
             .filter(|s| generated(s) && s != &room);
         match generation {
             Some(next) => room = next,
-            None => return Ok(response),
+            None => {
+                console_warn!(
+                    "{{\"event\":\"live_open_refused\",\"status\":409,\"reason\":\"room\",\"hops\":{hop}}}"
+                );
+                return Ok(response);
+            }
         }
     }
-    Response::error("Live room generation limit reached", 409)
+    refuse(
+        409,
+        "generation_limit",
+        "Live room generation limit reached",
+    )
 }

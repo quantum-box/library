@@ -2,7 +2,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
 };
-use library_worker_common::hash;
+use library_worker_common::{hash, now};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -16,6 +16,9 @@ pub const RESULT_TTL: i64 = 15 * 60_000;
 pub const BODY_CHUNK: usize = 64 * 1024;
 pub const META: &str = "live:room:meta:v1";
 pub const POINTER: &str = "live:room:current-generation:v1";
+/// Written into a superseded non-base generation so a join that read the old
+/// pointer just before it moved is redirected instead of joining a dead room.
+pub const RETIRED: &str = "live:room:retired-by:v1";
 pub const INIT: &str = "live:room:init-pending:v1";
 pub const PENDING: &str = "live:checkpoint:pending:v1";
 pub const RESULT_PREFIX: &str = "live:checkpoint:result:";
@@ -26,6 +29,25 @@ pub const SESSION: &str = "x-photon-live-session";
 pub const TARGET: &str = "x-photon-live-target";
 pub const GENERATION: &str = "x-photon-live-generation";
 pub const GENERATION_PREFIX: &str = "live-generation:";
+/// `live-error` codes the client acts on. A frame without a code is terminal.
+/// STALE: this operation id will not be saved, but nothing conflicts. The
+/// working version moved before it was reserved, or only the record version
+/// moved under its reservation (a title or property save). Resend the newest
+/// body under a new operation id. It can be broadcast; clients act only on
+/// their own operation id.
+pub const CHECKPOINT_STALE: &str = "CHECKPOINT_STALE";
+/// RETRY: transient or unknown outcome, or another reservation is still in
+/// doubt. Any reservation is kept, and the API replays a committed decision
+/// for the same operation id, so the client resends the identical frame (same
+/// operation_id, version and body).
+pub const CHECKPOINT_RETRY: &str = "CHECKPOINT_RETRY";
+/// How long the room waits for the API to answer a checkpoint request.
+pub const CHECKPOINT_TIMEOUT: u32 = 15_000;
+/// How long after a checkpoint request is sent the API may still commit it
+/// although the room saw no answer. The API has no request deadline of its
+/// own, so this is a bound comfortably past the timeout and the database's
+/// lock waits, not a guarantee.
+pub const CHECKPOINT_IN_DOUBT: i64 = 2 * 60_000;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,9 +161,6 @@ impl Metadata {
             0
         })
     }
-    pub fn dirty(&self) -> bool {
-        self.initialized && self.version > self.saved()
-    }
     pub fn normalize(mut self) -> Self {
         self.saved_version = Some(self.saved());
         self
@@ -174,8 +193,16 @@ pub struct Pending {
     pub fingerprint: String,
     pub body_byte_length: usize,
     pub chunk_count: usize,
+    /// Set when a request for this reservation is sent. Until then an
+    /// unchanged record version does not prove the CAS never committed: a
+    /// request the room gave up on can still be running at the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_doubt_until: Option<i64>,
 }
 impl Pending {
+    pub fn in_doubt(&self) -> bool {
+        self.in_doubt_until.is_some_and(|t| t > now())
+    }
     pub fn valid(&self) -> bool {
         self.version <= MAX_SAFE
             && [
@@ -188,6 +215,9 @@ impl Pending {
             && bounded(&self.body_hash, 128)
             && self.body_byte_length <= MAX_BODY
             && self.chunk_count <= MAX_BODY.div_ceil(BODY_CHUNK)
+            && self
+                .in_doubt_until
+                .is_none_or(|t| (0..=MAX_SAFE as i64).contains(&t))
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -296,6 +326,23 @@ pub fn generation(session: &Session) -> String {
             session.body_hash
         ))
     )
+}
+/// The base room id, record version and body hash a generation was named
+/// for: the canonical state its first join must hold.
+pub fn generation_state(name: &str) -> Option<(String, String, String)> {
+    let decoded = decode64(name.strip_prefix(GENERATION_PREFIX)?, 1024)?;
+    let decoded = String::from_utf8(decoded).ok()?;
+    let mut parts = decoded.split('\0');
+    let state = (
+        parts.next()?.to_owned(),
+        parts.next()?.to_owned(),
+        parts.next()?.to_owned(),
+    );
+    let valid = parts.next().is_none()
+        && bounded(&state.0, 512)
+        && bounded(&state.1, 512)
+        && bounded(&state.2, 128);
+    valid.then_some(state)
 }
 pub fn newer(candidate: &str, current: Option<&str>) -> bool {
     let Some(current) = current else {
