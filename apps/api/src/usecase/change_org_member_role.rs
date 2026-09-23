@@ -17,7 +17,8 @@ use tracing::info;
 use value_object::{OperatorId, TenantId, UserId};
 
 use crate::domain::{
-    library_api_key_issuer_policy_id, library_repo_owner_policy_id, OrgRole,
+    library_api_key_accounts_policy_id, library_api_key_issuer_policy_id,
+    library_repo_owner_policy_id, OrgRole,
 };
 use crate::sdk_auth::SdkAuthApp;
 
@@ -103,7 +104,7 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
                 &tenant,
             )
             .await?;
-            self.detach_api_key_issuer_policy(
+            self.detach_api_key_policies(
                 input.executor,
                 input.multi_tenancy,
                 &user,
@@ -186,38 +187,44 @@ impl ChangeOrgMemberRole {
         Ok(())
     }
 
-    /// Detach the API key issuer policy when downgrading from Owner.
+    /// Detach what issuing an API key with repository access granted,
+    /// when downgrading from Owner.
     ///
-    /// Issuing a key with repository access grants it on use (see
-    /// `grant_api_key_policy`), and it outlives the role that earned it:
-    /// left attached, a former owner could still attach policies to the
-    /// organization's service accounts and delete them, straight through
-    /// tachyon, which Library's own checks would now refuse.
-    async fn detach_api_key_issuer_policy(
+    /// Both policies are granted on use (see `grant_api_key_policy`) and
+    /// outlive the role that earned them: left attached, a former owner
+    /// could still make service accounts in the organization, attach
+    /// policies to them and delete them, straight through tachyon, which
+    /// Library's own checks would now refuse.
+    async fn detach_api_key_policies(
         &self,
         executor: &dyn ExecutorAction,
         multi_tenancy: &dyn MultiTenancyAction,
         user: &User,
         tenant_id: &TenantId,
     ) -> errors::Result<()> {
-        let policy_id = library_api_key_issuer_policy_id();
-        AuthApp::detach_user_policy(
-            self.sdk.as_ref(),
-            &DetachUserPolicyInput {
-                executor,
-                multi_tenancy,
-                user_id: user.id(),
-                policy_id: &policy_id,
-                tenant_id,
-            },
-        )
-        .await?;
+        for policy_id in [
+            library_api_key_issuer_policy_id(),
+            library_api_key_accounts_policy_id(),
+        ] {
+            AuthApp::detach_user_policy(
+                self.sdk.as_ref(),
+                &DetachUserPolicyInput {
+                    executor,
+                    multi_tenancy,
+                    user_id: user.id(),
+                    policy_id: &policy_id,
+                    tenant_id,
+                },
+            )
+            .await?;
 
-        info!(
-            user = %user.id(),
-            tenant = %tenant_id,
-            "detached api key issuer policy during role downgrade"
-        );
+            info!(
+                user = %user.id(),
+                tenant = %tenant_id,
+                policy = %policy_id,
+                "detached an api key policy during role downgrade"
+            );
+        }
 
         Ok(())
     }
