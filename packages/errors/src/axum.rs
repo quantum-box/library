@@ -23,12 +23,18 @@ impl IntoResponse for Error {
             Error::InternalServerError { message, backtrace } => {
                 log_server_error(&message);
                 log_debug_backtrace(&message, &backtrace);
-                create_response(StatusCode::INTERNAL_SERVER_ERROR, message)
+                create_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Error::PUBLIC_INTERNAL_SERVER_ERROR.to_string(),
+                )
             }
             Error::ServiceUnavailable { message, backtrace } => {
                 log_server_error(&message);
                 log_debug_backtrace(&message, &backtrace);
-                create_response(StatusCode::SERVICE_UNAVAILABLE, message)
+                create_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Error::PUBLIC_SERVICE_UNAVAILABLE.to_string(),
+                )
             }
             // 4xx errors - client side issues (WARN level)
             Error::BadRequest { message, backtrace } => {

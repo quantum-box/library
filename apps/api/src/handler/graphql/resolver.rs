@@ -406,7 +406,9 @@ impl LibraryQuery {
             .execute(GetSourceInputData {
                 executor,
                 multi_tenancy,
-                source_id: &source_id.parse()?,
+                source_id: &source_id
+                    .parse()
+                    .map_err(|e| errors::Error::from(e).extend())?,
                 org_username,
                 repo_username,
             })
@@ -1185,7 +1187,10 @@ impl Repo {
             .execute(FindSourcesInputData {
                 executor,
                 multi_tenancy,
-                repo_id: &self.id.parse()?,
+                repo_id: &self
+                    .id
+                    .parse()
+                    .map_err(|e| errors::Error::from(e).extend())?,
                 org_username: self.org_username.clone(),
                 repo_username: self.username.clone(),
             })

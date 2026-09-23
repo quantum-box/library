@@ -1,19 +1,27 @@
 use crate::Error;
 use async_graphql::ErrorExtensions;
 
+/// Route implicit `?` conversions through the same public-error redaction as
+/// explicit `ErrorExtensions::extend()` calls.
+impl From<Error> for async_graphql::Error {
+    fn from(error: Error) -> Self {
+        error.extend()
+    }
+}
+
 impl ErrorExtensions for Error {
     fn extend(&self) -> async_graphql::Error {
         // Log at appropriate level based on error type
         log_graphql_error(self);
-        async_graphql::Error::new(format!("{self}")).extend_with(|_, e| {
-            match self {
+        async_graphql::Error::new(self.public_message()).extend_with(
+            |_, e| match self {
                 Error::BadRequest { message, .. } => {
                     e.set("code", "BAD_REQUEST");
                     e.set("message", message)
                 }
-                Error::InternalServerError { message, .. } => {
+                Error::InternalServerError { .. } => {
                     e.set("code", "INTERNAL_SERVER_ERROR");
-                    e.set("message", message)
+                    e.set("message", self.public_message())
                 }
                 Error::Unauthorized { message, .. } => {
                     e.set("code", "UNAUTHORIZED");
@@ -35,12 +43,28 @@ impl ErrorExtensions for Error {
                     e.set("code", "PAYMENT_REQUIRED");
                     e.set("message", message)
                 }
-                Error::ServiceUnavailable { message, .. } => {
+                Error::ServiceUnavailable { .. } => {
                     e.set("code", "SERVICE_UNAVAILABLE");
-                    e.set("message", message)
+                    e.set("message", self.public_message())
                 }
-            }
-        })
+            },
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn implicit_conversion_hides_internal_error_details() {
+        let error = Error::internal_server_error(
+            "error returned from database: 1045 (28000): Access denied for user 'secret'@'10.0.0.1'",
+        );
+
+        let graphql_error: async_graphql::Error = error.into();
+
+        assert_eq!(graphql_error.message, "Internal server error");
     }
 }
 
