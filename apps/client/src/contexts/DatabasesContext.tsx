@@ -29,6 +29,8 @@ export interface WorkspaceDatabase {
   orgUsername?: string
   repoUsername?: string
   operatorId?: string
+  /** The repository's immutable Library id; its username can be renamed or reused. */
+  databaseId?: string
 }
 
 export interface WorkspaceOrganization {
@@ -78,6 +80,7 @@ function repoToDatabase(repo: LibraryRepository): WorkspaceDatabase {
     orgUsername: repo.orgUsername,
     repoUsername: repo.username,
     operatorId: repo.operatorId,
+    databaseId: repo.id,
   }
 }
 
@@ -340,13 +343,18 @@ export function DatabasesProvider({
     // Nor may the remembered lists, on the next start.
     void readWorkspace().then((cached) => {
       if (!cached) return
+      const gone = (repository: LibraryRepository, owner = repository.orgUsername) =>
+        owner === orgUsername && repository.username === repoUsername
       rememberWorkspace({
-        ...cached,
-        repositories: cached.repositories.filter(
-          (repository) => !(
-            repository.orgUsername === orgUsername && repository.username === repoUsername
+        repositories: cached.repositories.filter((repository) => !gone(repository)),
+        // Each organization carries its own list too, and an organization left
+        // holding a deleted repository reads as non-empty when choosing one.
+        organizations: cached.organizations.map((organization) => ({
+          ...organization,
+          repos: organization.repos.filter(
+            (repository) => !gone(repository, repository.orgUsername ?? organization.operatorName),
           ),
-        ),
+        })),
       })
     })
     setDatabases((current) => current.filter(

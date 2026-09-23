@@ -64,6 +64,8 @@ interface DataEditorPageProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** The repository's immutable id, which names its cached pages when known. */
+  databaseId?: string
   /** Open with the title selected, as a record that was just created does. */
   autoFocusTitle?: boolean
   onBack: () => void
@@ -186,7 +188,7 @@ function PageTitle({
  * remembers of *that* record rather than from the last one's page.
  */
 export function DataEditorPage(props: DataEditorPageProps) {
-  return <RecordPage key={`${props.org}/${props.repo}/${props.dataId}`} {...props} />
+  return <RecordPage key={`${props.databaseId ?? ''}:${props.org}/${props.repo}/${props.dataId}`} {...props} />
 }
 
 function RecordPage({
@@ -195,6 +197,7 @@ function RecordPage({
   repo,
   operatorId,
   repoLabel,
+  databaseId,
   autoFocusTitle = false,
   onBack,
 }: DataEditorPageProps) {
@@ -207,10 +210,12 @@ function RecordPage({
   // Read once: the flag is cleared from history as soon as the page opens,
   // and the title mounts only after the record has loaded.
   const [focusTitleOnOpen] = useState(autoFocusTitle)
+  /** What names this record's remembered pages. */
+  const cacheTarget = useMemo(() => ({ org, repo, databaseId }), [databaseId, org, repo])
   // Read in the render that mounts the page, so a record this device has
   // shown before -- or has a row for, in the table it was opened from -- is
   // on screen in the first frame.
-  const [cached] = useState<CachedDataDetail | null>(() => peekDataDetail({ org, repo }, dataId))
+  const [cached] = useState<CachedDataDetail | null>(() => peekDataDetail(cacheTarget, dataId))
   const [item, setItem] = useState<LibraryDataItem | null>(() => cached?.item ?? null)
   const [properties, setProperties] = useState<LibraryProperty[]>(() => cached?.properties ?? [])
   /** Nothing on screen yet, and a request out for it. */
@@ -311,12 +316,18 @@ function RecordPage({
       )
       if (deletedRef.current) return
       answered.current = true
-      if (!payload.item) {
-        // Gone upstream, so nothing may draw it from memory again -- and the
-        // page offers the way back only once that is so, or the table it goes
-        // back to could open on the row.
-        await forgetData({ org, repo }, dataId)
+      // The cache is brought in line before the page is: the table this page
+      // goes back to draws from it in its first frame, and must draw the
+      // record as it now is -- or, gone upstream, not at all.
+      if (payload.item) {
+        await rememberDataDetail(cacheTarget, dataId, {
+          item: payload.item,
+          properties: payload.properties,
+        })
+      } else {
+        await forgetData(cacheTarget, dataId)
       }
+      if (deletedRef.current) return
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
       setItem(payload.item)
@@ -324,10 +335,6 @@ function RecordPage({
       if (payload.item) {
         setConfirmed(true)
         setBodyKnown(true)
-        void rememberDataDetail({ org, repo }, dataId, {
-          item: payload.item,
-          properties: payload.properties,
-        })
       } else {
         setLoadError(`${dataId} is not available in ${org}/${repo}.`)
       }
@@ -337,7 +344,7 @@ function RecordPage({
     } finally {
       setLoading(false)
     }
-  }, [dataId, loadDetailByIdentifier, org, repo, repoTarget])
+  }, [cacheTarget, dataId, loadDetailByIdentifier, org, repo, repoTarget])
 
   useEffect(() => {
     void reload()
@@ -353,7 +360,7 @@ function RecordPage({
   useEffect(() => {
     if (itemRef.current) return
     let cancelled = false
-    void readDataDetail({ org, repo }, dataId).then((remembered) => {
+    void readDataDetail(cacheTarget, dataId).then((remembered) => {
       if (cancelled || !remembered || answered.current || itemRef.current) return
       setProperties(remembered.properties)
       propertiesRef.current = remembered.properties
@@ -365,7 +372,7 @@ function RecordPage({
     return () => {
       cancelled = true
     }
-  }, [dataId, org, repo])
+  }, [cacheTarget, dataId])
 
   const persistItem = useCallback((next: LibraryDataItem, carriesBody = false) => {
     const bodyProperty = getBodyProperty(propertiesRef.current)
@@ -418,7 +425,7 @@ function RecordPage({
         // table row included: going back straight after must not draw the
         // edit undone.
         if (!deletedRef.current) {
-          await rememberDataDetail({ org, repo }, dataId, {
+          await rememberDataDetail(cacheTarget, dataId, {
             item: savedWithBody,
             properties: propertiesRef.current,
           })
@@ -431,7 +438,7 @@ function RecordPage({
         setSaveState('failed')
         setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
       })
-  }, [dataId, org, repo, repoTarget])
+  }, [cacheTarget, dataId, repoTarget])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
     if (!item) return
@@ -457,7 +464,7 @@ function RecordPage({
       deletedRef.current = true
       // Before leaving: the table this goes back to draws from the cache in
       // its first frame, and the row must be gone from it by then.
-      await forgetData({ org, repo }, item.id)
+      await forgetData(cacheTarget, item.id)
       setDeleteOpen(false)
       onBack()
     } catch (error: unknown) {
@@ -465,7 +472,7 @@ function RecordPage({
     } finally {
       setDeleteBusy(false)
     }
-  }, [item, onBack, org, repo, repoTarget])
+  }, [cacheTarget, item, onBack, repoTarget])
 
   useDocumentTitle(item?.name)
 

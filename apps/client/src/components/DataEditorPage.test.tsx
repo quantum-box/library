@@ -359,6 +359,37 @@ describe('DataEditorPage', () => {
     })
   })
 
+  /**
+   * The table this page goes back to draws from the cache in its first frame,
+   * so the confirmed record is cached before the page shows it as confirmed.
+   */
+  it('caches a confirmed record before showing it as confirmed', async () => {
+    cache.peekDataDetail.mockReturnValue({
+      item: record('Remembered title', 'remembered body'),
+      properties,
+      complete: true,
+    })
+    let remembered!: () => void
+    cache.rememberDataDetail.mockReturnValue(new Promise<void>((resolve) => {
+      remembered = resolve
+    }))
+    const detail = deferredDetail()
+    renderPage()
+
+    detail.resolve({ item: record('Fresh title', 'fresh body'), properties })
+    await waitFor(() => {
+      expect(cache.rememberDataDetail).toHaveBeenCalled()
+    })
+    expect(screen.getByText('Remembered title')).toBeInTheDocument()
+    expect(screen.getByTestId('body-editor')).toHaveAttribute('data-editable', 'false')
+
+    remembered()
+    await waitFor(() => {
+      expect(screen.getByText('Fresh title')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('body-editor')).toHaveAttribute('data-editable', 'true')
+  })
+
   it('reads the store when the record could not be had at once', async () => {
     cache.readDataDetail.mockResolvedValue({
       item: record('Remembered title', 'remembered body'),

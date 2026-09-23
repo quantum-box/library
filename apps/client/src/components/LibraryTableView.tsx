@@ -109,6 +109,8 @@ interface LibraryTableViewProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** The repository's immutable id, which names its cached table when known. */
+  databaseId?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
   /** Called with a blank record the moment "New" has created it, so the
@@ -239,7 +241,7 @@ type TableSource = 'none' | 'cached' | 'listed'
  * own remembered rows -- or from nothing -- rather than from the last one's.
  */
 export function LibraryTableView(props: LibraryTableViewProps) {
-  return <RepositoryTable key={`${props.org}/${props.repo}`} {...props} />
+  return <RepositoryTable key={`${props.databaseId ?? ''}:${props.org}/${props.repo}`} {...props} />
 }
 
 function RepositoryTable({
@@ -247,6 +249,7 @@ function RepositoryTable({
   repo,
   operatorId,
   repoLabel,
+  databaseId,
   selectedDataId,
   onSelectData,
   onDataCreated,
@@ -261,9 +264,11 @@ function RepositoryTable({
     () => createLibraryRelationRecordLoader(),
     [],
   )
+  /** What names this repository's remembered table. */
+  const cacheTarget = useMemo(() => ({ org, repo, databaseId }), [databaseId, org, repo])
   // Read once, in the render that mounts the table, so a table this device
   // has drawn before is on screen in the first frame rather than the second.
-  const [cachedTable] = useState<CachedRepoTable | null>(() => peekRepoTable({ org, repo }))
+  const [cachedTable] = useState<CachedRepoTable | null>(() => peekRepoTable(cacheTarget))
   const [items, setItems] = useState<LibraryDataItem[]>(() => cachedTable?.items ?? [])
   const [properties, setProperties] = useState<LibraryProperty[]>(
     () => cachedTable?.properties ?? []
@@ -394,7 +399,7 @@ function RepositoryTable({
   useEffect(() => {
     if (sourceRef.current !== 'none') return
     let cancelled = false
-    void readRepoTable({ org, repo }).then((cached) => {
+    void readRepoTable(cacheTarget).then((cached) => {
       if (cancelled || !cached || sourceRef.current !== 'none') return
       setItems(cached.items)
       setProperties(cached.properties)
@@ -405,7 +410,7 @@ function RepositoryTable({
     return () => {
       cancelled = true
     }
-  }, [org, repo, setSource])
+  }, [cacheTarget, setSource])
 
   /**
    * Remember the table as it now stands, for the next visit to draw at once.
@@ -418,7 +423,7 @@ function RepositoryTable({
     if (source !== 'listed') return
     const pageSize = libraryPageSize()
     rememberRepoTable(
-      { org, repo },
+      cacheTarget,
       {
         items: items.slice(0, pageSize),
         properties,
@@ -426,7 +431,7 @@ function RepositoryTable({
         totalItems,
       }
     )
-  }, [items, nextPage, org, properties, repo, source, totalItems])
+  }, [cacheTarget, items, nextPage, properties, source, totalItems])
 
   /**
    * Append the next page.
@@ -557,7 +562,7 @@ function RepositoryTable({
       await deleteLibraryData(repoTarget, pendingDelete.id)
       // Before the deletion reads as done: the record's page, opened next,
       // draws from the cache in its first frame.
-      await forgetData({ org, repo }, pendingDelete.id)
+      await forgetData(cacheTarget, pendingDelete.id)
       setItems((current) => current.filter((row) => row.id !== pendingDelete.id))
       onDataDeleted?.(pendingDelete.id)
       setPendingDelete(null)
@@ -566,7 +571,7 @@ function RepositoryTable({
     } finally {
       setDeleteBusy(false)
     }
-  }, [onDataDeleted, org, pendingDelete, repo, repoTarget])
+  }, [cacheTarget, onDataDeleted, pendingDelete, repoTarget])
 
   /** Row writes, which a remembered row may not make; see `TableSource`. */
   const rowWritesLocked = saving || stale

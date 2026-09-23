@@ -305,6 +305,39 @@ describe('DatabasesProvider', () => {
     expect(screen.getByTestId('error')).toHaveTextContent('')
   })
 
+  it('drops a deleted repository from the remembered organization lists too', async () => {
+    cache.readWorkspace.mockResolvedValue({
+      repositories: [
+        { id: 'repo-1', username: 'alpha', name: 'Alpha Repo', orgUsername: 'acme', operatorId: 'org-1' },
+      ],
+      organizations: [{
+        id: 'org-1',
+        operatorName: 'acme',
+        platformTenantId: 'tn_test',
+        repos: [{ id: 'repo-1', username: 'alpha', name: 'Alpha Repo', orgUsername: 'acme' }],
+      }],
+    })
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('Alpha Repo')
+    })
+
+    await act(async () => {
+      screen.getByTestId('delete-repository').click()
+    })
+
+    await waitFor(() => {
+      expect(cache.rememberWorkspace).toHaveBeenLastCalledWith({
+        repositories: [],
+        organizations: [expect.objectContaining({ id: 'org-1', repos: [] })],
+      })
+    })
+  })
+
   it('surfaces load errors and retries with fetchLibraryRepositories', async () => {
     mocks.fetchLibraryRepositories
       .mockRejectedValueOnce(new Error('GraphQL unavailable'))

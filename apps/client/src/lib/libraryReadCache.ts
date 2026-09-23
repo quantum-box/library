@@ -75,6 +75,12 @@ function queueDetailWrite<T>(write: () => Promise<T>): Promise<T> {
 export interface ReadCacheRepository {
   org: string
   repo: string
+  /**
+   * The repository's immutable Library id, when known. Preferred to the
+   * username in keys: a username can be renamed, and reused by a repository
+   * created later, which must not open onto the old one's rows.
+   */
+  databaseId?: string
 }
 
 /** The first page of a repository's table, as it was last drawn. */
@@ -128,7 +134,7 @@ function viewer(): string {
 }
 
 function tableKey(target: ReadCacheRepository): string {
-  return `${viewer()}:${target.org}/${target.repo}`
+  return `${viewer()}:${target.databaseId ?? `${target.org}/${target.repo}`}`
 }
 
 function detailKey(target: ReadCacheRepository, dataId: string): string {

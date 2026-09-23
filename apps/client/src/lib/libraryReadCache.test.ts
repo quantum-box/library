@@ -104,6 +104,16 @@ describe('repository tables', () => {
   })
 })
 
+describe('a repository whose username is reused', () => {
+  it('does not open the new repository onto the old one’s rows', async () => {
+    rememberRepoTable({ ...target, databaseId: 'db-old' }, { items: [row('d1', 'todo', '')], properties, nextPage: null, totalItems: 1 })
+    await readRepoTable({ ...target, databaseId: 'db-old' })
+
+    expect(await readRepoTable({ ...target, databaseId: 'db-new' })).toBeNull()
+    expect((await readRepoTable({ ...target, databaseId: 'db-old' }))?.items).toHaveLength(1)
+  })
+})
+
 describe('record pages', () => {
   it('falls back to the table row, marked as not the whole record', async () => {
     rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })

@@ -1479,6 +1479,7 @@ function DataWorkspace({
               org={selectedDatabase!.orgUsername!}
               repo={selectedDatabase!.repoUsername!}
               operatorId={selectedDatabase?.operatorId}
+              databaseId={selectedDatabase?.databaseId}
               repoLabel={selectedDatabase?.label}
               selectedDataId={selectedRecord?.id ?? null}
               onSelectData={(item) => {
@@ -1758,6 +1759,7 @@ function RecordDetailPanel({
         org={selectedDatabase.orgUsername}
         repo={selectedDatabase.repoUsername}
         operatorId={selectedDatabase.operatorId}
+        databaseId={selectedDatabase.databaseId}
         repoLabel={selectedDatabase.label}
         autoFocusTitle={focusTitle}
         onBack={closeEditor}
