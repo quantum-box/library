@@ -11,7 +11,9 @@ use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
 
-use super::api_key_issuer::grant_api_key_policy;
+use super::api_key_issuer::{
+    api_key_account_policies, grant_api_key_policy,
+};
 use super::GetOrganizationByUsernameQuery;
 use crate::domain::{
     library_api_key_issuer_policy_id, ApiKeyServiceAccount, LIBRARY_TENANT,
@@ -164,6 +166,63 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 .await?;
         }
 
+        // An account holding a role is an account a key can be minted on,
+        // which would hand the access back, so the role comes off before
+        // the key goes. That order is also what lets a key revoke itself:
+        // the credential doing this is the one about to stop working, and
+        // the account it acts as is the one being stripped.
+        let account_is_spent =
+            matches!(account, Some(ApiKeyServiceAccount::Dedicated(_)))
+                && keys_on_account == 1;
+
+        // Taking a grant off an account is authorized upstream as the
+        // caller; owners get what allows it (see `grant_api_key_policy`).
+        // For anyone else the key is revoked and the account stays: what
+        // it carries is nothing they could have been given, and asking
+        // upstream would only be refused.
+        let may_manage = account_is_spent
+            && (key_carries_a_role
+                || input.executor.is_service_account()
+                || self
+                    .auth_app
+                    .check_policy(&CheckPolicyInput {
+                        executor: input.executor,
+                        multi_tenancy: &org_scope,
+                        action: "library:ManageRepoPolicy",
+                    })
+                    .await
+                    .is_ok());
+
+        if may_manage {
+            grant_api_key_policy(
+                self.auth_app.as_ref(),
+                &library_api_key_issuer_policy_id(),
+                input.executor,
+                &org_scope,
+                &tenant_id,
+            )
+            .await?;
+
+            // Reported when it fails, so the caller knows the access
+            // would have outlived the key -- which is why it happens
+            // before the key is revoked, while there is still a key to
+            // report it against.
+            for policy_id in account
+                .and_then(ApiKeyServiceAccount::role)
+                .map(api_key_account_policies)
+                .unwrap_or_default()
+            {
+                self.auth_app
+                    .detach_sa_policy(&AttachSaPolicyInput {
+                        executor: input.executor,
+                        multi_tenancy: &org_scope,
+                        service_account_id: &service_account_id,
+                        policy_id: &policy_id,
+                    })
+                    .await?;
+            }
+        }
+
         self.auth_app
             .revoke_public_api_key(&RevokePublicApiKeyInput {
                 executor: input.executor,
@@ -174,85 +233,32 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             })
             .await?;
 
-        // A key's own account has nothing left to authenticate. Removing
-        // it is tidying, not revocation: the key is already refused, so a
-        // failure here is logged rather than reported. An account Library
-        // did not make for this key, or one that still holds another key,
-        // stays.
-        let account_is_spent =
-            matches!(account, Some(ApiKeyServiceAccount::Dedicated(_)))
-                && keys_on_account == 1;
-        if account_is_spent {
-            // Removing an account is authorized upstream as the caller;
-            // owners get the grant that allows it (see
-            // `grant_api_key_policy`). For anyone else the key is revoked
-            // and the account stays: it holds nothing, so it authenticates
-            // nobody, and asking upstream to remove it would only be
-            // refused.
-            let may_manage = key_carries_a_role
-                || input.executor.is_service_account()
-                || self
-                    .auth_app
-                    .check_policy(&CheckPolicyInput {
-                        executor: input.executor,
-                        multi_tenancy: &org_scope,
-                        action: "library:ManageRepoPolicy",
-                    })
-                    .await
-                    .is_ok();
-
-            if may_manage {
-                grant_api_key_policy(
-                    self.auth_app.as_ref(),
-                    &library_api_key_issuer_policy_id(),
-                    input.executor,
-                    &org_scope,
-                    &tenant_id,
-                )
-                .await?;
-
-                // Taking the role off the account is the revocation, not
-                // tidying: an account left holding one is an account a
-                // key can be minted on, which would hand the access back.
-                // Reported when it fails, so the caller knows the access
-                // outlived the key.
-                if let Some(role) =
-                    account.and_then(ApiKeyServiceAccount::role)
-                {
-                    self.auth_app
-                        .detach_sa_policy(&AttachSaPolicyInput {
-                            executor: input.executor,
-                            multi_tenancy: &org_scope,
-                            service_account_id: &service_account_id,
-                            policy_id: &role.policy_id(),
-                        })
-                        .await?;
-                }
-
-                // Removing the account itself is tidying: it carries
-                // nothing and authenticates nobody by now, so a failure
-                // is logged rather than reported.
-                if let Err(error) = self
-                    .auth_app
-                    .delete_service_account(&DeleteServiceAccountInput {
-                        executor: input.executor,
-                        multi_tenancy: &org_scope,
-                        service_account_id: &service_account_id,
-                    })
-                    .await
-                {
-                    tracing::warn!(
-                        service_account = %service_account_id,
-                        error = %error,
-                        "revoked key's service account was not removed"
-                    );
-                }
-            } else {
-                tracing::info!(
+        // Removing the account itself is tidying: it carries nothing and
+        // authenticates nobody by now, so a failure is logged rather than
+        // reported. A key that revoked itself cannot do this at all --
+        // the credential is gone -- which is why it is the account's
+        // grants, not the account, that the step above had to settle.
+        if may_manage {
+            if let Err(error) = self
+                .auth_app
+                .delete_service_account(&DeleteServiceAccountInput {
+                    executor: input.executor,
+                    multi_tenancy: &org_scope,
+                    service_account_id: &service_account_id,
+                })
+                .await
+            {
+                tracing::warn!(
                     service_account = %service_account_id,
-                    "left the revoked key's service account to an owner"
+                    error = %error,
+                    "revoked key's service account was not removed"
                 );
             }
+        } else if account_is_spent {
+            tracing::info!(
+                service_account = %service_account_id,
+                "left the revoked key's service account to an owner"
+            );
         }
 
         Ok(())
@@ -317,6 +323,20 @@ mod tests {
     }
 
     type Calls = Arc<Mutex<Vec<String>>>;
+
+    /// An owner key, which revokes keys as itself.
+    fn key_executor() -> tachyon_sdk::auth::Executor {
+        tachyon_sdk::auth::Executor::ServiceAccount(Box::new(
+            ServiceAccount {
+                id: "sa_01reader".to_string().into(),
+                tenant_id: TenantId::default(),
+                name:
+                    "library-api-key-owner-0123456789abcdef0123456789abcdef"
+                        .to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ))
+    }
 
     /// An organization with a legacy shared account holding `pak_legacy`
     /// and a reader key `pak_reader` on its own account.
@@ -443,11 +463,18 @@ mod tests {
         auth: MockAuthApp,
         api_key_id: &str,
     ) -> errors::Result<()> {
+        revoke_as(auth, api_key_id, user_executor()).await
+    }
+
+    async fn revoke_as(
+        auth: MockAuthApp,
+        api_key_id: &str,
+        executor: tachyon_sdk::auth::Executor,
+    ) -> errors::Result<()> {
         let mut org_query = MockGetOrgByUsername::new();
         org_query
             .expect_execute()
             .returning(|_| Ok(Some(org(&TenantId::default()))));
-        let executor = user_executor();
         let multi_tenancy = create_test_multi_tenancy();
         RevokeApiKey::new(Arc::new(auth), Arc::new(org_query))
             .execute(&RevokeApiKeyInputData {
@@ -470,11 +497,12 @@ mod tests {
                 "policy:library:RevokeApiKey",
                 // Taking repository access away is an owner's to do.
                 "policy:library:ManageRepoPolicy",
-                "revoke:sa_01reader:pak_reader",
                 &format!("grant:{LIBRARY_API_KEY_ISSUER_POLICY_ID}"),
-                // The role comes off before the account goes, so an
-                // account that outlives the attempt carries nothing.
+                // The role comes off before the key goes: an account that
+                // outlives the attempt carries nothing, and a key that
+                // revokes itself is still able to do this.
                 "detach:sa_01reader:pol_01libraryreporeader",
+                "revoke:sa_01reader:pak_reader",
                 "delete-sa:sa_01reader",
             ]
         );
@@ -493,8 +521,8 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 "policy:library:RevokeApiKey",
-                "revoke:sa_01public:pak_public",
                 "policy:library:ManageRepoPolicy",
+                "revoke:sa_01public:pak_public",
             ]
         );
     }
@@ -515,6 +543,29 @@ mod tests {
                 "policy:library:ManageRepoPolicy",
             ]
         );
+    }
+
+    /// A key revoking itself stops working the moment it does, so what
+    /// its account carries has to come off first; only removing the
+    /// account is left to fail, and an account carrying nothing is
+    /// harmless.
+    #[tokio::test]
+    async fn a_key_revoking_itself_is_stripped_before_it_stops_working() {
+        let calls = Calls::default();
+        revoke_as(auth(&calls, true), "pak_reader", key_executor())
+            .await
+            .unwrap();
+
+        let calls = calls.lock().unwrap();
+        let detached = calls
+            .iter()
+            .position(|call| call.starts_with("detach:"))
+            .expect("the account kept what it carried");
+        let revoked = calls
+            .iter()
+            .position(|call| call.starts_with("revoke:"))
+            .expect("the key was not revoked");
+        assert!(detached < revoked, "{calls:?}");
     }
 
     /// The account may outlive the attempt -- upstream can refuse to

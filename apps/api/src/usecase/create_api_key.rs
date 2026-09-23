@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
 use derive_new::new;
+use tachyon_sdk::auth::PublicApiKey;
 use tachyon_sdk::auth::{
     AttachSaPolicyInput, AuthApp, CheckPolicyInput,
     CreatePublicApiKeyInput, CreateServiceAccountInput,
     DeleteServiceAccountInput, GetServiceAccountByNameInput,
     ServiceAccount,
 };
-use tachyon_sdk::auth::{PolicyId, PublicApiKey};
 use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
 
-use super::api_key_issuer::grant_api_key_policy;
+use super::api_key_issuer::{
+    api_key_account_policies, grant_api_key_policy,
+};
 use super::GetOrganizationByUsernameQuery;
 use crate::domain::{
     library_api_key_accounts_policy_id, library_api_key_issuer_policy_id,
@@ -285,17 +287,6 @@ impl CreateApiKey {
             .await
     }
 
-    /// What an account is given when a key is issued on it, which is
-    /// what has to come off if the key never is.
-    fn policies_for(role: ApiKeyRole) -> Vec<PolicyId> {
-        let mut policies = vec![role.policy_id()];
-        if role == ApiKeyRole::Owner {
-            policies.push(library_api_key_accounts_policy_id());
-            policies.push(library_api_key_issuer_policy_id());
-        }
-        policies
-    }
-
     /// Undo an account made for a key that was never issued.
     ///
     /// An account that keeps a role is an account a key can be minted
@@ -322,7 +313,7 @@ impl CreateApiKey {
         };
 
         let mut kept_a_grant = None;
-        for policy_id in Self::policies_for(role) {
+        for policy_id in api_key_account_policies(role) {
             if let Err(error) = self
                 .auth_app
                 .detach_sa_policy(&AttachSaPolicyInput {

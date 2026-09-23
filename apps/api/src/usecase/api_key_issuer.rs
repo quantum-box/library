@@ -10,6 +10,11 @@ use tachyon_sdk::auth::{
 };
 use value_object::TenantId;
 
+use crate::domain::{
+    library_api_key_accounts_policy_id, library_api_key_issuer_policy_id,
+    ApiKeyRole,
+};
+
 /// How many accounts Library asks about at once when it has to look
 /// through an organization's accounts for keys. Every key has an account
 /// of its own, so the number to ask about grows with the key count.
@@ -57,4 +62,16 @@ pub(crate) async fn grant_api_key_policy(
     }
 
     Ok(())
+}
+
+/// What the account behind a key with this role was given, and so what
+/// has to come off it when the key goes. An owner key issues keys as
+/// itself, which takes more than the role (see `create_api_key`).
+pub(crate) fn api_key_account_policies(role: ApiKeyRole) -> Vec<PolicyId> {
+    let mut policies = vec![role.policy_id()];
+    if role == ApiKeyRole::Owner {
+        policies.push(library_api_key_accounts_policy_id());
+        policies.push(library_api_key_issuer_policy_id());
+    }
+    policies
 }
