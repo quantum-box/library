@@ -408,6 +408,9 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
   get roomGeneration(): string | null {
     return this.initialized ? this.validatedGeneration : null
   }
+  get destroyed(): boolean {
+    return this.disposed
+  }
 
   private readonly target: PhotonLiveRecordTarget
   private readonly format: PhotonLiveFormat

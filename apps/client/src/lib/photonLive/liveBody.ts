@@ -319,6 +319,12 @@ export class LiveBodySession {
     if (this.disposed) return
     if (this.mode === 'live' && this.bound) {
       const provider = this.bound.provider
+      if (provider.destroyed) {
+        // Gone before its last body was acknowledged; it cannot send it now.
+        const onScreen = this.bodyOnScreen()
+        if (onScreen !== null && !this.same(onScreen, this.durable)) this.commitRest(onScreen)
+        return
+      }
       provider.flushCheckpoint()
       const unsent = provider.unsentBody()
       // A room that is not connected cannot take it before the page is gone.
@@ -407,6 +413,11 @@ export class LiveBodySession {
   private queueCheckpoint(body: string): void {
     const provider = this.bound?.provider
     if (!provider) return
+    if (provider.destroyed) {
+      // The page is unloading and the room went first; it would drop this.
+      this.commitRest(body)
+      return
+    }
     this.lastQueued = body
     provider.queueCheckpoint(body)
   }

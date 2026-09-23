@@ -427,10 +427,13 @@ function BlockRecordBodyEditor({
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushNow(false)
     }
-    window.addEventListener('pagehide', onPageHide)
+    // Capture phase: at the window, capturing listeners run before the
+    // room's own pagehide listener, which destroys it on unload and would
+    // drop the edit still waiting in the debounce.
+    window.addEventListener('pagehide', onPageHide, { capture: true })
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
-      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pagehide', onPageHide, { capture: true })
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [flushNow, live])

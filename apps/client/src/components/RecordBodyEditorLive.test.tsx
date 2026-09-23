@@ -114,6 +114,7 @@ vi.mock('../lib/photonLive/client', async (importOriginal) => {
         user: { name: 'Aoi', color: '#000' },
         session: null,
         roomGeneration: null,
+        destroyed: false,
         queued: [] as string[],
         getState: () => state,
         unsentBody: () => null,

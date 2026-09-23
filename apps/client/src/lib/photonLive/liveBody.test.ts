@@ -566,6 +566,18 @@ describe('LiveBodySession', () => {
     expect(h.rest).toEqual([])
   })
 
+  it('saves the last edit normally when the page unload already destroyed the room', () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    // The provider's own pagehide handler ran first.
+    h.rooms[0].destroy()
+    h.type('Base typed just before closing')
+    h.session.flush({ leaving: true })
+    expect(h.rooms[0].queued).toEqual([])
+    expect(h.rest).toEqual(['Base typed just before closing'])
+  })
+
   it('saves normally when leaving while the room is disconnected', () => {
     const h = harness()
     h.session.start()
