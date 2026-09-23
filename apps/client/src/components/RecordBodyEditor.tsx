@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BlockNoteEditor,
+  createExtension,
   YCursorExtension,
   YSyncExtension,
   YUndoExtension,
@@ -8,6 +9,8 @@ import {
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core'
 import { blocksToYDoc, blocksToYXmlFragment, yXmlFragmentToBlocks } from '@blocknote/core/yjs'
+import { redoCommand, undoCommand, yUndoPlugin } from 'y-prosemirror'
+import { carryIntoRoom, roomUndoManager } from '../lib/photonLive/roomUndo'
 import { merge3 } from '../lib/photonLive/merge3'
 import { comparableBody } from '../lib/photonLive/comparable'
 import {
@@ -371,13 +374,18 @@ function BlockRecordBodyEditor({
         )
         blocksToYXmlFragment(editor, withUniqueBlockIds(merged), target)
       },
-      bind: (provider) => {
+      bind: (provider, change) => {
         // Rebinding re-renders the document from the room. That is not an
         // edit, and must not come back as a checkpoint of the room's body.
         const wasLoading = loading.current
         loading.current = true
         try {
-          bindEditorToRoom(editor, provider)
+          // What this editor carries into the room is its own typing: written
+          // under an undo manager that is already tracking it, it stays
+          // undoable after the switch instead of starting a fresh history.
+          const undoManager = change ? roomUndoManager(provider.fragment) : undefined
+          if (change) carryIntoRoom(provider.doc, change)
+          bindEditorToRoom(editor, provider, undoManager)
         } finally {
           loading.current = wasLoading
         }
@@ -638,7 +646,20 @@ function withUniqueBlockIds(blocks: BodyEditor['document']): BodyEditor['documen
  * same positions, so when the room already holds what is on screen nothing
  * visible changes -- no remount, no lost caret, no broken composition.
  */
-function bindEditorToRoom(editor: BodyEditor, provider: PhotonLiveProvider): void {
+/** BlockNote's YUndoExtension, on a given undo manager. */
+const RoomUndoExtension = createExtension(({ options }: { options: { undoManager: Y.UndoManager } }) => ({
+  key: 'yUndo',
+  prosemirrorPlugins: [yUndoPlugin({ undoManager: options.undoManager })],
+  dependsOn: ['yCursor', 'ySync'],
+  undoCommand,
+  redoCommand,
+} as const))
+
+function bindEditorToRoom(
+  editor: BodyEditor,
+  provider: PhotonLiveProvider,
+  undoManager?: Y.UndoManager,
+): void {
   editor.unregisterExtension(['ySync', 'yCursor', 'yUndo'])
   editor.registerExtension([
     YSyncExtension({ fragment: provider.fragment }),
@@ -648,7 +669,7 @@ function bindEditorToRoom(editor: BodyEditor, provider: PhotonLiveProvider): voi
       provider: { awareness: provider.awareness },
       showCursorLabels: 'activity',
     }),
-    YUndoExtension(),
+    undoManager ? RoomUndoExtension({ undoManager }) : YUndoExtension(),
   ])
 }
 

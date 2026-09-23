@@ -1,5 +1,7 @@
 import {
   RecordApiError,
+  libraryGraphqlAvailability,
+  noteLibraryGraphqlResponse,
   shouldFallbackLibraryRequest,
   type LibraryDataItem,
   type LibraryProperty,
@@ -214,6 +216,7 @@ async function requestLibraryGraphQL<TData>(
       'transport'
     )
   }
+  noteLibraryGraphqlResponse(response.status)
   if (!response.ok) {
     throw new RecordApiError(
       `Library GraphQL request failed: ${response.status}`,
@@ -473,11 +476,25 @@ export async function addLibraryData(
 }
 
 /**
- * Set once this API has answered that it has no GraphQL update. A save that
- * must outlive the page then goes straight to REST: the page may not live to
- * run the fallback after the GraphQL answer.
+ * Whether a save that must outlive the page goes straight to REST. The page
+ * may not live to run a fallback after a GraphQL answer, so REST is taken
+ * when GraphQL is known to be absent -- or not yet known either way and REST
+ * can carry every value (it cannot carry some typed Properties).
  */
-let graphqlUpdateUnavailable = false
+function unloadingSaveUsesRest(
+  properties: LibraryProperty[],
+  propertyData: LibraryDataItem['propertyData'],
+): boolean {
+  const graphql = libraryGraphqlAvailability()
+  if (graphql === 'available') return false
+  if (graphql === 'unavailable') return true
+  try {
+    restPropertyPayload(properties, propertyData)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function updateLibraryData(
   target: LibraryRepoTarget,
@@ -487,7 +504,7 @@ export async function updateLibraryData(
   options?: { keepalive?: boolean }
 ): Promise<LibraryDataItem> {
   const propertyData = knownPropertyData(properties, item.propertyData, 'update')
-  if (!(options?.keepalive && graphqlUpdateUnavailable)) {
+  if (!(options?.keepalive && unloadingSaveUsesRest(properties, propertyData))) {
     try {
       const payload = await requestLibraryGraphQL<LibraryUpdateDataResponse>(
         libraryUpdateDataMutation,
@@ -512,9 +529,6 @@ export async function updateLibraryData(
       }
       return payload.updateData
     } catch (error: unknown) {
-      if (error instanceof RecordApiError && error.kind === 'endpoint-unavailable') {
-        graphqlUpdateUnavailable = true
-      }
       if (!shouldFallbackLibraryRequest(error, 'update')) throw error
     }
   }

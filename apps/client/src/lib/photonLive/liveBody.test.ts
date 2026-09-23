@@ -111,7 +111,8 @@ function harness(initialBody = 'Base', extra: Partial<LiveBodySessionOptions> = 
     mergeInto: (target, from, base) => {
       setBody(target, merge3(words(base), words(bodyOf(from)), words(bodyOf(target)), (w) => w).join(' '))
     },
-    bind: (provider) => {
+    bind: (provider, change) => {
+      change?.()
       bound = provider.fragment
       onBind?.(provider)
     },

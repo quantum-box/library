@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   addLibraryData,
@@ -6,6 +6,7 @@ import {
   deleteLibraryData,
   updateLibraryData,
 } from './libraryDataCrud'
+import { noteLibraryGraphqlResponse } from '../recordsApi'
 
 describe('libraryDataCrud', () => {
   afterEach(() => {
@@ -83,6 +84,9 @@ describe('libraryDataCrud', () => {
       { keepalive: true },
     )
 
+    // GraphQL answered before (the page loaded through it).
+    beforeEach(() => noteLibraryGraphqlResponse(200))
+
     it('sends the save in a request that outlives the page', async () => {
       const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => updated())
       vi.stubGlobal('fetch', fetchMock)
@@ -118,6 +122,38 @@ describe('libraryDataCrud', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
       expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/graphql')
       expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer still-valid' })
+    })
+
+    it('goes straight to REST while GraphQL is not known to be there, when REST can carry it', async () => {
+      vi.resetModules()
+      const crud = await import('./libraryDataCrud')
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+        Response.json({ id: 'data-1', name: 'Doc', items: [] }))
+      vi.stubGlobal('fetch', fetchMock)
+      await crud.updateLibraryData(
+        { org: 'acme', repo: 'docs' },
+        [...properties],
+        { id: 'data-1', name: 'Doc', propertyData: [{ propertyId: 'prop-1', value: { string: 'last edit' } }] },
+        { keepalive: true },
+      )
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1beta/repos/acme/docs/data/data-1')
+      expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBe(true)
+    })
+
+    it('keeps GraphQL for a value REST cannot carry while availability is unknown', async () => {
+      vi.resetModules()
+      const crud = await import('./libraryDataCrud')
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+        Response.json({ data: { updateData: { id: 'data-1', name: 'Doc', propertyData: [] } } }))
+      vi.stubGlobal('fetch', fetchMock)
+      await crud.updateLibraryData(
+        { org: 'acme', repo: 'docs' },
+        [{ id: 'status', name: 'Status', typ: 'Select', meta: { options: [{ id: 'done', name: 'Done' }] } }],
+        { id: 'data-1', name: 'Doc', propertyData: [{ propertyId: 'status', value: { optionId: 'done' } }] },
+        { keepalive: true },
+      )
+      expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/graphql')
     })
 
     it('sends a keepalive request the browser refuses again as an ordinary one', async () => {

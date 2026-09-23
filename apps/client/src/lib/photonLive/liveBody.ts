@@ -26,8 +26,12 @@ export interface LiveBodyEditorPort {
    * side added is dropped.
    */
   mergeInto(target: Y.XmlFragment, from: Y.XmlFragment, base: string): void
-  /** Point the editor's sync, cursor and undo plugins at this room. */
-  bind(provider: PhotonLiveProvider): void
+  /**
+   * Point the editor's sync, cursor and undo plugins at this room. `change`
+   * writes what this editor carries into the room first; it is this editor's
+   * own typing, so the port makes it undoable in the room.
+   */
+  bind(provider: PhotonLiveProvider, change?: () => void): void
   /** Rebinding re-renders the document, which would break a composition. */
   composing(): boolean
 }
@@ -847,8 +851,7 @@ export class LiveBodySession {
     this.heldFromRoom = false
     this.binding = true
     try {
-      change?.()
-      port.bind(candidate.provider)
+      port.bind(candidate.provider, change)
     } finally {
       this.binding = false
     }

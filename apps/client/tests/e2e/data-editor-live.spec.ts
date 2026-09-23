@@ -547,6 +547,37 @@ test('an edit typed before the room answers reaches a participant already in it'
   }
 })
 
+test('an edit typed before the room answers can still be undone after joining', async ({ page }) => {
+  const early = ' Typed before the room answered.'
+  let releaseRoom = () => {}
+  const roomHeld = new Promise<void>((resolve) => {
+    releaseRoom = resolve
+  })
+  await page.route('**/live/session', async (route) => {
+    await roomHeld
+    await route.continue()
+  })
+  await page.goto(route)
+  const editor = page.locator('.record-body-blocknote [contenteditable="true"]').first()
+  await expect(editor).toContainText(seed)
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.insertText(early)
+  await expect(editor).toContainText(early.trim())
+  releaseRoom()
+
+  // Joining switches the editor onto the room's document and undo history;
+  // the typing it carried in is still this person's to undo.
+  await liveRoomAttached(page)
+  await expect(editor).toContainText(early.trim())
+  await editor.click()
+  // The editor's shortcut follows the platform the page reports.
+  const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.platform))
+  await page.keyboard.press(mac ? 'Meta+z' : 'Control+z')
+  await expect(editor).not.toContainText(early.trim())
+  await expect(editor).toContainText(seed)
+})
+
 test('a participant is moved onto the new body when an ordinary save replaces it', async ({ browser, page }) => {
   const replacement = 'Replaced by an ordinary save.'
   const otherContext = await browser.newContext({ storageState: otherAuthState })

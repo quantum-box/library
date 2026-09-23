@@ -723,6 +723,21 @@ export class RecordPropertyMappingError extends RecordApiError {
 
 const unavailableGraphqlStatuses = new Set([404, 405, 501])
 
+let graphqlAvailability: 'unknown' | 'available' | 'unavailable' = 'unknown'
+
+/**
+ * Whether this API has answered that it serves GraphQL at all, as learned
+ * from any GraphQL request so far. A save that must outlive the page picks
+ * its transport from this: it cannot wait to find out.
+ */
+export function libraryGraphqlAvailability(): 'unknown' | 'available' | 'unavailable' {
+  return graphqlAvailability
+}
+
+export function noteLibraryGraphqlResponse(status: number): void {
+  graphqlAvailability = unavailableGraphqlStatuses.has(status) ? 'unavailable' : 'available'
+}
+
 export function shouldFallbackLibraryRequest(
   error: unknown,
   operation: LibraryFallbackOperation
@@ -881,6 +896,7 @@ async function requestLibraryGraphQL<TData>(
       'transport'
     )
   }
+  noteLibraryGraphqlResponse(response.status)
   if (!response.ok) {
     throw new RecordApiError(
       `Library GraphQL request failed: ${response.status}`,
