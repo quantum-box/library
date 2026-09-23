@@ -292,7 +292,7 @@ function RecordPage({
       if (payload.item) {
         setConfirmed(true)
         setBodyKnown(true)
-        rememberDataDetail({ org, repo }, dataId, {
+        void rememberDataDetail({ org, repo }, dataId, {
           item: payload.item,
           properties: payload.properties,
         })
@@ -384,7 +384,7 @@ function RecordPage({
         setItem(savedWithBody)
         setSaveState('saved')
         if (deletedRef.current) return
-        rememberDataDetail({ org, repo }, dataId, {
+        void rememberDataDetail({ org, repo }, dataId, {
           item: savedWithBody,
           properties: propertiesRef.current,
         })
@@ -595,13 +595,14 @@ function RecordPage({
     ))}
     </div>
     ) : null}
-    <label className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-selected hover:text-primary">
+    <label className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground ${confirmed ? 'cursor-pointer hover:bg-selected hover:text-primary' : 'cursor-default opacity-50'}`}>
     <Paperclip className="size-3.5" aria-hidden="true" />
     {attachments.length > 0 ? t('common.add') : t('dataEditor.attachFile')}
     <input
     data-testid="record-attach-file"
     type="file"
     multiple
+    disabled={!confirmed}
     accept={appKitConfig.attachments.acceptedTypes}
     className="hidden"
     onChange={(event) => {
@@ -698,6 +699,9 @@ function RecordPage({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground"
+            // Every action that writes waits for the record to be confirmed:
+            // the one on screen may be a memory of a record since deleted.
+            disabled={!confirmed}
             onClick={() => setShareOpen(true)}
             aria-label={t('share.shareData')}
             title={t('share.shareData')}
@@ -708,6 +712,7 @@ function RecordPage({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground hover:text-destructive"
+            disabled={!confirmed}
             onClick={() => setDeleteOpen(true)}
             aria-label={t('dataEditor.deleteData')}
             title={t('dataEditor.deleteData')}

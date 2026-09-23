@@ -118,7 +118,7 @@ describe('record pages', () => {
 
   it('prefers the record itself, under the id it was asked for too', async () => {
     rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
-    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'the whole body'), properties })
+    await rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'the whole body'), properties })
     await settle()
 
     for (const id of ['d1', 'DOC-1']) {
@@ -136,7 +136,7 @@ describe('record pages', () => {
     rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
     await settle()
 
-    rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
+    await rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
 
     await vi.waitFor(() => {
       expect(peekRepoTable(target)?.items[0]?.propertyData).toEqual([
@@ -153,7 +153,7 @@ describe('record pages', () => {
       nextPage: null,
       totalItems: 2,
     })
-    rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'body'), properties })
+    await rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'body'), properties })
     await settle()
 
     forgetData(target, 'd1')
@@ -169,7 +169,7 @@ describe('record pages', () => {
 describe('forgetting a record opened by its identifier', () => {
   it('forgets it under every name, whichever one the deletion used', async () => {
     rememberRepoTable(target, { items: [row('d1', 'todo', ''), row('d2', 'todo', '')], properties, nextPage: null, totalItems: 2 })
-    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
     await settle()
 
     forgetData(target, 'DOC-1')
@@ -183,10 +183,10 @@ describe('forgetting a record opened by its identifier', () => {
 
 describe('remembering a record under more than one name', () => {
   it('keeps the identifier it was opened by when it is opened again by id', async () => {
-    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
     await settle()
     await readDataDetail(target, 'd1')
-    rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'body'), properties })
+    await rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'body'), properties })
     await settle()
 
     await forgetData(target, 'd1')
@@ -206,15 +206,15 @@ describe('trimming a record remembered under two names', () => {
     readCache.setAutoTrim(false)
     const pause = () => new Promise((resolve) => setTimeout(resolve, 5))
     for (let index = 0; index < 60; index += 1) {
-      rememberDataDetail(target, `old${index}`, { item: row(`old${index}`, 'todo', ''), properties })
+      await rememberDataDetail(target, `old${index}`, { item: row(`old${index}`, 'todo', ''), properties })
     }
     await settle()
     await pause()
-    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
     await settle()
     await pause()
     for (let index = 0; index < readCache.DETAILS_KEPT - 1; index += 1) {
-      rememberDataDetail(target, `new${index}`, { item: row(`new${index}`, 'todo', ''), properties })
+      await rememberDataDetail(target, `new${index}`, { item: row(`new${index}`, 'todo', ''), properties })
     }
     await settle()
 
@@ -226,6 +226,37 @@ describe('trimming a record remembered under two names', () => {
     // The most recent kept, the oldest gone.
     expect([...kept].filter((key) => /:new\d+$/.test(key))).toHaveLength(readCache.DETAILS_KEPT - 1)
     expect([...kept].some((key) => /:old\d+$/.test(key))).toBe(false)
+  })
+})
+
+describe('aliases across a restart', () => {
+  /**
+   * Straight after start the record pages are still on disk. Opening a record
+   * by id then must still find the identifier it was opened by last session.
+   */
+  it('keeps an identifier remembered last session when the record is opened by id', async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'library-read-cache-'))
+    const open = async () => {
+      await engine.reset()
+      engine.configure({
+        storage: await createPGliteStore({ dataDir }),
+        kernel: await loadPhotonKernel(),
+        skipLegacyMigration: true,
+      })
+    }
+    try {
+      await open()
+      await rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+
+      await open()
+      await rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'body'), properties })
+      await forgetData(target, 'd1')
+
+      expect(await readDataDetail(target, 'DOC-1')).toBeNull()
+    } finally {
+      await engine.reset()
+      await rm(dataDir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -251,7 +282,7 @@ describe('a record opened straight after start', () => {
       await settle()
 
       await open()
-      rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
+      await rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
 
       await vi.waitFor(async () => {
         expect((await readRepoTable(target))?.items[0]?.propertyData[0]?.value).toEqual({ string: 'done' })
@@ -295,7 +326,7 @@ describe('across a restart', () => {
     try {
       await open()
       rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
-      rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'the whole body'), properties })
+      await rememberDataDetail(target, 'd1', { item: row('d1', 'todo', 'the whole body'), properties })
       await settle()
 
       await open()
@@ -311,14 +342,16 @@ describe('across a restart', () => {
 
 describe('record page trimming', () => {
   it('keeps the most recently remembered pages and drops the rest', async () => {
+    readCache.setAutoTrim(false)
     const count = readCache.DETAILS_KEPT + 60
     for (let index = 0; index < count; index += 1) {
-      rememberDataDetail(target, `d${index}`, { item: row(`d${index}`, 'todo', ''), properties })
+      await rememberDataDetail(target, `d${index}`, { item: row(`d${index}`, 'todo', ''), properties })
     }
     await settle()
 
     await readCache.trimDetails()
 
+    readCache.setAutoTrim(true)
     const kept = await listClientEngineRecords(LIBRARY_READ_DETAILS_COLLECTION)
     expect(kept).toHaveLength(readCache.DETAILS_KEPT)
     expect(kept.some((page) => page.recordId.endsWith(`:d${count - 1}`))).toBe(true)

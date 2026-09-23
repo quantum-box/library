@@ -172,6 +172,27 @@ describe('DataEditorPage', () => {
     expect(screen.getByTestId('cell-prop-status')).toHaveAttribute('data-disabled', 'false')
   })
 
+  it('keeps every action that writes locked until the record is confirmed', async () => {
+    cache.peekDataDetail.mockReturnValue({
+      item: record('Remembered title', 'remembered body'),
+      properties,
+      complete: true,
+    })
+    const detail = deferredDetail()
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Delete data' })).toBeDisabled()
+    expect(screen.getByTestId('data-editor-share')).toBeDisabled()
+    expect(screen.getByTestId('record-attach-file')).toBeDisabled()
+
+    detail.resolve({ item: record('Fresh title', 'fresh body'), properties })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete data' })).not.toBeDisabled()
+    })
+    expect(screen.getByTestId('data-editor-share')).not.toBeDisabled()
+    expect(screen.getByTestId('record-attach-file')).not.toBeDisabled()
+  })
+
   it('draws a listing row without the body preview it carries', async () => {
     cache.peekDataDetail.mockReturnValue({
       item: record('Row title', 'a preview, not the body'),
@@ -279,25 +300,32 @@ describe('DataEditorPage', () => {
    * about a record that is gone, and must not put it back in the cache.
    */
   it('does not remember a record a late answer describes after it was deleted', async () => {
-    cache.peekDataDetail.mockReturnValue({
-      item: record('Remembered title', 'remembered body'),
-      properties,
-      complete: true,
-    })
-    const detail = deferredDetail()
+    mocks.fetchLibraryDataDetail.mockResolvedValueOnce({ item: record('Title', 'body'), properties })
     mocks.deleteLibraryData.mockResolvedValue(undefined)
     const onBack = vi.fn()
-    render(<DataEditorPage dataId="data-1" org="acme" repo="docs" onBack={onBack} />)
+    const { rerender } = render(
+      <DataEditorPage dataId="data-1" org="acme" repo="docs" onBack={onBack} />
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete data' })).not.toBeDisabled()
+    })
+    expect(cache.rememberDataDetail).toHaveBeenCalledTimes(1)
 
+    // A second detail request, still out when the record is deleted.
+    const late = deferredDetail()
+    rerender(<DataEditorPage dataId="data-1" org="acme" repo="docs" repoLabel="Docs" onBack={onBack} />)
+    await waitFor(() => {
+      expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledTimes(2)
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Delete data' }))
     fireEvent.click(screen.getByTestId('library-delete-dialog-confirm'))
     await waitFor(() => {
       expect(onBack).toHaveBeenCalled()
     })
 
-    detail.resolve({ item: record('Remembered title', 'remembered body'), properties })
+    late.resolve({ item: record('Title', 'body'), properties })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(cache.rememberDataDetail).not.toHaveBeenCalled()
+    expect(cache.rememberDataDetail).toHaveBeenCalledTimes(1)
   })
 
   it('reads the store when the record could not be had at once', async () => {

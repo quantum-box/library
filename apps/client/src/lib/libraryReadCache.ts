@@ -221,18 +221,27 @@ export function rememberDataDetail(
   target: ReadCacheRepository,
   requestedId: string,
   detail: { item: LibraryDataItem; properties: LibraryProperty[] }
-): void {
+): Promise<void> {
+  return rememberDataDetailNow(target, requestedId, detail)
+}
+
+async function rememberDataDetailNow(
+  target: ReadCacheRepository,
+  requestedId: string,
+  detail: { item: LibraryDataItem; properties: LibraryProperty[] }
+): Promise<void> {
   // Every name the record is already remembered by, as well as these two:
   // opening it by its id must not drop the identifier it was opened by
-  // before, or deleting it by id would leave that URL drawing it.
+  // before, or deleting it by id would leave that URL drawing it. Read, not
+  // peeked -- straight after start the pages may not be loaded from disk yet.
   const ids = new Set([requestedId, detail.item.id])
   for (const known of [requestedId, detail.item.id]) {
-    for (const id of peek<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, known))?.ids ?? []) {
+    for (const id of (await read<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, known)))?.ids ?? []) {
       ids.add(id)
     }
   }
   const value: CachedDataDetail = { ...detail, complete: true, ids: [...ids], rememberedAt: Date.now() }
-  void remember(
+  await remember(
     DETAILS_COLLECTION,
     [...ids].map((dataId) => ({ recordId: detailKey(target, dataId), value }))
   )
@@ -240,7 +249,7 @@ export function rememberDataDetail(
     void trimDetails()
   }
 
-  void updateCachedRow(target, detail)
+  await updateCachedRow(target, detail)
 }
 
 /**
