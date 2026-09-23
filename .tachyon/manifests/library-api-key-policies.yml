@@ -28,7 +28,11 @@ policies:
   # removes the account. Tachyon authorizes both as the caller, and
   # neither action is in LibraryUserPolicy or LibraryRepoOwnerPolicy.
   # library-api grants this only after its own `library:ManageRepoPolicy`
-  # check, so it reaches owners. Upstream confines both actions to the
+  # check, so it reaches owners, and attaches it to the account behind an
+  # owner key, which issues keys as itself. `auth:CreatePublicApiKey` is
+  # here rather than in the policy every member gets: a member who could
+  # mint a key on an account they did not make could mint one on an
+  # account that carries a role, which is the check above undone. Upstream confines both actions to the
   # calling tenant: the service account and the policy have to belong to,
   # or be visible from, the organization. The grant is as strong as the
   # auth:AttachUserPolicy owners already hold.
@@ -41,6 +45,8 @@ policies:
         effect: allow
       - action: auth:DeleteServiceAccount
         effect: allow
+      - action: auth:CreatePublicApiKey
+        effect: allow
 
   # Applied 2026-09-23 as pol_01m36cff1vb3eftr27p4f12t1a
   # (`LIBRARY_API_KEY_ACCOUNTS_POLICY_ID` overrides it).
@@ -51,15 +57,13 @@ policies:
   # policy because an account created alone carries no policy, while
   # attaching one to it is an owner's to do.
   #
-  # `auth:CreatePublicApiKey` is here for the account an owner key acts
-  # as: a person already holds that one, a service account does not, and
-  # an owner key issues keys (`library api-key create`).
+  # Creating an account is all this carries: an account made alone holds
+  # no policy and authenticates nobody until a key is issued on it, and
+  # issuing that key is authorized separately.
   - name: library:ApiKeyAccounts
     namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
     description: Allow Library organization members to create the service account behind an API key they issue
     shared: true
     actions:
       - action: auth:CreateServiceAccount
-        effect: allow
-      - action: auth:CreatePublicApiKey
         effect: allow

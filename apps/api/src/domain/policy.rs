@@ -43,8 +43,12 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
 
 /// Companion policy granting what issuing an API key with repository
 /// access needs on the tachyon side: `auth:AttachServiceAccountPolicy` to
-/// grant the key's own service account its role, and
-/// `auth:DeleteServiceAccount` to remove that account when the key goes.
+/// grant the key's own service account its role,
+/// `auth:DeleteServiceAccount` to remove that account when the key goes,
+/// and `auth:CreatePublicApiKey`, which is here rather than in
+/// [`library_api_key_accounts_policy_id`] because someone able to put a
+/// key on an account they did not make could put one on an account that
+/// carries a role.
 /// Neither is in LibraryUserPolicy or LibraryRepoOwnerPolicy, and both are
 /// system policies the API cannot amend, so the actions live in this
 /// custom policy (`library:ApiKeyIssuer` in
@@ -67,8 +71,9 @@ pub fn library_api_key_issuer_policy_id() -> PolicyId {
     )
 }
 
-/// Companion policy granting `auth:CreateServiceAccount`, which issuing
-/// any key needs now that each key has a service account of its own
+/// Companion policy granting `auth:CreateServiceAccount` alone, which
+/// issuing any key needs now that each key has a service account of its
+/// own
 /// (`library:ApiKeyAccounts` in
 /// .tachyon/manifests/library-api-key-policies.yml). Separate from
 /// [`library_api_key_issuer_policy_id`] because a key without repository
