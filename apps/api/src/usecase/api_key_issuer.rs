@@ -22,9 +22,6 @@ pub(crate) const CONCURRENT_ACCOUNT_LOOKUPS: usize = 8;
 /// so organizations that predate these policies need no backfill. The
 /// attachment is idempotent upstream. A caller that is not a user (a key
 /// acting on its own behalf) gets nothing: the grant is for people.
-/// `policy_id` is `None` where the environment does not configure the
-/// policy, and the call then does nothing.
-///
 /// A refusal is not an error either. Attaching a policy is itself
 /// something tachyon authorizes as the caller: an organization owner may
 /// (their operator-owner grant carries it), a member may not. Whether the
@@ -33,7 +30,7 @@ pub(crate) const CONCURRENT_ACCOUNT_LOOKUPS: usize = 8;
 /// reported by that, not by this.
 pub(crate) async fn grant_api_key_policy(
     auth_app: &dyn AuthApp,
-    policy_id: Option<&PolicyId>,
+    policy_id: &PolicyId,
     executor: &dyn ExecutorAction,
     multi_tenancy: &dyn MultiTenancyAction,
     tenant_id: &TenantId,
@@ -41,13 +38,6 @@ pub(crate) async fn grant_api_key_policy(
     if !executor.is_user() {
         return Ok(());
     }
-    let Some(policy_id) = policy_id else {
-        tracing::debug!(
-            "an api key policy id is not configured; skipping the grant"
-        );
-        return Ok(());
-    };
-
     if let Err(error) = auth_app
         .attach_user_policy(&AttachUserPolicyInput {
             executor,

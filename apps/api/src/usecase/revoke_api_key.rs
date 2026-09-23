@@ -4,8 +4,8 @@ use derive_new::new;
 use futures_util::{StreamExt, TryStreamExt};
 use tachyon_sdk::auth::{
     AuthApp, CheckPolicyInput, DeleteServiceAccountInput,
-    FindAllPublicApiKeyInput, FindAllServiceAccountsInput, PolicyId,
-    PublicApiKeyId, RevokePublicApiKeyInput,
+    FindAllPublicApiKeyInput, FindAllServiceAccountsInput, PublicApiKeyId,
+    RevokePublicApiKeyInput,
 };
 use value_object::{Identifier, TenantId};
 
@@ -13,7 +13,9 @@ use tachyon_sdk::auth::MultiTenancy;
 
 use super::api_key_issuer::grant_api_key_policy;
 use super::GetOrganizationByUsernameQuery;
-use crate::domain::{ApiKeyServiceAccount, LIBRARY_TENANT};
+use crate::domain::{
+    library_api_key_issuer_policy_id, ApiKeyServiceAccount, LIBRARY_TENANT,
+};
 
 #[derive(Debug, Clone)]
 pub struct RevokeApiKeyInputData<'a> {
@@ -28,8 +30,6 @@ pub struct RevokeApiKeyInputData<'a> {
 pub struct RevokeApiKey {
     auth_app: Arc<dyn AuthApp>,
     get_org_by_name: Arc<dyn GetOrganizationByUsernameQuery>,
-    /// See `library_api_key_issuer_policy_id`.
-    api_key_issuer_policy_id: Option<PolicyId>,
 }
 
 #[async_trait::async_trait]
@@ -190,7 +190,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
             if may_manage {
                 grant_api_key_policy(
                     self.auth_app.as_ref(),
-                    self.api_key_issuer_policy_id.as_ref(),
+                    &library_api_key_issuer_policy_id(),
                     input.executor,
                     &org_scope,
                     &tenant_id,
@@ -229,7 +229,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Organization;
+    use crate::domain::{Organization, LIBRARY_API_KEY_ISSUER_POLICY_ID};
     use crate::usecase::GetOrganizationByUsernameQuery;
     use async_trait::async_trait;
     use mockall::mock;
@@ -405,18 +405,14 @@ mod tests {
             .returning(|_| Ok(Some(org(&TenantId::default()))));
         let executor = user_executor();
         let multi_tenancy = create_test_multi_tenancy();
-        RevokeApiKey::new(
-            Arc::new(auth),
-            Arc::new(org_query),
-            Some(PolicyId::new("pol_01issuer")),
-        )
-        .execute(&RevokeApiKeyInputData {
-            executor: &executor,
-            multi_tenancy: &multi_tenancy,
-            org_name: &Identifier::from_str("test-org").unwrap(),
-            api_key_id,
-        })
-        .await
+        RevokeApiKey::new(Arc::new(auth), Arc::new(org_query))
+            .execute(&RevokeApiKeyInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                org_name: &Identifier::from_str("test-org").unwrap(),
+                api_key_id,
+            })
+            .await
     }
 
     #[tokio::test]
@@ -431,7 +427,7 @@ mod tests {
                 // Taking repository access away is an owner's to do.
                 "policy:library:ManageRepoPolicy",
                 "revoke:sa_01reader:pak_reader",
-                "grant:pol_01issuer",
+                &format!("grant:{LIBRARY_API_KEY_ISSUER_POLICY_ID}"),
                 "delete-sa:sa_01reader",
             ]
         );

@@ -51,17 +51,20 @@ pub fn library_org_creator_policy_id() -> Option<PolicyId> {
 /// .tachyon/manifests/library-api-key-policies.yml). It is shared with the
 /// organizations under the Library platform and attached in the
 /// organization's tenant, which is the only scope a check made there
-/// reads. Its applied id is injected per environment.
+/// reads.
 ///
-/// `None` when the environment does not configure it; issuing then
-/// proceeds without the grant, which works for tenant administrators only.
-pub fn library_api_key_issuer_policy_id() -> Option<PolicyId> {
-    let id = std::env::var("LIBRARY_API_KEY_ISSUER_POLICY_ID").ok()?;
-    let id = id.trim();
-    if id.is_empty() {
-        return None;
-    }
-    Some(PolicyId::new(id))
+/// The id is the one the manifest was applied under, like the repository
+/// policies above: Library has one platform tenant, so there is no second
+/// id for the same policy. `LIBRARY_API_KEY_ISSUER_POLICY_ID` overrides
+/// it, for an environment where the policy was applied separately.
+pub const LIBRARY_API_KEY_ISSUER_POLICY_ID: &str =
+    "pol_01m36cfejtbmqgmk9pwccjjhn5";
+
+pub fn library_api_key_issuer_policy_id() -> PolicyId {
+    policy_id_from_env_or(
+        "LIBRARY_API_KEY_ISSUER_POLICY_ID",
+        LIBRARY_API_KEY_ISSUER_POLICY_ID,
+    )
 }
 
 /// Companion policy granting `auth:CreateServiceAccount`, which issuing
@@ -71,17 +74,26 @@ pub fn library_api_key_issuer_policy_id() -> Option<PolicyId> {
 /// [`library_api_key_issuer_policy_id`] because a key without repository
 /// access is issued by members who are not owners, and an account created
 /// on its own carries no policy.
-///
-/// `None` when the environment does not configure it; issuing then
-/// proceeds without the grant, which works wherever the caller may
-/// already create a service account.
-pub fn library_api_key_accounts_policy_id() -> Option<PolicyId> {
-    let id = std::env::var("LIBRARY_API_KEY_ACCOUNTS_POLICY_ID").ok()?;
-    let id = id.trim();
-    if id.is_empty() {
-        return None;
-    }
-    Some(PolicyId::new(id))
+/// `LIBRARY_API_KEY_ACCOUNTS_POLICY_ID` overrides it, as above.
+pub const LIBRARY_API_KEY_ACCOUNTS_POLICY_ID: &str =
+    "pol_01m36cff1vb3eftr27p4f12t1a";
+
+pub fn library_api_key_accounts_policy_id() -> PolicyId {
+    policy_id_from_env_or(
+        "LIBRARY_API_KEY_ACCOUNTS_POLICY_ID",
+        LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+    )
+}
+
+/// The applied id is the same in every environment Library runs, so it is
+/// compiled in; the variable is the way out of that if one ever is not.
+fn policy_id_from_env_or(variable: &str, applied: &str) -> PolicyId {
+    let configured = std::env::var(variable).ok();
+    let configured = configured
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    PolicyId::new(configured.unwrap_or(applied))
 }
 
 /// Tachyon's built-in tenant administrator policy.

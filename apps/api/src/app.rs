@@ -462,8 +462,6 @@ impl LibraryApp {
         let create_api_key = Arc::new(usecase::CreateApiKey::new(
             auth_app.clone(),
             get_organization_by_username.clone(),
-            crate::domain::library_api_key_issuer_policy_id(),
-            crate::domain::library_api_key_accounts_policy_id(),
         ));
 
         let list_api_keys = Arc::new(usecase::ListApiKeys::new(
@@ -474,7 +472,6 @@ impl LibraryApp {
         let revoke_api_key = Arc::new(usecase::RevokeApiKey::new(
             auth_app.clone(),
             get_organization_by_username.clone(),
-            crate::domain::library_api_key_issuer_policy_id(),
         ));
 
         let sign_in = Arc::new(usecase::SignIn::new(sdk.clone()));

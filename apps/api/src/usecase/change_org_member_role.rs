@@ -200,10 +200,7 @@ impl ChangeOrgMemberRole {
         user: &User,
         tenant_id: &TenantId,
     ) -> errors::Result<()> {
-        let Some(policy_id) = library_api_key_issuer_policy_id() else {
-            return Ok(());
-        };
-
+        let policy_id = library_api_key_issuer_policy_id();
         AuthApp::detach_user_policy(
             self.sdk.as_ref(),
             &DetachUserPolicyInput {

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use derive_new::new;
+use tachyon_sdk::auth::PublicApiKey;
 use tachyon_sdk::auth::{
     AttachSaPolicyInput, AuthApp, CheckPolicyInput,
     CreatePublicApiKeyInput, CreateServiceAccountInput,
     DeleteServiceAccountInput, GetServiceAccountByNameInput,
     ServiceAccount,
 };
-use tachyon_sdk::auth::{PolicyId, PublicApiKey};
 use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
@@ -15,6 +15,7 @@ use tachyon_sdk::auth::MultiTenancy;
 use super::api_key_issuer::grant_api_key_policy;
 use super::GetOrganizationByUsernameQuery;
 use crate::domain::{
+    library_api_key_accounts_policy_id, library_api_key_issuer_policy_id,
     ApiKeyRole, ApiKeyServiceAccount, LEGACY_API_KEY_SERVICE_ACCOUNT_NAME,
     LIBRARY_TENANT,
 };
@@ -43,10 +44,6 @@ pub struct CreateApiKeyOutputData {
 pub struct CreateApiKey {
     auth_app: Arc<dyn AuthApp>,
     get_org_by_name: Arc<dyn GetOrganizationByUsernameQuery>,
-    /// See `library_api_key_issuer_policy_id`.
-    api_key_issuer_policy_id: Option<PolicyId>,
-    /// See `library_api_key_accounts_policy_id`.
-    api_key_accounts_policy_id: Option<PolicyId>,
 }
 
 #[async_trait::async_trait]
@@ -110,7 +107,7 @@ impl CreateApiKeyInputPort for CreateApiKey {
             // see `grant_api_key_policy`.
             grant_api_key_policy(
                 self.auth_app.as_ref(),
-                self.api_key_issuer_policy_id.as_ref(),
+                &library_api_key_issuer_policy_id(),
                 input.executor,
                 &org_scope,
                 &tenant_id,
@@ -122,7 +119,7 @@ impl CreateApiKeyInputPort for CreateApiKey {
         // with no repository access, whose holder need not be an owner.
         grant_api_key_policy(
             self.auth_app.as_ref(),
-            self.api_key_accounts_policy_id.as_ref(),
+            &library_api_key_accounts_policy_id(),
             input.executor,
             &org_scope,
             &tenant_id,
@@ -287,7 +284,10 @@ impl CreateApiKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Organization;
+    use crate::domain::{
+        Organization, LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+        LIBRARY_API_KEY_ISSUER_POLICY_ID,
+    };
     use async_trait::async_trait;
     use mockall::mock;
     use std::str::FromStr;
@@ -497,20 +497,15 @@ mod tests {
         });
         let executor = user_executor();
         let multi_tenancy = create_test_multi_tenancy();
-        CreateApiKey::new(
-            Arc::new(auth),
-            Arc::new(get_org),
-            Some(PolicyId::new("pol_01issuer")),
-            Some(PolicyId::new("pol_01accounts")),
-        )
-        .execute(&CreateApiKeyInputData {
-            executor: &executor,
-            multi_tenancy: &multi_tenancy,
-            org_name: &Identifier::from_str("test-org").unwrap(),
-            name: "ci",
-            role,
-        })
-        .await
+        CreateApiKey::new(Arc::new(auth), Arc::new(get_org))
+            .execute(&CreateApiKeyInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                org_name: &Identifier::from_str("test-org").unwrap(),
+                name: "ci",
+                role,
+            })
+            .await
     }
 
     #[tokio::test]
@@ -530,8 +525,16 @@ mod tests {
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
                 format!("policy:library:ManageRepoPolicy@{}", org_tenant()),
                 // The caller gets what granting the account needs.
-                format!("grant:pol_01issuer@{}", org_tenant()),
-                format!("grant:pol_01accounts@{}", org_tenant()),
+                format!(
+                    "grant:{}@{}",
+                    LIBRARY_API_KEY_ISSUER_POLICY_ID,
+                    org_tenant()
+                ),
+                format!(
+                    "grant:{}@{}",
+                    LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+                    org_tenant()
+                ),
                 "sa:Some(Reader)".to_string(),
                 format!(
                     "attach:sa_01key:pol_01libraryreporeader@{}",
@@ -554,7 +557,11 @@ mod tests {
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
                 // A key without a role still needs its own account, and
                 // its holder need not be an owner.
-                format!("grant:pol_01accounts@{}", org_tenant()),
+                format!(
+                    "grant:{}@{}",
+                    LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+                    org_tenant()
+                ),
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
             ]
@@ -591,7 +598,11 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
-                format!("grant:pol_01accounts@{}", org_tenant()),
+                format!(
+                    "grant:{}@{}",
+                    LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
+                    org_tenant()
+                ),
                 "sa:None".to_string(),
                 "find-sa:default".to_string(),
                 "key:sa_01default".to_string(),

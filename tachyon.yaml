@@ -146,18 +146,6 @@ spec:
         # authorizes as the caller, can pass auth:CreateOperator.
         - name: LIBRARY_ORG_CREATOR_POLICY_ID
           value: "pol_01m0cdez8p62f0a8dz3tzsqzey"
-        # Applied id of the library:ApiKeyIssuer custom policy
-        # (.tachyon/manifests/library-api-key-policies.yml). Attached to an
-        # organization owner in the organization's tenant when they issue
-        # an API key with repository access.
-        - name: LIBRARY_API_KEY_ISSUER_POLICY_ID
-          value: "pol_01m36cfejtbmqgmk9pwccjjhn5"
-        # Applied id of the library:ApiKeyAccounts custom policy
-        # (.tachyon/manifests/library-api-key-policies.yml). Attached to the
-        # caller when they issue any API key, whose service account they
-        # have to be able to create.
-        - name: LIBRARY_API_KEY_ACCOUNTS_POLICY_ID
-          value: "pol_01m36cff1vb3eftr27p4f12t1a"
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
