@@ -56,10 +56,53 @@ Tauriの本番CSPには同じWorkerの `https:`（session）と `wss:`（接続�
 `null`、任意のlocalhost、ワイルドカードは許可しない。
 
 Liveは補助機能であり、接続待ち・失敗中も本文の表示・入力・通常保存を続ける。
-接続前に入力した場合、そのエディタを開いている間は通常保存を継続する既存の
-保護を維持する。Liveを有効にするために入力を待たせたり、入力中のエディタを
-差し替えたりしない。同時編集の検証では接続済みの本文Liveと、この通常保存への
-フォールバックを分けて確認する（オンライン人数だけでは本文Liveの証明にならない）。
+Liveを有効にするために入力を待たせたり、入力中のエディタを差し替えたりしない。
+同時編集の検証では接続済みの本文Liveと、通常保存へのフォールバックを分けて確認する
+（オンライン人数だけでは本文Liveの証明にならない）。
+
+### 接続前の入力と再参加（2026-09-23）
+
+以前は接続前に1文字でも入力すると、そのエディタは開いている間ずっと通常保存に
+なった。通常保存は `record_version` を進めずに本文を変えていたため、次の再接続で
+ルームに誰も入れなくなり、相手の編集が反映されない不具合になっていた
+（本番で再現。APIとWorkerの対応は末尾の節）。
+
+クライアントは `LiveBodySession`（`src/lib/photonLive/liveBody.ts`）で本文を扱う。
+
+- エディタは最初から協調編集モードで作り、ページが読んだ本文から作ったローカルの
+  下書きY.Docに結びつける。ルームの準備ができたら、BlockNoteのYjsプラグイン
+  （sync / cursor / undo）をルームのY.Docへ付け替える。エディタは再マウントしない。
+  内容が同じなら再描画後もカーソル位置は変わらない。IME変換中は付け替えない。
+- 付け替え時の判定（比較はRichTextの生成ブロックIDと末尾の空ブロックを除いた内容で行う）:
+  - 同じルーム（`room_generation` が同じ）への再接続: 旧Y.Docの差分を新しいY.Docへ
+    Yjsのままマージする。providerの通常の再接続と同じで、何も失わない。
+  - 画面とルームが同じ、または画面に未保存の変更がない: ルームをそのまま採用する。
+    参加しただけでは保存しない（採用した本文を書き戻さない）。
+  - ルームが保存済みの本文のまま: 画面の本文をYjsの差分としてルームへ書き込む。
+    接続前の入力は通常保存を経由せず、同じルームの参加者へそのまま届く。
+  - 接続前の入力があり、ルームも変わっていた: ブロック単位の3方向マージ
+    （`merge3.ts`）の結果をルームへ書き込む。片側だけの変更はその側を採用し、
+    同じブロックを両側が変えた場合は両方残す（相手→自分の順）。
+  - 外部で本文が変わった後（4410）に未保存の変更があった: 競合。自動では混ぜず、
+    通常保存もしない。次の入力で通常保存し、保存確定後にその本文で再参加する。
+    ルームが判断できないまま10秒経った場合も競合として表示する。
+- 接続前の入力はルームを待つ間（最大10秒）送らずに保持する。ルームが来なければ
+  通常保存し、保存が確定した後に開いたルームで再参加する。保存前に認可された
+  ルームは古い本文を持つため使わない。
+- 参加中のルームが本文を運べなくなった場合（拒否されたcheckpoint、オンラインのまま
+  15秒以上つながらない）は、新しいルームを開いて同じ判定で再参加する。
+  再試行可能な失敗（認可のtimeout・5xxなど）ではLiveを諦めない。同じ本文の
+  checkpointが続けて拒否された場合（大きすぎる本文など）は通常保存に切り替える。
+- `CHECKPOINT_RETRY` は同じoperation_id・version・本文をbackoff後に再送する。
+- ページが非表示になったとき・`pagehide`・アンマウント時は、デバウンス中の入力を
+  確定し、ルームがあればcheckpointを送る。保持中の入力は通常保存する。
+  離れるページのルームは最後の本文の確認応答を最大5秒待ち、届かなければ
+  （または切断中なら）通常保存する。
+- 付け替えの再描画は編集として扱わない。付け替えるとundo履歴は新しいルームから
+  やり直しになる。
+
+`DataEditorPage` の本文保存は、保存が確定したら `true`、失敗したら `false` で
+resolveするPromiseを返す。セッションはこれで「保存済みの本文」を更新する。
 
 ## PR301 の隔離Preview
 
@@ -94,6 +137,9 @@ APIのLive設定・dual-write設定は、Tachyonの
 （8788）、client（5187）を起動する。`wrangler.live-test.jsonc` はローカル専用で、
 公開用の設定ではない。各テストのAPI fixtureは新しいdatabase IDを発行するため、
 過去のDurable Object状態を誤って再利用しない。
+
+「接続前に入力した内容が、すでにルームにいる参加者へ届く」ケースは、
+`page.route` で `/live/session` を保留して入力後に解放し、確実に再現する。
 
 このテストは実際のLibrary DB、権限サービス、CASのDBトランザクションを
 検証するものではない。それらはRust側と実環境のゲートで確認する。
@@ -189,3 +235,108 @@ Client `bld_01m1s2n1d6hg7k3jfx6mbkk7cm`、API `bld_01m1s2qy6wrw8g1bywn1ng6k9n`
 緊急停止はClient/Worker/APIのLiveフラグを無効化して行う。
 `PROPERTY_VALUE_STORAGE_MODE` はdual-writeを維持し、旧writerを再公開しない。
 再有効化前に全件parityとcheckpointの保存を確認する。
+
+## Worker: 外部書き込み後の世代交代とcheckpoint再試行（2026-09-23）
+
+本番で、通常保存（GraphQL `updateData` / REST PUT、MCP、inbound sync）が
+`record_version` を進めずに本文だけを変えたため、Workerが同じversionで異なる本文を
+順序付けできず、ヘッダーなしの409を返し続けてルームへ再参加できなくなった。
+APIはすべての書き込みでversionを進めるよう修正し、Workerは次のように動作する。
+
+### 参加時の判定（`PhotonLiveRoom::fetch`）
+
+ルームの本文hashとセッションのcanonical本文hashが異なる場合:
+
+| セッションの `record_version` | 動作 |
+|---|---|
+| ルームより新しい、かつ保留中checkpointの本文と一致 | ACK喪失したcheckpointとして保存済みに確定（`live-saved` を配信）し、世代交代せず参加 |
+| ルームより新しい（上記以外） | 未保存の編集があっても新しい世代へ交代 |
+| ルームより古い（古いticket） | 409。古い本文へ戻さない。クライアントはセッションを取り直す |
+| 同じ（本文だけ異なる） | 409。順序付けできないため。API修正後の新規書き込みでは発生しない |
+
+世代交代では、基点ルームのpointerが実際に新世代を指した後にだけ、既存参加者を
+close 4410で切断する。pointerを確定できなかった場合は参加者を切断しない。
+旧世代のYjs状態と保留中checkpointは旧世代のstorageにそのまま残り、新世代へは
+混ぜない。旧世代は後継を記録し、pointer移動直後に届いた参加要求を後継へ転送する。
+
+新世代のメタデータは、世代名に含まれる `record_version` と本文hashから作る。
+最初に届いたセッションからは作らない。pointer移動直後に古いticketが新世代へ
+届いても、その古い本文で新世代を初期化しない（初期化すると正しいticketが
+すべて拒否され、次のcanonical書き込みまで再参加できなくなっていた）。
+基点ルームのpointerと旧世代の後継記録は、後継より古いticketを転送せず、その場で
+409（`stale_ticket`）を返す。まだ誰も入っていない世代へ、それより新しいセッションが
+届いた場合は、その世代を飛ばして次の世代へ交代する。
+
+WebSocket upgradeの拒否はブラウザでは1006としか見えないため、Workerは拒否ごとに
+`live_join_refused`（ルーム）/ `live_open_refused`（edge）をstatusと固定の理由で
+ログに出す。ticket、session ID、本文、認証値は出さない。`wrangler tail` で確認する。
+
+### checkpointの再試行（`code: CHECKPOINT_RETRY`）
+
+API（`record_mutation_operations`）はoperation_idごとに判定を記録し、同じ
+operation_id・expected version・本文・actorの再送には元の判定をそのまま返す。
+Workerは保留中checkpointの本文とexpected versionをjournalから読み直して再送するため、
+初回がcommit済みでACKだけ失われても、同じoperation_idの再送は元の
+`record_version` で `live-saved` になる。
+
+次の場合、Workerは予約を保持して `live-error` に `code: CHECKPOINT_RETRY` を付ける。
+
+- API呼び出しのtimeout・通信失敗
+- APIの401 / 408 / 429 / 5xx
+- 2xxだが `record_version` がない応答
+- APIの409後にcanonical本文を確認できない場合
+- 認可やstorageの失敗（`Live checkpoint recovery failed`）
+
+400 / 403 / 404 / 422など、同じ要求で同じ結果になる拒否は従来どおりcodeなし（終端）。
+このときWorkerは予約を削除する（commitされないことが確定しているため）。
+APIの409でも、canonical本文が保留中checkpointと一致し、versionが進んでいれば
+保存済みとして確定し、`live-conflict` にしない。
+
+#### 結果が未確定の予約（in doubt）
+
+Workerが応答を受け取れなかった要求（timeout・通信失敗・5xx）は、API側でまだ
+実行中で、後からcommitされる可能性がある。予約には送信時刻から2分
+（`CHECKPOINT_IN_DOUBT`）の期限を記録し、その間は「認可で見た `record_version` が
+予約時のまま」でも、commitされなかった証拠とはみなさない。別の参加者の
+checkpointはこの予約を置き換えず、`CHECKPOINT_RETRY`（理由
+`reservation_in_doubt`）を返す。予約の持ち主が同じフレームを再送すると、APIの
+冪等性で結果が確定する（同じoperation_idの要求はAPI側で一意キーのロックにより
+直列化され、commit済みなら元の判定が返る）。期限後は認可の結果で判断する。
+401 / 408 / 429、およびAPIの409は、APIが適用しなかったことが確定した応答なので
+未確定の印を外す。
+APIに要求の期限はないため、2分は十分な余裕を見た上限であり保証ではない。
+
+#### 本文を変えない書き込み（タイトル・プロパティの保存）
+
+API修正後は、本文を含まない通常保存でも `record_version` が進む。canonical本文が
+予約の基準にした本文（ルームの `body_hash`）のままversionだけ進んだ場合は競合に
+しない。
+
+- 送信中のcheckpointがAPIの409になった場合: 予約を削除して新しいversionを採用し、
+  送信者へ `code: CHECKPOINT_STALE` を返す。APIはこのoperation_idに競合を記録した
+  ため、同じIDでは保存できない。クライアントは最新本文を新しいoperation_idで送る。
+- 保持中の予約がある状態で別のcheckpointが届いた場合: 予約を削除し、その
+  operation_idを付けた `CHECKPOINT_STALE` を全参加者へ配信する（持ち主だけが反応し、
+  新しいoperation_idで送り直す）。届いたcheckpointは新しいversionで続行する。
+- 予約がなく、送られた本文がすでに新しいversionでcanonicalな場合（予約が置き換え
+  られた後に自分のCASがcommitされた、または別の書き込みが同じ本文を保存した）:
+  CASを送らずに保存済み（`live-saved`）として確定する。
+
+クライアントの契約:
+
+- `CHECKPOINT_RETRY`: 送信中のcheckpointを保持し、backoff後に**同じ
+  operation_id・version・本文**のフレームをそのまま再送する。本文を再シリアライズしない
+  （同じIDで内容が違うと終端の `Checkpoint operation was reused` になる）。
+  同じ世代（`live-ready.room_generation` が同じ）への再接続後も同じフレームを再送する。
+  再送が `CHECKPOINT_STALE` になった場合は既存どおり最新本文を新しいoperation_idで送る。
+  別の参加者の予約が未確定の間は、新しいcheckpointにも `CHECKPOINT_RETRY` が返る
+  （最大で約2分）。backoffは上限付きで、ソケットが開いている間は諦めない。
+- `CHECKPOINT_STALE`: 全参加者へ配信されることがある。`operation_id` が自分の
+  送信中checkpointと一致する場合だけ処理し、一致しなければ無視する。
+- close 4410: canonical本文が外部で新しいversionへ変わり、ルームが新世代へ移った。
+  送信中checkpointは保存済みとみなさない。未保存の編集は旧世代のstorageにも残るが
+  再参加できないため、ローカルのY.Docの内容を破棄せず競合として扱う。
+  新しいセッションを取得して接続し、
+  新しい `room_generation` では旧Y.Docを適用せず、セッション本文から作り直す
+  （`initialized: false` ならその本文でseedする）。
+- ヘッダーなし409（ブラウザでは1006）: 新しいセッションを取得して再接続する。

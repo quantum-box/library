@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BlockNoteEditor, filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
-import { blocksToYDoc } from '@blocknote/core/yjs'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  BlockNoteEditor,
+  YCursorExtension,
+  YSyncExtension,
+  YUndoExtension,
+  filterSuggestionItems,
+  insertOrUpdateBlockForSlashMenu,
+} from '@blocknote/core'
+import { blocksToYDoc, blocksToYXmlFragment, yXmlFragmentToBlocks } from '@blocknote/core/yjs'
+import { merge3 } from '../lib/photonLive/merge3'
 import {
   SuggestionMenuController,
   getDefaultReactSlashMenuItems,
@@ -21,14 +29,17 @@ import {
 } from './blocknote/imageWidthFragments'
 import { t } from '../i18n'
 import { appKitConfig } from '../app/kitConfig'
+import { PhotonLiveStatus } from './PhotonLiveStatus'
 import {
-  PhotonLiveStatus,
-} from './PhotonLiveStatus'
-import { usePhotonLiveRecord } from '../lib/photonLive/usePhotonLiveRecord'
-import type {
-  PhotonLiveFormat,
-  PhotonLiveProvider,
-  PhotonLiveRecordTarget,
+  LiveBodySession,
+  createPhotonLiveProvider,
+  defaultUser,
+  type LiveBodyEditorPort,
+  type LiveBodyView,
+  type PhotonLiveFormat,
+  type PhotonLiveProvider,
+  type PhotonLiveRecordTarget,
+  type PhotonLiveState,
 } from '../lib/photonLive'
 import * as Y from 'yjs'
 
@@ -58,7 +69,12 @@ export interface RecordBodyEditorProps {
    *   editor exactly as before.
    */
   format?: RecordBodyFormat
-  onCommit: (value: string) => void
+  /**
+   * Save the body. A Live body also needs to know when that save is durable,
+   * so a caller that can tell resolves `true` once it is, `false` if it
+   * failed.
+   */
+  onCommit: (value: string) => void | Promise<boolean>
   editable?: boolean
   surface?: 'panel' | 'page' | 'fill'
   /** Pin the read-only public reader independently of the OS theme. */
@@ -100,82 +116,129 @@ export function RecordBodyEditor(props: RecordBodyEditorProps) {
 }
 
 /**
- * Mount the ordinary editor immediately and let Live catch up.
+ * The body editor with Photon Live.
  *
  * Live is auxiliary and must never stand between the person and their body
  * text: the document is on screen, editable and saving from the first frame,
- * whether the room answers in 50ms, in 20 seconds, or never. Nothing here is
- * allowed to make the editor wait, go read-only, or stop persisting.
+ * whether a room answers in 50ms, in 20 seconds, or never.
  *
- * Mounting first is safe because the ordinary editor never touches a Y.Doc:
- * the room is joined only once the provider has its own server snapshot, and
- * only while the body is still untouched. The moment anything is typed the
- * room is dropped for the rest of this mount rather than swapping BlockNote
- * out from under the caret -- collaboration is worth less than the sentence
- * being written.
+ * The editor is a collaborative BlockNote from the start, bound to a local
+ * draft seeded from the body the page loaded. It is never remounted: joining
+ * a room re-points its Yjs plugins at the room's document in place, once the
+ * content on screen and in the room agree -- see LiveBodySession for when
+ * that loses nothing. So typing before the room answers is no longer a reason
+ * to give up on sharing this body for the rest of the mount.
  */
 function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
   format: PhotonLiveFormat
 }) {
-  const { liveTarget, format } = props
-  const seedUpdate = useCallback((body: string, seedFormat: PhotonLiveFormat) => {
-    const seedEditor = BlockNoteEditor.create({ schema: recordBodySchema })
-    const seedDoc = blocksToYDoc(
-      seedEditor,
-      seedBlocks(seedEditor, body, seedFormat),
-      appKitConfig.dataLive.fragmentName,
-    )
-    try {
-      return Y.encodeStateAsUpdate(seedDoc)
-    } finally {
-      // This temporary document is intentionally separate from the provider
-      // doc. Applying its update locally would make every client look seeded
-      // before the server has selected the initialization winner.
-      seedDoc.destroy()
-    }
-  }, [])
-  const [detached, setDetached] = useState(false)
-  const options = useMemo(() => detached ? null : {
-    target: liveTarget!,
-    format,
-    seedUpdate,
-  }, [detached, format, liveTarget, seedUpdate])
-  const { provider, state, mounted, initialError } = usePhotonLiveRecord(options)
+  const { liveTarget, format, value, onCommit } = props
 
-  const joined = !detached && mounted && provider !== null && state !== null
-  // A room that can no longer save this body -- an external write to the
-  // canonical body, a rejected checkpoint, a socket that gave up. The editor
-  // keeps its Y.Doc, because remounting would throw away everything typed
-  // into it, and its saves go back through the ordinary REST body instead.
-  const degraded = joined && (
-    state.status === 'failed' ||
-    state.saveStatus === 'conflict' ||
-    state.saveStatus === 'error'
-  )
+  // One session per mount. Callers key this component by record and body
+  // property, which is the scope a room is authorized for.
+  const [{ session, initialBinding }] = useState(() => {
+    const draftDoc = new Y.Doc()
+    Y.applyUpdate(draftDoc, seedUpdate(value, format))
+    const draft = draftDoc.getXmlFragment(appKitConfig.dataLive.fragmentName)
+    return {
+      session: new LiveBodySession({
+        draft,
+        createProvider: () => createPhotonLiveProvider({
+          target: liveTarget!,
+          format,
+          seedUpdate,
+        }),
+      }),
+      initialBinding: { fragment: draft, user: defaultUser() },
+    }
+  })
+  const [view, setView] = useState<LiveBodyView>(() => session.getView())
 
   useEffect(() => {
-    // Stop writing into a room that is no longer carrying the body. Peers
-    // must not keep receiving -- and checkpointing back -- a draft this
-    // editor has started saving through the REST body.
-    if (degraded) provider?.detach()
-  }, [degraded, provider])
+    session.setCommitRest(onCommit)
+  }, [onCommit, session])
+
+  useEffect(() => {
+    const unsubscribe = session.subscribe(setView)
+    session.start()
+    return () => {
+      unsubscribe()
+      // Deferred, so the editor's own unmount can still hand its last edit
+      // to the room it is in.
+      session.release()
+    }
+  }, [session])
 
   return (
     <>
-      <PhotonLiveStatus
-        state={detached ? null : state}
-        initialError={detached ? null : initialError}
-      />
+      <PhotonLiveStatus state={liveStatusState(view)} />
       <BlockRecordBodyEditor
         {...props}
-        collaboration={joined ? provider : undefined}
-        checkpointsSuspended={degraded}
-        onLocalEdit={joined ? undefined : () => setDetached(true)}
+        collaboration={initialBinding}
+        live={session}
+        liveCollab={view.mode === 'live' ? 'on' : view.joined ? 'off' : undefined}
         editable={props.editable ?? true}
         liveTarget={undefined}
       />
     </>
   )
+}
+
+/** The body, as a Yjs update in a document of its own. */
+function seedUpdate(body: string, seedFormat: PhotonLiveFormat): Uint8Array {
+  const seedEditor = BlockNoteEditor.create({ schema: recordBodySchema })
+  const seedDoc = blocksToYDoc(
+    seedEditor,
+    seedBlocks(seedEditor, body, seedFormat),
+    appKitConfig.dataLive.fragmentName,
+  )
+  try {
+    return Y.encodeStateAsUpdate(seedDoc)
+  } finally {
+    // This temporary document is intentionally separate from any room.
+    // Applying its update to a room would make every client look seeded
+    // before the server has selected the initialization winner.
+    seedDoc.destroy()
+  }
+}
+
+/**
+ * What the status line should say for the session as a whole.
+ *
+ * Only the room carrying the body speaks for it. While a room is being
+ * (re)opened the line reports the session itself: unsaved edits waiting for
+ * a room, a room being reopened, a conflict left to the person.
+ */
+function liveStatusState(view: LiveBodyView): PhotonLiveState | null {
+  const idle: PhotonLiveState = {
+    status: 'connected',
+    saveStatus: 'idle',
+    error: null,
+    initialized: true,
+    version: 0,
+    recordVersion: '',
+    hasUnackedChanges: false,
+    canEdit: true,
+  }
+  switch (view.mode) {
+    case 'live': {
+      const state = view.provider
+      if (!state) return null
+      // A retryable failure is the room reconnecting, not the end of it.
+      if (state.status === 'failed' && (state.error === null || state.error.retryable)) {
+        return { ...state, status: 'disconnected' }
+      }
+      return state
+    }
+    case 'joining':
+      return view.holding ? { ...idle, saveStatus: 'saving' } : null
+    case 'rejoining':
+      return { ...idle, status: 'disconnected' }
+    case 'conflict':
+      return { ...idle, saveStatus: 'conflict' }
+    case 'unavailable':
+      return { ...idle, status: 'failed' }
+  }
 }
 
 /**
@@ -198,7 +261,7 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
  */
 function useBodyEditor(
   imageTarget: RecordBodyImageTarget | undefined,
-  collaboration?: PhotonLiveProvider,
+  collaboration?: InitialCollaboration,
 ) {
   const imageTargetRef = useRef(imageTarget)
   const [uploads] = useState(() => imageTarget !== undefined)
@@ -209,10 +272,10 @@ function useBodyEditor(
 
   return useCreateBlockNote({
     schema: recordBodySchema,
+    // The local draft has no one else in it, so no awareness until a room.
     collaboration: collaboration
       ? {
         fragment: collaboration.fragment,
-        provider: { awareness: collaboration.awareness },
         user: collaboration.user,
         showCursorLabels: 'activity',
       }
@@ -227,6 +290,12 @@ function useBodyEditor(
   }, [collaboration])
 }
 type BodyEditor = ReturnType<typeof useBodyEditor>
+
+/** The document a Live body editor is created on: its local draft. */
+interface InitialCollaboration {
+  fragment: Y.XmlFragment
+  user: { name: string; color: string }
+}
 /** A partial block in the record body schema — what replaceBlocks accepts. */
 type BodyPartialBlock = Parameters<BodyEditor['replaceBlocks']>[1][number]
 
@@ -239,14 +308,15 @@ function BlockRecordBodyEditor({
   theme,
   imageTarget,
   collaboration,
-  checkpointsSuspended = false,
-  onLocalEdit,
+  live,
+  liveCollab,
 }: RecordBodyEditorProps & {
-  collaboration?: PhotonLiveProvider
-  /** The room is attached but can no longer persist; save through onCommit. */
-  checkpointsSuspended?: boolean
-  /** Fired on the first keystroke of every local edit. */
-  onLocalEdit?: () => void
+  /** Created on this document instead of seeding blocks from `value`. */
+  collaboration?: InitialCollaboration
+  /** Routes every commit, and rebinds the editor to its rooms. */
+  live?: LiveBodySession
+  /** Published as `data-live-collab`: whether a room carries the body. */
+  liveCollab?: 'on' | 'off'
 }) {
   const lastCommitted = useRef(value)
   const loading = useRef(true)
@@ -256,18 +326,48 @@ function BlockRecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
-  const onLocalEditRef = useRef(onLocalEdit)
   const editor = useBodyEditor(imageTarget, collaboration)
-  // The room persists the body only while it is attached and healthy.
-  const checkpointing = collaboration !== undefined && !checkpointsSuspended
 
   useEffect(() => {
     onCommitRef.current = onCommit
   }, [onCommit])
 
   useEffect(() => {
-    onLocalEditRef.current = onLocalEdit
-  }, [onLocalEdit])
+    if (!live) return
+    const port: LiveBodyEditorPort = {
+      serializeFragment: (fragment) =>
+        serializeBlocks(editor, yXmlFragmentToBlocks(editor, fragment), format),
+      comparable: (body) => comparableBody(body, format),
+      writeInto: (target, from) => {
+        blocksToYXmlFragment(editor, yXmlFragmentToBlocks(editor, from), target)
+      },
+      mergeInto: (target, from, base) => {
+        const blockKey = (block: BodyEditor['document'][number]) =>
+          comparableBody(serializeBlocks(editor, [block], format), format)
+        const merged = merge3(
+          fullBlocks(editor, seedBlocks(editor, base, format)),
+          yXmlFragmentToBlocks(editor, from),
+          yXmlFragmentToBlocks(editor, target),
+          blockKey,
+        )
+        blocksToYXmlFragment(editor, withUniqueBlockIds(merged), target)
+      },
+      bind: (provider) => {
+        // Rebinding re-renders the document from the room. That is not an
+        // edit, and must not come back as a checkpoint of the room's body.
+        const wasLoading = loading.current
+        loading.current = true
+        try {
+          bindEditorToRoom(editor, provider)
+        } finally {
+          loading.current = wasLoading
+        }
+      },
+      composing: () =>
+        composing.current || editor.prosemirrorView?.composing === true,
+    }
+    live.setEditor(port)
+  }, [editor, format, live])
 
   const commitPendingValue = useCallback(() => {
     if (commitTimer.current !== null) {
@@ -279,12 +379,12 @@ function BlockRecordBodyEditor({
     pendingValue.current = null
     // A Yjs transaction can advance the room without changing the serialized
     // text. Live still needs this fresh generation after a stale checkpoint.
-    if (next === null || (!checkpointing && next === lastCommitted.current)) return
+    if (next === null || (!live && next === lastCommitted.current)) return
 
     lastCommitted.current = next
-    if (checkpointing) collaboration!.queueCheckpoint(next)
-    else onCommitRef.current(next)
-  }, [checkpointing, collaboration])
+    if (live) live.commit(next)
+    else void onCommitRef.current(next)
+  }, [live])
 
   // Always the newest one. A body that is waiting out its debounce when the
   // room stops carrying it has to be committed by the persistence mode that
@@ -301,24 +401,39 @@ function BlockRecordBodyEditor({
     commitTimer.current = window.setTimeout(() => commitPendingValueRef.current(), 500)
   }, [])
 
-  const collaborationRef = useRef(collaboration)
+  const liveRef = useRef(live)
   useEffect(() => {
-    collaborationRef.current = collaboration
-  }, [collaboration])
+    liveRef.current = live
+  }, [live])
 
-  useEffect(() => () => {
+  const flushNow = useCallback((leaving: boolean) => {
     if (composing.current) {
       // The live composition is not safe to persist, but an ordinary edit may
       // already have been waiting in the debounce when composition started.
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
-      commitPendingValueRef.current()
-      collaborationRef.current?.flushCheckpoint()
-      return
     }
     commitPendingValueRef.current()
-    collaborationRef.current?.flushCheckpoint()
+    liveRef.current?.flush({ leaving })
   }, [])
+
+  useEffect(() => () => flushNow(true), [flushNow])
+
+  useEffect(() => {
+    if (!live) return
+    // Closing a tab, reloading or quitting the app never unmounts React, and
+    // a hidden page may never run again. Hand the body over while it can go.
+    const onPageHide = () => flushNow(true)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushNow(false)
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [flushNow, live])
 
   useEffect(() => {
     // Local first: once seeded, the editor document is the source of truth.
@@ -350,10 +465,6 @@ function BlockRecordBodyEditor({
   useEditorChange((changedEditor) => {
     if (loading.current || !editable) return
 
-    // Reported before the debounce, so a caller that has to decide between
-    // this document and something arriving asynchronously -- a Live room
-    // still handshaking -- learns about the keystroke rather than the save.
-    onLocalEditRef.current?.()
     pendingValue.current = serializeDocument(changedEditor, format)
     // An IME can keep composition open while the user considers conversion
     // candidates for longer than the normal save debounce. Committing then
@@ -367,20 +478,21 @@ function BlockRecordBodyEditor({
       if (changedEditor.prosemirrorView?.composing !== false) return
       composing.current = false
       valueBeforeComposition.current = null
+      live?.compositionEnded()
     }
     schedulePendingCommit()
   }, editor)
 
   // Live no longer narrates its own connection, so `data-live-collab` is the
-  // one place a room's actual attachment is published: absent when this body
-  // has no room at all, "off" once a room has stopped carrying it. The
-  // end-to-end suite waits on "on" before typing into a shared body.
+  // one place a room's actual attachment is published: absent until a room
+  // has carried this body, "off" while none does. The end-to-end suite waits
+  // on "on" before asserting on a shared body.
   return (
     <div
       className={surface === 'page'
         ? 'record-body-blocknote record-body-page min-h-[420px] bg-background py-2'
         : 'record-body-blocknote rounded border border-border bg-surface px-2 py-3'}
-      data-live-collab={collaboration === undefined ? undefined : checkpointing ? 'on' : 'off'}
+      data-live-collab={liveCollab}
       onCompositionStartCapture={() => {
         composing.current = true
         valueBeforeComposition.current = pendingValue.current
@@ -393,6 +505,7 @@ function BlockRecordBodyEditor({
         composing.current = false
         valueBeforeComposition.current = null
         if (pendingValue.current !== null) schedulePendingCommit()
+        live?.compositionEnded()
       }}
     >
       <BlockNoteView
@@ -443,11 +556,107 @@ function serializeDocument(
   editor: BodyEditor,
   format: RecordBodyFormat,
 ): string {
-  if (format === 'richText') return JSON.stringify(editor.document)
-  if (format === 'html') return editor.blocksToHTMLLossy(editor.document)
+  return serializeBlocks(editor, editor.document, format)
+}
+
+function serializeBlocks(
+  editor: BodyEditor,
+  blocks: BodyEditor['document'],
+  format: RecordBodyFormat,
+): string {
+  if (format === 'richText') return JSON.stringify(blocks)
+  if (format === 'html') return editor.blocksToHTMLLossy(blocks)
   return editor.blocksToMarkdownLossy(
-    withImageWidthFragments(editor.document) as typeof editor.document,
+    withImageWidthFragments(blocks) as typeof blocks,
   )
+}
+
+/**
+ * A body as content only, for deciding whether two copies are the same.
+ *
+ * Seeding a rich text body gives blocks without stored ids fresh random ids,
+ * separately in every copy, and BlockNote keeps a trailing empty block with
+ * an id of its own. Neither is content. Markdown carries no ids.
+ */
+function comparableBody(body: string, format: RecordBodyFormat): string {
+  if (format !== 'richText') return body.replace(/\s+$/, '')
+  let blocks: unknown
+  try {
+    blocks = JSON.parse(body)
+  } catch {
+    return body
+  }
+  if (!Array.isArray(blocks)) return body
+  const content = blocks.map(withoutIds)
+  while (content.length > 0 && isEmptyParagraph(content[content.length - 1])) content.pop()
+  return JSON.stringify(content)
+}
+
+function withoutIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutIds)
+  if (!value || typeof value !== 'object') return value
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => key !== 'id')
+    .map(([key, entry]) => [key, withoutIds(entry)] as const)
+  return Object.fromEntries(entries)
+}
+
+function isEmptyParagraph(block: unknown): boolean {
+  const { type, content, children } = block as { type?: unknown; content?: unknown; children?: unknown }
+  return type === 'paragraph' &&
+    (!Array.isArray(content) || content.length === 0) &&
+    (!Array.isArray(children) || children.length === 0)
+}
+
+/** Parsed body blocks with every default filled in, as a document holds them. */
+function fullBlocks(editor: BodyEditor, blocks: BodyPartialBlock[]): BodyEditor['document'] {
+  const doc = blocksToYDoc(editor, blocks, appKitConfig.dataLive.fragmentName)
+  try {
+    return yXmlFragmentToBlocks(editor, doc.getXmlFragment(appKitConfig.dataLive.fragmentName))
+  } finally {
+    doc.destroy()
+  }
+}
+
+/**
+ * A merge that kept both sides' version of a block keeps both of its ids
+ * too. The copy that comes second gets new ones, all the way down.
+ */
+function withUniqueBlockIds(blocks: BodyEditor['document']): BodyEditor['document'] {
+  const seen = new Set<string>()
+  const visit = (block: BodyEditor['document'][number]): BodyEditor['document'][number] => {
+    const children = block.children.map(visit)
+    if (!seen.has(block.id)) {
+      seen.add(block.id)
+      return { ...block, children }
+    }
+    const id = globalThis.crypto?.randomUUID?.() ?? `${block.id}-${seen.size}`
+    seen.add(id)
+    return { ...block, id, children }
+  }
+  return blocks.map(visit)
+}
+
+/**
+ * Re-point the editor's Yjs plugins at a room, in place.
+ *
+ * This is what BlockNote's own fork/merge does. The sync plugin re-renders
+ * the document from the room on registration and keeps the selection at the
+ * same positions, so when the room already holds what is on screen nothing
+ * visible changes -- no remount, no lost caret, no broken composition.
+ */
+function bindEditorToRoom(editor: BodyEditor, provider: PhotonLiveProvider): void {
+  editor.unregisterExtension(['ySync', 'yCursor', 'yUndo'])
+  editor.registerExtension([
+    YSyncExtension({ fragment: provider.fragment }),
+    YCursorExtension({
+      fragment: provider.fragment,
+      user: provider.user,
+      provider: { awareness: provider.awareness },
+      showCursorLabels: 'activity',
+    }),
+    YUndoExtension(),
+  ])
 }
 
 function seedBlocks(

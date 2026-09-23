@@ -306,6 +306,48 @@ describe('Photon Live provider', () => {
     }
   })
 
+  it('resends the identical checkpoint when the worker asks for a retry', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    vi.useFakeTimers()
+    try {
+      fixture.provider.queueCheckpoint('body the API timed out on')
+      fixture.provider.flushCheckpoint()
+      const first = sentJson(socket).find((frame) => frame.type === 'live-checkpoint')!
+      // A newer body waits behind the retried one, as behind the first try.
+      fixture.provider.queueCheckpoint('newer body')
+      socket.message(jsonFrame({ type: 'live-version', version: 3 }))
+      socket.message(jsonFrame({
+        type: 'live-error', code: 'CHECKPOINT_RETRY',
+        message: 'Live checkpoint failed', operation_id: first.operation_id,
+      }))
+      expect(fixture.provider.getState().saveStatus).toBe('saving')
+      expect(fixture.provider.getState().error).toBeNull()
+      expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      const checkpoints = sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')
+      expect(checkpoints).toHaveLength(2)
+      // Same id, version and body: the worker replays a save that did commit.
+      expect(checkpoints[1]).toEqual(first)
+
+      socket.message(jsonFrame({ type: 'live-saved', version: 2, record_version: '2', operation_id: first.operation_id }))
+      await vi.advanceTimersByTimeAsync(0)
+      const latest = sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')[2]!
+      expect(latest).toMatchObject({ body: 'newer body', version: 3 })
+      expect(latest.operation_id).not.toBe(first.operation_id)
+    } finally {
+      vi.useRealTimers()
+      fixture.provider.destroy()
+    }
+  })
+
   it('waits for a fresh serialization instead of retrying a pre-merge body', async () => {
     const fixture = createFixture()
     await waitFor(() => expect(fixture.getSocket()).toBeDefined())

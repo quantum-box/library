@@ -2,6 +2,7 @@ export {
   buildPhotonLiveSessionUrl,
   buildPhotonLiveWebsocketUrl,
   createPhotonLiveProvider,
+  defaultUser,
   requestPhotonLiveSession,
   type PhotonLiveProviderOptions,
   type PhotonLiveSessionResponse,
@@ -16,3 +17,12 @@ export {
   type PhotonLiveSession,
   type PhotonLiveState,
 } from './types'
+export {
+  LiveBodySession,
+  type CommitRest,
+  type LiveBodyEditorPort,
+  type LiveBodyMode,
+  type LiveBodySessionOptions,
+  type LiveBodyTiming,
+  type LiveBodyView,
+} from './liveBody'

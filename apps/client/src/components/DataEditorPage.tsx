@@ -159,7 +159,7 @@ export function DataEditorPage({
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const itemRef = useRef<LibraryDataItem | null>(null)
   const propertiesRef = useRef<LibraryProperty[]>([])
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const revisionRef = useRef(0)
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
@@ -235,7 +235,12 @@ export function DataEditorPage({
     void reload()
   }, [reload])
 
-  const persistItem = useCallback((next: LibraryDataItem, carriesBody = false) => {
+  /**
+   * Save the record. Resolves `true` once this save is durable, `false` if it
+   * failed. The Live body session waits on this before opening a room: a
+   * room authorized before the save lands would still hold the older body.
+   */
+  const persistItem = useCallback((next: LibraryDataItem, carriesBody = false): Promise<boolean> => {
     const bodyProperty = getBodyProperty(propertiesRef.current)
     const liveBodyConfigured = Boolean(
       appKitConfig.dataLive.baseUrl &&
@@ -264,11 +269,13 @@ export function DataEditorPage({
     setSaveState('saving')
     setSaveError(null)
 
-    saveQueueRef.current = saveQueueRef.current
+    const saving = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
         const saved = await updateLibraryData(repoTarget, propertiesRef.current, durableNext)
-        if (revision !== revisionRef.current) return
+        // Durable even when a newer save has been queued behind it; only the
+        // page state below belongs to the newest one.
+        if (revision !== revisionRef.current) return true
         // A patch response may omit the body field. Preserve the local value
         // for the page state while the Live editor remains the source of truth.
         const nextBody = next.propertyData.find(
@@ -283,12 +290,17 @@ export function DataEditorPage({
         itemRef.current = savedWithBody
         setItem(savedWithBody)
         setSaveState('saved')
+        return true
       })
       .catch((error: unknown) => {
-        if (revision !== revisionRef.current) return
-        setSaveState('failed')
-        setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
+        if (revision === revisionRef.current) {
+          setSaveState('failed')
+          setSaveError(error instanceof Error ? error.message : translate('dataEditor.saveFailed'))
+        }
+        return false
       })
+    saveQueueRef.current = saving
+    return saving
   }, [repoTarget])
 
   const handleAttachFiles = useCallback((files: FileList | File[]) => {
@@ -402,8 +414,8 @@ export function DataEditorPage({
     }
     onCommit={(value) => {
     const current = itemRef.current
-    if (!current) return
-    persistItem(mergeLibraryDataProperty(
+    if (!current) return Promise.resolve(false)
+    return persistItem(mergeLibraryDataProperty(
     current,
     bodyProperty.id,
     bodyPropertyValue(bodyProperty, value),
