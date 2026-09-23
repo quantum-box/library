@@ -370,7 +370,7 @@ function BlockRecordBodyEditor({
     live.setEditor(port)
   }, [editor, format, live])
 
-  const commitPendingValue = useCallback(() => {
+  const commitPendingValue = useCallback((options?: { keepalive?: boolean }) => {
     if (commitTimer.current !== null) {
       window.clearTimeout(commitTimer.current)
       commitTimer.current = null
@@ -383,7 +383,7 @@ function BlockRecordBodyEditor({
     if (next === null || (!live && next === lastCommitted.current)) return
 
     lastCommitted.current = next
-    if (live) live.commit(next)
+    if (live) live.commit(next, options)
     else void onCommitRef.current(next)
   }, [live])
 
@@ -418,7 +418,7 @@ function BlockRecordBodyEditor({
       // Keep that confirmed snapshot instead of dropping it with the IME text.
       pendingValue.current = valueBeforeComposition.current
     }
-    commitPendingValueRef.current()
+    commitPendingValueRef.current(reason === 'unloading' ? { keepalive: true } : undefined)
     liveRef.current?.flush({ reason })
   }, [])
 

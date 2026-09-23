@@ -593,6 +593,52 @@ describe('LiveBodySession', () => {
     expect(calls).toEqual([{ body: 'Base sent but not acknowledged', keepalive: true }])
   })
 
+  it('saves the last edit in a request that outlives the page while saving normally', () => {
+    const h = harness()
+    const calls: Array<{ body: string; keepalive?: boolean }> = []
+    h.session.setCommitRest((body, options) => {
+      calls.push({ body, keepalive: options?.keepalive })
+      return new Promise<boolean>(() => {})
+    })
+    h.session.start()
+    h.rooms[0].set({
+      status: 'failed',
+      error: new PhotonLiveError('disabled', 'disabled', 404),
+    })
+    expect(h.session.getView().mode).toBe('unavailable')
+    h.type('Base saved normally')
+    // Typed while that save is on its way; the closing page flushes it.
+    setBody(h.boundTo, 'Base typed while closing')
+    h.session.commit('Base typed while closing', { keepalive: true })
+    h.session.flush({ reason: 'unloading' })
+    expect(calls).toEqual([
+      { body: 'Base saved normally', keepalive: undefined },
+      { body: 'Base typed while closing', keepalive: true },
+    ])
+  })
+
+  it('sends the newest body again when its ordinary save may not outlive the page', () => {
+    const h = harness()
+    const calls: Array<{ body: string; keepalive?: boolean }> = []
+    h.session.setCommitRest((body, options) => {
+      calls.push({ body, keepalive: options?.keepalive })
+      return new Promise<boolean>(() => {})
+    })
+    h.session.start()
+    h.rooms[0].set({
+      status: 'failed',
+      error: new PhotonLiveError('disabled', 'disabled', 404),
+    })
+    h.type('Base saved normally')
+    h.session.flush({ reason: 'hidden' })
+    h.session.flush({ reason: 'unloading' })
+    h.session.flush({ reason: 'unloading' })
+    expect(calls).toEqual([
+      { body: 'Base saved normally', keepalive: undefined },
+      { body: 'Base saved normally', keepalive: true },
+    ])
+  })
+
   it('does not save normally on unload once the room acknowledged the body', () => {
     const h = harness()
     h.session.start()

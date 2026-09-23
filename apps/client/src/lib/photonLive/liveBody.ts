@@ -186,6 +186,8 @@ export class LiveBodySession {
   private restInFlight = 0
   /** The body of the newest ordinary save still in flight. */
   private restPending: string | null = null
+  /** Whether that save outlives the page (see `flush`). */
+  private restPendingKeepalive = false
   /** The body most recently handed to the bound room as a checkpoint. */
   private lastQueued: string | null = null
   private joined = false
@@ -273,12 +275,16 @@ export class LiveBodySession {
     return () => this.listeners.delete(listener)
   }
 
-  /** A debounced body from the editor. The session decides where it goes. */
-  commit(body: string): void {
+  /**
+   * A debounced body from the editor. The session decides where it goes.
+   * `keepalive`: the page is unloading, so a body saved normally must go in
+   * a request that outlives it.
+   */
+  commit(body: string, options?: { keepalive?: boolean }): void {
     if (this.disposed) return
     switch (this.mode) {
       case 'live':
-        this.queueCheckpoint(body)
+        this.queueCheckpoint(body, options)
         return
       case 'joining':
       case 'rejoining':
@@ -291,7 +297,7 @@ export class LiveBodySession {
           return
         }
         if (this.graceExpired) {
-          this.commitRest(body)
+          this.commitRest(body, options)
           return
         }
         // Once a room's unsaved body is held, what is typed on top of it is
@@ -309,10 +315,10 @@ export class LiveBodySession {
           this.emit()
           return
         }
-        this.commitRest(body)
+        this.commitRest(body, options)
         return
       case 'unavailable':
-        this.commitRest(body)
+        this.commitRest(body, options)
     }
   }
 
@@ -353,7 +359,13 @@ export class LiveBodySession {
     }
     if (this.canonicalConflict) return
     const body = this.held
-    if (body === null) return
+    if (body === null) {
+      // The newest body may be on its way in an ordinary save, which the
+      // unloading page cancels. The same body again cannot undo anything
+      // whichever of the two lands last.
+      if (keepalive && this.restPending !== null) this.commitRest(this.restPending, { keepalive })
+      return
+    }
     this.dropHold()
     this.commitRest(body, { keepalive })
   }
@@ -432,12 +444,12 @@ export class LiveBodySession {
     })
   }
 
-  private queueCheckpoint(body: string): void {
+  private queueCheckpoint(body: string, options?: { keepalive?: boolean }): void {
     const provider = this.bound?.provider
     if (!provider) return
     if (provider.destroyed) {
       // The page is unloading and the room went first; it would drop this.
-      this.commitRest(body)
+      this.commitRest(body, options)
       return
     }
     this.lastQueued = body
@@ -487,11 +499,13 @@ export class LiveBodySession {
   private commitRest(body: string, options?: { keepalive?: boolean }): void {
     if (body === this.durable && this.restInFlight === 0) return
     // Leaving can reach this twice for one body (the page's flush, then the
-    // room's drain). One save of it in flight is enough.
-    if (body === this.restPending) return
-    this.restSeq += 1
+    // room's drain). One save of it in flight is enough -- unless the page is
+    // unloading and that one would not outlive it.
+    if (body === this.restPending && (this.restPendingKeepalive || !options?.keepalive)) return
+    const seq = ++this.restSeq
     this.restInFlight += 1
     this.restPending = body
+    this.restPendingKeepalive = Boolean(options?.keepalive)
     let result: ReturnType<CommitRest>
     try {
       result = this.commitRestImpl(body, options)
@@ -504,7 +518,10 @@ export class LiveBodySession {
       }, () => undefined)
       .finally(() => {
         this.restInFlight -= 1
-        if (this.restPending === body) this.restPending = null
+        if (this.restSeq === seq) {
+          this.restPending = null
+          this.restPendingKeepalive = false
+        }
         this.afterRestSettled()
       })
   }
