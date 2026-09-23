@@ -24,6 +24,7 @@ export const fr: LocaleMessages = {
   'common.close': 'Fermer',
   'common.save': 'Enregistrer',
   'common.saving': 'Enregistrement…',
+  'common.showingCachedCopy': 'Affichage de la copie enregistrée sur cet appareil. Elle n’est peut-être pas à jour.',
   'common.saved': 'Enregistré',
   'common.create': 'Créer',
   'common.creating': 'Création…',

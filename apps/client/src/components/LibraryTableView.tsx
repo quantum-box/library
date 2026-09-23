@@ -44,6 +44,14 @@ import {
 } from '../lib/repositorySettingsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
+  forgetData,
+  forgetDataPages,
+  peekRepoTable,
+  readRepoTable,
+  rememberRepoTable,
+  type CachedRepoTable,
+} from '../lib/libraryReadCache'
+import {
   getLibraryDataPropertyValue,
   propertyValueDisplayText,
   propertyValueText,
@@ -102,6 +110,8 @@ interface LibraryTableViewProps {
   repo: string
   operatorId?: string
   repoLabel?: string
+  /** The repository's immutable id, which names its cached table when known. */
+  databaseId?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
   /** Called with a blank record the moment "New" has created it, so the
@@ -214,11 +224,33 @@ function LibraryDataCard({
   )
 }
 
-export function LibraryTableView({
+/**
+ * Where the table on screen came from.
+ *
+ * - `none`: nowhere yet. The only state that shows a spinner in its place.
+ * - `cached`: what this device drew last time, while the listing is asked
+ *   for again. Read-only: a write sends the whole row, so a write from a
+ *   remembered row would put back every value someone has changed since.
+ * - `listed`: the Library API's answer, from this visit.
+ */
+type TableSource = 'none' | 'cached' | 'listed'
+
+/**
+ * One table per repository.
+ *
+ * Keyed, so that moving to another repository starts from that repository's
+ * own remembered rows -- or from nothing -- rather than from the last one's.
+ */
+export function LibraryTableView(props: LibraryTableViewProps) {
+  return <RepositoryTable key={`${props.databaseId ?? ''}:${props.org}/${props.repo}`} {...props} />
+}
+
+function RepositoryTable({
   org,
   repo,
   operatorId,
   repoLabel,
+  databaseId,
   selectedDataId,
   onSelectData,
   onDataCreated,
@@ -233,13 +265,42 @@ export function LibraryTableView({
     () => createLibraryRelationRecordLoader(),
     [],
   )
-  const [items, setItems] = useState<LibraryDataItem[]>([])
-  const [properties, setProperties] = useState<LibraryProperty[]>([])
-  const [loading, setLoading] = useState(true)
+  /** What names this repository's remembered table. */
+  const cacheTarget = useMemo(() => ({ org, repo, databaseId }), [databaseId, org, repo])
+  // Read once, in the render that mounts the table, so a table this device
+  // has drawn before is on screen in the first frame rather than the second.
+  const [cachedTable] = useState<CachedRepoTable | null>(() => peekRepoTable(cacheTarget))
+  const [items, setItems] = useState<LibraryDataItem[]>(() => cachedTable?.items ?? [])
+  const [properties, setProperties] = useState<LibraryProperty[]>(
+    () => cachedTable?.properties ?? []
+  )
+  const [source, setSourceState] = useState<TableSource>(cachedTable ? 'cached' : 'none')
+  /** Read where a callback needs the source as of now, not as of its render. */
+  const sourceRef = useRef(source)
+  const setSource = useCallback((next: TableSource) => {
+    sourceRef.current = next
+    setSourceState(next)
+  }, [])
+  /** A listing request in flight, whether or not something is on screen. */
+  const [refreshing, setRefreshing] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [nextPage, setNextPage] = useState<number | null>(null)
-  const [totalItems, setTotalItems] = useState<number | null>(null)
+  const [nextPage, setNextPage] = useState<number | null>(() => cachedTable?.nextPage ?? null)
+  const [totalItems, setTotalItems] = useState<number | null>(
+    () => cachedTable?.totalItems ?? null
+  )
   const [error, setError] = useState<string | null>(null)
+  /** Nothing to show yet, and nothing has gone wrong. */
+  const loading = source === 'none' && error === null
+  /** Rows on screen that the listing has not confirmed. */
+  const stale = source === 'cached'
+  /**
+   * The listing failed with nothing to show in its place.
+   *
+   * Only then does the error take the table's place. A table that is on
+   * screen stays there with the error above it: rows that may be out of date
+   * are more use than none.
+   */
+  const listingFailed = source === 'none' && error !== null
   /**
    * A later page's failure, kept apart from `error`.
    *
@@ -308,7 +369,7 @@ export function LibraryTableView({
 
   const reload = useCallback(async () => {
     const token = ++listing.current
-    setLoading(true)
+    setRefreshing(true)
     setError(null)
     setLoadMoreError(null)
     try {
@@ -318,18 +379,60 @@ export function LibraryTableView({
       setProperties(payload.properties)
       setNextPage(payload.nextPage ?? null)
       setTotalItems(payload.totalItems ?? null)
+      setSource('listed')
     } catch (loadError: unknown) {
       if (token !== listing.current) return
       console.warn('Failed to load Library repository table data', loadError)
+      // Whatever is on screen stays; see `listingFailed`.
       setError(repositoryLoadErrorMessage(loadError))
-      setItems([])
-      setProperties([])
-      setNextPage(null)
-      setTotalItems(null)
     } finally {
-      if (token === listing.current) setLoading(false)
+      if (token === listing.current) setRefreshing(false)
     }
-  }, [repoTarget])
+  }, [repoTarget, setSource])
+
+  /**
+   * The remembered table, for the mount that could not have it at once.
+   *
+   * `peekRepoTable` answers only once the store is open, and on the first
+   * table of a session it may not be yet. Whichever of this and the listing
+   * lands first is drawn; the listing always wins over this.
+   */
+  useEffect(() => {
+    if (sourceRef.current !== 'none') return
+    let cancelled = false
+    void readRepoTable(cacheTarget).then((cached) => {
+      if (cancelled || !cached || sourceRef.current !== 'none') return
+      setItems(cached.items)
+      setProperties(cached.properties)
+      setNextPage(cached.nextPage)
+      setTotalItems(cached.totalItems)
+      setSource('cached')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [cacheTarget, setSource])
+
+  /**
+   * Remember the table as it now stands, for the next visit to draw at once.
+   *
+   * Only a listed table, and after every change to it, so that an edit made
+   * here is what the next visit opens on. Only the first page: that is what
+   * the next visit's listing asks for, and what it will replace.
+   */
+  useEffect(() => {
+    if (source !== 'listed') return
+    const pageSize = libraryPageSize()
+    rememberRepoTable(
+      cacheTarget,
+      {
+        items: items.slice(0, pageSize),
+        properties,
+        nextPage: items.length > pageSize ? 2 : nextPage,
+        totalItems,
+      }
+    )
+  }, [cacheTarget, items, nextPage, properties, source, totalItems])
 
   /**
    * Append the next page.
@@ -385,6 +488,9 @@ export function LibraryTableView({
       setMutationError(null)
       try {
         const saved = await updateLibraryData(repoTarget, properties, item)
+        // The record's remembered page predates this edit and would be drawn
+        // in preference to the row; it goes, and the record opens from the row.
+        await forgetDataPages(cacheTarget, saved.id)
         setItems((current) => current.map((row) => (row.id === saved.id ? saved : row)))
         return saved
       } catch (saveError: unknown) {
@@ -394,7 +500,7 @@ export function LibraryTableView({
         setSaving(false)
       }
     },
-    [properties, repoTarget]
+    [cacheTarget, properties, repoTarget]
   )
 
   const handlePropertyCommit = useCallback(
@@ -458,6 +564,9 @@ export function LibraryTableView({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, pendingDelete.id)
+      // Before the deletion reads as done: the record's page, opened next,
+      // draws from the cache in its first frame.
+      await forgetData(cacheTarget, pendingDelete.id)
       setItems((current) => current.filter((row) => row.id !== pendingDelete.id))
       onDataDeleted?.(pendingDelete.id)
       setPendingDelete(null)
@@ -466,7 +575,12 @@ export function LibraryTableView({
     } finally {
       setDeleteBusy(false)
     }
-  }, [onDataDeleted, pendingDelete, repoTarget])
+  }, [cacheTarget, onDataDeleted, pendingDelete, repoTarget])
+
+  /** Row writes, which a remembered row may not make; see `TableSource`. */
+  const rowWritesLocked = saving || stale
+  /** Property writes, which replace a whole definition that may be out of date. */
+  const propertyWritesOpen = !propertyWritesDenied && !stale
 
   /** Every Property in the reader's order, hidden ones included. */
   const arrangedProperties = useMemo(
@@ -651,7 +765,7 @@ export function LibraryTableView({
             type="button"
             data-testid={`library-table-delete-${row.original.id}`}
             className="flex size-6 items-center justify-center rounded text-subtle-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
-            disabled={saving}
+            disabled={rowWritesLocked}
             title={t('libraryTable.deleteRow')}
             aria-label={t('repoSettings.deleteNamed', { name: row.original.name })}
             onClick={(event) => {
@@ -672,7 +786,7 @@ export function LibraryTableView({
           <div className="flex min-w-0 items-center gap-1">
             <LibraryNameEditableCell
               item={row.original}
-              disabled={saving}
+              disabled={rowWritesLocked}
               onCommit={(name) => handleNameCommit(row.original, name)}
             />
             {/* The row itself opens the record, but only this says so. */}
@@ -709,7 +823,7 @@ export function LibraryTableView({
               <LibraryPropertyEditableCell
                 item={row.original}
                 property={property}
-                disabled={saving}
+                disabled={rowWritesLocked}
                 // One click opens the editor, the way a spreadsheet cell does.
                 // Opening the record moved to the name column's own button, so
                 // the two no longer compete for the same click.
@@ -759,7 +873,7 @@ export function LibraryTableView({
       locale,
       onSelectData,
       relationLoader,
-      saving,
+      rowWritesLocked,
       shownProperties,
       t,
     ]
@@ -891,11 +1005,11 @@ export function LibraryTableView({
             size="icon"
             className="size-8 text-subtle-foreground hover:text-foreground"
             onClick={() => void reload()}
-            disabled={loading}
+            disabled={refreshing}
             aria-label={t('libraryTable.refresh')}
             title={t('libraryTable.refresh')}
           >
-            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
           </Button>
           <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
           <Button
@@ -903,7 +1017,7 @@ export function LibraryTableView({
             variant="primary"
             size="sm"
             className="h-8"
-            disabled={loading || creatingRow}
+            disabled={loading || rowWritesLocked || creatingRow}
             aria-busy={creatingRow}
             onClick={() => void handleCreateRow()}
           >
@@ -921,6 +1035,29 @@ export function LibraryTableView({
         </div>
       )}
 
+      {error && !listingFailed && (
+        <div
+          role="status"
+          className="flex items-center gap-2 border-b border-border bg-surface px-4 py-1.5 text-xs text-muted-foreground"
+          data-testid="library-table-stale-notice"
+        >
+          <p className="min-w-0 flex-1">
+            <span className="text-destructive">{error}</span>
+            {stale ? ` ${t('common.showingCachedCopy')}` : null}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0"
+            disabled={refreshing}
+            onClick={() => void reload()}
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+            {t('common.retry')}
+          </Button>
+        </div>
+      )}
+
       {loading && (
         <div
           className="flex flex-1 items-center justify-center gap-2 px-4 py-12 text-xs text-subtle-foreground"
@@ -931,7 +1068,7 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && error && (
+      {listingFailed && (
         <div
           className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
           data-testid="library-table-error"
@@ -950,7 +1087,7 @@ export function LibraryTableView({
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && isMobileViewport && (
+      {!loading && !listingFailed && rows.length > 0 && isMobileViewport && (
         <div ref={cardScrollRef} className="flex-1 overflow-y-auto px-3 py-3">
           <div className="relative" style={{ height: cardVirtualizer.getTotalSize() }}>
             {cardVirtualizer.getVirtualItems().map((virtualCard) => {
@@ -967,7 +1104,7 @@ export function LibraryTableView({
                     item={row.original}
                     properties={properties}
                     selected={row.original.id === selectedDataId}
-                    disabled={saving}
+                    disabled={rowWritesLocked}
                     onSelect={() => onSelectData(row.original)}
                     onDelete={() => {
                       setPendingDelete(row.original)
@@ -984,7 +1121,7 @@ export function LibraryTableView({
       {/* Rendered with no rows as well: the `+` that defines a column lives in
           this header, and a repository nobody has written to yet is exactly
           when someone needs it. */}
-      {!loading && !error && !isMobileViewport && (
+      {!loading && !listingFailed && !isMobileViewport && (
         <DndContext
           sensors={columnSensors}
           collisionDetection={closestCenter}
@@ -1020,7 +1157,7 @@ export function LibraryTableView({
                               className="relative border-b border-border bg-background px-2 py-2 text-left align-middle"
                               style={{ width }}
                             >
-                              {!propertyWritesDenied && (
+                              {propertyWritesOpen && (
                                 <AddPropertyMenu
                                   busy={propertyBusy}
                                   error={propertyError}
@@ -1071,12 +1208,12 @@ export function LibraryTableView({
                                 : undefined
                             }
                             onRename={
-                              property && !propertyWritesDenied && canRenameProperty(property)
+                              property && propertyWritesOpen && canRenameProperty(property)
                                 ? (name) => void handleRenameProperty(property, name)
                                 : undefined
                             }
                             onDelete={
-                              property && !propertyWritesDenied
+                              property && propertyWritesOpen
                                 ? () => void handleDeleteProperty(property)
                                 : undefined
                             }
@@ -1146,7 +1283,7 @@ export function LibraryTableView({
       )}
 
       {/* The card list has no header to hang the empty message under. */}
-      {!loading && !error && isMobileViewport && rows.length === 0 && (
+      {!loading && !listingFailed && isMobileViewport && rows.length === 0 && (
         <div
           className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center"
           data-testid="library-table-empty"
@@ -1161,7 +1298,7 @@ export function LibraryTableView({
       {/* Outside the viewport branches on purpose: the card list and the
           table are two renderings of one listing, and both need its next
           page. */}
-      {!loading && !error && rows.length > 0 && nextPage !== null && (
+      {!loading && !listingFailed && rows.length > 0 && nextPage !== null && (
         <div className="flex flex-col items-center gap-2 border-t border-border bg-background px-4 py-3">
           {loadMoreError && (
             <p className="text-xs text-destructive" role="alert">{loadMoreError}</p>
@@ -1170,7 +1307,7 @@ export function LibraryTableView({
             variant="secondary"
             size="sm"
             data-testid="library-table-load-more"
-            disabled={loadingMore}
+            disabled={loadingMore || stale}
             onClick={() => void loadMore()}
           >
             {loadingMore ? t('common.loading') : t('libraryTable.loadMore')}

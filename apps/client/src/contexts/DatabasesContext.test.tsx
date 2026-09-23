@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DatabasesProvider, useWorkspaceDatabases } from './DatabasesContext'
 import { appKitConfig } from '../app/kitConfig'
+import type { CachedWorkspace } from '../lib/libraryReadCache'
 
 const SELECTED_ORGANIZATION_KEY = appKitConfig.storage.selectedOrganizationKey
 
@@ -38,6 +39,14 @@ const settingsMocks = vi.hoisted(() => ({
 vi.mock('../lib/repositorySettingsApi', () => ({
   deleteRepository: settingsMocks.deleteRepository,
 }))
+
+/** Nothing remembered unless a test says so: every other test is a first start. */
+const cache = vi.hoisted(() => ({
+  readWorkspace: vi.fn<() => Promise<CachedWorkspace | null>>(async () => null),
+  rememberWorkspace: vi.fn(),
+}))
+
+vi.mock('../lib/libraryReadCache', () => cache)
 
 function Probe() {
   const {
@@ -161,6 +170,7 @@ describe('DatabasesProvider', () => {
       isPublic: false,
     })
     settingsMocks.deleteRepository.mockResolvedValue(undefined)
+    cache.readWorkspace.mockResolvedValue(null)
   })
 
   it('loads sidebar repositories via fetchLibraryRepositories on mount', async () => {
@@ -179,6 +189,178 @@ describe('DatabasesProvider', () => {
     expect(screen.getByTestId('database-count')).toHaveTextContent('1')
     expect(screen.getByTestId('organization-count')).toHaveTextContent('1')
     expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+  })
+
+  describe('with lists this device remembers', () => {
+    const remembered: CachedWorkspace = {
+      repositories: [
+        { id: 'repo-9', username: 'kept', name: 'Kept Repo', orgUsername: 'acme', operatorId: 'org-1' },
+      ],
+      organizations: [{ id: 'org-1', operatorName: 'Acme', platformTenantId: 'tn_test', repos: [] }],
+    }
+
+    /**
+     * A repository URL waits on `repositoriesLoading` before it can resolve,
+     * so the remembered lists are what let it draw without a round trip.
+     */
+    it('shows them, no longer loading, while the request is out', async () => {
+      cache.readWorkspace.mockResolvedValue(remembered)
+      const repositories = deferred<unknown[]>()
+      mocks.fetchLibraryRepositories.mockReturnValue(repositories.promise)
+
+      render(
+        <DatabasesProvider>
+          <Probe />
+        </DatabasesProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Kept Repo')
+      })
+      expect(screen.getByTestId('loading')).toHaveTextContent('false')
+
+      await act(async () => {
+        repositories.resolve([
+          { id: 'repo-1', username: 'alpha', name: 'Alpha Repo', orgUsername: 'acme', operatorId: 'org-1' },
+        ])
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+      })
+      expect(screen.getByTestId('database-labels')).not.toHaveTextContent('Kept Repo')
+      expect(cache.rememberWorkspace).toHaveBeenCalledWith({
+        repositories: [expect.objectContaining({ id: 'repo-1' })],
+        organizations: [expect.objectContaining({ id: 'org-1' })],
+      })
+    })
+
+    it('keeps them rather than an error when the request fails', async () => {
+      cache.readWorkspace.mockResolvedValue(remembered)
+      const repositories = deferred<unknown[]>()
+      mocks.fetchLibraryRepositories.mockReturnValue(repositories.promise)
+
+      render(
+        <DatabasesProvider>
+          <Probe />
+        </DatabasesProvider>
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId('database-labels')).toHaveTextContent('Kept Repo')
+      })
+
+      await act(async () => {
+        repositories.reject(new Error('GraphQL unavailable'))
+      })
+
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('Kept Repo')
+      expect(screen.getByTestId('error')).toHaveTextContent('')
+    })
+
+    it('never draws them over what a request has already returned', async () => {
+      const workspace = deferred<CachedWorkspace | null>()
+      cache.readWorkspace.mockReturnValue(workspace.promise)
+
+      render(
+        <DatabasesProvider>
+          <Probe />
+        </DatabasesProvider>
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId('database-labels')).toHaveTextContent('Alpha Repo')
+      })
+
+      await act(async () => {
+        workspace.resolve(remembered)
+      })
+
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('Alpha Repo')
+      expect(screen.getByTestId('database-labels')).not.toHaveTextContent('Kept Repo')
+    })
+  })
+
+  /**
+   * A refresh that fails -- a token refresh blip, a dropped connection -- must
+   * not take away lists the same account already has on screen.
+   */
+  it('keeps listed repositories when a later refresh fails', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+    })
+
+    mocks.fetchLibraryRepositories.mockRejectedValueOnce(new Error('GraphQL unavailable'))
+    await act(async () => {
+      screen.getByTestId('refresh').click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false')
+    })
+    expect(screen.getByTestId('database-labels')).toHaveTextContent('acme / Alpha Repo')
+    expect(screen.getByTestId('error')).toHaveTextContent('')
+  })
+
+  it('drops a deleted repository from the remembered organization lists too', async () => {
+    cache.readWorkspace.mockResolvedValue({
+      repositories: [
+        { id: 'repo-1', username: 'alpha', name: 'Alpha Repo', orgUsername: 'acme', operatorId: 'org-1' },
+      ],
+      organizations: [{
+        id: 'org-1',
+        operatorName: 'acme',
+        platformTenantId: 'tn_test',
+        repos: [{ id: 'repo-1', username: 'alpha', name: 'Alpha Repo', orgUsername: 'acme' }],
+      }],
+    })
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('database-labels')).toHaveTextContent('Alpha Repo')
+    })
+
+    await act(async () => {
+      screen.getByTestId('delete-repository').click()
+    })
+
+    await waitFor(() => {
+      expect(cache.rememberWorkspace).toHaveBeenLastCalledWith({
+        repositories: [],
+        organizations: [expect.objectContaining({ id: 'org-1', repos: [] })],
+      })
+    })
+  })
+
+  /** A creation that succeeded is remembered even if the refresh after it fails. */
+  it('remembers a created repository when the refresh after it fails', async () => {
+    render(
+      <DatabasesProvider>
+        <Probe />
+      </DatabasesProvider>
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-count')).toHaveTextContent('1')
+    })
+    cache.readWorkspace.mockResolvedValue({ repositories: [], organizations: [] })
+    mocks.fetchLibraryRepositories.mockRejectedValueOnce(new Error('GraphQL unavailable'))
+
+    await act(async () => {
+      screen.getByTestId('create-repository').click()
+    })
+
+    await waitFor(() => {
+      expect(cache.rememberWorkspace).toHaveBeenLastCalledWith({
+        repositories: [expect.objectContaining({ id: 'repo-2', username: 'research-library' })],
+        organizations: [],
+      })
+    })
   })
 
   it('surfaces load errors and retries with fetchLibraryRepositories', async () => {

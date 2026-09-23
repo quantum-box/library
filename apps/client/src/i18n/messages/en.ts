@@ -36,6 +36,7 @@ export const en = {
   'common.close': 'Close',
   'common.save': 'Save',
   'common.saving': 'Saving…',
+  'common.showingCachedCopy': 'Showing the copy saved on this device. It may be out of date.',
   'common.saved': 'Saved',
   'common.create': 'Create',
   'common.creating': 'Creating…',

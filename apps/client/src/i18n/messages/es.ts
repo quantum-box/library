@@ -24,6 +24,7 @@ export const es: LocaleMessages = {
   'common.close': 'Cerrar',
   'common.save': 'Guardar',
   'common.saving': 'Guardando…',
+  'common.showingCachedCopy': 'Se muestra la copia guardada en este dispositivo. Puede no estar actualizada.',
   'common.saved': 'Guardado',
   'common.create': 'Crear',
   'common.creating': 'Creando…',
