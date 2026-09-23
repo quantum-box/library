@@ -131,18 +131,22 @@ impl CreateApiKeyInputPort for CreateApiKey {
                 &tenant_id,
             )
             .await?;
-        }
 
-        // Making the account is part of issuing any key, including one
-        // with no repository access, whose holder need not be an owner.
-        grant_api_key_policy(
-            self.auth_app.as_ref(),
-            &library_api_key_accounts_policy_id(),
-            input.executor,
-            &org_scope,
-            &tenant_id,
-        )
-        .await?;
+            // Making the account a role goes on takes a grant too, and
+            // it is only handed to owners: what it carries is a way to
+            // put a key on an account, and an account is a thing a role
+            // can be attached to. A member issuing a key without a role
+            // is not given it and falls back to the shared account,
+            // which is where their keys have always gone.
+            grant_api_key_policy(
+                self.auth_app.as_ref(),
+                &library_api_key_accounts_policy_id(),
+                input.executor,
+                &org_scope,
+                &tenant_id,
+            )
+            .await?;
+        }
 
         // Every key gets an account of its own, so what is granted here
         // reaches this key and no other (see `ApiKeyServiceAccount`).
@@ -690,13 +694,7 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
-                // A key without a role still needs its own account, and
-                // its holder need not be an owner.
-                format!(
-                    "grant:{}@{}",
-                    LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
-                    org_tenant()
-                ),
+                // Nothing is granted for a key that carries nothing.
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
             ]
@@ -830,11 +828,6 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
-                format!(
-                    "grant:{}@{}",
-                    LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
-                    org_tenant()
-                ),
                 "sa:None".to_string(),
                 "find-sa:default".to_string(),
                 "key:sa_01default".to_string(),
