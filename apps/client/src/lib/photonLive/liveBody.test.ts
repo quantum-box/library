@@ -600,6 +600,44 @@ describe('LiveBodySession', () => {
     expect(h.rest).toEqual(['Base never acked'])
   })
 
+  it('saves normally when a leaving room rejects the last body', () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base rejected on the way out')
+    h.session.release()
+    vi.advanceTimersByTime(0)
+    h.rooms[0].set({ saveStatus: 'error' })
+    expect(h.rooms[0].destroyed).toBe(true)
+    expect(h.rest).toEqual(['Base rejected on the way out'])
+  })
+
+  it('does not save normally when a leaving room reports a conflict', () => {
+    const h = harness()
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base draft on the way out')
+    h.session.release()
+    vi.advanceTimersByTime(0)
+    h.rooms[0].set({ saveStatus: 'conflict' })
+    expect(h.rooms[0].destroyed).toBe(true)
+    expect(h.rest).toEqual([])
+  })
+
+  it('saves a disconnected leaving body once, not from both flush and drain', () => {
+    const h = harness()
+    h.setRestResult(new Promise<boolean>(() => {}))
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base typed offline')
+    h.rooms[0].set({ status: 'disconnected' })
+    h.session.flush({ leaving: true })
+    h.session.release()
+    vi.advanceTimersByTime(0)
+    expect(h.rooms[0].destroyed).toBe(true)
+    expect(h.rest).toEqual(['Base typed offline'])
+  })
+
   it('survives a development double mount and is destroyed only on a real release', () => {
     const h = harness()
     h.session.start()

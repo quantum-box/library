@@ -178,6 +178,8 @@ export class LiveBodySession {
   private checkpointErrors = 0
   private restSeq = 0
   private restInFlight = 0
+  /** The body of the newest ordinary save still in flight. */
+  private restPending: string | null = null
   /** The body most recently handed to the bound room as a checkpoint. */
   private lastQueued: string | null = null
   private joined = false
@@ -394,7 +396,11 @@ export class LiveBodySession {
     )
     unsubscribe = provider.subscribe((state) => {
       if (provider.unsentBody() === null) finish(false)
-      else if (state.saveStatus === 'conflict' || state.saveStatus === 'error') finish(false)
+      // A conflict means the body changed elsewhere: saving over it is not
+      // this page's call. A rejected checkpoint is not that, and the body
+      // still has to be saved somewhere.
+      else if (state.saveStatus === 'conflict') finish(false)
+      else if (state.saveStatus === 'error') finish(true)
     })
   }
 
@@ -447,8 +453,12 @@ export class LiveBodySession {
 
   private commitRest(body: string): void {
     if (body === this.durable && this.restInFlight === 0) return
+    // Leaving can reach this twice for one body (the page's flush, then the
+    // room's drain). One save of it in flight is enough.
+    if (body === this.restPending) return
     this.restSeq += 1
     this.restInFlight += 1
+    this.restPending = body
     let result: ReturnType<CommitRest>
     try {
       result = this.commitRestImpl(body)
@@ -461,6 +471,7 @@ export class LiveBodySession {
       }, () => undefined)
       .finally(() => {
         this.restInFlight -= 1
+        if (this.restPending === body) this.restPending = null
         this.afterRestSettled()
       })
   }
