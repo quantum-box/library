@@ -180,6 +180,20 @@ describe('forgetting a record opened by its identifier', () => {
   })
 })
 
+describe('remembering a record under more than one name', () => {
+  it('keeps the identifier it was opened by when it is opened again by id', async () => {
+    rememberDataDetail(target, 'DOC-1', { item: row('d1', 'todo', 'body'), properties })
+    await settle()
+    await readDataDetail(target, 'd1')
+    rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'body'), properties })
+    await settle()
+
+    await forgetData(target, 'd1')
+    expect(await readDataDetail(target, 'DOC-1')).toBeNull()
+    expect(await readDataDetail(target, 'd1')).toBeNull()
+  })
+})
+
 describe('workspace lists', () => {
   it('round-trips per account', async () => {
     rememberWorkspace({

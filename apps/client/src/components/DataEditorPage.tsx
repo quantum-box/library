@@ -247,6 +247,12 @@ function RecordPage({
 
   /** The detail request has said what the record is, or that there is none. */
   const answered = useRef(false)
+  /**
+   * Set once the record is deleted. A detail request or a save still in flight
+   * then answers about a record that is gone, and must not put it back in the
+   * cache -- the table, and this URL, would draw it again.
+   */
+  const deletedRef = useRef(false)
 
   const reload = useCallback(async () => {
     // A page with something on it stays up while the record is asked for.
@@ -271,6 +277,7 @@ function RecordPage({
           throw error
         }
       )
+      if (deletedRef.current) return
       answered.current = true
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
@@ -372,6 +379,7 @@ function RecordPage({
         itemRef.current = savedWithBody
         setItem(savedWithBody)
         setSaveState('saved')
+        if (deletedRef.current) return
         rememberDataDetail({ org, repo }, dataId, {
           item: savedWithBody,
           properties: propertiesRef.current,
@@ -405,6 +413,7 @@ function RecordPage({
     setDeleteError(null)
     try {
       await deleteLibraryData(repoTarget, item.id)
+      deletedRef.current = true
       // Before leaving: the table this goes back to draws from the cache in
       // its first frame, and the row must be gone from it by then.
       await forgetData({ org, repo }, item.id)

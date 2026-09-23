@@ -261,6 +261,32 @@ describe('DataEditorPage', () => {
     })
   })
 
+  /**
+   * A detail request already in flight when the record is deleted answers
+   * about a record that is gone, and must not put it back in the cache.
+   */
+  it('does not remember a record a late answer describes after it was deleted', async () => {
+    cache.peekDataDetail.mockReturnValue({
+      item: record('Remembered title', 'remembered body'),
+      properties,
+      complete: true,
+    })
+    const detail = deferredDetail()
+    mocks.deleteLibraryData.mockResolvedValue(undefined)
+    const onBack = vi.fn()
+    render(<DataEditorPage dataId="data-1" org="acme" repo="docs" onBack={onBack} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete data' }))
+    fireEvent.click(screen.getByTestId('library-delete-dialog-confirm'))
+    await waitFor(() => {
+      expect(onBack).toHaveBeenCalled()
+    })
+
+    detail.resolve({ item: record('Remembered title', 'remembered body'), properties })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(cache.rememberDataDetail).not.toHaveBeenCalled()
+  })
+
   it('reads the store when the record could not be had at once', async () => {
     cache.readDataDetail.mockResolvedValue({
       item: record('Remembered title', 'remembered body'),

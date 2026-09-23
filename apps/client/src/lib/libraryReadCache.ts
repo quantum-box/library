@@ -214,7 +214,15 @@ export function rememberDataDetail(
   requestedId: string,
   detail: { item: LibraryDataItem; properties: LibraryProperty[] }
 ): void {
+  // Every name the record is already remembered by, as well as these two:
+  // opening it by its id must not drop the identifier it was opened by
+  // before, or deleting it by id would leave that URL drawing it.
   const ids = new Set([requestedId, detail.item.id])
+  for (const known of [requestedId, detail.item.id]) {
+    for (const id of peek<CachedDataDetail>(DETAILS_COLLECTION, detailKey(target, known))?.ids ?? []) {
+      ids.add(id)
+    }
+  }
   const value: CachedDataDetail = { ...detail, complete: true, ids: [...ids] }
   void remember(
     DETAILS_COLLECTION,
