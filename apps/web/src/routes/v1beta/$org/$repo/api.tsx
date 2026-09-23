@@ -10,7 +10,7 @@ import {
   revokeApiKey,
 } from '@/app/v1beta/[org]/_components/api-key-actions'
 import { useToast } from '@/components/ui/use-toast'
-import type { ApiKeyItemFragment } from '@/gen/graphql'
+import type { ApiKeyItemFragment, ApiKeyRole } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { baseURL, docsURL } from '@/lib/apiClient'
 
@@ -53,8 +53,8 @@ function ApiPage() {
   }, [loadApiKeys])
 
   const handleCreate = useCallback(
-    async (orgUsername: string, name: string) => {
-      const result = await createApiKey(orgUsername, name, accessToken)
+    async (orgUsername: string, name: string, role: ApiKeyRole | null) => {
+      const result = await createApiKey(orgUsername, name, role, accessToken)
       // The new key only reaches the list once it comes back from the
       // server, so the row and the dialog agree on what exists.
       await loadApiKeys()

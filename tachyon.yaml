@@ -140,7 +140,7 @@ spec:
           value: "https://planetlibrary.txcloud.app"
         - name: LIBRARY_TENANT_ID
           value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
-        # Applied id of the library:org-creator custom policy
+        # Applied id of the library:OrgCreator custom policy
         # (.tachyon/manifests/library-api-runtime.yml). Attached to
         # users at sign-in so organization creation, which tachyon-api
         # authorizes as the caller, can pass auth:CreateOperator.

@@ -72,6 +72,9 @@ enum Command {
     /// Sources attached to a repository
     #[command(subcommand)]
     Source(commands::source::SourceCommand),
+    /// API keys an organization authenticates with
+    #[command(subcommand, name = "api-key")]
+    ApiKey(commands::api_key::ApiKeyCommand),
     /// Talk to the Library MCP server directly
     #[command(subcommand)]
     Mcp(commands::mcp::McpCommand),
@@ -119,6 +122,10 @@ async fn run() -> Result<()> {
         Command::Source(command) => {
             let client = build_client(&overrides)?;
             commands::source::run(command, &client, format).await
+        }
+        Command::ApiKey(command) => {
+            let client = build_client(&overrides)?;
+            commands::api_key::run(command, &client, format).await
         }
         Command::Mcp(command) => {
             let client = build_client(&overrides)?;

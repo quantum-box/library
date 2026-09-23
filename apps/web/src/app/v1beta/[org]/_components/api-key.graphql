@@ -4,9 +4,7 @@ mutation createAPIKey($input: CreateApiKeyInput!) {
       id
       value
       name
-    }
-    serviceAccount {
-      id
+      role
     }
   }
 }
@@ -16,6 +14,7 @@ query getApiKeys($orgUsername: String!) {
     id
     name
     createdAt
+    role
   }
 }
 
@@ -23,6 +22,7 @@ fragment ApiKeyItem on PublicApiKey {
   id
   name
   createdAt
+  role
 }
 
 mutation revokeAPIKey($input: RevokeApiKeyInput!) {
