@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use derive_new::new;
-use tachyon_sdk::auth::PublicApiKey;
 use tachyon_sdk::auth::{
     AttachSaPolicyInput, AuthApp, CheckPolicyInput,
     CreatePublicApiKeyInput, CreateServiceAccountInput,
     DeleteServiceAccountInput, GetServiceAccountByNameInput,
     ServiceAccount,
 };
+use tachyon_sdk::auth::{PolicyId, PublicApiKey};
 use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
@@ -163,13 +163,23 @@ impl CreateApiKeyInputPort for CreateApiKey {
                 role: input.role,
             }),
             Err(error) => {
-                self.discard_service_account(
-                    input,
-                    &org_scope,
-                    &service_account,
-                )
-                .await;
-                Err(error)
+                match self
+                    .discard_service_account(
+                        input,
+                        &org_scope,
+                        &service_account,
+                    )
+                    .await
+                {
+                    Ok(()) => Err(error),
+                    Err(kept) => {
+                        tracing::error!(
+                            error = %error,
+                            "the key this account was made for was not issued"
+                        );
+                        Err(kept)
+                    }
+                }
             }
         }
     }
@@ -275,53 +285,65 @@ impl CreateApiKey {
             .await
     }
 
-    /// Best effort: an account left behind holds no key, so it is neither
-    /// listed nor usable, and the caller's error is the one worth
-    /// reporting.
+    /// What an account is given when a key is issued on it, which is
+    /// what has to come off if the key never is.
+    fn policies_for(role: ApiKeyRole) -> Vec<PolicyId> {
+        let mut policies = vec![role.policy_id()];
+        if role == ApiKeyRole::Owner {
+            policies.push(library_api_key_accounts_policy_id());
+            policies.push(library_api_key_issuer_policy_id());
+        }
+        policies
+    }
+
+    /// Undo an account made for a key that was never issued.
     ///
-    /// Removing an account is an owner's to do, and only a key with a
-    /// role has established that the caller is one. Without that, asking
-    /// upstream would only be refused, so the empty account is left
-    /// behind and said so.
+    /// An account that keeps a role is an account a key can be minted
+    /// on, so the grants come off first and the account goes after:
+    /// removing it settles both, and either one alone is enough for the
+    /// account to be harmless. Only when neither worked does this report
+    /// a failure, which is then the one worth raising — a key that was
+    /// not issued matters less than access nobody asked for.
+    ///
+    /// A key with no role was granted nothing, and its account may be the
+    /// shared one, which is not this key's to remove.
     async fn discard_service_account<'a>(
         &self,
         input: &CreateApiKeyInputData<'a>,
         org_scope: &MultiTenancy,
         service_account: &ServiceAccount,
-    ) {
-        if input.role.is_none() {
-            // It may be the shared account, which is not this key's to
-            // remove, and an account of its own is empty and inert.
+    ) -> errors::Result<()> {
+        let Some(role) = input.role else {
             tracing::info!(
                 service_account = %service_account.id(),
                 "left the service account of a key that was not issued"
             );
-            return;
-        }
+            return Ok(());
+        };
 
-        // The account may already carry the role, and one that does is
-        // one a key can be minted on, so it goes first and on its own
-        // terms.
-        if let Some(role) = input.role {
+        let mut kept_a_grant = None;
+        for policy_id in Self::policies_for(role) {
             if let Err(error) = self
                 .auth_app
                 .detach_sa_policy(&AttachSaPolicyInput {
                     executor: input.executor,
                     multi_tenancy: org_scope,
                     service_account_id: service_account.id(),
-                    policy_id: &role.policy_id(),
+                    policy_id: &policy_id,
                 })
                 .await
             {
                 tracing::warn!(
                     service_account = %service_account.id(),
+                    policy = %policy_id,
                     error = %error,
-                    "could not take the role off the account of a key that was not issued"
+                    "a grant stayed on the account of a key that was not issued"
                 );
+                kept_a_grant = Some(error);
             }
         }
 
-        if let Err(error) = self
+        match self
             .auth_app
             .delete_service_account(&DeleteServiceAccountInput {
                 executor: input.executor,
@@ -330,11 +352,24 @@ impl CreateApiKey {
             })
             .await
         {
-            tracing::warn!(
-                service_account = %service_account.id(),
-                error = %error,
-                "could not remove the service account of a key that was not issued"
-            );
+            Ok(()) => Ok(()),
+            Err(error) => {
+                tracing::warn!(
+                    service_account = %service_account.id(),
+                    error = %error,
+                    "could not remove the service account of a key that was not issued"
+                );
+                match kept_a_grant {
+                    None => Ok(()),
+                    Some(error) => {
+                        tracing::error!(
+                            service_account = %service_account.id(),
+                            "a service account nobody asked for still carries repository access"
+                        );
+                        Err(error)
+                    }
+                }
+            }
         }
     }
 }
@@ -484,7 +519,14 @@ mod tests {
                     "delete-sa:{}",
                     input.service_account_id.as_str()
                 ));
-                Box::pin(async { Ok(()) })
+                let denied = deny == Some("cleanup");
+                Box::pin(async move {
+                    if denied {
+                        Err(errors::Error::service_unavailable("upstream"))
+                    } else {
+                        Ok(())
+                    }
+                })
             }
         });
         auth.expect_attach_sa_policy().returning({
@@ -518,7 +560,14 @@ mod tests {
                     input.service_account_id.as_str(),
                     input.policy_id
                 ));
-                Box::pin(async { Ok(()) })
+                let denied = deny == Some("cleanup");
+                Box::pin(async move {
+                    if denied {
+                        Err(errors::Error::service_unavailable("upstream"))
+                    } else {
+                        Ok(())
+                    }
+                })
             }
         });
         auth.expect_create_public_api_key().returning({
@@ -528,6 +577,11 @@ mod tests {
                     "key:{}",
                     input.service_account_id.as_str()
                 ));
+                if deny == Some("key") || deny == Some("cleanup") {
+                    return Box::pin(async {
+                        Err(errors::Error::forbidden("denied"))
+                    });
+                }
                 let key = PublicApiKey {
                     id: PublicApiKeyId::new("pak_01test"),
                     tenant_id: input.operator_id.clone(),
@@ -655,6 +709,45 @@ mod tests {
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
             ]
+        );
+    }
+
+    /// An account made for a key that was never issued is stripped of
+    /// every grant, the owner extras included, before it is removed.
+    #[tokio::test]
+    async fn a_key_that_was_not_issued_leaves_no_grant_behind() {
+        let calls = Calls::default();
+        let result =
+            create(auth(&calls, Some("key")), Some(ApiKeyRole::Owner))
+                .await;
+
+        assert!(result.is_err());
+        let calls = calls.lock().unwrap();
+        for policy_id in [
+            ApiKeyRole::Owner.policy_id().to_string(),
+            LIBRARY_API_KEY_ACCOUNTS_POLICY_ID.to_string(),
+            LIBRARY_API_KEY_ISSUER_POLICY_ID.to_string(),
+        ] {
+            assert!(
+                calls.contains(&format!("detach:sa_01key:{policy_id}")),
+                "{policy_id} stayed on the account: {calls:?}"
+            );
+        }
+        assert!(calls.contains(&"delete-sa:sa_01key".to_string()));
+    }
+
+    /// Access nobody asked for outlasting the attempt is what the caller
+    /// is told about, rather than the key that was not issued.
+    #[tokio::test]
+    async fn an_account_that_keeps_its_access_is_reported() {
+        let calls = Calls::default();
+        let result =
+            create(auth(&calls, Some("cleanup")), Some(ApiKeyRole::Reader))
+                .await;
+
+        assert!(
+            matches!(result, Err(errors::Error::ServiceUnavailable { .. })),
+            "{result:?}"
         );
     }
 
