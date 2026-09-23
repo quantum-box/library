@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import * as Y from 'yjs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DatabaseRecord } from '../data/mock'
+import type { CreatedServerRecord } from '../lib/recordsApi'
 
 const mocks = vi.hoisted(() => {
   class MockYMap {
@@ -98,6 +99,10 @@ vi.mock('../lib/yjs/useYjsRecords', () => ({
 vi.mock('../lib/recordsApi', () => ({
   fetchServerRecords: mocks.fetchServerRecords,
   createServerRecord: mocks.createServerRecord,
+  createServerRecordWithDelivery: async (data: unknown) => ({
+    record: await mocks.createServerRecord(data),
+    delivered: true,
+  }),
   updateServerRecord: mocks.updateServerRecord,
   deleteServerRecord: mocks.deleteServerRecord,
   subscribeRecordSettlements: (listener: (settlement: unknown) => void) => {
@@ -452,7 +457,7 @@ describe('RecordsProvider server-accepted projection', () => {
       .mockReturnValueOnce(retryHydration.promise)
     mocks.createServerRecord.mockReturnValue(create.promise)
     let context: ReturnType<typeof useRecords> | null = null
-    let creation: Promise<void> | null = null
+    let creation: Promise<CreatedServerRecord> | null = null
 
     render(
       <RecordsProvider>

@@ -24,6 +24,11 @@ interface CreateRecordModalProps {
     operatorId?: string
   }>
   initialRepositoryId?: string
+  /**
+   * Repository-backed data: the repository is required and the name is not,
+   * since the caller opens the record's editor to write it. An empty title is
+   * passed through for the caller to name.
+   */
   requireRepository?: boolean
 }
 
@@ -88,7 +93,7 @@ export function CreateRecordModal({
   const handleSubmit = useCallback(async () => {
     const trimmed = title.trim()
     const repository = repositories.find((candidate) => candidate.id === repositoryId)
-    if (!trimmed || activeSubmissionRef.current || (requireRepository && !repository)) return
+    if ((!trimmed && !requireRepository) || activeSubmissionRef.current || (requireRepository && !repository)) return
     const submission = {
       id: ++nextSubmissionIdRef.current,
       session: modalSessionRef.current,
@@ -132,6 +137,8 @@ export function CreateRecordModal({
   }, [title, status, priority, assignee, description, onCreate, onClose, repositories, repositoryId, requireRepository])
 
   if (!open) return null
+
+  const canSubmit = !busy && (requireRepository ? Boolean(repositoryId) : Boolean(title.trim()))
 
   return createPortal(
     <div
@@ -183,22 +190,24 @@ export function CreateRecordModal({
           {/* Title */}
           <div>
             <label htmlFor="new-record-title" className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              {t('createRecord.nameLabel')} <span style={{ color: 'var(--priority-urgent)' }}>*</span>
+              {t('createRecord.nameLabel')}{' '}
+              {!requireRepository && <span style={{ color: 'var(--priority-urgent)' }}>*</span>}
             </label>
             <input
               id="new-record-title"
               data-testid="create-record-title"
               ref={titleRef}
               type="text"
-              required
-              aria-required="true"
+              required={!requireRepository}
+              aria-required={!requireRepository}
               disabled={busy}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) handleSubmit()
+                // Enter also confirms an IME conversion; that is not a submit.
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) handleSubmit()
               }}
-              placeholder={t('createRecord.namePlaceholder')}
+              placeholder={requireRepository ? t('common.untitled') : t('createRecord.namePlaceholder')}
               className="w-full px-3 py-2 rounded text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               style={{
                 background: 'var(--bg-primary)',
@@ -389,12 +398,12 @@ export function CreateRecordModal({
             type="button"
             onClick={handleSubmit}
             data-testid="create-record-submit"
-            disabled={!title.trim() || busy || (requireRepository && !repositoryId)}
+            disabled={!canSubmit}
             className="px-3 py-1.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             style={{
-              background: title.trim() && !busy && (!requireRepository || repositoryId) ? 'var(--accent)' : 'var(--bg-hover)',
-              color: title.trim() && !busy && (!requireRepository || repositoryId) ? '#fff' : 'var(--text-muted)',
-              cursor: title.trim() && !busy && (!requireRepository || repositoryId) ? 'pointer' : 'not-allowed',
+              background: canSubmit ? 'var(--accent)' : 'var(--bg-hover)',
+              color: canSubmit ? '#fff' : 'var(--text-muted)',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
             }}
           >
             {busy ? t('common.creating') : t('createRecord.submit')}

@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { mockDatabaseRecords } from '../data/mock'
-import { en } from '../i18n/messages/en'
 import { TableView } from './TableView'
 
 const tableRecords = mockDatabaseRecords.slice(0, 24)
@@ -15,7 +14,7 @@ const meta = {
     selectedRecordId: tableRecords[0]?.id ?? null,
     onSelectRecord: fn(),
     onUpdateRecord: fn(),
-    onCreateRecord: fn(),
+    onRequestCreate: fn(),
   },
   parameters: {
     layout: 'fullscreen',
@@ -50,19 +49,13 @@ export const Filtered: Story = {
   },
 }
 
-export const CreateInline: Story = {
+export const RequestCreate: Story = {
   args: {
-    onCreateRecord: fn(),
+    onRequestCreate: fn(),
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: /new data/i }))
-    await userEvent.type(
-      canvas.getByPlaceholderText(en['table.newRecordPlaceholder']),
-      'Storybook database record{Enter}'
-    )
-    await expect(args.onCreateRecord).toHaveBeenCalledWith({
-      title: 'Storybook database record',
-    })
+    await expect(args.onRequestCreate).toHaveBeenCalledTimes(1)
   },
 }
