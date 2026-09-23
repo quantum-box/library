@@ -105,6 +105,12 @@ export interface LiveBodySessionOptions {
    * the body did not become durable. Replaceable with `setCommitRest`.
    */
   commitRest?: CommitRest
+  /**
+   * Save a body only if the record is still at `expectedRecordVersion`, in a
+   * request that outlives the page. Used when the page is hidden while its
+   * room is out of reach: it can never replace anything saved since.
+   */
+  checkpointOutlivingPage?: (body: string, expectedRecordVersion: string) => unknown
   timing?: Partial<LiveBodyTiming>
   isOnline?: () => boolean
 }
@@ -194,6 +200,8 @@ export class LiveBodySession {
   private restPending: string | null = null
   /** Whether that save outlives the page (see `flush`). */
   private restPendingKeepalive = false
+  /** What `checkpointOutlivingPage` was last asked for, so it goes once. */
+  private lastPageCheckpoint: string | null = null
   /** The body most recently handed to the bound room as a checkpoint. */
   private lastQueued: string | null = null
   private joined = false
@@ -348,10 +356,10 @@ export class LiveBodySession {
    * what peers saved meanwhile -- and restart the room for everyone in it,
    * on a mere switch away from the tab. Updates made while connected are in
    * the room already, and its next checkpoint saves them. Updates made while
-   * reconnecting are only in this page's document until a socket opens again
-   * and sends its whole state; a page discarded before then loses them.
-   * Online, a room that stays away past the stall timeout is left and the
-   * body saved normally.
+   * reconnecting are only in this page's document until a socket opens again,
+   * so a room out of reach has its body saved on the version it last saw
+   * (`checkpointOutlivingPage`): written only if nothing was saved since,
+   * never over it.
    *
    * Never while the body may conflict with one changed elsewhere.
    */
@@ -370,7 +378,13 @@ export class LiveBodySession {
       }
       provider.flushCheckpoint()
       const unsent = provider.unsentBody()
-      if (unsent === null || reason === 'hidden') return
+      if (unsent === null) return
+      if (reason === 'hidden') {
+        if (provider.getState().status !== 'connected') {
+          this.checkpointOutlivingPage(this.lastQueued ?? unsent, provider.getState().recordVersion)
+        }
+        return
+      }
       if (reason === 'unloading' || provider.getState().status !== 'connected') {
         this.commitRest(this.lastQueued ?? unsent, { keepalive })
       }
@@ -461,6 +475,19 @@ export class LiveBodySession {
       else if (state.saveStatus === 'conflict') finish(false)
       else if (state.saveStatus === 'error') finish(true)
     })
+  }
+
+  private checkpointOutlivingPage(body: string, expectedRecordVersion: string): void {
+    const checkpoint = this.options.checkpointOutlivingPage
+    if (!checkpoint) return
+    const key = `${expectedRecordVersion}\n${body}`
+    if (key === this.lastPageCheckpoint) return
+    this.lastPageCheckpoint = key
+    try {
+      void Promise.resolve(checkpoint(body, expectedRecordVersion)).catch(() => undefined)
+    } catch {
+      // Best effort: the room carries the body once the page comes back.
+    }
   }
 
   private queueCheckpoint(body: string, options?: { keepalive?: boolean }): void {

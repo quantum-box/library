@@ -524,6 +524,44 @@ export async function updateLibraryData(
   return restResponseToLibraryDataItem(payload)
 }
 
+/**
+ * Save a Live body only if the record is still at `expectedRecordVersion`,
+ * in a request that outlives the page.
+ *
+ * For a page that goes away while its room is out of reach: the body is
+ * written through the same version-checked checkpoint a room uses, so it
+ * never replaces anything saved since that version -- if the record moved
+ * on, nothing is written. Resolves `true` when it was accepted.
+ */
+export async function checkpointLiveBodyOutlivingPage(
+  target: { org: string; repo: string; dataId: string; operatorId?: string },
+  checkpoint: {
+    propertyId: string
+    expectedRecordVersion: string
+    format: 'markdown' | 'richText'
+    body: string
+  },
+): Promise<boolean> {
+  const body = JSON.stringify({
+    property_id: checkpoint.propertyId,
+    operation_id: globalThis.crypto?.randomUUID?.() ??
+      `live-page-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    expected_record_version: checkpoint.expectedRecordVersion,
+    format: checkpoint.format,
+    body: checkpoint.body,
+  })
+  try {
+    const response = await fetchOutlivingPage(
+      `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/data/${target.dataId}/live/checkpoint`,
+      { method: 'POST', headers: await libraryRestHeaders(target.operatorId, true), body },
+      true,
+    )
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 export async function deleteLibraryData(
   target: LibraryRepoTarget,
   dataId: string

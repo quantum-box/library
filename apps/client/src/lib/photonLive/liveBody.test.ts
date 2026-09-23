@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
-import { LiveBodySession, type LiveBodyEditorPort } from './liveBody'
+import { LiveBodySession, type LiveBodyEditorPort, type LiveBodySessionOptions } from './liveBody'
 import { merge3 } from './merge3'
 import { PhotonLiveError, type PhotonLiveProvider, type PhotonLiveState } from './types'
 
@@ -91,7 +91,7 @@ class FakeRoom implements PhotonLiveProvider {
   }
 }
 
-function harness(initialBody = 'Base') {
+function harness(initialBody = 'Base', extra: Partial<LiveBodySessionOptions> = {}) {
   const draftDoc = new Y.Doc()
   const draft = draftDoc.getXmlFragment('prosemirror')
   setBody(draft, initialBody)
@@ -131,6 +131,7 @@ function harness(initialBody = 'Base') {
     },
     timing: { joinGraceMs: 10_000, stallMs: 15_000, retryBaseMs: 1_000, retryMaxMs: 8_000, drainMs: 5_000 },
     isOnline: () => true,
+    ...extra,
   })
   session.setEditor(port)
 
@@ -634,8 +635,11 @@ describe('LiveBodySession', () => {
     expect(h.rest).toEqual([])
   })
 
-  it('does not save a reconnecting room normally when the page is only hidden', () => {
-    const h = harness()
+  it('saves a reconnecting room on the version it last saw when the page is hidden', () => {
+    const checkpoints: Array<[string, string]> = []
+    const h = harness('Base', {
+      checkpointOutlivingPage: (body, version) => { checkpoints.push([body, version]) },
+    })
     const calls: Array<{ body: string; keepalive?: boolean }> = []
     h.session.setCommitRest((body, options) => {
       calls.push({ body, keepalive: options?.keepalive })
@@ -647,9 +651,26 @@ describe('LiveBodySession', () => {
     h.rooms[0].set({ status: 'connecting' })
     h.session.flush({ reason: 'hidden' })
     expect(h.rooms[0].flushed).toBe(1)
-    // The room has the Yjs updates and merges them on reconnect. A normal
-    // save would overwrite what peers saved meanwhile and restart the room.
+    // A normal save would overwrite what peers saved meanwhile. The page may
+    // be discarded before it reconnects, so the body goes only if the record
+    // is still at the version the room last saw.
     expect(calls).toEqual([])
+    expect(checkpoints).toEqual([['Base typed while reconnecting', '1']])
+    h.session.flush({ reason: 'hidden' })
+    expect(checkpoints).toHaveLength(1)
+  })
+
+  it('leaves a connected room to its own checkpoint when the page is hidden', () => {
+    const checkpoints: string[] = []
+    const h = harness('Base', {
+      checkpointOutlivingPage: (body) => { checkpoints.push(body) },
+    })
+    h.session.start()
+    h.rooms[0].ready()
+    h.type('Base last edit')
+    h.session.flush({ reason: 'hidden' })
+    expect(h.rooms[0].flushed).toBe(1)
+    expect(checkpoints).toEqual([])
   })
 
   it('flushes a connected room instead of saving normally when the editor unmounts', () => {

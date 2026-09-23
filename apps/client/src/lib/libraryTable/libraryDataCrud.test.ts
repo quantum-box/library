@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { addLibraryData, deleteLibraryData, updateLibraryData } from './libraryDataCrud'
+import {
+  addLibraryData,
+  checkpointLiveBodyOutlivingPage,
+  deleteLibraryData,
+  updateLibraryData,
+} from './libraryDataCrud'
 
 describe('libraryDataCrud', () => {
   afterEach(() => {
@@ -126,6 +131,27 @@ describe('libraryDataCrud', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2)
       expect(fetchMock.mock.calls[1]?.[1]?.keepalive).toBeFalsy()
       expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(fetchMock.mock.calls[0]?.[1]?.body)
+    })
+  })
+
+  it('checkpoints a Live body only on the version it last saw, outliving the page', async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response('{}', { status: 409 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(checkpointLiveBodyOutlivingPage(
+      { org: 'acme', repo: 'docs', dataId: 'data-1' },
+      { propertyId: 'body', expectedRecordVersion: '7', format: 'markdown', body: '# Last edit' },
+    )).resolves.toBe(false)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toContain('/v1beta/repos/acme/docs/data/data-1/live/checkpoint')
+    expect(init?.method).toBe('POST')
+    expect(init?.keepalive).toBe(true)
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      property_id: 'body',
+      expected_record_version: '7',
+      format: 'markdown',
+      body: '# Last edit',
+      operation_id: expect.any(String),
     })
   })
 

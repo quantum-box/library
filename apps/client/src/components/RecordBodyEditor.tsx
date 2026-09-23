@@ -23,6 +23,7 @@ import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
+import { checkpointLiveBodyOutlivingPage } from '../lib/libraryTable/libraryDataCrud'
 import { uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
@@ -149,6 +150,13 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
           format,
           seedUpdate,
         }),
+        checkpointOutlivingPage: (body, expectedRecordVersion) =>
+          checkpointLiveBodyOutlivingPage(liveTarget!, {
+            propertyId: liveTarget!.propertyId,
+            expectedRecordVersion,
+            format,
+            body,
+          }),
       }),
       initialBinding: { fragment: draft, user: defaultUser() },
     }
