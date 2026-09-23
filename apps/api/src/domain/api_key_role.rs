@@ -81,7 +81,17 @@ impl ApiKeyServiceAccount {
             return Some(Self::Legacy);
         }
         let rest = name.strip_prefix(API_KEY_SERVICE_ACCOUNT_PREFIX)?;
-        let (segment, _suffix) = rest.split_once('-')?;
+        let (segment, suffix) = rest.split_once('-')?;
+        // The suffix has to be one `new_name` could have written. A key
+        // issued before accounts were Library's own could be put on an
+        // account of any name, including one that reads like this; taking
+        // it for a key's own account would report a role it does not have
+        // and offer the account for removal, though it may hold others.
+        if suffix.len() != 32
+            || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return None;
+        }
         if segment == NO_ROLE_SEGMENT {
             return Some(Self::Dedicated(None));
         }
@@ -134,5 +144,23 @@ mod tests {
             ApiKeyServiceAccount::from_name("library-api-key-admin-x"),
             None
         );
+    }
+
+    /// A name someone chose themselves, back when the API took one, can
+    /// read like a name Library writes.
+    #[test]
+    fn a_name_without_a_generated_suffix_is_not_a_keys_own_account() {
+        for name in [
+            "library-api-key-reader-ci",
+            "library-api-key-reader-",
+            "library-api-key-reader-0123456789abcdef0123456789abcdeg",
+            "library-api-key-reader-0123456789abcdef0123456789abcde",
+        ] {
+            assert_eq!(
+                ApiKeyServiceAccount::from_name(name),
+                None,
+                "{name}"
+            );
+        }
     }
 }

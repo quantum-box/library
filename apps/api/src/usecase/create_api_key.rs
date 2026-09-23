@@ -9,9 +9,11 @@ use tachyon_sdk::auth::{
 use tachyon_sdk::auth::{PolicyId, PublicApiKey};
 use value_object::{Identifier, TenantId};
 
+use tachyon_sdk::auth::MultiTenancy;
+
 use super::api_key_issuer::grant_api_key_issuer;
 use super::GetOrganizationByUsernameQuery;
-use crate::domain::{ApiKeyRole, ApiKeyServiceAccount};
+use crate::domain::{ApiKeyRole, ApiKeyServiceAccount, LIBRARY_TENANT};
 
 #[derive(Debug, Clone)]
 pub struct CreateApiKeyInputData<'a> {
@@ -64,6 +66,25 @@ impl CreateApiKeyInputPort for CreateApiKey {
             })
             .await?;
 
+        let organization = self
+            .get_org_by_name
+            .execute(&input.org_name.to_string().parse()?)
+            .await?
+            .ok_or(errors::not_found!("Organization not found"))?;
+        let tenant_id: TenantId = organization.id().to_string().parse()?;
+
+        // Everything about the role is decided in the organization's own
+        // tenant, whatever operator the request named: that is where an
+        // owner's repository policy is attached and the only scope a
+        // check reads, and the key's account lives there too, which
+        // tachyon insists on for a grant. The v1 web client acts as the
+        // Library platform, so reading the caller's scope would refuse
+        // every owner.
+        let org_scope = MultiTenancy::new(
+            Some(LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
+
         // Handing a key repository access is granting repository
         // permissions, which only those who manage repository policy may
         // do. Checked before anything is created so a refusal leaves
@@ -72,28 +93,19 @@ impl CreateApiKeyInputPort for CreateApiKey {
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &org_scope,
                     action: "library:ManageRepoPolicy",
                 })
                 .await?;
-        }
 
-        let organization = self
-            .get_org_by_name
-            .execute(&input.org_name.to_string().parse()?)
-            .await?
-            .ok_or(errors::not_found!("Organization not found"))?;
-        let tenant_id: TenantId = organization.id().to_string().parse()?;
-
-        // Granting the key's account its role is authorized on the tachyon
-        // side as the caller, who needs the issuer grant for it. Only a
-        // role needs it; the owner check above has passed by now.
-        if input.role.is_some() {
+            // Granting the key's account its role is authorized on the
+            // tachyon side as the caller, who needs the issuer grant for
+            // it. The owner check above has passed by now.
             grant_api_key_issuer(
                 self.auth_app.as_ref(),
                 self.api_key_issuer_policy_id.as_ref(),
                 input.executor,
-                input.multi_tenancy,
+                &org_scope,
                 &tenant_id,
             )
             .await?;
@@ -112,7 +124,12 @@ impl CreateApiKeyInputPort for CreateApiKey {
             .await?;
 
         match self
-            .grant_and_issue(input, &organization, &service_account)
+            .grant_and_issue(
+                input,
+                &org_scope,
+                &organization,
+                &service_account,
+            )
             .await
         {
             Ok(api_key) => Ok(CreateApiKeyOutputData {
@@ -121,7 +138,12 @@ impl CreateApiKeyInputPort for CreateApiKey {
                 role: input.role,
             }),
             Err(error) => {
-                self.discard_service_account(input, &service_account).await;
+                self.discard_service_account(
+                    input,
+                    &org_scope,
+                    &service_account,
+                )
+                .await;
                 Err(error)
             }
         }
@@ -134,6 +156,7 @@ impl CreateApiKey {
     async fn grant_and_issue<'a>(
         &self,
         input: &CreateApiKeyInputData<'a>,
+        org_scope: &MultiTenancy,
         organization: &crate::domain::Organization,
         service_account: &ServiceAccount,
     ) -> errors::Result<PublicApiKey> {
@@ -141,7 +164,7 @@ impl CreateApiKey {
             self.auth_app
                 .attach_sa_policy(&AttachSaPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: org_scope,
                     service_account_id: service_account.id(),
                     policy_id: &role.policy_id(),
                 })
@@ -165,13 +188,14 @@ impl CreateApiKey {
     async fn discard_service_account<'a>(
         &self,
         input: &CreateApiKeyInputData<'a>,
+        org_scope: &MultiTenancy,
         service_account: &ServiceAccount,
     ) {
         if let Err(error) = self
             .auth_app
             .delete_service_account(&DeleteServiceAccountInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: org_scope,
                 service_account_id: service_account.id(),
             })
             .await
@@ -240,10 +264,15 @@ mod tests {
         auth.expect_check_policy().returning({
             let calls = calls.clone();
             move |input| {
-                calls
-                    .lock()
-                    .unwrap()
-                    .push(format!("policy:{}", input.action));
+                calls.lock().unwrap().push(format!(
+                    "policy:{}@{}",
+                    input.action,
+                    input
+                        .multi_tenancy
+                        .get_operator_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default()
+                ));
                 let denied = deny == Some(input.action);
                 Box::pin(async move {
                     if denied {
@@ -257,10 +286,15 @@ mod tests {
         auth.expect_attach_user_policy().returning({
             let calls = calls.clone();
             move |input| {
-                calls
-                    .lock()
-                    .unwrap()
-                    .push(format!("grant:{}", input.policy_id));
+                calls.lock().unwrap().push(format!(
+                    "grant:{}@{}",
+                    input.policy_id,
+                    input
+                        .multi_tenancy
+                        .get_operator_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default()
+                ));
                 Box::pin(async { Ok(()) })
             }
         });
@@ -295,9 +329,14 @@ mod tests {
             let calls = calls.clone();
             move |input| {
                 calls.lock().unwrap().push(format!(
-                    "attach:{}:{}",
+                    "attach:{}:{}@{}",
                     input.service_account_id.as_str(),
-                    input.policy_id
+                    input.policy_id,
+                    input
+                        .multi_tenancy
+                        .get_operator_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default()
                 ));
                 let denied = deny == Some("attach");
                 Box::pin(async move {
@@ -330,6 +369,14 @@ mod tests {
         auth
     }
 
+    /// The tenant the request names, which the v1 web client sets to the
+    /// Library platform rather than to the organization.
+    const CALLER_TENANT: &str = "tn_01hjryxysgey07h5jz5wagqj0m";
+
+    fn org_tenant() -> TenantId {
+        TenantId::new("tn_01organization00000000000").unwrap()
+    }
+
     async fn create(
         auth: MockAuthApp,
         role: Option<ApiKeyRole>,
@@ -337,7 +384,7 @@ mod tests {
         let mut get_org = MockGetOrgByUsername::new();
         get_org.expect_execute().returning(|_| {
             Ok(Some(Organization::new(
-                &TenantId::default(),
+                &org_tenant(),
                 &Text::new("Test Organization").unwrap(),
                 &Identifier::from_str("test-org").unwrap(),
                 None,
@@ -372,13 +419,19 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
-                "policy:library:CreateApiKey",
-                "policy:library:ManageRepoPolicy",
+                // Only the first check reads the caller's own scope;
+                // everything about the role is decided in the
+                // organization's tenant, whatever operator was named.
+                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:ManageRepoPolicy@{}", org_tenant()),
                 // The caller gets what granting the account needs.
-                "grant:pol_01issuer",
-                "sa:Some(Reader)",
-                "attach:sa_01key:pol_01libraryreporeader",
-                "key:sa_01key",
+                format!("grant:pol_01issuer@{}", org_tenant()),
+                "sa:Some(Reader)".to_string(),
+                format!(
+                    "attach:sa_01key:pol_01libraryreporeader@{}",
+                    org_tenant()
+                ),
+                "key:sa_01key".to_string(),
             ]
         );
     }
@@ -391,7 +444,11 @@ mod tests {
         assert_eq!(output.role, None);
         assert_eq!(
             calls.lock().unwrap().as_slice(),
-            ["policy:library:CreateApiKey", "sa:None", "key:sa_01key"]
+            [
+                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                "sa:None".to_string(),
+                "key:sa_01key".to_string(),
+            ]
         );
     }
 
@@ -408,8 +465,8 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
-                "policy:library:CreateApiKey",
-                "policy:library:ManageRepoPolicy"
+                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:ManageRepoPolicy@{}", org_tenant())
             ]
         );
     }

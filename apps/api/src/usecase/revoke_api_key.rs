@@ -9,9 +9,11 @@ use tachyon_sdk::auth::{
 };
 use value_object::{Identifier, TenantId};
 
+use tachyon_sdk::auth::MultiTenancy;
+
 use super::api_key_issuer::grant_api_key_issuer;
 use super::GetOrganizationByUsernameQuery;
-use crate::domain::ApiKeyServiceAccount;
+use crate::domain::{ApiKeyServiceAccount, LIBRARY_TENANT};
 
 #[derive(Debug, Clone)]
 pub struct RevokeApiKeyInputData<'a> {
@@ -61,6 +63,15 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         let tenant_id: TenantId = organization.id().to_string().parse()?;
         let api_key_id = PublicApiKeyId::new(input.api_key_id);
 
+        // Removing the key's account is authorized in the organization's
+        // own tenant, which is where an owner's repository policy and the
+        // account itself live; the v1 web client acts as the Library
+        // platform, so the caller's own scope would refuse every owner.
+        let org_scope = MultiTenancy::new(
+            Some(LIBRARY_TENANT.clone()),
+            Some(tenant_id.clone()),
+        );
+
         // Upstream revoke succeeds silently for a key the named account
         // does not hold, so the account holding it is found first. Every
         // account is searched, not only the ones Library names today: keys
@@ -81,7 +92,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 let api_key_id = &api_key_id;
                 let organization = &organization;
                 async move {
-                    let holds_key = self
+                    let api_keys = self
                         .auth_app
                         .find_all_public_api_key(
                             &FindAllPublicApiKeyInput {
@@ -91,16 +102,18 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                                 service_account_id: service_account.id(),
                             },
                         )
-                        .await?
-                        .iter()
-                        .any(|key| key.id() == api_key_id);
-                    Ok::<_, errors::Error>(
-                        holds_key.then_some((service_account, account)),
-                    )
+                        .await?;
+                    let holds_key =
+                        api_keys.iter().any(|key| key.id() == api_key_id);
+                    Ok::<_, errors::Error>(holds_key.then_some((
+                        service_account,
+                        account,
+                        api_keys.len(),
+                    )))
                 }
             }))
             .await?;
-        let (service_account, account) = holders
+        let (service_account, account, keys_on_account) = holders
             .into_iter()
             .flatten()
             .next()
@@ -118,9 +131,13 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
 
         // A key's own account has nothing left to authenticate. Removing
         // it is tidying, not revocation: the key is already refused, so a
-        // failure here is logged rather than reported.
-        // An account Library did not make for this key may hold others.
-        if let Some(ApiKeyServiceAccount::Dedicated(_)) = account {
+        // failure here is logged rather than reported. An account Library
+        // did not make for this key, or one that still holds another key,
+        // stays.
+        let account_is_spent =
+            matches!(account, Some(ApiKeyServiceAccount::Dedicated(_)))
+                && keys_on_account == 1;
+        if account_is_spent {
             // Removing an account is authorized upstream as the caller;
             // owners get the grant that allows it (see
             // `grant_api_key_issuer`). Anyone else revokes the key only.
@@ -128,7 +145,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 .auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &org_scope,
                     action: "library:ManageRepoPolicy",
                 })
                 .await
@@ -138,7 +155,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                     self.auth_app.as_ref(),
                     self.api_key_issuer_policy_id.as_ref(),
                     input.executor,
-                    input.multi_tenancy,
+                    &org_scope,
                     &tenant_id,
                 )
                 .await
@@ -153,7 +170,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 .auth_app
                 .delete_service_account(&DeleteServiceAccountInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &org_scope,
                     service_account_id: service_account.id(),
                 })
                 .await
@@ -267,7 +284,10 @@ mod tests {
             move |_| {
                 let accounts = [
                     ("sa_01legacy", "default"),
-                    ("sa_01reader", "library-api-key-reader-aaa"),
+                    ("sa_01reader", "library-api-key-reader-0123456789abcdef0123456789abcdef"),
+                    // A key's own account that somehow holds a second
+                    // key: it is not spent when one of them goes.
+                    ("sa_01shared", "library-api-key-writer-fedcba9876543210fedcba9876543210"),
                     // Named by whoever issued the key, back when the
                     // API took a service account name.
                     ("sa_01custom", "ci-bot"),
@@ -285,20 +305,27 @@ mod tests {
         auth.expect_find_all_public_api_key().returning({
             let tenant_id = tenant_id.clone();
             move |input| {
-                let key_id = match input.service_account_id.as_str() {
-                    "sa_01legacy" => "pak_legacy",
-                    "sa_01custom" => "pak_custom",
-                    _ => "pak_reader",
-                };
-                let key = PublicApiKey {
-                    id: PublicApiKeyId::new(key_id),
-                    tenant_id: tenant_id.clone(),
-                    service_account_id: input.service_account_id.clone(),
-                    name: "key".to_string(),
-                    value: PublicApiKeyValue::new("pk_****"),
-                    created_at: chrono::Utc::now(),
-                };
-                Box::pin(async move { Ok(vec![key]) })
+                let key_ids: &[&str] =
+                    match input.service_account_id.as_str() {
+                        "sa_01legacy" => &["pak_legacy"],
+                        "sa_01custom" => &["pak_custom"],
+                        "sa_01shared" => &["pak_shared", "pak_other"],
+                        _ => &["pak_reader"],
+                    };
+                let keys = key_ids
+                    .iter()
+                    .map(|key_id| PublicApiKey {
+                        id: PublicApiKeyId::new(*key_id),
+                        tenant_id: tenant_id.clone(),
+                        service_account_id: input
+                            .service_account_id
+                            .clone(),
+                        name: "key".to_string(),
+                        value: PublicApiKeyValue::new("pk_****"),
+                        created_at: chrono::Utc::now(),
+                    })
+                    .collect();
+                Box::pin(async move { Ok(keys) })
             }
         });
         auth.expect_revoke_public_api_key().returning({
@@ -381,6 +408,21 @@ mod tests {
                 "revoke:sa_01reader:pak_reader",
                 "policy:library:ManageRepoPolicy",
                 "delete-sa:sa_01reader",
+            ]
+        );
+    }
+
+    /// Removing the account would take the other key with it.
+    #[tokio::test]
+    async fn an_account_that_still_holds_another_key_is_kept() {
+        let calls = Calls::default();
+        revoke(auth(&calls, true), "pak_shared").await.unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "policy:library:RevokeApiKey",
+                "revoke:sa_01shared:pak_shared",
             ]
         );
     }

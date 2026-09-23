@@ -154,8 +154,8 @@ mod tests {
             move |_| {
                 let accounts = [
                     ("sa_01legacy", "default"),
-                    ("sa_01reader", "library-api-key-reader-aaa"),
-                    ("sa_01public", "library-api-key-public-bbb"),
+                    ("sa_01reader", "library-api-key-reader-0123456789abcdef0123456789abcdef"),
+                    ("sa_01public", "library-api-key-public-fedcba9876543210fedcba9876543210"),
                     // Not Library's: its keys stay out of the list.
                     ("sa_01cli", "tachyon-cli"),
                 ]
