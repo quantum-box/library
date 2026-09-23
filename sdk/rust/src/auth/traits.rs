@@ -210,6 +210,12 @@ pub trait AuthApp: Debug + Send + Sync + 'static {
         input: &AttachSaPolicyInput<'a>,
     ) -> errors::Result<()>;
 
+    /// Detach a policy from a service account.
+    async fn detach_sa_policy<'a>(
+        &self,
+        input: &AttachSaPolicyInput<'a>,
+    ) -> errors::Result<()>;
+
     /// Create an OAuth2 client.
     async fn create_oauth2_client<'a>(
         &self,

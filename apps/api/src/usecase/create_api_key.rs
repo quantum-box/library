@@ -299,6 +299,28 @@ impl CreateApiKey {
             return;
         }
 
+        // The account may already carry the role, and one that does is
+        // one a key can be minted on, so it goes first and on its own
+        // terms.
+        if let Some(role) = input.role {
+            if let Err(error) = self
+                .auth_app
+                .detach_sa_policy(&AttachSaPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: org_scope,
+                    service_account_id: service_account.id(),
+                    policy_id: &role.policy_id(),
+                })
+                .await
+            {
+                tracing::warn!(
+                    service_account = %service_account.id(),
+                    error = %error,
+                    "could not take the role off the account of a key that was not issued"
+                );
+            }
+        }
+
         if let Err(error) = self
             .auth_app
             .delete_service_account(&DeleteServiceAccountInput {
@@ -486,6 +508,17 @@ mod tests {
                         Ok(())
                     }
                 })
+            }
+        });
+        auth.expect_detach_sa_policy().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls.lock().unwrap().push(format!(
+                    "detach:{}:{}",
+                    input.service_account_id.as_str(),
+                    input.policy_id
+                ));
+                Box::pin(async { Ok(()) })
             }
         });
         auth.expect_create_public_api_key().returning({

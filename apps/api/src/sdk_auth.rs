@@ -2788,6 +2788,49 @@ impl AuthApp for SdkAuthApp {
         Ok(())
     }
 
+    async fn detach_sa_policy<'a>(
+        &self,
+        input: &auth::AttachSaPolicyInput<'a>,
+    ) -> errors::Result<()> {
+        let config = self
+            .sdk_config_with_context(input.executor, input.multi_tenancy);
+        // The counterpart of `attach_sa_policy`, and GraphQL-only for the
+        // same reason.
+        let body = serde_json::json!({
+            "query": "mutation DetachServiceAccountPolicy($input: DetachServiceAccountPolicyInput!) { detachServiceAccountPolicy(input: $input) { success } }",
+            "variables": {
+                "input": {
+                    "serviceAccountId": input.service_account_id.to_string(),
+                    "policyId": input.policy_id.to_string(),
+                }
+            },
+        });
+
+        let resp: GraphqlResp =
+            Self::rest_post_observed(&config, "/v1/graphql", &body)
+                .await
+                .map_err(|failure| {
+                    observe_sdk_request_failure(
+                        "detach_sa_policy",
+                        failure.error,
+                        failure.correlation_id.as_deref(),
+                    );
+                    failure.error.into_public_error()
+                })?;
+
+        if let Some(error) = resp.errors.into_iter().next() {
+            tracing::warn!(
+                service_account = %input.service_account_id,
+                policy = %input.policy_id,
+                code = ?error.code(),
+                "detach_sa_policy rejected upstream"
+            );
+            return Err(error.into_public_error());
+        }
+
+        Ok(())
+    }
+
     async fn create_oauth2_client<'a>(
         &self,
         _input: &auth::CreateOAuth2ClientInput<'a>,

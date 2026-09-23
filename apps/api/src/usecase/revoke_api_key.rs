@@ -3,9 +3,9 @@ use std::sync::Arc;
 use derive_new::new;
 use futures_util::{StreamExt, TryStreamExt};
 use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyInput, DeleteServiceAccountInput,
-    FindAllPublicApiKeyInput, FindAllServiceAccountsInput, PublicApiKeyId,
-    RevokePublicApiKeyInput,
+    AttachSaPolicyInput, AuthApp, CheckPolicyInput,
+    DeleteServiceAccountInput, FindAllPublicApiKeyInput,
+    FindAllServiceAccountsInput, PublicApiKeyId, RevokePublicApiKeyInput,
 };
 use value_object::{Identifier, TenantId};
 
@@ -211,8 +211,27 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 )
                 .await?;
 
-                // Tidying, not revocation: the key is already refused, so
-                // a failure here is logged rather than reported.
+                // Taking the role off the account is the revocation, not
+                // tidying: an account left holding one is an account a
+                // key can be minted on, which would hand the access back.
+                // Reported when it fails, so the caller knows the access
+                // outlived the key.
+                if let Some(role) =
+                    account.and_then(ApiKeyServiceAccount::role)
+                {
+                    self.auth_app
+                        .detach_sa_policy(&AttachSaPolicyInput {
+                            executor: input.executor,
+                            multi_tenancy: &org_scope,
+                            service_account_id: &service_account_id,
+                            policy_id: &role.policy_id(),
+                        })
+                        .await?;
+                }
+
+                // Removing the account itself is tidying: it carries
+                // nothing and authenticates nobody by now, so a failure
+                // is logged rather than reported.
                 if let Err(error) = self
                     .auth_app
                     .delete_service_account(&DeleteServiceAccountInput {
@@ -396,6 +415,17 @@ mod tests {
                 Box::pin(async { Ok(()) })
             }
         });
+        auth.expect_detach_sa_policy().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls.lock().unwrap().push(format!(
+                    "detach:{}:{}",
+                    input.service_account_id.as_str(),
+                    input.policy_id
+                ));
+                Box::pin(async { Ok(()) })
+            }
+        });
         auth.expect_delete_service_account().returning({
             let calls = calls.clone();
             move |input| {
@@ -442,6 +472,9 @@ mod tests {
                 "policy:library:ManageRepoPolicy",
                 "revoke:sa_01reader:pak_reader",
                 &format!("grant:{LIBRARY_API_KEY_ISSUER_POLICY_ID}"),
+                // The role comes off before the account goes, so an
+                // account that outlives the attempt carries nothing.
+                "detach:sa_01reader:pol_01libraryreporeader",
                 "delete-sa:sa_01reader",
             ]
         );
@@ -482,6 +515,28 @@ mod tests {
                 "policy:library:ManageRepoPolicy",
             ]
         );
+    }
+
+    /// The account may outlive the attempt -- upstream can refuse to
+    /// remove it -- and what matters is that it no longer carries the
+    /// role, so no key minted on it could inherit one.
+    #[tokio::test]
+    async fn a_revoked_role_comes_off_even_when_the_account_stays() {
+        let calls = Calls::default();
+        let mut auth = auth(&calls, true);
+        auth.expect_delete_service_account()
+            .times(..)
+            .returning(|_| {
+                Box::pin(async {
+                    Err(errors::Error::service_unavailable("upstream"))
+                })
+            });
+
+        revoke(auth, "pak_reader").await.unwrap();
+
+        assert!(calls.lock().unwrap().contains(
+            &"detach:sa_01reader:pol_01libraryreporeader".to_string()
+        ));
     }
 
     /// Removing the account would take the other key with it.
