@@ -62,7 +62,10 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         let api_key_id = PublicApiKeyId::new(input.api_key_id);
 
         // Upstream revoke succeeds silently for a key the named account
-        // does not hold, so the account holding it is found first.
+        // does not hold, so the account holding it is found first. Every
+        // account is searched, not only the ones Library names today: keys
+        // issued before accounts were Library's own could be put on an
+        // account of the caller's choosing, and those still revoke.
         let service_accounts = self
             .auth_app
             .find_all_service_accounts(&FindAllServiceAccountsInput {
@@ -71,38 +74,32 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 tenant_id: &tenant_id,
             })
             .await?;
-        let holders = try_join_all(
-            service_accounts
-                .iter()
-                .filter_map(|service_account| {
-                    ApiKeyServiceAccount::from_name(service_account.name())
-                        .map(|account| (service_account, account))
-                })
-                .map(|(service_account, account)| {
-                    let api_key_id = &api_key_id;
-                    let organization = &organization;
-                    async move {
-                        let holds_key = self
-                            .auth_app
-                            .find_all_public_api_key(
-                                &FindAllPublicApiKeyInput {
-                                    executor: input.executor,
-                                    multi_tenancy: input.multi_tenancy,
-                                    operator_id: organization.id(),
-                                    service_account_id: service_account
-                                        .id(),
-                                },
-                            )
-                            .await?
-                            .iter()
-                            .any(|key| key.id() == api_key_id);
-                        Ok::<_, errors::Error>(
-                            holds_key.then_some((service_account, account)),
+        let holders =
+            try_join_all(service_accounts.iter().map(|service_account| {
+                let account =
+                    ApiKeyServiceAccount::from_name(service_account.name());
+                let api_key_id = &api_key_id;
+                let organization = &organization;
+                async move {
+                    let holds_key = self
+                        .auth_app
+                        .find_all_public_api_key(
+                            &FindAllPublicApiKeyInput {
+                                executor: input.executor,
+                                multi_tenancy: input.multi_tenancy,
+                                operator_id: organization.id(),
+                                service_account_id: service_account.id(),
+                            },
                         )
-                    }
-                }),
-        )
-        .await?;
+                        .await?
+                        .iter()
+                        .any(|key| key.id() == api_key_id);
+                    Ok::<_, errors::Error>(
+                        holds_key.then_some((service_account, account)),
+                    )
+                }
+            }))
+            .await?;
         let (service_account, account) = holders
             .into_iter()
             .flatten()
@@ -122,7 +119,8 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
         // A key's own account has nothing left to authenticate. Removing
         // it is tidying, not revocation: the key is already refused, so a
         // failure here is logged rather than reported.
-        if let ApiKeyServiceAccount::Dedicated(_) = account {
+        // An account Library did not make for this key may hold others.
+        if let Some(ApiKeyServiceAccount::Dedicated(_)) = account {
             // Removing an account is authorized upstream as the caller;
             // owners get the grant that allows it (see
             // `grant_api_key_issuer`). Anyone else revokes the key only.
@@ -270,6 +268,9 @@ mod tests {
                 let accounts = [
                     ("sa_01legacy", "default"),
                     ("sa_01reader", "library-api-key-reader-aaa"),
+                    // Named by whoever issued the key, back when the
+                    // API took a service account name.
+                    ("sa_01custom", "ci-bot"),
                 ]
                 .map(|(id, name)| ServiceAccount {
                     id: id.to_string().into(),
@@ -286,6 +287,7 @@ mod tests {
             move |input| {
                 let key_id = match input.service_account_id.as_str() {
                     "sa_01legacy" => "pak_legacy",
+                    "sa_01custom" => "pak_custom",
                     _ => "pak_reader",
                 };
                 let key = PublicApiKey {
@@ -379,6 +381,23 @@ mod tests {
                 "revoke:sa_01reader:pak_reader",
                 "policy:library:ManageRepoPolicy",
                 "delete-sa:sa_01reader",
+            ]
+        );
+    }
+
+    /// Keys issued before accounts were Library's own could name any
+    /// account. Nothing points at those names now, so the key is found by
+    /// searching, and the account -- which may hold other keys -- stays.
+    #[tokio::test]
+    async fn a_key_on_an_account_library_did_not_name_still_revokes() {
+        let calls = Calls::default();
+        revoke(auth(&calls, true), "pak_custom").await.unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "policy:library:RevokeApiKey",
+                "revoke:sa_01custom:pak_custom",
             ]
         );
     }
