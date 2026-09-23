@@ -17,6 +17,14 @@ const DOC_REMOTE_ORIGIN = 'photon-live-remote'
 const AWARENESS_REMOTE_ORIGIN = 'photon-live-awareness-remote'
 const MAX_BACKOFF_MS = 30_000
 const INITIAL_BACKOFF_MS = 1_000
+/**
+ * The largest text frame the worker parses (`MAX_TEXT` in
+ * workers/sync/src/model.rs), in UTF-8 bytes. A larger one is refused
+ * before its operation id can be read, so it has to be caught here.
+ */
+const MAX_TEXT_FRAME_BYTES = 4 * 1024 * 1024 + 32 * 1024
+/** What the worker answers a text frame it could not parse at all. */
+const UNPARSED_FRAME_MESSAGE = 'Invalid Live message'
 
 interface LiveReadyMessage {
   type: 'live-ready'
@@ -1023,10 +1031,15 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       message.message ?? 'Photon Live rejected the checkpoint',
       'server',
     )
-    // An error without an operation id is about some other frame (an
-    // awareness update, an oversized message); it says nothing about the
-    // checkpoint in flight.
-    if (!this.inFlight || message.operation_id !== this.inFlight.operationId) return
+    if (!this.inFlight) return
+    if (message.operation_id === undefined) {
+      // Most errors without an operation id are about some other frame (an
+      // awareness update). A frame the worker could not parse at all is the
+      // one kind a checkpoint can cause without its id being readable.
+      if (message.message === UNPARSED_FRAME_MESSAGE) this.failInFlight(error)
+      return
+    }
+    if (message.operation_id !== this.inFlight.operationId) return
     if (message.code === 'CHECKPOINT_STALE' && message.operation_id === this.inFlight.operationId) {
       // The worker rejected this operation before reserving/writing it. The
       // working document advanced while authorization was in flight; this is
@@ -1061,10 +1074,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       this.checkpointRetryDelay = Math.min(this.checkpointRetryDelay * 2, MAX_BACKOFF_MS)
       return
     }
-    if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
-    this.inFlight = null
-    this.clearCheckpointRetry()
-    this.setSaveStatus('error', error)
+    this.failInFlight(error)
   }
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
@@ -1253,7 +1263,7 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       !socket ||
       socket.readyState !== WebSocket.OPEN
     ) return
-    this.sendJson(socket, {
+    const frame = JSON.stringify({
       type: 'live-checkpoint',
       // Reconnects replay the exact operation and room version. New
       // checkpoints get their version in sendPendingCheckpoint above.
@@ -1261,6 +1271,25 @@ class PhotonLiveProviderImpl implements PhotonLiveProvider {
       body: checkpoint.body,
       operation_id: checkpoint.operationId,
     })
+    if (new TextEncoder().encode(frame).byteLength > MAX_TEXT_FRAME_BYTES) {
+      // JSON escaping can push a body under the worker's body limit over
+      // its frame limit. Sent, it would be refused without an operation id
+      // and this checkpoint would wait for an answer that never comes.
+      this.failInFlight(new PhotonLiveError(
+        'Photon Live checkpoint is too large to send',
+        'server',
+      ))
+      return
+    }
+    socket.send(frame)
+  }
+
+  /** The in-flight checkpoint was refused for good. */
+  private failInFlight(error: PhotonLiveError): void {
+    if (this.inFlight && !this.pendingCheckpoint) this.pendingCheckpoint = this.inFlight
+    this.inFlight = null
+    this.clearCheckpointRetry()
+    this.setSaveStatus('error', error)
   }
 
   private clearCheckpointRetry(): void {

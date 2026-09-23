@@ -348,6 +348,48 @@ describe('Photon Live provider', () => {
     }
   })
 
+  it('fails a checkpoint too large for the worker to read instead of waiting forever', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    try {
+      // Under the body limit, but every newline doubles once JSON-escaped.
+      fixture.provider.queueCheckpoint('line\n'.repeat(800_000))
+      fixture.provider.flushCheckpoint()
+      expect(sentJson(socket).filter((frame) => frame.type === 'live-checkpoint')).toHaveLength(0)
+      expect(fixture.provider.getState().saveStatus).toBe('error')
+    } finally {
+      fixture.provider.destroy()
+    }
+  })
+
+  it('fails the in-flight checkpoint when the worker could not read a frame at all', async () => {
+    const fixture = createFixture()
+    await waitFor(() => expect(fixture.getSocket()).toBeDefined())
+    const socket = fixture.getSocket()!
+    socket.open()
+    socket.message(Y.encodeStateAsUpdate(new Y.Doc()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    socket.message(jsonFrame({ type: 'live-ready', initialized: true, version: 2, record_version: '1' }))
+    await waitFor(() => expect(fixture.provider.getState().canEdit).toBe(true))
+    try {
+      fixture.provider.queueCheckpoint('body')
+      fixture.provider.flushCheckpoint()
+      // About some other frame: the checkpoint is still in flight.
+      socket.message(jsonFrame({ type: 'live-error', message: 'Invalid awareness update' }))
+      expect(fixture.provider.getState().saveStatus).toBe('saving')
+      socket.message(jsonFrame({ type: 'live-error', message: 'Invalid Live message' }))
+      expect(fixture.provider.getState().saveStatus).toBe('error')
+    } finally {
+      fixture.provider.destroy()
+    }
+  })
+
   it('waits for a fresh serialization instead of retrying a pre-merge body', async () => {
     const fixture = createFixture()
     await waitFor(() => expect(fixture.getSocket()).toBeDefined())

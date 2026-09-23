@@ -58,25 +58,56 @@ export function merge3<T>(
   return result
 }
 
-/** A longest-common-subsequence alignment of `from` onto `to`. */
+/**
+ * The most cells the alignment table may have (4 bytes each). Past it, the
+ * part of the two sequences that differs is not aligned block by block:
+ * nothing in it is matched, so a merge keeps both sides of it.
+ */
+const MAX_ALIGNMENT_CELLS = 4_000_000
+
+/**
+ * A longest-common-subsequence alignment of `from` onto `to`: for each
+ * element of `from`, its index in `to`, or -1.
+ *
+ * Edits are almost always local, so the common head and tail are matched
+ * directly and only what lies between them is aligned by table. A middle
+ * too large for a bounded table is left unmatched rather than allowed to
+ * exhaust memory.
+ */
 function matchIndexes(from: readonly string[], to: readonly string[]): number[] {
-  const n = from.length
-  const m = to.length
-  // lengths[i][j]: LCS length of from[i..] and to[j..]
+  const matches = new Array<number>(from.length).fill(-1)
+  let head = 0
+  while (head < from.length && head < to.length && from[head] === to[head]) {
+    matches[head] = head
+    head += 1
+  }
+  let tail = 0
+  while (
+    tail < from.length - head &&
+    tail < to.length - head &&
+    from[from.length - 1 - tail] === to[to.length - 1 - tail]
+  ) {
+    matches[from.length - 1 - tail] = to.length - 1 - tail
+    tail += 1
+  }
+  const n = from.length - head - tail
+  const m = to.length - head - tail
+  if (n === 0 || m === 0 || (n + 1) * (m + 1) > MAX_ALIGNMENT_CELLS) return matches
+
+  // lengths[i][j]: LCS length of the middles from from[head + i] and to[head + j]
   const lengths: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))
   for (let i = n - 1; i >= 0; i -= 1) {
     for (let j = m - 1; j >= 0; j -= 1) {
-      lengths[i][j] = from[i] === to[j]
+      lengths[i][j] = from[head + i] === to[head + j]
         ? lengths[i + 1][j + 1] + 1
         : Math.max(lengths[i + 1][j], lengths[i][j + 1])
     }
   }
-  const matches = new Array<number>(n).fill(-1)
   let i = 0
   let j = 0
   while (i < n && j < m) {
-    if (from[i] === to[j]) {
-      matches[i] = j
+    if (from[head + i] === to[head + j]) {
+      matches[head + i] = head + j
       i += 1
       j += 1
     } else if (lengths[i + 1][j] >= lengths[i][j + 1]) {

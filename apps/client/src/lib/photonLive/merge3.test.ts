@@ -31,4 +31,25 @@ describe('merge3', () => {
     expect(merge3(base, ours, theirs, (block) => block.text).map((block) => block.id))
       .toEqual(['t0', 't1', 't2', 'o3'])
   })
+
+  it('merges very large documents without a quadratic table', () => {
+    const base = Array.from({ length: 20_000 }, (_, index) => `block ${index}`)
+    const ours = ['mine first', ...base]
+    const theirs = [...base.slice(0, 10_000), 'theirs middle', ...base.slice(10_000)]
+    const merged = merge3(base, ours, theirs, (value) => value)
+    expect(merged).toHaveLength(20_002)
+    expect(merged[0]).toBe('mine first')
+    expect(merged[10_001]).toBe('theirs middle')
+  })
+
+  it('keeps both sides of a middle too large to align', () => {
+    const base = Array.from({ length: 3_000 }, (_, index) => `b${index}`)
+    const ours = Array.from({ length: 3_000 }, (_, index) => `o${index}`)
+    const theirs = Array.from({ length: 3_000 }, (_, index) => `t${index}`)
+    const merged = merge3(base, ours, theirs, (value) => value)
+    // Nothing either side has is dropped.
+    expect(merged).toHaveLength(6_000)
+    expect(merged.slice(0, 3_000)).toEqual(theirs)
+    expect(merged.slice(3_000)).toEqual(ours)
+  })
 })
