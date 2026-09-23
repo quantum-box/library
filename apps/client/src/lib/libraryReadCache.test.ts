@@ -137,12 +137,13 @@ describe('record pages', () => {
     await settle()
 
     rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
-    await settle()
 
-    expect(peekRepoTable(target)?.items[0]?.propertyData).toEqual([
-      { propertyId: 'prop-status', value: { string: 'done' } },
-      { propertyId: 'prop-body', value: { markdown: 'pre' } },
-    ])
+    await vi.waitFor(() => {
+      expect(peekRepoTable(target)?.items[0]?.propertyData).toEqual([
+        { propertyId: 'prop-status', value: { string: 'done' } },
+        { propertyId: 'prop-body', value: { markdown: 'pre' } },
+      ])
+    })
   })
 
   it('forgets a deleted record and its row', async () => {
@@ -225,6 +226,40 @@ describe('trimming a record remembered under two names', () => {
     // The most recent kept, the oldest gone.
     expect([...kept].filter((key) => /:new\d+$/.test(key))).toHaveLength(readCache.DETAILS_KEPT - 1)
     expect([...kept].some((key) => /:old\d+$/.test(key))).toBe(false)
+  })
+})
+
+describe('a record opened straight after start', () => {
+  /**
+   * The table's collection is loaded when something first reads it. A record
+   * opened before that still has a row on disk, and it must still be brought
+   * up to date.
+   */
+  it('brings its cached row up to date before the table has been loaded', async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'library-read-cache-'))
+    const open = async () => {
+      await engine.reset()
+      engine.configure({
+        storage: await createPGliteStore({ dataDir }),
+        kernel: await loadPhotonKernel(),
+        skipLegacyMigration: true,
+      })
+    }
+    try {
+      await open()
+      rememberRepoTable(target, { items: [row('d1', 'todo', 'pre')], properties, nextPage: null, totalItems: 1 })
+      await settle()
+
+      await open()
+      rememberDataDetail(target, 'd1', { item: row('d1', 'done', 'the whole body'), properties })
+
+      await vi.waitFor(async () => {
+        expect((await readRepoTable(target))?.items[0]?.propertyData[0]?.value).toEqual({ string: 'done' })
+      })
+    } finally {
+      await engine.reset()
+      await rm(dataDir, { recursive: true, force: true })
+    }
   })
 })
 

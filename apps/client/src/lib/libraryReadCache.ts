@@ -240,7 +240,20 @@ export function rememberDataDetail(
     void trimDetails()
   }
 
-  const table = peekRepoTable(target)
+  void updateCachedRow(target, detail)
+}
+
+/**
+ * Bring the record's row in the cached table up to date.
+ *
+ * Read, not peeked: a record opened straight after start can come before the
+ * table has been loaded from disk, and the row is there all the same.
+ */
+async function updateCachedRow(
+  target: ReadCacheRepository,
+  detail: { item: LibraryDataItem; properties: LibraryProperty[] }
+): Promise<void> {
+  const table = await readRepoTable(target)
   const row = table?.items.find((candidate) => candidate.id === detail.item.id)
   if (!table || !row) return
   const bodyId = getBodyProperty(detail.properties)?.id
@@ -251,10 +264,13 @@ export function rememberDataDetail(
       ...row.propertyData.filter((entry) => entry.propertyId === bodyId),
     ],
   }
-  rememberRepoTable(target, {
-    ...table,
-    items: table.items.map((candidate) => (candidate.id === row.id ? updated : candidate)),
-  })
+  await remember(TABLES_COLLECTION, [{
+    recordId: tableKey(target),
+    value: {
+      ...table,
+      items: table.items.map((candidate) => (candidate.id === row.id ? updated : candidate)),
+    },
+  }])
 }
 
 /**

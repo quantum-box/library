@@ -1497,7 +1497,8 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
   const token = await validLibraryAccessToken()
   if (!token) return []
 
-  const restRepos = await fetchLibraryRestRepositories(token)
+  const restListing = await fetchLibraryRestRepositories(token)
+  const restRepos = restListing ?? []
 
   try {
     const payload = await requestLibraryGraphQL<LibraryMeOrganizationsResponse>(
@@ -1551,12 +1552,13 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
       )
     } catch (error: unknown) {
       // Neither GraphQL answer arrived, so the REST listing is the only word
-      // on what the caller has. With nothing there either, the API was not
+      // on what the caller has. If it did not answer either, the API was not
       // reached at all: "no organizations" would be a claim nobody made, and
       // the workspace acts on it by emptying itself -- the sidebar, the
       // remembered lists, and every cached record the records projection
       // reconciles against it. Failing lets each fall back to what it has.
-      if (restRepos.length === 0) throw error
+      // An empty listing that did answer is a real answer, and stands.
+      if (restListing === null) throw error
       return hydrateOrganizationsFromRestRepositories(restRepos)
     }
   }
@@ -1639,9 +1641,10 @@ async function fetchTachyonOperator(tenantId: string): Promise<TachyonOperatorRe
   }
 }
 
+/** The REST repository listing, or null when no Library API base URL answered it. */
 async function fetchLibraryRestRepositories(
   token: string
-): Promise<LibraryRestRepository[]> {
+): Promise<LibraryRestRepository[] | null> {
   return requestLibraryRestRepositories({
     'x-platform-id': configuredPlatformId(),
     'x-operator-id': import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
@@ -1651,7 +1654,7 @@ async function fetchLibraryRestRepositories(
 
 async function requestLibraryRestRepositories(
   headers: Record<string, string>
-): Promise<LibraryRestRepository[]> {
+): Promise<LibraryRestRepository[] | null> {
   const baseUrls = [
     configuredLibraryApiBaseUrl(),
     'https://library-api.txcloud.app',
@@ -1667,7 +1670,8 @@ async function requestLibraryRestRepositories(
       // Try the next known Library API base URL.
     }
   }
-  return []
+  // Nothing answered -- which is not the same as an empty listing.
+  return null
 }
 
 function restRepoOrganizationId(repo: LibraryRestRepository): string | undefined {

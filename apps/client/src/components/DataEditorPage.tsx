@@ -279,6 +279,12 @@ function RecordPage({
       )
       if (deletedRef.current) return
       answered.current = true
+      if (!payload.item) {
+        // Gone upstream, so nothing may draw it from memory again -- and the
+        // page offers the way back only once that is so, or the table it goes
+        // back to could open on the row.
+        await forgetData({ org, repo }, dataId)
+      }
       setProperties(payload.properties)
       propertiesRef.current = payload.properties
       setItem(payload.item)
@@ -291,8 +297,6 @@ function RecordPage({
           properties: payload.properties,
         })
       } else {
-        // Gone upstream, so nothing may draw it from memory again.
-        void forgetData({ org, repo }, dataId)
         setLoadError(`${dataId} is not available in ${org}/${repo}.`)
       }
     } catch (error: unknown) {

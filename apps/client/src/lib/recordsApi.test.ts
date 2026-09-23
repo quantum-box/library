@@ -872,6 +872,26 @@ describe('recordsApi', () => {
     await expect(fetchLibraryRepositories()).rejects.toThrow()
   })
 
+  /** An empty REST listing that did answer is a real answer: no repositories yet. */
+  it('reports no organizations when only the REST listing answers, and it is empty', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token',
+      refreshToken: '',
+      expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1',
+      email: 'test@example.com',
+      username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('/v1beta/repos')) return Response.json([])
+      throw new TypeError('Failed to fetch')
+    }))
+
+    await expect(fetchLibraryOrganizations()).resolves.toEqual([])
+  })
+
   it('lists no organizations while signed out instead of every repository the API returns', async () => {
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
     vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'platform-1')

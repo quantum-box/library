@@ -214,21 +214,34 @@ describe('DataEditorPage', () => {
     expect(screen.getByTestId('body-editor')).toHaveAttribute('data-editable', 'false')
   })
 
-  it('forgets a remembered record the Library API no longer has', async () => {
+  /**
+   * The not-found page offers the way back, and the table it goes back to
+   * draws from the cache in its first frame -- so the record is forgotten
+   * before that page is shown.
+   */
+  it('forgets a remembered record the Library API no longer has, before showing it gone', async () => {
     cache.peekDataDetail.mockReturnValue({
       item: record('Remembered title', 'remembered body'),
       properties,
       complete: true,
     })
+    let forgotten!: () => void
+    cache.forgetData.mockReturnValue(new Promise<void>((resolve) => {
+      forgotten = resolve
+    }))
     const detail = deferredDetail()
     renderPage()
 
     detail.resolve({ item: null, properties })
+    await waitFor(() => {
+      expect(cache.forgetData).toHaveBeenCalledWith({ org: 'acme', repo: 'docs' }, 'data-1')
+    })
+    expect(screen.getByText('Remembered title')).toBeInTheDocument()
 
+    forgotten()
     await waitFor(() => {
       expect(screen.queryByText('Remembered title')).not.toBeInTheDocument()
     })
-    expect(cache.forgetData).toHaveBeenCalledWith({ org: 'acme', repo: 'docs' }, 'data-1')
   })
 
   /**
