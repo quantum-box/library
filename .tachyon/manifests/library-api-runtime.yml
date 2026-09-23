@@ -124,3 +124,21 @@
         effect: allow
       - action: auth:DeleteServiceAccount
         effect: allow
+
+# Every key Library issues gets a service account of its own, so creating
+# one is part of issuing any key -- including a key with no repository
+# access, whose holder is not an owner and gets nothing else. An account
+# created this way carries no policy until `library:ApiKeyIssuer` attaches
+# one, which is why this is separate from that grant rather than part of
+# it. Attached to the caller in the organization's tenant, like the other.
+- apiVersion: auth.tachyon.io/v1
+  kind: Policy
+  metadata:
+    name: library:ApiKeyAccounts
+    namespace: tn_01j91h09tpj5ehwbwfwfxpak2b
+  spec:
+    description: Allow Library organization members to create the service account behind an API key they issue
+    shared: true
+    actions:
+      - action: auth:CreateServiceAccount
+        effect: allow

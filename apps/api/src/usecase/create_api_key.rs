@@ -11,7 +11,7 @@ use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
 
-use super::api_key_issuer::grant_api_key_issuer;
+use super::api_key_issuer::grant_api_key_policy;
 use super::GetOrganizationByUsernameQuery;
 use crate::domain::{ApiKeyRole, ApiKeyServiceAccount, LIBRARY_TENANT};
 
@@ -41,6 +41,8 @@ pub struct CreateApiKey {
     get_org_by_name: Arc<dyn GetOrganizationByUsernameQuery>,
     /// See `library_api_key_issuer_policy_id`.
     api_key_issuer_policy_id: Option<PolicyId>,
+    /// See `library_api_key_accounts_policy_id`.
+    api_key_accounts_policy_id: Option<PolicyId>,
 }
 
 #[async_trait::async_trait]
@@ -101,7 +103,7 @@ impl CreateApiKeyInputPort for CreateApiKey {
             // Granting the key's account its role is authorized on the
             // tachyon side as the caller, who needs the issuer grant for
             // it. The owner check above has passed by now.
-            grant_api_key_issuer(
+            grant_api_key_policy(
                 self.auth_app.as_ref(),
                 self.api_key_issuer_policy_id.as_ref(),
                 input.executor,
@@ -111,13 +113,24 @@ impl CreateApiKeyInputPort for CreateApiKey {
             .await?;
         }
 
+        // Making the account is part of issuing any key, including one
+        // with no repository access, whose holder need not be an owner.
+        grant_api_key_policy(
+            self.auth_app.as_ref(),
+            self.api_key_accounts_policy_id.as_ref(),
+            input.executor,
+            &org_scope,
+            &tenant_id,
+        )
+        .await?;
+
         // Every key gets an account of its own, so what is granted here
         // reaches this key and no other (see `ApiKeyServiceAccount`).
         let service_account = self
             .auth_app
             .create_service_account(&CreateServiceAccountInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &org_scope,
                 tenant_id: &tenant_id,
                 name: &ApiKeyServiceAccount::new_name(input.role),
             })
@@ -174,7 +187,7 @@ impl CreateApiKey {
         self.auth_app
             .create_public_api_key(&CreatePublicApiKeyInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: org_scope,
                 operator_id: organization.id(),
                 service_account_id: service_account.id(),
                 name: input.name,
@@ -397,6 +410,7 @@ mod tests {
             Arc::new(auth),
             Arc::new(get_org),
             Some(PolicyId::new("pol_01issuer")),
+            Some(PolicyId::new("pol_01accounts")),
         )
         .execute(&CreateApiKeyInputData {
             executor: &executor,
@@ -426,6 +440,7 @@ mod tests {
                 format!("policy:library:ManageRepoPolicy@{}", org_tenant()),
                 // The caller gets what granting the account needs.
                 format!("grant:pol_01issuer@{}", org_tenant()),
+                format!("grant:pol_01accounts@{}", org_tenant()),
                 "sa:Some(Reader)".to_string(),
                 format!(
                     "attach:sa_01key:pol_01libraryreporeader@{}",
@@ -446,6 +461,9 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [
                 format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                // A key without a role still needs its own account, and
+                // its holder need not be an owner.
+                format!("grant:pol_01accounts@{}", org_tenant()),
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
             ]

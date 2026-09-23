@@ -11,7 +11,7 @@ use value_object::{Identifier, TenantId};
 
 use tachyon_sdk::auth::MultiTenancy;
 
-use super::api_key_issuer::grant_api_key_issuer;
+use super::api_key_issuer::grant_api_key_policy;
 use super::GetOrganizationByUsernameQuery;
 use crate::domain::{ApiKeyServiceAccount, LIBRARY_TENANT};
 
@@ -151,7 +151,7 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 .await
                 .is_ok()
             {
-                if let Err(error) = grant_api_key_issuer(
+                if let Err(error) = grant_api_key_policy(
                     self.auth_app.as_ref(),
                     self.api_key_issuer_policy_id.as_ref(),
                     input.executor,

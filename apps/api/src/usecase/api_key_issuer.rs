@@ -1,6 +1,8 @@
-//! The tachyon-side grant an organization owner needs to issue and remove
-//! API keys that carry repository access (see
-//! `library_api_key_issuer_policy_id`).
+//! The tachyon-side grants issuing an API key needs, which Library's own
+//! policies do not carry: creating the key's service account
+//! (`library_api_key_accounts_policy_id`) and, for a key with repository
+//! access, granting and later removing that account
+//! (`library_api_key_issuer_policy_id`).
 
 use tachyon_sdk::auth::{
     AttachUserPolicyInput, AuthApp, ExecutorAction, MultiTenancyAction,
@@ -8,17 +10,17 @@ use tachyon_sdk::auth::{
 };
 use value_object::TenantId;
 
-/// Attach the issuer policy to the calling user in the organization's
-/// tenant. Callers check `library:ManageRepoPolicy` first: the grant lets
-/// its holder attach policies to service accounts, which is only an
-/// owner's to do.
+/// Attach one of those policies to the calling user in the organization's
+/// tenant, which is the only scope a check made there reads.
 ///
-/// Granted on use rather than when someone becomes an owner, so owners of
-/// organizations that predate the policy need no backfill. The attachment
-/// is idempotent upstream. A caller that is not a user (a key acting on
-/// its own behalf) gets nothing: the grant is for people. `policy_id` is
-/// `None` where the environment does not configure the policy.
-pub(crate) async fn grant_api_key_issuer(
+/// Granted on use rather than when someone becomes a member or an owner,
+/// so organizations that predate these policies need no backfill. The
+/// attachment is idempotent upstream. A caller that is not a user (a key
+/// acting on its own behalf) gets nothing: the grant is for people.
+/// `policy_id` is `None` where the environment does not configure the
+/// policy, and the call then does nothing — issuing still works wherever
+/// the caller already holds what it needs.
+pub(crate) async fn grant_api_key_policy(
     auth_app: &dyn AuthApp,
     policy_id: Option<&PolicyId>,
     executor: &dyn ExecutorAction,
@@ -30,7 +32,7 @@ pub(crate) async fn grant_api_key_issuer(
     }
     let Some(policy_id) = policy_id else {
         tracing::debug!(
-            "LIBRARY_API_KEY_ISSUER_POLICY_ID is not set; skipping the api key issuer grant"
+            "an api key policy id is not configured; skipping the grant"
         );
         return Ok(());
     };

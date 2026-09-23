@@ -16,7 +16,9 @@ use tachyon_sdk::auth::{
 use tracing::info;
 use value_object::{OperatorId, TenantId, UserId};
 
-use crate::domain::{library_repo_owner_policy_id, OrgRole};
+use crate::domain::{
+    library_api_key_issuer_policy_id, library_repo_owner_policy_id, OrgRole,
+};
 use crate::sdk_auth::SdkAuthApp;
 
 /// Input data for changing a user's role in an organization
@@ -126,6 +128,13 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
                 &tenant,
             )
             .await?;
+            self.detach_api_key_issuer_policy(
+                input.executor,
+                input.multi_tenancy,
+                &updated_user,
+                &tenant,
+            )
+            .await?;
         }
 
         Ok(ChangeOrgMemberRoleOutputData { user: updated_user })
@@ -159,6 +168,45 @@ impl ChangeOrgMemberRole {
             user = %user.id(),
             tenant = %tenant_id,
             "attached repo owner policy during role upgrade"
+        );
+
+        Ok(())
+    }
+
+    /// Detach the API key issuer policy when downgrading from Owner.
+    ///
+    /// Issuing a key with repository access grants it on use (see
+    /// `grant_api_key_policy`), and it outlives the role that earned it:
+    /// left attached, a former owner could still attach policies to the
+    /// organization's service accounts and delete them, straight through
+    /// tachyon, which Library's own checks would now refuse.
+    async fn detach_api_key_issuer_policy(
+        &self,
+        executor: &dyn ExecutorAction,
+        multi_tenancy: &dyn MultiTenancyAction,
+        user: &User,
+        tenant_id: &TenantId,
+    ) -> errors::Result<()> {
+        let Some(policy_id) = library_api_key_issuer_policy_id() else {
+            return Ok(());
+        };
+
+        AuthApp::detach_user_policy(
+            self.sdk.as_ref(),
+            &DetachUserPolicyInput {
+                executor,
+                multi_tenancy,
+                user_id: user.id(),
+                policy_id: &policy_id,
+                tenant_id,
+            },
+        )
+        .await?;
+
+        info!(
+            user = %user.id(),
+            tenant = %tenant_id,
+            "detached api key issuer policy during role downgrade"
         );
 
         Ok(())

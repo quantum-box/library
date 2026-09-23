@@ -64,6 +64,26 @@ pub fn library_api_key_issuer_policy_id() -> Option<PolicyId> {
     Some(PolicyId::new(id))
 }
 
+/// Companion policy granting `auth:CreateServiceAccount`, which issuing
+/// any key needs now that each key has a service account of its own
+/// (`library:ApiKeyAccounts` in
+/// .tachyon/manifests/library-api-runtime.yml). Separate from
+/// [`library_api_key_issuer_policy_id`] because a key without repository
+/// access is issued by members who are not owners, and an account created
+/// on its own carries no policy.
+///
+/// `None` when the environment does not configure it; issuing then
+/// proceeds without the grant, which works wherever the caller may
+/// already create a service account.
+pub fn library_api_key_accounts_policy_id() -> Option<PolicyId> {
+    let id = std::env::var("LIBRARY_API_KEY_ACCOUNTS_POLICY_ID").ok()?;
+    let id = id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(PolicyId::new(id))
+}
+
 /// Tachyon's built-in tenant administrator policy.
 ///
 /// This is the grant that actually makes someone an administrator of a

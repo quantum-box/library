@@ -153,6 +153,12 @@ spec:
         # applied; keys with a role then need a tenant administrator.
         # - name: LIBRARY_API_KEY_ISSUER_POLICY_ID
         #   value: "pol_..."
+        # Applied id of the library:ApiKeyAccounts custom policy
+        # (.tachyon/manifests/library-api-runtime.yml). Attached to the
+        # caller when they issue any API key, whose service account they
+        # have to be able to create. Unset until the policy is applied.
+        # - name: LIBRARY_API_KEY_ACCOUNTS_POLICY_ID
+        #   value: "pol_..."
         - name: LIBRARY_PARQUET_BUCKET
           value: "tachyon-library-parquet-production"
         - name: SENTRY_DSN
