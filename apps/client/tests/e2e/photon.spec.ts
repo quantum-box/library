@@ -530,9 +530,20 @@ test.describe('Library shell', () => {
 
     // The placeholder name is selected, so typing replaces it.
     await page.keyboard.type(title)
+    const titleSaves: string[] = []
+    page.on('request', (request) => {
+      if (request.postData()?.includes('LibraryClientUpdateData')) titleSaves.push(request.url())
+    })
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('data-editor-title')).toHaveText(title)
     await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+    // Enter hands focus to the body; the blur that follows must not save again.
+    expect(titleSaves).toHaveLength(1)
+
+    // Opening it again, by reload, is not creating it: the title stays put.
+    await page.reload()
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await expect(page.getByTestId('data-editor-title-input')).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Back to data' }).click()
     await page.getByTestId('library-table-global-filter').fill(title)

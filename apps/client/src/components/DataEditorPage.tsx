@@ -90,14 +90,23 @@ function PageTitle({
   const [editing, setEditing] = useState(autoFocus)
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
+  /**
+   * Set once this edit has been committed or abandoned. Enter moves focus to
+   * the body before the input unmounts, and the blur that causes must not
+   * save the title a second time.
+   */
+  const settledRef = useRef(false)
 
   useEffect(() => {
     if (!editing) return
+    settledRef.current = false
     inputRef.current?.focus()
     inputRef.current?.select()
   }, [editing])
 
   const commit = () => {
+    if (settledRef.current) return
+    settledRef.current = true
     const next = draft.trim()
     setEditing(false)
     if (next && next !== value) onCommit(next)
@@ -122,6 +131,7 @@ function PageTitle({
             onContinue?.()
           }
           if (event.key === 'Escape') {
+            settledRef.current = true
             setDraft(value)
             setEditing(false)
           }
@@ -161,6 +171,9 @@ export function DataEditorPage({
   )
   const i18n = useI18n()
   const { t } = i18n
+  // Read once: the flag is cleared from history as soon as the page opens,
+  // and the title mounts only after the record has loaded.
+  const [focusTitleOnOpen] = useState(autoFocusTitle)
   const [item, setItem] = useState<LibraryDataItem | null>(null)
   const [properties, setProperties] = useState<LibraryProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -440,7 +453,7 @@ export function DataEditorPage({
     <PageTitle
     value={item.name}
     onCommit={(name) => persistItem({ ...itemRef.current!, name })}
-    autoFocus={autoFocusTitle}
+    autoFocus={focusTitleOnOpen}
     onContinue={() => {
       bodyRef.current
         ?.querySelector<HTMLElement>('[contenteditable="true"], textarea')

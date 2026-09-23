@@ -1733,6 +1733,18 @@ function RecordDetailPanel({
   const focusTitle = useRouterState({
     select: (state) => state.location.state.focusDataTitle === true,
   })
+  // One-shot: once the editor has read it, drop it from this history entry
+  // so a reload or back/forward does not select the title again.
+  useEffect(() => {
+    if (!focusTitle) return
+    void navigate({
+      to: '.',
+      search: (prev) => prev,
+      params: (prev) => prev,
+      replace: true,
+      state: (prev) => ({ ...prev, focusDataTitle: undefined }),
+    })
+  }, [focusTitle, navigate])
 
   if (
     useLibraryEditor &&
@@ -1741,6 +1753,7 @@ function RecordDetailPanel({
   ) {
     return (
       <DataEditorPage
+        key={recordId}
         dataId={record?.id ?? recordId}
         org={selectedDatabase.orgUsername}
         repo={selectedDatabase.repoUsername}
