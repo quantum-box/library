@@ -11,7 +11,9 @@ Issue #134 の最初の slice として、Library の Record に永続化 revisi
 - API は `BIGINT UNSIGNED` の精度を JavaScript で失わないよう、REST と
   GraphQL の `recordVersion` を10進文字列で返す。
 - この slice の write path は version を比較・更新しない。既存の更新処理も
-  現在値を維持する。
+  現在値を維持する。（後続 slice で変更済み: 既存の更新処理も比較はしないが、
+  書き込みごとに version を1増やす。[Record patch decision UoW](record-patch-decision-uow.md)
+  を参照。）
 
 ## Expand
 

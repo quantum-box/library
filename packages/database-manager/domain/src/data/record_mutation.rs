@@ -66,10 +66,20 @@ pub trait RecordUnitOfWork: Debug + Send + Sync + 'static {
         command: &CreateRecordCommand,
     ) -> errors::Result<()>;
 
+    /// Compatibility (non-CAS) patch used by ordinary saves and inbound
+    /// provider writes.
+    ///
+    /// It must still advance `record_version` exactly once, in the same
+    /// transaction as the value change, and return the version it stored.
+    /// Versioned consumers (Live checkpoints, `PatchRecord`) treat an
+    /// unchanged version as "the stored record is unchanged"; a body change
+    /// that kept the old version would leave them comparing a new body with
+    /// a version they already hold. The command's `record.record_version()`
+    /// is only what the caller read and is never trusted as the base.
     async fn patch_atomically(
         &self,
         command: &PatchRecordCommand,
-    ) -> errors::Result<()>;
+    ) -> errors::Result<RecordVersion>;
 
     async fn delete_atomically(
         &self,

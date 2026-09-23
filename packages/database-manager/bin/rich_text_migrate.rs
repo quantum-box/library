@@ -12,12 +12,14 @@
 //!     alone, so re-running is safe)
 //!   - matching canonical `property_values` rows, for deployments already
 //!     dual-writing
+//!   - `data.record_version` of every record holding a value, once each
 //!
 //! Reads never depended on this finishing: the legacy text boundary
 //! converts stray Markdown under a RICH_TEXT property on the fly. Running
 //! it moves the data to its canonical form eagerly instead of on next
 //! write.
 
+use std::collections::BTreeSet;
 use std::env;
 
 use database_manager::domain::rich_text::from_markdown;
@@ -153,6 +155,13 @@ async fn main() -> anyhow::Result<()> {
         .fetch_all(pool.as_ref())
         .await?;
 
+        // Every record holding a value changes what readers see: its
+        // Property turns RICH_TEXT and the stored value becomes a document.
+        // Each one advances `record_version` once in this transaction, since
+        // Live and other versioned readers take an unchanged version to mean
+        // an unchanged record.
+        let mut changed_records: BTreeSet<String> =
+            rows.iter().map(|row| row.id.clone()).collect();
         let pending: Vec<(String, String)> = rows
             .into_iter()
             .filter_map(|row| {
@@ -204,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
         for row in canonical {
             let Some(raw) = row.value else { continue };
+            changed_records.insert(row.id.clone());
             let markdown: String =
                 serde_json::from_str(&raw).unwrap_or_else(|_| raw.clone());
             let document = if is_document(&markdown) {
@@ -222,6 +232,20 @@ async fn main() -> anyhow::Result<()> {
             .bind(&options.database_id)
             .bind(&field.id)
             .bind(&row.id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        // A record already at u64::MAX makes the unsigned column reject the
+        // increment, rolling this property back instead of wrapping.
+        for data_id in &changed_records {
+            sqlx::query(
+                "UPDATE data SET record_version = record_version + 1 \
+                 WHERE tenant_id = ? AND object_id = ? AND id = ?",
+            )
+            .bind(options.tenant_id.to_string())
+            .bind(&options.database_id)
+            .bind(data_id)
             .execute(&mut *transaction)
             .await?;
         }

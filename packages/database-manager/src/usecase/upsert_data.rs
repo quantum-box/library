@@ -113,12 +113,14 @@ impl UpsertDataInteractorImpl {
                 &property_data,
             )?);
         }
-        self.record_uow
+        let record_version = self
+            .record_uow
             .patch_atomically(&PatchRecordCommand {
                 record: data.clone(),
                 changes,
             })
             .await?;
+        data.apply_persisted_version(record_version);
 
         Ok(data)
     }
@@ -232,7 +234,7 @@ mod tests {
     use crate::domain::{
         AddPropertyCommand, DataCollection, DataId, Property, PropertyId,
         PropertySchemaMutationPort, PropertyType, PropertyValueCommand,
-        UpdatePropertyCommand,
+        RecordVersion, UpdatePropertyCommand,
     };
     use crate::usecase::PropertyDataInputData;
     use std::sync::Mutex;
@@ -454,16 +456,32 @@ mod tests {
             Ok(())
         }
 
+        /// Mirrors the storage adapter: the base version is the stored one,
+        /// not whatever the caller read, and every patch advances it once.
         async fn patch_atomically(
             &self,
             command: &PatchRecordCommand,
-        ) -> errors::Result<()> {
+        ) -> errors::Result<RecordVersion> {
             self.patches
                 .lock()
                 .unwrap()
                 .push(command.record.id().clone());
-            self.store.put(command.record.clone());
-            Ok(())
+            let stored_version = self
+                .store
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|held| held.id() == command.record.id())
+                .map(|held| *held.record_version())
+                .ok_or_else(|| {
+                    errors::Error::not_found("resource not found")
+                })?;
+            let next_version = stored_version.checked_increment()?;
+            let mut record = command.record.clone();
+            record.apply_persisted_version(next_version);
+            self.store.put(record);
+            Ok(next_version)
         }
 
         async fn delete_atomically(
@@ -601,7 +619,7 @@ mod tests {
         let fixture = fixture();
         let data_id = DataId::default();
 
-        upsert(&fixture, &data_id, "first", "hello")
+        let (created, _) = upsert(&fixture, &data_id, "first", "hello")
             .await
             .expect("the first write creates");
         let (data, outcome) = upsert(&fixture, &data_id, "second", "world")
@@ -611,6 +629,14 @@ mod tests {
         assert_eq!(outcome, UpsertOutcome::Updated);
         assert_eq!(data.id(), &data_id);
         assert_eq!(data.name().to_string(), "second");
+        // The update response must carry the version the write stored, not
+        // the one the interactor read before writing.
+        assert_eq!(*created.record_version(), RecordVersion::INITIAL);
+        assert_eq!(data.record_version().get(), 2);
+        assert_eq!(
+            fixture.store.records.lock().unwrap()[0].record_version(),
+            data.record_version()
+        );
         assert_eq!(
             data.get_property_data(fixture.title.id())
                 .map(PropertyData::string_value),

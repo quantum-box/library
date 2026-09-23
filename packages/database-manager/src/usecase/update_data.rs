@@ -134,12 +134,17 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
                 &property_data,
             )?);
         }
-        self.record_uow
+        let record_version = self
+            .record_uow
             .patch_atomically(&PatchRecordCommand {
                 record: data.clone(),
                 changes,
             })
             .await?;
+        // `data` was loaded before the write; report the version the write
+        // stored so REST/GraphQL/MCP responses agree with a re-read and a
+        // Live client does not hold a version the record has already left.
+        data.apply_persisted_version(record_version);
 
         Ok(data)
     }
