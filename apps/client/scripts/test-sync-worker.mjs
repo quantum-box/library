@@ -173,6 +173,24 @@ test('generic Yjs relay exchanges edits, presence and engine-changed; recovers a
   await a.take('engine-changed'); assert.equal(s.state.calls.at(-1).headers.authorization, 'Bearer user-token')
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === 'hello world')
 })
+test('generic Yjs relay serves its stored log to joiners and compacts it only in an alarm', async (t) => {
+  const s = await scenario(t); const a = await s.sync()
+  for (let i = 0; i < 60; i += 1) a.edit(`${i},`)
+  const expected = Array.from({ length: 60 }, (_, i) => `${i},`).join('')
+  const room = async () => s.storage('PHOTON_SYNC_ROOMS', 'records')
+  await until(async () => Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length === 60)
+  // Nothing was folded while relaying; a joiner is sent the log as stored.
+  assert.equal((await room())['yjs:snapshot:meta'], undefined)
+  const b = await s.sync(); await until(() => b.doc.getText('body').toString() === expected)
+  const alarm = async () => (await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm-state')).json()
+  assert.ok((await alarm()).alarm, 'a long log schedules a compaction')
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm')
+  const compacted = await room()
+  assert.equal(Object.keys(compacted).filter((k) => k.startsWith('yjs:update:0')).length, 0)
+  assert.equal(compacted['yjs:snapshot:meta'].seq, 60)
+  a.edit('after')
+  await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === `${expected}after`)
+})
 test('two Live clients initialize once, exchange updates, save and reload Yjs state', async (t) => {
   const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
   await until(() => b.doc.getText('body').toString() === 'Seed')
@@ -490,6 +508,8 @@ test('snapshot compaction spans multiple values and preserves out-of-order Yjs d
   await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 60)
   a.ws.send(updates[0])
   await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 61)
+  // Folded by the alarm the long log scheduled, not while relaying.
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'large')).fetch('https://fixture/__test/alarm')
   const stored = await s.storage('PHOTON_SYNC_ROOMS', 'large'); assert.ok(stored['yjs:snapshot:meta'].chunks > 1)
   await s.restart(); const b = await s.sync('large'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
@@ -538,12 +558,14 @@ test('backlogged rooms resume over alarms without replaying the same prefix fore
     ...Object.fromEntries(updates.map((u, i) => [`yjs:update:${String(i + 1).padStart(12, '0')}`, asBytes(u)])),
     'yjs:update:meta': { oldestSeq: 1, nextSeq: 601 },
   }, 'PHOTON_SYNC_ROOMS', 'backlog')
+  // A joiner is sent the whole log as stored, without waiting on a fold.
   const a = await s.sync('backlog')
+  await until(() => a.doc.getText('body').toString() === source.getText('body').toString(), 'log sent on join')
+  // Alarms fold it a bounded pass at a time, each one further than the last.
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'backlog')).fetch('https://fixture/__test/alarm')
   const partial = await s.storage('PHOTON_SYNC_ROOMS', 'backlog')
-  assert.equal(partial['yjs:snapshot:meta'].seq, 512)
-  await until(() => a.doc.getText('body').toString() === source.getText('body').toString(), 'alarm catch-up')
-  const done = await s.storage('PHOTON_SYNC_ROOMS', 'backlog')
-  assert.equal(done['yjs:update:meta'].oldestSeq, 601)
+  assert.ok(partial['yjs:snapshot:meta'].seq >= 512)
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'backlog'))['yjs:update:meta'].oldestSeq === 601, 'alarm catch-up')
   await s.restart(); const b = await s.sync('backlog'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
 test('malformed and oversized frames cannot change document versions or pending state', async (t) => {

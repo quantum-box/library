@@ -1,6 +1,8 @@
-use crate::{document::Document, model::INTERNAL};
-use futures::lock::Mutex;
-use library_worker_common::header;
+use crate::{
+    document::{self, Document},
+    model::INTERNAL,
+};
+use library_worker_common::{header, now};
 use serde_json::{json, Value};
 use worker::*;
 
@@ -61,17 +63,34 @@ pub fn error(
     send(ws, &error_frame(message, operation, code));
 }
 
+/// Logged updates a room lets build up before an alarm folds them into its
+/// snapshot.
+const COMPACT_AFTER: u64 = 50;
+
+/// A relay for workspace-wide Yjs state (records, views, presence).
+///
+/// It never builds the document to serve a request. A joining client is sent
+/// the stored snapshot and logged updates as they are, and an update from a
+/// client is validated, logged and relayed. Building the document -- decoding
+/// the snapshot, applying the log, encoding it again -- grows with the room,
+/// and done on every join it outlasted the request for a large one, so no
+/// one could join at all. It happens only when an alarm compacts the log.
 #[durable_object]
 pub struct PhotonSyncRoom {
     state: State,
-    doc: Mutex<Document>,
+}
+impl PhotonSyncRoom {
+    async fn compact_later(&self, waiting: u64) -> Result<()> {
+        if waiting > COMPACT_AFTER {
+            crate::tickets::schedule(&self.state.storage(), now() + 1000)
+                .await?;
+        }
+        Ok(())
+    }
 }
 impl DurableObject for PhotonSyncRoom {
     fn new(state: State, _env: Env) -> Self {
-        Self {
-            state,
-            doc: Mutex::new(Document::default()),
-        }
+        Self { state }
     }
     async fn fetch(&self, request: Request) -> Result<Response> {
         if request.path() == "/internal/engine-changed"
@@ -85,13 +104,20 @@ impl DurableObject for PhotonSyncRoom {
         {
             return Response::error("Expected WebSocket upgrade", 426);
         }
-        let mut doc = self.doc.lock().await;
-        if doc.advance(&self.state.storage()).await? {
-            binary(&self.state, &doc.snapshot(), None)
-        }
+        let stored = document::stored(&self.state.storage()).await?;
         let pair = WebSocketPair::new()?;
         self.state.accept_web_socket(&pair.server);
-        pair.server.send_with_bytes(doc.snapshot())?;
+        // The client treats its first binary frame as the room's state, so
+        // an empty room still sends one.
+        if stored.snapshot.is_empty() {
+            pair.server.send_with_bytes(document::EMPTY_UPDATE)?;
+        } else {
+            pair.server.send_with_bytes(&stored.snapshot)?;
+        }
+        for update in &stored.updates {
+            pair.server.send_with_bytes(update)?;
+        }
+        self.compact_later(stored.updates.len() as u64).await?;
         presence(&self.state, None);
         Response::from_websocket(pair.client)
     }
@@ -112,15 +138,12 @@ impl DurableObject for PhotonSyncRoom {
                 }
             }
             WebSocketIncomingMessage::Binary(bytes) => {
-                let mut doc = self.doc.lock().await;
-                if doc.advance(&self.state.storage()).await? {
-                    binary(&self.state, &doc.snapshot(), None)
-                }
-                if doc
-                    .append(&self.state.storage(), &bytes, vec![], vec![])
-                    .await?
+                if let Some(waiting) =
+                    document::append_logged(&self.state.storage(), &bytes)
+                        .await?
                 {
-                    binary(&self.state, &bytes, Some(&sender))
+                    binary(&self.state, &bytes, Some(&sender));
+                    self.compact_later(waiting).await?;
                 }
             }
         }
@@ -145,10 +168,12 @@ impl DurableObject for PhotonSyncRoom {
         Ok(())
     }
     async fn alarm(&self) -> Result<Response> {
-        let mut doc = self.doc.lock().await;
-        if doc.advance(&self.state.storage()).await? {
-            binary(&self.state, &doc.snapshot(), None)
-        }
+        // Built for this compaction only, and dropped with it: clients
+        // already have every update, which was relayed as it arrived. A log
+        // too long for one pass leaves the document behind and schedules the
+        // next alarm itself.
+        let mut doc = Document::default();
+        doc.advance(&self.state.storage()).await?;
         Response::empty()
     }
 }

@@ -41,6 +41,141 @@ fn apply(doc: &Doc, bytes: &[u8]) -> Result<()> {
         .apply_update(update)
         .map_err(|_| Error::RustError("Invalid Yjs update".into()))
 }
+/// Yjs v1 encoding of an empty document: what a room with nothing stored
+/// sends a joining client.
+pub const EMPTY_UPDATE: [u8; 2] = [0, 0];
+
+async fn read_snapshot(
+    storage: &Storage,
+    meta: Option<&SnapshotMeta>,
+) -> Result<Vec<u8>> {
+    let mut snapshot = Vec::new();
+    if let Some(meta) = meta.filter(|m| m.chunks > 0) {
+        for index in 0..meta.chunks {
+            let Some(raw) = get_raw(storage, &chunk_key(index)).await?
+            else {
+                return Err("Missing Yjs snapshot chunk".into());
+            };
+            snapshot.extend(bytes(&raw)?);
+        }
+        if snapshot.len() != meta.byte_length {
+            return Err("Invalid Yjs snapshot size".into());
+        }
+    } else if let Some(raw) = get_raw(storage, SNAPSHOT).await? {
+        snapshot = bytes(&raw)?;
+    }
+    Ok(snapshot)
+}
+
+async fn log_update(
+    storage: &Storage,
+    update: &[u8],
+    extra: Vec<(String, JsValue)>,
+    delete: Vec<String>,
+) -> Result<(UpdateMeta, u64)> {
+    let data = binary(update);
+    transaction(storage, move |tx| {
+        async move {
+            let mut meta = tx_get::<UpdateMeta>(&tx, UPDATE_META)
+                .await?
+                .unwrap_or(UpdateMeta {
+                    next_seq: 1,
+                    oldest_seq: 1,
+                });
+            let seq = meta.next_seq;
+            meta.next_seq =
+                seq.checked_add(1).ok_or("Yjs sequence limit reached")?;
+            meta.oldest_seq = meta.oldest_seq.min(seq);
+            let mut rows = extra;
+            rows.push((update_key(seq), data));
+            rows.push((UPDATE_META.into(), to_js(&meta)?));
+            tx_batch(&tx, rows).await?;
+            tx_delete(&tx, delete).await?;
+            Ok((meta, seq))
+        }
+        .boxed_local()
+    })
+    .await
+}
+
+/// A room's state exactly as stored: its compacted snapshot and the updates
+/// logged since, in order.
+pub struct Stored {
+    pub snapshot: Vec<u8>,
+    pub updates: Vec<Vec<u8>>,
+}
+
+/// Read a room's stored state without decoding it.
+///
+/// A joining client can apply the snapshot and the logged updates itself;
+/// building the document here first -- decoding the snapshot, applying every
+/// update and encoding it all again -- is what grows with the room and, for
+/// a large one, outlasts the request. A compaction committing between the
+/// reads would leave a gap, so the snapshot is read again and the whole read
+/// retried if it moved.
+pub async fn stored(storage: &Storage) -> Result<Stored> {
+    for _ in 0..3 {
+        let meta: Option<SnapshotMeta> = storage.get(SNAP_META).await?;
+        let snapshot = read_snapshot(storage, meta.as_ref()).await?;
+        let seq = meta.as_ref().map_or(0, |m| m.seq);
+        let log = storage.get::<UpdateMeta>(UPDATE_META).await?.unwrap_or(
+            UpdateMeta {
+                next_seq: seq + 1,
+                oldest_seq: seq + 1,
+            },
+        );
+        let mut updates = Vec::new();
+        let mut cursor = log.oldest_seq;
+        while cursor < log.next_seq {
+            let rows = entries(
+                storage
+                    .list_with_options(
+                        ListOptions::new()
+                            .start(&update_key(cursor))
+                            .end(&update_key(log.next_seq))
+                            .limit(128),
+                    )
+                    .await?,
+            )?;
+            if rows.is_empty() {
+                break;
+            }
+            for (key, raw) in rows {
+                let Some(row) = key
+                    .strip_prefix("yjs:update:")
+                    .and_then(|s| s.parse::<u64>().ok())
+                else {
+                    continue;
+                };
+                // As catching up does: a malformed row is skipped, not fatal.
+                if let Ok(update) = bytes(&raw) {
+                    updates.push(update);
+                }
+                cursor = cursor.max(row + 1);
+            }
+        }
+        let again: Option<SnapshotMeta> = storage.get(SNAP_META).await?;
+        if again.map(|m| m.seq) == meta.map(|m| m.seq) {
+            return Ok(Stored { snapshot, updates });
+        }
+    }
+    Err("Yjs room storage kept changing while it was read".into())
+}
+
+/// Log an update without building the document: validated on its own and
+/// stored, for the next compaction to fold in. Returns how many logged
+/// updates now wait for that compaction, or `None` for an invalid update.
+pub async fn append_logged(
+    storage: &Storage,
+    update: &[u8],
+) -> Result<Option<u64>> {
+    if !valid_update(update) {
+        return Ok(None);
+    }
+    let (meta, _) = log_update(storage, update, vec![], vec![]).await?;
+    Ok(Some(meta.next_seq - meta.oldest_seq))
+}
+
 pub fn valid_update(bytes: &[u8]) -> bool {
     !bytes.is_empty()
         && bytes.len() <= MAX_UPDATE
@@ -68,22 +203,7 @@ impl Document {
             // avoids platform randomness without changing incoming client IDs.
             let doc = Doc::with_client_id(1);
             let meta: Option<SnapshotMeta> = storage.get(SNAP_META).await?;
-            let mut snapshot = Vec::new();
-            if let Some(meta) = meta.filter(|m| m.chunks > 0) {
-                for index in 0..meta.chunks {
-                    let Some(raw) =
-                        get_raw(storage, &chunk_key(index)).await?
-                    else {
-                        return Err("Missing Yjs snapshot chunk".into());
-                    };
-                    snapshot.extend(bytes(&raw)?);
-                }
-                if snapshot.len() != meta.byte_length {
-                    return Err("Invalid Yjs snapshot size".into());
-                }
-            } else if let Some(raw) = get_raw(storage, SNAPSHOT).await? {
-                snapshot = bytes(&raw)?;
-            }
+            let snapshot = read_snapshot(storage, meta.as_ref()).await?;
             if !snapshot.is_empty() {
                 apply(&doc, &snapshot)?;
             }
@@ -189,37 +309,14 @@ impl Document {
         }
         self.advance(storage).await?;
         apply(self.doc.as_ref().expect("hydrated"), update)?;
-        let data = binary(update);
-        let result = transaction(storage, move |tx| {
-            async move {
-                let mut meta = tx_get::<UpdateMeta>(&tx, UPDATE_META)
-                    .await?
-                    .unwrap_or(UpdateMeta {
-                        next_seq: 1,
-                        oldest_seq: 1,
-                    });
-                let seq = meta.next_seq;
-                meta.next_seq = seq
-                    .checked_add(1)
-                    .ok_or("Yjs sequence limit reached")?;
-                meta.oldest_seq = meta.oldest_seq.min(seq);
-                let mut rows = extra;
-                rows.push((update_key(seq), data));
-                rows.push((UPDATE_META.into(), to_js(&meta)?));
-                tx_batch(&tx, rows).await?;
-                tx_delete(&tx, delete).await?;
-                Ok((meta, seq))
-            }
-            .boxed_local()
-        })
-        .await;
-        let (meta, seq) = match result {
-            Ok(v) => v,
-            Err(e) => {
-                self.doc = None;
-                return Err(e);
-            }
-        };
+        let (meta, seq) =
+            match log_update(storage, update, extra, delete).await {
+                Ok(v) => v,
+                Err(e) => {
+                    self.doc = None;
+                    return Err(e);
+                }
+            };
         if !self.behind && meta.next_seq - meta.oldest_seq > 50 {
             self.compact(storage, seq).await?;
         }
