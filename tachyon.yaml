@@ -348,6 +348,9 @@ spec:
           envVars:
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
               value: "false"
+            # Plain sentinel removes the previously stored preview secret binding.
+            - name: EXTERNAL_SYNC_SCANNER_TOKEN
+              value: "disabled"
 ---
 # Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
 # (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が
