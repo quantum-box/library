@@ -86,6 +86,11 @@ pub struct ErrataBook {
 pub enum ErrataStatus {
     Applied,
     AlreadyApplied,
+    /// The table showed neither the wrong nor the right value; the right
+    /// value was applied anyway (decided 2026-09-25: the errata wins).
+    AppliedOverConflict,
+    /// A text correction whose fragment could not be placed in the
+    /// table's text. Nothing was changed.
     Conflict,
     Unresolved,
 }
@@ -426,6 +431,8 @@ pub fn same_value(a: Option<&str>, b: Option<&str>) -> bool {
 enum Check {
     Already,
     Apply(Option<String>),
+    /// Neither wrong nor right: apply the right value regardless.
+    Override(Option<String>),
     Conflict,
 }
 
@@ -439,13 +446,68 @@ fn check_value(
     } else if same_value(current, wrong) {
         Check::Apply(right.map(str::to_string))
     } else {
-        Check::Conflict
+        Check::Override(right.map(str::to_string))
     }
+}
+
+/// Where a corrected fragment belongs in text that shows neither the
+/// wrong nor the right fragment: the equally long stretch that differs
+/// from it in the fewest characters, if it differs in at most a quarter
+/// of them (`…含まれている油で調理` for `…含まれている脂で調理`).
+fn place_fragment(cur: &str, right: &str) -> Option<String> {
+    let c: Vec<char> = cur.chars().collect();
+    let r: Vec<char> = right.chars().collect();
+    if r.is_empty() || r.len() > c.len() {
+        return None;
+    }
+    let limit = (r.len() / 4).max(1);
+    let (start, distance) = (0..=c.len() - r.len())
+        .map(|i| {
+            let d = c[i..i + r.len()]
+                .iter()
+                .zip(&r)
+                .filter(|(a, b)| a != b)
+                .count();
+            (i, d)
+        })
+        .min_by_key(|(_, d)| *d)?;
+    if distance > limit {
+        return None;
+    }
+    let mut out: String = c[..start].iter().collect();
+    out.push_str(right);
+    out.extend(&c[start + r.len()..]);
+    Some(out)
 }
 
 /// Text fields: the errata may quote only the changed fragment of a
 /// multi-line remark or a long name.
 fn check_text(
+    current: Option<&str>,
+    wrong: Option<&str>,
+    right: Option<&str>,
+    multi_line: bool,
+) -> Check {
+    match check_text_strict(current, wrong, right) {
+        Check::Conflict => {}
+        other => return other,
+    }
+    let cur = current.map(str::trim).unwrap_or("");
+    let r = right.map(str::trim).unwrap_or("");
+    if cur.is_empty() || r.is_empty() {
+        return Check::Override((!r.is_empty()).then(|| r.to_string()));
+    }
+    if let Some(placed) = place_fragment(cur, r) {
+        return Check::Override(Some(placed));
+    }
+    if multi_line {
+        // A remark line the table does not have at all: add it.
+        return Check::Override(Some(format!("{cur}\n{r}")));
+    }
+    Check::Conflict
+}
+
+fn check_text_strict(
     current: Option<&str>,
     wrong: Option<&str>,
     right: Option<&str>,
@@ -578,12 +640,12 @@ pub fn apply_errata(
             }
             ErrataField::Name => {
                 let cur = Some(food.name.clone());
-                let check = check_text(cur.as_deref(), wrong, right);
+                let check = check_text(cur.as_deref(), wrong, right, false);
                 (cur, check)
             }
             ErrataField::Remarks => {
                 let cur = food.remarks.clone();
-                let check = check_text(cur.as_deref(), wrong, right);
+                let check = check_text(cur.as_deref(), wrong, right, true);
                 (cur, check)
             }
             ErrataField::Marker(k) => {
@@ -605,11 +667,13 @@ pub fn apply_errata(
                     cur_value.clone().unwrap_or_default(),
                     cur_marker.clone().unwrap_or_default()
                 ));
+                let over_conflict =
+                    matches!(value_check, Check::Override(_));
                 let check = match (value_check, marker_check) {
                     (Check::Conflict, _) => Check::Conflict,
                     (Check::Already, Check::Already) => Check::Already,
                     (v, m) => {
-                        if let Check::Apply(v) = v {
+                        if let Check::Apply(v) | Check::Override(v) = v {
                             match v {
                                 Some(v) => food.values.insert(k.clone(), v),
                                 None => food.values.remove(k),
@@ -623,14 +687,19 @@ pub fn apply_errata(
                                 None => food.markers.remove(k),
                             };
                         }
-                        Check::Apply(Some(format!(
+                        let after = Some(format!(
                             "{}{}",
                             food.values.get(k).cloned().unwrap_or_default(),
                             food.markers
                                 .get(k)
                                 .cloned()
                                 .unwrap_or_default()
-                        )))
+                        ));
+                        if over_conflict {
+                            Check::Override(after)
+                        } else {
+                            Check::Apply(after)
+                        }
                     }
                 };
                 outcome.detail = Some(
@@ -642,6 +711,7 @@ pub fn apply_errata(
         };
 
         outcome.before = before.clone();
+        let over_conflict = matches!(check, Check::Override(_));
         match check {
             Check::Already => {
                 outcome.status = ErrataStatus::AlreadyApplied;
@@ -651,12 +721,20 @@ pub fn apply_errata(
                 outcome.status = ErrataStatus::Conflict;
                 outcome.after = before;
                 outcome.detail = Some(format!(
-                    "table shows {:?}, which is neither the wrong nor the right value",
+                    "table shows {:?}, which is neither the wrong nor the right value, and the corrected text could not be placed in it",
                     outcome.before.clone().unwrap_or_default()
                 ));
             }
-            Check::Apply(after) => {
-                outcome.status = ErrataStatus::Applied;
+            Check::Apply(after) | Check::Override(after) => {
+                if over_conflict {
+                    outcome.status = ErrataStatus::AppliedOverConflict;
+                    outcome.detail = Some(format!(
+                        "table showed {:?}, which is neither the wrong nor the right value; the errata's right value was applied",
+                        outcome.before.clone().unwrap_or_default()
+                    ));
+                } else {
+                    outcome.status = ErrataStatus::Applied;
+                }
                 match field {
                     ErrataField::Nutrient(k) => match &after {
                         Some(v) => {
@@ -738,7 +816,13 @@ mod tests {
             .unwrap()
             .contains("オニオン、玉葱"));
 
-        assert_eq!(status("10330", "VITK"), ErrataStatus::Conflict);
+        let over = outcome(&outcomes, "10330", "VITK");
+        assert_eq!(over.status, ErrataStatus::AppliedOverConflict);
+        assert_eq!(over.before.as_deref(), Some("7"));
+        assert_eq!(over.after.as_deref(), Some("-"));
+        assert_eq!(over.basis, "正誤表 2026-03-27 本表第2章!R8");
+        let aji = foods.iter().find(|f| f.food_code == "10330").unwrap();
+        assert_eq!(aji.values["VITK"], "-");
         assert_eq!(status("10330", "name"), ErrataStatus::AlreadyApplied);
         assert_eq!(
             status("01001", "CHOAVLM+marker"),
@@ -766,7 +850,10 @@ mod tests {
         let after_first = foods.clone();
         let second = apply_errata(&mut foods, &book);
         assert_eq!(foods, after_first);
-        assert!(second.iter().all(|o| o.status != ErrataStatus::Applied));
+        assert!(second.iter().all(|o| !matches!(
+            o.status,
+            ErrataStatus::Applied | ErrataStatus::AppliedOverConflict
+        )));
     }
 
     #[test]
@@ -786,6 +873,7 @@ mod tests {
             Some("別名： オニオン"),
             Some("オニオン"),
             Some("オニオン、玉葱"),
+            true,
         ) {
             Check::Apply(Some(v)) => v,
             _ => panic!("expected apply"),
@@ -795,7 +883,8 @@ mod tests {
             check_text(
                 Some(&once),
                 Some("オニオン"),
-                Some("オニオン、玉葱")
+                Some("オニオン、玉葱"),
+                true
             ),
             Check::Already
         ));
@@ -804,8 +893,56 @@ mod tests {
             check_text(
                 Some("a\n植物油（調合油）"),
                 Some("植物油（調合油）： 4.1 g"),
-                Some("植物油（調合油）")
+                Some("植物油（調合油）"),
+                true
             ),
+            Check::Already
+        ));
+    }
+
+    #[test]
+    fn a_remark_in_conflict_gets_the_right_text_once() {
+        // 11316: the Excel says 油, the errata's 正 says 脂, and 誤 is gone.
+        let cur = "別名：ベーコン\nヨウ素： 第3章参照\nばらベーコンに含まれている油で調理";
+        let wrong = Some("調理による脂質の増減：第1章表14参照");
+        let right = Some("ばらベーコンに含まれている脂で調理");
+        let fixed = match check_text(Some(cur), wrong, right, true) {
+            Check::Override(Some(v)) => v,
+            _ => panic!("expected an override"),
+        };
+        assert_eq!(
+            fixed,
+            "別名：ベーコン\nヨウ素： 第3章参照\nばらベーコンに含まれている脂で調理"
+        );
+        assert!(matches!(
+            check_text(Some(&fixed), wrong, right, true),
+            Check::Already
+        ));
+        // A remark line the table lacks entirely is appended.
+        assert!(matches!(
+            check_text(Some("別名：ベーコン"), wrong, Some("全く別の注記"), true),
+            Check::Override(Some(v)) if v == "別名：ベーコン\n全く別の注記"
+        ));
+        // A name fragment that fits nowhere is left alone and reported.
+        assert!(matches!(
+            check_text(
+                Some("まあじ 生"),
+                Some("半固形状"),
+                Some("半固体状ドレッシング"),
+                false
+            ),
+            Check::Conflict
+        ));
+    }
+
+    #[test]
+    fn a_value_in_conflict_takes_the_right_value() {
+        assert!(matches!(
+            check_value(Some("7"), Some("5"), Some("-")),
+            Check::Override(Some(v)) if v == "-"
+        ));
+        assert!(matches!(
+            check_value(Some("-"), Some("5"), Some("-")),
             Check::Already
         ));
     }

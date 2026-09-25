@@ -14,8 +14,26 @@
 
 2026-09-25 時点の公式Excelは正誤表を反映済みで再公開されていた。正誤表111件の
 うち110件は「適用済み」と判定され、二重適用はない。残る1件（11316 備考）は
-Excel と正誤表の「正」が一字違う（`油` と `脂`）ため conflict として報告し、
-Excelの表記のまま取り込む。
+Excel と正誤表の「正」が一字違う（`油` と `脂`）。下記の決定により正誤表の「正」
+（`脂`）を適用し、`applied_over_conflict` として記録する。公式ファイルでの
+隔離は0件で、`--accept-quarantine` なしで `--apply` できる。
+
+## 決定事項（2026-09-25 ユーザーから委任され決定）
+
+1. **正誤表と表の食い違い**: 正誤表の対象項目で、表が「誤」とも「正」とも一致しないときは「正」を適用し、
+   `applied_over_conflict`（適用前・適用後・根拠セル）として `report.json` と `manifest` の報告に残す。
+   表が既に「正」なら従来どおり `already_applied` で、二重適用しない。
+   備考・食品名のように一部だけを示す訂正は、表の文字列のうち同じ長さで最も近い箇所（違いが1/4以下）を
+   置き換える（11316: `…含まれている油で調理` → `…含まれている脂で調理`）。備考で置き場所がなければ1行追加する。
+   食品名で置き場所がないときだけ `conflict` として食品ごと隔離する（公式ファイルでは0件）。
+2. **ヨウ素の `*`（第3章参照）**: エラーとして隔離しない。そのセルの成分値recordは作らず（公開時は `not_listed`）、
+   `report.json` の `deferred_to_chapter3` に食品番号・成分識別子・原典表記・備考の行を出す。
+   対象は値が `*` で、その食品の備考に `第3章参照` があるセルだけ。それ以外の `*` は従来どおり隔離する。
+   公式ファイルでは 06371・13051・17137 の `ID` の3セル。
+3. **cooking_state**: 対応表にない語は空欄のまま人がレビューする。`report.json` の
+   `cooking_state_review` に、対応しなかった最後の語ごとの件数と食品番号の一覧を多い順で出す
+   （公式ファイル: 1,159食品、858語）。
+4. **炭水化物の `*` 列**（エネルギー計算に使った値の印）: 当面は取り込まない。後続で扱う（残りを参照）。
 
 ## 観測した原典（取得 2026-09-25T08:36:35Z）
 
@@ -38,7 +56,7 @@ Excelの表記のまま取り込む。
   （Excel上は `VITK ` と末尾空白あり → trim）
 - 採用しない列: O・R（`CHOAVLM`/`CHOAVLDF-` の右の `*`。エネルギー計算に使った利用可能炭水化物の印。799/1738セル）、AG（空の区切り列）。
 - 値の表記（全134,514セル）: 数値 90,428、`(数値)` 21,415、`-` 18,650、`Tr` 3,081、`(Tr)` 934、`数値†` 3（03032の規定法による測定値。†を外して読み、`raw_notation` に残す）、ヨウ素列の `*` 3（06371・13051・17137、「第3章参照」）。
-  → value_status: measured 75,909 / estimated 13,075 / zero 14,522 / estimated_zero 8,340 / trace 3,081 / estimated_trace 934 / not_measured 18,650。
+  → value_status: measured 75,909 / estimated 13,075 / zero 14,522 / estimated_zero 8,340 / trace 3,081 / estimated_trace 934 / not_measured 18,650。ヨウ素の `*` 3セルは `deferred_to_chapter3`（値recordなし）。
 - 重複食品番号なし。先頭ゼロ落ちなし。
 
 ### 正誤表 `20260327-…_16.xlsx`
@@ -77,7 +95,7 @@ library food import … --apply --accept-quarantine [--concurrency 4] [--max-fai
 `<source_id>-<source_release>-<hash>/` に次を残す:
 
 - `manifest.json`: 出典（URL・SHA-256・サイズ・取得時刻・シート・ヘッダ行・採用列・正誤表日付）、importer（`library-food-import/v1`・CLIバージョン）、対象repo、状態（`planned` / `blocked` / `in_progress` / `failed` / `completed`）。`completed` のときだけ公開APIに渡す `publish_hint`（`source_id=mext-sfct8-2023`, `source_release=2023+errata-2026-03-27`, `source_url`, `source_retrieved_at`, `notes` にSHA-256）を載せる。
-- `report.json`: 件数、value_status別件数、表記別件数、無視した列、重複食品番号、単位の不一致、正誤表の全件の結果（誤・正・適用前・適用後・根拠 `正誤表 2026-03-27 本表第2章!R52`）、repo別の追加/変更/変更なし/キー衝突/削除候補、人の編集を保持した件数。
+- `report.json`: 件数、value_status別件数、表記別件数、無視した列、重複食品番号、単位の不一致、正誤表の全件の結果（誤・正・適用前・適用後・根拠 `正誤表 2026-03-27 本表第2章!R52`、状態 `applied` / `already_applied` / `applied_over_conflict` / `conflict` / `unresolved`）、`deferred_to_chapter3`、`cooking_state_review`、repo別の追加/変更/変更なし/キー衝突/削除候補、人の編集を保持した件数。
 - `plan.json`: 送る予定のupsertの全件。
 - `quarantine.jsonl`: 取り込まなかった行・セル・正誤表項目と理由。
 - `writes.jsonl`: upsert 1件ごとの結果（ok / failed、試行回数、エラー）。再実行でも追記。
@@ -118,7 +136,8 @@ upsert は送ったプロパティだけを書き換える patch なので、送
 
 ## 検証・隔離・失敗時
 
-- 隔離（書かない・理由を残す）: 食品番号が5桁の文字列でない行、食品名なし、重複食品番号（全コピー）、廃棄率が0–100外、表記が読めないセル（`*` 等）、空セル、正誤表と食い違う値（食品名・廃棄率の食い違いは食品ごと）。
+- 隔離（書かない・理由を残す）: 食品番号が5桁の文字列でない行、食品名なし、重複食品番号（全コピー）、廃棄率が0–100外、表記が読めないセル（第3章参照でない `*` 等）、空セル、置き場所のない食品名の訂正（食品ごと）。
+- 隔離しないが報告する: 第3章参照の `*`（`deferred_to_chapter3`）、表が誤とも正とも一致しない訂正（`applied_over_conflict`）。
 - `--apply` の拒否: ヘッダ不整合、単位の不一致、repoに必要なプロパティがない／型が String 以外（`display_order` の Integer、`default_display` の Boolean は可）。隔離・正誤表の conflict/unresolved・キー衝突があるときは `--accept-quarantine` が必要。
 - 書き込み: 成分定義 → 食材 → 成分値の順。並列数は `--concurrency`（1–16）。5xx・429・409・通信エラーは最大3回まで指数バックオフで再試行。ある段で失敗が出たら次の段に進まない。`--max-failures` で打ち切る。
 - 1件でも失敗・未実行があれば終了コード1、`manifest.json` の状態は `failed`、`publish_hint` は出さない。
@@ -132,11 +151,11 @@ upsert は送ったプロパティだけを書き換える patch なので、送
 
 ```
 cargo test -p ingredient_notation   # 43 passed
-cargo test -p library-cli           # 75 passed（food import 35件）
+cargo test -p library-cli           # 79 passed（food import 39件）
 cargo clippy -p library-cli -p ingredient_notation --all-targets  # 警告なし
 ```
 
-主なテスト: 列と単位の特定、先頭ゼロ、全表記の status/amount/raw、件数と隔離、正誤表の適用と二回目で変化なし、断片の二重適用防止、DataIdの安定性（固定値で照合）、dry runで書かない、2回目の取込で送信0件・重複0件、人の編集（standard_name/aliases/reviewed）が残る、失敗時に次段へ進まず再実行で残りだけ書く、単位変更の検出。
+主なテスト: 正誤表の食い違いで「正」を適用（値・備考、再実行で already_applied）、第3章参照の `*` を隔離せず値なしで報告、公式ファイル相当の状態で `--accept-quarantine` 不要（異常があれば必要）、列と単位の特定、先頭ゼロ、全表記の status/amount/raw、件数と隔離、正誤表の適用と二回目で変化なし、断片の二重適用防止、DataIdの安定性（固定値で照合）、dry runで書かない、2回目の取込で送信0件・重複0件、人の編集（standard_name/aliases/reviewed）が残る、失敗時に次段へ進まず再実行で残りだけ書く、単位変更の検出。
 
 ## 計測
 
@@ -148,7 +167,6 @@ cargo clippy -p library-cli -p ingredient_notation --all-targets  # 警告なし
 - [ ] 本番 org `library` への取込（`--apply`）と公開はユーザー承認が必要。本ブランチでは本番・デプロイ先に一切書いていない。
 - [ ] ローカルの library-api（MySQL）に対する通しの取込と、COM-860 の公開処理の所要時間計測（13.7万件を100件ずつ読む）。
 - [ ] 成分値repoの一覧取得は約1,400ページ。遅ければ一括取得APIを検討（COM-860と共通の課題）。
-- [ ] `*`（エネルギー計算に使った炭水化物の印）を保存するかは未決。保存するなら成分値に別プロパティを足す。
-- [ ] ヨウ素列の `*`（3セル、第3章参照）の扱いを決める。今は隔離で、公開時は `not_listed`。
-- [ ] `cooking_state` の語彙を広げるか、レビューで埋めるか。
-- [ ] 11316 備考の `油`/`脂` の食い違いをMEXTに確認するか、Excelの表記のままとするか。
+- [ ] 後続: 炭水化物の `*` 列（`CHOAVLM`/`CHOAVLDF-` の右、エネルギー計算に使った値の印）の保存。保存するなら成分値に別プロパティ（例 `energy_basis`）を足し、正誤表のアスタリスク項目も反映する。今は無視列として報告のみ。
+- [ ] `cooking_state_review` を使った人手のレビュー（1,159食品・858語）。
+- [ ] ヨウ素の第3章（別表）の値を取り込むかどうか。今は `not_listed`。

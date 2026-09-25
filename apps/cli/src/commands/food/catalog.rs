@@ -121,6 +121,35 @@ pub struct Quarantined {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct UnmappedState {
+    pub count: usize,
+    /// Food numbers carrying the word, all of them, for the manual pass.
+    pub food_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeferredCell {
+    pub row: usize,
+    pub food_code: String,
+    pub nutrient_key: String,
+    pub raw: String,
+    pub remark: String,
+}
+
+/// `*` in a value cell meaning "see chapter 3", as the table uses for
+/// iodine: the remark says `ヨウ素： 第3章参照` (sometimes `*ヨウ素：…`).
+fn chapter3_remark(raw: &str, remarks: Option<&str>) -> Option<String> {
+    if raw.trim() != "*" {
+        return None;
+    }
+    remarks?
+        .lines()
+        .map(str::trim)
+        .find(|l| l.contains("第3章参照"))
+        .map(str::to_string)
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TargetCatalog {
     pub nutrients: Vec<TargetRecord>,
@@ -133,8 +162,12 @@ pub struct TargetCatalog {
     pub notation_counts: BTreeMap<String, usize>,
     /// Header unit vs the expected unit of the identifier.
     pub unit_mismatches: Vec<String>,
-    /// Last name token that did not map to a cooking state → count.
-    pub unmapped_states: BTreeMap<String, usize>,
+    /// Last name word that did not map to a cooking state → foods.
+    pub unmapped_states: BTreeMap<String, UnmappedState>,
+    /// Cells printed as `*` with a `第3章参照` remark (iodine). They have no
+    /// value in this table, so no value record is written and a release
+    /// reports `not_listed`.
+    pub deferred_to_chapter3: Vec<DeferredCell>,
     /// Ingredient keys left out this run; their existing records are not
     /// delete candidates.
     pub withheld_keys: BTreeSet<String>,
@@ -446,7 +479,9 @@ pub fn build_catalog(
         let state = match cooking_state(&food.name) {
             Ok(s) => s.map(str::to_string),
             Err(token) => {
-                *out.unmapped_states.entry(token).or_default() += 1;
+                let entry = out.unmapped_states.entry(token).or_default();
+                entry.count += 1;
+                entry.food_codes.push(food.food_code.clone());
                 None
             }
         };
@@ -536,6 +571,18 @@ pub fn build_catalog(
                 ));
                 continue;
             };
+            if let Some(remark) =
+                chapter3_remark(raw, food.remarks.as_deref())
+            {
+                out.deferred_to_chapter3.push(DeferredCell {
+                    row: food.row,
+                    food_code: food.food_code.clone(),
+                    nutrient_key: n.key.clone(),
+                    raw: raw.trim().to_string(),
+                    remark,
+                });
+                continue;
+            }
             let (status, amount) = match NutrientValueStatus::from_notation(
                 strip_footnotes(raw),
             ) {
@@ -663,6 +710,43 @@ pub(super) mod tests {
         check("06154", "CHOAVLM", "measured", Some("20.3"), "20.3†");
         // Errata applied: 33 → 31 kcal.
         check("06153", "ENERC_KCAL", "measured", Some("31"), "31");
+        // Errata applied over a conflict: table 7, 誤 5, 正 `-`.
+        check("10330", "VITK", "not_measured", None, "-");
+    }
+
+    #[test]
+    fn chapter3_stars_are_deferred_not_quarantined() {
+        let c = fixture_catalog();
+        assert_eq!(
+            c.deferred_to_chapter3,
+            vec![DeferredCell {
+                row: 12,
+                food_code: "10330".into(),
+                nutrient_key: "NA".into(),
+                raw: "*".into(),
+                remark: "ヨウ素： 第3章参照".into(),
+            }]
+        );
+        assert!(!c
+            .quarantine
+            .iter()
+            .any(|q| q.nutrient_key.as_deref() == Some("NA")));
+        assert!(!c
+            .values
+            .iter()
+            .any(|v| v.business_key == "mext-10330/NA"));
+        // A `*` without the chapter 3 remark is still an anomaly.
+        assert_eq!(chapter3_remark("*", Some("別名： あじ")), None);
+        assert_eq!(chapter3_remark("*", None), None);
+        assert_eq!(
+            chapter3_remark(
+                " * ",
+                Some("*ヨウ素： 第3章参照\n硝酸イオン： 0 g")
+            )
+            .as_deref(),
+            Some("*ヨウ素： 第3章参照")
+        );
+        assert_eq!(chapter3_remark("Tr", Some("ヨウ素： 第3章参照")), None);
     }
 
     #[test]
@@ -675,9 +759,9 @@ pub(super) mod tests {
             .map(|i| i.field(prop::SOURCE_FOOD_CODE).unwrap())
             .collect();
         assert_eq!(codes, vec!["01001", "06153", "06154", "10330"]);
-        // 4 foods x 10 nutrients, minus: 10330 NA `*`, 10330 VITB12 empty,
-        // 10330 FIB- empty, 10330 VITK errata conflict.
-        assert_eq!(c.values.len(), 36);
+        // 4 foods x 10 nutrients, minus: 10330 NA `*` (chapter 3),
+        // 10330 VITB12 empty, 10330 FIB- empty.
+        assert_eq!(c.values.len(), 37);
         let reasons: Vec<_> = c
             .quarantine
             .iter()
@@ -690,10 +774,8 @@ pub(super) mod tests {
             })
             .collect();
         for expected in [
-            ("cell", "10330", "NA"),
             ("cell", "10330", "VITB12"),
             ("cell", "10330", "FIB-"),
-            ("cell", "10330", "VITK"),
             ("row", "1002", ""),
             ("row", "99999", ""),
             ("row", "18001", ""),
@@ -751,7 +833,13 @@ pub(super) mod tests {
             .find(|i| i.business_key == "mext-01001")
             .unwrap();
         assert_eq!(amaranth.field(prop::COOKING_STATE), None);
-        assert_eq!(c.unmapped_states.get("玄穀"), Some(&1));
+        assert_eq!(
+            c.unmapped_states.get("玄穀"),
+            Some(&UnmappedState {
+                count: 1,
+                food_codes: vec!["01001".into()]
+            })
+        );
     }
 
     #[test]

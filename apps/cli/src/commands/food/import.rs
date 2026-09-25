@@ -29,8 +29,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::catalog::{
-    build_catalog, prop, BuildOptions, RecordKind, TargetCatalog,
-    TargetRecord,
+    build_catalog, prop, BuildOptions, DeferredCell, RecordKind,
+    TargetCatalog, TargetRecord,
 };
 use super::errata::{
     apply_errata, parse_errata, ErrataBook, ErrataOutcome, ErrataStatus,
@@ -500,13 +500,50 @@ pub struct Report {
     pub unit_mismatches: Vec<String>,
     pub value_status_counts: BTreeMap<String, usize>,
     pub notation_counts: BTreeMap<String, usize>,
-    pub unmapped_cooking_states: BTreeMap<String, usize>,
+    /// Foods whose `cooking_state` was left blank for a person, grouped by
+    /// the last word of the name that the importer does not map.
+    pub cooking_state_review: CookingStateReview,
+    /// `*` cells whose remark says `第3章参照` (iodine). No value record is
+    /// written for them; a release reports them as `not_listed`.
+    pub deferred_to_chapter3: Vec<DeferredCell>,
     pub quarantined: BTreeMap<String, usize>,
     pub errata: Option<ErrataSummary>,
     pub repos: Vec<RepoReport>,
     /// Why `--apply` would be refused, if it would.
     pub blockers: Vec<String>,
     pub needs_accept_quarantine: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CookingStateReview {
+    pub blank_foods: usize,
+    /// Most frequent first.
+    pub unmapped_last_words: Vec<UnmappedWord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UnmappedWord {
+    pub word: String,
+    pub count: usize,
+    pub food_codes: Vec<String>,
+}
+
+fn cooking_state_review(
+    unmapped: &BTreeMap<String, super::catalog::UnmappedState>,
+) -> CookingStateReview {
+    let mut words: Vec<UnmappedWord> = unmapped
+        .iter()
+        .map(|(word, u)| UnmappedWord {
+            word: word.clone(),
+            count: u.count,
+            food_codes: u.food_codes.clone(),
+        })
+        .collect();
+    words.sort_by(|a, b| b.count.cmp(&a.count).then(a.word.cmp(&b.word)));
+    CookingStateReview {
+        blank_foods: words.iter().map(|w| w.count).sum(),
+        unmapped_last_words: words,
+    }
 }
 
 pub fn build_report(
@@ -616,7 +653,10 @@ pub fn build_report(
         unit_mismatches: p.catalog.unit_mismatches.clone(),
         value_status_counts: p.catalog.status_counts.clone(),
         notation_counts: p.catalog.notation_counts.clone(),
-        unmapped_cooking_states: p.catalog.unmapped_states.clone(),
+        cooking_state_review: cooking_state_review(
+            &p.catalog.unmapped_states,
+        ),
+        deferred_to_chapter3: p.catalog.deferred_to_chapter3.clone(),
         quarantined,
         errata,
         repos: repos.iter().map(|r| r.report.clone()).collect(),
@@ -678,6 +718,7 @@ fn print_text(r: &Report, run_dir: &Path) {
             matches!(
                 o.status,
                 ErrataStatus::Applied
+                    | ErrataStatus::AppliedOverConflict
                     | ErrataStatus::Conflict
                     | ErrataStatus::Unresolved
             )
@@ -701,17 +742,29 @@ fn print_text(r: &Report, run_dir: &Path) {
             );
         }
     }
-    if !r.unmapped_cooking_states.is_empty() {
-        let mut top: Vec<_> = r.unmapped_cooking_states.iter().collect();
-        top.sort_by(|a, b| b.1.cmp(a.1));
-        let shown: Vec<_> = top
+    if !r.deferred_to_chapter3.is_empty() {
+        let cells: Vec<_> = r
+            .deferred_to_chapter3
             .iter()
-            .take(8)
-            .map(|(k, v)| format!("{k}={v}"))
+            .map(|d| format!("{} {}", d.food_code, d.nutrient_key))
             .collect();
         println!(
-            "cooking_state left blank for {} foods (last name token not mapped): {} …",
-            top.iter().map(|(_, v)| **v).sum::<usize>(),
+            "deferred to chapter 3 (no value written, reads as not_listed): {}",
+            cells.join(", ")
+        );
+    }
+    let review = &r.cooking_state_review;
+    if review.blank_foods > 0 {
+        let shown: Vec<_> = review
+            .unmapped_last_words
+            .iter()
+            .take(8)
+            .map(|w| format!("{}={}", w.word, w.count))
+            .collect();
+        println!(
+            "cooking_state left blank for {} foods ({} distinct last words; full list in report.json cooking_state_review): {} …",
+            review.blank_foods,
+            review.unmapped_last_words.len(),
             shown.join(", ")
         );
     }
@@ -1245,12 +1298,18 @@ mod tests {
         assert_eq!(report.rows_read, 8);
         assert_eq!(
             (report.foods, report.nutrients, report.values),
-            (4, 10, 36)
+            (4, 10, 37)
         );
         assert_eq!(report.duplicate_food_codes, vec!["99999"]);
         assert_eq!(report.repos[0].create, 10);
         assert_eq!(report.repos[1].create, 4);
-        assert_eq!(report.repos[2].create, 36);
+        assert_eq!(report.repos[2].create, 37);
+        assert_eq!(report.deferred_to_chapter3.len(), 1);
+        assert_eq!(report.cooking_state_review.blank_foods, 1);
+        assert_eq!(
+            report.cooking_state_review.unmapped_last_words[0].word,
+            "玄穀"
+        );
         // `remarks` is optional and this repo lacks it.
         assert_eq!(
             report.repos[1].skipped_optional_properties,
@@ -1262,12 +1321,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_clean_run_needs_no_accept_quarantine() {
+        // What the official files look like: errata applied (some over a
+        // conflict) and iodine `*` deferred to chapter 3, no anomalies.
+        let mut p = prepared();
+        p.catalog.quarantine.clear();
+        p.errata_outcomes.retain(|o| {
+            !matches!(
+                o.status,
+                ErrataStatus::Conflict | ErrataStatus::Unresolved
+            )
+        });
+        assert!(p
+            .errata_outcomes
+            .iter()
+            .any(|o| o.status == ErrataStatus::AppliedOverConflict));
+        assert!(!p.catalog.deferred_to_chapter3.is_empty());
+        let s = store();
+        let repos = plan(&p, &s).await;
+        let report =
+            build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
+        assert!(report.blockers.is_empty(), "{:?}", report.blockers);
+        assert!(
+            report.needs_accept_quarantine.is_empty(),
+            "{:?}",
+            report.needs_accept_quarantine
+        );
+
+        // A real anomaly still needs the flag.
+        let anomalous = prepared();
+        let report = build_report(
+            &anomalous,
+            "表全体",
+            "mext-sfct8-2023",
+            &repos,
+            "apply",
+        );
+        assert!(!report.needs_accept_quarantine.is_empty());
+    }
+
+    #[tokio::test]
     async fn import_is_idempotent_and_keeps_human_edits() {
         let p = prepared();
         let s = store();
         let first = apply(&p, &s).await;
-        assert_eq!((first.succeeded, first.failed), (50, 0));
-        assert_eq!(s.count(VAL), 36);
+        assert_eq!((first.succeeded, first.failed), (51, 0));
+        assert_eq!(s.count(VAL), 37);
 
         let onion = p
             .catalog
@@ -1288,7 +1387,7 @@ mod tests {
         let second = apply(&p, &s).await;
         assert_eq!(second.attempted, 0, "nothing changed, nothing sent");
         assert_eq!(*s.upserts.borrow(), upserts_before);
-        assert_eq!(s.count(VAL), 36, "no duplicates");
+        assert_eq!(s.count(VAL), 37, "no duplicates");
 
         let stored = s.record(ING, &onion.data_id).unwrap();
         assert_eq!(stored.fields[prop::STANDARD_NAME], "たまねぎ");
@@ -1328,9 +1427,9 @@ mod tests {
         assert_eq!(resumed.failed, 0);
         assert_eq!(resumed.not_attempted, 0);
         // Nutrients and the three ingredients that landed are not re-sent.
-        assert_eq!(resumed.succeeded, 1 + 36);
+        assert_eq!(resumed.succeeded, 1 + 37);
         assert_eq!(s.count(ING), 4);
-        assert_eq!(s.count(VAL), 36);
+        assert_eq!(s.count(VAL), 37);
     }
 
     #[tokio::test]
