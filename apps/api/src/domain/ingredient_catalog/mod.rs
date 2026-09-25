@@ -9,13 +9,12 @@
 //! Store-specific data (purchase prices, private recipes) never enters a
 //! catalog: the draft schema has no field for it and consumers only read.
 
-mod decimal;
 mod snapshot;
-mod value_status;
 
-pub use decimal::*;
+// The value rules live in a shared crate so the COM-861 importer
+// (`library food import`) applies exactly the rules publishing checks.
+pub use ingredient_notation::{NormalizedDecimal, NutrientValueStatus};
 pub use snapshot::*;
-pub use value_status::*;
 
 #[cfg(test)]
 pub(crate) use snapshot::fixtures;
