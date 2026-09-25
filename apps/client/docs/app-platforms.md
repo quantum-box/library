@@ -19,16 +19,19 @@ Production app builds point at this app's own sync Worker:
 wss://library-client-sync.quantum-box.workers.dev/ws
 ```
 
-It is defined by `apps/client/wrangler.jsonc` and shipped by the
-`library-client-sync` Cloud App in the repo-root `tachyon.yaml`, which runs
-`wrangler deploy` against that same config on every push to `main` that touches
-the Worker's bundle. `npm run worker:deploy` stays available for a manual
-deploy, but is no longer how production is kept current: while the Worker was
-hand-deployed the screen followed `main` through its own Cloud App and the
-Worker did not, and on 2026-09-08 production still ran the 09-05 build. Every
-Live room answered the WebSocket upgrade with 409, and because a browser cannot
-read a failed handshake's status the data editor simply said it was offline and
-retried forever.
+The Worker settings and production runtime variables live in the
+`library-client-sync` Cloud App declaration in the repo-root `tachyon.yaml`.
+Tachyon generates Wrangler's configuration during each Cloud App build and
+deploys it when a push to `main` touches the Worker's bundle. The repository
+does not keep a production `wrangler.jsonc`; `npm run worker:dev` uses
+`wrangler.preview.jsonc` for local development, and production deploys are
+handled by Tachyon.
+
+This replaced a manual deployment path that let the screen follow `main` through
+its own Cloud App while the Worker did not. On 2026-09-08 production still ran
+the 09-05 build. Every Live room answered the WebSocket upgrade with 409, and
+because a browser cannot read a failed handshake's status the data editor simply
+said it was offline and retried forever.
 
 Production used to point at `photon-sync`, which is Photon's own deployment
 rather than this app's: Library did not control when it was redeployed, and the
