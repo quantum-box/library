@@ -151,7 +151,12 @@ pub async fn stored(storage: &Storage) -> Result<Stored> {
                 // A client applies every frame it is sent, and one that is
                 // not a Yjs update would throw there.
                 match bytes(&raw) {
-                    Ok(update) if Update::decode_v1(&update).is_ok() => {
+                    // Applied to a scratch document, as a client will:
+                    // decoding alone passes structure a client rejects. No
+                    // size limit, which legacy rows may exceed.
+                    Ok(update)
+                        if apply(&Doc::with_client_id(1), &update).is_ok() =>
+                    {
                         updates.push(update)
                     }
                     _ => console_warn!(
