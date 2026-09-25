@@ -203,6 +203,7 @@ impl Property {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_display_name(
         id: &PropertyId,
         tenant_id: &TenantId,
