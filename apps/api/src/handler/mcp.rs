@@ -3341,6 +3341,11 @@ async fn resolve_auth_context(
             }
         }
     } else {
+        // A token issued for some resource cannot be checked against
+        // Library's resource without the external configuration.
+        if crate::sdk_auth::is_resource_bound_token(&token) {
+            return McpAuthContext::anonymous();
+        }
         None
     };
 
@@ -3369,6 +3374,21 @@ async fn resolve_auth_context(
             McpAuthContext::anonymous()
         }
     }
+}
+
+/// Verify a resource-bound OAuth token (see
+/// [`crate::sdk_auth::is_resource_bound_token`]) against Library's own
+/// resource: issuer, signature, expiry and `aud` = Library. Returns the
+/// subject. Without external OAuth configured Library names no resource,
+/// so every such token is refused rather than trusted by default.
+pub(crate) async fn verify_library_resource_token(
+    token: &str,
+) -> Result<String, &'static str> {
+    if !oauth_resource::enabled() {
+        return Err("resource-bound tokens need external OAuth configured");
+    }
+    let config = oauth_resource::Config::from_env()?;
+    Ok(config.verify(token).await?.subject)
 }
 
 async fn resolve_library_org(
