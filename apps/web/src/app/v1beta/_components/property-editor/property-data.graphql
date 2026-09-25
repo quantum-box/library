@@ -74,6 +74,7 @@ fragment ImageValueForEditor on ImageValue {
 fragment PropertyForEditor on Property {
   id
   name
+  displayName
   typ
   meta {
     ...PropertyTypeMetaForEditor

@@ -667,8 +667,8 @@ function RecordPage({
     key={property.id}
     className="-mx-2 grid min-h-9 grid-cols-[112px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-1.5 hover:bg-muted/40 sm:grid-cols-[132px_minmax(0,1fr)]"
     >
-    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.name}>
-    {property.name}
+    <span className="truncate pt-0.5 text-sm text-muted-foreground" title={property.displayName ?? property.name}>
+    {property.displayName ?? property.name}
     </span>
     <LibraryPropertyEditableCell
     item={item}

@@ -426,6 +426,33 @@ where
         // executor via their own policy checks.
         match sdk.verify_token(&token).await {
             Ok(user) => {
+                // tachyon-api verifies who the token belongs to, not which
+                // resource it was issued for. A resource-bound token must
+                // name Library, or a token issued for another service
+                // could be replayed here.
+                if crate::sdk_auth::is_resource_bound_token(&token) {
+                    let bound_to_library =
+                        crate::handler::mcp::verify_library_resource_token(
+                            &token,
+                        )
+                        .await
+                        .is_ok_and(|subject| user.id == subject);
+                    if !bound_to_library {
+                        tracing::warn!(
+                            "resource-bound token not issued for Library; \
+                             treating request as unauthenticated"
+                        );
+                        let executor = LibraryExecutor {
+                            inner: LibraryExecutorKind::None,
+                            original_token: None,
+                        };
+                        crate::sentry_context::configure_executor_scope(
+                            &executor,
+                            sentry_request_context(parts),
+                        );
+                        return Ok(executor);
+                    }
+                }
                 let executor = LibraryExecutor {
                     inner: LibraryExecutorKind::User(Box::new(user)),
                     original_token: Some(token),

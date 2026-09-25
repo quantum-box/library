@@ -26,6 +26,7 @@ message Property {
   string type = 4;
   bool is_indexed = 5;
   uint32 property_num = 6;
+  string display_name = 7;
 }
 
 // ## data
@@ -68,7 +69,8 @@ message CreateDatabaseRequest {
 
 message AddPropertyRequest {
   string database_id = 1;
-  // If name is empty, set propertyN name as default
+  // Stable key: starts with an ASCII letter, followed by ASCII letters,
+  // digits, underscores, or hyphens (maximum 64 characters).
   string name = 2;
   
   // ## type
@@ -92,6 +94,8 @@ message AddPropertyRequest {
   // 文字列リテラルで定義された複数の選択肢を持つプロパティ
   // `multi_select|{option1},{option2},{option3}`
   string property_type = 3;
+  // Human-readable label shown in the UI. Defaults to name when omitted.
+  string display_name = 4;
 }
 
 message GetDatabaseDefinitionRequest {
