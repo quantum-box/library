@@ -339,20 +339,18 @@ spec:
       readinessProof:
         path: /api/health
       # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # Scanner bearer と cron activation は Preview だけで検証する。
-      # production の scanner/cron を有効化するまでは Preview credential を
-      # production に流用しない。
+      # Tachyon Worker secrets は生成設定が必須で、現在の repo-owned wrangler.jsonc
+      # と併用できないため、生成設定へ移行するまでは Preview scanner を無効にする。
       environments:
         production:
           envVars: []
         preview:
           envVars:
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
-              value: "true"
+              value: "false"
+            # Plain sentinel removes the previously stored preview secret binding.
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
-              type: credential
-              valueFrom:
-                secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
+              value: "disabled"
 ---
 # Library MCP を RFC 8707 の resource indicator の宛先として Tachyon に登録する
 # (PLT-4373 / ADR-0104)。resource は Library の Protected Resource Metadata が

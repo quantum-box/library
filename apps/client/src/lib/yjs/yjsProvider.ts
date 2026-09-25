@@ -199,7 +199,14 @@ export function connectWs() {
     }
 
     const data = new Uint8Array(event.data as ArrayBuffer)
-    Y.applyUpdate(ydoc, data, WS_REMOTE)
+    try {
+      Y.applyUpdate(ydoc, data, WS_REMOTE)
+    } catch (error) {
+      // The room sends its stored log as it is, and cannot fully check each
+      // row against the document without rebuilding it. One this document
+      // rejects is skipped; the rest of the room still arrives.
+      console.warn('[yjs] skipped an update the document rejected', error)
+    }
 
     if (isFirstMessage) {
       isFirstMessage = false
