@@ -16,21 +16,29 @@ cargo build -p library-cli --release
 
 ## 認証
 
-`pk_` で始まる Library API key を使います。key は Library client の API keys 画面で発行します。
+既定はブラウザでのサインインです。
 
 ```bash
-library auth login --api-key pk_xxx
+library auth login          # ブラウザが開き、Tachyon でサインインする
 library auth status
 library auth logout
 ```
 
-`auth login` は保存前に key を API に問い合わせて検証します。飛ばす場合は `--no-verify`。`auth status` は key 全体ではなく prefix だけを表示します。
+Library API が `/.well-known/oauth-protected-resource` で案内する認可サーバーを使い、PKCE 付きの Authorization Code フローでトークンを取得します。トークンは Library 向け (RFC 8707 `resource`) に発行され、期限前に refresh token で自動更新されます。ブラウザを開けない環境では `--no-browser` で URL だけ表示します。
+
+CI やサービスアカウントでは、Library client の API keys 画面で発行した `pk_` で始まるキーを使います。
+
+```bash
+library auth login --api-key pk_xxx
+```
+
+`--api-key` の場合、保存前に key を API に問い合わせて検証します。飛ばす場合は `--no-verify`。`auth status` は key 全体ではなく prefix だけを表示し、ブラウザのトークンは表示しません。
 
 解決順序は次のとおりで、先に見つかったものが勝ちます。
 
 1. `--api-key` / `--api-url` / `--operator-id` フラグ
 2. 環境変数 `LIBRARY_API_KEY` / `LIBRARY_API_BASE_URL`
-3. `library auth login` が保存したローカル profile
+3. `library auth login` が保存したローカル profile（API key、なければブラウザのサインイン）
 
 いずれも無い場合、API URL は本番の `https://library-api.txcloud.app` を使います。ローカルの library-api に向けるときは `--api-url http://localhost:50055` か `LIBRARY_API_BASE_URL` を指定します。
 

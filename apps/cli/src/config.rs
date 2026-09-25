@@ -29,12 +29,17 @@ pub struct StoredConfig {
     /// name an organization in their path need it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operator_id: Option<String>,
+    /// Browser sign-in, used when no API key is configured anywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<crate::oauth::OAuthSession>,
 }
 
 /// What a command actually runs with, after all three sources are merged.
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
     pub api_base_url: String,
+    /// Bearer credential: an API key, or the browser sign-in's access
+    /// token when no key is configured.
     pub api_key: Option<String>,
     pub operator_id: Option<String>,
 }
@@ -126,7 +131,8 @@ pub fn delete_stored() -> Result<Option<PathBuf>> {
     }
 }
 
-/// The config file holds an API key, so it must not be world-readable.
+/// The config file holds an API key or tokens, so it must not be
+/// world-readable.
 #[cfg(unix)]
 fn restrict_to_owner(path: &PathBuf) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -166,6 +172,27 @@ pub fn resolve(overrides: &ConfigOverrides) -> Result<ResolvedConfig> {
     Ok(merge(overrides, &EnvConfig::from_process(), &stored))
 }
 
+/// Like `resolve`, but renews the browser sign-in first when it is the
+/// credential in use and about to expire, and saves the renewed tokens.
+pub async fn resolve_fresh(
+    overrides: &ConfigOverrides,
+) -> Result<ResolvedConfig> {
+    let mut stored = load_stored()?;
+    let env = EnvConfig::from_process();
+    let uses_session = overrides.api_key.is_none()
+        && env.api_key.is_none()
+        && stored.api_key.is_none();
+    if uses_session {
+        if let Some(session) = &stored.oauth {
+            if session.needs_refresh(crate::oauth::now_unix()) {
+                stored.oauth = Some(crate::oauth::refresh(session).await?);
+                save_stored(&stored)?;
+            }
+        }
+    }
+    Ok(merge(overrides, &env, &stored))
+}
+
 pub fn merge(
     overrides: &ConfigOverrides,
     env: &EnvConfig,
@@ -182,7 +209,8 @@ pub fn merge(
         .api_key
         .clone()
         .or_else(|| env.api_key.clone())
-        .or_else(|| stored.api_key.clone());
+        .or_else(|| stored.api_key.clone())
+        .or_else(|| stored.oauth.as_ref().map(|s| s.access_token.clone()));
 
     let operator_id = overrides
         .operator_id
@@ -270,7 +298,49 @@ mod tests {
     }
 
     #[test]
-    fn nothing_configured_falls_back_to_the_local_api() {
+    fn an_api_key_beats_the_browser_sign_in() {
+        let stored = StoredConfig {
+            api_key: Some("pk_stored".to_string()),
+            oauth: Some(session("access")),
+            ..Default::default()
+        };
+        let resolved = merge(
+            &ConfigOverrides::default(),
+            &EnvConfig::default(),
+            &stored,
+        );
+        assert_eq!(resolved.api_key.as_deref(), Some("pk_stored"));
+    }
+
+    #[test]
+    fn the_browser_sign_in_is_used_when_no_key_is_set() {
+        let stored = StoredConfig {
+            oauth: Some(session("access")),
+            ..Default::default()
+        };
+        let resolved = merge(
+            &ConfigOverrides::default(),
+            &EnvConfig::default(),
+            &stored,
+        );
+        assert_eq!(resolved.api_key.as_deref(), Some("access"));
+    }
+
+    fn session(access_token: &str) -> crate::oauth::OAuthSession {
+        crate::oauth::OAuthSession {
+            issuer: "https://issuer".into(),
+            token_endpoint: "https://issuer/token".into(),
+            revocation_endpoint: None,
+            client_id: "c".into(),
+            resource: "https://api/mcp".into(),
+            access_token: access_token.into(),
+            refresh_token: None,
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn nothing_configured_falls_back_to_the_production_api() {
         let resolved = merge(
             &ConfigOverrides::default(),
             &EnvConfig::default(),
