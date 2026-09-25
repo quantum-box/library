@@ -129,13 +129,15 @@ library org update acme --name '新しい名前' --description "$(library --json
 | --- | --- |
 | `library property list <org/repo>` | property 一覧 |
 | `library property get <org/repo> <property-id>` | property 詳細 |
-| `library property create <org/repo> <name> --type <type> [--auto-generate]` | property を作成 |
-| `library property update <org/repo> <property-id> --name <name>` | property を rename |
+| `library property create <org/repo> <key> --type <type> [--display-name <label>] [--auto-generate]` | property を作成 |
+| `library property update <org/repo> <property-id> [--name <key>] [--display-name <label>]` | property のkeyまたは表示名を更新 |
 | `library property delete <org/repo> <property-id> [--yes]` | property を削除 |
 
 `--type` の値: `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`, `boolean`。`html` は API 側で `rich_text` に置き換えられた旧型。
 
 `--auto-generate` は `--type id` でのみ必須で、他の型に付けると拒否される。
+
+property key はASCII英字で始まり、ASCII英字・数字・`_`・`-` のみを使う64文字以内の値。`name` はAPIで参照するkey、`display_name` は画面に表示するラベル。
 
 ### `source`
 

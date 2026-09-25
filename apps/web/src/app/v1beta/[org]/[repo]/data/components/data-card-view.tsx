@@ -203,7 +203,7 @@ export function DataCardView({
 													className='flex items-start gap-2 text-sm'
 												>
 													<span className='text-muted-foreground shrink-0'>
-														{prop.name}:
+														{prop.displayName ?? prop.name}:
 													</span>
 													<span className='text-foreground truncate'>
 														{formattedValue}

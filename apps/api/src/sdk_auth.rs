@@ -469,6 +469,14 @@ pub struct ServiceEndpoint {
     pub auth_token: String,
 }
 
+/// tachyon-api evaluates these for a user named in the body, authorized
+/// by Library's own credential (`auth:EvaluatePoliciesForUser`), so a
+/// caller's resource-bound token never has to be forwarded.
+const CHECK_POLICIES_FOR_USER_PATH: &str =
+    "/v1/auth/policies/check-for-user";
+const CHECK_RESOURCE_POLICY_FOR_USER_PATH: &str =
+    "/v1/auth/policies/check-for-resource-for-user";
+
 tokio::task_local! {
     /// Bearer token of the request currently being handled.
     ///
@@ -534,6 +542,80 @@ fn request_caller_token() -> Option<String> {
         .try_with(|token| token.clone())
         .ok()
         .flatten()
+}
+
+/// Whether `token` is an OAuth access token issued for a resource
+/// (RFC 8707) rather than to its client.
+///
+/// Library is the resource such a token names. tachyon-api rejects it,
+/// deliberately, so it cannot be replayed there; forwarding it would
+/// also be the token passthrough MCP forbids. This only decides *how*
+/// Library talks to tachyon-api for the caller. Who the caller is still
+/// comes from the verified executor, and the extractors check that the
+/// audience is Library's own resource.
+pub(crate) fn is_resource_bound_token(token: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Claims {
+        #[serde(default)]
+        aud: Option<serde_json::Value>,
+        #[serde(default)]
+        client_id: Option<String>,
+    }
+
+    let mut parts = token.split('.');
+    let (Some(_), Some(payload), Some(_), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    let Ok(bytes) = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('='))
+    else {
+        return false;
+    };
+    let Ok(claims) = serde_json::from_slice::<Claims>(&bytes) else {
+        return false;
+    };
+    // Cognito tokens and API keys carry no client_id claim of this kind.
+    let Some(client_id) = claims.client_id else {
+        return false;
+    };
+    match claims.aud {
+        None => false,
+        Some(serde_json::Value::String(aud)) => aud != client_id,
+        Some(serde_json::Value::Array(auds)) => {
+            !(auds.len() == 1 && auds[0].as_str() == Some(&client_id))
+        }
+        Some(_) => true,
+    }
+}
+
+/// `token` if it may be sent to tachyon-api, or `None` for a
+/// resource-bound token, which must never leave Library.
+fn forwardable(token: &str) -> Option<&str> {
+    (!is_resource_bound_token(token)).then_some(token)
+}
+
+/// The tenant a delegated decision is evaluated in: the caller's
+/// organization. `None` leaves it to tachyon-api, which then evaluates in
+/// the calling (platform) tenant.
+fn delegated_tenant_id(
+    multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
+) -> Option<String> {
+    multi_tenancy
+        .get_operator_id()
+        .ok()
+        .map(|id| id.to_string())
+}
+
+/// Insert `Authorization: Bearer` unless the token must not be forwarded.
+/// Without it tachyon-api answers 401, so a caller-scoped call fails
+/// closed instead of running with Library's own credential.
+fn insert_bearer(headers: &mut reqwest::header::HeaderMap, token: &str) {
+    if let Some(token) = forwardable(token) {
+        if let Ok(value) = format!("Bearer {token}").parse() {
+            headers.insert("Authorization", value);
+        }
+    }
 }
 
 impl Debug for SdkAuthApp {
@@ -648,9 +730,7 @@ impl SdkAuthApp {
         let token = request_caller_token()
             .unwrap_or_else(|| self.auth_token.clone());
         let mut headers = reqwest::header::HeaderMap::new();
-        if let Ok(value) = format!("Bearer {token}").parse() {
-            headers.insert("Authorization", value);
-        }
+        insert_bearer(&mut headers, &token);
         headers
             .insert("x-operator-id", tenant_id.as_str().parse().unwrap());
 
@@ -670,9 +750,7 @@ impl SdkAuthApp {
     /// Build an SDK Configuration using an explicit bearer token.
     fn sdk_config_with_token(&self, token: &str) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        if let Ok(value) = format!("Bearer {token}").parse() {
-            headers.insert("Authorization", value);
-        }
+        insert_bearer(&mut headers, token);
         headers.insert(
             "x-operator-id",
             self.default_operator_id.parse().unwrap(),
@@ -686,10 +764,9 @@ impl SdkAuthApp {
     /// executor/multi-tenancy context.
     fn sdk_config(&self) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "Authorization",
-            format!("Bearer {}", self.auth_token).parse().unwrap(),
-        );
+        // `auth_token` is the caller's token on a `with_caller_token`
+        // instance, so it goes through the same check.
+        insert_bearer(&mut headers, &self.auth_token);
         headers.insert(
             "x-operator-id",
             self.default_operator_id.parse().unwrap(),
@@ -727,11 +804,23 @@ impl SdkAuthApp {
         } else {
             self.auth_token.clone()
         };
-        headers.insert(
-            "Authorization",
-            format!("Bearer {bearer}").parse().unwrap(),
-        );
+        insert_bearer(&mut headers, &bearer);
+        Self::insert_tenant_headers(&mut headers, multi_tenancy);
 
+        if let Ok(user_id) = executor.get_user_id() {
+            if let Ok(val) = user_id.to_string().parse() {
+                headers.insert("x-user-id", val);
+            }
+        }
+
+        self.configuration(headers)
+    }
+
+    /// `x-operator-id`, plus `x-platform-id` when it differs.
+    fn insert_tenant_headers(
+        headers: &mut reqwest::header::HeaderMap,
+        multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
+    ) {
         let resolved_op = multi_tenancy.get_operator_id().ok();
 
         if let Some(ref op_id) = resolved_op {
@@ -749,13 +838,45 @@ impl SdkAuthApp {
                 }
             }
         }
+    }
 
-        if let Ok(user_id) = executor.get_user_id() {
-            if let Ok(val) = user_id.to_string().parse() {
-                headers.insert("x-user-id", val);
-            }
+    /// The verified user a policy decision is for, when the caller's
+    /// token must not be forwarded and Library has to ask on the user's
+    /// behalf with its own credential.
+    fn delegated_policy_subject(
+        &self,
+        executor: &dyn tachyon_sdk::auth::ExecutorAction,
+    ) -> Option<String> {
+        if !executor.is_user() {
+            return None;
         }
+        let bearer = request_caller_token()
+            .unwrap_or_else(|| self.auth_token.clone());
+        if !is_resource_bound_token(&bearer) {
+            return None;
+        }
+        executor.get_user_id().ok().map(|id| id.to_string())
+    }
 
+    /// Library's own credential, for asking tachyon-api about a verified
+    /// user without their token.
+    ///
+    /// The service key verifies only in Library's platform tenant, so the
+    /// request is scoped there and the organization the decision is for
+    /// travels as `tenantId` in the body (see `delegated_tenant_id`);
+    /// tachyon-api checks that it descends from this tenant.
+    fn sdk_config_as_service(&self) -> Configuration {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "Authorization",
+            format!("Bearer {}", self.service_auth_token)
+                .parse()
+                .unwrap(),
+        );
+        headers.insert(
+            "x-operator-id",
+            self.default_operator_id.parse().unwrap(),
+        );
         self.configuration(headers)
     }
 
@@ -763,10 +884,7 @@ impl SdkAuthApp {
     /// Used by SdkOAuthTokenRepository and get_user_by_id_full.
     fn sdk_config_for_tenant(&self, tenant_id: &TenantId) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "Authorization",
-            format!("Bearer {}", self.auth_token).parse().unwrap(),
-        );
+        insert_bearer(&mut headers, &self.auth_token);
         headers.insert(
             "x-operator-id",
             tenant_id.to_string().parse().unwrap(),
@@ -1296,6 +1414,10 @@ impl SdkAuthApp {
             return Ok(user);
         }
 
+        // Verification is the one call a resource-bound token may make:
+        // it goes to the token's own issuer, which is what verification
+        // means, and returns identity only. Everything else refuses it;
+        // see `insert_bearer`.
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             "Authorization",
@@ -2068,27 +2190,39 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::CheckPolicyInput<'a>,
     ) -> errors::Result<()> {
-        let config = self
-            .sdk_config_with_context(input.executor, input.multi_tenancy);
-        let req = tachyon_sdk::models::EvaluatePoliciesBatchRequest {
-            actions: vec![input.action.to_string()],
+        let (config, path, req) = match self
+            .delegated_policy_subject(input.executor)
+        {
+            Some(user_id) => (
+                self.sdk_config_as_service(),
+                CHECK_POLICIES_FOR_USER_PATH,
+                serde_json::json!({
+                    "userId": user_id,
+                    "tenantId": delegated_tenant_id(input.multi_tenancy),
+                    "actions": [input.action.to_string()],
+                }),
+            ),
+            None => (
+                self.sdk_config_with_context(
+                    input.executor,
+                    input.multi_tenancy,
+                ),
+                "/v1/auth/policies/check",
+                serde_json::json!({ "actions": [input.action.to_string()] }),
+            ),
         };
 
         let resp: tachyon_sdk::models::EvaluatePoliciesBatchResponse =
-            Self::rest_post_observed(
-                &config,
-                "/v1/auth/policies/check",
-                &req,
-            )
-            .await
-            .map_err(|failure| {
-                observe_sdk_request_failure(
-                    "check_policy",
-                    failure.error,
-                    failure.correlation_id.as_deref(),
-                );
-                failure.error.into_public_error()
-            })?;
+            Self::rest_post_observed(&config, path, &req)
+                .await
+                .map_err(|failure| {
+                    observe_sdk_request_failure(
+                        "check_policy",
+                        failure.error,
+                        failure.correlation_id.as_deref(),
+                    );
+                    failure.error.into_public_error()
+                })?;
 
         if let Some(result) = resp.results.first() {
             if !result.allowed {
@@ -2106,18 +2240,38 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::EvaluatePoliciesBatchInput<'a>,
     ) -> errors::Result<Vec<auth::EvaluatePoliciesBatchOutcome>> {
-        let config = self
-            .sdk_config_with_context(input.executor, input.multi_tenancy);
-        let req = tachyon_sdk::models::EvaluatePoliciesBatchRequest {
-            actions: input.actions.iter().map(|a| a.to_string()).collect(),
-        };
-
-        let resp =
-            tachyon_sdk::apis::auth_policies_api::evaluate_policies_batch(
-                &config, req,
-            )
-            .await
-            .map_err(sdk_api_err)?;
+        let actions: Vec<String> =
+            input.actions.iter().map(|a| a.to_string()).collect();
+        let resp: tachyon_sdk::models::EvaluatePoliciesBatchResponse =
+            match self.delegated_policy_subject(input.executor) {
+                Some(user_id) => {
+                    Self::rest_post(
+                        &self.sdk_config_as_service(),
+                        CHECK_POLICIES_FOR_USER_PATH,
+                        &serde_json::json!({
+                            "userId": user_id,
+                            "tenantId": delegated_tenant_id(input.multi_tenancy),
+                            "actions": actions,
+                        }),
+                    )
+                    .await?
+                }
+                None => {
+                    let config = self.sdk_config_with_context(
+                        input.executor,
+                        input.multi_tenancy,
+                    );
+                    let req =
+                        tachyon_sdk::models::EvaluatePoliciesBatchRequest {
+                            actions,
+                        };
+                    tachyon_sdk::apis::auth_policies_api::evaluate_policies_batch(
+                        &config, req,
+                    )
+                    .await
+                    .map_err(sdk_api_err)?
+                }
+            };
 
         Ok(resp
             .results
@@ -2537,33 +2691,47 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::CheckPolicyForResourceInput<'a>,
     ) -> errors::Result<()> {
-        let config = self
-            .sdk_config_with_context(input.executor, input.multi_tenancy);
-        let body = serde_json::json!({
-            "action": input.action.to_string(),
-            "resourceTrn": input.resource_trn.to_string(),
-        });
+        let (config, path, body) = match self
+            .delegated_policy_subject(input.executor)
+        {
+            Some(user_id) => (
+                self.sdk_config_as_service(),
+                CHECK_RESOURCE_POLICY_FOR_USER_PATH,
+                serde_json::json!({
+                    "userId": user_id,
+                    "tenantId": delegated_tenant_id(input.multi_tenancy),
+                    "action": input.action.to_string(),
+                    "resourceTrn": input.resource_trn.to_string(),
+                }),
+            ),
+            None => (
+                self.sdk_config_with_context(
+                    input.executor,
+                    input.multi_tenancy,
+                ),
+                "/v1/auth/policies/check-for-resource",
+                serde_json::json!({
+                    "action": input.action.to_string(),
+                    "resourceTrn": input.resource_trn.to_string(),
+                }),
+            ),
+        };
 
         #[derive(Deserialize)]
         struct Resp {
             allowed: bool,
         }
 
-        let resp: Resp = Self::rest_post(
-            &config,
-            "/v1/auth/policies/check-for-resource",
-            &body,
-        )
-        .await
-        .map_err(|e| {
-            tracing::debug!(
-                action = %input.action,
-                resource = %input.resource_trn,
-                error = %e,
-                "check_policy_for_resource failed"
-            );
-            e
-        })?;
+        let resp: Resp =
+            Self::rest_post(&config, path, &body).await.map_err(|e| {
+                tracing::debug!(
+                    action = %input.action,
+                    resource = %input.resource_trn,
+                    error = %e,
+                    "check_policy_for_resource failed"
+                );
+                e
+            })?;
 
         if !resp.allowed {
             return Err(errors::Error::forbidden(format!(
@@ -4391,6 +4559,228 @@ mod caller_token_scope_tests {
             Some("Bearer caller-jwt".to_string()),
             "API-key policies must not be evaluated using the service's fallback credential",
         );
+    }
+
+    /// An unsigned JWT with `claims`; only the payload matters to the
+    /// classifier, which never trusts it for identity.
+    fn fake_jwt(claims: serde_json::Value) -> String {
+        let enc = |v: &serde_json::Value| {
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(v).unwrap())
+        };
+        format!(
+            "{}.{}.sig",
+            enc(&serde_json::json!({ "alg": "RS256", "kid": "k" })),
+            enc(&claims)
+        )
+    }
+
+    fn library_resource_token() -> String {
+        fake_jwt(serde_json::json!({
+            "sub": "us_01testcaller",
+            "client_id": "mcp_cli",
+            "aud": "https://library-api.txcloud.app/mcp",
+        }))
+    }
+
+    #[test]
+    fn classifies_resource_bound_tokens() {
+        assert!(is_resource_bound_token(&library_resource_token()));
+        assert!(is_resource_bound_token(&fake_jwt(serde_json::json!({
+            "client_id": "c", "aud": ["c", "https://other"],
+        }))));
+        // Issued to the client itself: tachyon-api accepts these.
+        assert!(!is_resource_bound_token(&fake_jwt(serde_json::json!({
+            "client_id": "c", "aud": "c",
+        }))));
+        assert!(!is_resource_bound_token(&fake_jwt(serde_json::json!({
+            "client_id": "c", "aud": ["c"],
+        }))));
+        // Cognito tokens, API keys and junk are not resource-bound.
+        assert!(!is_resource_bound_token(&fake_jwt(serde_json::json!({
+            "sub": "u", "token_use": "access",
+        }))));
+        assert!(!is_resource_bound_token("pk_live_abc"));
+        assert!(!is_resource_bound_token("caller-jwt"));
+        assert!(!is_resource_bound_token("a.b.c"));
+    }
+
+    #[test]
+    fn resource_bound_tokens_are_never_put_in_a_header() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        insert_bearer(&mut headers, &library_resource_token());
+        assert!(headers.get("Authorization").is_none());
+
+        insert_bearer(&mut headers, "caller-jwt");
+        assert_eq!(headers["Authorization"], "Bearer caller-jwt");
+    }
+
+    type PolicyCall = for<'a> fn(
+        &'a SdkAuthApp,
+        &'a UserExecutor,
+        &'a auth::MultiTenancy,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = ()> + Send + 'a>,
+    >;
+
+    /// One policy call against a stub tachyon-api, as a user signed in
+    /// with `caller_token`. Returns (path, Authorization, body) per request.
+    async fn policy_requests_as_user(
+        caller_token: String,
+        call: PolicyCall,
+    ) -> Vec<(String, Option<String>, serde_json::Value)> {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let app = axum::Router::new().fallback(axum::routing::any(
+            move |uri: axum::http::Uri,
+                  headers: axum::http::HeaderMap,
+                  body: axum::body::Bytes| {
+                let captured = captured.clone();
+                async move {
+                    let auth = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    let body = serde_json::from_slice(&body)
+                        .unwrap_or(serde_json::Value::Null);
+                    captured.lock().unwrap().push((
+                        uri.path().to_string(),
+                        auth,
+                        body,
+                    ));
+                    axum::Json(serde_json::json!({
+                        "results": [{ "action": "library:UpdateRepo", "allowed": true }],
+                        "allowed": true,
+                    }))
+                }
+            },
+        ));
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+        let multi_tenancy = auth::MultiTenancy::new(
+            Some(tenant_id.clone()),
+            Some(tenant_id.clone()),
+        );
+        caller_token_scope(Some(caller_token), async {
+            call(&sdk, &UserExecutor, &multi_tenancy).await
+        })
+        .await;
+        let seen = requests.lock().unwrap().clone();
+        seen
+    }
+
+    fn check_update_repo<'a>(
+        sdk: &'a SdkAuthApp,
+        executor: &'a UserExecutor,
+        multi_tenancy: &'a auth::MultiTenancy,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>
+    {
+        Box::pin(async move {
+            AuthApp::check_policy(
+                sdk,
+                &auth::CheckPolicyInput {
+                    executor,
+                    multi_tenancy,
+                    action: "library:UpdateRepo",
+                },
+            )
+            .await
+            .unwrap();
+        })
+    }
+
+    #[tokio::test]
+    async fn a_resource_bound_caller_is_checked_with_the_service_credential(
+    ) {
+        let seen = policy_requests_as_user(
+            library_resource_token(),
+            check_update_repo,
+        )
+        .await;
+        assert_eq!(seen.len(), 1);
+        let (path, auth, body) = &seen[0];
+        assert_eq!(path, CHECK_POLICIES_FOR_USER_PATH);
+        assert_eq!(auth.as_deref(), Some("Bearer process-level-token"));
+        assert_eq!(body["userId"], "us_01testcaller");
+        assert_eq!(
+            body["actions"],
+            serde_json::json!(["library:UpdateRepo"])
+        );
+        assert_eq!(body["tenantId"], TEST_TENANT_ID);
+    }
+
+    #[tokio::test]
+    async fn a_client_token_caller_is_still_checked_as_themselves() {
+        let seen =
+            policy_requests_as_user("caller-jwt".into(), check_update_repo)
+                .await;
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "/v1/auth/policies/check");
+        assert_eq!(seen[0].1.as_deref(), Some("Bearer caller-jwt"));
+    }
+
+    #[tokio::test]
+    async fn a_resource_bound_caller_is_checked_per_resource_as_the_service(
+    ) {
+        let seen = policy_requests_as_user(
+            library_resource_token(),
+            |sdk, executor, mt| {
+                Box::pin(async move {
+                    AuthApp::check_policy_for_resource(
+                        sdk,
+                        &auth::CheckPolicyForResourceInput {
+                            executor,
+                            multi_tenancy: mt,
+                            action: "library:ViewRepo",
+                            resource_trn: "trn:library:repo:rp_1",
+                        },
+                    )
+                    .await
+                    .unwrap();
+                })
+            },
+        )
+        .await;
+        let (path, auth, body) = &seen[0];
+        assert_eq!(path, CHECK_RESOURCE_POLICY_FOR_USER_PATH);
+        assert_eq!(auth.as_deref(), Some("Bearer process-level-token"));
+        assert_eq!(body["userId"], "us_01testcaller");
+        assert_eq!(body["resourceTrn"], "trn:library:repo:rp_1");
+        assert_eq!(body["tenantId"], TEST_TENANT_ID);
+    }
+
+    #[tokio::test]
+    async fn other_caller_calls_never_carry_a_resource_bound_token() {
+        // Not a policy check: there is no delegated form, so the call
+        // goes out unauthenticated and fails, instead of forwarding the
+        // token or borrowing Library's credential.
+        let seen = policy_requests_as_user(
+            library_resource_token(),
+            |sdk, _executor, _mt| {
+                Box::pin(async move {
+                    let tenant_id: TenantId =
+                        TEST_TENANT_ID.parse().unwrap();
+                    let _ = sdk
+                        .get_operator_by_alias(&tenant_id, "some-org")
+                        .await;
+                })
+            },
+        )
+        .await;
+        assert!(!seen.is_empty());
+        for (_, auth, _) in seen {
+            assert_eq!(auth, None);
+        }
     }
 
     /// Serves a tachyon whose `/v1/me` is down, so `verify_token` has to

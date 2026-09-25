@@ -122,7 +122,7 @@ pub fn collect_schema_labels(
             TranslationScope::PropertyDef,
             TranslationItem {
                 id: property.id().to_string(),
-                text: property.name().to_string(),
+                text: property.display_name().to_string(),
             },
         ));
 

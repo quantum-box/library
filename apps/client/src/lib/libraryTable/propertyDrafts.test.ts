@@ -3,7 +3,7 @@ import type { LibraryProperty } from '../recordsApi'
 import { canRenameProperty, propertyRenameDraft, tablePropertyTypeChoices } from './propertyDrafts'
 
 describe('propertyDrafts', () => {
-  it('carries every Select option back, so none reads as deleted', () => {
+  it('renames a Select display label without changing its key or options', () => {
     const property: LibraryProperty = {
       id: 'p1',
       name: 'status',
@@ -11,13 +11,14 @@ describe('propertyDrafts', () => {
       meta: { options: [{ id: 'o1', key: 'draft', name: 'Draft' }] },
     }
     expect(propertyRenameDraft(property, 'state')).toEqual({
-      name: 'state',
+      name: 'status',
+      displayName: 'state',
       type: 'SELECT',
       options: [{ id: 'o1', identifier: 'draft', label: 'Draft' }],
     })
   })
 
-  it('keeps an Id column generating its own values', () => {
+  it('renames an Id display label without changing its key or generator', () => {
     const property: LibraryProperty = {
       id: 'p2',
       name: 'id',
@@ -25,13 +26,14 @@ describe('propertyDrafts', () => {
       meta: { autoGenerate: true },
     }
     expect(propertyRenameDraft(property, 'key')).toEqual({
-      name: 'key',
+      name: 'id',
+      displayName: 'key',
       type: 'ID',
       autoGenerateId: true,
     })
   })
 
-  it('keeps a Relation pointed at its target', () => {
+  it('renames a Relation display label without changing its key or target', () => {
     const property: LibraryProperty = {
       id: 'p3',
       name: 'linked',
@@ -39,7 +41,8 @@ describe('propertyDrafts', () => {
       meta: { databaseId: 'repo-9' },
     }
     expect(propertyRenameDraft(property, 'related')).toEqual({
-      name: 'related',
+      name: 'linked',
+      displayName: 'related',
       type: 'RELATION',
       relationDatabaseId: 'repo-9',
     })

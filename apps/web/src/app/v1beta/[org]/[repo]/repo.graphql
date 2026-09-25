@@ -156,6 +156,7 @@ fragment PaginationField on Paginator {
 fragment PropertyFieldOnRepoPage on Property {
   id
   name
+  displayName
   typ
   meta {
     ... on IdType {

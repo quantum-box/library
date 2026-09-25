@@ -57,6 +57,7 @@ async fn add_relation_property(
     let property = app
         .add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -765,6 +766,7 @@ async fn dormant_record_delete_uow_prioritizes_cas_and_guards_lifecycle(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: indexed_database.id(),
+            display_name: None,
             name: "indexed",
             property_type: PropertyType::String,
         })

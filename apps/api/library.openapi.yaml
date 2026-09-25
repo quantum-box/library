@@ -19,7 +19,18 @@ components:
           - boolean
           - 'null'
         name:
+          description: Stable key used by API clients to identify the Property.
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z][A-Za-z0-9_-]{0,63}$
           type: string
+        display_name:
+          description: Human-readable label. Defaults to name when omitted.
+          minLength: 1
+          maxLength: 255
+          type:
+          - string
+          - 'null'
         property_type:
           type: string
       required:
@@ -586,7 +597,12 @@ components:
           - 'null'
         id:
           type: string
+        display_name:
+          description: Human-readable label shown in the user interface.
+          maxLength: 255
+          type: string
         name:
+          description: Stable key used by API clients to identify the Property.
           type: string
         options:
           description: |-
@@ -605,6 +621,7 @@ components:
       required:
       - id
       - name
+      - display_name
       - property_type
       type: object
     PropertySelectOptionResponse:
@@ -932,10 +949,21 @@ components:
       type: object
     UpdatePropertyRequest:
       properties:
+        display_name:
+          description: New human-readable label for the Property.
+          minLength: 1
+          maxLength: 255
+          type:
+          - string
+          - 'null'
         name:
-          type: string
-      required:
-      - name
+          description: New stable key for the Property.
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z][A-Za-z0-9_-]{0,63}$
+          type:
+          - string
+          - 'null'
       type: object
     UpdateRepoRequest:
       properties:
