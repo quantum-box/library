@@ -1765,9 +1765,7 @@ type Property {
 	tenantId: String!
 	databaseId: String!
 	"""
-	Stable key used by API clients to identify this Property. It must start with
-	an ASCII letter and contain only ASCII letters, digits, underscores, or
-	hyphens, up to 64 characters.
+	Stable key used by API clients to identify this Property.
 	"""
 	name: String!
 	"""
@@ -1821,13 +1819,13 @@ input PropertyInput {
 	orgUsername: String!
 	repoUsername: String!
 	"""
-	Stable key used by API clients to identify this Property. It must start with
-	an ASCII letter and contain only ASCII letters, digits, underscores, or
-	hyphens, up to 64 characters.
+	Stable key used by API clients to identify this Property. It must start
+	with an ASCII letter and contain only ASCII letters, digits,
+	underscores, or hyphens, up to 64 characters.
 	"""
 	propertyName: String!
 	"""
-	Human-readable label shown in the user interface. Defaults to propertyName.
+	Human-readable label shown in the user interface; defaults to the key.
 	"""
 	displayName: String
 	propertyType: PropertyType!
