@@ -23,6 +23,8 @@ pub use source_repository::*;
 
 pub mod global_id_mapping_repository;
 pub use global_id_mapping_repository::*;
+pub mod ingredient_catalog_repository;
+pub use ingredient_catalog_repository::*;
 
 pub mod published_language_repository;
 pub use published_language_repository::*;

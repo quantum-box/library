@@ -12,9 +12,9 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, docs::*, global_id_mapping::*, image::*, live::*,
-    organization::*, property::*, repository::*, share_link::*, source::*,
-    translation::*,
+    auth::*, data::*, docs::*, global_id_mapping::*, image::*,
+    ingredient_catalog::*, live::*, organization::*, property::*,
+    repository::*, share_link::*, source::*, translation::*,
 };
 
 // TODO: add English comment
@@ -171,6 +171,14 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(update_source))
         .routes(routes!(delete_source))
         .routes(routes!(get_global_id_mapping))
+        .routes(routes!(create_ingredient_catalog))
+        .routes(routes!(
+            publish_ingredient_release,
+            list_ingredient_releases
+        ))
+        .routes(routes!(get_ingredient_release))
+        .routes(routes!(search_released_ingredients))
+        .routes(routes!(get_released_ingredient))
         .routes(routes!(get_published_languages))
         .routes(routes!(set_published_languages))
         .routes(routes!(run_translations))
