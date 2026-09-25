@@ -88,7 +88,12 @@ Every refused join is logged (`live_join_refused` / `live_open_refused`) with
 its status and a fixed reason, never a ticket, session or credential.
 
 Snapshot replay works in batches of 64 rows, folds at most 512 rows per pass,
-and continues on the next request or alarm. Snapshots use 96 KiB chunks;
+and continues on the next request or alarm. The generic relay (`/ws`) never
+builds its document to serve a request: a join is sent the stored snapshot and
+logged updates as they are, a client update is validated, logged and relayed,
+and only an alarm -- scheduled once more than 50 updates wait -- folds the log.
+Building the document on every join had grown past the Durable Object's time
+limit for a large workspace room, so no one could join it. Snapshots use 96 KiB chunks;
 checkpoint bodies use 64 KiB chunks. Replay results are capped at 128 entries
 and 15 minutes, except a result pinned by a pending operation. Ticket and
 session cleanup scans at most 128 keys per prefix per alarm.

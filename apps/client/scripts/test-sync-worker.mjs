@@ -173,6 +173,52 @@ test('generic Yjs relay exchanges edits, presence and engine-changed; recovers a
   await a.take('engine-changed'); assert.equal(s.state.calls.at(-1).headers.authorization, 'Bearer user-token')
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === 'hello world')
 })
+test('generic Yjs relay serves its stored log to joiners and compacts it only in an alarm', async (t) => {
+  const s = await scenario(t); const a = await s.sync()
+  for (let i = 0; i < 60; i += 1) a.edit(`${i},`)
+  const expected = Array.from({ length: 60 }, (_, i) => `${i},`).join('')
+  const room = async () => s.storage('PHOTON_SYNC_ROOMS', 'records')
+  // A joiner gets every edit whether or not a compaction has run yet.
+  const b = await s.sync(); await until(() => b.doc.getText('body').toString() === expected)
+  // The long log is folded by an alarm (scheduled a second out; run here in
+  // case it has not fired), not while relaying.
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm')
+  await until(async () => (await room())['yjs:snapshot:meta']?.seq === 60, 'log folded')
+  assert.equal(Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length, 0)
+  a.edit('after')
+  await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === `${expected}after`)
+})
+test('clients joining while another edits receive every edit', async (t) => {
+  const s = await scenario(t); const a = await s.sync()
+  let expected = ''
+  const joins = []
+  for (let i = 0; i < 40; i += 1) {
+    a.edit(`${i},`); expected += `${i},`
+    if (i % 8 === 0) joins.push(s.sync())
+  }
+  const joined = await Promise.all(joins)
+  for (const b of joined) await until(() => b.doc.getText('body').toString() === expected, 'joiner has every edit')
+})
+test('a joiner is not sent a stored row that is not a Yjs update', async (t) => {
+  const s = await scenario(t); const source = new Y.Doc(); const updates = []
+  source.on('update', (u) => updates.push(u))
+  for (let i = 0; i < 3; i++) source.getText('body').insert(source.getText('body').length, `${i};`)
+  await s.seed({
+    'yjs:update:000000000001': asBytes(updates[0]),
+    'yjs:update:000000000002': asBytes(new Uint8Array([255, 255, 255, 255])),
+    'yjs:update:000000000003': asBytes(updates[1]),
+    'yjs:update:000000000004': asBytes(updates[2]),
+    'yjs:update:meta': { oldestSeq: 1, nextSeq: 5 },
+  }, 'PHOTON_SYNC_ROOMS', 'corrupt')
+  const response = await s.fetch('/ws?room=corrupt', { headers: { upgrade: 'websocket' } })
+  const ws = response.webSocket; const doc = new Y.Doc(); const failures = []
+  ws.addEventListener('message', ({ data }) => {
+    if (typeof data !== 'string') try { Y.applyUpdate(doc, new Uint8Array(data)) } catch (e) { failures.push(e) }
+  })
+  ws.accept(); t.after(() => ws.close())
+  await until(() => doc.getText('body').toString() === source.getText('body').toString(), 'good rows applied')
+  assert.deepEqual(failures, [])
+})
 test('two Live clients initialize once, exchange updates, save and reload Yjs state', async (t) => {
   const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
   await until(() => b.doc.getText('body').toString() === 'Seed')
@@ -490,6 +536,8 @@ test('snapshot compaction spans multiple values and preserves out-of-order Yjs d
   await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 60)
   a.ws.send(updates[0])
   await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 61)
+  // Folded by the alarm the long log scheduled, not while relaying.
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'large')).fetch('https://fixture/__test/alarm')
   const stored = await s.storage('PHOTON_SYNC_ROOMS', 'large'); assert.ok(stored['yjs:snapshot:meta'].chunks > 1)
   await s.restart(); const b = await s.sync('large'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
@@ -538,12 +586,14 @@ test('backlogged rooms resume over alarms without replaying the same prefix fore
     ...Object.fromEntries(updates.map((u, i) => [`yjs:update:${String(i + 1).padStart(12, '0')}`, asBytes(u)])),
     'yjs:update:meta': { oldestSeq: 1, nextSeq: 601 },
   }, 'PHOTON_SYNC_ROOMS', 'backlog')
+  // A joiner is sent the whole log as stored, without waiting on a fold.
   const a = await s.sync('backlog')
+  await until(() => a.doc.getText('body').toString() === source.getText('body').toString(), 'log sent on join')
+  // Alarms fold it a bounded pass at a time, each one further than the last.
+  await (await s.stub('PHOTON_SYNC_ROOMS', 'backlog')).fetch('https://fixture/__test/alarm')
   const partial = await s.storage('PHOTON_SYNC_ROOMS', 'backlog')
-  assert.equal(partial['yjs:snapshot:meta'].seq, 512)
-  await until(() => a.doc.getText('body').toString() === source.getText('body').toString(), 'alarm catch-up')
-  const done = await s.storage('PHOTON_SYNC_ROOMS', 'backlog')
-  assert.equal(done['yjs:update:meta'].oldestSeq, 601)
+  assert.ok(partial['yjs:snapshot:meta'].seq >= 512)
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'backlog'))['yjs:update:meta'].oldestSeq === 601, 'alarm catch-up')
   await s.restart(); const b = await s.sync('backlog'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
 test('malformed and oversized frames cannot change document versions or pending state', async (t) => {
