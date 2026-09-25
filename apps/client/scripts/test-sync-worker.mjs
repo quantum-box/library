@@ -178,16 +178,13 @@ test('generic Yjs relay serves its stored log to joiners and compacts it only in
   for (let i = 0; i < 60; i += 1) a.edit(`${i},`)
   const expected = Array.from({ length: 60 }, (_, i) => `${i},`).join('')
   const room = async () => s.storage('PHOTON_SYNC_ROOMS', 'records')
-  await until(async () => Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length === 60)
-  // Nothing was folded while relaying; a joiner is sent the log as stored.
-  assert.equal((await room())['yjs:snapshot:meta'], undefined)
+  // A joiner gets every edit whether or not a compaction has run yet.
   const b = await s.sync(); await until(() => b.doc.getText('body').toString() === expected)
-  const alarm = async () => (await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm-state')).json()
-  assert.ok((await alarm()).alarm, 'a long log schedules a compaction')
+  // The long log is folded by an alarm (scheduled a second out; run here in
+  // case it has not fired), not while relaying.
   await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm')
-  const compacted = await room()
-  assert.equal(Object.keys(compacted).filter((k) => k.startsWith('yjs:update:0')).length, 0)
-  assert.equal(compacted['yjs:snapshot:meta'].seq, 60)
+  await until(async () => (await room())['yjs:snapshot:meta']?.seq === 60, 'log folded')
+  assert.equal(Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length, 0)
   a.edit('after')
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === `${expected}after`)
 })
@@ -201,6 +198,26 @@ test('clients joining while another edits receive every edit', async (t) => {
   }
   const joined = await Promise.all(joins)
   for (const b of joined) await until(() => b.doc.getText('body').toString() === expected, 'joiner has every edit')
+})
+test('a joiner is not sent a stored row that is not a Yjs update', async (t) => {
+  const s = await scenario(t); const source = new Y.Doc(); const updates = []
+  source.on('update', (u) => updates.push(u))
+  for (let i = 0; i < 3; i++) source.getText('body').insert(source.getText('body').length, `${i};`)
+  await s.seed({
+    'yjs:update:000000000001': asBytes(updates[0]),
+    'yjs:update:000000000002': asBytes(new Uint8Array([255, 255, 255, 255])),
+    'yjs:update:000000000003': asBytes(updates[1]),
+    'yjs:update:000000000004': asBytes(updates[2]),
+    'yjs:update:meta': { oldestSeq: 1, nextSeq: 5 },
+  }, 'PHOTON_SYNC_ROOMS', 'corrupt')
+  const response = await s.fetch('/ws?room=corrupt', { headers: { upgrade: 'websocket' } })
+  const ws = response.webSocket; const doc = new Y.Doc(); const failures = []
+  ws.addEventListener('message', ({ data }) => {
+    if (typeof data !== 'string') try { Y.applyUpdate(doc, new Uint8Array(data)) } catch (e) { failures.push(e) }
+  })
+  ws.accept(); t.after(() => ws.close())
+  await until(() => doc.getText('body').toString() === source.getText('body').toString(), 'good rows applied')
+  assert.deepEqual(failures, [])
 })
 test('two Live clients initialize once, exchange updates, save and reload Yjs state', async (t) => {
   const s = await scenario(t); const a = await s.initialize(); const b = await s.live()

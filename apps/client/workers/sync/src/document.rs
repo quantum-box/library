@@ -148,8 +148,16 @@ pub async fn stored(storage: &Storage) -> Result<Stored> {
                     continue;
                 };
                 // As catching up does: a malformed row is skipped, not fatal.
-                if let Ok(update) = bytes(&raw) {
-                    updates.push(update);
+                // A client applies every frame it is sent, and one that is
+                // not a Yjs update would throw there.
+                match bytes(&raw) {
+                    Ok(update) if Update::decode_v1(&update).is_ok() => {
+                        updates.push(update)
+                    }
+                    _ => console_warn!(
+                        "{{\"event\":\"corrupt_yjs_update\",\"sequence\":{}}}",
+                        row
+                    ),
                 }
                 cursor = cursor.max(row + 1);
             }
