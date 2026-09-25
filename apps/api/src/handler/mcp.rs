@@ -247,6 +247,8 @@ struct CreatePropertyArgs {
     org: String,
     repo: String,
     name: String,
+    #[serde(default)]
+    display_name: Option<String>,
     property_type: String,
     #[serde(default)]
     meta: Value,
@@ -258,6 +260,8 @@ struct UpdatePropertyArgs {
     repo: String,
     property_id: String,
     name: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
     property_type: Option<String>,
     #[serde(default)]
     meta: Option<Value>,
@@ -463,6 +467,7 @@ struct McpRepo {
 struct McpProperty {
     id: String,
     name: String,
+    display_name: String,
     property_type: String,
     meta: Option<Value>,
 }
@@ -1698,6 +1703,7 @@ async fn create_property(
         multi_tenancy: &library_org,
         org_username: args.org,
         repo_username: args.repo,
+        property_display_name: args.display_name,
         property_name: args.name,
         property_type,
     };
@@ -1715,6 +1721,15 @@ async fn update_property(
     auth: McpAuthContext,
     args: UpdatePropertyArgs,
 ) -> Result<Value, Value> {
+    if args.name.is_none()
+        && args.display_name.is_none()
+        && args.property_type.is_none()
+        && args.meta.is_none()
+    {
+        return Err(invalid_tool_arg(
+            "provide a Property key, display name, type, or meta to update",
+        ));
+    }
     let executor = require_executor(auth, "update_property")?;
     let library_org = resolve_library_org(&library_app, &args.org)
         .await
@@ -1748,6 +1763,7 @@ async fn update_property(
         repo_username: args.repo,
         property_id: args.property_id,
         property_name: args.name,
+        property_display_name: args.display_name,
         property_type: property_type.as_ref(),
         meta_json,
     };
@@ -2189,6 +2205,7 @@ fn property_to_mcp(property: &Property) -> McpProperty {
     McpProperty {
         id: property.id().to_string(),
         name: property.name().to_string(),
+        display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
         meta: property
             .meta_json()
@@ -2536,12 +2553,12 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             }),
             json!({
                 "name": "create_property",
-                "description": "Create a repository property.",
+                "description": "Create a repository Property. name is its stable API key; display_name is its user-facing label.",
                 "inputSchema": property_write_schema(["org", "repo", "name", "property_type"])
             }),
             json!({
                 "name": "update_property",
-                "description": "Update a repository property.",
+                "description": "Update a repository Property key, display name, type, or metadata.",
                 "inputSchema": property_write_schema(["org", "repo", "property_id"])
             }),
             json!({
@@ -2858,11 +2875,18 @@ fn mcp_property_schema() -> Value {
     schema_object(
         json!({
             "id": { "type": "string" },
-            "name": { "type": "string" },
+            "name": {
+                "type": "string",
+                "description": "Stable API key for this Property."
+            },
+            "display_name": {
+                "type": "string",
+                "description": "Human-readable label shown in the user interface."
+            },
             "property_type": { "type": "string" },
             "meta": {}
         }),
-        &["id", "name", "property_type", "meta"],
+        &["id", "name", "display_name", "property_type", "meta"],
     )
 }
 
@@ -3075,7 +3099,19 @@ fn property_write_schema<const N: usize>(required: [&str; N]) -> Value {
             "org": { "type": "string" },
             "repo": { "type": "string" },
             "property_id": { "type": "string" },
-            "name": { "type": "string" },
+            "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+                "description": "Stable key: start with an ASCII letter; use ASCII letters, digits, underscores, or hyphens, up to 64 characters."
+            },
+            "display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Human-readable label shown in the user interface. Defaults to name on creation."
+            },
             "property_type": {
                 "type": "string",
                 "enum": [
@@ -4270,6 +4306,7 @@ mod tests {
         let property = json!({
             "id": "prop_01example",
             "name": "Status",
+            "display_name": "Status",
             "property_type": "SELECT",
             "meta": null
         });

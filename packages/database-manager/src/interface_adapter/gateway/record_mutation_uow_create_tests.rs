@@ -55,6 +55,7 @@ async fn add_relation_property(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -76,6 +77,7 @@ async fn add_auto_id_property(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -939,7 +941,7 @@ async fn dormant_record_create_uow_guards_targets_inverse_cardinality_and_indexe
                 None,
                 None,
                 RelationInverseChange::SetAlias(
-                    "guard inverse".to_string(),
+                    "guard_inverse".to_string(),
                 ),
                 None,
             ),

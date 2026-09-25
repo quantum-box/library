@@ -48,10 +48,11 @@ impl AddPropertyInputPort for AddPropertyInteractorImpl {
                 .await?;
         }
 
-        let command = AddPropertyCommand::new(
+        let command = AddPropertyCommand::new_with_display_name(
             database.tenant_id(),
             database.id(),
             input.name,
+            input.display_name.unwrap_or(input.name),
             &input.property_type,
         );
 

@@ -13,6 +13,7 @@ pub struct PropertyDefinition {
     tenant_id: TenantId,
     database_id: DatabaseId,
     name: String,
+    display_name: String,
     config: ResolvedPropertyConfig,
     is_indexed: bool,
     property_num: u32,
@@ -31,6 +32,31 @@ impl PropertyDefinition {
         property_num: u32,
         meta_json: Option<String>,
     ) -> Self {
+        Self::new_with_display_name(
+            id,
+            tenant_id,
+            database_id,
+            name,
+            name,
+            config,
+            is_indexed,
+            property_num,
+            meta_json,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_display_name(
+        id: &PropertyId,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        name: &str,
+        display_name: &str,
+        config: ResolvedPropertyConfig,
+        is_indexed: bool,
+        property_num: u32,
+        meta_json: Option<String>,
+    ) -> Self {
         Self {
             id: id.clone(),
             tenant_id: tenant_id.clone(),
@@ -40,6 +66,15 @@ impl PropertyDefinition {
             } else {
                 name.to_string()
             },
+            display_name: if display_name.trim().is_empty() {
+                if name.is_empty() {
+                    format!("property{property_num}")
+                } else {
+                    name.to_string()
+                }
+            } else {
+                display_name.trim().to_string()
+            },
             config,
             is_indexed,
             property_num,
@@ -48,11 +83,12 @@ impl PropertyDefinition {
     }
 
     pub fn from_property(property: &Property) -> Self {
-        Self::new(
+        Self::new_with_display_name(
             property.id(),
             property.tenant_id(),
             property.database_id(),
             property.name(),
+            property.display_name(),
             ResolvedPropertyConfig::Known(
                 property.property_type().canonical_config(),
             ),
@@ -76,6 +112,10 @@ impl PropertyDefinition {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
     }
 
     pub fn config(&self) -> &ResolvedPropertyConfig {
@@ -123,11 +163,12 @@ impl PropertyDefinition {
                 ));
             }
         };
-        Ok(Property::with_meta_json(
+        Ok(Property::with_display_name_and_meta_json(
             &self.id,
             &self.tenant_id,
             &self.database_id,
             &self.name,
+            &self.display_name,
             &PropertyType::from(config),
             self.is_indexed,
             self.property_num,
@@ -138,15 +179,19 @@ impl PropertyDefinition {
     pub fn update_known(
         &self,
         name: Option<&str>,
+        display_name: Option<&str>,
         property_type: Option<&PropertyType>,
         meta_json: Option<Option<String>>,
     ) -> errors::Result<Self> {
         self.config.ensure_writable()?;
-        let property = self.to_property()?.update_with_meta_json(
-            name,
-            property_type,
-            meta_json,
-        )?;
+        let property = self
+            .to_property()?
+            .update_with_display_name_and_meta_json(
+                name,
+                display_name,
+                property_type,
+                meta_json,
+            )?;
         Ok(Self::from_property(&property))
     }
 }

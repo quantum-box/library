@@ -123,7 +123,7 @@ impl DataRepositoryImpl {
 
         Ok(sqlx::query_as::<_, FieldRow>(
             r#"
-            SELECT id, tenant_id, object_id, field_name, datatype,
+            SELECT id, tenant_id, object_id, field_name, field_display_name, datatype,
                    datatype_meta, is_indexed, field_num, meta_json,
                    type_key, type_version, type_config
             FROM fields

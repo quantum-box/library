@@ -179,6 +179,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     multi_tenancy: input.multi_tenancy,
                     org_username: input.org_username.clone(),
                     repo_username: input.repo_username.clone(),
+                    property_display_name: None,
                     property_name: "ext_github".to_string(),
                     property_type: db::PropertyType::String,
                 })
@@ -206,6 +207,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     multi_tenancy: input.multi_tenancy,
                     org_username: input.org_username.clone(),
                     repo_username: input.repo_username.clone(),
+                    property_display_name: None,
                     property_name: input.content_property_name.clone(),
                     property_type: db::PropertyType::RichText,
                 })
@@ -287,6 +289,7 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                         multi_tenancy: input.multi_tenancy,
                         org_username: input.org_username.clone(),
                         repo_username: input.repo_username.clone(),
+                        property_display_name: None,
                         property_name: mapping.property_name.clone(),
                         property_type: prop_type,
                     })

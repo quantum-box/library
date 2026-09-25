@@ -147,6 +147,7 @@ impl DatabaseApp for DatabaseAppImpl {
             multi_tenancy,
             tenant_id: &operator_id,
             database_id: &database_id,
+            display_name: None,
             name,
             property_type,
         };
@@ -155,6 +156,7 @@ impl DatabaseApp for DatabaseAppImpl {
             id: property.id().to_string(),
             database_id: property.database_id().to_string(),
             name: property.name().to_string(),
+            display_name: property.display_name().to_string(),
             property_type: match property.property_type() {
                 domain::PropertyType::String => AppPropertyType::String,
                 domain::PropertyType::Html
@@ -190,6 +192,7 @@ impl DatabaseApp for DatabaseAppImpl {
             database_id: &database_id,
             property_id: &property_id,
             name,
+            display_name: None,
             property_type: None,
             meta_json: None,
         };
@@ -198,6 +201,7 @@ impl DatabaseApp for DatabaseAppImpl {
             id: property.id().to_string(),
             database_id: property.database_id().to_string(),
             name: property.name().to_string(),
+            display_name: property.display_name().to_string(),
             property_type: match property.property_type() {
                 domain::PropertyType::String => AppPropertyType::String,
                 domain::PropertyType::Html
@@ -262,6 +266,7 @@ impl DatabaseApp for DatabaseAppImpl {
                 id: property.id().to_string(),
                 database_id: property.database_id().to_string(),
                 name: property.name().to_string(),
+                display_name: property.display_name().to_string(),
                 property_type: match property.property_type() {
                     domain::PropertyType::String => AppPropertyType::String,
                     domain::PropertyType::Html

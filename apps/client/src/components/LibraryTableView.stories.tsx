@@ -136,6 +136,7 @@ function stubRepository(rows: typeof items) {
           // The Property mutations name their fields this way on the wire.
           input?: {
             propertyName?: string
+            displayName?: string
             propertyType?: string
             dataId?: string
             name?: string
@@ -151,6 +152,7 @@ function stubRepository(rows: typeof items) {
         const property = {
           id: `prop-new-${created}`,
           name: variables.input?.propertyName ?? 'New property',
+          displayName: variables.input?.displayName ?? variables.input?.propertyName ?? 'New property',
           typ: variables.input?.propertyType ?? 'STRING',
         }
         liveProperties.push(property)
@@ -158,8 +160,9 @@ function stubRepository(rows: typeof items) {
       }
       if (query.includes('updateProperty')) {
         const property = liveProperties.find((entry) => entry.id === variables.id)
-        if (property && variables.input?.propertyName) {
-          property.name = variables.input.propertyName
+        if (property) {
+          if (variables.input?.propertyName) property.name = variables.input.propertyName
+          if (variables.input?.displayName) property.displayName = variables.input.displayName
         }
         return jsonResponse({ data: { updateProperty: property ?? null } })
       }

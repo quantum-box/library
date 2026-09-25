@@ -138,6 +138,7 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
+            display_name: None,
             name: "slug",
             property_type: PropertyType::String,
         })
@@ -253,7 +254,8 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &foreign_multi_tenancy,
             tenant_id: &foreign_tenant_id,
             database_id: foreign_database.id(),
-            name: "foreign slug",
+            display_name: Some("foreign slug"),
+            name: "foreign_slug",
             property_type: PropertyType::String,
         })
         .await?;
@@ -420,7 +422,8 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            name: "related records",
+            display_name: Some("related records"),
+            name: "related_records",
             property_type: PropertyType::Relation(TypeRelation::new(
                 target_database.id().clone(),
             )),
@@ -592,7 +595,8 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            name: "guarded projection",
+            display_name: Some("guarded projection"),
+            name: "guarded_projection",
             property_type: PropertyType::String,
         })
         .await?;
@@ -687,7 +691,8 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            name: "canonical integer with stale legacy string",
+            display_name: Some("canonical integer with stale legacy string"),
+            name: "canonical_integer_with_stale_legacy_string",
             property_type: PropertyType::String,
         })
         .await?;
@@ -742,7 +747,8 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            name: "future canonical type",
+            display_name: Some("future canonical type"),
+            name: "future_canonical_type",
             property_type: PropertyType::String,
         })
         .await?;

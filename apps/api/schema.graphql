@@ -1764,7 +1764,16 @@ type Property {
 	id: String!
 	tenantId: String!
 	databaseId: String!
+	"""
+	Stable key used by API clients to identify this Property. It must start with
+	an ASCII letter and contain only ASCII letters, digits, underscores, or
+	hyphens, up to 64 characters.
+	"""
 	name: String!
+	"""
+	Human-readable label shown in the user interface.
+	"""
+	displayName: String!
 	"""
 	STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT, ID,
 	LOCATION, DATE, IMAGE, RICH_TEXT, BOOLEAN
@@ -1811,7 +1820,16 @@ input PropertyDataValueInputData @oneOf {
 input PropertyInput {
 	orgUsername: String!
 	repoUsername: String!
+	"""
+	Stable key used by API clients to identify this Property. It must start with
+	an ASCII letter and contain only ASCII letters, digits, underscores, or
+	hyphens, up to 64 characters.
+	"""
 	propertyName: String!
+	"""
+	Human-readable label shown in the user interface. Defaults to propertyName.
+	"""
+	displayName: String
 	propertyType: PropertyType!
 	meta: PropertyMetaInput
 }

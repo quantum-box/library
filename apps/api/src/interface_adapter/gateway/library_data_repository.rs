@@ -116,6 +116,7 @@ impl LibraryDataRepositoryImpl {
                     multi_tenancy,
                     tenant_id,
                     database_id,
+                    display_name: None,
                     name,
                     property_type: Self::property_type_for(name),
                 })

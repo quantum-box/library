@@ -40,7 +40,7 @@ import {
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Database, Info, Search } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { PropertyOptionsField } from './property-options-field'
@@ -61,13 +61,12 @@ interface PropertyDialogProps {
 }
 
 export const propertyFormSchema = z.object({
-	property_name: z
+	property_name: z.string().min(1, 'Property key is required'),
+	display_name: z
 		.string()
-		.min(1, 'Property name is required')
-		.refine(
-			name => !name.startsWith('ext_'),
-			'Property names starting with "ext_" are reserved for system extensions',
-		),
+		.trim()
+		.min(1, 'Display name is required')
+		.max(255, 'Display name must be at most 255 characters'),
 	type: z.nativeEnum(PropertyType),
 	options: z
 		.array(
@@ -94,11 +93,34 @@ export function PropertyDialog({
 	onSave,
 }: PropertyDialogProps) {
 	const { t } = useTranslation()
+	const validationSchema = useMemo(
+		() =>
+			propertyFormSchema.superRefine((values, context) => {
+				if (values.property_name === editingProperty?.name) return
+				if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(values.property_name)) {
+					context.addIssue({
+						code: z.ZodIssueCode.custom,
+						path: ['property_name'],
+						message: 'Start with an ASCII letter; use ASCII letters, digits, underscores, or hyphens (max 64 characters)',
+					})
+					return
+				}
+				if (values.property_name.startsWith('ext_')) {
+					context.addIssue({
+						code: z.ZodIssueCode.custom,
+						path: ['property_name'],
+						message: 'Property names starting with "ext_" are reserved for system extensions',
+					})
+				}
+			}),
+		[editingProperty?.name],
+	)
 	const form = useForm<PropertyFormValues>({
-		resolver: zodResolver(propertyFormSchema),
+		resolver: zodResolver(validationSchema),
 		reValidateMode: 'onChange',
 		defaultValues: {
 			property_name: '',
+			display_name: '',
 			type: PropertyType.String,
 			options: [],
 			relatedDatabase: '',
@@ -110,6 +132,7 @@ export function PropertyDialog({
 		if (editingProperty) {
 			form.reset({
 				property_name: editingProperty.name,
+				display_name: editingProperty.displayName ?? editingProperty.name,
 				type: editingProperty.typ,
 				options: (
 					editingProperty.meta as SelectTypeMetaForPropertiesUiFragment
@@ -127,7 +150,11 @@ export function PropertyDialog({
 	const onSubmit = (values: PropertyFormValues) => {
 		const newProperty: PropertyForPropertiesUiFragment = {
 			id: editingProperty?.id || crypto.randomUUID(),
-			name: values.property_name,
+			name:
+				values.property_name === editingProperty?.name
+					? editingProperty.name
+					: values.property_name.trim(),
+			displayName: values.display_name.trim(),
 			typ: values.type,
 			meta:
 				values.type === PropertyType.Select
@@ -192,12 +219,26 @@ export function PropertyDialog({
 							name='property_name'
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>{t.v1beta.properties.propertyName}</FormLabel>
+								<FormLabel>{t.v1beta.properties.propertyName}</FormLabel>
 									<FormControl>
 										<Input
 											{...field}
 											placeholder={t.v1beta.properties.propertyNamePlaceholder}
 										/>
+									</FormControl>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
+
+						<FormField
+							control={form.control}
+							name='display_name'
+							render={({ field }) => (
+								<FormItem>
+									<FormLabel>{t.v1beta.properties.displayName}</FormLabel>
+									<FormControl>
+										<Input {...field} placeholder={t.v1beta.properties.displayName} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>

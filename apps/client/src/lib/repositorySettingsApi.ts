@@ -39,6 +39,7 @@ export interface RepositoryPropertyMeta {
 export interface RepositoryPropertyDefinition {
   id: string
   name: string
+  displayName?: string
   /** Preserve future server-side Property types even when this client cannot edit them. */
   typ: RepositoryPropertyType | string
   meta?: RepositoryPropertyMeta | null
@@ -69,6 +70,7 @@ export interface RepositorySettingsTarget {
 
 export interface RepositoryPropertyDraft {
   name: string
+  displayName?: string
   type: RepositoryPropertyType
   options?: Array<{
     /** Existing server-issued option ID. Omit for a newly created option. */
@@ -163,6 +165,7 @@ const repositorySettingsQuery = `
     properties(orgUsername: $orgUsername, repoUsername: $repoUsername) {
       id
       name
+      displayName
       typ
       meta {
         ... on IdType { autoGenerate }
@@ -180,6 +183,7 @@ const addRepositoryPropertyMutation = `
     addProperty(input: $input) {
       id
       name
+      displayName
       typ
       meta {
         ... on IdType { autoGenerate }
@@ -197,6 +201,7 @@ const updateRepositoryPropertyMutation = `
     updateProperty(id: $id, input: $input) {
       id
       name
+      displayName
       typ
       meta {
         ... on IdType { autoGenerate }
@@ -344,10 +349,23 @@ async function requestRepositoryGraphQL<TData>(
 function propertyInput(
   target: RepositorySettingsTarget,
   draft: RepositoryPropertyDraft,
+  validateKey: boolean,
 ): Record<string, unknown> {
-  const name = draft.name.trim()
-  if (!name) {
-    throw new RepositorySettingsApiError(t('repoSettings.propertyNameRequired'), 422, 'validation')
+  const name = validateKey ? draft.name.trim() : draft.name
+  if (validateKey && !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)) {
+    throw new RepositorySettingsApiError(
+      t('repoSettings.propertyKeyInvalid'),
+      422,
+      'validation',
+    )
+  }
+  const displayName = draft.displayName?.trim()
+  if (draft.displayName !== undefined && (!displayName || [...displayName].length > 255)) {
+    throw new RepositorySettingsApiError(
+      t('repoSettings.propertyDisplayNameInvalid'),
+      422,
+      'validation',
+    )
   }
 
   let meta: Record<string, unknown> | undefined
@@ -386,6 +404,7 @@ function propertyInput(
     orgUsername: target.orgUsername,
     repoUsername: target.repoUsername,
     propertyName: name,
+    ...(displayName !== undefined ? { displayName } : {}),
     propertyType: draft.type,
     ...(meta ? { meta } : {}),
   }
@@ -446,7 +465,7 @@ export async function createRepositoryProperty(
   }
   const payload = await requestRepositoryGraphQL<RepositoryPropertyMutationResponse>(
     addRepositoryPropertyMutation,
-    { input: propertyInput(target, draft) },
+    { input: propertyInput(target, draft, true) },
     target,
   )
   if (!payload.addProperty) {
@@ -471,7 +490,7 @@ export async function updateRepositoryProperty(
     updateRepositoryPropertyMutation,
     {
       id: propertyId,
-      input: propertyInput(target, draft),
+      input: propertyInput(target, draft, false),
     },
     target,
   )
