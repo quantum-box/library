@@ -173,7 +173,10 @@ pub async fn run(
                 body.insert("name".to_string(), json!(name));
             }
             if let Some(display_name) = display_name {
-                body.insert("display_name".to_string(), json!(display_name));
+                body.insert(
+                    "display_name".to_string(),
+                    json!(display_name),
+                );
             }
             let response = client
                 .put(

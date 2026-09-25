@@ -90,10 +90,8 @@ impl UpdatePropertyCommand {
         {
             return Err(errors::Error::not_found("resource not found"));
         }
-        let name = self
-            .name
-            .as_deref()
-            .filter(|name| *name != current.name());
+        let name =
+            self.name.as_deref().filter(|name| *name != current.name());
         current.update_known(
             name,
             self.display_name.as_deref(),
@@ -186,12 +184,9 @@ impl PropertySchema {
     ) -> errors::Result<PropertySchemaMutation> {
         validate_property_key(command.name())?;
         validate_property_display_name(command.display_name())?;
-        if existing_definitions
-            .iter()
-            .any(|definition| {
-                definition.name().eq_ignore_ascii_case(command.name())
-            })
-        {
+        if existing_definitions.iter().any(|definition| {
+            definition.name().eq_ignore_ascii_case(command.name())
+        }) {
             return Err(errors::Error::conflict(format!(
                 "Property key `{}` is already in use",
                 command.name()

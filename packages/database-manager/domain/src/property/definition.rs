@@ -184,9 +184,8 @@ impl PropertyDefinition {
         meta_json: Option<Option<String>>,
     ) -> errors::Result<Self> {
         self.config.ensure_writable()?;
-        let property = self
-            .to_property()?
-            .update_with_display_name_and_meta_json(
+        let property =
+            self.to_property()?.update_with_display_name_and_meta_json(
                 name,
                 display_name,
                 property_type,

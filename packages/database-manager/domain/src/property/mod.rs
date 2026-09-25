@@ -41,9 +41,8 @@ pub fn validate_property_key(key: &str) -> errors::Result<()> {
         chars.next().is_some_and(|ch| ch.is_ascii_alphabetic());
     if !valid_first
         || key.len() > MAX_PROPERTY_KEY_LENGTH
-        || !chars.all(|ch| {
-            ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'
-        })
+        || !chars
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
     {
         return Err(errors::Error::invalid(format!(
             "Property key must start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens (maximum {MAX_PROPERTY_KEY_LENGTH} characters)"

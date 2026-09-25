@@ -691,7 +691,9 @@ async fn index_definition_control_plane_is_scoped_and_cas_ready(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            display_name: Some("canonical integer with stale legacy string"),
+            display_name: Some(
+                "canonical integer with stale legacy string",
+            ),
             name: "canonical_integer_with_stale_legacy_string",
             property_type: PropertyType::String,
         })
