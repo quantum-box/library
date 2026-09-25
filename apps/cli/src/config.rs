@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_API_BASE_URL: &str = "http://localhost:50055";
+/// Production. Local development points elsewhere with `--api-url`,
+/// `LIBRARY_API_BASE_URL`, or `library auth login --api-url`.
+pub const DEFAULT_API_BASE_URL: &str = "https://library-api.txcloud.app";
 
 /// The saved profile on disk. Nothing here is required: a file holding
 /// only a base URL is valid, and so is one holding only a key.

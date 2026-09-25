@@ -19,7 +19,7 @@ cargo build -p library-cli --release
 `pk_` で始まる Library API key を使います。key は Library client の API keys 画面で発行します。
 
 ```bash
-library auth login --api-key pk_xxx --api-url https://library-api.txcloud.app
+library auth login --api-key pk_xxx
 library auth status
 library auth logout
 ```
@@ -32,7 +32,7 @@ library auth logout
 2. 環境変数 `LIBRARY_API_KEY` / `LIBRARY_API_BASE_URL`
 3. `library auth login` が保存したローカル profile
 
-いずれも無い場合、API URL は `http://localhost:50055` にフォールバックします。
+いずれも無い場合、API URL は本番の `https://library-api.txcloud.app` を使います。ローカルの library-api に向けるときは `--api-url http://localhost:50055` か `LIBRARY_API_BASE_URL` を指定します。
 
 profile の保存先:
 
@@ -45,7 +45,6 @@ profile の保存先:
 CI や agent からは、保存済み profile に依存させず環境変数だけで完結させます。
 
 ```bash
-export LIBRARY_API_BASE_URL=https://library-api.txcloud.app
 export LIBRARY_API_KEY=pk_xxx
 library --json repo list acme
 ```

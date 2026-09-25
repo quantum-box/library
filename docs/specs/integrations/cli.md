@@ -30,7 +30,7 @@ cargo build -p library-cli --release
 2. 環境変数 `LIBRARY_API_KEY` / `LIBRARY_API_BASE_URL`
 3. `library auth login` が保存したローカル profile
 
-いずれも無い場合、API URL は `http://localhost:50055` にフォールバックする。
+いずれも無い場合、API URL は本番の `https://library-api.txcloud.app` を使う。ローカルの library-api には `--api-url http://localhost:50055` か `LIBRARY_API_BASE_URL` で向ける。
 
 ```bash
 library auth login --api-key pk_xxx --api-url https://api.example.com
