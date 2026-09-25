@@ -258,7 +258,7 @@ async fn dormant_record_create_uow_dual_writes_relations_and_emits_created_event
         &tenant_id,
         source_database.id(),
         target_database.id(),
-        "empty related",
+        "empty_related",
     )
     .await?;
     let target =
@@ -554,7 +554,7 @@ async fn dormant_record_create_uow_replays_rejects_reuse_and_stays_disabled(
         &tenant_id,
         database.id(),
         target_database.id(),
-        "disabled relation",
+        "disabled_relation",
     )
     .await?;
     let target = add_record(
@@ -629,7 +629,7 @@ async fn dormant_record_create_uow_fails_closed_before_index_policy_on_definitio
         &app,
         &tenant_id,
         database.id(),
-        "canonical id",
+        "canonical_id",
     )
     .await?;
     let repository = DataRepositoryImpl::new_with_all_storage_modes(
@@ -871,7 +871,7 @@ async fn dormant_record_create_uow_guards_targets_inverse_cardinality_and_indexe
         &tenant_id,
         source_database.id(),
         target_database.id(),
-        "guard relation",
+        "guard_relation",
     )
     .await?;
     let target_a = add_record(
