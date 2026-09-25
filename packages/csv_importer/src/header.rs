@@ -137,8 +137,7 @@ fn property_key_from_header(
 
     let max_length = database_manager::domain::MAX_PROPERTY_KEY_LENGTH;
     key.truncate(max_length);
-    let key = key
-        .trim_end_matches(|character| character == '_' || character == '-');
+    let key = key.trim_end_matches(['_', '-']);
     let base = if key.is_empty() { "column" } else { key };
     let mut candidate = base.to_owned();
     let mut suffix = 2;
