@@ -104,9 +104,21 @@ impl DurableObject for PhotonSyncRoom {
         {
             return Response::error("Expected WebSocket upgrade", 426);
         }
-        let stored = document::stored(&self.state.storage()).await?;
+        // Accepted before the state is read: an update another client sends
+        // while the reads are in flight is relayed to this socket too.
+        // Otherwise it could be logged after the reads and relayed before
+        // the accept, reaching this client by neither path. An update that
+        // arrives both ways is applied twice, which Yjs ignores.
         let pair = WebSocketPair::new()?;
         self.state.accept_web_socket(&pair.server);
+        let stored = match document::stored(&self.state.storage()).await {
+            Ok(stored) => stored,
+            Err(error) => {
+                let _ =
+                    pair.server.close(Some(1011), Some("Room unavailable"));
+                return Err(error);
+            }
+        };
         // The client treats its first binary frame as the room's state, so
         // an empty room still sends one.
         if stored.snapshot.is_empty() {

@@ -191,6 +191,17 @@ test('generic Yjs relay serves its stored log to joiners and compacts it only in
   a.edit('after')
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === `${expected}after`)
 })
+test('clients joining while another edits receive every edit', async (t) => {
+  const s = await scenario(t); const a = await s.sync()
+  let expected = ''
+  const joins = []
+  for (let i = 0; i < 40; i += 1) {
+    a.edit(`${i},`); expected += `${i},`
+    if (i % 8 === 0) joins.push(s.sync())
+  }
+  const joined = await Promise.all(joins)
+  for (const b of joined) await until(() => b.doc.getText('body').toString() === expected, 'joiner has every edit')
+})
 test('two Live clients initialize once, exchange updates, save and reload Yjs state', async (t) => {
   const s = await scenario(t); const a = await s.initialize(); const b = await s.live()
   await until(() => b.doc.getText('body').toString() === 'Seed')
