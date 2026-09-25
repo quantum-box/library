@@ -12,6 +12,7 @@ import { LibraryTableView } from './LibraryTableView'
 const properties: Array<{
   id: string
   name: string
+  displayName?: string
   typ: string
   meta?: { options: Array<{ id: string; name: string }> }
 }> = [

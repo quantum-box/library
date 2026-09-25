@@ -298,7 +298,7 @@ async fn backfill_is_resumable_idempotent_opaque_safe_and_atomic(
         &legacy_app,
         &tenant_id,
         &opaque_definition_database,
-        "future definition",
+        "future_definition",
         PropertyType::String,
     )
     .await?;
@@ -354,7 +354,7 @@ async fn backfill_is_resumable_idempotent_opaque_safe_and_atomic(
         &legacy_app,
         &tenant_id,
         &mismatched_definition_database,
-        "mismatched definition",
+        "mismatched_definition",
         PropertyType::String,
     )
     .await?;
