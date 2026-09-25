@@ -188,7 +188,7 @@ export function PropertiesSection({
 						{filteredProperties.map(property => (
 							<TableRow key={property.id} className='border-border/40'>
 								<TableCell className='align-top text-sm font-medium text-foreground'>
-									{property.name}
+									{property.displayName}
 									{isExtGithubProperty(property) && (
 										<span className='ml-2 text-xs text-muted-foreground'>
 											(GitHub Sync)
@@ -507,7 +507,7 @@ export function PropertyValue({
 						{imageUrl && (
 							<img
 								src={imageUrl}
-								alt={property.name}
+								alt={property.displayName}
 								className='max-h-48 max-w-full rounded-lg border border-border/60 object-contain'
 								onError={e => {
 									;(e.target as HTMLImageElement).style.display = 'none'
@@ -717,7 +717,7 @@ export function PropertyValue({
 			return (
 				<img
 					src={value}
-					alt={property.name}
+					alt={property.displayName}
 					className='max-h-48 max-w-full rounded-lg border border-border/60 object-contain'
 					onError={e => {
 						const target = e.target as HTMLImageElement

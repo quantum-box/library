@@ -72,6 +72,7 @@ impl DataQuery for DataQueryService {
                 tenant_id,
                 object_id,
                 field_name,
+                field_display_name,
                 datatype,
                 datatype_meta,
                 is_indexed,

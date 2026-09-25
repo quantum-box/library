@@ -165,6 +165,7 @@ async fn record_patch_decision_is_atomic_cas_idempotent_and_fail_closed(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "content",
             property_type: PropertyType::String,
         })
@@ -917,6 +918,7 @@ async fn record_patch_decision_is_atomic_cas_idempotent_and_fail_closed(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "record-id",
             property_type: PropertyType::Id(TypeId::new(true)),
         })
@@ -1066,6 +1068,7 @@ async fn record_patch_decision_is_atomic_cas_idempotent_and_fail_closed(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "future-value",
             property_type: PropertyType::String,
         })
@@ -1387,6 +1390,7 @@ async fn record_patch_decision_is_atomic_cas_idempotent_and_fail_closed(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "blocked-relation",
             property_type: PropertyType::Relation(TypeRelation::new(
                 target_database.id().clone(),
@@ -1573,6 +1577,7 @@ async fn legacy_record_writes_advance_version_without_record_events(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "body",
             property_type: PropertyType::String,
         })
@@ -1728,6 +1733,7 @@ async fn legacy_record_writes_advance_version_without_record_events(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "removable",
             property_type: PropertyType::String,
         })

@@ -112,13 +112,15 @@ describe('RepositorySettingsView', () => {
     }))
     apiMocks.createRepositoryProperty.mockResolvedValue({
       id: 'property-status',
-      name: 'Status',
+      name: 'status',
+      displayName: 'Status',
       typ: 'STRING',
       meta: null,
     })
     apiMocks.updateRepositoryProperty.mockResolvedValue({
       id: 'property-summary',
-      name: 'Abstract',
+      name: 'Summary',
+      displayName: 'Abstract',
       typ: 'STRING',
       meta: null,
     })
@@ -306,6 +308,7 @@ describe('RepositorySettingsView', () => {
     apiMocks.updateRepositoryProperty.mockResolvedValueOnce({
       id: 'property-status',
       name: 'Status',
+      displayName: 'Status',
       typ: 'SELECT',
       meta: {
         options: [
@@ -340,6 +343,7 @@ describe('RepositorySettingsView', () => {
       'property-status',
       {
         name: 'Status',
+        displayName: 'Status',
         type: 'SELECT',
         options: [
           { id: 'option-todo', identifier: 'todo', label: 'To do' },
@@ -396,7 +400,8 @@ describe('RepositorySettingsView', () => {
   it('creates a Relation by choosing a repository instead of entering a database id', async () => {
     apiMocks.createRepositoryProperty.mockResolvedValueOnce({
       id: 'property-related',
-      name: 'Related people',
+      name: 'related_people',
+      displayName: 'Related people',
       typ: 'RELATION',
       meta: { databaseId: 'database-people' },
     })
@@ -405,7 +410,10 @@ describe('RepositorySettingsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Property' }))
     const dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Name'), {
+    fireEvent.change(within(dialog).getByLabelText('Property key'), {
+      target: { value: 'related_people' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Display name'), {
       target: { value: 'Related people' },
     })
     fireEvent.click(within(dialog).getByRole('combobox', { name: 'Type' }))
@@ -421,7 +429,8 @@ describe('RepositorySettingsView', () => {
     await waitFor(() => expect(apiMocks.createRepositoryProperty).toHaveBeenCalledWith(
       expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
       {
-        name: 'Related people',
+        name: 'related_people',
+        displayName: 'Related people',
         type: 'RELATION',
         relationDatabaseId: 'database-people',
       },
@@ -482,24 +491,25 @@ describe('RepositorySettingsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Property' }))
     let dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Status' } })
+    fireEvent.change(within(dialog).getByLabelText('Property key'), { target: { value: 'status' } })
+    fireEvent.change(within(dialog).getByLabelText('Display name'), { target: { value: 'Status' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add Property' }))
 
     await waitFor(() => expect(apiMocks.createRepositoryProperty).toHaveBeenCalledWith(
       expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
-      { name: 'Status', type: 'STRING' },
+      { name: 'status', displayName: 'Status', type: 'STRING' },
     ))
     expect(await screen.findByText('Property added.')).toBeInTheDocument()
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Status')
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Summary' }))
     dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Abstract' } })
+    fireEvent.change(within(dialog).getByLabelText('Display name'), { target: { value: 'Abstract' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save Property' }))
     await waitFor(() => expect(apiMocks.updateRepositoryProperty).toHaveBeenCalledWith(
       expect.objectContaining({ orgUsername: 'quantum-box', repoUsername: 'library' }),
       'property-summary',
-      { name: 'Abstract', type: 'STRING' },
+      { name: 'Summary', displayName: 'Abstract', type: 'STRING' },
     ))
     expect(screen.getByTestId('repository-property-list')).toHaveTextContent('Abstract')
 

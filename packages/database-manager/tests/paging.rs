@@ -65,6 +65,7 @@ async fn paging_is_one_origin_stable_and_filtered() -> anyhow::Result<()> {
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "value",
             property_type: PropertyType::String,
         })

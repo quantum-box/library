@@ -74,6 +74,7 @@ async fn add_relation(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -228,6 +229,7 @@ async fn versioned_mutation_owns_inverse_and_guards_public_property_writes(
             tenant_id: &tenant_id,
             database_id: source.id(),
             property_id: relation.id(),
+            display_name: None,
             name: None,
             property_type: Some(&same_relation_type),
             meta_json: None,
@@ -246,7 +248,8 @@ async fn versioned_mutation_owns_inverse_and_guards_public_property_writes(
             tenant_id: &tenant_id,
             database_id: target.id(),
             property_id: &inverse_id,
-            name: Some("direct rename"),
+            display_name: None,
+            name: Some("direct_rename"),
             property_type: None,
             meta_json: None,
         })
@@ -592,6 +595,7 @@ async fn legacy_canonical_target_mismatch_never_gets_overwritten(
             tenant_id: &tenant_id,
             database_id: source.id(),
             property_id: relation.id(),
+            display_name: None,
             name: Some("must-not-overwrite"),
             property_type: None,
             meta_json: None,

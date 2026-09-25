@@ -161,7 +161,7 @@ export function LibraryPropertyEditableCell({
     }
     return (
       <LibraryRelationEditor
-        propertyName={property.name}
+        propertyName={property.displayName ?? property.name}
         propertyId={property.id}
         databaseId={databaseId}
         value={currentValue?.dataIds ?? []}
@@ -187,7 +187,7 @@ export function LibraryPropertyEditableCell({
             data-testid={`library-editable-input-${property.id}`}
             checked={checked}
             disabled={disabled}
-            aria-label={t('common.editNamed', { name: property.name })}
+            aria-label={t('common.editNamed', { name: property.displayName ?? property.name })}
             className={`${checkboxClassName} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50`}
             onClick={(event) => event.stopPropagation()}
             onChange={(event) => {
@@ -273,7 +273,7 @@ export function LibraryPropertyEditableCell({
       role={singleClick && !disabled ? 'button' : undefined}
       tabIndex={singleClick && !disabled ? 0 : undefined}
       aria-label={singleClick && !disabled
-        ? t('common.editNamed', { name: property.name })
+        ? t('common.editNamed', { name: property.displayName ?? property.name })
         : undefined}
       onClick={singleClick ? beginEditing : undefined}
       onKeyDown={singleClick ? (event) => {

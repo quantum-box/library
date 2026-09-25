@@ -39,6 +39,7 @@ async fn add_property(
 ) -> errors::Result<Property> {
     app.add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &auth::MultiTenancy::new_operator(
                 tenant_id.clone(),
@@ -297,7 +298,7 @@ async fn backfill_is_resumable_idempotent_opaque_safe_and_atomic(
         &legacy_app,
         &tenant_id,
         &opaque_definition_database,
-        "future definition",
+        "future_definition",
         PropertyType::String,
     )
     .await?;
@@ -353,7 +354,7 @@ async fn backfill_is_resumable_idempotent_opaque_safe_and_atomic(
         &legacy_app,
         &tenant_id,
         &mismatched_definition_database,
-        "mismatched definition",
+        "mismatched_definition",
         PropertyType::String,
     )
     .await?;
