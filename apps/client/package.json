@@ -74,7 +74,7 @@
     "library:api:verify": "node scripts/verify-library-api-connection.mjs",
     "pages:build": "npm run build:cloud",
     "pages:deploy": "npm run pages:build && cd dist && wrangler pages deploy . --project-name library-client --branch main --commit-dirty=true",
-    "worker:dev": "wrangler dev --config wrangler.preview.jsonc --port 8787",
+    "worker:dev": "wrangler dev --config wrangler.local.jsonc --port 8787",
     "build:public-docs": "node scripts/build-workers.mjs public-docs",
     "type-check:public-docs": "cargo check --manifest-path workers/Cargo.toml --target wasm32-unknown-unknown -p library-public-docs-worker --locked",
     "test:public-docs-worker": "node --test scripts/test-public-docs-worker.mjs",

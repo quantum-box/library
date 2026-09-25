@@ -24,7 +24,7 @@ The Worker settings and production runtime variables live in the
 Tachyon generates Wrangler's configuration during each Cloud App build and
 deploys it when a push to `main` touches the Worker's bundle. The repository
 does not keep a production `wrangler.jsonc`; `npm run worker:dev` uses
-`wrangler.preview.jsonc` for local development, and production deploys are
+`wrangler.local.jsonc` for local development, and production deploys are
 handled by Tachyon.
 
 This replaced a manual deployment path that let the screen follow `main` through

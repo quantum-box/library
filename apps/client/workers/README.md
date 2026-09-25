@@ -30,11 +30,16 @@ cargo +nightly-2026-06-04 clippy --manifest-path workers/Cargo.toml --target was
 npm run test:e2e:live
 ```
 
-`worker:dev` and `worker:deploy` invoke the Rust build through Wrangler's
-custom build command. Production, preview and Live E2E configs all load
-`workers/sync/build/index.js` and its Wasm module. Existing class names,
-binding names, migration tags and origins remain configured in those files.
-No Durable Object migration or namespace reset is required.
+`worker:dev` builds the Rust Worker through Wrangler's custom build command
+and loads `wrangler.local.jsonc`. That local-only config enables Live for
+localhost and Tauri origins, points the Engine proxy and Library API at local
+servers, and uses its own Worker name and Durable Object namespace.
+Production deployments are handled by Tachyon, which generates Wrangler's
+configuration from the `library-client-sync` declaration in the root
+`tachyon.yaml`; there is no direct production deploy script.
+The separate preview and Live E2E configs still load
+`workers/sync/build/index.js` and its Wasm module. Their Durable Object
+migration histories are independent from production.
 
 `build:cloud` resolves the same Vite environment for the browser and the
 public-docs Rust build, including the preview overrides. It emits the Pages
