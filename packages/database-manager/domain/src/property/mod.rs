@@ -33,6 +33,88 @@ pub const MAX_PROPERTY_NUM: u32 = 50;
 pub const MAX_PROPERTY_KEY_LENGTH: usize = 64;
 pub const MAX_PROPERTY_DISPLAY_NAME_LENGTH: usize = 255;
 
+/// Derive a valid, unique API key from a user-facing property label.
+///
+/// Existing names in `used` are compared case-insensitively to match the
+/// database collation used when reserving Property keys.
+pub fn unique_property_key_for_label(
+    label: &str,
+    used: &mut std::collections::HashSet<String>,
+) -> String {
+    let mut normalized = String::new();
+    let mut separator_pending = false;
+    for character in label.trim().chars() {
+        if character.is_ascii_alphanumeric() {
+            if separator_pending
+                && !normalized.is_empty()
+                && !normalized.ends_with('_')
+                && !normalized.ends_with('-')
+            {
+                normalized.push('_');
+            }
+            normalized.push(character);
+            separator_pending = false;
+        } else if character == '_' || character == '-' {
+            if !normalized.is_empty() {
+                normalized.push(character);
+            } else {
+                separator_pending = true;
+            }
+        } else {
+            separator_pending = true;
+        }
+    }
+
+    let normalized = normalized.trim_matches(['_', '-']);
+    let mut base = if normalized.is_empty() {
+        "property".to_string()
+    } else {
+        normalized.to_string()
+    };
+    if !base.as_bytes()[0].is_ascii_alphabetic() {
+        base.insert_str(0, "property_");
+    }
+    base.truncate(MAX_PROPERTY_KEY_LENGTH);
+    let trimmed_base = base.trim_end_matches(['_', '-']);
+    base = if trimmed_base.is_empty() {
+        "property".to_string()
+    } else {
+        trimmed_base.to_string()
+    };
+
+    let mut candidate = base.clone();
+    let mut suffix = 2usize;
+    while used
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&candidate))
+    {
+        let ending = format!("_{suffix}");
+        let prefix_length =
+            MAX_PROPERTY_KEY_LENGTH.saturating_sub(ending.len());
+        let prefix = &base[..base.len().min(prefix_length)];
+        candidate =
+            format!("{}{ending}", prefix.trim_end_matches(['_', '-']));
+        suffix += 1;
+    }
+    used.insert(candidate.clone());
+    candidate
+}
+
+/// Keep imported/user-provided labels within the domain limit and give blank
+/// labels a readable fallback before they reach Property validation.
+pub fn property_display_name_for_label(label: &str) -> String {
+    let display_name = label
+        .trim()
+        .chars()
+        .take(MAX_PROPERTY_DISPLAY_NAME_LENGTH)
+        .collect::<String>();
+    if display_name.is_empty() {
+        "Property".to_string()
+    } else {
+        display_name
+    }
+}
+
 /// Property names are API keys, so keep them portable across JSON, SQL, and
 /// generated client code.
 pub fn validate_property_key(key: &str) -> errors::Result<()> {

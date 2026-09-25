@@ -133,6 +133,25 @@ impl DatabaseApp for DatabaseAppImpl {
     ) -> errors::Result<AppProperty> {
         let operator_id = multi_tenancy.get_operator_id()?;
         let database_id = DatabaseId::new(database_id)?;
+        // This compatibility method predates separate keys and labels. Keep
+        // its argument as the display label and derive a stable API key.
+        let existing_properties = self
+            .app
+            .find_all_properties()
+            .execute(FindAllPropertiesInputData {
+                tenant_id: operator_id.clone(),
+                database_id: database_id.clone(),
+            })
+            .await?;
+        let mut used_property_keys = existing_properties
+            .iter()
+            .map(|property| property.name().to_ascii_lowercase())
+            .collect::<std::collections::HashSet<_>>();
+        let property_key = domain::unique_property_key_for_label(
+            name,
+            &mut used_property_keys,
+        );
+        let display_name = domain::property_display_name_for_label(name);
         let property_type = match property_type {
             AppPropertyType::String => domain::PropertyType::String,
             AppPropertyType::Markdown => domain::PropertyType::Markdown,
@@ -147,8 +166,8 @@ impl DatabaseApp for DatabaseAppImpl {
             multi_tenancy,
             tenant_id: &operator_id,
             database_id: &database_id,
-            display_name: None,
-            name,
+            display_name: Some(&display_name),
+            name: &property_key,
             property_type,
         };
         let property = self.app.add_property().execute(input).await?;
@@ -185,14 +204,16 @@ impl DatabaseApp for DatabaseAppImpl {
         let operator_id = multi_tenancy.get_operator_id()?;
         let property_id = PropertyId::new(id)?;
         let database_id = DatabaseId::new(database_id)?;
+        // Older SDK callers use `name` as the visible rename value. Preserve
+        // that behavior without changing the stable key.
         let input = UpdatePropertyInputData {
             executor,
             multi_tenancy,
             tenant_id: &operator_id,
             database_id: &database_id,
             property_id: &property_id,
-            name,
-            display_name: None,
+            name: None,
+            display_name: name,
             property_type: None,
             meta_json: None,
         };

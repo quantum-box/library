@@ -648,6 +648,7 @@ export const ru: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'Задайте, как хранятся данные репозитория. Смена типа применяется к каноническому определению свойства.',
   'repoSettings.propertyNameRequired': 'Укажите имя свойства.',
   'repoSettings.propertyKey': 'Ключ свойства',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Отображаемое имя',
   'repoSettings.propertyKeyHint': 'Начните с латинской буквы; далее используйте только латинские буквы, цифры, подчёркивания или дефисы (до 64 символов).',
   'repoSettings.propertyKeyInvalid': 'Начните с латинской буквы; далее используйте только латинские буквы, цифры, подчёркивания или дефисы (до 64 символов).',

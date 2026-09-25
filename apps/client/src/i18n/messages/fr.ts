@@ -627,6 +627,7 @@ export const fr: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'Définissez la façon dont les données du dépôt sont stockées. Les changements de type s’appliquent à la définition de propriété canonique.',
   'repoSettings.propertyNameRequired': 'Le nom de la propriété est obligatoire.',
   'repoSettings.propertyKey': 'Clé de propriété',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Nom affiché',
   'repoSettings.propertyKeyHint': 'Commencez par une lettre ASCII; utilisez uniquement des lettres ASCII, chiffres, traits de soulignement ou traits d’union (64 caractères max.).',
   'repoSettings.propertyKeyInvalid': 'Commencez par une lettre ASCII; utilisez uniquement des lettres ASCII, chiffres, traits de soulignement ou traits d’union (64 caractères max.).',

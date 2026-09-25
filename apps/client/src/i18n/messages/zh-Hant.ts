@@ -627,6 +627,7 @@ export const zhHant: LocaleMessages = {
   'repoSettings.propertyDialogDescription': '定義儲存庫資料的儲存方式。型別變更會套用到標準屬性定義。',
   'repoSettings.propertyNameRequired': '請輸入屬性名稱。',
   'repoSettings.propertyKey': '屬性鍵',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': '顯示名稱',
   'repoSettings.propertyKeyHint': '以 ASCII 字母開頭，只能使用 ASCII 字母、數字、底線或連字號（最多 64 個字元）。',
   'repoSettings.propertyKeyInvalid': '以 ASCII 字母開頭，只能使用 ASCII 字母、數字、底線或連字號（最多 64 個字元）。',

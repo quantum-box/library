@@ -627,6 +627,7 @@ export const zhHans: LocaleMessages = {
   'repoSettings.propertyDialogDescription': '定义仓库数据的存储方式。类型变更会应用到规范属性定义。',
   'repoSettings.propertyNameRequired': '请输入属性名称。',
   'repoSettings.propertyKey': '属性键',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': '显示名称',
   'repoSettings.propertyKeyHint': '以 ASCII 字母开头，仅使用 ASCII 字母、数字、下划线或连字符（最多 64 个字符）。',
   'repoSettings.propertyKeyInvalid': '以 ASCII 字母开头，仅使用 ASCII 字母、数字、下划线或连字符（最多 64 个字符）。',

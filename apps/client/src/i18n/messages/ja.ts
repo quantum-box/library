@@ -630,6 +630,7 @@ export const ja: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'リポジトリのデータの保存方法を定義します。型の変更は正式なプロパティ定義に適用されます。',
   'repoSettings.propertyNameRequired': 'プロパティ名を入力してください。',
   'repoSettings.propertyKey': 'プロパティキー',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': '表示名',
   'repoSettings.propertyKeyHint': 'ASCII英字で始め、ASCII英字・数字・アンダースコア・ハイフンのみ、64文字以内で入力してください。',
   'repoSettings.propertyKeyInvalid': 'ASCII英字で始め、ASCII英字・数字・アンダースコア・ハイフンのみ、64文字以内で入力してください。',

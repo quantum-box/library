@@ -699,6 +699,7 @@ export const en = {
   'repoSettings.propertyDialogDescription': 'Define how repository data is stored. Type changes apply to the canonical Property definition.',
   'repoSettings.propertyNameRequired': 'Property name is required.',
   'repoSettings.propertyKey': 'Property key',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Display name',
   'repoSettings.propertyKeyHint': 'Start with an ASCII letter; use only ASCII letters, digits, underscores, or hyphens (max 64 characters).',
   'repoSettings.propertyKeyInvalid': 'Start with an ASCII letter; use only ASCII letters, digits, underscores, or hyphens (max 64 characters).',

@@ -627,6 +627,7 @@ export const it: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'Definisci come vengono archiviati i dati del repository. I cambi di tipo si applicano alla definizione canonica della proprietà.',
   'repoSettings.propertyNameRequired': 'Il nome della proprietà è obbligatorio.',
   'repoSettings.propertyKey': 'Chiave della proprietà',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Nome visualizzato',
   'repoSettings.propertyKeyHint': 'Inizia con una lettera ASCII; usa solo lettere ASCII, numeri, trattini bassi o trattini (massimo 64 caratteri).',
   'repoSettings.propertyKeyInvalid': 'Inizia con una lettera ASCII; usa solo lettere ASCII, numeri, trattini bassi o trattini (massimo 64 caratteri).',

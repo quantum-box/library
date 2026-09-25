@@ -627,6 +627,7 @@ export const de: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'Lege fest, wie Repository-Daten gespeichert werden. Typänderungen gelten für die kanonische Eigenschaftsdefinition.',
   'repoSettings.propertyNameRequired': 'Der Name der Eigenschaft ist erforderlich.',
   'repoSettings.propertyKey': 'Eigenschaftsschlüssel',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Anzeigename',
   'repoSettings.propertyKeyHint': 'Beginne mit einem ASCII-Buchstaben; danach nur ASCII-Buchstaben, Ziffern, Unterstriche oder Bindestriche (max. 64 Zeichen).',
   'repoSettings.propertyKeyInvalid': 'Beginne mit einem ASCII-Buchstaben; danach nur ASCII-Buchstaben, Ziffern, Unterstriche oder Bindestriche (max. 64 Zeichen).',

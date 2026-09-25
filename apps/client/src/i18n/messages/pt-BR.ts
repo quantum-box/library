@@ -627,6 +627,7 @@ export const ptBR: LocaleMessages = {
   'repoSettings.propertyDialogDescription': 'Defina como os dados do repositório são armazenados. Mudanças de tipo se aplicam à definição canônica da propriedade.',
   'repoSettings.propertyNameRequired': 'O nome da propriedade é obrigatório.',
   'repoSettings.propertyKey': 'Chave da propriedade',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': 'Nome de exibição',
   'repoSettings.propertyKeyHint': 'Comece com uma letra ASCII e use apenas letras ASCII, números, sublinhados ou hífens (máx. 64 caracteres).',
   'repoSettings.propertyKeyInvalid': 'Comece com uma letra ASCII e use apenas letras ASCII, números, sublinhados ou hífens (máx. 64 caracteres).',

@@ -627,6 +627,7 @@ export const ko: LocaleMessages = {
   'repoSettings.propertyDialogDescription': '리포지터리 데이터의 저장 방식을 정의합니다. 타입 변경은 표준 속성 정의에 적용됩니다.',
   'repoSettings.propertyNameRequired': '속성 이름을 입력하세요.',
   'repoSettings.propertyKey': '속성 키',
+  'repoSettings.propertyKeyPlaceholder': 'status',
   'repoSettings.propertyDisplayName': '표시 이름',
   'repoSettings.propertyKeyHint': 'ASCII 영문자로 시작하고 ASCII 영문자, 숫자, 밑줄 또는 하이픈만 사용하세요(최대 64자).',
   'repoSettings.propertyKeyInvalid': 'ASCII 영문자로 시작하고 ASCII 영문자, 숫자, 밑줄 또는 하이픈만 사용하세요(최대 64자).',

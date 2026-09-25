@@ -269,7 +269,7 @@ function PropertyEditorDialog({
               id="repository-property-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="status"
+              placeholder={t('repoSettings.propertyKeyPlaceholder')}
               disabled={busy}
               autoFocus
             />
