@@ -87,7 +87,14 @@ impl NutrientValueStatus {
                         self
                     ))
                 })?;
-                Ok(Some(NormalizedDecimal::parse(raw)?))
+                let value = NormalizedDecimal::parse(raw)?;
+                if value.is_zero() {
+                    return Err(errors::Error::invalid(format!(
+                        "value_status {} requires a non-zero amount",
+                        self
+                    )));
+                }
+                Ok(Some(value))
             }
             Self::Zero | Self::EstimatedZero => match amount {
                 None => Ok(Some(NormalizedDecimal::parse("0")?)),
