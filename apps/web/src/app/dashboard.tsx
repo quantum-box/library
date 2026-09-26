@@ -41,6 +41,14 @@ const TenantSeedCandidatesQuery = graphql(`
 	}
 `)
 
+const DashboardRepoAccessQuery = graphql(`
+	query DashboardRepoAccess($orgUsername: String!, $repoUsername: String!) {
+		repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+			id
+		}
+	}
+`)
+
 const SeedLibraryTenantMutation = graphql(`
 	mutation SeedLibraryTenant($tenantId: String!) {
 		seedLibraryTenant(tenantId: $tenantId) {
@@ -78,14 +86,20 @@ export function DashboardPage() {
 				}
 
 				setMe(result.me)
-				const seedResult = await executeGraphQL<{
-					tenantSeedCandidates: TenantSeedCandidate[]
-				}>(
-					TenantSeedCandidatesQuery,
-					undefined,
-					{ accessToken: session.user.accessToken },
-				)
-				setSeedCandidates(seedResult.tenantSeedCandidates)
+				let candidates: TenantSeedCandidate[] = []
+				try {
+					const seedResult = await executeGraphQL<{
+						tenantSeedCandidates: TenantSeedCandidate[]
+					}>(
+						TenantSeedCandidatesQuery,
+						undefined,
+						{ accessToken: session.user.accessToken },
+					)
+					candidates = seedResult.tenantSeedCandidates ?? []
+				} catch (error) {
+					console.warn('Failed to load tenant import candidates:', error)
+				}
+				setSeedCandidates(candidates)
 
 				// `me.organizations` is already only what Library treats as an
 				// organization. Narrowing it again by platform here dropped every
@@ -114,7 +128,55 @@ export function DashboardPage() {
 						newOrgRepos.set(orgs[i].id, result.value.organization.repos)
 					}
 				}
-				setOrgRepos(newOrgRepos)
+				const privateRepoCandidates = orgs.flatMap((org) =>
+					(newOrgRepos.get(org.id) ?? [])
+						.filter((repo) => !repo.isPublic)
+						.map((repo) => ({ org, repo })),
+				)
+				const permittedPrivateRepoIds = new Set<string>()
+				for (
+					let offset = 0;
+					offset < privateRepoCandidates.length;
+					offset += 16
+				) {
+					const batch = privateRepoCandidates.slice(offset, offset + 16)
+					const accessResults = await Promise.allSettled(
+						batch.map(({ org, repo }) =>
+							executeGraphQL<{ repo: { id: string } | null }>(
+								DashboardRepoAccessQuery,
+								{
+									orgUsername: org.operatorName,
+									repoUsername: repo.username,
+								},
+								{ accessToken: session.user.accessToken },
+							),
+						),
+					)
+					for (let i = 0; i < accessResults.length; i++) {
+						const access = accessResults[i]
+						if (
+							access.status === 'fulfilled' &&
+							access.value.repo?.id === batch[i].repo.id
+						) {
+							permittedPrivateRepoIds.add(batch[i].repo.id)
+						}
+					}
+				}
+
+				const visibleOrgRepos = new Map<
+					string,
+					RepoItemOnDashboardFragment[]
+				>()
+				for (const [orgId, repos] of newOrgRepos) {
+					visibleOrgRepos.set(
+						orgId,
+						repos.filter(
+							(repo) =>
+								repo.isPublic || permittedPrivateRepoIds.has(repo.id),
+						),
+					)
+				}
+				setOrgRepos(visibleOrgRepos)
 			} catch (e) {
 				console.error('Failed to load dashboard:', e)
 			} finally {
@@ -165,7 +227,7 @@ export function DashboardPage() {
 		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
 	})
 
-	if (seedCandidates.length > 0) {
+	if (orgs.length === 0 && seedCandidates.length > 0) {
 		return (
 			<I18nProvider locale={locale} dictionary={dictionary}>
 				<SpaHeader />
