@@ -1580,7 +1580,8 @@ mod tests {
         let report =
             build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
         assert!(report.blockers.iter().any(|blocker| {
-            blocker.contains("property `method` is INTEGER, expected STRING")
+            blocker
+                .contains("property `method` is INTEGER, expected STRING")
         }));
     }
 
