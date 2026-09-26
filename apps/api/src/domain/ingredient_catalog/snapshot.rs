@@ -11,9 +11,10 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use ingredient_notation::{
-    validate_aliases, validate_attribute_review_status, validate_cooking_state,
-    validate_default_display, validate_display_order, validate_key,
-    validate_optional_text, validate_required_text,
+    validate_aliases, validate_attribute_review_status,
+    validate_cooking_state, validate_default_display,
+    validate_display_order, validate_key, validate_optional_text,
+    validate_required_text,
 };
 
 use super::{NormalizedDecimal, NutrientValueStatus};
@@ -398,7 +399,10 @@ fn validate_ingredient(
     Ok(ReleasedIngredient {
         ingredient_key: validate_key("ingredient_key", &d.ingredient_key)?,
         source_food_code,
-        original_name: validate_required_text("original_name", &d.original_name)?,
+        original_name: validate_required_text(
+            "original_name",
+            &d.original_name,
+        )?,
         standard_name: validate_optional_text(
             "standard_name",
             d.standard_name.as_deref(),
@@ -415,7 +419,10 @@ fn validate_ingredient(
         )?,
         part: validate_optional_text("part", d.part.as_deref())?,
         cooking_state: validate_cooking_state(d.cooking_state.as_deref())?,
-        skin_bone: validate_optional_text("skin_bone", d.skin_bone.as_deref())?,
+        skin_bone: validate_optional_text(
+            "skin_bone",
+            d.skin_bone.as_deref(),
+        )?,
         refuse_rate: d
             .refuse_rate
             .as_deref()
@@ -435,8 +442,7 @@ fn validate_ingredient(
 fn validate_nutrient(
     d: &DraftNutrient,
 ) -> errors::Result<ReleasedNutrient> {
-    let display_order =
-        validate_display_order(d.display_order.as_deref())?;
+    let display_order = validate_display_order(d.display_order.as_deref())?;
     let default_display =
         validate_default_display(d.default_display.as_deref())?;
 

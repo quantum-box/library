@@ -1369,19 +1369,15 @@ pub async fn run<S: Store>(
         args.concurrency as usize,
         args.max_failures,
         Duration::from_millis(500),
-        |entry| {
-            match serde_json::to_string(entry)
-                .map_err(anyhow::Error::from)
-                .and_then(|line| {
-                    writeln!(log_file, "{line}")
-                        .map_err(anyhow::Error::from)
-                })
-            {
-                Ok(()) => true,
-                Err(error) => {
-                    log_error.get_or_insert(error);
-                    false
-                }
+        |entry| match serde_json::to_string(entry)
+            .map_err(anyhow::Error::from)
+            .and_then(|line| {
+                writeln!(log_file, "{line}").map_err(anyhow::Error::from)
+            }) {
+            Ok(()) => true,
+            Err(error) => {
+                log_error.get_or_insert(error);
+                false
             }
         },
     )

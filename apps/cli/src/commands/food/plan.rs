@@ -16,8 +16,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use ingredient_notation::{
-    validate_aliases, validate_attribute_review_status, validate_cooking_state,
-    validate_default_display, validate_optional_text, validate_required_text,
+    validate_aliases, validate_attribute_review_status,
+    validate_cooking_state, validate_default_display,
+    validate_optional_text, validate_required_text,
 };
 
 use super::catalog::{prop, Owner, RecordKind, TargetRecord};
@@ -133,7 +134,10 @@ fn retained_field_error(
     let result = match (kind, property) {
         (
             RecordKind::Ingredient,
-            prop::STANDARD_NAME | prop::READING | prop::PART | prop::SKIN_BONE,
+            prop::STANDARD_NAME
+            | prop::READING
+            | prop::PART
+            | prop::SKIN_BONE,
         ) => validate_optional_text(property, Some(value)).map(|_| ()),
         (RecordKind::Ingredient, prop::ALIASES) => {
             validate_aliases(Some(value)).map(|_| ())
@@ -237,9 +241,11 @@ pub fn plan_repo(
                     if f.owner == Owner::Human
                         || (f.owner == Owner::Derived && reviewed)
                     {
-                        if let Some(error) =
-                            retained_field_error(kind, f.property, e.get(f.property))
-                        {
+                        if let Some(error) = retained_field_error(
+                            kind,
+                            f.property,
+                            e.get(f.property),
+                        ) {
                             record_validation_error(
                                 &mut plan,
                                 &mut omitted_validation_errors,
@@ -254,7 +260,9 @@ pub fn plan_repo(
                     }
                 }
                 if t.name_owner == Owner::Human {
-                    if let Err(error) = validate_required_text("name", &e.name) {
+                    if let Err(error) =
+                        validate_required_text("name", &e.name)
+                    {
                         record_validation_error(
                             &mut plan,
                             &mut omitted_validation_errors,
@@ -486,10 +494,9 @@ mod tests {
         assert!(plan.preserved_human_fields.contains_key("aliases"));
 
         let mut invalid_status = stored(&c.ingredients[0]);
-        invalid_status.fields.insert(
-            "attribute_review_status".into(),
-            "approved".into(),
-        );
+        invalid_status
+            .fields
+            .insert("attribute_review_status".into(), "approved".into());
         let invalid_status_plan = plan_repo(
             RecordKind::Ingredient,
             &c.ingredients,
