@@ -173,7 +173,8 @@ fn protected_resource_metadata_url(api_base_url: &str) -> Result<String> {
 
 /// RFC 8414 puts an issuer path after the well-known metadata prefix.
 fn authorization_server_metadata_url(issuer: &str) -> Result<String> {
-    let issuer_url = validate_oauth_url(issuer, "authorization server issuer")?;
+    let issuer_url =
+        validate_oauth_url(issuer, "authorization server issuer")?;
     if issuer_url.query().is_some() || issuer_url.fragment().is_some() {
         bail!("authorization server issuer must not include a query or fragment");
     }
@@ -192,9 +193,9 @@ async fn discover(
     let protected_resource_url =
         protected_resource_metadata_url(api_base_url)?;
     let prm: ProtectedResourceMetadata =
-        get_json(http, &protected_resource_url)
-            .await
-            .context("the Library API does not advertise browser sign-in")?;
+        get_json(http, &protected_resource_url).await.context(
+            "the Library API does not advertise browser sign-in",
+        )?;
     let issuer = prm
         .authorization_servers
         .first()
@@ -238,7 +239,10 @@ async fn register_client(
     registration_endpoint: &str,
     redirect_uri: &str,
 ) -> Result<String> {
-    validate_oauth_url(registration_endpoint, "client registration endpoint")?;
+    validate_oauth_url(
+        registration_endpoint,
+        "client registration endpoint",
+    )?;
     let response = http
         .post(registration_endpoint)
         .json(&serde_json::json!({
