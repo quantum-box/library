@@ -1921,6 +1921,11 @@ type Query {
 	accessibleTenants: [AccessibleTenant!]!
 	organization(username: String!): Organization!
 	repo(orgUsername: String!, repoUsername: String!): Repo!
+	"""
+	Check repository visibility without making one authorization failure
+	null out sibling results in a batched GraphQL query.
+	"""
+	canViewRepo(orgUsername: String!, repoUsername: String!): Boolean!
 	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!
 	dataList(orgUsername: String!, repoUsername: String!, pageSize: Int, page: Int): DataList!
 	properties(orgUsername: String!, repoUsername: String!): [Property!]!
