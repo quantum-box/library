@@ -9,7 +9,11 @@ import * as Y from 'yjs'
 
 const origin = 'https://reader.example.test'
 const edge = 'https://sync.example.test'
-const productionOrigins = (await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8')).match(/"PHOTON_LIVE_ALLOWED_ORIGINS":\s*"([^"]+)"/)[1]
+const tachyonYaml = await readFile(new URL('../../../tachyon.yaml', import.meta.url), 'utf8')
+const clientManifest = tachyonYaml.slice(tachyonYaml.indexOf('    - name: library-client-sync\n'))
+const productionManifest = clientManifest.split(/^        preview:\s*$/m)[0]
+const productionOrigins = productionManifest.match(/^\s+- name: PHOTON_LIVE_ALLOWED_ORIGINS\s*\n\s+value:\s*"([^"]+)"\s*$/m)?.[1]
+assert.ok(productionOrigins, 'production PHOTON_LIVE_ALLOWED_ORIGINS must be declared in tachyon.yaml')
 const api = 'https://api.example.test'
 const identity = { roomId: 'live:test-room', tenant: 'tenant-test', database: 'db-test', data: 'data-test', property: 'body', format: 'markdown' }
 const metaKey = 'live:room:meta:v1'

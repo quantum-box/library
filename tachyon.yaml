@@ -327,7 +327,6 @@ spec:
         - apps/client/scripts/build-workers.mjs
         - apps/client/scripts/install-worker-toolchain.sh
         - apps/client/rust-toolchain.toml
-        - apps/client/wrangler.jsonc
         - apps/client/package.json
         - apps/client/package-lock.json
         - tachyon.yaml
@@ -343,14 +342,58 @@ spec:
       # 記録され、txcloud.app URL が発行されない (SOL-431)。
       readinessProof:
         path: /api/health
-      # vars・Durable Object binding・migration は apps/client/wrangler.jsonc が持つ。
-      # Tachyon Worker secrets は生成設定が必須で、現在の repo-owned wrangler.jsonc
-      # と併用できないため、生成設定へ移行するまでは Preview scanner を無効にする。
+      # Cloudflare Worker settings and runtime bindings are generated from this declaration.
+      worker:
+        generateConfig: true
+        main: workers/sync/build/index.js
+        compatibilityDate: "2026-05-05"
+        rules:
+          - type: CompiledWasm
+            globs: ["**/*.wasm"]
+            fallthrough: true
+        services:
+          - binding: TXCLOUD_PROXY
+            service: txcloud-proxy
+        triggers:
+          crons:
+            - "* * * * *"
+        observability:
+          enabled: true
+        durableObjects:
+          - binding: PHOTON_SYNC_ROOMS
+            className: PhotonSyncRoom
+          - binding: PHOTON_LIVE_ROOMS
+            className: PhotonLiveRoom
+          - binding: PHOTON_LIVE_TICKETS
+            className: PhotonLiveTicketStore
+          - binding: EXTERNAL_SYNC_DISPATCH
+            className: ExternalSyncDispatcher
+        migrations:
+          - tag: v1
+            newSqliteClasses: [PhotonSyncRoom]
+          - tag: v2
+            newSqliteClasses: [PhotonLiveRoom, PhotonLiveTicketStore]
+          - tag: v3
+            newSqliteClasses: [ExternalSyncDispatcher]
       environments:
         production:
-          envVars: []
+          envVars:
+            - name: PHOTON_CLOUD_ENGINE_BASE_URL
+              value: "https://library-api.txcloud.app"
+            - name: PHOTON_LIVE_ENABLED
+              value: "true"
+            - name: PHOTON_LIVE_ALLOWED_ORIGINS
+              value: "https://planetlibrary.txcloud.app,https://library-client.txcloud.app,tauri://localhost,http://tauri.localhost"
+            - name: PHOTON_LIVE_API_BASE_URL
+              value: "https://library-api.txcloud.app"
+            - name: EXTERNAL_SYNC_SCANNER_ENABLED
+              value: "false"
         preview:
           envVars:
+            - name: PHOTON_LIVE_ENABLED
+              value: "false"
+            - name: PHOTON_LIVE_ALLOWED_ORIGINS
+              value: ""
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
               value: "false"
             # Plain sentinel removes the previously stored preview secret binding.
