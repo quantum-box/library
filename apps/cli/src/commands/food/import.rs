@@ -638,6 +638,9 @@ pub struct Report {
     /// Why `--apply` would be refused, if it would.
     pub blockers: Vec<String>,
     pub needs_accept_quarantine: Vec<String>,
+    /// Existing records absent from this source, which require explicit
+    /// acceptance before they can be retained in a published release.
+    pub needs_accept_retained_records: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -819,6 +822,18 @@ pub fn build_report(
             "{conflicts} records skipped: key held by another record"
         ));
     }
+    let needs_accept_retained_records = repos
+        .iter()
+        .filter_map(|repo| {
+            let count = repo.report.delete_candidates;
+            (count > 0).then(|| {
+                format!(
+                    "{} has {count} existing records not produced by this import; they remain in the draft and will be included in a release",
+                    repo.repo
+                )
+            })
+        })
+        .collect();
 
     Report {
         mode,
@@ -865,6 +880,7 @@ pub fn build_report(
         repos: repos.iter().map(|r| r.report.clone()).collect(),
         blockers,
         needs_accept_quarantine: needs_accept,
+        needs_accept_retained_records,
     }
 }
 
@@ -1007,6 +1023,9 @@ fn print_text(r: &Report, run_dir: &Path) {
     }
     for n in &r.needs_accept_quarantine {
         println!("needs --accept-quarantine: {n}");
+    }
+    for n in &r.needs_accept_retained_records {
+        println!("needs --accept-retained-records: {n}");
     }
     println!("details: {}", run_dir.display());
 }
@@ -1341,19 +1360,41 @@ pub async fn run<S: Store>(
             dir.join("quarantine.jsonl").display()
         );
     }
+    if !report.needs_accept_retained_records.is_empty()
+        && !args.accept_retained_records
+    {
+        write_json(
+            &dir.join("manifest.json"),
+            &manifest(
+                args,
+                &prepared,
+                "blocked",
+                json!({
+                    "needs_accept_retained_records": report.needs_accept_retained_records
+                }),
+            ),
+        )?;
+        bail!(
+            "refusing to write: {} (review {} and pass --accept-retained-records to retain them)",
+            report.needs_accept_retained_records.join("; "),
+            dir.join("plan.json").display()
+        );
+    }
     let Some(store) = store else {
         bail!("--apply needs the repos; it cannot run with --offline");
     };
 
     let started_at = now();
+    let mut progress = json!({"started_at": started_at});
+    if args.accept_retained_records
+        && !report.needs_accept_retained_records.is_empty()
+    {
+        progress["accepted_retained_records"] =
+            json!(report.needs_accept_retained_records);
+    }
     write_json(
         &dir.join("manifest.json"),
-        &manifest(
-            args,
-            &prepared,
-            "in_progress",
-            json!({"started_at": started_at}),
-        ),
+        &manifest(args, &prepared, "in_progress", progress),
     )?;
     let mut log_file = OpenOptions::new()
         .create(true)
@@ -1385,6 +1426,12 @@ pub async fn run<S: Store>(
         && log_error.is_none();
     let status = if ok { "completed" } else { "failed" };
     let mut extra = json!({"started_at": started_at, "finished_at": now(), "writes": summary});
+    if args.accept_retained_records
+        && !report.needs_accept_retained_records.is_empty()
+    {
+        extra["accepted_retained_records"] =
+            json!(report.needs_accept_retained_records);
+    }
     if ok {
         extra["publish_hint"] = publish_hint(args, &prepared);
     }
@@ -1475,6 +1522,7 @@ mod tests {
             offline: true,
             apply: false,
             accept_quarantine: false,
+            accept_retained_records: false,
             concurrency: 4,
             max_failures: 20,
             state_dir: PathBuf::from(".food-import"),
@@ -1579,6 +1627,35 @@ mod tests {
             file.retrieved_at = "2026-09-26T08:36:35Z".into();
         }
         assert_ne!(original, run_dir(&args, &changed_retrieval_time));
+    }
+
+    #[tokio::test]
+    async fn retained_records_require_explicit_acceptance() {
+        let p = prepared();
+        let s = store();
+        let stale = super::super::plan::ExistingRecord {
+            id: "data_01stalefoodrecord0000000000".into(),
+            name: "Old food".into(),
+            fields: [(
+                prop::INGREDIENT_KEY.to_string(),
+                "mext-99999".to_string(),
+            )]
+            .into(),
+        };
+        s.repos
+            .borrow_mut()
+            .get_mut(ING)
+            .unwrap()
+            .insert(stale.id.clone(), stale);
+
+        let repos = plan(&p, &s).await;
+        let report =
+            build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
+
+        assert_eq!(report.repos[1].delete_candidates, 1);
+        assert_eq!(report.needs_accept_retained_records.len(), 1);
+        assert!(report.needs_accept_retained_records[0]
+            .contains("not produced by this import"));
     }
 
     #[tokio::test]
