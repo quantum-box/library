@@ -273,7 +273,13 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
         let label = labels.last().cloned().unwrap_or_default();
 
         if identifier == "REFUSE" {
-            layout.refuse_col = Some(col);
+            if layout.refuse_col.is_some() {
+                layout
+                    .errors
+                    .push("REFUSE identifier appears more than once".into());
+            } else {
+                layout.refuse_col = Some(col);
+            }
             continue;
         }
         if identifier.is_empty() {
@@ -333,11 +339,18 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
             continue;
         }
         if let Err(e) = validate_key("nutrient_key", identifier) {
+            let cells = non_empty(col);
+            if cells > 0 {
+                layout.errors.push(format!(
+                    "column {} has data with an invalid component identifier {identifier:?}: {e}",
+                    col + 1
+                ));
+            }
             layout.ignored.push(IgnoredColumn {
                 col,
                 label,
                 reason: e.to_string(),
-                non_empty_cells: non_empty(col),
+                non_empty_cells: cells,
             });
             continue;
         }
@@ -649,6 +662,28 @@ mod tests {
         assert_eq!(name("FIB-"), "食物繊維総量");
         assert_eq!(name("ID"), "ヨウ素");
         assert_eq!(name("VITB12"), "ビタミンB12");
+        // Malformed identifier columns with values must block the layout.
+        let malformed_sheet = |second_identifier: &str| {
+            Sheet::from_rows(
+                "malformed",
+                &[
+                    &["食品群", "食品番号", "", "食品名", "x", "x", "備考"],
+                    &["", "", "単位", "", "%", "%", ""],
+                    &["成分識別子", "", "", "", "REFUSE", second_identifier, ""],
+                    &["", "00001", "", "食品", "1", "1", ""],
+                ],
+            )
+        };
+        let duplicate_refuse =
+            parse_layout(&malformed_sheet("REFUSE")).unwrap();
+        assert!(duplicate_refuse.errors.iter().any(|error| {
+            error.contains("REFUSE identifier appears more than once")
+        }));
+        let invalid_identifier =
+            parse_layout(&malformed_sheet("BAD/ID")).unwrap();
+        assert!(invalid_identifier.errors.iter().any(|error| {
+            error.contains("invalid component identifier")
+        }));
         // The `*` column beside CHOAVLM is a marker, not a nutrient.
         assert_eq!(
             layout.markers.values().collect::<Vec<_>>(),
