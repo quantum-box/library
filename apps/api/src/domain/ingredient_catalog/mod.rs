@@ -231,7 +231,13 @@ impl IngredientRelease {
         snapshot: &ReleaseSnapshot,
         published_by: &str,
     ) -> errors::Result<Self> {
-        Self::publish_with_visibility(catalog, source, snapshot, 0, published_by)
+        Self::publish_with_visibility(
+            catalog,
+            source,
+            snapshot,
+            0,
+            published_by,
+        )
     }
 
     pub fn publish_with_visibility(

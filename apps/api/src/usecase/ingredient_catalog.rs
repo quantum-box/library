@@ -15,7 +15,8 @@ use database_manager::{
     usecase::FindAllPropertiesInputData,
 };
 use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyForResourceInput, ExecutorAction, MultiTenancyAction,
+    AuthApp, CheckPolicyForResourceInput, ExecutorAction,
+    MultiTenancyAction,
 };
 use value_object::{TenantId, MAX_PAGE_SIZE};
 
@@ -207,7 +208,8 @@ impl CatalogLookup {
         org_username: &str,
         catalog_key: &str,
     ) -> errors::Result<(IngredientCatalog, Vec<Repo>)> {
-        let catalog = self.catalog_record(org_username, catalog_key).await?;
+        let catalog =
+            self.catalog_record(org_username, catalog_key).await?;
         let org_id = catalog.tenant_id().clone();
         let mut repos = Vec::with_capacity(3);
         for repo_id in catalog.repo_ids() {
@@ -240,7 +242,9 @@ impl CatalogLookup {
                 continue;
             }
             if executor.is_none() {
-                return Err(errors::Error::permission_denied("Access denied"));
+                return Err(errors::Error::permission_denied(
+                    "Access denied",
+                ));
             }
             authorize_private_repo_read(
                 self.auth.as_ref(),
@@ -438,7 +442,9 @@ impl PublishIngredientRelease {
         let mut seen_names = BTreeSet::new();
         for property in &properties {
             let name = property.name().trim();
-            if relevant_names.contains(&name) && !seen_names.insert(name.to_string()) {
+            if relevant_names.contains(&name)
+                && !seen_names.insert(name.to_string())
+            {
                 return Err(errors::Error::invalid(format!(
                     "draft repo {} has duplicate property name {name:?}",
                     repo.username()
@@ -599,7 +605,8 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             .lookup
             .catalog(&input.org_username, &input.catalog_key)
             .await?;
-        let repo_ids: Vec<RepoId> = catalog.repo_ids().into_iter().cloned().collect();
+        let repo_ids: Vec<RepoId> =
+            catalog.repo_ids().into_iter().cloned().collect();
         self.lookup
             .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
             .await?;
@@ -639,16 +646,14 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             )));
         }
 
-        let private_repo_mask = repos.iter().enumerate().fold(
-            0u8,
-            |mask, (index, repo)| {
+        let private_repo_mask =
+            repos.iter().enumerate().fold(0u8, |mask, (index, repo)| {
                 if repo.is_private() {
                     mask | (1 << index)
                 } else {
                     mask
                 }
-            },
-        );
+            });
         let release = IngredientRelease::publish_with_visibility(
             &catalog,
             input.source,
@@ -656,7 +661,12 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             private_repo_mask,
             input.executor.get_id(),
         )?;
-        match self.lookup.catalogs.insert_release(&release, &snapshot).await {
+        match self
+            .lookup
+            .catalogs
+            .insert_release(&release, &snapshot)
+            .await
+        {
             Ok(()) => Ok((release, true)),
             Err(insert_error) => {
                 let existing = self
@@ -729,7 +739,9 @@ impl ReadIngredientCatalog {
             .catalogs
             .get_release(catalog.tenant_id(), catalog.id(), &release_id)
             .await?
-            .ok_or_else(|| errors::Error::not_found("ingredient release"))?;
+            .ok_or_else(|| {
+                errors::Error::not_found("ingredient release")
+            })?;
         self.lookup
             .authorize_read(
                 target.executor,

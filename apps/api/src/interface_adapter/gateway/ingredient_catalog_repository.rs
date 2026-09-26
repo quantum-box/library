@@ -308,7 +308,7 @@ impl IngredientCatalogRepositoryImpl {
                 continue;
             }
             let mut qb = QueryBuilder::<MySql>::new(
-                "SELECT `ingredient_key`, `alias` \
+                "SELECT `ingredient_key`, CAST(`alias` AS CHAR CHARACTER SET utf8mb4) AS `alias` \
                  FROM `ingredient_release_aliases` \
                  WHERE `release_id` = ",
             );
@@ -605,9 +605,8 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
             .map(ReleasedIngredient::try_from)
             .collect::<errors::Result<Vec<_>>>()?;
         for item in &mut items {
-            item.aliases = aliases
-                .remove(&item.ingredient_key)
-                .unwrap_or_default();
+            item.aliases =
+                aliases.remove(&item.ingredient_key).unwrap_or_default();
         }
         Ok((items, u64::try_from(total).unwrap_or(0)))
     }
@@ -631,7 +630,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
                 let keys = [ingredient.ingredient_key.clone()];
                 let mut aliases = self
                     .aliases_for_ingredients(
-                        &release.id().to_string(),
+                        release.id().as_ref(),
                         &keys,
                     )
                     .await?;
