@@ -1,6 +1,7 @@
 use super::*;
 use crate::property_definition_rollout::PropertyDefinitionStorageMode;
 use crate::property_value_rollout::PropertyValueStorageMode;
+use crate::usecase::{DataRevision, DataRevisionQuery};
 use crate::DataQuery;
 
 const SEARCH_DATA_BY_NAME_SQL: &str = r#"
@@ -14,6 +15,29 @@ const SEARCH_DATA_BY_NAME_SQL: &str = r#"
         created_at ASC, id ASC
     LIMIT ? OFFSET ?
 "#;
+
+/// One aggregate over the Database's records; see `DataRevision` for what
+/// each column is there to catch. Reads only the record header columns, so
+/// its cost does not grow with the size of stored values.
+const DATA_REVISION_SQL: &str = r#"
+    SELECT
+        COUNT(*) AS record_count,
+        CAST(COALESCE(BIT_XOR(CRC32(id)), 0) AS UNSIGNED) AS id_checksum,
+        CAST(COALESCE(SUM(record_version), 0) AS UNSIGNED) AS version_sum,
+        CAST(MAX(updated_at) AS CHAR) AS last_updated_at
+    FROM
+        data
+    WHERE
+        tenant_id = ? and object_id = ?
+"#;
+
+#[derive(sqlx::FromRow)]
+struct DataRevisionRow {
+    record_count: i64,
+    id_checksum: u64,
+    version_sum: u64,
+    last_updated_at: Option<String>,
+}
 
 #[derive(Clone, Debug)]
 pub struct DataQueryService {
@@ -155,6 +179,27 @@ impl DataQuery for DataQueryService {
     }
 }
 
+#[async_trait::async_trait]
+impl DataRevisionQuery for DataQueryService {
+    async fn data_revision(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+    ) -> errors::Result<DataRevision> {
+        let row = sqlx::query_as::<_, DataRevisionRow>(DATA_REVISION_SQL)
+            .bind(tenant_id.to_string())
+            .bind(database_id.to_string())
+            .fetch_one(self.db.pool().as_ref())
+            .await?;
+        Ok(DataRevision {
+            record_count: u64::try_from(row.record_count).unwrap_or(0),
+            id_checksum: row.id_checksum,
+            version_sum: row.version_sum,
+            last_updated_at: row.last_updated_at,
+        })
+    }
+}
+
 #[cfg(test)]
 mod query_contract_tests {
     use super::*;
@@ -175,5 +220,13 @@ mod query_contract_tests {
         ));
         assert!(sql.contains("order by created_at asc, id asc"));
         assert!(sql.contains("limit ? offset ?"));
+    }
+
+    #[test]
+    fn revision_is_tenant_scoped_and_reads_no_values() {
+        let sql = normalize(DATA_REVISION_SQL);
+
+        assert!(sql.contains("where tenant_id = ? and object_id = ?"));
+        assert!(!sql.contains("value"));
     }
 }

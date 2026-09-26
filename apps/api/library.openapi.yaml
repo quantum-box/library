@@ -188,6 +188,126 @@ components:
       - url
       - items
       type: object
+    DataSearchHitResponse:
+      allOf:
+      - $ref: '#/components/schemas/DataResponse'
+      - properties:
+          distanceMeters:
+            description: Meters from `lat`/`lng`; absent when the query has no point.
+            format: double
+            type:
+            - number
+            - 'null'
+        type: object
+    DataSearchParams:
+      description: |-
+        Query parameters of `data-search`.
+
+        Parsed by hand from the raw pairs rather than through serde, because
+        `filter` repeats and the form decoder `Query` uses cannot collect a
+        repeated key.
+      properties:
+        bbox:
+          description: |-
+            Viewport as `minLng,minLat,maxLng,maxLat` (GeoJSON order). Records
+            without a location are excluded.
+          type:
+          - string
+          - 'null'
+        filter:
+          description: |-
+            Property filter, repeatable; all must hold. `key:value` matches a
+            value (Select/MultiSelect options by id, key or label; Boolean
+            `true`/`false`, where no value counts as `false`; Relation by
+            record id; text exactly). `key:a|b` matches any of several.
+            `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        ids:
+          description: |-
+            Comma-separated record ids (at most 100). Fetches specific records
+            under the same publication rules as the listing, e.g. a spot detail.
+          type:
+          - string
+          - 'null'
+        include_body:
+          description: Return rich text documents in full instead of as previews.
+          type: boolean
+        include_unpublished:
+          description: |-
+            Include records whose `publication_status` is not `published`.
+            Requires permission to edit the repo.
+          type: boolean
+        lat:
+          description: Latitude of the point to measure distance from. Requires `lng`.
+          format: double
+          type:
+          - number
+          - 'null'
+        lng:
+          description: Longitude of the point to measure distance from. Requires `lat`.
+          format: double
+          type:
+          - number
+          - 'null'
+        location_property:
+          description: |-
+            Key of the Location Property that places a record on the map.
+            Defaults to the repo's first Location Property.
+          type:
+          - string
+          - 'null'
+        page:
+          description: 1-origin page number. Defaults to 1.
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        page_size:
+          description: Number of records per page. Defaults to 20 and is capped at 100.
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        q:
+          description: |-
+            Text to find. Every whitespace-separated term must appear in the
+            record name, a text Property, or the key or label of a selected
+            option. Case- and width-insensitive (`ＤＣＭ` matches `dcm`).
+          type:
+          - string
+          - 'null'
+        radius_m:
+          description: Only return records within this many meters of `lat`/`lng`.
+          format: double
+          type:
+          - number
+          - 'null'
+        sort:
+          description: |-
+            `distance` (default when `lat`/`lng` are given), `name` (default
+            otherwise) or `updated` (newest first).
+          type:
+          - string
+          - 'null'
+      type: object
+    DataSearchResponse:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/DataSearchHitResponse'
+          type: array
+        paginator:
+          $ref: '#/components/schemas/OffsetPaginator'
+      required:
+      - data
+      - paginator
+      type: object
     GlobalIdMappingResponse:
       properties:
         created_at:
@@ -1696,6 +1816,146 @@ paths:
           description: Data list found. Rich text properties are returned as `richTextPreview` unless `include_body` is set
         '400':
           description: Invalid pagination request
+        '404':
+          description: Repository not found
+      tags: []
+  /v1beta/repos/{org}/{repo}/data-search:
+    get:
+      operationId: search_data_index
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: |-
+          Text to find. Every whitespace-separated term must appear in the
+          record name, a text Property, or the key or label of a selected
+          option. Case- and width-insensitive (`ＤＣＭ` matches `dcm`).
+        in: query
+        name: q
+        required: false
+        schema:
+          type: string
+      - description: |-
+          Viewport as `minLng,minLat,maxLng,maxLat` (GeoJSON order). Records
+          without a location are excluded.
+        example: 141.20,42.95,141.50,43.15
+        in: query
+        name: bbox
+        required: false
+        schema:
+          type: string
+      - description: Latitude of the point to measure distance from. Requires `lng`.
+        in: query
+        name: lat
+        required: false
+        schema:
+          format: double
+          type: number
+      - description: Longitude of the point to measure distance from. Requires `lat`.
+        in: query
+        name: lng
+        required: false
+        schema:
+          format: double
+          type: number
+      - description: Only return records within this many meters of `lat`/`lng`.
+        in: query
+        name: radius_m
+        required: false
+        schema:
+          format: double
+          type: number
+      - description: |-
+          Key of the Location Property that places a record on the map.
+          Defaults to the repo's first Location Property.
+        in: query
+        name: location_property
+        required: false
+        schema:
+          type: string
+      - description: |-
+          Property filter, repeatable; all must hold. `key:value` matches a
+          value (Select/MultiSelect options by id, key or label; Boolean
+          `true`/`false`, where no value counts as `false`; Relation by
+          record id; text exactly). `key:a|b` matches any of several.
+          `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
+        example: category:home_center
+        in: query
+        name: filter
+        required: false
+        schema:
+          items:
+            type: string
+          type: array
+      - description: |-
+          Comma-separated record ids (at most 100). Fetches specific records
+          under the same publication rules as the listing, e.g. a spot detail.
+        in: query
+        name: ids
+        required: false
+        schema:
+          type: string
+      - description: |-
+          `distance` (default when `lat`/`lng` are given), `name` (default
+          otherwise) or `updated` (newest first).
+        in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+      - description: |-
+          Include records whose `publication_status` is not `published`.
+          Requires permission to edit the repo.
+        in: query
+        name: include_unpublished
+        required: false
+        schema:
+          type: boolean
+      - description: Return rich text documents in full instead of as previews.
+        in: query
+        name: include_body
+        required: false
+        schema:
+          type: boolean
+      - description: 1-origin page number. Defaults to 1.
+        in: query
+        name: page
+        required: false
+        schema:
+          format: int32
+          minimum: 1
+          type: integer
+      - description: Number of records per page. Defaults to 20 and is capped at 100.
+        in: query
+        name: page_size
+        required: false
+        schema:
+          format: int32
+          maximum: 100
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSearchResponse'
+          description: 'Matching records, one page at a time. Public repos answer with `Cache-Control: public` and an `ETag`; send it back in `If-None-Match` to get a 304 while nothing has changed'
+        '304':
+          description: Unchanged since the ETag in `If-None-Match`
+        '400':
+          description: Malformed query, unknown Property, or a Property that cannot be filtered that way
+        '403':
+          description: Private repo, or `include_unpublished` without edit permission
         '404':
           description: Repository not found
       tags: []

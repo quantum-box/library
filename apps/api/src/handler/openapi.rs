@@ -12,9 +12,9 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handler::{
-    auth::*, data::*, docs::*, global_id_mapping::*, image::*, live::*,
-    organization::*, property::*, repository::*, share_link::*, source::*,
-    translation::*,
+    auth::*, data::*, data_search::*, docs::*, global_id_mapping::*,
+    image::*, live::*, organization::*, property::*, repository::*,
+    share_link::*, source::*, translation::*,
 };
 
 // TODO: add English comment
@@ -50,6 +50,7 @@ use crate::handler::{
         upsert_data,
         delete_data,
         search_data,
+        search_data_index,
         get_properties,
         get_property,
         add_property,
@@ -91,6 +92,9 @@ use crate::handler::{
         crate::handler::types::UpsertDataRequest,
         crate::handler::types::SearchDataQuery,
         crate::handler::types::DataPaginationQuery,
+        crate::handler::data_search::DataSearchParams,
+        crate::handler::data_search::DataSearchResponse,
+        crate::handler::data_search::DataSearchHitResponse,
         value_object::OffsetPaginator,
         crate::handler::types::PropertyResponse,
         crate::handler::types::PropertySelectOptionResponse,
@@ -162,6 +166,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(upsert_data))
         .routes(routes!(delete_data))
         .routes(routes!(search_data))
+        .routes(routes!(search_data_index))
         .routes(routes!(get_properties))
         .routes(routes!(get_property))
         .routes(routes!(delete_property))
