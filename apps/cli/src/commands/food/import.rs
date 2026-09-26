@@ -1193,6 +1193,31 @@ fn validate_distinct_repositories(args: &ImportArgs) -> Result<()> {
             "--ingredient-repo, --nutrient-repo, and --value-repo must name three distinct repos"
         );
     }
+    let organizations = repositories
+        .iter()
+        .map(|repo| {
+            let Some((organization, name)) = repo.split_once('/') else {
+                bail!("draft repos must be named as org/repo");
+            };
+            if organization.is_empty() || name.is_empty() || name.contains('/')
+            {
+                bail!("draft repos must be named as org/repo");
+            }
+            Ok(organization.to_string())
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    if organizations.len() != 1 {
+        bail!(
+            "--ingredient-repo, --nutrient-repo, and --value-repo must be in the same organization"
+        );
+    }
+    Ok(())
+}
+
+fn validate_publish_source_url(source_url: &str) -> Result<()> {
+    if source_url.len() > 2048 {
+        bail!("--table-url must be no more than 2048 bytes");
+    }
     Ok(())
 }
 
@@ -1203,6 +1228,7 @@ pub async fn run<S: Store>(
 ) -> Result<()> {
     validate_distinct_repositories(args)?;
     validate_source_id(&args.source_id)?;
+    validate_publish_source_url(&args.table_url)?;
     let retrieved = retrieved_at(args)?;
     let table_bytes = fs::read(&args.table)
         .with_context(|| format!("reading {}", args.table.display()))?;
@@ -1597,6 +1623,23 @@ mod tests {
     async fn apply(p: &Prepared, s: &FakeStore) -> ExecSummary {
         let repos = plan(p, s).await;
         execute(s, &repos, 3, 5, Duration::ZERO, |_| true).await
+    }
+
+    #[test]
+    fn draft_repositories_must_share_an_organization() {
+        let args = import_args();
+        assert!(validate_distinct_repositories(&args).is_ok());
+
+        let mut args = import_args();
+        args.value_repo = "another-org/food-nutrient-values".into();
+        let error = validate_distinct_repositories(&args).unwrap_err();
+        assert!(error.to_string().contains("same organization"));
+    }
+
+    #[test]
+    fn table_url_respects_the_release_source_limit() {
+        assert!(validate_publish_source_url(&"x".repeat(2048)).is_ok());
+        assert!(validate_publish_source_url(&"x".repeat(2049)).is_err());
     }
 
     #[test]
