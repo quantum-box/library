@@ -2065,32 +2065,32 @@ paths:
         schema:
           type: string
       - description: Substring of the source name, standard name, reading or an alias.
-        in: path
+        in: query
         name: q
-        required: true
+        required: false
         schema:
           type:
           - string
           - 'null'
-      - in: path
+      - in: query
         name: category_code
-        required: true
+        required: false
         schema:
           type:
           - string
           - 'null'
       - description: e.g. `raw`, `boiled`. Alias matches do not pick a state for you.
-        in: path
+        in: query
         name: cooking_state
-        required: true
+        required: false
         schema:
           type:
           - string
           - 'null'
       - description: 1-origin. Defaults to 1.
-        in: path
+        in: query
         name: page
-        required: true
+        required: false
         schema:
           format: int32
           minimum: 0
@@ -2098,9 +2098,9 @@ paths:
           - integer
           - 'null'
       - description: 1..=100. Defaults to 20.
-        in: path
+        in: query
         name: page_size
-        required: true
+        required: false
         schema:
           format: int32
           minimum: 0

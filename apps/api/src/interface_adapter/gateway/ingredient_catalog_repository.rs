@@ -200,6 +200,12 @@ struct ValueRow {
     raw_notation: Option<String>,
 }
 
+#[derive(Debug, FromRow)]
+struct RepoVisibilityRow {
+    id: String,
+    is_public: i8,
+}
+
 impl TryFrom<ValueRow> for ReleasedValue {
     type Error = errors::Error;
 
@@ -218,9 +224,14 @@ impl TryFrom<ValueRow> for ReleasedValue {
     }
 }
 
-const CATALOG_COLUMNS: &str = "`id`, `tenant_id`, `catalog_key`, `name`, \
-    `ingredient_repo_id`, `nutrient_repo_id`, `value_repo_id`, \
-    `created_at`, `updated_at`";
+const CATALOG_COLUMNS: &str = "`id`, `tenant_id`, `catalog_key`, \
+    `name`, `ingredient_repo_id`, `nutrient_repo_id`, \
+    `value_repo_id`, `created_at`, `updated_at`";
+
+const CATALOG_SELECT_COLUMNS: &str = "`id`, `tenant_id`, \
+    CAST(`catalog_key` AS CHAR CHARACTER SET utf8mb4) AS `catalog_key`, \
+    `name`, `ingredient_repo_id`, `nutrient_repo_id`, \
+    `value_repo_id`, `created_at`, `updated_at`";
 
 const RELEASE_COLUMNS: &str = "`id`, `tenant_id`, `catalog_id`, \
     `source_id`, `source_release`, `source_url`, `source_retrieved_at`, \
@@ -228,13 +239,21 @@ const RELEASE_COLUMNS: &str = "`id`, `tenant_id`, `catalog_id`, \
     `nutrient_count`, `value_count`, `private_repo_mask`, \
     `published_by`, `published_at`";
 
+const RELEASE_SELECT_COLUMNS: &str = "`id`, `tenant_id`, `catalog_id`, \
+    CAST(`source_id` AS CHAR CHARACTER SET utf8mb4) AS `source_id`, \
+    CAST(`source_release` AS CHAR CHARACTER SET utf8mb4) AS `source_release`, \
+    `source_url`, `source_retrieved_at`, `notes`, `schema_version`, \
+    `content_hash`, `ingredient_count`, `nutrient_count`, `value_count`, \
+    `private_repo_mask`, `published_by`, `published_at`";
+
 /// Item columns. Aliases are loaded in a separate bounded query.
 const ITEM_SELECT: &str =
-    "SELECT i.`ingredient_key`, i.`source_food_code`, \
-    i.`original_name`, i.`standard_name`, i.`reading`, i.`category_code`, \
-    i.`category_name`, i.`part`, i.`cooking_state`, i.`skin_bone`, \
-    i.`refuse_rate`, i.`attribute_review_status` \
-    FROM `ingredient_release_items` i";
+    "SELECT CAST(i.`ingredient_key` AS CHAR CHARACTER SET utf8mb4) \
+    AS `ingredient_key`, CAST(i.`source_food_code` AS CHAR CHARACTER SET utf8mb4) \
+    AS `source_food_code`, i.`original_name`, i.`standard_name`, \
+    i.`reading`, i.`category_code`, i.`category_name`, i.`part`, \
+    i.`cooking_state`, i.`skin_bone`, i.`refuse_rate`, \
+    i.`attribute_review_status` FROM `ingredient_release_items` i";
 
 /// Escape `%`, `_` and `\` so user text is matched literally by LIKE.
 fn like_contains(text: &str) -> String {
@@ -308,7 +327,8 @@ impl IngredientCatalogRepositoryImpl {
                 continue;
             }
             let mut qb = QueryBuilder::<MySql>::new(
-                "SELECT `ingredient_key`, CAST(`alias` AS CHAR CHARACTER SET utf8mb4) AS `alias` \
+                "SELECT CAST(`ingredient_key` AS CHAR CHARACTER SET utf8mb4) AS `ingredient_key`, \
+                 CAST(`alias` AS CHAR CHARACTER SET utf8mb4) AS `alias` \
                  FROM `ingredient_release_aliases` \
                  WHERE `release_id` = ",
             );
@@ -368,7 +388,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         catalog_key: &str,
     ) -> errors::Result<Option<IngredientCatalog>> {
         let row: Option<CatalogRow> = sqlx::query_as(&format!(
-            "SELECT {CATALOG_COLUMNS} FROM `ingredient_catalogs` \
+            "SELECT {CATALOG_SELECT_COLUMNS} FROM `ingredient_catalogs` \
              WHERE `tenant_id` = ? AND `catalog_key` = ?"
         ))
         .bind(tenant_id.to_string())
@@ -387,6 +407,65 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         let release_id = release.id().to_string();
         let source = release.source();
         let mut tx = self.db.pool().begin().await.map_err(db_error)?;
+
+        let catalog_repo_ids: Option<(String, String, String)> =
+            sqlx::query_as(
+                "SELECT `ingredient_repo_id`, `nutrient_repo_id`, \
+                 `value_repo_id` FROM `ingredient_catalogs` \
+                 WHERE `tenant_id` = ? AND `id` = ? FOR UPDATE",
+            )
+            .bind(release.tenant_id().to_string())
+            .bind(release.catalog_id().to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        let Some((ingredient_repo_id, nutrient_repo_id, value_repo_id)) =
+            catalog_repo_ids
+        else {
+            return Err(errors::Error::not_found(
+                "ingredient catalog disappeared during publication",
+            ));
+        };
+
+        let locked_repos: Vec<RepoVisibilityRow> = sqlx::query_as(
+            "SELECT `id`, `is_public` FROM `repos` \
+             WHERE `id` IN (?, ?, ?) ORDER BY `id` FOR UPDATE",
+        )
+        .bind(&ingredient_repo_id)
+        .bind(&nutrient_repo_id)
+        .bind(&value_repo_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db_error)?;
+        if locked_repos.len() != 3 {
+            return Err(errors::Error::conflict(
+                "a catalog draft repo was deleted during publication",
+            ));
+        }
+        let visibility = locked_repos
+            .into_iter()
+            .map(|repo| (repo.id, repo.is_public == 1))
+            .collect::<BTreeMap<_, _>>();
+        let catalog_repo_ids = [
+            ingredient_repo_id,
+            nutrient_repo_id,
+            value_repo_id,
+        ];
+        let actual_private_repo_mask = catalog_repo_ids
+            .iter()
+            .enumerate()
+            .fold(0u8, |mask, (index, repo_id)| {
+                if visibility.get(repo_id) == Some(&false) {
+                    mask | (1 << index)
+                } else {
+                    mask
+                }
+            });
+        if actual_private_repo_mask != *release.private_repo_mask() {
+            return Err(errors::Error::conflict(
+                "draft repo visibility changed during publication; retry",
+            ));
+        }
 
         sqlx::query(&format!(
             "INSERT INTO `ingredient_releases` ({RELEASE_COLUMNS}) \
@@ -509,7 +588,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         source_release: &str,
     ) -> errors::Result<Option<IngredientRelease>> {
         let row: Option<ReleaseRow> = sqlx::query_as(&format!(
-            "SELECT {RELEASE_COLUMNS} FROM `ingredient_releases` \
+            "SELECT {RELEASE_SELECT_COLUMNS} FROM `ingredient_releases` \
              WHERE `tenant_id` = ? AND `catalog_id` = ? \
                AND `source_id` = ? AND `source_release` = ?"
         ))
@@ -530,7 +609,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         release_id: &IngredientReleaseId,
     ) -> errors::Result<Option<IngredientRelease>> {
         let row: Option<ReleaseRow> = sqlx::query_as(&format!(
-            "SELECT {RELEASE_COLUMNS} FROM `ingredient_releases` \
+            "SELECT {RELEASE_SELECT_COLUMNS} FROM `ingredient_releases` \
              WHERE `tenant_id` = ? AND `catalog_id` = ? AND `id` = ?"
         ))
         .bind(tenant_id.to_string())
@@ -548,7 +627,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         catalog_id: &IngredientCatalogId,
     ) -> errors::Result<Vec<IngredientRelease>> {
         let rows: Vec<ReleaseRow> = sqlx::query_as(&format!(
-            "SELECT {RELEASE_COLUMNS} FROM `ingredient_releases` \
+            "SELECT {RELEASE_SELECT_COLUMNS} FROM `ingredient_releases` \
              WHERE `tenant_id` = ? AND `catalog_id` = ? \
              ORDER BY `published_at` DESC, `id` DESC"
         ))
@@ -646,7 +725,10 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         ingredient_key: &str,
     ) -> errors::Result<Vec<ReleasedValue>> {
         let rows: Vec<ValueRow> = sqlx::query_as(
-            "SELECT `ingredient_key`, `nutrient_key`, `value_status`, \
+            "SELECT CAST(`ingredient_key` AS CHAR CHARACTER SET utf8mb4) \
+                    AS `ingredient_key`, \
+                    CAST(`nutrient_key` AS CHAR CHARACTER SET utf8mb4) \
+                    AS `nutrient_key`, `value_status`, \
                     `amount`, `raw_notation` \
              FROM `ingredient_release_values` \
              WHERE `release_id` = ? AND `ingredient_key` = ? \
@@ -665,8 +747,9 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         release: &IngredientRelease,
     ) -> errors::Result<Vec<ReleasedNutrient>> {
         let rows: Vec<NutrientRow> = sqlx::query_as(
-            "SELECT `nutrient_key`, `name`, `unit`, `basis`, `method`, \
-                    `display_order`, `default_display` \
+            "SELECT CAST(`nutrient_key` AS CHAR CHARACTER SET utf8mb4) \
+                    AS `nutrient_key`, `name`, `unit`, `basis`, \
+                    `method`, `display_order`, `default_display` \
              FROM `ingredient_release_nutrients` \
              WHERE `release_id` = ? \
              ORDER BY `display_order` ASC, `nutrient_key` ASC",

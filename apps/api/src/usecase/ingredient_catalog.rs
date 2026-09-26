@@ -449,16 +449,17 @@ impl PublishIngredientRelease {
                         repo.username()
                     )));
                 }
-                let expected_type = match name {
-                    draft_schema::DISPLAY_ORDER => "INTEGER",
-                    draft_schema::DEFAULT_DISPLAY => "BOOLEAN",
-                    _ => "STRING",
+                let expected_types: &[&str] = match name {
+                    draft_schema::DISPLAY_ORDER => &["STRING", "INTEGER"],
+                    draft_schema::DEFAULT_DISPLAY => &["STRING", "BOOLEAN"],
+                    _ => &["STRING"],
                 };
                 let actual_type = property.property_type().to_string();
-                if actual_type != expected_type {
+                if !expected_types.contains(&actual_type.as_str()) {
                     return Err(errors::Error::invalid(format!(
-                        "draft repo {} property {name:?} must be {expected_type}, got {actual_type}",
-                        repo.username()
+                        "draft repo {} property {name:?} must be {}, got {actual_type}",
+                        repo.username(),
+                        expected_types.join(" or ")
                     )));
                 }
             }
