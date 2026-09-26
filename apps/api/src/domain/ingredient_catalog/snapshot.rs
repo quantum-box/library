@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use ingredient_notation::{validate_cooking_state, validate_key};
+
 use super::{NormalizedDecimal, NutrientValueStatus};
 
 /// Version of the snapshot layout. Bump it when a field's meaning
@@ -378,21 +380,6 @@ impl Errors {
     }
 }
 
-/// Stable identifiers: letters, digits, `.`, `_` and `-`, at most 64.
-fn validate_key(field: &str, raw: &str) -> errors::Result<String> {
-    let s = raw.trim();
-    let valid = !s.is_empty()
-        && s.len() <= 64
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
-    if !valid {
-        return Err(errors::Error::invalid(format!(
-            "{field} must be 1-64 characters of [A-Za-z0-9._-]: {raw:?}"
-        )));
-    }
-    Ok(s.to_string())
-}
-
 fn required_text(field: &str, raw: &str) -> errors::Result<String> {
     optional_text(field, Some(raw))?.ok_or_else(|| {
         errors::Error::invalid(format!("{field} is required"))
@@ -409,21 +396,6 @@ fn optional_text(
     if s.chars().count() > MAX_TEXT_LEN {
         return Err(errors::Error::invalid(format!(
             "{field} is longer than {MAX_TEXT_LEN} characters"
-        )));
-    }
-    Ok(Some(s.to_string()))
-}
-
-/// Cooking or processing state code, e.g. `raw`, `boiled`, `dried`.
-fn optional_state(raw: Option<&str>) -> errors::Result<Option<String>> {
-    let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
-        return Ok(None);
-    };
-    let valid = s.len() <= 32
-        && s.bytes().all(|b| b.is_ascii_lowercase() || b == b'_');
-    if !valid {
-        return Err(errors::Error::invalid(format!(
-            "cooking_state must be 1-32 characters of [a-z_]: {s:?}"
         )));
     }
     Ok(Some(s.to_string()))
@@ -473,7 +445,7 @@ fn validate_ingredient(
             d.category_name.as_deref(),
         )?,
         part: optional_text("part", d.part.as_deref())?,
-        cooking_state: optional_state(d.cooking_state.as_deref())?,
+        cooking_state: validate_cooking_state(d.cooking_state.as_deref())?,
         skin_bone: optional_text("skin_bone", d.skin_bone.as_deref())?,
         refuse_rate: d
             .refuse_rate
