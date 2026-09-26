@@ -873,8 +873,9 @@ mod tests {
 
     fn setup() -> (Vec<SourceFood>, ErrataBook) {
         let table = parse_table(&fixtures::main_sheet()).unwrap();
-        let book = parse_errata(&fixtures::errata_book(), &table.layout, false)
-            .unwrap();
+        let book =
+            parse_errata(&fixtures::errata_book(), &table.layout, false)
+                .unwrap();
         (table.foods, book)
     }
 

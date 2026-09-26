@@ -487,8 +487,14 @@ pub async fn execute<S: Store>(
                     let at = now();
                     let result = match upsert_body(w, &state.properties) {
                         Ok(body) => {
-                            write_one(store, &state.repo, w, &body, retry_delay)
-                                .await
+                            write_one(
+                                store,
+                                &state.repo,
+                                w,
+                                &body,
+                                retry_delay,
+                            )
+                            .await
                         }
                         Err(e) => (
                             0,
@@ -504,7 +510,8 @@ pub async fn execute<S: Store>(
 
             // Finish every request in this batch before stopping so outcomes
             // for writes already sent are recorded in the audit log.
-            while let Some((w, at, (attempts, result))) = jobs.next().await {
+            while let Some((w, at, (attempts, result))) = jobs.next().await
+            {
                 summary.attempted += 1;
                 let entry = WriteLog {
                     at,
@@ -714,8 +721,11 @@ pub fn build_report(
                 ));
             }
         }
-        for quarantined in
-            p.catalog.quarantine.iter().filter(|item| item.scope == "cell")
+        for quarantined in p
+            .catalog
+            .quarantine
+            .iter()
+            .filter(|item| item.scope == "cell")
         {
             let (Some(food_code), Some(nutrient_key)) = (
                 quarantined.food_code.as_deref(),
@@ -723,7 +733,8 @@ pub fn build_report(
             ) else {
                 continue;
             };
-            let Some(ingredient_key) = ingredient_keys.get(food_code).copied()
+            let Some(ingredient_key) =
+                ingredient_keys.get(food_code).copied()
             else {
                 continue;
             };

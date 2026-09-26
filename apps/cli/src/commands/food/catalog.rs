@@ -688,8 +688,9 @@ pub(super) mod tests {
     pub fn fixture_catalog() -> TargetCatalog {
         let table = parse_table(&fixtures::main_sheet()).unwrap();
         let mut foods = table.foods.clone();
-        let book = parse_errata(&fixtures::errata_book(), &table.layout, false)
-            .unwrap();
+        let book =
+            parse_errata(&fixtures::errata_book(), &table.layout, false)
+                .unwrap();
         let outcomes = apply_errata(&mut foods, &book);
         build_catalog(&table, &foods, &outcomes, &options())
     }

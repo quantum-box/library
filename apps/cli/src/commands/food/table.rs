@@ -286,13 +286,17 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
                     non_empty_cells: 0,
                 });
             } else {
-                let marker_owner = last_nutrient.as_ref().and_then(|owner| {
-                    let nutrient_col = layout.nutrient(owner)?.col;
-                    (ENERGY_MARKER_NUTRIENTS.contains(&owner.as_str())
-                        && nutrient_col + 1 == col
-                        && !layout.markers.values().any(|marker| marker == owner))
-                    .then_some(owner)
-                });
+                let marker_owner =
+                    last_nutrient.as_ref().and_then(|owner| {
+                        let nutrient_col = layout.nutrient(owner)?.col;
+                        (ENERGY_MARKER_NUTRIENTS.contains(&owner.as_str())
+                            && nutrient_col + 1 == col
+                            && !layout
+                                .markers
+                                .values()
+                                .any(|marker| marker == owner))
+                        .then_some(owner)
+                    });
                 let only_marker_values = data_rows.clone().all(|row| {
                     match sheet.cell(row, col).map(str::trim) {
                         Some(value) if !value.is_empty() => value == "*",
@@ -300,7 +304,9 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
                     }
                 });
 
-                if let Some(owner) = marker_owner.filter(|_| only_marker_values) {
+                if let Some(owner) =
+                    marker_owner.filter(|_| only_marker_values)
+                {
                     layout.markers.insert(col, owner.clone());
                     layout.ignored.push(IgnoredColumn {
                         col,
