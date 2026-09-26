@@ -43,3 +43,6 @@ storybook-static/
 *.db
 *.sqlite
 *.sqlite3
+
+# `library food import` state (manifests, reports, write logs) and downloaded source files
+.food-import/

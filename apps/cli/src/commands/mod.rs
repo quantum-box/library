@@ -1,6 +1,7 @@
 pub mod api_key;
 pub mod auth;
 pub mod data;
+pub mod food;
 pub mod mcp;
 pub mod org;
 pub mod property;
