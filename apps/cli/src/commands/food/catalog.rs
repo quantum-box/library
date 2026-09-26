@@ -681,7 +681,7 @@ pub(super) mod tests {
             ingredient_repo: "library/food".into(),
             nutrient_repo: "library/food-nutrients".into(),
             value_repo: "library/food-nutrient-values".into(),
-            categories: categories_from_sheet_names(&fixtures::table_book()),
+            categories: categories_from_sheet_names(&fixtures::table_book()).unwrap(),
         }
     }
 

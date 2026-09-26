@@ -174,19 +174,24 @@ pub struct SourceTable {
 /// (`1穀類`, `18調理済み流通食品類`).
 pub fn categories_from_sheet_names(
     book: &Workbook,
-) -> BTreeMap<String, String> {
-    book.sheet_names()
-        .into_iter()
-        .filter_map(|name| {
-            let digits: String =
-                name.chars().take_while(|c| c.is_ascii_digit()).collect();
-            let rest = name[digits.len()..].trim();
-            if digits.is_empty() || rest.is_empty() || digits.len() > 2 {
-                return None;
-            }
-            Some((format!("{digits:0>2}"), rest.to_string()))
-        })
-        .collect()
+) -> Result<BTreeMap<String, String>, String> {
+    let mut categories = BTreeMap::new();
+    for name in book.sheet_names() {
+        let digits: String =
+            name.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let rest = name[digits.len()..].trim();
+        if digits.is_empty() || rest.is_empty() || digits.len() > 2 {
+            continue;
+        }
+        let code = format!("{digits:0>2}");
+        if let Some(existing) = categories.get(&code) {
+            return Err(format!(
+                "food-group sheets {existing:?} and {rest:?} normalize to the same code {code}"
+            ));
+        }
+        categories.insert(code, rest.to_string());
+    }
+    Ok(categories)
 }
 
 fn find_cell(
@@ -391,6 +396,31 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
             label_path: labels.iter().map(|l| display_name(l)).collect(),
             unit: unit_text,
         });
+    }
+
+    for col in (remarks_col + 1)..sheet.width() {
+        let cells = (0..sheet.height())
+            .filter(|&row| {
+                sheet
+                    .cell(row, col)
+                    .is_some_and(|value| !value.trim().is_empty())
+            })
+            .count();
+        if cells > 0 {
+            layout.errors.push(format!(
+                "column {} contains data outside the table boundary after 備考",
+                col + 1
+            ));
+            layout.ignored.push(IgnoredColumn {
+                col,
+                label: label_path(sheet, name_row..unit_row, name_col, col)
+                    .last()
+                    .cloned()
+                    .unwrap_or_default(),
+                reason: "populated column after the 備考 table boundary".into(),
+                non_empty_cells: cells,
+            });
+        }
     }
 
     if layout.refuse_col.is_none() {
@@ -692,6 +722,20 @@ mod tests {
         assert!(invalid_identifier.errors.iter().any(|error| {
             error.contains("invalid component identifier")
         }));
+
+        let trailing_column = Sheet::from_rows(
+            "trailing",
+            &[
+                &["食品群", "食品番号", "", "食品名", "x", "x", "備考", "追加成分"],
+                &["", "", "単位", "", "%", "%", "", "mg"],
+                &["成分識別子", "", "", "", "REFUSE", "PROT-", "", "IRON"],
+                &["", "00001", "", "食品", "1", "1", "", "2"],
+            ],
+        );
+        let trailing_layout = parse_layout(&trailing_column).unwrap();
+        assert!(trailing_layout.errors.iter().any(|error| {
+            error.contains("outside the table boundary after 備考")
+        }));
         // The `*` column beside CHOAVLM is a marker, not a nutrient.
         assert_eq!(
             layout.markers.values().collect::<Vec<_>>(),
@@ -750,10 +794,20 @@ mod tests {
         {
             book.sheets.push(Sheet::new(name, vec![]));
         }
-        let cats = categories_from_sheet_names(&book);
+        let cats = categories_from_sheet_names(&book).unwrap();
         assert_eq!(cats["01"], "穀類");
         assert_eq!(cats["18"], "調理済み流通食品類");
         assert_eq!(cats.len(), 2);
+
+        let duplicates = Workbook {
+            sheets: vec![
+                Sheet::new("1穀類", vec![]),
+                Sheet::new("01別名", vec![]),
+            ],
+        };
+        assert!(categories_from_sheet_names(&duplicates)
+            .unwrap_err()
+            .contains("normalize to the same code"));
     }
 
     #[test]

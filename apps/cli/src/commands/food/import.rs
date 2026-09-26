@@ -159,7 +159,8 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
             ));
         }
     }
-    let categories = categories_from_sheet_names(&book);
+    let categories = categories_from_sheet_names(&book)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let mut files = vec![input.table_file];
     let mut foods = table.foods.clone();
