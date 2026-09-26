@@ -317,32 +317,20 @@ pub async fn plan_all<S: Store>(
             properties.insert(name, def);
         }
         for p in required_properties(t.records) {
-            match properties.get(p) {
-                None => {
-                    errors.push(format!("{} has no `{p}` property", t.repo))
-                }
-                Some(d) if !type_ok(p, d) => errors.push(format!(
-                    "{}: property `{p}` is {}, expected STRING",
-                    t.repo, d.property_type
-                )),
-                _ => {}
+            if !properties.contains_key(p) {
+                errors.push(format!("{} has no `{p}` property", t.repo));
             }
         }
-        let optional_properties: BTreeSet<String> = t
-            .records
-            .iter()
-            .flat_map(|record| record.fields.iter())
-            .filter(|field| {
-                field.value.is_some()
-                    && prop::OPTIONAL.contains(&field.property)
-            })
-            .map(|field| field.property.to_string())
-            .collect();
-        for property in optional_properties {
-            if let Some(def) = properties.get(&property) {
-                if !type_ok(&property, def) {
+        for property in &relevant_properties {
+            if let Some(def) = properties.get(property) {
+                if !type_ok(property, def) {
+                    let expected = match property.as_str() {
+                        prop::DISPLAY_ORDER => "STRING or INTEGER",
+                        prop::DEFAULT_DISPLAY => "STRING or BOOLEAN",
+                        _ => "STRING",
+                    };
                     errors.push(format!(
-                        "{}: optional property `{property}` is {}, expected STRING",
+                        "{}: property `{property}` is {}, expected {expected}",
                         t.repo, def.property_type
                     ));
                 }
@@ -1568,6 +1556,32 @@ mod tests {
         assert!(report.blockers.is_empty(), "{:?}", report.blockers);
         assert!(!report.needs_accept_quarantine.is_empty());
         assert_eq!(*s.upserts.borrow(), 0, "a preview writes nothing");
+    }
+
+    #[tokio::test]
+    async fn present_empty_properties_are_still_type_checked() {
+        let p = prepared();
+        assert!(p.catalog.nutrients.iter().any(|record| {
+            record.fields.iter().any(|field| {
+                field.property == prop::METHOD && field.value.is_none()
+            })
+        }));
+
+        let mut s = store();
+        s.props
+            .get_mut(NUT)
+            .unwrap()
+            .iter_mut()
+            .find(|property| property.name == prop::METHOD)
+            .unwrap()
+            .property_type = "INTEGER".into();
+
+        let repos = plan(&p, &s).await;
+        let report =
+            build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
+        assert!(report.blockers.iter().any(|blocker| {
+            blocker.contains("property `method` is INTEGER, expected STRING")
+        }));
     }
 
     #[tokio::test]
