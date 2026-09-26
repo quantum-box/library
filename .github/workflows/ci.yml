@@ -150,6 +150,7 @@ jobs:
           cargo test -p database-manager --test tenant_composite_foreign_keys -- --ignored --test-threads=1
           cargo test -p database-manager --test tenant_database_scope -- --ignored --test-threads=1
           cargo test -p database-manager --test paging -- --ignored --test-threads=1
+          cargo test -p database-manager --test data_snapshot -- --ignored --test-threads=1
           cargo test -p database-manager --test property_value_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test property_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test property_definition_dual_write -- --ignored --test-threads=1

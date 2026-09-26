@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod data;
+pub mod data_search;
 pub mod docs;
 pub mod external_sync_scanner;
 pub mod global_id_mapping;

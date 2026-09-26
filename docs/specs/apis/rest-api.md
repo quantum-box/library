@@ -85,6 +85,7 @@
 | GET | `/v1beta/repos/{org}/{repo}/data/{data_id}/md` | 必要 | Path: `org`,`repo`,`data_id` | Markdown text | 文字列応答 |
 | GET | `/v1beta/repos/{org}/{repo}/data-list` | 必要 | Path: `org`,`repo` / Query: `include_body` | `DataListResponse` | 実装上 offset/limit 参照。RichText は既定で preview |
 | GET | `/v1beta/repos/{org}/{repo}/data` | 必要 | Query: `name`, `page`, `page_size` | `DataListResponse` | 条件検索 |
+| GET | `/v1beta/repos/{org}/{repo}/data-search` | 公開repoは不要 / private repoは必要 | Query: `bbox`, `lat`,`lng`,`radius_m`, `filter`（複数可）, `q`, `ids`, `sort`, `include_unpublished`, `page`, `page_size` | `DataSearchResponse` | 位置・条件・テキスト検索。ETag / Cache-Control 付き |
 | POST | `/v1beta/repos/{org}/{repo}/data` | 必要 | `AddDataRequest` | `DataResponse` | create 系 |
 | PUT | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | `UpdateDataRequest` | `DataResponse` | 更新 |
 | DELETE | `/v1beta/repos/{org}/{repo}/data/{data_id}` | 必要 | Path: `org`,`repo`,`data_id` | 空 | 204 |
@@ -114,7 +115,29 @@ expand/read 段階では更新要求に version を渡さず、write 時の CAS 
 `/v1beta/{org}/{repo}/data/{dataId}`）は指さない。API が返す `url` に従う
 利用側は、v1 の縮退時に追加の移行を要さない。
 
-参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs)
+`data-search` は地図・一覧クライアント向けの検索で、`DataResponse` に
+地点からの距離 `distanceMeters` を加えて返す。例：札幌駅から近いホームセンターで、
+大型犬可のもの。
+
+```text
+GET /v1beta/repos/{org}/{repo}/data-search?lat=43.0687&lng=141.3508&radius_m=10000
+    &filter=category:home_center&filter=large_dog_allowed:true
+```
+
+- `bbox` は `minLng,minLat,maxLng,maxLat`（GeoJSON順）。`lat`/`lng` は必ず組で渡す。
+- `filter` は `key:value`（`|` で OR）、`key>=n`、`key<=n`。複数指定は AND。
+  Select は選択肢 ID・key・表示名のいずれでもよく、存在しない選択肢は 0 件になる。
+  Boolean は値なしを `false` と扱う。Location と RichText は絞り込めない。
+- `publication_status`（Select なら key `published`、Boolean なら `true`）を
+  持つ Repo では、公開レコードだけを返す。下書きを含めるには
+  `include_unpublished=true` と Repo の編集権限が要る。
+- 公開 Repo への匿名アクセスは `Cache-Control: public, max-age=60` で返す。
+  `If-None-Match` に前回の `ETag` を送ると、変更がなければ 304 になる。
+- サーバー側の索引は、Database のリビジョンが変わった次の検索で作り直す。
+  詳細と今後の拡張条件は
+  [ADR-0011](../decisions/ADR-0011-data-search-index.md)。
+
+参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/src/handler/data.rs), [apps/api/src/handler/data_search.rs](../../../apps/api/src/handler/data_search.rs)
 
 ### 4.5 Property / Source
 

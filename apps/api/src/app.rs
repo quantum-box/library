@@ -34,6 +34,8 @@ pub struct LibraryApp {
     pub get_glossary: Arc<dyn usecase::GetGlossaryInputPort>,
     pub set_glossary: Arc<dyn usecase::SetGlossaryInputPort>,
     pub search_data: Arc<dyn usecase::SearchDataInputPort>,
+    /// Location, filter and text search over a repo's records.
+    pub data_search: Arc<dyn usecase::data_search::DataSearchInputPort>,
     pub search_repo: Arc<dyn usecase::SearchRepoInputPort>,
     pub add_data: Arc<dyn usecase::AddDataInputPort>,
     pub save_data: Arc<dyn usecase::AddDataInputPort>,
@@ -244,6 +246,12 @@ impl LibraryApp {
                 published_language_repo.clone(),
             ));
         let search_data = usecase::SearchData::new(
+            database_app.clone(),
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            auth_app.clone(),
+        );
+        let data_search = usecase::data_search::DataSearch::new(
             database_app.clone(),
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -586,6 +594,7 @@ impl LibraryApp {
             get_glossary,
             set_glossary,
             search_data,
+            data_search,
             search_repo,
             save_data,
             share_links: share_links.clone(),

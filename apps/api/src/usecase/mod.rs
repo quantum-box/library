@@ -14,6 +14,7 @@ mod create_organization;
 mod create_pull_request;
 mod create_repo;
 mod create_source;
+pub mod data_search;
 mod delete_data;
 mod delete_property;
 mod delete_repo;
