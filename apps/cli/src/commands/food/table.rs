@@ -274,9 +274,9 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
 
         if identifier == "REFUSE" {
             if layout.refuse_col.is_some() {
-                layout
-                    .errors
-                    .push("REFUSE identifier appears more than once".into());
+                layout.errors.push(
+                    "REFUSE identifier appears more than once".into(),
+                );
             } else {
                 layout.refuse_col = Some(col);
             }
@@ -669,7 +669,15 @@ mod tests {
                 &[
                     &["食品群", "食品番号", "", "食品名", "x", "x", "備考"],
                     &["", "", "単位", "", "%", "%", ""],
-                    &["成分識別子", "", "", "", "REFUSE", second_identifier, ""],
+                    &[
+                        "成分識別子",
+                        "",
+                        "",
+                        "",
+                        "REFUSE",
+                        second_identifier,
+                        "",
+                    ],
                     &["", "00001", "", "食品", "1", "1", ""],
                 ],
             )
