@@ -122,12 +122,14 @@ pub fn parse_errata(
 ) -> Result<ErrataBook, String> {
     let labels = label_index(table);
     let mut out = ErrataBook::default();
+    let mut found_itemized_sheet = false;
     for sheet in &book.sheets {
         if out.date.is_none() {
             out.date = find_date(sheet);
         }
         match sheet.name.as_str() {
             ITEMIZED_SHEET => {
+                found_itemized_sheet = true;
                 out.entries.extend(parse_itemized(sheet, &labels)?)
             }
             ROW_PAIR_SHEET => out.entries.extend(parse_row_pairs(sheet)?),
@@ -144,6 +146,11 @@ pub fn parse_errata(
                 });
             }
         }
+    }
+    if !found_itemized_sheet {
+        return Err(format!(
+            "errata workbook is missing required sheet {ITEMIZED_SHEET:?}"
+        ));
     }
     Ok(out)
 }

@@ -158,6 +158,11 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
                 .context("reading the errata workbook")?;
             let parsed = parse_errata(&errata_book, &table.layout)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
+            if parsed.date.is_none() {
+                return Err(anyhow::anyhow!(
+                    "errata workbook is missing a recognized correction date"
+                ));
+            }
             let outcomes = apply_errata(&mut foods, &parsed);
             files.push(file);
             (Some(parsed), outcomes)

@@ -214,7 +214,9 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
         .ok_or("no 食品名 (food name) column")?;
     let (unit_row, _) = find_cell(sheet, header.clone(), "単位")
         .ok_or("no 単位 (unit) row")?;
-    let group_col = find_cell(sheet, header.clone(), "食品群").map(|p| p.1);
+    let group_col = find_cell(sheet, header.clone(), "食品群")
+        .map(|p| p.1)
+        .ok_or("no 食品群 (food group) column")?;
     let index_col =
         find_cell(sheet, header.clone(), "索引番号").map(|p| p.1);
     let remarks_col = find_cell(sheet, header.clone(), "備考").map(|p| p.1);
@@ -312,6 +314,9 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
             .map(|(_, v)| unit_token(v))
             .unwrap_or_default();
         if !KNOWN_UNITS.contains(&unit_text.as_str()) {
+            layout.errors.push(format!(
+                "component identifier {identifier} has unsupported unit {unit_text:?}"
+            ));
             layout.ignored.push(IgnoredColumn {
                 col,
                 label,
