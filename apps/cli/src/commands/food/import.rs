@@ -777,11 +777,7 @@ pub fn build_report(
                 continue;
             };
             let business_key = format!("{ingredient_key}/{nutrient_key}");
-            if stale_value_exists(
-                &business_key,
-                food_code,
-                nutrient_key,
-            ) {
+            if stale_value_exists(&business_key, food_code, nutrient_key) {
                 blockers.push(format!(
                     "stale value {business_key} exists for a quarantined cell; remove it from the value draft repo, then rerun the import"
                 ));
