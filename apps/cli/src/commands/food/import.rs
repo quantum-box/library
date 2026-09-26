@@ -1656,7 +1656,8 @@ mod tests {
 
         assert_eq!(report.repos[1].delete_candidates, 1);
         assert!(report.blockers.iter().any(|blocker| {
-            blocker.contains("remove them from the draft repo before applying")
+            blocker
+                .contains("remove them from the draft repo before applying")
         }));
     }
 
