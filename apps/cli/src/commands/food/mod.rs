@@ -86,10 +86,6 @@ pub struct ImportArgs {
     /// (they are left out and listed in quarantine.jsonl)
     #[arg(long)]
     pub accept_quarantine: bool,
-    /// Keep existing draft records not produced by this source.
-    /// Review plan.json; retained records will be included in releases.
-    #[arg(long)]
-    pub accept_retained_records: bool,
     /// Parallel requests while listing and writing (1-16)
     #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..=16))]
     pub concurrency: u16,

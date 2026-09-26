@@ -101,7 +101,7 @@ pub struct RepoPlan {
     pub unchanged: usize,
     pub conflicts: Vec<KeyConflict>,
     /// Records in the repo that this import does not produce. Never
-    /// deleted by the importer; listed for a person to decide.
+    /// deleted by the importer; they block apply until a person resolves them.
     pub delete_candidates: Vec<DeleteCandidate>,
     /// Retained values that would fail release validation.
     pub validation_errors: Vec<String>,
