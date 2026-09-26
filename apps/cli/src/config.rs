@@ -175,7 +175,7 @@ pub fn resolve(overrides: &ConfigOverrides) -> Result<ResolvedConfig> {
 
 /// Like `resolve`, but renews the browser sign-in first when it is the
 /// credential in use and about to expire, and saves the renewed tokens.
-async fn acquire_refresh_lock() -> Result<File> {
+pub(crate) async fn acquire_refresh_lock() -> Result<File> {
     let path = config_path()?;
     let mut lock_name = path.as_os_str().to_os_string();
     lock_name.push(".refresh.lock");

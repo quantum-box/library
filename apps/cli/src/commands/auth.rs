@@ -235,6 +235,11 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             .is_some(),
         stored.api_base_url.is_some(),
     );
+    let browser_session = session_in_use(
+        key_source,
+        &stored,
+        &resolved.api_base_url,
+    );
 
     match format {
         Format::Json => print_json(&json!({
@@ -244,11 +249,14 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             "api_base_url_source": url_source,
             "authenticated": resolved.api_key.is_some()
                 || resolved.mcp_access_token.is_some(),
-            "credential": credential_kind(key_source, &stored),
+            "credential": credential_kind(
+                key_source,
+                browser_session.is_some(),
+            ),
             "api_key": api_key_shown(key_source, &resolved),
             "api_key_source": key_source,
-            "session_expires_at": session_in_use(key_source, &stored)
-                .and_then(|s| s.expires_at),
+            "session_expires_at": browser_session
+                .and_then(|session| session.expires_at),
             "operator_id": resolved.operator_id,
         })),
         Format::Text => {
@@ -258,7 +266,7 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
                 resolved.api_base_url
             );
             match (
-                session_in_use(key_source, &stored),
+                browser_session,
                 resolved.api_key.as_deref(),
             ) {
                 (Some(session), _) => println!(
@@ -291,19 +299,19 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
 fn session_in_use<'a>(
     key_source: &str,
     stored: &'a StoredConfig,
+    api_base_url: &str,
 ) -> Option<&'a crate::oauth::OAuthSession> {
-    if key_source == "default" {
-        stored.oauth.as_ref()
-    } else {
-        None
+    if key_source != "default" {
+        return None;
     }
+    let resource = format!("{}/mcp", api_base_url.trim_end_matches('/'));
+    stored.oauth.as_ref().filter(|session| {
+        session.resource.trim_end_matches('/') == resource
+    })
 }
 
-fn credential_kind(
-    key_source: &str,
-    stored: &StoredConfig,
-) -> &'static str {
-    match (key_source, stored.oauth.is_some()) {
+fn credential_kind(key_source: &str, has_browser_session: bool) -> &'static str {
+    match (key_source, has_browser_session) {
         ("default", true) => "browser",
         ("default", false) => "none",
         _ => "api_key",
@@ -334,6 +342,7 @@ fn source_of(flag: bool, env: bool, stored: bool) -> &'static str {
 }
 
 async fn logout(format: Format) -> Result<()> {
+    let _refresh_lock = config::acquire_refresh_lock().await?;
     if let Some(session) = config::load_stored().ok().and_then(|s| s.oauth)
     {
         crate::oauth::revoke(&session).await;

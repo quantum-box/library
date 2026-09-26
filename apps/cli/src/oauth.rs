@@ -9,6 +9,7 @@
 //! Bearer token only to /mcp; the refresh token keeps the session alive
 //! without another browser trip.
 
+use std::net::IpAddr;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -129,16 +130,52 @@ async fn get_json<T: for<'de> Deserialize<'de>>(
         .with_context(|| format!("GET {url} returned unexpected JSON"))
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    let host = host
+        .trim_end_matches('.')
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn validate_oauth_url(endpoint: &str, label: &str) -> Result<url::Url> {
+    let parsed = url::Url::parse(endpoint)
+        .with_context(|| format!("{label} is not a valid URL"))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow!("{label} has no host"))?;
+    let secure = parsed.scheme() == "https";
+    let local_http = parsed.scheme() == "http" && is_loopback_host(host);
+    if !secure && !local_http {
+        bail!("{label} must use HTTPS except for loopback development");
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        bail!("{label} must not include URL credentials");
+    }
+    Ok(parsed)
+}
+
+fn protected_resource_metadata_url(api_base_url: &str) -> Result<String> {
+    let api = validate_oauth_url(api_base_url, "Library API URL")?;
+    if api.query().is_some() || api.fragment().is_some() {
+        bail!("Library API URL must not include a query or fragment");
+    }
+    let origin = api.origin().ascii_serialization();
+    let path = api.path().trim_end_matches('/');
+    Ok(format!(
+        "{origin}/.well-known/oauth-protected-resource{path}"
+    ))
+}
+
 /// RFC 8414 puts an issuer path after the well-known metadata prefix.
 fn authorization_server_metadata_url(issuer: &str) -> Result<String> {
-    let issuer_url = url::Url::parse(issuer)
-        .context("authorization server issuer is not a valid URL")?;
-    if !matches!(issuer_url.scheme(), "http" | "https")
-        || issuer_url.host_str().is_none()
-        || issuer_url.query().is_some()
-        || issuer_url.fragment().is_some()
-    {
-        bail!("authorization server issuer must be an HTTP(S) URL without query or fragment");
+    let issuer_url = validate_oauth_url(issuer, "authorization server issuer")?;
+    if issuer_url.query().is_some() || issuer_url.fragment().is_some() {
+        bail!("authorization server issuer must not include a query or fragment");
     }
     let origin = issuer_url.origin().ascii_serialization();
     let path = issuer_url.path().trim_end_matches('/');
@@ -152,12 +189,12 @@ async fn discover(
     http: &reqwest::Client,
     api_base_url: &str,
 ) -> Result<(String, AuthorizationServerMetadata)> {
-    let prm: ProtectedResourceMetadata = get_json(
-        http,
-        &format!("{api_base_url}/.well-known/oauth-protected-resource"),
-    )
-    .await
-    .context("the Library API does not advertise browser sign-in")?;
+    let protected_resource_url =
+        protected_resource_metadata_url(api_base_url)?;
+    let prm: ProtectedResourceMetadata =
+        get_json(http, &protected_resource_url)
+            .await
+            .context("the Library API does not advertise browser sign-in")?;
     let issuer = prm
         .authorization_servers
         .first()
@@ -175,6 +212,17 @@ async fn discover(
             metadata.issuer
         );
     }
+    validate_oauth_url(
+        &metadata.authorization_endpoint,
+        "authorization endpoint",
+    )?;
+    validate_oauth_url(&metadata.token_endpoint, "token endpoint")?;
+    if let Some(endpoint) = metadata.registration_endpoint.as_deref() {
+        validate_oauth_url(endpoint, "client registration endpoint")?;
+    }
+    if let Some(endpoint) = metadata.revocation_endpoint.as_deref() {
+        validate_oauth_url(endpoint, "token revocation endpoint")?;
+    }
     if !metadata
         .code_challenge_methods_supported
         .iter()
@@ -190,6 +238,7 @@ async fn register_client(
     registration_endpoint: &str,
     redirect_uri: &str,
 ) -> Result<String> {
+    validate_oauth_url(registration_endpoint, "client registration endpoint")?;
     let response = http
         .post(registration_endpoint)
         .json(&serde_json::json!({
@@ -218,6 +267,7 @@ async fn token_request(
     token_endpoint: &str,
     form: &[(&str, &str)],
 ) -> Result<TokenResponse> {
+    validate_oauth_url(token_endpoint, "token endpoint")?;
     let response = http
         .post(token_endpoint)
         .form(form)
@@ -464,6 +514,9 @@ pub async fn revoke(session: &OAuthSession) {
     else {
         return;
     };
+    if validate_oauth_url(endpoint, "token revocation endpoint").is_err() {
+        return;
+    }
     if let Ok(http) = http() {
         let _ = http
             .post(endpoint)
