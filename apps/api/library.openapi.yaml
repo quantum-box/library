@@ -44,6 +44,29 @@ components:
       required:
       - new_username
       type: object
+    CreateIngredientCatalogRequest:
+      properties:
+        catalog_key:
+          description: URL-safe key, unique within the org, e.g. `food-composition`.
+          type: string
+        ingredient_repo:
+          description: Username of the repo holding ingredient records.
+          type: string
+        name:
+          type: string
+        nutrient_repo:
+          description: Username of the repo holding nutrient definitions.
+          type: string
+        value_repo:
+          description: Username of the repo holding ingredient x nutrient values.
+          type: string
+      required:
+      - catalog_key
+      - name
+      - ingredient_repo
+      - nutrient_repo
+      - value_repo
+      type: object
     CreateOrganizationRequest:
       properties:
         description:
@@ -374,6 +397,217 @@ components:
       - id
       - url
       type: object
+    IngredientCatalogResponse:
+      properties:
+        catalog_key:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+        ingredient_repo_id:
+          type: string
+        name:
+          type: string
+        nutrient_repo_id:
+          type: string
+        value_repo_id:
+          type: string
+      required:
+      - id
+      - catalog_key
+      - name
+      - ingredient_repo_id
+      - nutrient_repo_id
+      - value_repo_id
+      - created_at
+      type: object
+    IngredientDetailResponse:
+      properties:
+        ingredient:
+          $ref: '#/components/schemas/IngredientResponse'
+        release:
+          $ref: '#/components/schemas/IngredientReleaseResponse'
+        values:
+          description: One entry per nutrient of the release, in display order.
+          items:
+            $ref: '#/components/schemas/NutrientValueResponse'
+          type: array
+      required:
+      - release
+      - ingredient
+      - values
+      type: object
+    IngredientReleaseDetailResponse:
+      properties:
+        nutrients:
+          description: In display order.
+          items:
+            $ref: '#/components/schemas/NutrientResponse'
+          type: array
+        release:
+          $ref: '#/components/schemas/IngredientReleaseResponse'
+      required:
+      - release
+      - nutrients
+      type: object
+    IngredientReleaseListResponse:
+      properties:
+        catalog:
+          $ref: '#/components/schemas/IngredientCatalogResponse'
+        releases:
+          description: Newest first.
+          items:
+            $ref: '#/components/schemas/IngredientReleaseResponse'
+          type: array
+      required:
+      - catalog
+      - releases
+      type: object
+    IngredientReleaseResponse:
+      properties:
+        catalog_id:
+          type: string
+        content_hash:
+          description: '`sha256:<hex>` over the frozen rows.'
+          type: string
+        id:
+          type: string
+        ingredient_count:
+          format: int32
+          minimum: 0
+          type: integer
+        notes:
+          type:
+          - string
+          - 'null'
+        nutrient_count:
+          format: int32
+          minimum: 0
+          type: integer
+        published_at:
+          type: string
+        published_by:
+          type: string
+        schema_version:
+          format: int32
+          minimum: 0
+          type: integer
+        source_id:
+          type: string
+        source_release:
+          type: string
+        source_retrieved_at:
+          type:
+          - string
+          - 'null'
+        source_url:
+          type:
+          - string
+          - 'null'
+        value_count:
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+      - id
+      - catalog_id
+      - source_id
+      - source_release
+      - schema_version
+      - content_hash
+      - ingredient_count
+      - nutrient_count
+      - value_count
+      - published_by
+      - published_at
+      type: object
+    IngredientResponse:
+      properties:
+        aliases:
+          items:
+            type: string
+          type: array
+        attribute_review_status:
+          description: Whether parsed attributes were checked by a person.
+          type: string
+        category_code:
+          type:
+          - string
+          - 'null'
+        category_name:
+          type:
+          - string
+          - 'null'
+        cooking_state:
+          type:
+          - string
+          - 'null'
+        ingredient_key:
+          type: string
+        original_name:
+          description: Food name exactly as in the source.
+          type: string
+        part:
+          type:
+          - string
+          - 'null'
+        reading:
+          type:
+          - string
+          - 'null'
+        refuse_rate:
+          description: |-
+            Source refuse rate (%) for edible-portion conversion. Not a store
+            food-loss rate.
+          type:
+          - string
+          - 'null'
+        skin_bone:
+          type:
+          - string
+          - 'null'
+        source_food_code:
+          description: Food number in the source; text so leading zeros survive.
+          type: string
+        standard_name:
+          type:
+          - string
+          - 'null'
+      required:
+      - ingredient_key
+      - source_food_code
+      - original_name
+      - aliases
+      - attribute_review_status
+      type: object
+    IngredientSearchResponse:
+      properties:
+        ingredients:
+          items:
+            $ref: '#/components/schemas/IngredientResponse'
+          type: array
+        page:
+          format: int32
+          minimum: 0
+          type: integer
+        page_size:
+          format: int32
+          minimum: 0
+          type: integer
+        release_id:
+          type: string
+        total_items:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+      - release_id
+      - ingredients
+      - page
+      - page_size
+      - total_items
+      type: object
     LiveAuthorizationResponse:
       description: |-
         Canonical scope and current body returned to the Photon Live worker.
@@ -508,6 +742,58 @@ components:
       required:
       - latitude
       - longitude
+      type: object
+    NutrientResponse:
+      properties:
+        basis:
+          type: string
+        default_display:
+          type: boolean
+        display_order:
+          format: int32
+          type: integer
+        method:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        nutrient_key:
+          type: string
+        unit:
+          type: string
+      required:
+      - nutrient_key
+      - name
+      - unit
+      - basis
+      - display_order
+      - default_display
+      type: object
+    NutrientValueResponse:
+      properties:
+        amount:
+          description: |-
+            Normalized decimal string. Null for trace, not measured and not
+            listed: those are not zero.
+          type:
+          - string
+          - 'null'
+        nutrient:
+          $ref: '#/components/schemas/NutrientResponse'
+        raw_notation:
+          description: Cell text as in the source, when recorded.
+          type:
+          - string
+          - 'null'
+        value_status:
+          description: |-
+            measured, estimated, zero, estimated_zero, trace, estimated_trace,
+            not_measured, or not_listed (no value in this release).
+          type: string
+      required:
+      - nutrient
+      - value_status
       type: object
     OffsetPaginator:
       description: |-
@@ -715,6 +1001,11 @@ components:
           type:
           - boolean
           - 'null'
+        database_id:
+          description: Canonical target repository id of a `RELATION` property.
+          type:
+          - string
+          - 'null'
         id:
           type: string
         display_name:
@@ -757,6 +1048,44 @@ components:
       - id
       - key
       - name
+      type: object
+    PublishIngredientReleaseRequest:
+      properties:
+        notes:
+          type:
+          - string
+          - 'null'
+        source_id:
+          description: Dataset identifier, e.g. `mext-sfct-2023`.
+          type: string
+        source_release:
+          description: |-
+            Edition label including applied errata, e.g.
+            `2023+errata-2026-03-27`. A new label is needed for new content.
+          type: string
+        source_retrieved_at:
+          description: RFC 3339 time the source files were downloaded.
+          type:
+          - string
+          - 'null'
+        source_url:
+          type:
+          - string
+          - 'null'
+      required:
+      - source_id
+      - source_release
+      type: object
+    PublishIngredientReleaseResponse:
+      properties:
+        created:
+          description: False when an identical release already existed (safe retry).
+          type: boolean
+        release:
+          $ref: '#/components/schemas/IngredientReleaseResponse'
+      required:
+      - release
+      - created
       type: object
     PublishedLanguagesResponse:
       description: The languages a repo is published in.
@@ -983,6 +1312,67 @@ components:
       required:
       - user
       type: object
+    SlackUnfurlNoUnfurlReason:
+      enum:
+      - unsupported_or_not_found
+      type: string
+    SlackUnfurlProjectionKind:
+      enum:
+      - private_share
+      - public_data
+      type: string
+    SlackUnfurlProjectionRequest:
+      properties:
+        requestId:
+          type: string
+        slackTeamId:
+          type: string
+        tachyonTenantId:
+          type: string
+        url:
+          type: string
+      required:
+      - url
+      - slackTeamId
+      - tachyonTenantId
+      - requestId
+      type: object
+    SlackUnfurlProjectionResponse:
+      oneOf:
+      - properties:
+          canonical_url:
+            type: string
+          content_kind:
+            type: string
+          kind:
+            $ref: '#/components/schemas/SlackUnfurlProjectionKind'
+          result:
+            enum:
+            - unfurl
+            type: string
+          summary:
+            type: string
+          title:
+            type: string
+        required:
+        - kind
+        - title
+        - summary
+        - content_kind
+        - canonical_url
+        - result
+        type: object
+      - properties:
+          reason:
+            $ref: '#/components/schemas/SlackUnfurlNoUnfurlReason'
+          result:
+            enum:
+            - no_unfurl
+            type: string
+        required:
+        - reason
+        - result
+        type: object
     SourceResponse:
       properties:
         id:
@@ -1167,7 +1557,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.7
+  version: 1.11.9
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:
@@ -1395,6 +1785,31 @@ paths:
         '200':
           description: OK
       tags: []
+  /internal/slack/unfurl-projection:
+    post:
+      description: |-
+        Private service route for Tachyon's Slack integration. Authentication is a
+        short-lived workload JWT; a share token by itself is never enough to call
+        this endpoint.
+      operationId: slack_unfurl_projection
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlackUnfurlProjectionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlackUnfurlProjectionResponse'
+          description: Projection or explicit no-op
+        '401':
+          description: Missing or invalid workload token
+      summary: '`POST /internal/slack/unfurl-projection`'
+      tags:
+      - internal
   /v1beta/global-id-mapping:
     get:
       operationId: get_global_id_mapping
@@ -1490,6 +1905,266 @@ paths:
         '404':
           description: Organization not found
       tags: []
+  /v1beta/orgs/{org}/ingredient-catalogs:
+    post:
+      operationId: create_ingredient_catalog
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIngredientCatalogRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientCatalogResponse'
+          description: Catalog registered
+        '403':
+          description: Caller may not update repos
+        '404':
+          description: Organization or a repo not found in the organization
+        '409':
+          description: catalog_key already exists
+      summary: '`POST /v1beta/orgs/{org}/ingredient-catalogs`'
+      tags:
+      - ingredient-catalogs
+  /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases:
+    get:
+      operationId: list_ingredient_releases
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Catalog key
+        in: path
+        name: catalog
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientReleaseListResponse'
+          description: Catalog and its releases, newest first
+        '403':
+          description: A draft repo is private and the caller may not read it
+        '404':
+          description: Organization or catalog not found
+      summary: '`GET /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases`'
+      tags:
+      - ingredient-catalogs
+    post:
+      operationId: publish_ingredient_release
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Catalog key
+        in: path
+        name: catalog
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishIngredientReleaseRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishIngredientReleaseResponse'
+          description: Release published, or the identical existing release
+        '400':
+          description: Draft records failed validation; nothing was published
+        '403':
+          description: Caller may not update repos
+        '404':
+          description: Organization or catalog not found
+        '409':
+          description: source_release already published with different content
+      summary: '`POST /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases`'
+      tags:
+      - ingredient-catalogs
+  /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}:
+    get:
+      operationId: get_ingredient_release
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Catalog key
+        in: path
+        name: catalog
+        required: true
+        schema:
+          type: string
+      - description: Release ID (irel_)
+        in: path
+        name: release_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientReleaseDetailResponse'
+          description: Release metadata and its nutrient definitions
+        '403':
+          description: A draft repo is private and the caller may not read it
+        '404':
+          description: Organization, catalog or release not found
+      summary: '`GET /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}`'
+      tags:
+      - ingredient-catalogs
+  /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}/ingredients:
+    get:
+      operationId: search_released_ingredients
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Catalog key
+        in: path
+        name: catalog
+        required: true
+        schema:
+          type: string
+      - description: Release ID (irel_)
+        in: path
+        name: release_id
+        required: true
+        schema:
+          type: string
+      - description: Substring of the source name, standard name, reading or an alias.
+        in: query
+        name: q
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+      - in: query
+        name: category_code
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+      - description: e.g. `raw`, `boiled`. Alias matches do not pick a state for you.
+        in: query
+        name: cooking_state
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+      - description: 1-origin. Defaults to 1.
+        in: query
+        name: page
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      - description: 1..=100. Defaults to 20.
+        in: query
+        name: page_size
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientSearchResponse'
+          description: One page of matching ingredients, ordered by source food code
+        '400':
+          description: Invalid paging
+        '403':
+          description: A draft repo is private and the caller may not read it
+        '404':
+          description: Organization, catalog or release not found
+      summary: '`GET /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}/ingredients`'
+      tags:
+      - ingredient-catalogs
+  /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}/ingredients/{ingredient_key}:
+    get:
+      operationId: get_released_ingredient
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Catalog key
+        in: path
+        name: catalog
+        required: true
+        schema:
+          type: string
+      - description: Release ID (irel_)
+        in: path
+        name: release_id
+        required: true
+        schema:
+          type: string
+      - description: Stable ingredient key
+        in: path
+        name: ingredient_key
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientDetailResponse'
+          description: The ingredient with a value entry for every nutrient of the release
+        '403':
+          description: A draft repo is private and the caller may not read it
+        '404':
+          description: Organization, catalog, release or ingredient not found
+      summary: '`GET /v1beta/orgs/{org}/ingredient-catalogs/{catalog}/releases/{release_id}/ingredients/{ingredient_key}`'
+      tags:
+      - ingredient-catalogs
   /v1beta/repos:
     get:
       operationId: search_repo
