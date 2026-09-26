@@ -478,61 +478,70 @@ pub async fn execute<S: Store>(
             continue;
         };
         let mut phase_failed = false;
-        let mut jobs = stream::iter(state.plan.writes.iter())
-            .map(|w| async move {
-                let at = now();
-                let result = match upsert_body(w, &state.properties) {
-                    Ok(body) => {
-                        write_one(store, &state.repo, w, &body, retry_delay)
-                            .await
-                    }
-                    Err(e) => (
-                        0,
-                        Err(WriteError {
-                            message: format!("{e:#}"),
-                            retryable: false,
-                        }),
-                    ),
-                };
-                (w, at, result)
-            })
-            .buffer_unordered(concurrency.max(1));
+        let batch_size = concurrency.max(1);
+        let mut stop_after_batch = false;
 
-        while let Some((w, at, (attempts, result))) = jobs.next().await {
-            summary.attempted += 1;
-            let entry = WriteLog {
-                at,
-                repo: state.repo.clone(),
-                kind,
-                data_id: w.data_id.clone(),
-                business_key: w.business_key.clone(),
-                action: match w.action {
-                    Action::Create => "create",
-                    Action::Update { .. } => "update",
-                },
-                attempts,
-                status: if result.is_ok() { "ok" } else { "failed" },
-                outcome: match &result {
-                    Ok(UpsertStatus::Created) => Some("created"),
-                    Ok(UpsertStatus::Updated) => Some("updated"),
-                    Err(_) => None,
-                },
-                error: result.as_ref().err().map(|e| e.message.clone()),
-            };
-            log(&entry);
-            match result {
-                Ok(_) => summary.succeeded += 1,
-                Err(_) => {
-                    summary.failed += 1;
-                    phase_failed = true;
-                    if summary.failed >= max_failures {
-                        summary.stopped_early = Some(format!(
-                            "stopped after {} failed writes",
-                            summary.failed
-                        ));
-                        break 'phases;
+        for batch in state.plan.writes.chunks(batch_size) {
+            let mut jobs = stream::iter(batch.iter())
+                .map(|w| async move {
+                    let at = now();
+                    let result = match upsert_body(w, &state.properties) {
+                        Ok(body) => {
+                            write_one(store, &state.repo, w, &body, retry_delay)
+                                .await
+                        }
+                        Err(e) => (
+                            0,
+                            Err(WriteError {
+                                message: format!("{e:#}"),
+                                retryable: false,
+                            }),
+                        ),
+                    };
+                    (w, at, result)
+                })
+                .buffer_unordered(batch.len());
+
+            // Finish every request in this batch before stopping so outcomes
+            // for writes already sent are recorded in the audit log.
+            while let Some((w, at, (attempts, result))) = jobs.next().await {
+                summary.attempted += 1;
+                let entry = WriteLog {
+                    at,
+                    repo: state.repo.clone(),
+                    kind,
+                    data_id: w.data_id.clone(),
+                    business_key: w.business_key.clone(),
+                    action: match w.action {
+                        Action::Create => "create",
+                        Action::Update { .. } => "update",
+                    },
+                    attempts,
+                    status: if result.is_ok() { "ok" } else { "failed" },
+                    outcome: match &result {
+                        Ok(UpsertStatus::Created) => Some("created"),
+                        Ok(UpsertStatus::Updated) => Some("updated"),
+                        Err(_) => None,
+                    },
+                    error: result.as_ref().err().map(|e| e.message.clone()),
+                };
+                log(&entry);
+                match result {
+                    Ok(_) => summary.succeeded += 1,
+                    Err(_) => {
+                        summary.failed += 1;
+                        phase_failed = true;
+                        stop_after_batch |= summary.failed >= max_failures;
                     }
                 }
+            }
+
+            if stop_after_batch {
+                summary.stopped_early = Some(format!(
+                    "stopped after {} failed writes",
+                    summary.failed
+                ));
+                break 'phases;
             }
         }
         if phase_failed {
@@ -687,9 +696,8 @@ pub fn build_report(
             })
             .collect();
         for deferred in &p.catalog.deferred_to_chapter3 {
-            let Some(ingredient_key) = ingredient_keys
-                .get(deferred.food_code.as_str())
-                .copied()
+            let Some(ingredient_key) =
+                ingredient_keys.get(deferred.food_code.as_str()).copied()
             else {
                 continue;
             };

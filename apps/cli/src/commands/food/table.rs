@@ -16,6 +16,8 @@ use super::sheet::{match_key, narrow_alnum, squash, Sheet, Workbook};
 /// Units the importer knows how to carry. Anything else in the unit row
 /// makes the column unsupported rather than guessed.
 const KNOWN_UNITS: [&str; 6] = ["%", "g", "mg", "μg", "kJ", "kcal"];
+/// Nutrients that may have an adjacent `*` column identifying the energy input.
+const ENERGY_MARKER_NUTRIENTS: [&str; 2] = ["CHOAVLM", "CHOAVLDF-"];
 
 /// Expected unit per component identifier of the 2023 table. A header
 /// that disagrees is reported as a unit mismatch and blocks writing.
@@ -283,23 +285,44 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
                     reason: "empty spacer column".into(),
                     non_empty_cells: 0,
                 });
-            } else if let Some(owner) = &last_nutrient {
-                layout.markers.insert(col, owner.clone());
-                layout.ignored.push(IgnoredColumn {
-                    col,
-                    label: format!("{owner} marker"),
-                    reason: format!(
-                        "marker column without a component identifier (`*` = the {owner} value used for the energy calculation); not stored"
-                    ),
-                    non_empty_cells: cells,
-                });
             } else {
-                layout.ignored.push(IgnoredColumn {
-                    col,
-                    label,
-                    reason: "column without a component identifier".into(),
-                    non_empty_cells: cells,
+                let marker_owner = last_nutrient.as_ref().and_then(|owner| {
+                    let nutrient_col = layout.nutrient(owner)?.col;
+                    (ENERGY_MARKER_NUTRIENTS.contains(&owner.as_str())
+                        && nutrient_col + 1 == col
+                        && !layout.markers.values().any(|marker| marker == owner))
+                    .then_some(owner)
                 });
+                let only_marker_values = data_rows.clone().all(|row| {
+                    match sheet.cell(row, col).map(str::trim) {
+                        Some(value) if !value.is_empty() => value == "*",
+                        _ => true,
+                    }
+                });
+
+                if let Some(owner) = marker_owner.filter(|_| only_marker_values) {
+                    layout.markers.insert(col, owner.clone());
+                    layout.ignored.push(IgnoredColumn {
+                        col,
+                        label: format!("{owner} marker"),
+                        reason: format!(
+                            "marker column without a component identifier (`*` = the {owner} value used for the energy calculation); not stored"
+                        ),
+                        non_empty_cells: cells,
+                    });
+                } else {
+                    layout.errors.push(format!(
+                        "column {} has data without a component identifier or a recognized carbohydrate marker",
+                        col + 1
+                    ));
+                    layout.ignored.push(IgnoredColumn {
+                        col,
+                        label,
+                        reason: "unexpected data in a column without a component identifier"
+                            .into(),
+                        non_empty_cells: cells,
+                    });
+                }
             }
             continue;
         }
@@ -335,11 +358,17 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
             ));
             continue;
         }
+        let name = display_name(&label);
+        if name.is_empty() {
+            layout.errors.push(format!(
+                "component identifier {identifier} has a blank display label"
+            ));
+        }
         last_nutrient = Some(identifier.to_string());
         layout.nutrients.push(NutrientColumn {
             col,
             key: identifier.to_string(),
-            name: display_name(&label),
+            name,
             label_path: labels.iter().map(|l| display_name(l)).collect(),
             unit: unit_text,
         });

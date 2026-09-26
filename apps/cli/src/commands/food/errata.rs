@@ -138,13 +138,11 @@ pub fn parse_errata(
                 itemized_entry_count += entries.len();
                 out.entries.extend(entries);
             }
-            ROW_PAIR_SHEET => {
-                out.entries.extend(parse_row_pairs(
-                    sheet,
-                    table,
-                    require_complete_layout,
-                )?)
-            }
+            ROW_PAIR_SHEET => out.entries.extend(parse_row_pairs(
+                sheet,
+                table,
+                require_complete_layout,
+            )?),
             other => {
                 let reason = if other.contains("第1章") {
                     "chapter 1 text (cooking conditions etc.), not table data"
@@ -871,8 +869,8 @@ mod tests {
 
     fn setup() -> (Vec<SourceFood>, ErrataBook) {
         let table = parse_table(&fixtures::main_sheet()).unwrap();
-        let book =
-            parse_errata(&fixtures::errata_book(), &table.layout, false).unwrap();
+        let book = parse_errata(&fixtures::errata_book(), &table.layout, false)
+            .unwrap();
         (table.foods, book)
     }
 
