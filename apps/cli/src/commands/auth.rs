@@ -282,7 +282,7 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             "api_base_url": resolved.api_base_url,
             "api_base_url_source": url_source,
             "authenticated": resolved.api_key.is_some()
-                || resolved.mcp_access_token.is_some(),
+                || browser_session.is_some(),
             "credential": credential_kind(
                 key_source,
                 browser_session.is_some(),
@@ -336,8 +336,11 @@ fn session_in_use<'a>(
         return None;
     }
     let resource = format!("{}/mcp", api_base_url.trim_end_matches('/'));
+    let now = crate::oauth::now_unix();
     stored.oauth.as_ref().filter(|session| {
         session.resource.trim_end_matches('/') == resource
+            && (!session.needs_refresh(now)
+                || session.refresh_token.is_some())
     })
 }
 
