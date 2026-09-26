@@ -208,7 +208,7 @@ function LibraryDataCard({
         <dl className="mt-2 space-y-1">
           {shownProperties.map(({ property, text }) => (
             <div key={property.id} className="flex min-w-0 items-baseline gap-3 text-xs">
-              <dt className="shrink-0 text-subtle-foreground">{property.displayName ?? property.name}</dt>
+              <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
               <dd className="min-w-0 flex-1 truncate text-right text-foreground">{text}</dd>
             </div>
           ))}
@@ -604,20 +604,16 @@ function RepositoryTable({
   )
 
   const handleCreateProperty = useCallback(
-    async (name: string, displayName: string, type: RepositoryPropertyType) => {
+    async (name: string, type: RepositoryPropertyType) => {
       setPropertyBusy(true)
       setPropertyError(null)
       try {
-        const created = await createRepositoryProperty(
-          propertyTarget,
-          newPropertyDraft(name, type, displayName),
-        )
+        const created = await createRepositoryProperty(propertyTarget, newPropertyDraft(name, type))
         setProperties((current) => [
           ...current,
           {
             id: created.id,
             name: created.name,
-            displayName: created.displayName ?? created.name,
             typ: normalizeLibraryPropertyType(created.typ),
             // The two Property shapes disagree about whether an option carries
             // an id: the settings API models one that has not been saved yet,
@@ -649,17 +645,14 @@ function RepositoryTable({
 
   const handleRenameProperty = useCallback(
     async (property: LibraryProperty, name: string) => {
-      const displayName = name.trim()
-      const draft = propertyRenameDraft(property, displayName)
+      const draft = propertyRenameDraft(property, name)
       if (!draft) return
       setPropertyBusy(true)
       setMutationError(null)
       // Renamed on screen first: the header is what the reader just typed in,
       // and a round trip that fails puts the old name back below.
       setProperties((current) =>
-        current.map((entry) => (
-          entry.id === property.id ? { ...entry, displayName } : entry
-        ))
+        current.map((entry) => (entry.id === property.id ? { ...entry, name } : entry))
       )
       try {
         await updateRepositoryProperty(propertyTarget, property.id, draft)
@@ -830,7 +823,7 @@ function RepositoryTable({
           },
           {
             id: `property:${property.id}`,
-            header: property.displayName ?? property.name,
+            header: property.name,
             size: columnWidth(property.id, defaultColumnWidth(property)),
             cell: ({ row }) => (
               <LibraryPropertyEditableCell
@@ -1197,7 +1190,7 @@ function RepositoryTable({
                             columnId={property ? property.id : columnId}
                             label={
                               property
-                                ? property.displayName ?? property.name
+                                ? property.name
                                 : String(header.column.columnDef.header ?? '')
                             }
                             width={width}

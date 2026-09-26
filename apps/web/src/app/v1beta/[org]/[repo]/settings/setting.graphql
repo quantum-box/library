@@ -51,7 +51,6 @@ fragment RepoFieldOnRepoSettingsPage on Repo {
 fragment PropertyForSettingsPage on Property {
   id
   name
-  displayName
   typ
 }
 

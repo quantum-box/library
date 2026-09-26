@@ -47,12 +47,11 @@ impl UpdatePropertyInputPort for UpdatePropertyInteractorImpl {
             .await?
             .ok_or(errors::not_found!("Database not found"))?;
 
-        let command = UpdatePropertyCommand::new_with_display_name(
+        let command = UpdatePropertyCommand::new(
             database.tenant_id(),
             database.id(),
             input.property_id,
             input.name,
-            input.display_name,
             input.property_type,
             input.meta_json,
         );

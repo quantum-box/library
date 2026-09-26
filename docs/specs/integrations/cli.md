@@ -129,15 +129,13 @@ library org update acme --name '新しい名前' --description "$(library --json
 | --- | --- |
 | `library property list <org/repo>` | property 一覧 |
 | `library property get <org/repo> <property-id>` | property 詳細 |
-| `library property create <org/repo> <key> --type <type> [--display-name <label>] [--auto-generate]` | property を作成 |
-| `library property update <org/repo> <property-id> [--name <key>] [--display-name <label>]` | property のkeyまたは表示名を更新 |
+| `library property create <org/repo> <name> --type <type> [--auto-generate]` | property を作成 |
+| `library property update <org/repo> <property-id> --name <name>` | property を rename |
 | `library property delete <org/repo> <property-id> [--yes]` | property を削除 |
 
 `--type` の値: `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`, `boolean`。`html` は API 側で `rich_text` に置き換えられた旧型。
 
 `--auto-generate` は `--type id` でのみ必須で、他の型に付けると拒否される。
-
-property key はASCII英字で始まり、ASCII英字・数字・`_`・`-` のみを使う64文字以内の値。`name` はAPIで参照するkey、`display_name` は画面に表示するラベル。
 
 ### `source`
 
@@ -148,6 +146,14 @@ property key はASCII英字で始まり、ASCII英字・数字・`_`・`-` の�
 | `library source create <org/repo> <name> [--url]` | source を追加 |
 | `library source update <org/repo> <source-id> [--name --url --clear-url]` | source を更新。`--clear-url` で URL を外す |
 | `library source delete <org/repo> <source-id> [--yes]` | source を削除 |
+
+### `food`
+
+| コマンド | 説明 |
+| --- | --- |
+| `library food import --table <xlsx> [--errata <xlsx>] [--apply]` | 日本食品標準成分表（八訂）増補2023年の公式Excel（＋正誤表）を COM-860 の下書き repo（食材・成分定義・成分値）へ取り込む。既定は dry run（書き込まない）。`--offline` は repo も読まずにファイルだけ検証する |
+
+書き込みは `data upsert` と同じ `PUT .../data/{data_id}/upsert` だけを使い、data ID は業務キー（repo・出典・食品番号・成分識別子）の SHA-256 から決まるので、再実行しても record は増えない。人が編集する項目（`standard_name` / `reading` / `aliases` / `attribute_review_status`、成分定義の表示名・`default_display`・`method`）は新規作成時にしか書かない。隔離した行・セル・正誤表の食い違いがあると `--accept-quarantine` なしでは `--apply` を拒否する。公開（release）はしない。詳細・列の対応・出典の記録は [COM-861 タスク](../../tasks/in-progress/com-861-food-composition-import/task.md)。
 
 ### 削除の確認
 

@@ -223,10 +223,7 @@ pub struct Property {
     pub id: String,
     pub tenant_id: String,
     pub database_id: String,
-    /// Stable key used by API clients to identify this Property.
     pub name: String,
-    /// Human-readable label shown in the user interface.
-    pub display_name: String,
     /// STRING, INTEGER, HTML, MARKDOWN, RELATION, SELECT, MULTI_SELECT, ID,
     /// LOCATION, DATE, IMAGE, RICH_TEXT, BOOLEAN
     pub typ: PropertyType,
@@ -290,7 +287,6 @@ impl From<database_manager::domain::Property> for Property {
             tenant_id: value.tenant_id().to_string(),
             database_id: value.database_id().to_string(),
             name: value.name().to_string(),
-            display_name: value.display_name().to_string(),
             typ: value.property_type().clone().into(),
             meta,
             is_indexed: *value.is_indexed(),

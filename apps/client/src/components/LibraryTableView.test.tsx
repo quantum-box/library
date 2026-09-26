@@ -340,7 +340,6 @@ describe('LibraryTableView', () => {
     mocks.createRepositoryProperty.mockResolvedValue({
       id: 'prop-owner',
       name: 'Owner',
-      displayName: 'Owner',
       typ: 'STRING',
       meta: null,
     })
@@ -356,9 +355,6 @@ describe('LibraryTableView', () => {
     fireEvent.change(screen.getByTestId('library-table-add-column-name'), {
       target: { value: 'Owner' },
     })
-    fireEvent.change(screen.getByTestId('library-table-add-column-display-name'), {
-      target: { value: 'Owner' },
-    })
     fireEvent.click(screen.getByTestId('library-table-add-column-submit'))
 
     await waitFor(() => {
@@ -366,7 +362,7 @@ describe('LibraryTableView', () => {
     })
     expect(mocks.createRepositoryProperty).toHaveBeenCalledWith(
       { orgUsername: 'quantum-box', repoUsername: 'docs' },
-      { name: 'Owner', displayName: 'Owner', type: 'STRING' },
+      { name: 'Owner', type: 'STRING' },
     )
   })
 
@@ -439,9 +435,6 @@ describe('LibraryTableView', () => {
     fireEvent.change(screen.getByTestId('library-table-add-column-name'), {
       target: { value: 'Owner' },
     })
-    fireEvent.change(screen.getByTestId('library-table-add-column-display-name'), {
-      target: { value: 'Owner' },
-    })
     fireEvent.click(screen.getByTestId('library-table-add-column-submit'))
 
     await waitFor(() => {
@@ -455,8 +448,7 @@ describe('LibraryTableView', () => {
   it('renames a Property from its header menu', async () => {
     mocks.updateRepositoryProperty.mockResolvedValue({
       id: 'prop-title',
-      name: 'Title',
-      displayName: 'Heading',
+      name: 'Heading',
       typ: 'STRING',
     })
 
@@ -479,7 +471,7 @@ describe('LibraryTableView', () => {
     expect(mocks.updateRepositoryProperty).toHaveBeenCalledWith(
       { orgUsername: 'quantum-box', repoUsername: 'docs' },
       'prop-title',
-      { name: 'Title', displayName: 'Heading', type: 'STRING' },
+      { name: 'Heading', type: 'STRING' },
     )
   })
 

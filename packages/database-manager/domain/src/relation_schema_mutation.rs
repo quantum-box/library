@@ -6,7 +6,7 @@ use crate::{
     DatabaseId, Property, PropertyDefinition, PropertyId, PropertyType,
     RelationCardinality, RelationDefinition, RelationGeneration,
     RelationOnDelete, ResolvedPropertyConfig, TypeRelation,
-    next_property_definition_num, validate_property_key,
+    next_property_definition_num,
 };
 
 /// Requested change to the generated inverse Property.
@@ -226,7 +226,6 @@ impl RelationSchema {
                             } else {
                                 let updated = inverse.update_known(
                                     Some(alias),
-                                    Some(alias),
                                     None,
                                     None,
                                 )?;
@@ -416,9 +415,8 @@ impl RelationSchema {
                 "inverse Property alias must not be empty",
             ));
         }
-        validate_property_key(alias)?;
         if target_properties.iter().any(|property| {
-            property.name().eq_ignore_ascii_case(alias)
+            property.name() == alias
                 && Some(property.id()) != current_inverse_id.as_ref()
         }) {
             return Err(errors::Error::conflict(

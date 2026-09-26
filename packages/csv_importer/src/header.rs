@@ -20,8 +20,6 @@
 //! ```
 
 use csv::StringRecord;
-use std::collections::HashSet;
-
 use database_manager::{
     domain::{Database, Property},
     AddPropertyInputData, CreateDatabaseInputData,
@@ -72,19 +70,7 @@ impl CSVImporterClient {
             })
             .await?;
         let mut properties = Vec::new();
-        let mut used_property_keys = HashSet::new();
-        for (index, header) in headers.iter().enumerate() {
-            let name =
-                property_key_from_header(header, &mut used_property_keys);
-            let display_name = header
-                .chars()
-                .take(database_manager::domain::MAX_PROPERTY_DISPLAY_NAME_LENGTH)
-                .collect::<String>();
-            let display_name = if display_name.trim().is_empty() {
-                format!("Column {}", index + 1)
-            } else {
-                display_name
-            };
+        for header in headers.iter() {
             let property = self
                 .db_manager
                 .add_property()
@@ -93,8 +79,7 @@ impl CSVImporterClient {
                     multi_tenancy,
                     tenant_id: config.tenant_id,
                     database_id: database.id(),
-                    display_name: Some(&display_name),
-                    name: &name,
+                    name: header,
                     property_type:
                         database_manager::domain::PropertyType::String,
                 })
@@ -103,53 +88,6 @@ impl CSVImporterClient {
         }
         Ok((database, properties))
     }
-}
-
-fn property_key_from_header(
-    header: &str,
-    used: &mut HashSet<String>,
-) -> String {
-    let mut key = String::new();
-    let mut needs_separator = false;
-    for character in header.chars() {
-        if character.is_ascii_alphanumeric()
-            || character == '_'
-            || character == '-'
-        {
-            if needs_separator
-                && !key.is_empty()
-                && !key.ends_with('_')
-                && !key.ends_with('-')
-            {
-                key.push('_');
-            }
-            key.push(character);
-            needs_separator = false;
-        } else {
-            needs_separator = true;
-        }
-    }
-    if key.is_empty() {
-        key.push_str("column");
-    } else if !key.as_bytes()[0].is_ascii_alphabetic() {
-        key.insert_str(0, "column_");
-    }
-
-    let max_length = database_manager::domain::MAX_PROPERTY_KEY_LENGTH;
-    key.truncate(max_length);
-    let key = key.trim_end_matches(['_', '-']);
-    let base = if key.is_empty() { "column" } else { key };
-    let mut candidate = base.to_owned();
-    let mut suffix = 2;
-    while used.contains(&candidate.to_ascii_lowercase()) {
-        let ending = format!("_{suffix}");
-        let prefix_length = max_length.saturating_sub(ending.len());
-        candidate =
-            format!("{}{ending}", &base[..base.len().min(prefix_length)]);
-        suffix += 1;
-    }
-    used.insert(candidate.to_ascii_lowercase());
-    candidate
 }
 
 // const SYSTEM_PROMPT: &str = r#"

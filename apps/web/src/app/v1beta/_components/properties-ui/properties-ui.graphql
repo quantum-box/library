@@ -1,7 +1,6 @@
 fragment PropertyForPropertiesUi on Property {
   id
   name
-  displayName
   typ
   meta {
     ...PropertyTypeMetaForPropertiesUi

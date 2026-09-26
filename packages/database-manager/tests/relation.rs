@@ -52,7 +52,6 @@ async fn test_create_new_database() {
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
-            display_name: None,
             name: "property1",
             property_type: PropertyType::String,
         })

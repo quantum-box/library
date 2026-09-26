@@ -230,7 +230,7 @@ export function PublicRepositoryView({
                               key={property.id}
                               className="flex min-w-0 items-baseline gap-2 text-xs"
                             >
-                              <dt className="shrink-0 text-subtle-foreground">{property.displayName ?? property.name}</dt>
+                              <dt className="shrink-0 text-subtle-foreground">{property.name}</dt>
                               <dd className="min-w-0 flex-1 truncate text-right text-foreground">
                                 {text}
                               </dd>
@@ -258,7 +258,7 @@ export function PublicRepositoryView({
                         key={property.id}
                         className="border-b border-border bg-surface px-3 py-2 text-left text-xs font-medium text-subtle"
                       >
-                        {property.displayName ?? property.name}
+                        {property.name}
                       </th>
                     ))}
                   </tr>

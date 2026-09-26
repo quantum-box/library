@@ -9,9 +9,8 @@ use value_object::{TenantId, Ulid};
 
 use crate::domain::{RepoId, RepoRepository};
 use database_manager::domain::{
-    property_display_name_for_label, unique_property_key_for_label,
-    validate_property_key, DataId, DatabaseId, Property, PropertyType,
-    PropertyValueCommand, TypeId,
+    DataId, DatabaseId, Property, PropertyType, PropertyValueCommand,
+    TypeId,
 };
 use database_manager::usecase::FindAllPropertiesInputData;
 use database_manager::{
@@ -100,42 +99,15 @@ impl LibraryDataRepositoryImpl {
                 database_id: database_id.clone(),
             })
             .await?;
-        let mut used_property_keys: std::collections::HashSet<String> =
-            existing
-                .iter()
-                .map(|property| property.name().to_ascii_lowercase())
-                .collect();
         let mut property_definitions: HashMap<String, Property> = existing
             .into_iter()
             .map(|property| (property.name().to_string(), property))
             .collect();
 
-        let mut property_names: Vec<&String> = properties.keys().collect();
-        property_names.sort();
-        for name in property_names {
+        for name in properties.keys() {
             if property_definitions.contains_key(name) {
                 continue;
             }
-            if validate_property_key(name).is_err() {
-                let display_name = property_display_name_for_label(name);
-                if let Some(existing_property) = property_definitions
-                    .values()
-                    .find(|property| {
-                        property.display_name() == &display_name
-                    })
-                    .cloned()
-                {
-                    property_definitions
-                        .insert(name.clone(), existing_property);
-                    continue;
-                }
-            }
-
-            let property_key = unique_property_key_for_label(
-                name,
-                &mut used_property_keys,
-            );
-            let display_name = property_display_name_for_label(name);
             let property = self
                 .database_app
                 .add_property()
@@ -144,13 +116,11 @@ impl LibraryDataRepositoryImpl {
                     multi_tenancy,
                     tenant_id,
                     database_id,
-                    display_name: Some(&display_name),
-                    name: &property_key,
+                    name,
                     property_type: Self::property_type_for(name),
                 })
                 .await?;
-            property_definitions.insert(name.clone(), property.clone());
-            property_definitions.insert(property_key, property);
+            property_definitions.insert(name.clone(), property);
         }
 
         Ok(property_definitions)

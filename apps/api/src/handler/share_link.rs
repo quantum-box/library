@@ -363,7 +363,6 @@ pub async fn view_shared_data(
             .map(|property| PropertyResponse {
                 id: property.id().to_string(),
                 name: property.name().to_string(),
-                display_name: property.display_name().to_string(),
                 property_type: property.property_type().to_string(),
                 auto_generate: None,
                 database_id: match property.property_type() {

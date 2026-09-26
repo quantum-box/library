@@ -109,7 +109,6 @@ export function DataGanttView({
 			properties.map(p => ({
 				id: p.id,
 				name: p.name,
-				displayName: p.displayName,
 				typ: p.typ,
 				meta: p.meta as PropertyForEditorFragment['meta'],
 			})),
@@ -768,7 +767,7 @@ export function DataGanttView({
 								<SelectContent>
 									{dateProperties.map(prop => (
 										<SelectItem key={prop.id} value={prop.id}>
-											{prop.displayName ?? prop.name}
+											{prop.name}
 										</SelectItem>
 									))}
 								</SelectContent>
@@ -786,7 +785,7 @@ export function DataGanttView({
 								<SelectContent>
 									{dateProperties.map(prop => (
 										<SelectItem key={prop.id} value={prop.id}>
-											{prop.displayName ?? prop.name}
+											{prop.name}
 										</SelectItem>
 									))}
 								</SelectContent>

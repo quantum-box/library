@@ -104,7 +104,6 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             multi_tenancy: multi_tenancy_a,
             tenant_id: &tenant_a,
             database_id: database_a.id(),
-            display_name: None,
             name: "foreign-relation",
             property_type: PropertyType::Relation(TypeRelation::new(
                 database_b.id().clone(),
@@ -123,7 +122,6 @@ async fn two_tenants_cannot_cross_database_or_record_boundaries(
             multi_tenancy: multi_tenancy_a,
             tenant_id: &tenant_a,
             database_id: database_a.id(),
-            display_name: None,
             name: "relation",
             property_type: PropertyType::Relation(TypeRelation::new(
                 other_database_a.id().clone(),

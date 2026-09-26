@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS `ingredient_releases` (
     `ingredient_count`    INT UNSIGNED  NOT NULL,
     `nutrient_count`      INT UNSIGNED  NOT NULL,
     `value_count`         INT UNSIGNED  NOT NULL,
-    `private_repo_mask`   TINYINT UNSIGNED NOT NULL COMMENT 'Private draft repos at publish: bit 0 ingredients, bit 1 nutrients, bit 2 values',
     `published_by`        VARCHAR(64)   NOT NULL,
     `published_at`        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -95,7 +94,7 @@ COMMENT='COM-860: ingredients frozen in a release';
 CREATE TABLE IF NOT EXISTS `ingredient_release_aliases` (
     `release_id`     VARCHAR(32)  NOT NULL,
     `ingredient_key` VARCHAR(64)  NOT NULL,
-    `alias`          VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `alias`          VARCHAR(255) NOT NULL,
     PRIMARY KEY (`release_id`, `ingredient_key`, `alias`),
     CONSTRAINT `fk_ingredient_release_aliases_item` FOREIGN KEY (`release_id`, `ingredient_key`)
         REFERENCES `ingredient_release_items` (`release_id`, `ingredient_key`)

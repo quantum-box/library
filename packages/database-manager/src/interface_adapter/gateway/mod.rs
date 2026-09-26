@@ -55,7 +55,6 @@ pub struct FieldRow {
     pub tenant_id: String,
     pub object_id: String,
     pub field_name: String,
-    pub field_display_name: String,
     pub datatype: String,
     pub datatype_meta: serde_json::Value,
     pub is_indexed: bool,
@@ -71,12 +70,11 @@ impl FieldRow {
         &self,
         config: ResolvedPropertyConfig,
     ) -> errors::Result<PropertyDefinition> {
-        Ok(PropertyDefinition::new_with_display_name(
+        Ok(PropertyDefinition::new(
             &PropertyId::new(&self.id)?,
             &TenantId::from_str(&self.tenant_id)?,
             &DatabaseId::from_str(&self.object_id)?,
             &self.field_name,
-            &self.field_display_name,
             config,
             self.is_indexed,
             self.field_num,
@@ -215,7 +213,6 @@ mod property_definition_row_tests {
             tenant_id: TenantId::default().to_string(),
             object_id: DatabaseId::default().to_string(),
             field_name: "title".to_string(),
-            field_display_name: "Title".to_string(),
             datatype: "STRING".to_string(),
             datatype_meta: serde_json::Value::Null,
             is_indexed: false,

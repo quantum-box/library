@@ -55,7 +55,6 @@ async fn add_relation_property(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
-            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -77,7 +76,6 @@ async fn add_auto_id_property(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
-            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,
@@ -258,7 +256,7 @@ async fn dormant_record_create_uow_dual_writes_relations_and_emits_created_event
         &tenant_id,
         source_database.id(),
         target_database.id(),
-        "empty_related",
+        "empty related",
     )
     .await?;
     let target =
@@ -554,7 +552,7 @@ async fn dormant_record_create_uow_replays_rejects_reuse_and_stays_disabled(
         &tenant_id,
         database.id(),
         target_database.id(),
-        "disabled_relation",
+        "disabled relation",
     )
     .await?;
     let target = add_record(
@@ -629,7 +627,7 @@ async fn dormant_record_create_uow_fails_closed_before_index_policy_on_definitio
         &app,
         &tenant_id,
         database.id(),
-        "canonical_id",
+        "canonical id",
     )
     .await?;
     let repository = DataRepositoryImpl::new_with_all_storage_modes(
@@ -871,7 +869,7 @@ async fn dormant_record_create_uow_guards_targets_inverse_cardinality_and_indexe
         &tenant_id,
         source_database.id(),
         target_database.id(),
-        "guard_relation",
+        "guard relation",
     )
     .await?;
     let target_a = add_record(
@@ -941,7 +939,7 @@ async fn dormant_record_create_uow_guards_targets_inverse_cardinality_and_indexe
                 None,
                 None,
                 RelationInverseChange::SetAlias(
-                    "guard_inverse".to_string(),
+                    "guard inverse".to_string(),
                 ),
                 None,
             ),

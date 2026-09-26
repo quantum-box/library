@@ -102,8 +102,7 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
 
         let existing_properties = sqlx::query_as::<_, FieldRow>(
             r#"
-            SELECT id, tenant_id, object_id, field_name,
-                   field_display_name, datatype,
+            SELECT id, tenant_id, object_id, field_name, datatype,
                    datatype_meta, is_indexed, field_num, meta_json,
                    type_key, type_version, type_config
             FROM fields
@@ -119,29 +118,6 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         .map(|row| row.definition(self.definition_mode))
         .collect::<errors::Result<Vec<_>>>()?;
 
-        // Match the database collation when reserving a key. This catches
-        // legacy spellings whose case or accents compare equal in SQL even
-        // though the domain key validator accepts only ASCII identifiers.
-        let duplicate_key = sqlx::query_scalar::<_, bool>(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM fields
-                WHERE tenant_id = ? AND object_id = ? AND field_name = ?
-            )
-            "#,
-        )
-        .bind(command.tenant_id().to_string())
-        .bind(command.database_id().to_string())
-        .bind(command.name())
-        .fetch_one(&mut *transaction)
-        .await?;
-        if duplicate_key {
-            return Err(errors::Error::conflict(format!(
-                "Property key `{}` is already in use",
-                command.name()
-            )));
-        }
-
         let mutation =
             PropertySchema::plan_addition(&existing_properties, command)?;
         let (definition, relation_definition) = mutation.into_parts();
@@ -151,19 +127,17 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         let field_insert = sqlx::query(
             r#"
             INSERT INTO fields
-                (id, tenant_id, object_id, field_name,
-                 field_display_name, datatype,
+                (id, tenant_id, object_id, field_name, datatype,
                  datatype_meta, is_indexed, field_num, meta_json,
                  type_key, type_version, type_config)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         )
         .bind(property.id().to_string())
         .bind(property.tenant_id().to_string())
         .bind(property.database_id().to_string())
         .bind(property.name())
-        .bind(property.display_name())
         .bind(property.property_type().to_string())
         .bind(property.property_type().get_meta()?)
         .bind(property.is_indexed())
@@ -241,8 +215,7 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
 
         let row = sqlx::query_as::<_, FieldRow>(
             r#"
-            SELECT id, tenant_id, object_id, field_name,
-                   field_display_name, datatype,
+            SELECT id, tenant_id, object_id, field_name, datatype,
                    datatype_meta, is_indexed, field_num, meta_json,
                    type_key, type_version, type_config
             FROM fields
@@ -320,44 +293,19 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
             row.definition(self.definition_mode)?
         };
         let updated = command.apply(&current)?;
-        if updated.name() != current.name() {
-            let duplicate_key = sqlx::query_scalar::<_, bool>(
-                r#"
-                SELECT EXISTS(
-                    SELECT 1 FROM fields
-                    WHERE tenant_id = ? AND object_id = ? AND id <> ?
-                      AND LOWER(field_name) = LOWER(?)
-                )
-                "#,
-            )
-            .bind(command.tenant_id().to_string())
-            .bind(command.database_id().to_string())
-            .bind(command.property_id().to_string())
-            .bind(updated.name())
-            .fetch_one(&mut *transaction)
-            .await?;
-            if duplicate_key {
-                return Err(errors::Error::conflict(format!(
-                    "Property key `{}` is already in use",
-                    updated.name()
-                )));
-            }
-        }
         let (property, type_key, type_version, type_config) =
             encoded_definition(&updated)?;
 
         let result = sqlx::query(
             r#"
             UPDATE fields
-            SET field_name = ?, field_display_name = ?,
-                datatype = ?, datatype_meta = ?,
+            SET field_name = ?, datatype = ?, datatype_meta = ?,
                 is_indexed = ?, meta_json = ?, type_key = ?,
                 type_version = ?, type_config = ?
             WHERE tenant_id = ? AND object_id = ? AND id = ?
             "#,
         )
         .bind(property.name())
-        .bind(property.display_name())
         .bind(property.property_type().to_string())
         .bind(property.property_type().get_meta()?)
         .bind(property.is_indexed())
@@ -412,8 +360,7 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
         }
         let row = sqlx::query_as::<_, FieldRow>(
             r#"
-            SELECT id, tenant_id, object_id, field_name,
-                   field_display_name, datatype,
+            SELECT id, tenant_id, object_id, field_name, datatype,
                    datatype_meta, is_indexed, field_num, meta_json,
                    type_key, type_version, type_config
             FROM fields

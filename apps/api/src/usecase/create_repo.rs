@@ -95,7 +95,6 @@ impl CreateRepoInputPort for CreateRepo {
                 multi_tenancy: input.multi_tenancy,
                 tenant_id: org.id(),
                 database_id: database.id(),
-                display_name: None,
                 name: "id",
                 property_type: PropertyType::Id(TypeId::new(true)),
             })
@@ -108,7 +107,6 @@ impl CreateRepoInputPort for CreateRepo {
                 multi_tenancy: input.multi_tenancy,
                 tenant_id: org.id(),
                 database_id: database.id(),
-                display_name: None,
                 name: "content",
                 property_type: PropertyType::RichText,
             })

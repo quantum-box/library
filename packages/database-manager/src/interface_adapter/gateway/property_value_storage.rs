@@ -245,7 +245,6 @@ mod tests {
             tenant_id: TenantId::default().to_string(),
             object_id: DatabaseId::default().to_string(),
             field_name: "value".to_string(),
-            field_display_name: "Value".to_string(),
             datatype: property_type.to_string(),
             datatype_meta: property_type.get_meta().expect("type metadata"),
             is_indexed: false,

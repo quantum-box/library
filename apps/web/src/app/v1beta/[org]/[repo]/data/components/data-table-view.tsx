@@ -735,12 +735,7 @@ export function DataTableView({
 			updatedAt: { id: 'updatedAt', name: 'Updated', sortable: true },
 		}
 		for (const p of properties) {
-			defs[p.id] = {
-				id: p.id,
-				name: p.displayName ?? p.name,
-				sortable: true,
-				type: p.typ,
-			}
+			defs[p.id] = { id: p.id, name: p.name, sortable: true, type: p.typ }
 		}
 		return defs
 	}, [properties])

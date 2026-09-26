@@ -30,123 +30,6 @@ pub const ID_PROPERTY_ALREADY_EXISTS: &str = "Id property already exists";
 pub const RELATION_TARGET_DATABASE_IMMUTABLE: &str =
     "Relation target database is immutable after property creation";
 pub const MAX_PROPERTY_NUM: u32 = 50;
-pub const MAX_PROPERTY_KEY_LENGTH: usize = 64;
-pub const MAX_PROPERTY_DISPLAY_NAME_LENGTH: usize = 255;
-
-/// Derive a valid, unique API key from a user-facing property label.
-///
-/// Existing names in `used` are compared case-insensitively to match the
-/// database collation used when reserving Property keys.
-pub fn unique_property_key_for_label(
-    label: &str,
-    used: &mut std::collections::HashSet<String>,
-) -> String {
-    let mut normalized = String::new();
-    let mut separator_pending = false;
-    for character in label.trim().chars() {
-        if character.is_ascii_alphanumeric() {
-            if separator_pending
-                && !normalized.is_empty()
-                && !normalized.ends_with('_')
-                && !normalized.ends_with('-')
-            {
-                normalized.push('_');
-            }
-            normalized.push(character);
-            separator_pending = false;
-        } else if character == '_' || character == '-' {
-            if !normalized.is_empty() {
-                normalized.push(character);
-            } else {
-                separator_pending = true;
-            }
-        } else {
-            separator_pending = true;
-        }
-    }
-
-    let normalized = normalized.trim_matches(['_', '-']);
-    let mut base = if normalized.is_empty() {
-        "property".to_string()
-    } else {
-        normalized.to_string()
-    };
-    if !base.as_bytes()[0].is_ascii_alphabetic() {
-        base.insert_str(0, "property_");
-    }
-    base.truncate(MAX_PROPERTY_KEY_LENGTH);
-    let trimmed_base = base.trim_end_matches(['_', '-']);
-    base = if trimmed_base.is_empty() {
-        "property".to_string()
-    } else {
-        trimmed_base.to_string()
-    };
-
-    let mut candidate = base.clone();
-    let mut suffix = 2usize;
-    while used
-        .iter()
-        .any(|existing| existing.eq_ignore_ascii_case(&candidate))
-    {
-        let ending = format!("_{suffix}");
-        let prefix_length =
-            MAX_PROPERTY_KEY_LENGTH.saturating_sub(ending.len());
-        let prefix = &base[..base.len().min(prefix_length)];
-        candidate =
-            format!("{}{ending}", prefix.trim_end_matches(['_', '-']));
-        suffix += 1;
-    }
-    used.insert(candidate.clone());
-    candidate
-}
-
-/// Keep imported/user-provided labels within the domain limit and give blank
-/// labels a readable fallback before they reach Property validation.
-pub fn property_display_name_for_label(label: &str) -> String {
-    let display_name = label
-        .trim()
-        .chars()
-        .take(MAX_PROPERTY_DISPLAY_NAME_LENGTH)
-        .collect::<String>();
-    if display_name.is_empty() {
-        "Property".to_string()
-    } else {
-        display_name
-    }
-}
-
-/// Property names are API keys, so keep them portable across JSON, SQL, and
-/// generated client code.
-pub fn validate_property_key(key: &str) -> errors::Result<()> {
-    let mut chars = key.chars();
-    let valid_first =
-        chars.next().is_some_and(|ch| ch.is_ascii_alphabetic());
-    if !valid_first
-        || key.len() > MAX_PROPERTY_KEY_LENGTH
-        || !chars
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        return Err(errors::Error::invalid(format!(
-            "Property key must start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens (maximum {MAX_PROPERTY_KEY_LENGTH} characters)"
-        )));
-    }
-    Ok(())
-}
-
-pub fn validate_property_display_name(name: &str) -> errors::Result<()> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err(errors::Error::invalid(
-            "Property display name is required",
-        ));
-    }
-    if trimmed.chars().count() > MAX_PROPERTY_DISPLAY_NAME_LENGTH {
-        return Err(errors::Error::invalid(format!(
-            "Property display name must be at most {MAX_PROPERTY_DISPLAY_NAME_LENGTH} characters"
-        )));
-    }
-    Ok(())
-}
 
 fn validate_select_option_update(
     current: &[SelectItem],
@@ -255,7 +138,6 @@ pub struct Property {
     tenant_id: TenantId,
     database_id: DatabaseId,
     name: String,
-    display_name: String,
     property_type: PropertyType,
     is_indexed: bool,
     property_num: u32,
@@ -273,35 +155,11 @@ impl Property {
         is_indexed: bool,
         property_num: u32,
     ) -> Self {
-        Self::new_with_display_name(
+        Self::with_meta_json(
             id,
             tenant_id,
             database_id,
             name,
-            name,
-            property_type,
-            is_indexed,
-            property_num,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_display_name(
-        id: &PropertyId,
-        tenant_id: &TenantId,
-        database_id: &DatabaseId,
-        name: &str,
-        display_name: &str,
-        property_type: &PropertyType,
-        is_indexed: bool,
-        property_num: u32,
-    ) -> Self {
-        Self::with_display_name_and_meta_json(
-            id,
-            tenant_id,
-            database_id,
-            name,
-            display_name,
             property_type,
             is_indexed,
             property_num,
@@ -320,47 +178,16 @@ impl Property {
         property_num: u32,
         meta_json: Option<String>,
     ) -> Self {
-        Self::with_display_name_and_meta_json(
-            id,
-            tenant_id,
-            database_id,
-            name,
-            name,
-            property_type,
-            is_indexed,
-            property_num,
-            meta_json,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_display_name_and_meta_json(
-        id: &PropertyId,
-        tenant_id: &TenantId,
-        database_id: &DatabaseId,
-        name: &str,
-        display_name: &str,
-        property_type: &PropertyType,
-        is_indexed: bool,
-        property_num: u32,
-        meta_json: Option<String>,
-    ) -> Self {
         let name: String = if name.is_empty() {
             format!("property{property_num}")
         } else {
             name.into()
         };
-        let display_name = display_name.trim();
         Self {
             id: id.clone(),
             tenant_id: tenant_id.clone(),
             database_id: database_id.clone(),
             name: name.to_string(),
-            display_name: if display_name.is_empty() {
-                name.clone()
-            } else {
-                display_name.to_string()
-            },
             property_type: property_type.clone(),
             is_indexed,
             property_num,
@@ -382,36 +209,12 @@ impl Property {
         property_type: Option<&PropertyType>,
         meta_json: Option<Option<String>>,
     ) -> errors::Result<Self> {
-        self.update_with_display_name_and_meta_json(
-            name,
-            None,
-            property_type,
-            meta_json,
-        )
-    }
-
-    pub fn update_with_display_name_and_meta_json(
-        &self,
-        name: Option<&str>,
-        display_name: Option<&str>,
-        property_type: Option<&PropertyType>,
-        meta_json: Option<Option<String>>,
-    ) -> errors::Result<Self> {
-        if let Some(name) = name {
-            validate_property_key(name)?;
-        }
-        if let Some(display_name) = display_name {
-            validate_property_display_name(display_name)?;
-        }
         let property = self.update_property_type(property_type)?;
 
         Ok(Self {
             name: name
                 .map(|s| s.to_string())
                 .unwrap_or(property.name.clone()),
-            display_name: display_name
-                .map(|s| s.trim().to_string())
-                .unwrap_or(property.display_name.clone()),
             meta_json: meta_json
                 .unwrap_or_else(|| property.meta_json.clone()),
             ..property

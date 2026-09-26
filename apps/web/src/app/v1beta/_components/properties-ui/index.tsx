@@ -100,7 +100,7 @@ export function PropertiesUi({
 				title: t.v1beta.properties.propertyUpdated,
 				description: t.v1beta.properties.propertyUpdatedDescription.replace(
 					'{name}',
-					property.displayName,
+					property.name,
 				),
 			})
 		} else {
@@ -111,7 +111,7 @@ export function PropertiesUi({
 				title: t.v1beta.properties.propertyAdded,
 				description: t.v1beta.properties.propertyAddedDescription.replace(
 					'{name}',
-					property.displayName,
+					property.name,
 				),
 			})
 		}
@@ -127,7 +127,7 @@ export function PropertiesUi({
 				title: t.v1beta.properties.propertyRemoved,
 				description: t.v1beta.properties.propertyRemovedDescription.replace(
 					'{name}',
-					propertyToRemove.displayName,
+					propertyToRemove.name,
 				),
 			})
 		} else {
@@ -174,9 +174,7 @@ export function PropertiesUi({
 	}
 
 	const filteredUserProperties = userProperties.filter(prop =>
-		[prop.name, prop.displayName].some(value =>
-			value?.toLowerCase().includes(searchTerm?.toLowerCase()),
-		),
+		prop.name?.toLowerCase().includes(searchTerm?.toLowerCase()),
 	)
 
 	return (
@@ -217,7 +215,7 @@ export function PropertiesUi({
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>{t.v1beta.properties.displayName}</TableHead>
+								<TableHead>{t.v1beta.properties.name}</TableHead>
 								<TableHead>{t.v1beta.properties.type}</TableHead>
 								<TableHead>{t.v1beta.properties.optionsOrRelated}</TableHead>
 								<TableHead>{t.v1beta.properties.actions}</TableHead>
@@ -228,10 +226,7 @@ export function PropertiesUi({
 								<TableRow key={property.id}>
 									<TableCell>
 										<div className='flex items-center gap-2'>
-											<div>{property.displayName}</div>
-											<code className='text-xs text-muted-foreground'>
-												{property.name}
-											</code>
+											{property.name}
 										</div>
 									</TableCell>
 									<TableCell>{property.typ}</TableCell>
@@ -303,7 +298,7 @@ export function PropertiesUi({
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead>{t.v1beta.properties.displayName}</TableHead>
+									<TableHead>{t.v1beta.properties.name}</TableHead>
 									<TableHead>{t.v1beta.properties.type}</TableHead>
 									<TableHead>{t.v1beta.properties.status}</TableHead>
 									<TableHead>{t.v1beta.properties.actions}</TableHead>
@@ -317,7 +312,7 @@ export function PropertiesUi({
 												{isExtGithubProperty(property) && (
 													<Github className='h-4 w-4 text-muted-foreground' />
 												)}
-												{property.displayName}
+												{property.name}
 												<Badge variant='outline' className='text-xs'>
 													{isExtGithubProperty(property)
 														? t.v1beta.properties.githubSync

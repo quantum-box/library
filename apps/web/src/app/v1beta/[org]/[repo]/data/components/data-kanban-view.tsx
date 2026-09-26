@@ -541,7 +541,7 @@ export function DataKanbanView({
 					<SelectContent>
 						{groupableProperties.map(prop => (
 							<SelectItem key={prop.id} value={prop.id}>
-								{prop.displayName ?? prop.name}
+								{prop.name}
 							</SelectItem>
 						))}
 					</SelectContent>

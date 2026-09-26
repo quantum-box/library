@@ -120,9 +120,6 @@ function PropertyEditorDialog({
   const { t } = useI18n()
   const property = state.property
   const [name, setName] = useState(property?.name ?? '')
-  const [displayName, setDisplayName] = useState(
-    property?.displayName ?? property?.name ?? '',
-  )
   const [type, setType] = useState<RepositoryPropertyType>(
     property && isEditablePropertyType(property.typ) ? property.typ : 'STRING',
   )
@@ -191,14 +188,8 @@ function PropertyEditorDialog({
     event.preventDefault()
     setValidationError(null)
     const trimmedName = name.trim()
-    const unchangedKey = property != null && name === property.name
-    if (!unchangedKey && !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(trimmedName)) {
-      setValidationError(t('repoSettings.propertyKeyInvalid'))
-      return
-    }
-    const trimmedDisplayName = displayName.trim()
-    if (!trimmedDisplayName || [...trimmedDisplayName].length > 255) {
-      setValidationError(t('repoSettings.propertyDisplayNameInvalid'))
+    if (!trimmedName) {
+      setValidationError(t('repoSettings.propertyNameRequired'))
       return
     }
     try {
@@ -230,8 +221,7 @@ function PropertyEditorDialog({
         }
       }
       onSave({
-        name: unchangedKey ? property.name : trimmedName,
-        displayName: trimmedDisplayName,
+        name: trimmedName,
         type,
         ...(type === 'SELECT' || type === 'MULTI_SELECT'
           ? { options: parsedOptions ?? [] }
@@ -247,9 +237,7 @@ function PropertyEditorDialog({
   const displayedError = validationError ?? error
   const title = state.mode === 'create'
     ? t('repoSettings.addProperty')
-    : t('repoSettings.editProperty', {
-        name: property?.displayName ?? property?.name ?? t('repoSettings.property'),
-      })
+    : t('repoSettings.editProperty', { name: property?.name ?? t('repoSettings.property') })
 
   return (
     <Dialog open onOpenChange={(open) => {
@@ -264,36 +252,20 @@ function PropertyEditorDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="repository-property-name">{t('repoSettings.propertyKey')}</Label>
+            <Label htmlFor="repository-property-name">{t('apiKeys.nameLabel')}</Label>
             <Input
               id="repository-property-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder={t('repoSettings.propertyKeyPlaceholder')}
+              placeholder={t('table.column.status')}
               disabled={busy}
               autoFocus
             />
-            <p className="text-2xs text-muted-foreground">
-              {t('repoSettings.propertyKeyHint')}
-            </p>
             <p className="text-2xs text-muted-foreground">
               {t('repoSettings.reservedPrefixBefore')}{' '}
               <span className="font-mono">ext_</span>{' '}
               {t('repoSettings.reservedPrefixAfter')}
             </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="repository-property-display-name">
-              {t('repoSettings.propertyDisplayName')}
-            </Label>
-            <Input
-              id="repository-property-display-name"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder={t('repoSettings.propertyDisplayName')}
-              disabled={busy}
-            />
           </div>
 
           <div className="space-y-1.5">
@@ -439,9 +411,7 @@ function DeletePropertyDialog({
         <DialogHeader>
           <DialogTitle>{t('repoSettings.deletePropertyTitle')}</DialogTitle>
           <DialogDescription>
-            <span className="font-medium text-foreground">
-              {property.displayName ?? property.name}
-            </span>{' '}
+            <span className="font-medium text-foreground">{property.name}</span>{' '}
             {t('repoSettings.deletePropertyDescription')}
           </DialogDescription>
         </DialogHeader>
@@ -502,7 +472,6 @@ export function RepositoryPropertiesSection({
     if (!query) return properties
     return properties.filter((property) => [
       property.name,
-      property.displayName ?? property.name,
       property.typ,
       propertyTypeLabel(property.typ),
       property.id,
@@ -642,9 +611,7 @@ export function RepositoryPropertiesSection({
                 </span>
                 <div className="min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {property.displayName ?? property.name}
-                    </span>
+                    <span className="truncate text-sm font-medium">{property.name}</span>
                     <Badge variant="outline" className="font-mono text-[10px]">
                       {propertyTypeLabel(property.typ)}
                     </Badge>
@@ -659,8 +626,6 @@ export function RepositoryPropertiesSection({
                     ) : null}
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-muted-foreground">
-                    <span className="truncate font-mono">{property.name}</span>
-                    <span aria-hidden="true">·</span>
                     <span className="truncate">{propertyDetail(property)}</span>
                     <span aria-hidden="true">·</span>
                     <span className="truncate font-mono text-subtle-foreground">{property.id}</span>
@@ -671,7 +636,7 @@ export function RepositoryPropertiesSection({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={t('repoSettings.editNamed', { name: property.displayName ?? property.name })}
+                    aria-label={t('repoSettings.editNamed', { name: property.name })}
                     disabled={readOnlyProperty || readOnly}
                     title={system
                       ? t('repoSettings.systemManaged')
@@ -688,7 +653,7 @@ export function RepositoryPropertiesSection({
                     variant="ghost"
                     size="icon"
                     className="hover:text-destructive"
-                    aria-label={t('repoSettings.deleteNamed', { name: property.displayName ?? property.name })}
+                    aria-label={t('repoSettings.deleteNamed', { name: property.name })}
                     disabled={protectedProperty || readOnly}
                     title={protectedProperty
                       ? t('repoSettings.protectedProperty')

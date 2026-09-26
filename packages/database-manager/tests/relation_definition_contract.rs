@@ -57,8 +57,7 @@ async fn relation_property_creation_persists_a_queryable_definition(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            display_name: Some("related records"),
-            name: "related_records",
+            name: "related records",
             property_type: PropertyType::Relation(TypeRelation::new(
                 target_database.id().clone(),
             )),
@@ -154,8 +153,7 @@ async fn relation_property_creation_persists_a_queryable_definition(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
-            display_name: Some("self relation"),
-            name: "self_relation",
+            name: "self relation",
             property_type: PropertyType::Relation(TypeRelation::new(
                 source_database.id().clone(),
             )),

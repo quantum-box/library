@@ -115,7 +115,6 @@ pub async fn add_property(
         multi_tenancy: &library_org,
         org_username: org,
         repo_username: repo,
-        property_display_name: payload.display_name,
         property_name: payload.name,
         property_type,
     };
@@ -134,7 +133,6 @@ mod tests {
         let property_type =
             property_type_from_request(&AddPropertyRequest {
                 name: "id".to_string(),
-                display_name: None,
                 property_type: "id".to_string(),
                 auto_generate: Some(true),
             })
@@ -152,7 +150,6 @@ mod tests {
     fn rest_id_property_requires_auto_generate() {
         let error = property_type_from_request(&AddPropertyRequest {
             name: "id".to_string(),
-            display_name: None,
             property_type: "id".to_string(),
             auto_generate: None,
         })
@@ -170,7 +167,6 @@ mod tests {
         let property_type =
             property_type_from_request(&AddPropertyRequest {
                 name: "published".to_string(),
-                display_name: None,
                 property_type: "date".to_string(),
                 auto_generate: None,
             })
@@ -183,7 +179,6 @@ mod tests {
     fn rest_non_id_property_rejects_auto_generate() {
         let error = property_type_from_request(&AddPropertyRequest {
             name: "title".to_string(),
-            display_name: None,
             property_type: "string".to_string(),
             auto_generate: Some(true),
         })
@@ -295,19 +290,13 @@ pub async fn update_property(
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Json(payload): Json<UpdatePropertyRequest>,
 ) -> errors::Result<Json<PropertyResponse>> {
-    if payload.name.is_none() && payload.display_name.is_none() {
-        return Err(errors::Error::invalid(
-            "provide a Property key or display name to update",
-        ));
-    }
     let input = crate::usecase::UpdatePropertyInputData {
         executor: &executor,
         multi_tenancy: &library_org,
         org_username: org,
         repo_username: repo,
         property_id,
-        property_name: payload.name,
-        property_display_name: payload.display_name,
+        property_name: Some(payload.name),
         property_type: None,
         meta_json: None,
     };
@@ -320,7 +309,6 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
     PropertyResponse {
         id: property.id().to_string(),
         name: property.name().to_string(),
-        display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
         auto_generate: match property.property_type() {
             PropertyType::Id(type_id) => Some(type_id.auto_generate),

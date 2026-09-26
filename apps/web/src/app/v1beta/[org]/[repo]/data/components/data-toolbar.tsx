@@ -119,7 +119,7 @@ export function DataToolbar({
 		{ id: 'name', name: 'Name' },
 		{ id: 'createdAt', name: 'Created' },
 		{ id: 'updatedAt', name: 'Updated' },
-		...properties.map(p => ({ id: p.id, name: p.displayName ?? p.name })),
+		...properties.map(p => ({ id: p.id, name: p.name })),
 	]
 
 	const sqlColumns = [

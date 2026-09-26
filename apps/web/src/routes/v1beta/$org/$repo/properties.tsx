@@ -32,7 +32,6 @@ type PropertyMeta = {
 type Property = {
 	id: string
 	name: string
-	displayName: string
 	typ: PropertyType
 	meta?: PropertyMeta | null
 }
@@ -82,7 +81,7 @@ function PropertiesPage() {
     const normalizedQuery = query.trim().toLowerCase()
     if (!normalizedQuery) return properties
     return properties.filter((property) =>
-      [property.name, property.displayName, property.typ, property.id]
+      [property.name, property.typ, property.id]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
     )
@@ -137,10 +136,7 @@ function PropertiesPage() {
               <TableBody>
                 {filteredProperties.map((property) => (
                   <TableRow key={property.id}>
-                    <TableCell className='font-medium'>
-                      <div>{property.displayName}</div>
-                      <code className='text-xs text-muted-foreground'>{property.name}</code>
-                    </TableCell>
+                    <TableCell className='font-medium'>{property.name}</TableCell>
                     <TableCell>
                       <Badge variant='outline'>{formatPropertyType(property.typ)}</Badge>
                     </TableCell>

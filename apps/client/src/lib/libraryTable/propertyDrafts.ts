@@ -22,18 +22,14 @@ export function canRenameProperty(property: LibraryProperty): boolean {
   return true
 }
 
-/** The draft that renames a Property's display label and changes nothing else. */
+/** The draft that renames a Property and changes nothing else. */
 export function propertyRenameDraft(
   property: LibraryProperty,
-  displayName: string,
+  name: string,
 ): RepositoryPropertyDraft | null {
   if (!canRenameProperty(property)) return null
   const type = libraryPropertyTypeWireValue(property.typ) as RepositoryPropertyType
-  const draft: RepositoryPropertyDraft = {
-    name: property.name,
-    displayName: displayName.trim(),
-    type,
-  }
+  const draft: RepositoryPropertyDraft = { name: name.trim(), type }
   if (type === 'SELECT' || type === 'MULTI_SELECT') {
     // Every option travels back: an omitted one is a deleted one, and the API
     // refuses to delete an option rows still point at.
@@ -65,13 +61,8 @@ export function tablePropertyTypeChoices<T extends { value: RepositoryPropertyTy
 export function newPropertyDraft(
   name: string,
   type: RepositoryPropertyType,
-  displayName = name,
 ): RepositoryPropertyDraft {
-  const draft: RepositoryPropertyDraft = {
-    name: name.trim(),
-    displayName: displayName.trim(),
-    type,
-  }
+  const draft: RepositoryPropertyDraft = { name: name.trim(), type }
   if (type === 'SELECT' || type === 'MULTI_SELECT') draft.options = []
   if (type === 'ID') draft.autoGenerateId = true
   return draft

@@ -29,8 +29,6 @@ pub struct AddPropertyInputData<'a> {
 
     pub tenant_id: &'a TenantId,
     pub database_id: &'a DatabaseId,
-    /// User-facing label; omitted values default to the stable key.
-    pub display_name: Option<&'a str>,
     pub name: &'a str,
 
     pub property_type: domain::PropertyType,
@@ -54,7 +52,6 @@ pub struct UpdatePropertyInputData<'a> {
     pub property_id: &'a PropertyId,
 
     pub name: Option<&'a str>,
-    pub display_name: Option<&'a str>,
     pub property_type: Option<&'a PropertyType>,
     /// JSON metadata for property configuration (e.g., ext_github repos)
     /// Option<Option<String>>: None = don't update, Some(None) = clear, Some(Some(v)) = set

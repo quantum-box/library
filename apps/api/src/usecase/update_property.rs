@@ -74,7 +74,6 @@ impl UpdatePropertyInputPort for UpdateProperty {
                 database_id: &repo.databases().first().unwrap().clone(),
                 property_id: &input.property_id.parse()?,
                 name: input.property_name.as_deref(),
-                display_name: input.property_display_name.as_deref(),
                 property_type: input.property_type,
                 meta_json: input.meta_json,
             })

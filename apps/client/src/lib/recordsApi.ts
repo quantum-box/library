@@ -90,7 +90,6 @@ export interface LibrarySelectOption {
 export interface LibraryProperty {
   id: string
   name: string
-  displayName?: string
   typ: LibraryPropertyType
   /**
    * The parts of a Property definition a listing carries.
@@ -386,7 +385,6 @@ interface LibraryRestDataListResponse {
 interface LibraryRestPropertyResponse {
   id: string
   name: string
-  display_name?: string
   property_type: string
   auto_generate?: boolean
   database_id?: string
@@ -524,7 +522,6 @@ const libraryRepoDataQuery = `
       properties {
         id
         name
-        displayName
         typ
         meta {
           ... on IdType { autoGenerate }
@@ -546,7 +543,6 @@ const libraryPropertiesQuery = `
     properties(orgUsername: $org, repoUsername: $repo) {
       id
       name
-      displayName
       typ
       meta {
         ... on SelectType {
@@ -680,7 +676,6 @@ const libraryDataDetailQuery = `
     properties(orgUsername: $org, repoUsername: $repo) {
       id
       name
-      displayName
       typ
       meta {
         ... on SelectType {
@@ -1826,7 +1821,6 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
   return {
     id: property.id,
     name: property.name,
-    displayName: property.display_name ?? property.name,
     typ: normalizeLibraryPropertyType(property.property_type),
     // The GraphQL path already carries type metadata. Preserve its REST
     // equivalents too: Select labels, Id generation, and Relation editing

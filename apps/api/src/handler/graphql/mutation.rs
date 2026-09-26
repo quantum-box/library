@@ -805,7 +805,6 @@ impl LibraryMutation {
                 multi_tenancy,
                 org_username: input.org_username.clone(),
                 repo_username: input.repo_username.clone(),
-                property_display_name: input.display_name.clone(),
                 property_name: input.property_name.clone(),
                 property_type: input.clone().try_into()?,
             })
@@ -885,7 +884,6 @@ impl LibraryMutation {
                 org_username: input.org_username.clone(),
                 repo_username: input.repo_username.clone(),
                 property_name: Some(input.property_name.clone()),
-                property_display_name: input.display_name.clone(),
                 property_type: Some(&property_type),
                 meta_json,
             })
@@ -1615,7 +1613,6 @@ impl LibraryMutation {
                 multi_tenancy,
                 org_username: input.org_username.clone(),
                 repo_username: input.repo_username.clone(),
-                property_display_name: None,
                 property_name: "ext_github".to_string(),
                 property_type:
                     database_manager::domain::PropertyType::String,
@@ -1674,7 +1671,6 @@ impl LibraryMutation {
                 multi_tenancy,
                 org_username: input.org_username.clone(),
                 repo_username: input.repo_username.clone(),
-                property_display_name: None,
                 property_name: "ext_linear".to_string(),
                 property_type:
                     database_manager::domain::PropertyType::String,
@@ -2746,12 +2742,7 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
 pub struct PropertyInput {
     pub org_username: String,
     pub repo_username: String,
-    /// Stable key used by API clients to identify this Property. It must start
-    /// with an ASCII letter and contain only ASCII letters, digits,
-    /// underscores, or hyphens, up to 64 characters.
     pub property_name: String,
-    /// Human-readable label shown in the user interface; defaults to the key.
-    pub display_name: Option<String>,
     pub property_type: PropertyType,
     pub meta: Option<PropertyMetaInput>,
 }
@@ -2828,7 +2819,6 @@ mod select_option_input_tests {
             org_username: "quantum-box".to_string(),
             repo_username: "library".to_string(),
             property_name: "Status".to_string(),
-            display_name: None,
             property_type: PropertyType::Select,
             meta: Some(PropertyMetaInput::Select(options)),
         }

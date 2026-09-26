@@ -373,17 +373,12 @@ async fn test_properties_api_all() -> anyhow::Result<()> {
 
     // TODO: add English comment
     for (property_type, property_name_suffix) in property_types {
-        let test_property_display_name =
+        let test_property_name =
             format!("Test {} {}", property_name_suffix, timestamp);
-        let test_property_key = format!(
-            "test_{}_{}",
-            property_name_suffix.to_ascii_lowercase().replace(' ', "_"),
-            timestamp
-        );
 
         println!(
             "Creating property: {} (type: {})",
-            test_property_display_name, property_type
+            test_property_name, property_type
         );
 
         let create_property_url = format!(
@@ -397,15 +392,13 @@ async fn test_properties_api_all() -> anyhow::Result<()> {
         {
             // TODO: add English comment
             AddPropertyRequest {
-                name: test_property_key.clone(),
-                display_name: Some(test_property_display_name.clone()),
+                name: test_property_name.clone(),
                 property_type: format!("relation:{}", target_database_id),
                 auto_generate: None,
             }
         } else {
             AddPropertyRequest {
-                name: test_property_key.clone(),
-                display_name: Some(test_property_display_name.clone()),
+                name: test_property_name.clone(),
                 property_type: property_type.to_string(),
                 auto_generate: None,
             }

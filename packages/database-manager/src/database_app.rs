@@ -120,7 +120,6 @@ pub struct Property {
     pub id: String,
     pub database_id: String,
     pub name: String,
-    pub display_name: String,
     pub property_type: PropertyType,
 }
 

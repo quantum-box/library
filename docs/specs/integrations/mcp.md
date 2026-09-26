@@ -276,10 +276,10 @@ Data を作成する。認証必須。
 
 ### Property tools
 
-- `list_properties`: repo の properties を取得する。`name` はAPI用のkey、`display_name` は表示用ラベル。
+- `list_properties`: repo の properties を取得する。
 - `get_property`: property を 1 件取得する。必須 `org`, `repo`, `property_id`。type と meta を含む。
-- `create_property`: property を作成する。必須 `name`（ASCII英字で始まり、ASCII英字・数字・`_`・`-`のみ、64文字以内）, `property_type`。任意 `display_name`（未指定時はkeyと同じ）, `meta`。
-- `update_property`: property を更新する。`name`（key）, `display_name`, `property_type`, `meta` を指定可能。
+- `create_property`: property を作成する。`name`, `property_type`, `meta` を指定可能。
+- `update_property`: property を更新する。`name`, `property_type`, `meta` を指定可能。
 - `delete_property`: property を削除する。
 
 `property_type` は `string`, `integer`, `html`, `markdown`, `relation`, `select`, `multi_select`, `id`, `location`, `date`, `image`, `rich_text`, `boolean`。`html` は `rich_text` に置き換えられた旧型。
