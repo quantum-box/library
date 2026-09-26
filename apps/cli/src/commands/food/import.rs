@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::catalog::{
-    build_catalog, prop, BuildOptions, DeferredCell, RecordKind,
+    build_catalog, data_id, prop, BuildOptions, DeferredCell, RecordKind,
     TargetCatalog, TargetRecord,
 };
 use super::errata::{
@@ -726,11 +726,21 @@ pub fn build_report(
                 Some((code, ingredient.business_key.as_str()))
             })
             .collect();
-        let stale_value_exists = |business_key: &str| {
-            value_repo.plan.delete_candidates.iter().any(|candidate| {
-                candidate.business_key.as_deref() == Some(business_key)
-            })
-        };
+        let stale_value_exists =
+            |business_key: &str, food_code: &str, nutrient_key: &str| {
+                let key = format!("{food_code}/{nutrient_key}");
+                let expected_id = data_id(
+                    &value_repo.repo,
+                    source_id,
+                    RecordKind::Value,
+                    &key,
+                );
+                value_repo.plan.delete_candidates.iter().any(|candidate| {
+                    candidate.id.as_str() == expected_id.as_str()
+                        || candidate.business_key.as_deref()
+                            == Some(business_key)
+                })
+            };
         for deferred in &p.catalog.deferred_to_chapter3 {
             let Some(ingredient_key) =
                 ingredient_keys.get(deferred.food_code.as_str()).copied()
@@ -739,7 +749,11 @@ pub fn build_report(
             };
             let business_key =
                 format!("{ingredient_key}/{}", deferred.nutrient_key);
-            if stale_value_exists(&business_key) {
+            if stale_value_exists(
+                &business_key,
+                &deferred.food_code,
+                &deferred.nutrient_key,
+            ) {
                 blockers.push(format!(
                     "stale value {business_key} exists for a chapter-3 deferred cell; remove it from the value draft repo, then rerun the import"
                 ));
@@ -763,7 +777,11 @@ pub fn build_report(
                 continue;
             };
             let business_key = format!("{ingredient_key}/{nutrient_key}");
-            if stale_value_exists(&business_key) {
+            if stale_value_exists(
+                &business_key,
+                food_code,
+                nutrient_key,
+            ) {
                 blockers.push(format!(
                     "stale value {business_key} exists for a quarantined cell; remove it from the value draft repo, then rerun the import"
                 ));
@@ -1568,6 +1586,43 @@ mod tests {
             "{:?}",
             report.needs_accept_quarantine
         );
+
+        // The value ID is stable when the ingredient key prefix changes.
+        let mut rekeyed = prepared();
+        let iodine = rekeyed
+            .catalog
+            .ingredients
+            .iter_mut()
+            .find(|ingredient| ingredient.business_key == "mext-10330")
+            .unwrap();
+        iodine.business_key = "new-10330".into();
+        let mut rekeyed_repos = plan(&rekeyed, &s).await;
+        let value_repo = rekeyed_repos
+            .iter_mut()
+            .find(|repo| repo.kind == RecordKind::Value)
+            .unwrap();
+        value_repo.plan.delete_candidates.push(
+            super::super::plan::DeleteCandidate {
+                id: data_id(
+                    VAL,
+                    "mext-sfct8-2023",
+                    RecordKind::Value,
+                    "10330/ID",
+                ),
+                name: "stale iodine value".into(),
+                business_key: Some("mext-10330/ID".into()),
+            },
+        );
+        let report = build_report(
+            &rekeyed,
+            "表全体",
+            "mext-sfct8-2023",
+            &rekeyed_repos,
+            "apply",
+        );
+        assert!(report.blockers.iter().any(|blocker| {
+            blocker.contains("stale value new-10330/ID")
+        }));
 
         // A real anomaly still needs the flag.
         let anomalous = prepared();
