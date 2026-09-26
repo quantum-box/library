@@ -167,8 +167,12 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
         Some((bytes, file)) => {
             let errata_book = Workbook::read_xlsx(bytes)
                 .context("reading the errata workbook")?;
-            let parsed = parse_errata(&errata_book, &table.layout)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let parsed = parse_errata(
+                &errata_book,
+                &table.layout,
+                input.validate_complete_source,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
             if parsed.date.is_none() {
                 return Err(anyhow::anyhow!(
                     "errata workbook is missing a recognized correction date"
@@ -664,6 +668,42 @@ pub fn build_report(
     blockers.extend(p.catalog.category_errors.iter().cloned());
     for r in repos {
         blockers.extend(r.report.errors.iter().cloned());
+    }
+    if let Some(value_repo) =
+        repos.iter().find(|repo| repo.kind == RecordKind::Value)
+    {
+        let ingredient_keys: BTreeMap<&str, &str> = p
+            .catalog
+            .ingredients
+            .iter()
+            .filter_map(|ingredient| {
+                let code = ingredient
+                    .fields
+                    .iter()
+                    .find(|field| field.property == prop::SOURCE_FOOD_CODE)?
+                    .value
+                    .as_deref()?;
+                Some((code, ingredient.business_key.as_str()))
+            })
+            .collect();
+        for deferred in &p.catalog.deferred_to_chapter3 {
+            let Some(ingredient_key) = ingredient_keys
+                .get(deferred.food_code.as_str())
+                .copied()
+            else {
+                continue;
+            };
+            let business_key =
+                format!("{ingredient_key}/{}", deferred.nutrient_key);
+            if value_repo.plan.delete_candidates.iter().any(|candidate| {
+                candidate.business_key.as_deref()
+                    == Some(business_key.as_str())
+            }) {
+                blockers.push(format!(
+                    "stale value {business_key} exists for a chapter-3 deferred cell; remove it from the value draft repo, then rerun the import"
+                ));
+            }
+        }
     }
     if p.catalog.values.is_empty() {
         blockers.push("the import produced no values".into());

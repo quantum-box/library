@@ -23,6 +23,8 @@ use super::table::{label_index, parse_layout, SourceFood, TableLayout};
 pub const ITEMIZED_SHEET: &str = "本表第2章";
 /// Sheet with 誤/正 row pairs for foods corrected in many columns.
 pub const ROW_PAIR_SHEET: &str = "本表";
+const OFFICIAL_ERRATA_DATE: &str = "2026-03-27";
+const OFFICIAL_ERRATA_ENTRY_COUNT: usize = 111;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "key", rename_all = "snake_case")]
@@ -119,10 +121,12 @@ pub struct ErrataOutcome {
 pub fn parse_errata(
     book: &Workbook,
     table: &TableLayout,
+    require_complete_layout: bool,
 ) -> Result<ErrataBook, String> {
     let labels = label_index(table);
     let mut out = ErrataBook::default();
     let mut found_itemized_sheet = false;
+    let mut itemized_entry_count = 0;
     for sheet in &book.sheets {
         if out.date.is_none() {
             out.date = find_date(sheet);
@@ -130,10 +134,16 @@ pub fn parse_errata(
         match sheet.name.as_str() {
             ITEMIZED_SHEET => {
                 found_itemized_sheet = true;
-                out.entries.extend(parse_itemized(sheet, &labels)?)
+                let entries = parse_itemized(sheet, &labels)?;
+                itemized_entry_count += entries.len();
+                out.entries.extend(entries);
             }
             ROW_PAIR_SHEET => {
-                out.entries.extend(parse_row_pairs(sheet, table)?)
+                out.entries.extend(parse_row_pairs(
+                    sheet,
+                    table,
+                    require_complete_layout,
+                )?)
             }
             other => {
                 let reason = if other.contains("第1章") {
@@ -153,6 +163,21 @@ pub fn parse_errata(
         return Err(format!(
             "errata workbook is missing required sheet {ITEMIZED_SHEET:?}"
         ));
+    }
+    if require_complete_layout
+        && out.date.as_deref() == Some(OFFICIAL_ERRATA_DATE)
+    {
+        if itemized_entry_count == 0 {
+            return Err(format!(
+                "errata sheet {ITEMIZED_SHEET:?} has no correction rows"
+            ));
+        }
+        if out.entries.len() != OFFICIAL_ERRATA_ENTRY_COUNT {
+            return Err(format!(
+                "expected {OFFICIAL_ERRATA_ENTRY_COUNT} entries in the {OFFICIAL_ERRATA_DATE} errata, found {}",
+                out.entries.len()
+            ));
+        }
     }
     Ok(out)
 }
@@ -291,6 +316,7 @@ fn lookup(key: &str, labels: &BTreeMap<String, String>) -> Option<String> {
 fn parse_row_pairs(
     sheet: &Sheet,
     main_layout: &TableLayout,
+    require_complete_layout: bool,
 ) -> Result<Vec<ErrataEntry>, String> {
     let layout = parse_layout(sheet)?;
     if !layout.errors.is_empty() {
@@ -304,13 +330,21 @@ fn parse_row_pairs(
         .iter()
         .map(|n| (n.key.as_str(), n.unit.as_str()))
         .collect::<BTreeMap<_, _>>();
-    if let Some(component) = layout.nutrients.iter().find(|component| {
-        main_components.get(component.key.as_str()).copied()
-            != Some(component.unit.as_str())
-    }) {
+    let errata_components = layout
+        .nutrients
+        .iter()
+        .map(|n| (n.key.as_str(), n.unit.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let components_match = if require_complete_layout {
+        errata_components == main_components
+    } else {
+        errata_components.iter().all(|(key, unit)| {
+            main_components.get(key).copied() == Some(*unit)
+        })
+    };
+    if !components_match {
         return Err(format!(
-            "errata {ROW_PAIR_SHEET} component {:?} with unit {:?} does not match the main table",
-            component.key, component.unit
+            "errata {ROW_PAIR_SHEET} component identifiers or units do not match the main table"
         ));
     }
     let marker_col = |r: usize| {
@@ -838,7 +872,7 @@ mod tests {
     fn setup() -> (Vec<SourceFood>, ErrataBook) {
         let table = parse_table(&fixtures::main_sheet()).unwrap();
         let book =
-            parse_errata(&fixtures::errata_book(), &table.layout).unwrap();
+            parse_errata(&fixtures::errata_book(), &table.layout, false).unwrap();
         (table.foods, book)
     }
 
