@@ -64,8 +64,12 @@ pub enum Error {
 }
 
 impl Error {
+    // Only read by the axum response mapping; other builds (e.g. the CLI
+    // through `ingredient_notation`) do not enable it.
+    #[cfg_attr(not(feature = "axum-extension"), allow(dead_code))]
     const PUBLIC_INTERNAL_SERVER_ERROR: &'static str =
         "Internal server error";
+    #[cfg_attr(not(feature = "axum-extension"), allow(dead_code))]
     const PUBLIC_SERVICE_UNAVAILABLE: &'static str = "Service unavailable";
 
     fn capture_backtrace() -> Backtrace {
@@ -167,6 +171,7 @@ impl Error {
     /// hostnames, or other internal topology. Keep those details available on
     /// the error for server-side logging, but never include them in a public
     /// response.
+    #[cfg_attr(not(feature = "axum-extension"), allow(dead_code))]
     pub(crate) fn public_message(&self) -> &str {
         match self {
             Error::InternalServerError { .. } => {
