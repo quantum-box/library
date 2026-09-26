@@ -793,9 +793,9 @@ pub(super) mod tests {
             .map(|i| i.field(prop::SOURCE_FOOD_CODE).unwrap())
             .collect();
         assert_eq!(codes, vec!["01001", "06153", "06154", "10330"]);
-        // 4 foods x 10 nutrients, minus: 10330 NA `*` (chapter 3),
+        // 4 foods x 11 nutrients, minus: 10330 NA `*` (chapter 3),
         // 10330 VITB12 empty, 10330 FIB- empty.
-        assert_eq!(c.values.len(), 43);
+        assert_eq!(c.values.len(), 41);
         let reasons: Vec<_> = c
             .quarantine
             .iter()
