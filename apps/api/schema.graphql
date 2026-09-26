@@ -1922,7 +1922,8 @@ type Query {
 	organization(username: String!): Organization!
 	repo(orgUsername: String!, repoUsername: String!): Repo!
 	"""
-	Whether the caller may view the repository. Access checks fail closed.
+	Check repository visibility without making one authorization failure
+	null out sibling results in a batched GraphQL query.
 	"""
 	canViewRepo(orgUsername: String!, repoUsername: String!): Boolean!
 	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!

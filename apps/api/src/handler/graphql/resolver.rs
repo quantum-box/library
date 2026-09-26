@@ -297,18 +297,14 @@ impl LibraryQuery {
 
     /// Check repository visibility without making one authorization failure
     /// null out sibling results in a batched GraphQL query.
-    #[tracing::instrument(
-        name = "library_can_view_repo",
-        skip(self, ctx)
-    )]
+    #[tracing::instrument(name = "library_can_view_repo", skip(self, ctx))]
     async fn can_view_repo(
         &self,
         ctx: &Context<'_>,
         org_username: String,
         repo_username: String,
     ) -> bool {
-        let executor =
-            match ctx.data::<tachyon_sdk::auth::Executor>() {
+        let executor = match ctx.data::<tachyon_sdk::auth::Executor>() {
                 Ok(executor) => executor,
                 Err(_) => return false,
             };
