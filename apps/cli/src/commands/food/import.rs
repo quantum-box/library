@@ -1398,12 +1398,12 @@ mod tests {
         assert_eq!(report.rows_read, 8);
         assert_eq!(
             (report.foods, report.nutrients, report.values),
-            (4, 10, 37)
+            (4, 11, 41)
         );
         assert_eq!(report.duplicate_food_codes, vec!["99999"]);
-        assert_eq!(report.repos[0].create, 10);
+        assert_eq!(report.repos[0].create, 11);
         assert_eq!(report.repos[1].create, 4);
-        assert_eq!(report.repos[2].create, 37);
+        assert_eq!(report.repos[2].create, 41);
         assert_eq!(report.deferred_to_chapter3.len(), 1);
         assert_eq!(report.cooking_state_review.blank_foods, 1);
         assert_eq!(
@@ -1465,8 +1465,8 @@ mod tests {
         let p = prepared();
         let s = store();
         let first = apply(&p, &s).await;
-        assert_eq!((first.succeeded, first.failed), (51, 0));
-        assert_eq!(s.count(VAL), 37);
+        assert_eq!((first.succeeded, first.failed), (56, 0));
+        assert_eq!(s.count(VAL), 41);
 
         let onion = p
             .catalog
@@ -1487,7 +1487,7 @@ mod tests {
         let second = apply(&p, &s).await;
         assert_eq!(second.attempted, 0, "nothing changed, nothing sent");
         assert_eq!(*s.upserts.borrow(), upserts_before);
-        assert_eq!(s.count(VAL), 37, "no duplicates");
+        assert_eq!(s.count(VAL), 41, "no duplicates");
 
         let stored = s.record(ING, &onion.data_id).unwrap();
         assert_eq!(stored.fields[prop::STANDARD_NAME], "たまねぎ");
@@ -1527,9 +1527,9 @@ mod tests {
         assert_eq!(resumed.failed, 0);
         assert_eq!(resumed.not_attempted, 0);
         // Nutrients and the three ingredients that landed are not re-sent.
-        assert_eq!(resumed.succeeded, 1 + 37);
+        assert_eq!(resumed.succeeded, 1 + 41);
         assert_eq!(s.count(ING), 4);
-        assert_eq!(s.count(VAL), 37);
+        assert_eq!(s.count(VAL), 41);
     }
 
     #[tokio::test]
