@@ -198,8 +198,7 @@ async fn acquire_refresh_lock() -> Result<File> {
             format!("failed to open {}", lock_path.display())
         })?;
     tokio::task::spawn_blocking(move || {
-        lock.lock()
-            .with_context(|| {
+        lock.lock().with_context(|| {
             format!("failed to lock {}", lock_path.display())
         })?;
         Ok(lock)
