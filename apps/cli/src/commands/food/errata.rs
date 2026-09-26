@@ -11,7 +11,7 @@
 //! so running the same errata twice, or on a table that already has them,
 //! never changes a value twice.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ingredient_notation::NutrientValueStatus;
 use serde::Serialize;
@@ -126,6 +126,7 @@ pub fn parse_errata(
     let labels = label_index(table);
     let mut out = ErrataBook::default();
     let mut found_itemized_sheet = false;
+    let mut found_row_pair_sheet = false;
     let mut itemized_entry_count = 0;
     for sheet in &book.sheets {
         if out.date.is_none() {
@@ -138,11 +139,14 @@ pub fn parse_errata(
                 itemized_entry_count += entries.len();
                 out.entries.extend(entries);
             }
-            ROW_PAIR_SHEET => out.entries.extend(parse_row_pairs(
-                sheet,
-                table,
-                require_complete_layout,
-            )?),
+            ROW_PAIR_SHEET => {
+                found_row_pair_sheet = true;
+                out.entries.extend(parse_row_pairs(
+                    sheet,
+                    table,
+                    require_complete_layout,
+                )?);
+            }
             other => {
                 let reason = if other.contains("第1章") {
                     "chapter 1 text (cooking conditions etc.), not table data"
@@ -162,6 +166,11 @@ pub fn parse_errata(
             "errata workbook is missing required sheet {ITEMIZED_SHEET:?}"
         ));
     }
+    if require_complete_layout && !found_row_pair_sheet {
+        return Err(format!(
+            "errata workbook is missing required sheet {ROW_PAIR_SHEET:?}"
+        ));
+    }
     if require_complete_layout {
         if out.date.as_deref() != Some(OFFICIAL_ERRATA_DATE) {
             return Err(format!(
@@ -173,6 +182,23 @@ pub fn parse_errata(
             return Err(format!(
                 "errata sheet {ITEMIZED_SHEET:?} has no correction rows"
             ));
+        }
+        let mut identities = BTreeSet::new();
+        for entry in &out.entries {
+            let identity = (
+                entry.sheet.clone(),
+                entry.food_code.clone(),
+                entry.item.clone(),
+                entry.field.as_ref().map(|field| field.label()),
+                entry.wrong.clone(),
+                entry.right.clone(),
+            );
+            if !identities.insert(identity) {
+                return Err(format!(
+                    "duplicate errata correction identity in {:?} for food code {:?}",
+                    entry.sheet, entry.food_code
+                ));
+            }
         }
         if out.entries.len() != OFFICIAL_ERRATA_ENTRY_COUNT {
             return Err(format!(

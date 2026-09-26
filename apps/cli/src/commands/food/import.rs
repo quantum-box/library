@@ -53,6 +53,10 @@ const SOURCE_PUBLISHER: &str =
     "文部科学省 科学技術・学術審議会 資源調査分科会";
 const BASIS: &str = "可食部100g当たり";
 const EXPECTED_FOOD_COUNT: usize = 2_538;
+const EXPECTED_TABLE_SHA256: &str =
+    "0d5a77077dd6cd91cbc2e6e317b8b218a38728c409eed452f1c10635a0d3099c";
+const EXPECTED_ERRATA_SHA256: &str =
+    "fb61037c7f66af0db1fb0729977913a629bc17097bc3ff7bf75217f9110acabb";
 
 // ==================== inputs ====================
 
@@ -130,6 +134,12 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
     let mut table =
         parse_table(sheet).map_err(|e| anyhow::anyhow!("{e}"))?;
     if input.validate_complete_source {
+        if input.table_file.sha256 != EXPECTED_TABLE_SHA256 {
+            table.layout.errors.push(format!(
+                "table SHA-256 mismatch: expected {EXPECTED_TABLE_SHA256}, found {}",
+                input.table_file.sha256
+            ));
+        }
         let actual_keys = table
             .layout
             .nutrients
@@ -166,6 +176,14 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
     let mut foods = table.foods.clone();
     let (errata, outcomes) = match input.errata {
         Some((bytes, file)) => {
+            if input.validate_complete_source
+                && file.sha256 != EXPECTED_ERRATA_SHA256
+            {
+                table.layout.errors.push(format!(
+                    "errata SHA-256 mismatch: expected {EXPECTED_ERRATA_SHA256}, found {}",
+                    file.sha256
+                ));
+            }
             let errata_book = Workbook::read_xlsx(bytes)
                 .context("reading the errata workbook")?;
             let parsed = parse_errata(

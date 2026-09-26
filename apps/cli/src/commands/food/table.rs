@@ -555,6 +555,18 @@ pub fn parse_table(sheet: &Sheet) -> Result<SourceTable, String> {
             });
             continue;
         };
+        let group_code = text(r, layout.group_col);
+        let expected_group = &code[..2];
+        if group_code.as_deref() != Some(expected_group) {
+            row_issues.push(RowIssue {
+                row,
+                food_code: Some(code),
+                reason: format!(
+                    "food-group code must match the first two digits of the food number ({expected_group})"
+                ),
+            });
+            continue;
+        }
         let mut values = BTreeMap::new();
         for n in &layout.nutrients {
             if let Some(v) = text(r, Some(n.col)) {
@@ -569,7 +581,7 @@ pub fn parse_table(sheet: &Sheet) -> Result<SourceTable, String> {
         }
         foods.push(SourceFood {
             row,
-            group_code: text(r, layout.group_col),
+            group_code,
             food_code: code,
             index_code: text(r, layout.index_col),
             name,
@@ -795,6 +807,29 @@ mod tests {
             2
         );
         assert_eq!(table.rows_read, 8);
+
+        let mismatch = Sheet::from_rows(
+            "mismatch",
+            &[
+                &[
+                    "食品群",
+                    "食品番号",
+                    "索引番号",
+                    "食品名",
+                    "廃棄率",
+                    "エネルギー",
+                    "備考",
+                ],
+                &["", "", "", "単位", "%", "kJ", ""],
+                &["成分識別子", "", "", "", "REFUSE", "ENERC", ""],
+                &["02", "01001", "0001", "食品", "0", "1", ""],
+            ],
+        );
+        let mismatch_table = parse_table(&mismatch).unwrap();
+        assert!(mismatch_table.foods.is_empty());
+        assert!(mismatch_table.row_issues.iter().any(|issue| {
+            issue.reason.contains("food-group code must match")
+        }));
     }
 
     #[test]
