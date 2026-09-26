@@ -235,11 +235,8 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             .is_some(),
         stored.api_base_url.is_some(),
     );
-    let browser_session = session_in_use(
-        key_source,
-        &stored,
-        &resolved.api_base_url,
-    );
+    let browser_session =
+        session_in_use(key_source, &stored, &resolved.api_base_url);
 
     match format {
         Format::Json => print_json(&json!({
@@ -265,10 +262,7 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
                 "API URL:     {} ({url_source})",
                 resolved.api_base_url
             );
-            match (
-                browser_session,
-                resolved.api_key.as_deref(),
-            ) {
+            match (browser_session, resolved.api_key.as_deref()) {
                 (Some(session), _) => println!(
                     "MCP signed in: {} (browser sign-in{})",
                     session.issuer,
@@ -310,7 +304,10 @@ fn session_in_use<'a>(
     })
 }
 
-fn credential_kind(key_source: &str, has_browser_session: bool) -> &'static str {
+fn credential_kind(
+    key_source: &str,
+    has_browser_session: bool,
+) -> &'static str {
     match (key_source, has_browser_session) {
         ("default", true) => "browser",
         ("default", false) => "none",
