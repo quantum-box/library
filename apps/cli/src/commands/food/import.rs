@@ -1638,7 +1638,7 @@ mod tests {
             name: "Old food".into(),
             fields: [(
                 prop::INGREDIENT_KEY.to_string(),
-                "mext-99999".to_string(),
+                "mext-99990".to_string(),
             )]
             .into(),
         };
