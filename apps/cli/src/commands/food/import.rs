@@ -1199,7 +1199,9 @@ fn validate_distinct_repositories(args: &ImportArgs) -> Result<()> {
             let Some((organization, name)) = repo.split_once('/') else {
                 bail!("draft repos must be named as org/repo");
             };
-            if organization.is_empty() || name.is_empty() || name.contains('/')
+            if organization.is_empty()
+                || name.is_empty()
+                || name.contains('/')
             {
                 bail!("draft repos must be named as org/repo");
             }
