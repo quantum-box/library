@@ -1,0 +1,16 @@
+[package]
+name = "ingredient_notation"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "Pure rules for ingredient catalog values: decimals, food composition table notation and keys (COM-860/COM-861)"
+
+# Shared by library-api (publishing) and library-cli (the MEXT importer), so
+# the importer and the publish validation can never disagree on what `Tr`,
+# `(0)` or `012.50` mean. Keep it free of IO and heavy dependencies.
+
+[dependencies]
+errors = { path = "../errors", default-features = false }
+
+[dev-dependencies]
+rstest = { workspace = true }

@@ -22,4 +22,14 @@ tokio = { workspace = true, features = [
     "macros",
     "rt",
     "rt-multi-thread",
+    "time",
 ], default-features = false }
+
+# `library food import` (COM-861): the MEXT Excel reader and the value
+# rules shared with library-api.
+calamine = "0.36"
+chrono = { workspace = true }
+futures = { workspace = true }
+ingredient_notation = { path = "../../packages/ingredient_notation" }
+sha2 = { workspace = true }
+ulid = { workspace = true }
