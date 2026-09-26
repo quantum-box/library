@@ -556,8 +556,8 @@ pub fn parse_table(sheet: &Sheet) -> Result<SourceTable, String> {
             continue;
         };
         let group_code = text(r, layout.group_col);
-        let expected_group = &code[..2];
-        if group_code.as_deref() != Some(expected_group) {
+        let expected_group = code[..2].to_string();
+        if group_code.as_deref() != Some(expected_group.as_str()) {
             row_issues.push(RowIssue {
                 row,
                 food_code: Some(code),
