@@ -186,6 +186,9 @@ pub struct IngredientRelease {
     ingredient_count: u32,
     nutrient_count: u32,
     value_count: u32,
+    /// Bit 0/1/2 records whether the ingredient/nutrient/value draft repo
+    /// was private when this immutable release was published.
+    private_repo_mask: u8,
     published_by: String,
     published_at: DateTime<Utc>,
 }
@@ -202,6 +205,7 @@ impl IngredientRelease {
         ingredient_count: u32,
         nutrient_count: u32,
         value_count: u32,
+        private_repo_mask: u8,
         published_by: String,
         published_at: DateTime<Utc>,
     ) -> Self {
@@ -215,6 +219,7 @@ impl IngredientRelease {
             ingredient_count,
             nutrient_count,
             value_count,
+            private_repo_mask,
             published_by,
             published_at,
         }
@@ -226,7 +231,22 @@ impl IngredientRelease {
         snapshot: &ReleaseSnapshot,
         published_by: &str,
     ) -> errors::Result<Self> {
+        Self::publish_with_visibility(catalog, source, snapshot, 0, published_by)
+    }
+
+    pub fn publish_with_visibility(
+        catalog: &IngredientCatalog,
+        source: ReleaseSource,
+        snapshot: &ReleaseSnapshot,
+        private_repo_mask: u8,
+        published_by: &str,
+    ) -> errors::Result<Self> {
         source.validate()?;
+        if private_repo_mask & !0b111 != 0 {
+            return Err(errors::Error::invalid(
+                "private repo mask must use only its three defined bits",
+            ));
+        }
         let count = |n: usize| {
             u32::try_from(n).map_err(|_| {
                 errors::Error::invalid("release is too large to publish")
@@ -242,6 +262,7 @@ impl IngredientRelease {
             count(snapshot.ingredients().len())?,
             count(snapshot.nutrients().len())?,
             count(snapshot.values().len())?,
+            private_repo_mask,
             published_by.to_string(),
             Utc::now(),
         ))

@@ -4,6 +4,7 @@
 //! through a release that was already loaded for the caller's tenant.
 //! Releases are insert-only: nothing here updates or deletes them.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -83,6 +84,7 @@ struct ReleaseRow {
     ingredient_count: u32,
     nutrient_count: u32,
     value_count: u32,
+    private_repo_mask: u8,
     published_by: String,
     published_at: DateTime<Utc>,
 }
@@ -107,6 +109,7 @@ impl TryFrom<ReleaseRow> for IngredientRelease {
             row.ingredient_count,
             row.nutrient_count,
             row.value_count,
+            row.private_repo_mask,
             row.published_by,
             row.published_at,
         ))
@@ -127,30 +130,19 @@ struct ItemRow {
     skin_bone: Option<String>,
     refuse_rate: Option<String>,
     attribute_review_status: String,
-    /// Newline-joined aliases, from GROUP_CONCAT.
-    aliases: Option<String>,
 }
 
 impl TryFrom<ItemRow> for ReleasedIngredient {
     type Error = errors::Error;
 
     fn try_from(row: ItemRow) -> Result<Self, Self::Error> {
-        let mut aliases: Vec<String> = row
-            .aliases
-            .as_deref()
-            .unwrap_or("")
-            .split('\n')
-            .filter(|a| !a.is_empty())
-            .map(str::to_string)
-            .collect();
-        aliases.sort();
         Ok(ReleasedIngredient {
             ingredient_key: row.ingredient_key,
             source_food_code: row.source_food_code,
             original_name: row.original_name,
             standard_name: row.standard_name,
             reading: row.reading,
-            aliases,
+            aliases: Vec::new(),
             category_code: row.category_code,
             category_name: row.category_name,
             part: row.part,
@@ -166,6 +158,12 @@ impl TryFrom<ItemRow> for ReleasedIngredient {
             )?,
         })
     }
+}
+
+#[derive(Debug, FromRow)]
+struct AliasRow {
+    ingredient_key: String,
+    alias: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -227,18 +225,15 @@ const CATALOG_COLUMNS: &str = "`id`, `tenant_id`, `catalog_key`, `name`, \
 const RELEASE_COLUMNS: &str = "`id`, `tenant_id`, `catalog_id`, \
     `source_id`, `source_release`, `source_url`, `source_retrieved_at`, \
     `notes`, `schema_version`, `content_hash`, `ingredient_count`, \
-    `nutrient_count`, `value_count`, `published_by`, `published_at`";
+    `nutrient_count`, `value_count`, `private_repo_mask`, \
+    `published_by`, `published_at`";
 
-/// Item columns plus the aliases folded into one newline-joined column.
+/// Item columns. Aliases are loaded in a separate bounded query.
 const ITEM_SELECT: &str =
     "SELECT i.`ingredient_key`, i.`source_food_code`, \
     i.`original_name`, i.`standard_name`, i.`reading`, i.`category_code`, \
     i.`category_name`, i.`part`, i.`cooking_state`, i.`skin_bone`, \
-    i.`refuse_rate`, i.`attribute_review_status`, \
-    (SELECT GROUP_CONCAT(a.`alias` ORDER BY a.`alias` SEPARATOR '\\n') \
-       FROM `ingredient_release_aliases` a \
-      WHERE a.`release_id` = i.`release_id` \
-        AND a.`ingredient_key` = i.`ingredient_key`) AS `aliases` \
+    i.`refuse_rate`, i.`attribute_review_status` \
     FROM `ingredient_release_items` i";
 
 /// Escape `%`, `_` and `\` so user text is matched literally by LIKE.
@@ -301,6 +296,45 @@ impl IngredientCatalogRepositoryImpl {
     pub fn new(db: Arc<persistence::Db>) -> Self {
         Self { db }
     }
+
+    async fn aliases_for_ingredients(
+        &self,
+        release_id: &str,
+        ingredient_keys: &[String],
+    ) -> errors::Result<BTreeMap<String, Vec<String>>> {
+        let mut aliases = BTreeMap::<String, Vec<String>>::new();
+        for chunk in ingredient_keys.chunks(INSERT_CHUNK) {
+            if chunk.is_empty() {
+                continue;
+            }
+            let mut qb = QueryBuilder::<MySql>::new(
+                "SELECT `ingredient_key`, `alias` \
+                 FROM `ingredient_release_aliases` \
+                 WHERE `release_id` = ",
+            );
+            qb.push_bind(release_id.to_string())
+                .push(" AND `ingredient_key` IN (");
+            let mut separated = qb.separated(", ");
+            for key in chunk {
+                separated.push_bind(key);
+            }
+            separated.push_unseparated(
+                ") ORDER BY `ingredient_key` ASC, `alias` ASC",
+            );
+            let rows: Vec<AliasRow> = qb
+                .build_query_as()
+                .fetch_all(self.db.pool().as_ref())
+                .await
+                .map_err(db_error)?;
+            for row in rows {
+                aliases
+                    .entry(row.ingredient_key)
+                    .or_default()
+                    .push(row.alias);
+            }
+        }
+        Ok(aliases)
+    }
 }
 
 #[async_trait::async_trait]
@@ -356,7 +390,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
 
         sqlx::query(&format!(
             "INSERT INTO `ingredient_releases` ({RELEASE_COLUMNS}) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ))
         .bind(&release_id)
         .bind(release.tenant_id().to_string())
@@ -371,6 +405,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         .bind(release.ingredient_count())
         .bind(release.nutrient_count())
         .bind(release.value_count())
+        .bind(release.private_repo_mask())
         .bind(release.published_by())
         .bind(release.published_at())
         .execute(&mut *tx)
@@ -559,10 +594,21 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
             .await
             .map_err(db_error)?;
 
-        let items = rows
+        let keys = rows
+            .iter()
+            .map(|row| row.ingredient_key.clone())
+            .collect::<Vec<_>>();
+        let mut aliases =
+            self.aliases_for_ingredients(&release_id, &keys).await?;
+        let mut items = rows
             .into_iter()
             .map(ReleasedIngredient::try_from)
             .collect::<errors::Result<Vec<_>>>()?;
+        for item in &mut items {
+            item.aliases = aliases
+                .remove(&item.ingredient_key)
+                .unwrap_or_default();
+        }
         Ok((items, u64::try_from(total).unwrap_or(0)))
     }
 
@@ -579,7 +625,23 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         .fetch_optional(self.db.pool().as_ref())
         .await
         .map_err(db_error)?;
-        row.map(ReleasedIngredient::try_from).transpose()
+        match row {
+            Some(row) => {
+                let mut ingredient = ReleasedIngredient::try_from(row)?;
+                let keys = [ingredient.ingredient_key.clone()];
+                let mut aliases = self
+                    .aliases_for_ingredients(
+                        &release.id().to_string(),
+                        &keys,
+                    )
+                    .await?;
+                ingredient.aliases = aliases
+                    .remove(&ingredient.ingredient_key)
+                    .unwrap_or_default();
+                Ok(Some(ingredient))
+            }
+            None => Ok(None),
+        }
     }
 
     async fn list_values(

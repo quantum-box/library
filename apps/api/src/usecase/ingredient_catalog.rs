@@ -1,12 +1,12 @@
 //! COM-860: common ingredient master usecases.
 //!
-//! Writes (register a catalog, publish a release) need `library:UpdateRepo`,
-//! the same action that edits the draft repos. Reads follow the draft
-//! repos' visibility: anyone can read a catalog whose three repos are
-//! public, and a private repo needs the usual repo read permission.
+//! Writes (register a catalog, publish a release) require
+//! `library:UpdateRepo` on each of the three draft repos. Each immutable
+//! release captures the repos' public/private visibility at publication time,
+//! so deleting a draft repo does not make a published release inaccessible.
 //! Consumers such as Field only read; nothing here lets them write back.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use database_manager::{
     usecase::FindAllPropertiesInputData,
 };
 use tachyon_sdk::auth::{
-    AuthApp, CheckPolicyInput, ExecutorAction, MultiTenancyAction,
+    AuthApp, CheckPolicyForResourceInput, ExecutorAction, MultiTenancyAction,
 };
 use value_object::{TenantId, MAX_PAGE_SIZE};
 
@@ -24,7 +24,7 @@ use crate::domain::{
     IngredientCatalog, IngredientCatalogRepository, IngredientRelease,
     IngredientReleaseId, IngredientSearch, NutrientValueStatus,
     ReleaseSnapshot, ReleaseSource, ReleasedIngredient, ReleasedNutrient,
-    ReleasedValue, Repo, RepoRepository,
+    ReleasedValue, Repo, RepoId, RepoRepository,
 };
 use crate::usecase::{
     authorize_private_repo_read, GetOrganizationByUsernameQuery,
@@ -190,20 +190,25 @@ impl CatalogLookup {
         Ok(repo)
     }
 
+    async fn catalog_record(
+        &self,
+        org_username: &str,
+        catalog_key: &str,
+    ) -> errors::Result<IngredientCatalog> {
+        let org_id = self.org_id(org_username).await?;
+        self.catalogs
+            .get_catalog_by_key(&org_id, catalog_key)
+            .await?
+            .ok_or_else(|| errors::Error::not_found("ingredient catalog"))
+    }
+
     async fn catalog(
         &self,
         org_username: &str,
         catalog_key: &str,
     ) -> errors::Result<(IngredientCatalog, Vec<Repo>)> {
-        let org_id = self.org_id(org_username).await?;
-        let catalog = self
-            .catalogs
-            .get_catalog_by_key(&org_id, catalog_key)
-            .await?
-            .ok_or_else(|| {
-                errors::Error::not_found("ingredient catalog")
-            })?;
-
+        let catalog = self.catalog_record(org_username, catalog_key).await?;
+        let org_id = catalog.tenant_id().clone();
         let mut repos = Vec::with_capacity(3);
         for repo_id in catalog.repo_ids() {
             let repo = self
@@ -221,24 +226,27 @@ impl CatalogLookup {
         Ok((catalog, repos))
     }
 
-    /// Readable when every draft repo is readable by the caller.
+    /// Private-repo visibility is frozen with each release. Resource checks
+    /// continue to work from the stored repo IDs even after a draft is deleted.
     async fn authorize_read(
         &self,
         executor: &dyn ExecutorAction,
         multi_tenancy: &dyn MultiTenancyAction,
-        repos: &[Repo],
+        catalog: &IngredientCatalog,
+        private_repo_mask: u8,
     ) -> errors::Result<()> {
-        for repo in repos.iter().filter(|r| r.is_private()) {
+        for (index, repo_id) in catalog.repo_ids().into_iter().enumerate() {
+            if private_repo_mask & (1 << index) == 0 {
+                continue;
+            }
             if executor.is_none() {
-                return Err(errors::Error::permission_denied(
-                    "Access denied",
-                ));
+                return Err(errors::Error::permission_denied("Access denied"));
             }
             authorize_private_repo_read(
                 self.auth.as_ref(),
                 executor,
                 multi_tenancy,
-                repo.id().as_ref(),
+                repo_id.as_ref(),
             )
             .await?;
         }
@@ -249,14 +257,20 @@ impl CatalogLookup {
         &self,
         executor: &dyn ExecutorAction,
         multi_tenancy: &dyn MultiTenancyAction,
+        repo_ids: &[RepoId],
     ) -> errors::Result<()> {
-        self.auth
-            .check_policy(&CheckPolicyInput {
-                executor,
-                multi_tenancy,
-                action: "library:UpdateRepo",
-            })
-            .await
+        for repo_id in repo_ids {
+            let resource_trn = format!("trn:library:repo:{repo_id}");
+            self.auth
+                .check_policy_for_resource(&CheckPolicyForResourceInput {
+                    executor,
+                    multi_tenancy,
+                    action: "library:UpdateRepo",
+                    resource_trn: &resource_trn,
+                })
+                .await?;
+        }
+        Ok(())
     }
 }
 
@@ -309,9 +323,6 @@ impl CreateIngredientCatalogInputPort for CreateIngredientCatalog {
         &self,
         input: CreateIngredientCatalogInputData<'a>,
     ) -> errors::Result<IngredientCatalog> {
-        self.lookup
-            .authorize_write(input.executor, input.multi_tenancy)
-            .await?;
         let org = input.org_username.as_str();
         let org_id = self.lookup.org_id(org).await?;
         let ingredient_repo = self
@@ -325,6 +336,15 @@ impl CreateIngredientCatalogInputPort for CreateIngredientCatalog {
         let value_repo = self
             .lookup
             .repo_in_org(org, &org_id, &input.value_repo)
+            .await?;
+
+        let repo_ids = [
+            ingredient_repo.id().clone(),
+            nutrient_repo.id().clone(),
+            value_repo.id().clone(),
+        ];
+        self.lookup
+            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
             .await?;
 
         let catalog = IngredientCatalog::create(
@@ -391,6 +411,40 @@ impl PublishIngredientRelease {
                 database_id: database_id.clone(),
             })
             .await?;
+
+        let relevant_names = [
+            draft_schema::INGREDIENT_KEY,
+            draft_schema::SOURCE_FOOD_CODE,
+            draft_schema::STANDARD_NAME,
+            draft_schema::READING,
+            draft_schema::ALIASES,
+            draft_schema::CATEGORY_CODE,
+            draft_schema::CATEGORY_NAME,
+            draft_schema::PART,
+            draft_schema::COOKING_STATE,
+            draft_schema::SKIN_BONE,
+            draft_schema::REFUSE_RATE,
+            draft_schema::ATTRIBUTE_REVIEW_STATUS,
+            draft_schema::NUTRIENT_KEY,
+            draft_schema::UNIT,
+            draft_schema::BASIS,
+            draft_schema::METHOD,
+            draft_schema::DISPLAY_ORDER,
+            draft_schema::DEFAULT_DISPLAY,
+            draft_schema::VALUE_STATUS,
+            draft_schema::AMOUNT,
+            draft_schema::RAW_NOTATION,
+        ];
+        let mut seen_names = BTreeSet::new();
+        for property in &properties {
+            let name = property.name().trim();
+            if relevant_names.contains(&name) && !seen_names.insert(name.to_string()) {
+                return Err(errors::Error::invalid(format!(
+                    "draft repo {} has duplicate property name {name:?}",
+                    repo.username()
+                )));
+            }
+        }
 
         let mut records = Vec::new();
         let mut page = 1;
@@ -540,13 +594,14 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
         &self,
         input: PublishIngredientReleaseInputData<'a>,
     ) -> errors::Result<(IngredientRelease, bool)> {
-        self.lookup
-            .authorize_write(input.executor, input.multi_tenancy)
-            .await?;
         input.source.validate()?;
         let (catalog, repos) = self
             .lookup
             .catalog(&input.org_username, &input.catalog_key)
+            .await?;
+        let repo_ids: Vec<RepoId> = catalog.repo_ids().into_iter().cloned().collect();
+        self.lookup
+            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
             .await?;
         let tenant_id = catalog.tenant_id().clone();
 
@@ -584,17 +639,50 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             )));
         }
 
-        let release = IngredientRelease::publish(
+        let private_repo_mask = repos.iter().enumerate().fold(
+            0u8,
+            |mask, (index, repo)| {
+                if repo.is_private() {
+                    mask | (1 << index)
+                } else {
+                    mask
+                }
+            },
+        );
+        let release = IngredientRelease::publish_with_visibility(
             &catalog,
             input.source,
             &snapshot,
+            private_repo_mask,
             input.executor.get_id(),
         )?;
-        self.lookup
-            .catalogs
-            .insert_release(&release, &snapshot)
-            .await?;
-        Ok((release, true))
+        match self.lookup.catalogs.insert_release(&release, &snapshot).await {
+            Ok(()) => Ok((release, true)),
+            Err(insert_error) => {
+                let existing = self
+                    .lookup
+                    .catalogs
+                    .find_release_by_source(
+                        &tenant_id,
+                        catalog.id(),
+                        &release.source().source_id,
+                        &release.source().source_release,
+                    )
+                    .await?;
+                if let Some(existing) = existing {
+                    if existing.content_hash() == snapshot.content_hash() {
+                        return Ok((existing, false));
+                    }
+                    return Err(errors::Error::conflict(format!(
+                        "release {}/{} is already published with different content; \
+                         publish the change under a new source_release",
+                        release.source().source_id,
+                        release.source().source_release
+                    )));
+                }
+                Err(insert_error)
+            }
+        }
     }
 }
 
@@ -624,34 +712,33 @@ impl ReadIngredientCatalog {
         })
     }
 
-    async fn readable_catalog(
-        &self,
-        target: CatalogTarget<'_>,
-    ) -> errors::Result<IngredientCatalog> {
-        let (catalog, repos) = self
-            .lookup
-            .catalog(target.org_username, target.catalog_key)
-            .await?;
-        self.lookup
-            .authorize_read(target.executor, target.multi_tenancy, &repos)
-            .await?;
-        Ok(catalog)
-    }
-
     async fn readable_release(
         &self,
         target: CatalogTarget<'_>,
         release_id: &str,
     ) -> errors::Result<IngredientRelease> {
-        let catalog = self.readable_catalog(target).await?;
+        let catalog = self
+            .lookup
+            .catalog_record(target.org_username, target.catalog_key)
+            .await?;
         let release_id: IngredientReleaseId = release_id
             .parse()
             .map_err(|_| errors::Error::not_found("ingredient release"))?;
-        self.lookup
+        let release = self
+            .lookup
             .catalogs
             .get_release(catalog.tenant_id(), catalog.id(), &release_id)
             .await?
-            .ok_or_else(|| errors::Error::not_found("ingredient release"))
+            .ok_or_else(|| errors::Error::not_found("ingredient release"))?;
+        self.lookup
+            .authorize_read(
+                target.executor,
+                target.multi_tenancy,
+                &catalog,
+                *release.private_repo_mask(),
+            )
+            .await?;
+        Ok(release)
     }
 }
 
@@ -665,12 +752,25 @@ impl ReadIngredientCatalogInputPort for ReadIngredientCatalog {
         &self,
         target: CatalogTarget<'a>,
     ) -> errors::Result<(IngredientCatalog, Vec<IngredientRelease>)> {
-        let catalog = self.readable_catalog(target).await?;
+        let catalog = self
+            .lookup
+            .catalog_record(target.org_username, target.catalog_key)
+            .await?;
         let releases = self
             .lookup
             .catalogs
             .list_releases(catalog.tenant_id(), catalog.id())
             .await?;
+        for release in &releases {
+            self.lookup
+                .authorize_read(
+                    target.executor,
+                    target.multi_tenancy,
+                    &catalog,
+                    *release.private_repo_mask(),
+                )
+                .await?;
+        }
         Ok((catalog, releases))
     }
 

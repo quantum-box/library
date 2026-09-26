@@ -225,6 +225,7 @@ impl From<&ReleasedIngredient> for IngredientResponse {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchIngredientsQuery {
     /// Substring of the source name, standard name, reading or an alias.
     pub q: Option<String>,
