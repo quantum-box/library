@@ -2,8 +2,8 @@
 
 - Issue: https://linear.app/quantum-box/issue/COM-814
 - Branch: `cfeature/library-integration-search-index-4e1a05`
-- Status: In Progress
-- 設計: [ADR-0011](../../../specs/decisions/ADR-0011-data-search-index.md)
+- Status: Completed (2026-09-26, PR #383)
+- 設計: [ADR-0011](../../../../specs/decisions/ADR-0011-data-search-index.md)
 
 ## 背景
 
@@ -33,7 +33,7 @@ Location Propertyは `"lat,lng"` 文字列で保存されていて、SQLで範�
   フィルタ各型、公開制御、全角半角の同一視、ETag）
 - [x] `database-manager` DBテスト `data_snapshot`：作成・更新・削除のたびに
   リビジョンが動き、読み取りでは動かない。他テナントからは読めない
-- [ ] Ready PR / CI
+- [x] PR #383 / CI / マージ（2026-09-26）
 - [ ] 本番で犬スポットRepoを作成し、札幌圏データで地図アプリから確認（COM-813・COM-817）
 
 ## 残課題
