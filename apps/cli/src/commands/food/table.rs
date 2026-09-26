@@ -219,7 +219,9 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
         .ok_or("no 食品群 (food group) column")?;
     let index_col =
         find_cell(sheet, header.clone(), "索引番号").map(|p| p.1);
-    let remarks_col = find_cell(sheet, header.clone(), "備考").map(|p| p.1);
+    let remarks_col = find_cell(sheet, header.clone(), "備考")
+        .map(|p| p.1)
+        .ok_or("no 備考 (remarks) column")?;
     let updated_label = (0..id_row).find_map(|r| {
         (0..sheet.width()).find_map(|c| {
             sheet
@@ -231,7 +233,7 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
 
     let first_data_row = id_row + 1;
     let data_rows = first_data_row..sheet.height();
-    let last_col = remarks_col.unwrap_or(sheet.width());
+    let last_col = remarks_col;
 
     let mut layout = TableLayout {
         sheet: sheet.name.clone(),
@@ -244,7 +246,7 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
         index_col,
         name_col,
         refuse_col: None,
-        remarks_col,
+        remarks_col: Some(remarks_col),
         nutrients: Vec::new(),
         markers: BTreeMap::new(),
         ignored: Vec::new(),

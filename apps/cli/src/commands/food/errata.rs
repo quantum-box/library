@@ -132,7 +132,9 @@ pub fn parse_errata(
                 found_itemized_sheet = true;
                 out.entries.extend(parse_itemized(sheet, &labels)?)
             }
-            ROW_PAIR_SHEET => out.entries.extend(parse_row_pairs(sheet)?),
+            ROW_PAIR_SHEET => {
+                out.entries.extend(parse_row_pairs(sheet, table)?)
+            }
             other => {
                 let reason = if other.contains("第1章") {
                     "chapter 1 text (cooking conditions etc.), not table data"
@@ -286,8 +288,32 @@ fn lookup(key: &str, labels: &BTreeMap<String, String>) -> Option<String> {
 
 /// `本表`: the table layout again, one column to the right, with rows in
 /// 誤/正 pairs. Each differing column becomes one entry.
-fn parse_row_pairs(sheet: &Sheet) -> Result<Vec<ErrataEntry>, String> {
+fn parse_row_pairs(
+    sheet: &Sheet,
+    main_layout: &TableLayout,
+) -> Result<Vec<ErrataEntry>, String> {
     let layout = parse_layout(sheet)?;
+    if !layout.errors.is_empty() {
+        return Err(format!(
+            "errata {ROW_PAIR_SHEET} sheet has an invalid layout: {}",
+            layout.errors.join("; ")
+        ));
+    }
+    let main_components = main_layout
+        .nutrients
+        .iter()
+        .map(|n| (n.key.as_str(), n.unit.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let errata_components = layout
+        .nutrients
+        .iter()
+        .map(|n| (n.key.as_str(), n.unit.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    if errata_components != main_components {
+        return Err(format!(
+            "errata {ROW_PAIR_SHEET} component identifiers or units do not match the main table"
+        ));
+    }
     let marker_col = |r: usize| {
         (0..layout.code_col).find_map(|c| {
             sheet

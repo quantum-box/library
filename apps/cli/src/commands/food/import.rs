@@ -52,6 +52,7 @@ const SOURCE_NAME: &str = "日本食品標準成分表（八訂）増補2023年"
 const SOURCE_PUBLISHER: &str =
     "文部科学省 科学技術・学術審議会 資源調査分科会";
 const BASIS: &str = "可食部100g当たり";
+const EXPECTED_FOOD_COUNT: usize = 2_538;
 
 // ==================== inputs ====================
 
@@ -111,6 +112,8 @@ pub struct PrepareInput<'a> {
     pub table_file: SourceFile,
     pub errata: Option<(&'a [u8], SourceFile)>,
     pub sheet: &'a str,
+    /// Enforce the complete fixed MEXT 2023 source layout and row count.
+    pub validate_complete_source: bool,
     pub options: BuildOptions,
 }
 
@@ -126,27 +129,35 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
     })?;
     let mut table =
         parse_table(sheet).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let actual_keys = table
-        .layout
-        .nutrients
-        .iter()
-        .map(|n| n.key.clone())
-        .collect::<BTreeSet<_>>();
-    let expected_keys = EXPECTED_UNITS
-        .iter()
-        .map(|(key, _)| (*key).to_string())
-        .collect::<BTreeSet<_>>();
-    for key in expected_keys.difference(&actual_keys) {
-        table
+    if input.validate_complete_source {
+        let actual_keys = table
             .layout
-            .errors
-            .push(format!("missing nutrient identifier {key:?}"));
-    }
-    for key in actual_keys.difference(&expected_keys) {
-        table
-            .layout
-            .errors
-            .push(format!("unexpected nutrient identifier {key:?}"));
+            .nutrients
+            .iter()
+            .map(|n| n.key.clone())
+            .collect::<BTreeSet<_>>();
+        let expected_keys = EXPECTED_UNITS
+            .iter()
+            .map(|(key, _)| (*key).to_string())
+            .collect::<BTreeSet<_>>();
+        for key in expected_keys.difference(&actual_keys) {
+            table
+                .layout
+                .errors
+                .push(format!("missing nutrient identifier {key:?}"));
+        }
+        for key in actual_keys.difference(&expected_keys) {
+            table
+                .layout
+                .errors
+                .push(format!("unexpected nutrient identifier {key:?}"));
+        }
+        if table.foods.len() != EXPECTED_FOOD_COUNT {
+            table.layout.errors.push(format!(
+                "expected {EXPECTED_FOOD_COUNT} food rows in the MEXT 2023 table, found {}",
+                table.foods.len()
+            ));
+        }
     }
     let categories = categories_from_sheet_names(&book);
 
@@ -1069,6 +1080,7 @@ pub async fn run<S: Store>(
             _ => None,
         },
         sheet: &args.sheet,
+        validate_complete_source: true,
         options,
     })?;
 
@@ -1286,6 +1298,7 @@ mod tests {
             table_file: file("table"),
             errata: Some((fixtures::ERRATA_XLSX, file("errata"))),
             sheet: "表全体",
+            validate_complete_source: false,
             options: BuildOptions {
                 source_id: "mext-sfct8-2023".into(),
                 ingredient_key_prefix: "mext-".into(),
