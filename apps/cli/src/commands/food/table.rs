@@ -631,6 +631,7 @@ mod tests {
                 "CHOAVLM",
                 "CHOAVLDF-",
                 "FIB-",
+                "ID",
                 "NA",
                 "VITK",
                 "VITB12"
@@ -646,6 +647,7 @@ mod tests {
         assert_eq!(name("ENERC_KCAL"), "エネルギー（kcal）");
         assert_eq!(name("PROTCAA"), "アミノ酸組成によるたんぱく質");
         assert_eq!(name("FIB-"), "食物繊維総量");
+        assert_eq!(name("ID"), "ヨウ素");
         assert_eq!(name("VITB12"), "ビタミンB12");
         // The `*` column beside CHOAVLM is a marker, not a nutrient.
         assert_eq!(
