@@ -162,9 +162,13 @@ pub fn parse_errata(
             "errata workbook is missing required sheet {ITEMIZED_SHEET:?}"
         ));
     }
-    if require_complete_layout
-        && out.date.as_deref() == Some(OFFICIAL_ERRATA_DATE)
-    {
+    if require_complete_layout {
+        if out.date.as_deref() != Some(OFFICIAL_ERRATA_DATE) {
+            return Err(format!(
+                "unsupported errata date {:?}; expected {OFFICIAL_ERRATA_DATE}",
+                out.date.as_deref()
+            ));
+        }
         if itemized_entry_count == 0 {
             return Err(format!(
                 "errata sheet {ITEMIZED_SHEET:?} has no correction rows"

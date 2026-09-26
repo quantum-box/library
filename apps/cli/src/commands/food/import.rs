@@ -695,6 +695,11 @@ pub fn build_report(
                 Some((code, ingredient.business_key.as_str()))
             })
             .collect();
+        let stale_value_exists = |business_key: &str| {
+            value_repo.plan.delete_candidates.iter().any(|candidate| {
+                candidate.business_key.as_deref() == Some(business_key)
+            })
+        };
         for deferred in &p.catalog.deferred_to_chapter3 {
             let Some(ingredient_key) =
                 ingredient_keys.get(deferred.food_code.as_str()).copied()
@@ -703,12 +708,29 @@ pub fn build_report(
             };
             let business_key =
                 format!("{ingredient_key}/{}", deferred.nutrient_key);
-            if value_repo.plan.delete_candidates.iter().any(|candidate| {
-                candidate.business_key.as_deref()
-                    == Some(business_key.as_str())
-            }) {
+            if stale_value_exists(&business_key) {
                 blockers.push(format!(
                     "stale value {business_key} exists for a chapter-3 deferred cell; remove it from the value draft repo, then rerun the import"
+                ));
+            }
+        }
+        for quarantined in
+            p.catalog.quarantine.iter().filter(|item| item.scope == "cell")
+        {
+            let (Some(food_code), Some(nutrient_key)) = (
+                quarantined.food_code.as_deref(),
+                quarantined.nutrient_key.as_deref(),
+            ) else {
+                continue;
+            };
+            let Some(ingredient_key) = ingredient_keys.get(food_code).copied()
+            else {
+                continue;
+            };
+            let business_key = format!("{ingredient_key}/{nutrient_key}");
+            if stale_value_exists(&business_key) {
+                blockers.push(format!(
+                    "stale value {business_key} exists for a quarantined cell; remove it from the value draft repo, then rerun the import"
                 ));
             }
         }
@@ -1080,11 +1102,27 @@ pub(super) fn validate_source_id(source_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_distinct_repositories(args: &ImportArgs) -> Result<()> {
+    let repositories = [
+        args.ingredient_repo.as_str(),
+        args.nutrient_repo.as_str(),
+        args.value_repo.as_str(),
+    ]
+    .map(|repo| repo.trim().to_ascii_lowercase());
+    if repositories.iter().collect::<BTreeSet<_>>().len() != 3 {
+        bail!(
+            "--ingredient-repo, --nutrient-repo, and --value-repo must name three distinct repos"
+        );
+    }
+    Ok(())
+}
+
 pub async fn run<S: Store>(
     args: &ImportArgs,
     store: Option<&S>,
     format: Format,
 ) -> Result<()> {
+    validate_distinct_repositories(args)?;
     validate_source_id(&args.source_id)?;
     let retrieved = retrieved_at(args)?;
     let table_bytes = fs::read(&args.table)
