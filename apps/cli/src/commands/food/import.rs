@@ -1671,7 +1671,8 @@ mod tests {
             build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
 
         assert!(report.blockers.iter().any(|blocker| {
-            blocker.contains("unresolved key conflicts") && blocker.contains(NUT)
+            blocker.contains("unresolved key conflicts")
+                && blocker.contains(NUT)
         }));
         assert!(!report
             .needs_accept_quarantine
