@@ -1038,7 +1038,16 @@ fn run_dir(args: &ImportArgs, p: &Prepared) -> PathBuf {
         h.update([0]);
     }
     for f in &p.files {
-        h.update(f.sha256.as_bytes());
+        for part in [
+            f.role,
+            f.url.as_str(),
+            f.file_name.as_str(),
+            f.sha256.as_str(),
+            f.retrieved_at.as_str(),
+        ] {
+            h.update(part.as_bytes());
+            h.update([0]);
+        }
     }
     let short = &hex(&h.finalize())[..12];
     args.state_dir
@@ -1450,6 +1459,28 @@ mod tests {
         .unwrap()
     }
 
+    fn import_args() -> ImportArgs {
+        ImportArgs {
+            table: PathBuf::from("table.xlsx"),
+            errata: Some(PathBuf::from("errata.xlsx")),
+            table_url: "https://example.test/table.xlsx".into(),
+            errata_url: "https://example.test/errata.xlsx".into(),
+            retrieved_at: Some("2026-09-25T08:36:35Z".into()),
+            sheet: "表全体".into(),
+            source_id: "mext-sfct8-2023".into(),
+            key_prefix: "mext-".into(),
+            ingredient_repo: ING.into(),
+            nutrient_repo: NUT.into(),
+            value_repo: VAL.into(),
+            offline: true,
+            apply: false,
+            accept_quarantine: false,
+            concurrency: 4,
+            max_failures: 20,
+            state_dir: PathBuf::from(".food-import"),
+        }
+    }
+
     fn store() -> FakeStore {
         use prop::*;
         FakeStore::default()
@@ -1518,6 +1549,36 @@ mod tests {
     async fn apply(p: &Prepared, s: &FakeStore) -> ExecSummary {
         let repos = plan(p, s).await;
         execute(s, &repos, 3, 5, Duration::ZERO, |_| true).await
+    }
+
+    #[test]
+    fn run_dir_includes_source_provenance() {
+        let args = import_args();
+        let original = run_dir(&args, &prepared());
+
+        let mut changed_table_url = prepared();
+        changed_table_url
+            .files
+            .iter_mut()
+            .find(|file| file.role == "table")
+            .unwrap()
+            .url = "https://mirror.example.test/table.xlsx".into();
+        assert_ne!(original, run_dir(&args, &changed_table_url));
+
+        let mut changed_errata_url = prepared();
+        changed_errata_url
+            .files
+            .iter_mut()
+            .find(|file| file.role == "errata")
+            .unwrap()
+            .url = "https://mirror.example.test/errata.xlsx".into();
+        assert_ne!(original, run_dir(&args, &changed_errata_url));
+
+        let mut changed_retrieval_time = prepared();
+        for file in &mut changed_retrieval_time.files {
+            file.retrieved_at = "2026-09-26T08:36:35Z".into();
+        }
+        assert_ne!(original, run_dir(&args, &changed_retrieval_time));
     }
 
     #[tokio::test]
