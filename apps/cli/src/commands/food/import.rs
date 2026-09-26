@@ -710,6 +710,12 @@ pub fn build_report(
     blockers.extend(p.catalog.category_errors.iter().cloned());
     for r in repos {
         blockers.extend(r.report.errors.iter().cloned());
+        if r.report.key_conflicts > 0 {
+            blockers.push(format!(
+                "{} has {} unresolved key conflicts; remove conflicting records from the draft repo before applying",
+                r.repo, r.report.key_conflicts
+            ));
+        }
         if r.report.delete_candidates > 0 {
             blockers.push(format!(
                 "{} has {} existing records this import will not update; remove them from the draft repo before applying",
@@ -816,13 +822,6 @@ pub fn build_report(
     if errata_problems > 0 {
         needs_accept.push(format!(
             "{errata_problems} errata entries in conflict or unresolved"
-        ));
-    }
-    let conflicts: usize =
-        repos.iter().map(|r| r.report.key_conflicts).sum();
-    if conflicts > 0 {
-        needs_accept.push(format!(
-            "{conflicts} records skipped: key held by another record"
         ));
     }
     Report {
@@ -1659,6 +1658,25 @@ mod tests {
             blocker
                 .contains("remove them from the draft repo before applying")
         }));
+    }
+
+    #[tokio::test]
+    async fn unresolved_key_conflicts_are_blockers_not_quarantine() {
+        let p = prepared();
+        let s = store();
+        let mut repos = plan(&p, &s).await;
+        repos[0].report.key_conflicts = 1;
+
+        let report =
+            build_report(&p, "表全体", "mext-sfct8-2023", &repos, "apply");
+
+        assert!(report.blockers.iter().any(|blocker| {
+            blocker.contains("unresolved key conflicts") && blocker.contains(NUT)
+        }));
+        assert!(!report
+            .needs_accept_quarantine
+            .iter()
+            .any(|item| item.contains("key conflict")));
     }
 
     #[tokio::test]
