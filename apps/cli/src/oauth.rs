@@ -107,6 +107,9 @@ fn code_challenge(verifier: &str) -> String {
 fn http() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(concat!("library-cli/", env!("CARGO_PKG_VERSION")))
+        // OAuth requests carry authorization codes and rotating tokens;
+        // never replay their forms to a redirect target.
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(30))
         .build()
         .context("failed to build the HTTP client")

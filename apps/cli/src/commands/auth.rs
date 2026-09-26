@@ -92,21 +92,32 @@ async fn login(
         );
     }
 
-    // Anything already saved survives a login that does not mention it,
-    // so re-running with a rotated key does not clear the API URL.
+    // Verify the requested credential before taking the profile lock. A
+    // concurrent refresh may finish while the API is being checked.
+    let mut candidate = config::load_stored().unwrap_or_default();
+    candidate.api_key = Some(api_key.clone());
+    candidate.oauth = None;
+    if let Some(api_url) = api_url.as_ref() {
+        candidate.api_base_url = Some(api_url.clone());
+    }
+    if let Some(operator_id) = operator_id.as_ref() {
+        candidate.operator_id = Some(operator_id.clone());
+    }
+    if !no_verify {
+        verify(&candidate).await?;
+    }
+
+    // Serialize credential changes with refresh and logout, then apply the
+    // requested login to the latest profile rather than a stale snapshot.
+    let _profile_lock = config::acquire_refresh_lock().await?;
     let mut stored = config::load_stored().unwrap_or_default();
     stored.api_key = Some(api_key.clone());
-    // One credential at a time, so status never shows a stale sign-in.
     stored.oauth = None;
     if let Some(api_url) = api_url {
         stored.api_base_url = Some(api_url);
     }
     if let Some(operator_id) = operator_id {
         stored.operator_id = Some(operator_id);
-    }
-
-    if !no_verify {
-        verify(&stored).await?;
     }
 
     let path = config::save_stored(&stored)?;
@@ -142,12 +153,12 @@ async fn browser_login(
     no_browser: bool,
     format: Format,
 ) -> Result<()> {
-    let mut stored = config::load_stored().unwrap_or_default();
-    if let Some(api_url) = api_url {
-        stored.api_base_url = Some(api_url);
+    let mut candidate = config::load_stored().unwrap_or_default();
+    if let Some(api_url) = api_url.as_ref() {
+        candidate.api_base_url = Some(api_url.clone());
     }
-    if let Some(operator_id) = operator_id {
-        stored.operator_id = Some(operator_id);
+    if let Some(operator_id) = operator_id.as_ref() {
+        candidate.operator_id = Some(operator_id.clone());
     }
     // Sign in against the URL this login will save, unless a flag or the
     // environment points this one command elsewhere.
@@ -157,12 +168,38 @@ async fn browser_login(
             ..Default::default()
         },
         &config::EnvConfig::from_process(),
-        &stored,
+        &candidate,
     )
     .api_base_url;
 
     let session =
         crate::oauth::browser_login(&base_url, !no_browser).await?;
+
+    // Do not hold this lock while the user completes the browser flow. Once
+    // it completes, reload and serialize the save with refresh and logout.
+    let _profile_lock = config::acquire_refresh_lock().await?;
+    let mut stored = config::load_stored().unwrap_or_default();
+    if let Some(api_url) = api_url {
+        stored.api_base_url = Some(api_url);
+    }
+    if let Some(operator_id) = operator_id {
+        stored.operator_id = Some(operator_id);
+    }
+    let current_base_url = config::merge(
+        &ConfigOverrides {
+            api_base_url: overrides.api_base_url.clone(),
+            ..Default::default()
+        },
+        &config::EnvConfig::from_process(),
+        &stored,
+    )
+    .api_base_url;
+    if current_base_url != base_url {
+        bail!(
+            "the saved API URL changed while browser sign-in was in progress; run library auth login again"
+        );
+    }
+
     stored.api_key = None;
     stored.oauth = Some(session.clone());
     let path = config::save_stored(&stored)?;
