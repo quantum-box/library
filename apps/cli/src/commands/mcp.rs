@@ -223,11 +223,12 @@ fn render_config(
 
     let mut server = json!({ "type": kind, "url": url });
     if !no_key {
-        // Printed in full because a client config file needs the real
-        // value; the warning below makes that explicit.
-        let bearer = client.mcp_credential().unwrap_or("pk_REPLACE_ME");
-        server["headers"] =
-            json!({ "Authorization": format!("Bearer {bearer}") });
+        // Browser sessions use the MCP client's OAuth flow; only an API
+        // key is stable enough to put in a static Authorization header.
+        if let Some(api_key) = client.api_key() {
+            server["headers"] =
+                json!({ "Authorization": format!("Bearer {api_key}") });
+        }
     }
 
     let config = json!({ "mcpServers": { name: server } });
@@ -237,7 +238,7 @@ fn render_config(
     // either way — but a machine reading stdout should not also get the
     // warning mixed into its stream.
     let _ = format;
-    if !no_key && client.has_mcp_credential() {
+    if !no_key && client.has_api_key() {
         eprintln!(
             "warning: this output contains a bearer credential; pass --no-key to \
              leave it out"

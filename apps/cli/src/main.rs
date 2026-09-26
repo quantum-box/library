@@ -129,13 +129,28 @@ async fn run() -> Result<()> {
             commands::api_key::run(command, &client, format).await
         }
         Command::Mcp(command) => {
-            let client = build_client(&overrides).await?;
+            let client = if matches!(
+                &command,
+                commands::mcp::McpCommand::Config { .. }
+            ) {
+                // The emitted config lets the MCP client perform OAuth itself
+                // instead of embedding this CLI's short-lived access token.
+                build_client(&overrides).await?
+            } else {
+                build_mcp_client(&overrides).await?
+            };
             commands::mcp::run(command, &client, format).await
         }
     }
 }
 
 async fn build_client(
+    overrides: &ConfigOverrides,
+) -> Result<client::LibraryClient> {
+    client::LibraryClient::new(config::resolve(overrides)?)
+}
+
+async fn build_mcp_client(
     overrides: &ConfigOverrides,
 ) -> Result<client::LibraryClient> {
     client::LibraryClient::new(config::resolve_fresh(overrides).await?)

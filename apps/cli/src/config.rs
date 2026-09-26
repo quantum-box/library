@@ -184,8 +184,9 @@ async fn acquire_refresh_lock() -> Result<File> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!("failed to create {}", parent.display())
+        })?;
     }
     let lock = OpenOptions::new()
         .create(true)
@@ -193,10 +194,14 @@ async fn acquire_refresh_lock() -> Result<File> {
         .read(true)
         .write(true)
         .open(&lock_path)
-        .with_context(|| format!("failed to open {}", lock_path.display()))?;
+        .with_context(|| {
+            format!("failed to open {}", lock_path.display())
+        })?;
     tokio::task::spawn_blocking(move || {
         lock.lock()
-            .with_context(|| format!("failed to lock {}", lock_path.display()))?;
+            .with_context(|| {
+            format!("failed to lock {}", lock_path.display())
+        })?;
         Ok(lock)
     })
     .await
@@ -212,19 +217,16 @@ pub async fn resolve_fresh(
     // A stale read only decides whether to enter the critical section.
     // Reload after acquiring the OS lock because another CLI process may
     // already have rotated and saved the refresh token.
-    let uses_session = merge(overrides, &env, &stored)
-        .mcp_access_token
-        .is_some();
-    let needs_refresh = stored
-        .oauth
-        .as_ref()
-        .is_some_and(|session| session.needs_refresh(crate::oauth::now_unix()));
+    let uses_session =
+        merge(overrides, &env, &stored).mcp_access_token.is_some();
+    let needs_refresh = stored.oauth.as_ref().is_some_and(|session| {
+        session.needs_refresh(crate::oauth::now_unix())
+    });
     if uses_session && needs_refresh {
         let _refresh_lock = acquire_refresh_lock().await?;
         stored = load_stored()?;
-        let still_uses_session = merge(overrides, &env, &stored)
-            .mcp_access_token
-            .is_some();
+        let still_uses_session =
+            merge(overrides, &env, &stored).mcp_access_token.is_some();
         let now = crate::oauth::now_unix();
         let session = stored
             .oauth
@@ -385,10 +387,7 @@ mod tests {
             &stored,
         );
         assert!(resolved.api_key.is_none());
-        assert_eq!(
-            resolved.mcp_access_token.as_deref(),
-            Some("access")
-        );
+        assert_eq!(resolved.mcp_access_token.as_deref(), Some("access"));
     }
 
     fn session(access_token: &str) -> crate::oauth::OAuthSession {
@@ -397,7 +396,7 @@ mod tests {
             token_endpoint: "https://issuer/token".into(),
             revocation_endpoint: None,
             client_id: "c".into(),
-            resource: "https://api/mcp".into(),
+            resource: format!("{}/mcp", DEFAULT_API_BASE_URL),
             access_token: access_token.into(),
             refresh_token: None,
             expires_at: None,

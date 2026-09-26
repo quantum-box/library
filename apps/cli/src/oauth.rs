@@ -316,7 +316,8 @@ async fn wait_for_code(
             parse_callback(first_line, state)
         } else {
             Callback::Error(
-                "the callback request line was incomplete or too long".into(),
+                "the callback request line was incomplete or too long"
+                    .into(),
             )
         };
         let (status, message) = match &outcome {
