@@ -358,6 +358,11 @@ pub async fn plan_all<S: Store>(
             .await
             .with_context(|| format!("listing {}", t.repo))?;
         let plan = plan_repo(t.kind, t.records, &existing, withheld, &skip);
+        errors.extend(
+            plan.validation_errors
+                .iter()
+                .map(|error| format!("{}: {error}", t.repo)),
+        );
 
         let mut changed_properties: BTreeMap<String, usize> =
             BTreeMap::new();
@@ -487,7 +492,7 @@ pub async fn execute<S: Store>(
     concurrency: usize,
     max_failures: usize,
     retry_delay: Duration,
-    mut log: impl FnMut(&WriteLog),
+    mut log: impl FnMut(&WriteLog) -> bool,
 ) -> ExecSummary {
     let started = Instant::now();
     let mut summary = ExecSummary::default();
@@ -504,6 +509,7 @@ pub async fn execute<S: Store>(
         let mut phase_failed = false;
         let batch_size = concurrency.max(1);
         let mut stop_after_batch = false;
+        let mut log_failed = false;
 
         for batch in state.plan.writes.chunks(batch_size) {
             let mut jobs = stream::iter(batch.iter())
@@ -556,7 +562,9 @@ pub async fn execute<S: Store>(
                     },
                     error: result.as_ref().err().map(|e| e.message.clone()),
                 };
-                log(&entry);
+                if !log(&entry) {
+                    log_failed = true;
+                }
                 match result {
                     Ok(_) => summary.succeeded += 1,
                     Err(_) => {
@@ -565,6 +573,12 @@ pub async fn execute<S: Store>(
                         stop_after_batch |= summary.failed >= max_failures;
                     }
                 }
+            }
+
+            if log_failed {
+                summary.stopped_early =
+                    Some("stopped after write log failure".into());
+                break 'phases;
             }
 
             if stop_after_batch {
@@ -1356,13 +1370,18 @@ pub async fn run<S: Store>(
         args.max_failures,
         Duration::from_millis(500),
         |entry| {
-            if let Err(e) = serde_json::to_string(entry)
+            match serde_json::to_string(entry)
                 .map_err(anyhow::Error::from)
-                .and_then(|l| {
-                    writeln!(log_file, "{l}").map_err(anyhow::Error::from)
+                .and_then(|line| {
+                    writeln!(log_file, "{line}")
+                        .map_err(anyhow::Error::from)
                 })
             {
-                log_error.get_or_insert(e);
+                Ok(()) => true,
+                Err(error) => {
+                    log_error.get_or_insert(error);
+                    false
+                }
             }
         },
     )
@@ -1514,7 +1533,7 @@ mod tests {
 
     async fn apply(p: &Prepared, s: &FakeStore) -> ExecSummary {
         let repos = plan(p, s).await;
-        execute(s, &repos, 3, 5, Duration::ZERO, |_| {}).await
+        execute(s, &repos, 3, 5, Duration::ZERO, |_| true).await
     }
 
     #[tokio::test]
@@ -1673,6 +1692,28 @@ mod tests {
     #[tokio::test]
     async fn a_failed_run_is_reported_and_resumes() {
         let p = prepared();
+        let log_store = store();
+        let log_repos = plan(&p, &log_store).await;
+        let mut log_attempts = 0;
+        let log_failure =
+            execute(&log_store, &log_repos, 2, 5, Duration::ZERO, |_| {
+                log_attempts += 1;
+                false
+            })
+            .await;
+        assert_eq!(log_attempts, 2, "the in-flight batch is drained");
+        assert_eq!(log_failure.attempted, 2);
+        assert_eq!(log_store.count(NUT), 2, "the in-flight writes finish");
+        assert!(
+            log_failure.not_attempted > 0,
+            "writes stop after the in-flight batch when logging fails"
+        );
+        assert_eq!(
+            log_failure.stopped_early.as_deref(),
+            Some("stopped after write log failure")
+        );
+        assert_eq!(log_store.count(VAL), 0);
+
         let s = store();
         let bad = p.catalog.ingredients[1].data_id.clone();
         s.failing.borrow_mut().insert(bad.clone());
@@ -1680,7 +1721,8 @@ mod tests {
         let mut logged = Vec::new();
         let repos = plan(&p, &s).await;
         let failed = execute(&s, &repos, 2, 5, Duration::ZERO, |l| {
-            logged.push(l.clone())
+            logged.push(l.clone());
+            true
         })
         .await;
         assert_eq!(failed.failed, 1);

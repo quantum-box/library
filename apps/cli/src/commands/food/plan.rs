@@ -15,6 +15,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use ingredient_notation::{
+    validate_aliases, validate_attribute_review_status, validate_cooking_state,
+    validate_default_display, validate_optional_text, validate_required_text,
+};
+
 use super::catalog::{prop, Owner, RecordKind, TargetRecord};
 
 /// A record as read back from a draft repo, by property name.
@@ -97,6 +102,8 @@ pub struct RepoPlan {
     /// Records in the repo that this import does not produce. Never
     /// deleted by the importer; listed for a person to decide.
     pub delete_candidates: Vec<DeleteCandidate>,
+    /// Retained values that would fail release validation.
+    pub validation_errors: Vec<String>,
     /// Human-owned fields left alone on existing records, by property.
     pub preserved_human_fields: BTreeMap<String, usize>,
     /// Derived fields left alone because the record is reviewed.
@@ -113,6 +120,50 @@ impl RepoPlan {
 
     pub fn updates(&self) -> usize {
         self.writes.len() - self.creates()
+    }
+}
+
+const MAX_RETAINED_FIELD_ERRORS: usize = 50;
+
+fn retained_field_error(
+    kind: RecordKind,
+    property: &str,
+    value: &str,
+) -> Option<String> {
+    let result = match (kind, property) {
+        (
+            RecordKind::Ingredient,
+            prop::STANDARD_NAME | prop::READING | prop::PART | prop::SKIN_BONE,
+        ) => validate_optional_text(property, Some(value)).map(|_| ()),
+        (RecordKind::Ingredient, prop::ALIASES) => {
+            validate_aliases(Some(value)).map(|_| ())
+        }
+        (RecordKind::Ingredient, prop::COOKING_STATE) => {
+            validate_cooking_state(Some(value)).map(|_| ())
+        }
+        (RecordKind::Ingredient, prop::ATTRIBUTE_REVIEW_STATUS) => {
+            validate_attribute_review_status(Some(value)).map(|_| ())
+        }
+        (RecordKind::Nutrient, prop::METHOD) => {
+            validate_optional_text(property, Some(value)).map(|_| ())
+        }
+        (RecordKind::Nutrient, prop::DEFAULT_DISPLAY) => {
+            validate_default_display(Some(value)).map(|_| ())
+        }
+        _ => return None,
+    };
+    result.err().map(|error| error.to_string())
+}
+
+fn record_validation_error(
+    plan: &mut RepoPlan,
+    omitted: &mut usize,
+    message: String,
+) {
+    if plan.validation_errors.len() < MAX_RETAINED_FIELD_ERRORS {
+        plan.validation_errors.push(message);
+    } else {
+        *omitted += 1;
     }
 }
 
@@ -136,6 +187,7 @@ pub fn plan_repo(
     }
     let target_ids: BTreeSet<&str> =
         targets.iter().map(|t| t.data_id.as_str()).collect();
+    let mut omitted_validation_errors = 0;
 
     for t in targets {
         let others: Vec<String> = by_key
@@ -155,14 +207,16 @@ pub fn plan_repo(
             continue;
         }
 
-        let fields = t
+        let fields: Vec<_> = t
             .fields
             .iter()
-            .filter(|f| !skip_properties.contains(f.property));
+            .filter(|f| !skip_properties.contains(f.property))
+            .collect();
 
         match by_id.get(t.data_id.as_str()) {
             None => {
                 let properties = fields
+                    .into_iter()
                     .filter_map(|f| {
                         f.value.clone().map(|v| (f.property.to_string(), v))
                     })
@@ -179,6 +233,39 @@ pub fn plan_repo(
             Some(e) => {
                 let reviewed =
                     e.get(prop::ATTRIBUTE_REVIEW_STATUS) == "reviewed";
+                for f in &fields {
+                    if f.owner == Owner::Human
+                        || (f.owner == Owner::Derived && reviewed)
+                    {
+                        if let Some(error) =
+                            retained_field_error(kind, f.property, e.get(f.property))
+                        {
+                            record_validation_error(
+                                &mut plan,
+                                &mut omitted_validation_errors,
+                                format!(
+                                    "{} {} has invalid retained field `{}`: {error}",
+                                    kind.as_str(),
+                                    t.business_key,
+                                    f.property
+                                ),
+                            );
+                        }
+                    }
+                }
+                if t.name_owner == Owner::Human {
+                    if let Err(error) = validate_required_text("name", &e.name) {
+                        record_validation_error(
+                            &mut plan,
+                            &mut omitted_validation_errors,
+                            format!(
+                                "{} {} has invalid retained field `name`: {error}",
+                                kind.as_str(),
+                                t.business_key
+                            ),
+                        );
+                    }
+                }
                 let mut properties = BTreeMap::new();
                 let mut changed = Vec::new();
                 for f in fields {
@@ -237,6 +324,12 @@ pub fn plan_repo(
                 }
             }
         }
+    }
+
+    if omitted_validation_errors > 0 {
+        plan.validation_errors.push(format!(
+            "{omitted_validation_errors} additional retained fields failed validation"
+        ));
     }
 
     for e in existing {
@@ -391,6 +484,63 @@ mod tests {
             Some(&1)
         );
         assert!(plan.preserved_human_fields.contains_key("aliases"));
+
+        let mut invalid_status = stored(&c.ingredients[0]);
+        invalid_status.fields.insert(
+            "attribute_review_status".into(),
+            "approved".into(),
+        );
+        let invalid_status_plan = plan_repo(
+            RecordKind::Ingredient,
+            &c.ingredients,
+            &[invalid_status],
+            &c.withheld_keys,
+            &no_skip(),
+        );
+        assert!(invalid_status_plan
+            .validation_errors
+            .iter()
+            .any(|error| error.contains("attribute_review_status")));
+
+        let mut invalid_state = stored(&c.ingredients[0]);
+        invalid_state
+            .fields
+            .insert("attribute_review_status".into(), "reviewed".into());
+        invalid_state
+            .fields
+            .insert("cooking_state".into(), "Raw".into());
+        let invalid_state_plan = plan_repo(
+            RecordKind::Ingredient,
+            &c.ingredients,
+            &[invalid_state],
+            &c.withheld_keys,
+            &no_skip(),
+        );
+        assert!(invalid_state_plan
+            .validation_errors
+            .iter()
+            .any(|error| error.contains("cooking_state")));
+
+        let mut invalid_nutrient = stored(&c.nutrients[0]);
+        invalid_nutrient.name = " ".into();
+        invalid_nutrient
+            .fields
+            .insert("default_display".into(), "yes".into());
+        let invalid_nutrient_plan = plan_repo(
+            RecordKind::Nutrient,
+            &c.nutrients,
+            &[invalid_nutrient],
+            &c.withheld_keys,
+            &no_skip(),
+        );
+        assert!(invalid_nutrient_plan
+            .validation_errors
+            .iter()
+            .any(|error| error.contains("default_display")));
+        assert!(invalid_nutrient_plan
+            .validation_errors
+            .iter()
+            .any(|error| error.contains("name")));
     }
 
     #[test]

@@ -10,7 +10,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use ingredient_notation::{validate_cooking_state, validate_key};
+use ingredient_notation::{
+    validate_aliases, validate_attribute_review_status, validate_cooking_state,
+    validate_default_display, validate_display_order, validate_key,
+    validate_optional_text, validate_required_text,
+};
 
 use super::{NormalizedDecimal, NutrientValueStatus};
 
@@ -21,8 +25,6 @@ pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 /// Report at most this many validation errors, so one broken import does
 /// not produce a response the size of the whole table.
 const MAX_REPORTED_ERRORS: usize = 50;
-const MAX_ALIASES: usize = 64;
-const MAX_TEXT_LEN: usize = 255;
 
 /// One ingredient record as read from the draft repo.
 #[derive(Debug, Clone, Default)]
@@ -94,12 +96,17 @@ impl AttributeReviewStatus {
     }
 
     pub fn parse(raw: &str) -> errors::Result<Self> {
-        match raw.trim() {
-            "unreviewed" => Ok(Self::Unreviewed),
-            "reviewed" => Ok(Self::Reviewed),
-            other => Err(errors::Error::invalid(format!(
-                "unknown attribute_review_status: {other}"
-            ))),
+        let status = validate_attribute_review_status(Some(raw))?;
+        if raw.trim().is_empty() {
+            return Err(errors::Error::invalid(format!(
+                "unknown attribute_review_status: {}",
+                raw.trim()
+            )));
+        }
+        if status == "reviewed" {
+            Ok(Self::Reviewed)
+        } else {
+            Ok(Self::Unreviewed)
         }
     }
 }
@@ -379,27 +386,6 @@ impl Errors {
     }
 }
 
-fn required_text(field: &str, raw: &str) -> errors::Result<String> {
-    optional_text(field, Some(raw))?.ok_or_else(|| {
-        errors::Error::invalid(format!("{field} is required"))
-    })
-}
-
-fn optional_text(
-    field: &str,
-    raw: Option<&str>,
-) -> errors::Result<Option<String>> {
-    let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
-        return Ok(None);
-    };
-    if s.chars().count() > MAX_TEXT_LEN {
-        return Err(errors::Error::invalid(format!(
-            "{field} is longer than {MAX_TEXT_LEN} characters"
-        )));
-    }
-    Ok(Some(s.to_string()))
-}
-
 fn validate_ingredient(
     d: &DraftIngredient,
 ) -> errors::Result<ReleasedIngredient> {
@@ -407,45 +393,29 @@ fn validate_ingredient(
     let source_food_code =
         validate_key("source_food_code", &d.source_food_code)?;
 
-    let mut aliases: Vec<String> = d
-        .aliases
-        .as_deref()
-        .unwrap_or("")
-        .lines()
-        .map(|l| optional_text("alias", Some(l)))
-        .collect::<errors::Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-    aliases.sort();
-    aliases.dedup();
-    if aliases.len() > MAX_ALIASES {
-        return Err(errors::Error::invalid(format!(
-            "more than {MAX_ALIASES} aliases"
-        )));
-    }
+    let aliases = validate_aliases(d.aliases.as_deref())?;
 
     Ok(ReleasedIngredient {
         ingredient_key: validate_key("ingredient_key", &d.ingredient_key)?,
         source_food_code,
-        original_name: required_text("original_name", &d.original_name)?,
-        standard_name: optional_text(
+        original_name: validate_required_text("original_name", &d.original_name)?,
+        standard_name: validate_optional_text(
             "standard_name",
             d.standard_name.as_deref(),
         )?,
-        reading: optional_text("reading", d.reading.as_deref())?,
+        reading: validate_optional_text("reading", d.reading.as_deref())?,
         aliases,
-        category_code: optional_text(
+        category_code: validate_optional_text(
             "category_code",
             d.category_code.as_deref(),
         )?,
-        category_name: optional_text(
+        category_name: validate_optional_text(
             "category_name",
             d.category_name.as_deref(),
         )?,
-        part: optional_text("part", d.part.as_deref())?,
+        part: validate_optional_text("part", d.part.as_deref())?,
         cooking_state: validate_cooking_state(d.cooking_state.as_deref())?,
-        skin_bone: optional_text("skin_bone", d.skin_bone.as_deref())?,
+        skin_bone: validate_optional_text("skin_bone", d.skin_bone.as_deref())?,
         refuse_rate: d
             .refuse_rate
             .as_deref()
@@ -453,14 +423,11 @@ fn validate_ingredient(
             .filter(|s| !s.is_empty())
             .map(NormalizedDecimal::parse_percentage)
             .transpose()?,
-        attribute_review_status: match d
-            .attribute_review_status
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            Some(s) => AttributeReviewStatus::parse(s)?,
-            None => AttributeReviewStatus::Unreviewed,
+        attribute_review_status: match validate_attribute_review_status(
+            d.attribute_review_status.as_deref(),
+        )? {
+            "reviewed" => AttributeReviewStatus::Reviewed,
+            _ => AttributeReviewStatus::Unreviewed,
         },
     })
 }
@@ -468,40 +435,17 @@ fn validate_ingredient(
 fn validate_nutrient(
     d: &DraftNutrient,
 ) -> errors::Result<ReleasedNutrient> {
-    let display_order = match d
-        .display_order
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) => s.parse::<i32>().map_err(|_| {
-            errors::Error::invalid(format!(
-                "display_order must be an integer: {s:?}"
-            ))
-        })?,
-        None => 0,
-    };
-    let default_display = match d
-        .default_display
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some("true") => true,
-        Some("false") | None => false,
-        Some(other) => {
-            return Err(errors::Error::invalid(format!(
-                "default_display must be true or false: {other:?}"
-            )))
-        }
-    };
+    let display_order =
+        validate_display_order(d.display_order.as_deref())?;
+    let default_display =
+        validate_default_display(d.default_display.as_deref())?;
 
     Ok(ReleasedNutrient {
         nutrient_key: validate_key("nutrient_key", &d.nutrient_key)?,
-        name: required_text("name", &d.name)?,
-        unit: required_text("unit", &d.unit)?,
-        basis: required_text("basis", &d.basis)?,
-        method: optional_text("method", d.method.as_deref())?,
+        name: validate_required_text("name", &d.name)?,
+        unit: validate_required_text("unit", &d.unit)?,
+        basis: validate_required_text("basis", &d.basis)?,
+        method: validate_optional_text("method", d.method.as_deref())?,
         display_order,
         default_display,
     })
@@ -515,7 +459,7 @@ fn validate_value(d: &DraftValue) -> errors::Result<ReleasedValue> {
         nutrient_key: validate_key("nutrient_key", &d.nutrient_key)?,
         status,
         amount,
-        raw_notation: optional_text(
+        raw_notation: validate_optional_text(
             "raw_notation",
             d.raw_notation.as_deref(),
         )?,
