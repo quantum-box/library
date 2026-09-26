@@ -305,24 +305,41 @@ impl LibraryQuery {
         repo_username: String,
     ) -> bool {
         let executor = match ctx.data::<tachyon_sdk::auth::Executor>() {
-                Ok(executor) => executor,
-                Err(_) => return false,
-            };
-        let multi_tenancy =
-            match ctx.data::<tachyon_sdk::auth::MultiTenancy>() {
-                Ok(multi_tenancy) => multi_tenancy,
-                Err(_) => return false,
-            };
+            Ok(executor) => executor,
+            Err(_) => return false,
+        };
         let app = match ctx.data::<Arc<LibraryApp>>() {
             Ok(app) => app,
             Err(_) => return false,
         };
+        let org_username =
+            match org_username.parse::<value_object::Identifier>() {
+                Ok(username) => username,
+                Err(_) => return false,
+            };
+        let organization = match app
+            .organization_repo
+            .get_by_username(&org_username)
+            .await
+        {
+            Ok(Some(organization)) => organization,
+            Ok(None) => return false,
+            Err(error) => {
+                super::log_graphql_operation_error("library_query", &error);
+                return false;
+            }
+        };
+        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(organization.id().clone()),
+        );
+
         match app
             .view_repo
             .execute(&crate::usecase::ViewRepoInputData {
                 executor,
-                multi_tenancy,
-                organization_username: org_username,
+                multi_tenancy: &tenant_scope,
+                organization_username: org_username.to_string(),
                 repo_username,
             })
             .await
