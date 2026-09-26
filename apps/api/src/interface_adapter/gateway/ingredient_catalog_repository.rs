@@ -882,6 +882,7 @@ mod ingredient_catalog_db_tests {
         });
         assert_eq!(
             ReleaseSnapshot::compute_hash(
+                release.schema_version(),
                 &ingredients,
                 &nutrients,
                 &all_values

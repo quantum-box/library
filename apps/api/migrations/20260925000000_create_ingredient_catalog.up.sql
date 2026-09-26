@@ -16,7 +16,7 @@
 CREATE TABLE IF NOT EXISTS `ingredient_catalogs` (
     `id`                 VARCHAR(32)  NOT NULL COMMENT 'Catalog ID (icat_)',
     `tenant_id`          VARCHAR(29)  NOT NULL COMMENT 'Owning org (tn_)',
-    `catalog_key`        VARCHAR(64)  NOT NULL COMMENT 'URL-safe key, unique per org',
+    `catalog_key`        VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'URL-safe key, unique per org',
     `name`               VARCHAR(255) NOT NULL,
     `ingredient_repo_id` VARCHAR(29)  NOT NULL COMMENT 'Draft ingredients (rp_)',
     `nutrient_repo_id`   VARCHAR(29)  NOT NULL COMMENT 'Draft nutrient definitions (rp_)',
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS `ingredient_releases` (
     `id`                  VARCHAR(32)   NOT NULL COMMENT 'Release ID (irel_)',
     `tenant_id`           VARCHAR(29)   NOT NULL,
     `catalog_id`          VARCHAR(32)   NOT NULL,
-    `source_id`           VARCHAR(128)  NOT NULL COMMENT 'Dataset, e.g. mext-sfct-2023',
-    `source_release`      VARCHAR(128)  NOT NULL COMMENT 'Edition incl. errata',
+    `source_id`           VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Dataset, e.g. mext-sfct-2023',
+    `source_release`      VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Edition incl. errata',
     `source_url`          VARCHAR(2048) NULL,
     `source_retrieved_at` TIMESTAMP     NULL,
     `notes`               TEXT          NULL,
@@ -56,7 +56,7 @@ COMMENT='COM-860: immutable published release of an ingredient catalog';
 
 CREATE TABLE IF NOT EXISTS `ingredient_release_nutrients` (
     `release_id`      VARCHAR(32)  NOT NULL,
-    `nutrient_key`    VARCHAR(64)  NOT NULL COMMENT 'e.g. ENERC_KCAL, PROT-',
+    `nutrient_key`    VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'e.g. ENERC_KCAL, PROT-',
     `name`            VARCHAR(255) NOT NULL,
     `unit`            VARCHAR(255) NOT NULL,
     `basis`           VARCHAR(255) NOT NULL COMMENT 'e.g. per 100 g edible portion',
@@ -71,8 +71,8 @@ COMMENT='COM-860: nutrient definitions frozen in a release';
 
 CREATE TABLE IF NOT EXISTS `ingredient_release_items` (
     `release_id`              VARCHAR(32)  NOT NULL,
-    `ingredient_key`          VARCHAR(64)  NOT NULL COMMENT 'Stable across releases',
-    `source_food_code`        VARCHAR(64)  NOT NULL COMMENT 'Text: keeps leading zeros',
+    `ingredient_key`          VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Stable across releases',
+    `source_food_code`        VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Text: keeps leading zeros',
     `original_name`           VARCHAR(255) NOT NULL COMMENT 'Food name as in the source',
     `standard_name`           VARCHAR(255) NULL,
     `reading`                 VARCHAR(255) NULL,
@@ -94,7 +94,7 @@ COMMENT='COM-860: ingredients frozen in a release';
 
 CREATE TABLE IF NOT EXISTS `ingredient_release_aliases` (
     `release_id`     VARCHAR(32)  NOT NULL,
-    `ingredient_key` VARCHAR(64)  NOT NULL,
+    `ingredient_key` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `alias`          VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     PRIMARY KEY (`release_id`, `ingredient_key`, `alias`),
     CONSTRAINT `fk_ingredient_release_aliases_item` FOREIGN KEY (`release_id`, `ingredient_key`)
@@ -104,8 +104,8 @@ COMMENT='COM-860: curated aliases frozen in a release, used for search';
 
 CREATE TABLE IF NOT EXISTS `ingredient_release_values` (
     `release_id`     VARCHAR(32)  NOT NULL,
-    `ingredient_key` VARCHAR(64)  NOT NULL,
-    `nutrient_key`   VARCHAR(64)  NOT NULL,
+    `ingredient_key` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `nutrient_key`   VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `value_status`   VARCHAR(32)  NOT NULL COMMENT 'measured, estimated, zero, trace, not_measured, ...',
     `amount`         VARCHAR(38)  NULL COMMENT 'Normalized decimal; NULL for trace and not measured',
     `raw_notation`   VARCHAR(255) NULL COMMENT 'Cell text as in the source',

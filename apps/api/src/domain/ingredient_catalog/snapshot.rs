@@ -198,12 +198,13 @@ impl ReleaseSnapshot {
     /// Recompute the hash of stored rows, e.g. to check that a published
     /// release was not modified after it was written.
     pub fn compute_hash(
+        schema_version: u32,
         ingredients: &[ReleasedIngredient],
         nutrients: &[ReleasedNutrient],
         values: &[ReleasedValue],
     ) -> String {
         let content = HashedContent {
-            schema_version: SNAPSHOT_SCHEMA_VERSION,
+            schema_version,
             ingredients,
             nutrients,
             values,
@@ -312,7 +313,12 @@ impl ReleaseSnapshot {
         let nutrients: Vec<_> = nutrients.into_values().collect();
         let values: Vec<_> = values.into_values().collect();
         let content_hash =
-            Self::compute_hash(&ingredients, &nutrients, &values);
+            Self::compute_hash(
+                SNAPSHOT_SCHEMA_VERSION,
+                &ingredients,
+                &nutrients,
+                &values,
+            );
 
         Ok(Self {
             ingredients,
@@ -726,6 +732,7 @@ mod tests {
         let s = ReleaseSnapshot::build(&onion_catalog()).unwrap();
         assert_eq!(
             ReleaseSnapshot::compute_hash(
+                SNAPSHOT_SCHEMA_VERSION,
                 s.ingredients(),
                 s.nutrients(),
                 s.values()

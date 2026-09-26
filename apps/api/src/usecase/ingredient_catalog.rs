@@ -442,13 +442,25 @@ impl PublishIngredientRelease {
         let mut seen_names = BTreeSet::new();
         for property in &properties {
             let name = property.name().trim();
-            if relevant_names.contains(&name)
-                && !seen_names.insert(name.to_string())
-            {
-                return Err(errors::Error::invalid(format!(
-                    "draft repo {} has duplicate property name {name:?}",
-                    repo.username()
-                )));
+            if relevant_names.contains(&name) {
+                if !seen_names.insert(name.to_string()) {
+                    return Err(errors::Error::invalid(format!(
+                        "draft repo {} has duplicate property name {name:?}",
+                        repo.username()
+                    )));
+                }
+                let expected_type = match name {
+                    draft_schema::DISPLAY_ORDER => "INTEGER",
+                    draft_schema::DEFAULT_DISPLAY => "BOOLEAN",
+                    _ => "STRING",
+                };
+                let actual_type = property.property_type().to_string();
+                if actual_type != expected_type {
+                    return Err(errors::Error::invalid(format!(
+                        "draft repo {} property {name:?} must be {expected_type}, got {actual_type}",
+                        repo.username()
+                    )));
+                }
             }
         }
 
@@ -646,8 +658,20 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             )));
         }
 
-        let private_repo_mask =
-            repos.iter().enumerate().fold(0u8, |mask, (index, repo)| {
+        // Publishing can take a while, so use the current repo visibility
+        // at the point the immutable release is inserted, not the values
+        // loaded before reading every draft page.
+        let (_, current_repos) = self
+            .lookup
+            .catalog(&input.org_username, &input.catalog_key)
+            .await?;
+        self.lookup
+            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
+            .await?;
+        let private_repo_mask = current_repos
+            .iter()
+            .enumerate()
+            .fold(0u8, |mask, (index, repo)| {
                 if repo.is_private() {
                     mask | (1 << index)
                 } else {
@@ -773,17 +797,24 @@ impl ReadIngredientCatalogInputPort for ReadIngredientCatalog {
             .catalogs
             .list_releases(catalog.tenant_id(), catalog.id())
             .await?;
-        for release in &releases {
-            self.lookup
+        let mut readable_releases = Vec::with_capacity(releases.len());
+        for release in releases {
+            match self
+                .lookup
                 .authorize_read(
                     target.executor,
                     target.multi_tenancy,
                     &catalog,
                     *release.private_repo_mask(),
                 )
-                .await?;
+                .await
+            {
+                Ok(()) => readable_releases.push(release),
+                Err(error) if error.is_forbidden() => {}
+                Err(error) => return Err(error),
+            }
         }
-        Ok((catalog, releases))
+        Ok((catalog, readable_releases))
     }
 
     #[tracing::instrument(
