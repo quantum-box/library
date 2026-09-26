@@ -1,4 +1,6 @@
-//! `library auth` — manage the API key saved on this machine.
+//! `library auth` — sign in and manage the credentials saved on this
+//! machine. Browser sign-in is for MCP; `--api-key` saves a credential
+//! for REST, GraphQL, MCP, CI, and service accounts.
 
 use anyhow::{bail, Result};
 use clap::Subcommand;
@@ -12,12 +14,15 @@ use crate::output::{print_json, Format};
 
 #[derive(Subcommand)]
 pub enum AuthCommand {
-    /// Save an API key (and optionally an API URL) to the local profile
+    /// Sign in to MCP through the browser, or save an API key with `--api-key`
     Login {
-        /// Library API key. Create one in the Library client under API
-        /// keys; it starts with `pk_`.
+        /// Save a Library API key (`pk_…`) instead of signing in through
+        /// the browser. For CI and service accounts.
         #[arg(long, value_name = "KEY")]
-        api_key: String,
+        api_key: Option<String>,
+        /// Print the sign-in URL; open it in a browser on this machine
+        #[arg(long)]
+        no_browser: bool,
         /// Base URL to save alongside the key
         #[arg(long, value_name = "URL")]
         api_url: Option<String>,
@@ -30,7 +35,7 @@ pub enum AuthCommand {
     },
     /// Show which credentials the CLI would use and where they came from
     Status,
-    /// Delete the local profile
+    /// Sign out and delete the local profile
     Logout,
 }
 
@@ -41,13 +46,30 @@ pub async fn run(
 ) -> Result<()> {
     match command {
         AuthCommand::Login {
-            api_key,
+            api_key: Some(api_key),
             api_url,
             operator_id,
             no_verify,
+            ..
         } => login(api_key, api_url, operator_id, no_verify, format).await,
+        AuthCommand::Login {
+            api_key: None,
+            no_browser,
+            api_url,
+            operator_id,
+            ..
+        } => {
+            browser_login(
+                overrides,
+                api_url,
+                operator_id,
+                no_browser,
+                format,
+            )
+            .await
+        }
         AuthCommand::Status => status(overrides, format),
-        AuthCommand::Logout => logout(format),
+        AuthCommand::Logout => logout(format).await,
     }
 }
 
@@ -74,6 +96,8 @@ async fn login(
     // so re-running with a rotated key does not clear the API URL.
     let mut stored = config::load_stored().unwrap_or_default();
     stored.api_key = Some(api_key.clone());
+    // One credential at a time, so status never shows a stale sign-in.
+    stored.oauth = None;
     if let Some(api_url) = api_url {
         stored.api_base_url = Some(api_url);
     }
@@ -108,6 +132,54 @@ async fn login(
         }
     }
 
+    Ok(())
+}
+
+async fn browser_login(
+    overrides: &ConfigOverrides,
+    api_url: Option<String>,
+    operator_id: Option<String>,
+    no_browser: bool,
+    format: Format,
+) -> Result<()> {
+    let mut stored = config::load_stored().unwrap_or_default();
+    if let Some(api_url) = api_url {
+        stored.api_base_url = Some(api_url);
+    }
+    if let Some(operator_id) = operator_id {
+        stored.operator_id = Some(operator_id);
+    }
+    // Sign in against the URL this login will save, unless a flag or the
+    // environment points this one command elsewhere.
+    let base_url = config::merge(
+        &ConfigOverrides {
+            api_base_url: overrides.api_base_url.clone(),
+            ..Default::default()
+        },
+        &config::EnvConfig::from_process(),
+        &stored,
+    )
+    .api_base_url;
+
+    let session =
+        crate::oauth::browser_login(&base_url, !no_browser).await?;
+    stored.api_key = None;
+    stored.oauth = Some(session.clone());
+    let path = config::save_stored(&stored)?;
+
+    match format {
+        Format::Json => print_json(&json!({
+            "saved_to": path.display().to_string(),
+            "api_base_url": base_url,
+            "signed_in_with": session.issuer,
+            "expires_at": session.expires_at,
+        })),
+        Format::Text => {
+            println!("Signed in to MCP. Saved to {}", path.display());
+            println!("  API URL:   {base_url}");
+            println!("  Signed in: {}", session.issuer);
+        }
+    }
     Ok(())
 }
 
@@ -170,12 +242,13 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             "config_exists": path.exists(),
             "api_base_url": resolved.api_base_url,
             "api_base_url_source": url_source,
-            "authenticated": resolved.api_key.is_some(),
-            "api_key": resolved
-                .api_key
-                .as_deref()
-                .map(config::redact_key),
+            "authenticated": resolved.api_key.is_some()
+                || resolved.mcp_access_token.is_some(),
+            "credential": credential_kind(key_source, &stored),
+            "api_key": api_key_shown(key_source, &resolved),
             "api_key_source": key_source,
+            "session_expires_at": session_in_use(key_source, &stored)
+                .and_then(|s| s.expires_at),
             "operator_id": resolved.operator_id,
         })),
         Format::Text => {
@@ -184,15 +257,26 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
                 "API URL:     {} ({url_source})",
                 resolved.api_base_url
             );
-            match resolved.api_key.as_deref() {
-                Some(key) => println!(
+            match (
+                session_in_use(key_source, &stored),
+                resolved.api_key.as_deref(),
+            ) {
+                (Some(session), _) => println!(
+                    "MCP signed in: {} (browser sign-in{})",
+                    session.issuer,
+                    if session.refresh_token.is_some() {
+                        ", renews automatically"
+                    } else {
+                        ""
+                    }
+                ),
+                (None, Some(key)) => println!(
                     "API key:     {} ({key_source})",
                     config::redact_key(key)
                 ),
-                None => println!(
-                    "API key:     none — run `library auth login \
-                     --api-key pk_…`"
-                ),
+                (None, None) => {
+                    println!("Signed in:   no — run `library auth login`")
+                }
             }
             if let Some(operator_id) = resolved.operator_id {
                 println!("Operator id: {operator_id}");
@@ -201,6 +285,40 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The saved browser sign-in, when it is the credential in use.
+fn session_in_use<'a>(
+    key_source: &str,
+    stored: &'a StoredConfig,
+) -> Option<&'a crate::oauth::OAuthSession> {
+    if key_source == "default" {
+        stored.oauth.as_ref()
+    } else {
+        None
+    }
+}
+
+fn credential_kind(
+    key_source: &str,
+    stored: &StoredConfig,
+) -> &'static str {
+    match (key_source, stored.oauth.is_some()) {
+        ("default", true) => "browser",
+        ("default", false) => "none",
+        _ => "api_key",
+    }
+}
+
+/// A token from browser sign-in is never shown, even redacted.
+fn api_key_shown(
+    key_source: &str,
+    resolved: &config::ResolvedConfig,
+) -> Option<String> {
+    if key_source == "default" {
+        return None;
+    }
+    resolved.api_key.as_deref().map(config::redact_key)
 }
 
 fn source_of(flag: bool, env: bool, stored: bool) -> &'static str {
@@ -215,7 +333,11 @@ fn source_of(flag: bool, env: bool, stored: bool) -> &'static str {
     }
 }
 
-fn logout(format: Format) -> Result<()> {
+async fn logout(format: Format) -> Result<()> {
+    if let Some(session) = config::load_stored().ok().and_then(|s| s.oauth)
+    {
+        crate::oauth::revoke(&session).await;
+    }
     let removed = config::delete_stored()?;
 
     match (format, removed) {

@@ -3561,7 +3561,6 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
- "unicode-normalization",
  "url",
  "util",
  "utoipa",
@@ -3591,11 +3590,15 @@ name = "library-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
+ "rand 0.8.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
+ "url",
 ]
 
 [[package]]
