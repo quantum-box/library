@@ -295,6 +295,50 @@ impl LibraryQuery {
         Ok(output.repo.into())
     }
 
+    /// Check repository visibility without making one authorization failure
+    /// null out sibling results in a batched GraphQL query.
+    #[tracing::instrument(
+        name = "library_can_view_repo",
+        skip(self, ctx)
+    )]
+    async fn can_view_repo(
+        &self,
+        ctx: &Context<'_>,
+        org_username: String,
+        repo_username: String,
+    ) -> bool {
+        let executor =
+            match ctx.data::<tachyon_sdk::auth::Executor>() {
+                Ok(executor) => executor,
+                Err(_) => return false,
+            };
+        let multi_tenancy =
+            match ctx.data::<tachyon_sdk::auth::MultiTenancy>() {
+                Ok(multi_tenancy) => multi_tenancy,
+                Err(_) => return false,
+            };
+        let app = match ctx.data::<Arc<LibraryApp>>() {
+            Ok(app) => app,
+            Err(_) => return false,
+        };
+        match app
+            .view_repo
+            .execute(&crate::usecase::ViewRepoInputData {
+                executor,
+                multi_tenancy,
+                organization_username: org_username,
+                repo_username,
+            })
+            .await
+        {
+            Ok(_) => true,
+            Err(error) => {
+                super::log_graphql_operation_error("library_query", &error);
+                false
+            }
+        }
+    }
+
     #[tracing::instrument(name = "library_data", skip(self, ctx))]
     async fn data(
         &self,
