@@ -304,14 +304,13 @@ fn parse_row_pairs(
         .iter()
         .map(|n| (n.key.as_str(), n.unit.as_str()))
         .collect::<BTreeMap<_, _>>();
-    let errata_components = layout
-        .nutrients
-        .iter()
-        .map(|n| (n.key.as_str(), n.unit.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    if errata_components != main_components {
+    if let Some(component) = layout.nutrients.iter().find(|component| {
+        main_components.get(component.key.as_str()).copied()
+            != Some(component.unit.as_str())
+    }) {
         return Err(format!(
-            "errata {ROW_PAIR_SHEET} component identifiers or units do not match the main table"
+            "errata {ROW_PAIR_SHEET} component {:?} with unit {:?} does not match the main table",
+            component.key, component.unit
         ));
     }
     let marker_col = |r: usize| {
