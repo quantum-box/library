@@ -1,5 +1,6 @@
 mod api_key_role;
 pub mod global_id_mapping;
+pub mod ingredient_catalog;
 mod organization;
 pub mod policy;
 pub mod repo;
@@ -11,6 +12,7 @@ pub mod translation;
 
 pub use api_key_role::*;
 pub use global_id_mapping::*;
+pub use ingredient_catalog::*;
 pub use organization::*;
 pub use policy::*;
 pub use repo::*;

@@ -6,6 +6,7 @@ pub mod external_sync_scanner;
 pub mod global_id_mapping;
 pub mod graphql;
 pub mod image;
+pub mod ingredient_catalog;
 pub mod library_executor_extractor;
 pub mod library_org_extractor;
 pub mod live;
