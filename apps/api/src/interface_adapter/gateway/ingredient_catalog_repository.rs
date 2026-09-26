@@ -428,9 +428,12 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
         };
 
         let locked_repos: Vec<RepoVisibilityRow> = sqlx::query_as(
-            "SELECT `id`, `is_public` FROM `repos` \
-             WHERE `id` IN (?, ?, ?) ORDER BY `id` FOR UPDATE",
+            "SELECT CAST(`id` AS CHAR CHARACTER SET utf8mb4) AS `id`, \
+                    `is_public` FROM `repos` \
+             WHERE `platform_id` = ? AND `id` IN (?, ?, ?) \
+             ORDER BY `id` FOR UPDATE",
         )
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
         .bind(&ingredient_repo_id)
         .bind(&nutrient_repo_id)
         .bind(&value_repo_id)
@@ -446,11 +449,8 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
             .into_iter()
             .map(|repo| (repo.id, repo.is_public == 1))
             .collect::<BTreeMap<_, _>>();
-        let catalog_repo_ids = [
-            ingredient_repo_id,
-            nutrient_repo_id,
-            value_repo_id,
-        ];
+        let catalog_repo_ids =
+            [ingredient_repo_id, nutrient_repo_id, value_repo_id];
         let actual_private_repo_mask = catalog_repo_ids
             .iter()
             .enumerate()
@@ -825,18 +825,91 @@ mod ingredient_catalog_db_tests {
         }
     }
 
+    async fn seed_repo_visibility(
+        repo: &IngredientCatalogRepositoryImpl,
+        repo_id: &RepoId,
+        org_id: &str,
+        org_username: &str,
+        role: &str,
+    ) {
+        let suffix = repo_id.as_str().trim_start_matches("rp_");
+        sqlx::query(
+            "INSERT INTO `repos` \
+             (`id`, `org_id`, `org_username`, `username`, `name`, \
+              `description`, `is_public`, `platform_id`) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(repo_id.to_string())
+        .bind(org_id)
+        .bind(org_username)
+        .bind(format!("{role}-{suffix}"))
+        .bind(format!("test {role} repo"))
+        .bind(Option::<String>::None)
+        .bind(1_i8)
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
+        .execute(repo.db.pool().as_ref())
+        .await
+        .unwrap();
+    }
+
+    async fn seed_organization(
+        repo: &IngredientCatalogRepositoryImpl,
+        org_id: &str,
+        org_username: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO `organizations` \
+             (`id`, `name`, `username`, `description`, `website`, `platform_id`) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(org_id)
+        .bind("catalog test")
+        .bind(org_username)
+        .bind(Option::<String>::None)
+        .bind(Option::<String>::None)
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
+        .execute(repo.db.pool().as_ref())
+        .await
+        .unwrap();
+    }
+
     /// A fresh catalog in a fresh tenant, so tests never see each other.
     async fn publish(
         repo: &IngredientCatalogRepositoryImpl,
         draft: &DraftCatalog,
     ) -> (IngredientCatalog, IngredientRelease) {
+        let repo_ids = [
+            RepoId::default(),
+            RepoId::default(),
+            RepoId::default(),
+        ];
+        let org_id = value_object::OperatorId::default().to_string();
+        let org_username = format!(
+            "catalog-test-{}",
+            org_id.trim_start_matches("op_")
+        );
+        seed_organization(repo, &org_id, &org_username).await;
+        for (repo_id, role) in repo_ids.iter().zip([
+            "ingredient",
+            "nutrient",
+            "value",
+        ]) {
+            seed_repo_visibility(
+                repo,
+                repo_id,
+                &org_id,
+                &org_username,
+                role,
+            )
+            .await;
+        }
         let catalog = IngredientCatalog::create(
             &TenantId::default(),
             "food-composition",
             "食品成分",
-            &RepoId::default(),
-            &RepoId::default(),
-            &RepoId::default(),
+            &repo_ids[0],
+            &repo_ids[1],
+            &repo_ids[2],
         )
         .unwrap();
         repo.insert_catalog(&catalog).await.unwrap();
