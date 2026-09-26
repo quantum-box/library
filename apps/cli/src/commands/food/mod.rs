@@ -104,6 +104,7 @@ pub async fn run(
 ) -> Result<()> {
     match command {
         FoodCommand::Import(args) => {
+            import::validate_source_id(&args.source_id)?;
             let client = if args.offline {
                 None
             } else {

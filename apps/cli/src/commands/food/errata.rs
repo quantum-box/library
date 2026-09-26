@@ -116,7 +116,10 @@ pub struct ErrataOutcome {
 
 // ==================== reading ====================
 
-pub fn parse_errata(book: &Workbook, table: &TableLayout) -> ErrataBook {
+pub fn parse_errata(
+    book: &Workbook,
+    table: &TableLayout,
+) -> Result<ErrataBook, String> {
     let labels = label_index(table);
     let mut out = ErrataBook::default();
     for sheet in &book.sheets {
@@ -125,17 +128,10 @@ pub fn parse_errata(book: &Workbook, table: &TableLayout) -> ErrataBook {
         }
         match sheet.name.as_str() {
             ITEMIZED_SHEET => {
-                out.entries.extend(parse_itemized(sheet, &labels))
+                out.entries.extend(parse_itemized(sheet, &labels)?)
             }
-            ROW_PAIR_SHEET => match parse_row_pairs(sheet) {
-                Ok(entries) => out.entries.extend(entries),
-                Err(reason) => out.skipped.push(SkippedSheet {
-                    sheet: sheet.name.clone(),
-                    entries: 0,
-                    reason: format!(
-                        "row pair sheet could not be read: {reason}"
-                    ),
-                }),
+            ROW_PAIR_SHEET => {
+                out.entries.extend(parse_row_pairs(sheet)?)
             },
             other => {
                 let reason = if other.contains("第1章") {
@@ -151,7 +147,7 @@ pub fn parse_errata(book: &Workbook, table: &TableLayout) -> ErrataBook {
             }
         }
     }
-    out
+    Ok(out)
 }
 
 fn text(sheet: &Sheet, r: usize, c: Option<usize>) -> Option<String> {
@@ -202,9 +198,15 @@ fn count_entries(sheet: &Sheet) -> usize {
 fn parse_itemized(
     sheet: &Sheet,
     labels: &BTreeMap<String, String>,
-) -> Vec<ErrataEntry> {
+) -> Result<Vec<ErrataEntry>, String> {
     let Some(h) = itemized_header(sheet) else {
-        return Vec::new();
+        return Err(format!(
+            concat!(
+                "sheet {:?} is missing one or more required headers: ",
+                "食品番号, 項目等, 誤, 正"
+            ),
+            sheet.name
+        ));
     };
     let mut entries = Vec::new();
     for r in (h.row + 1)..sheet.height() {
@@ -278,16 +280,28 @@ fn parse_row_pairs(sheet: &Sheet) -> Result<Vec<ErrataEntry>, String> {
     let mut pending: Option<usize> = None;
     for r in (layout.first_data_row - 1)..sheet.height() {
         match marker_col(r).as_deref() {
-            Some("誤") => pending = Some(r),
-            Some("正") => {
-                let Some(w) = pending.take() else { continue };
-                let code = text(sheet, r, Some(layout.code_col));
-                if code.is_none()
-                    || code != text(sheet, w, Some(layout.code_col))
-                {
-                    continue;
+            Some("誤") => {
+                if let Some(unmatched) = pending.replace(r) {
+                    return Err(format!(
+                        "row {} has 誤 without a matching 正 row",
+                        unmatched + 1
+                    ));
                 }
-                let code = code.unwrap_or_default();
+            }
+            Some("正") => {
+                let w = pending.take().ok_or_else(|| {
+                    format!("row {} has 正 without a preceding 誤 row", r + 1)
+                })?;
+                let wrong_code = text(sheet, w, Some(layout.code_col));
+                let right_code = text(sheet, r, Some(layout.code_col));
+                if right_code.is_none() || right_code != wrong_code {
+                    return Err(format!(
+                        "errata rows {}-{} have mismatched food numbers: 誤={wrong_code:?}, 正={right_code:?}",
+                        w + 1,
+                        r + 1
+                    ));
+                }
+                let code = right_code.unwrap_or_default();
                 let mut fields: Vec<(ErrataField, Option<usize>, String)> = vec![
                     (
                         ErrataField::Name,
@@ -369,6 +383,12 @@ fn parse_row_pairs(sheet: &Sheet) -> Result<Vec<ErrataEntry>, String> {
             }
             _ => {}
         }
+    }
+    if let Some(unmatched) = pending {
+        return Err(format!(
+            "row {} has 誤 without a matching 正 row",
+            unmatched + 1
+        ));
     }
     Ok(entries)
 }
@@ -769,7 +789,8 @@ mod tests {
 
     fn setup() -> (Vec<SourceFood>, ErrataBook) {
         let table = parse_table(&fixtures::main_sheet()).unwrap();
-        let book = parse_errata(&fixtures::errata_book(), &table.layout);
+        let book =
+            parse_errata(&fixtures::errata_book(), &table.layout).unwrap();
         (table.foods, book)
     }
 

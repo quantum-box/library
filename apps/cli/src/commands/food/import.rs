@@ -42,6 +42,7 @@ use super::store::{
 };
 use super::table::{
     categories_from_sheet_names, parse_table, IgnoredColumn, SourceTable,
+    EXPECTED_UNITS,
 };
 use super::{ImportArgs, MEXT_PAGE_URL};
 use crate::output::{print_json, Format};
@@ -123,7 +124,29 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
             book.sheet_names().join(", ")
         )
     })?;
-    let table = parse_table(sheet).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut table = parse_table(sheet).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let actual_keys = table
+        .layout
+        .nutrients
+        .iter()
+        .map(|n| n.key.clone())
+        .collect::<BTreeSet<_>>();
+    let expected_keys = EXPECTED_UNITS
+        .iter()
+        .map(|(key, _)| (*key).to_string())
+        .collect::<BTreeSet<_>>();
+    for key in expected_keys.difference(&actual_keys) {
+        table
+            .layout
+            .errors
+            .push(format!("missing nutrient identifier {key:?}"));
+    }
+    for key in actual_keys.difference(&expected_keys) {
+        table
+            .layout
+            .errors
+            .push(format!("unexpected nutrient identifier {key:?}"));
+    }
     let categories = categories_from_sheet_names(&book);
 
     let mut files = vec![input.table_file];
@@ -132,7 +155,8 @@ pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
         Some((bytes, file)) => {
             let errata_book = Workbook::read_xlsx(bytes)
                 .context("reading the errata workbook")?;
-            let parsed = parse_errata(&errata_book, &table.layout);
+            let parsed = parse_errata(&errata_book, &table.layout)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
             let outcomes = apply_errata(&mut foods, &parsed);
             files.push(file);
             (Some(parsed), outcomes)
@@ -935,11 +959,26 @@ fn retrieved_at(args: &ImportArgs) -> Result<String> {
         .to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
+pub(super) fn validate_source_id(source_id: &str) -> Result<()> {
+    let valid = !source_id.is_empty()
+        && source_id.len() <= 128
+        && source_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b));
+    if !valid {
+        bail!(
+            "--source-id must be 1-128 ASCII letters, digits, '.', '_', '+', or '-'"
+        );
+    }
+    Ok(())
+}
+
 pub async fn run<S: Store>(
     args: &ImportArgs,
     store: Option<&S>,
     format: Format,
 ) -> Result<()> {
+    validate_source_id(&args.source_id)?;
     let retrieved = retrieved_at(args)?;
     let table_bytes = fs::read(&args.table)
         .with_context(|| format!("reading {}", args.table.display()))?;
