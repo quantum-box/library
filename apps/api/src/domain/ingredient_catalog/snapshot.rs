@@ -312,13 +312,12 @@ impl ReleaseSnapshot {
         let ingredients: Vec<_> = ingredients.into_values().collect();
         let nutrients: Vec<_> = nutrients.into_values().collect();
         let values: Vec<_> = values.into_values().collect();
-        let content_hash =
-            Self::compute_hash(
-                SNAPSHOT_SCHEMA_VERSION,
-                &ingredients,
-                &nutrients,
-                &values,
-            );
+        let content_hash = Self::compute_hash(
+            SNAPSHOT_SCHEMA_VERSION,
+            &ingredients,
+            &nutrients,
+            &values,
+        );
 
         Ok(Self {
             ingredients,

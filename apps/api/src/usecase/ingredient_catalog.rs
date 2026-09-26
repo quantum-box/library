@@ -668,16 +668,16 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
         self.lookup
             .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
             .await?;
-        let private_repo_mask = current_repos
-            .iter()
-            .enumerate()
-            .fold(0u8, |mask, (index, repo)| {
+        let private_repo_mask = current_repos.iter().enumerate().fold(
+            0u8,
+            |mask, (index, repo)| {
                 if repo.is_private() {
                     mask | (1 << index)
                 } else {
                     mask
                 }
-            });
+            },
+        );
         let release = IngredientRelease::publish_with_visibility(
             &catalog,
             input.source,

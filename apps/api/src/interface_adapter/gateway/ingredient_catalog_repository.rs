@@ -629,10 +629,7 @@ impl IngredientCatalogRepository for IngredientCatalogRepositoryImpl {
                 let mut ingredient = ReleasedIngredient::try_from(row)?;
                 let keys = [ingredient.ingredient_key.clone()];
                 let mut aliases = self
-                    .aliases_for_ingredients(
-                        release.id().as_ref(),
-                        &keys,
-                    )
+                    .aliases_for_ingredients(release.id().as_ref(), &keys)
                     .await?;
                 ingredient.aliases = aliases
                     .remove(&ingredient.ingredient_key)
@@ -882,7 +879,7 @@ mod ingredient_catalog_db_tests {
         });
         assert_eq!(
             ReleaseSnapshot::compute_hash(
-                release.schema_version(),
+                *release.schema_version(),
                 &ingredients,
                 &nutrients,
                 &all_values
