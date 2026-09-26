@@ -1,6 +1,6 @@
 //! `library auth` — sign in and manage the credentials saved on this
-//! machine. Browser sign-in is the default; `--api-key` saves a key for
-//! CI and service accounts instead.
+//! machine. Browser sign-in is for MCP; `--api-key` saves a credential
+//! for REST, GraphQL, MCP, CI, and service accounts.
 
 use anyhow::{bail, Result};
 use clap::Subcommand;
@@ -14,13 +14,13 @@ use crate::output::{print_json, Format};
 
 #[derive(Subcommand)]
 pub enum AuthCommand {
-    /// Sign in through the browser, or save an API key with `--api-key`
+    /// Sign in to MCP through the browser, or save an API key with `--api-key`
     Login {
         /// Save a Library API key (`pk_…`) instead of signing in through
         /// the browser. For CI and service accounts.
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
-        /// Print the sign-in URL without opening a browser
+        /// Print the sign-in URL; open it in a browser on this machine
         #[arg(long)]
         no_browser: bool,
         /// Base URL to save alongside the key
@@ -175,7 +175,7 @@ async fn browser_login(
             "expires_at": session.expires_at,
         })),
         Format::Text => {
-            println!("Signed in. Saved to {}", path.display());
+            println!("Signed in to MCP. Saved to {}", path.display());
             println!("  API URL:   {base_url}");
             println!("  Signed in: {}", session.issuer);
         }
@@ -242,7 +242,8 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
             "config_exists": path.exists(),
             "api_base_url": resolved.api_base_url,
             "api_base_url_source": url_source,
-            "authenticated": resolved.api_key.is_some(),
+            "authenticated": resolved.api_key.is_some()
+                || resolved.mcp_access_token.is_some(),
             "credential": credential_kind(key_source, &stored),
             "api_key": api_key_shown(key_source, &resolved),
             "api_key_source": key_source,
@@ -261,7 +262,7 @@ fn status(overrides: &ConfigOverrides, format: Format) -> Result<()> {
                 resolved.api_key.as_deref(),
             ) {
                 (Some(session), _) => println!(
-                    "Signed in:   {} (browser sign-in{})",
+                    "MCP signed in: {} (browser sign-in{})",
                     session.issuer,
                     if session.refresh_token.is_some() {
                         ", renews automatically"

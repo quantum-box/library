@@ -6,7 +6,7 @@
 //! the saved profile, and the environment wins over the file so CI and
 //! agent runners never need to write to a home directory at all.
 
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
@@ -29,7 +29,7 @@ pub struct StoredConfig {
     /// name an organization in their path need it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operator_id: Option<String>,
-    /// Browser sign-in, used when no API key is configured anywhere.
+    /// Browser sign-in for MCP, used when no API key is configured anywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<crate::oauth::OAuthSession>,
 }
@@ -38,9 +38,10 @@ pub struct StoredConfig {
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
     pub api_base_url: String,
-    /// Bearer credential: an API key, or the browser sign-in's access
-    /// token when no key is configured.
+    /// API key sent to REST and GraphQL requests.
     pub api_key: Option<String>,
+    /// MCP-resource token sent only to `/mcp` requests.
+    pub mcp_access_token: Option<String>,
     pub operator_id: Option<String>,
 }
 
@@ -174,18 +175,65 @@ pub fn resolve(overrides: &ConfigOverrides) -> Result<ResolvedConfig> {
 
 /// Like `resolve`, but renews the browser sign-in first when it is the
 /// credential in use and about to expire, and saves the renewed tokens.
+async fn acquire_refresh_lock() -> Result<File> {
+    let path = config_path()?;
+    let mut lock_name = path.as_os_str().to_os_string();
+    lock_name.push(".refresh.lock");
+    let lock_path = PathBuf::from(lock_name);
+    if let Some(parent) = lock_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .with_context(|| format!("failed to open {}", lock_path.display()))?;
+    tokio::task::spawn_blocking(move || {
+        lock.lock()
+            .with_context(|| format!("failed to lock {}", lock_path.display()))?;
+        Ok(lock)
+    })
+    .await
+    .context("refresh lock worker failed")?
+}
+
 pub async fn resolve_fresh(
     overrides: &ConfigOverrides,
 ) -> Result<ResolvedConfig> {
     let mut stored = load_stored()?;
     let env = EnvConfig::from_process();
-    let uses_session = overrides.api_key.is_none()
-        && env.api_key.is_none()
-        && stored.api_key.is_none();
-    if uses_session {
-        if let Some(session) = &stored.oauth {
-            if session.needs_refresh(crate::oauth::now_unix()) {
-                stored.oauth = Some(crate::oauth::refresh(session).await?);
+
+    // A stale read only decides whether to enter the critical section.
+    // Reload after acquiring the OS lock because another CLI process may
+    // already have rotated and saved the refresh token.
+    let uses_session = merge(overrides, &env, &stored)
+        .mcp_access_token
+        .is_some();
+    let needs_refresh = stored
+        .oauth
+        .as_ref()
+        .is_some_and(|session| session.needs_refresh(crate::oauth::now_unix()));
+    if uses_session && needs_refresh {
+        let _refresh_lock = acquire_refresh_lock().await?;
+        stored = load_stored()?;
+        let still_uses_session = merge(overrides, &env, &stored)
+            .mcp_access_token
+            .is_some();
+        let now = crate::oauth::now_unix();
+        let session = stored
+            .oauth
+            .as_ref()
+            .filter(|session| session.needs_refresh(now))
+            .cloned();
+        if still_uses_session {
+            if let Some(session) = session {
+                stored.oauth = Some(crate::oauth::refresh(&session).await?);
                 save_stored(&stored)?;
             }
         }
@@ -205,12 +253,24 @@ pub fn merge(
         .or_else(|| stored.api_base_url.clone())
         .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
 
+    let api_base_url = api_base_url.trim_end_matches('/').to_string();
     let api_key = overrides
         .api_key
         .clone()
         .or_else(|| env.api_key.clone())
-        .or_else(|| stored.api_key.clone())
-        .or_else(|| stored.oauth.as_ref().map(|s| s.access_token.clone()));
+        .or_else(|| stored.api_key.clone());
+    let mcp_resource = format!("{api_base_url}/mcp");
+    let mcp_access_token = if api_key.is_none() {
+        stored
+            .oauth
+            .as_ref()
+            .filter(|session| {
+                session.resource.trim_end_matches('/') == mcp_resource
+            })
+            .map(|session| session.access_token.clone())
+    } else {
+        None
+    };
 
     let operator_id = overrides
         .operator_id
@@ -219,8 +279,9 @@ pub fn merge(
         .or_else(|| stored.operator_id.clone());
 
     ResolvedConfig {
-        api_base_url: api_base_url.trim_end_matches('/').to_string(),
+        api_base_url,
         api_key,
+        mcp_access_token,
         operator_id,
     }
 }
@@ -323,7 +384,11 @@ mod tests {
             &EnvConfig::default(),
             &stored,
         );
-        assert_eq!(resolved.api_key.as_deref(), Some("access"));
+        assert!(resolved.api_key.is_none());
+        assert_eq!(
+            resolved.mcp_access_token.as_deref(),
+            Some("access")
+        );
     }
 
     fn session(access_token: &str) -> crate::oauth::OAuthSession {

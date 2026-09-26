@@ -87,7 +87,7 @@ pub async fn run(
         }
         McpCommand::Tools => {
             let result = client.mcp_rpc("tools/list", None).await?;
-            render_tools(&result, client.has_api_key(), format);
+            render_tools(&result, client.has_mcp_credential(), format);
             Ok(())
         }
         McpCommand::Call {
@@ -225,7 +225,7 @@ fn render_config(
     if !no_key {
         // Printed in full because a client config file needs the real
         // value; the warning below makes that explicit.
-        let bearer = client.api_key().unwrap_or("pk_REPLACE_ME");
+        let bearer = client.mcp_credential().unwrap_or("pk_REPLACE_ME");
         server["headers"] =
             json!({ "Authorization": format!("Bearer {bearer}") });
     }
@@ -237,9 +237,9 @@ fn render_config(
     // either way — but a machine reading stdout should not also get the
     // warning mixed into its stream.
     let _ = format;
-    if !no_key && client.has_api_key() {
+    if !no_key && client.has_mcp_credential() {
         eprintln!(
-            "warning: this output contains an API key; pass --no-key to \
+            "warning: this output contains a bearer credential; pass --no-key to \
              leave it out"
         );
     }

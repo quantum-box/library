@@ -33,6 +33,17 @@ impl LibraryClient {
         self.config.api_key.is_some()
     }
 
+    pub fn mcp_credential(&self) -> Option<&str> {
+        self.config
+            .api_key
+            .as_deref()
+            .or(self.config.mcp_access_token.as_deref())
+    }
+
+    pub fn has_mcp_credential(&self) -> bool {
+        self.mcp_credential().is_some()
+    }
+
     pub fn api_key(&self) -> Option<&str> {
         self.config.api_key.as_deref()
     }
@@ -61,14 +72,32 @@ impl LibraryClient {
         query: &[(&str, String)],
         body: Option<Value>,
     ) -> Result<(StatusCode, Value)> {
+        self.request_with_status_and_credential(
+            method,
+            path,
+            query,
+            body,
+            self.config.api_key.as_deref(),
+        )
+        .await
+    }
+
+    async fn request_with_status_and_credential(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<Value>,
+        bearer_credential: Option<&str>,
+    ) -> Result<(StatusCode, Value)> {
         let url = format!("{}{path}", self.config.api_base_url);
         let mut request = self.http.request(method.clone(), &url);
 
         if !query.is_empty() {
             request = request.query(query);
         }
-        if let Some(api_key) = &self.config.api_key {
-            request = request.bearer_auth(api_key);
+        if let Some(credential) = bearer_credential {
+            request = request.bearer_auth(credential);
         }
         if let Some(operator_id) = &self.config.operator_id {
             request = request.header("x-operator-id", operator_id);
@@ -227,7 +256,15 @@ impl LibraryClient {
             request["params"] = params;
         }
 
-        let response = self.post("/mcp", request).await?;
+        let (_, response) = self
+            .request_with_status_and_credential(
+                Method::POST,
+                "/mcp",
+                &[],
+                Some(request),
+                self.mcp_credential(),
+            )
+            .await?;
         if let Some(error) = response.get("error") {
             bail!("MCP error: {error}");
         }

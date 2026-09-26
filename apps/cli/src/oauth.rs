@@ -5,9 +5,9 @@
 //! than hard-coding one. The flow is the usual one for a native app
 //! (RFC 8252): register a public client (RFC 7591), open the browser on
 //! the authorize endpoint with PKCE (RFC 7636), receive the code on a
-//! loopback port, and exchange it. The access token is sent as a Bearer
-//! token, which the API verifies like any signed-in user's token; the
-//! refresh token keeps the session alive without another browser trip.
+//! loopback port, and exchange it. The MCP-resource token is sent as a
+//! Bearer token only to /mcp; the refresh token keeps the session alive
+//! without another browser trip.
 
 use std::time::Duration;
 
@@ -20,13 +20,13 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// Scopes asked for at sign-in. `mcp:*` cover the MCP tools; the REST API
-/// only needs a valid user token.
+/// Scopes asked for at sign-in. The resulting token is issued for the
+/// MCP resource and is only sent to the MCP endpoint.
 const SCOPES: &str = "openid profile email mcp:read mcp:write";
 /// Give up waiting for the browser after this long.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 /// Refresh this long before the access token actually expires, so a
-/// command never starts with a token that dies mid-request.
+/// an MCP request never starts with a token that dies mid-request.
 const REFRESH_MARGIN_SECS: i64 = 60;
 
 /// A signed-in session, saved in the profile next to the API URL.
@@ -129,6 +129,24 @@ async fn get_json<T: for<'de> Deserialize<'de>>(
         .with_context(|| format!("GET {url} returned unexpected JSON"))
 }
 
+/// RFC 8414 puts an issuer path after the well-known metadata prefix.
+fn authorization_server_metadata_url(issuer: &str) -> Result<String> {
+    let issuer_url = url::Url::parse(issuer)
+        .context("authorization server issuer is not a valid URL")?;
+    if !matches!(issuer_url.scheme(), "http" | "https")
+        || issuer_url.host_str().is_none()
+        || issuer_url.query().is_some()
+        || issuer_url.fragment().is_some()
+    {
+        bail!("authorization server issuer must be an HTTP(S) URL without query or fragment");
+    }
+    let origin = issuer_url.origin().ascii_serialization();
+    let path = issuer_url.path().trim_end_matches('/');
+    Ok(format!(
+        "{origin}/.well-known/oauth-authorization-server{path}"
+    ))
+}
+
 /// Find the authorization server the API trusts.
 async fn discover(
     http: &reqwest::Client,
@@ -148,11 +166,9 @@ async fn discover(
         })?
         .trim_end_matches('/')
         .to_string();
-    let metadata: AuthorizationServerMetadata = get_json(
-        http,
-        &format!("{issuer}/.well-known/oauth-authorization-server"),
-    )
-    .await?;
+    let metadata_url = authorization_server_metadata_url(&issuer)?;
+    let metadata: AuthorizationServerMetadata =
+        get_json(http, &metadata_url).await?;
     if metadata.issuer.trim_end_matches('/') != issuer {
         bail!(
             "authorization server metadata names issuer {}, expected {issuer}",
@@ -278,12 +294,31 @@ async fn wait_for_code(
 ) -> Result<String> {
     loop {
         let (mut stream, _) = listener.accept().await?;
-        let mut buffer = vec![0u8; 8192];
-        let n = stream.read(&mut buffer).await.unwrap_or(0);
-        let request = String::from_utf8_lossy(&buffer[..n]);
+        let mut buffer = Vec::with_capacity(8192);
+        let mut request_line_complete = false;
+        while buffer.len() < 8192 {
+            let mut chunk = [0u8; 1024];
+            let limit = (8192 - buffer.len()).min(chunk.len());
+            let n = stream.read(&mut chunk[..limit]).await?;
+            if n == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..n]);
+            if buffer.windows(2).any(|pair| pair == b"\r\n") {
+                request_line_complete = true;
+                break;
+            }
+        }
+        let request = String::from_utf8_lossy(&buffer);
         let first_line = request.lines().next().unwrap_or_default();
 
-        let outcome = parse_callback(first_line, state);
+        let outcome = if request_line_complete {
+            parse_callback(first_line, state)
+        } else {
+            Callback::Error(
+                "the callback request line was incomplete or too long".into(),
+            )
+        };
         let (status, message) = match &outcome {
             Callback::Code(_) => ("200 OK", "Library CLI にログインしました。このタブは閉じてかまいません。"),
             Callback::Error(_) => ("400 Bad Request", "ログインに失敗しました。ターミナルを確認してください。"),
