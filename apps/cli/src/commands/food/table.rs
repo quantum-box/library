@@ -417,7 +417,8 @@ pub fn parse_layout(sheet: &Sheet) -> Result<TableLayout, String> {
                     .last()
                     .cloned()
                     .unwrap_or_default(),
-                reason: "populated column after the 備考 table boundary".into(),
+                reason: "populated column after the 備考 table boundary"
+                    .into(),
                 non_empty_cells: cells,
             });
         }
@@ -726,7 +727,16 @@ mod tests {
         let trailing_column = Sheet::from_rows(
             "trailing",
             &[
-                &["食品群", "食品番号", "", "食品名", "x", "x", "備考", "追加成分"],
+                &[
+                    "食品群",
+                    "食品番号",
+                    "",
+                    "食品名",
+                    "x",
+                    "x",
+                    "備考",
+                    "追加成分",
+                ],
                 &["", "", "単位", "", "%", "%", "", "mg"],
                 &["成分識別子", "", "", "", "REFUSE", "PROT-", "", "IRON"],
                 &["", "00001", "", "食品", "1", "1", "", "2"],
