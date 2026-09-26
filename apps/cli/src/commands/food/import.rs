@@ -122,6 +122,11 @@ pub struct PrepareInput<'a> {
 }
 
 pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared> {
+    if input.validate_complete_source && input.errata.is_none() {
+        return Err(anyhow::anyhow!(
+            "complete MEXT 2023 import requires the matching 2026-03-27 errata workbook"
+        ));
+    }
     let book = Workbook::read_xlsx(input.table_bytes)
         .context("reading the table workbook")?;
     let sheet = book.sheet(input.sheet).with_context(|| {
