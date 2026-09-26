@@ -878,22 +878,15 @@ mod ingredient_catalog_db_tests {
         repo: &IngredientCatalogRepositoryImpl,
         draft: &DraftCatalog,
     ) -> (IngredientCatalog, IngredientRelease) {
-        let repo_ids = [
-            RepoId::default(),
-            RepoId::default(),
-            RepoId::default(),
-        ];
+        let repo_ids =
+            [RepoId::default(), RepoId::default(), RepoId::default()];
         let org_id = value_object::OperatorId::default().to_string();
-        let org_username = format!(
-            "catalog-test-{}",
-            org_id.trim_start_matches("op_")
-        );
+        let org_username =
+            format!("catalog-test-{}", org_id.trim_start_matches("op_"));
         seed_organization(repo, &org_id, &org_username).await;
-        for (repo_id, role) in repo_ids.iter().zip([
-            "ingredient",
-            "nutrient",
-            "value",
-        ]) {
+        for (repo_id, role) in
+            repo_ids.iter().zip(["ingredient", "nutrient", "value"])
+        {
             seed_repo_visibility(
                 repo,
                 repo_id,
