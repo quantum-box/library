@@ -103,6 +103,10 @@ async fn login(
     if let Some(operator_id) = operator_id.as_ref() {
         candidate.operator_id = Some(operator_id.clone());
     }
+    let verified_base_url = candidate
+        .api_base_url
+        .clone()
+        .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
     if !no_verify {
         verify(&candidate).await?;
     }
@@ -120,11 +124,15 @@ async fn login(
         stored.operator_id = Some(operator_id);
     }
 
-    let path = config::save_stored(&stored)?;
     let base_url = stored
         .api_base_url
         .clone()
         .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
+    if !no_verify && base_url != verified_base_url {
+        verify(&stored).await?;
+    }
+
+    let path = config::save_stored(&stored)?;
 
     match format {
         Format::Json => print_json(&json!({
