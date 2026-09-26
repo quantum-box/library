@@ -4,7 +4,7 @@ import type {
 	MeOnDashboardFragment,
 	RepoItemOnDashboardFragment,
 } from '@/gen/graphql'
-import { executeGraphQL, graphql } from '@/lib/graphql'
+import { executeGraphQL, executeGraphQLWithPartialData, graphql } from '@/lib/graphql'
 import { ArrowRight, BookOpen, Globe, Loader2, Lock, Users } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
@@ -78,14 +78,20 @@ export function DashboardPage() {
 				}
 
 				setMe(result.me)
-				const seedResult = await executeGraphQL<{
-					tenantSeedCandidates: TenantSeedCandidate[]
-				}>(
-					TenantSeedCandidatesQuery,
-					undefined,
-					{ accessToken: session.user.accessToken },
-				)
-				setSeedCandidates(seedResult.tenantSeedCandidates)
+				let candidates: TenantSeedCandidate[] = []
+				try {
+					const seedResult = await executeGraphQL<{
+						tenantSeedCandidates: TenantSeedCandidate[]
+					}>(
+						TenantSeedCandidatesQuery,
+						undefined,
+						{ accessToken: session.user.accessToken },
+					)
+					candidates = seedResult.tenantSeedCandidates ?? []
+				} catch (error) {
+					console.warn('Failed to load tenant import candidates:', error)
+				}
+				setSeedCandidates(candidates)
 
 				// `me.organizations` is already only what Library treats as an
 				// organization. Narrowing it again by platform here dropped every
@@ -114,7 +120,64 @@ export function DashboardPage() {
 						newOrgRepos.set(orgs[i].id, result.value.organization.repos)
 					}
 				}
-				setOrgRepos(newOrgRepos)
+				const privateRepoCandidates = orgs.flatMap((org) =>
+					(newOrgRepos.get(org.id) ?? [])
+						.filter((repo) => !repo.isPublic)
+						.map((repo) => ({ org, repo })),
+				)
+				const permittedPrivateRepoIds = new Set<string>()
+				if (privateRepoCandidates.length > 0) {
+					const variableDefinitions = privateRepoCandidates
+						.map((_, index) => `$org${index}: String!, $repo${index}: String!`)
+						.join(', ')
+					const repoSelections = privateRepoCandidates
+						.map(
+							(_, index) =>
+								`repo${index}: repo(orgUsername: $org${index}, repoUsername: $repo${index}) { id }`,
+						)
+						.join('\n')
+					const query = `query DashboardRepoAccessBatch(${variableDefinitions}) {
+						${repoSelections}
+					}`
+					const variables = Object.fromEntries(
+						privateRepoCandidates.flatMap(({ org, repo }, index) => [
+							[`org${index}`, org.operatorName],
+							[`repo${index}`, repo.username],
+						]),
+					)
+
+					try {
+						const accessResults = await executeGraphQLWithPartialData<
+							Record<string, { id: string } | null>
+						>(query, variables, { accessToken: session.user.accessToken })
+						for (let index = 0; index < privateRepoCandidates.length; index++) {
+							const candidate = privateRepoCandidates[index]
+							if (accessResults[`repo${index}`]?.id === candidate.repo.id) {
+								permittedPrivateRepoIds.add(candidate.repo.id)
+							}
+						}
+					} catch (error) {
+						console.warn(
+							'Failed to verify private dashboard repository access:',
+							error,
+						)
+					}
+				}
+
+				const visibleOrgRepos = new Map<
+					string,
+					RepoItemOnDashboardFragment[]
+				>()
+				for (const [orgId, repos] of newOrgRepos) {
+					visibleOrgRepos.set(
+						orgId,
+						repos.filter(
+							(repo) =>
+								repo.isPublic || permittedPrivateRepoIds.has(repo.id),
+						),
+					)
+				}
+				setOrgRepos(visibleOrgRepos)
 			} catch (e) {
 				console.error('Failed to load dashboard:', e)
 			} finally {
@@ -165,7 +228,47 @@ export function DashboardPage() {
 		return repos.map((repo) => ({ ...repo, orgName: org.operatorName }))
 	})
 
-	if (seedCandidates.length > 0) {
+	const seedCandidateCards = (
+		<div className='space-y-3'>
+			{seedCandidates.map((candidate) => (
+				<Card key={candidate.tenantId}>
+					<CardHeader className='pb-3'>
+						<CardTitle className='text-base'>{candidate.name}</CardTitle>
+					</CardHeader>
+					<CardContent className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+						<div className='min-w-0 space-y-2'>
+							<p className='truncate text-sm text-muted-foreground'>
+								/{candidate.username}
+							</p>
+							<div className='flex items-center gap-2 text-sm text-muted-foreground'>
+								<Users className='h-4 w-4' />
+								<span>
+									{candidate.staffCount === null
+										? 'Staff count unavailable'
+										: `${candidate.staffCount} staff members`}
+								</span>
+							</div>
+						</div>
+						<Button
+							type='button'
+							className='w-full sm:w-auto'
+							disabled={seedingTenantId !== null}
+							onClick={() => seedTenant(candidate.tenantId)}
+						>
+							{seedingTenantId === candidate.tenantId ? (
+								<Loader2 className='h-4 w-4 animate-spin' />
+							) : (
+								<ArrowRight className='h-4 w-4' />
+							)}
+							Import to Library
+						</Button>
+					</CardContent>
+				</Card>
+			))}
+		</div>
+	)
+
+	if (orgs.length === 0 && seedCandidates.length > 0) {
 		return (
 			<I18nProvider locale={locale} dictionary={dictionary}>
 				<SpaHeader />
@@ -179,43 +282,7 @@ export function DashboardPage() {
 							Library.
 						</p>
 					</div>
-					<div className='space-y-3'>
-						{seedCandidates.map((candidate) => (
-							<Card key={candidate.tenantId}>
-								<CardHeader className='pb-3'>
-									<CardTitle className='text-base'>{candidate.name}</CardTitle>
-								</CardHeader>
-								<CardContent className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-									<div className='min-w-0 space-y-2'>
-										<p className='truncate text-sm text-muted-foreground'>
-											/{candidate.username}
-										</p>
-										<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-											<Users className='h-4 w-4' />
-											<span>
-												{candidate.staffCount === null
-													? 'Staff count unavailable'
-													: `${candidate.staffCount} staff members`}
-											</span>
-										</div>
-									</div>
-									<Button
-										type='button'
-										className='w-full sm:w-auto'
-										disabled={seedingTenantId !== null}
-										onClick={() => seedTenant(candidate.tenantId)}
-									>
-										{seedingTenantId === candidate.tenantId ? (
-											<Loader2 className='h-4 w-4 animate-spin' />
-										) : (
-											<ArrowRight className='h-4 w-4' />
-										)}
-										Import to Library
-									</Button>
-								</CardContent>
-							</Card>
-						))}
-					</div>
+					{seedCandidateCards}
 				</div>
 			</I18nProvider>
 		)
@@ -225,6 +292,20 @@ export function DashboardPage() {
 		<I18nProvider locale={locale} dictionary={dictionary}>
 			<SpaHeader />
 			<div className='container mx-auto px-4 mt-4'>
+				{seedCandidates.length > 0 && (
+					<div className='mx-auto mb-6 max-w-3xl'>
+						<div className='mb-4'>
+							<h2 className='text-xl font-semibold tracking-normal'>
+								Organizations you can import
+							</h2>
+							<p className='mt-1 text-sm text-muted-foreground'>
+								Import an existing organization profile and staff access into
+								Library.
+							</p>
+						</div>
+						{seedCandidateCards}
+					</div>
+				)}
 				<div className='flex flex-col lg:flex-row gap-4'>
 					{/* Left Sidebar */}
 					<div className='w-full lg:w-64 space-y-4'>
