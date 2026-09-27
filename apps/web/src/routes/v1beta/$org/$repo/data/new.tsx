@@ -39,9 +39,6 @@ function NewDataPage() {
 
     const fetchEditorData = async () => {
       setLoading(true)
-      setCanManageTemplates(false)
-      setRichTextTemplates([])
-      setTemplatesError(null)
       try {
         const result = await platformAction(
           (sdk) => sdk.repositoryPage({ org, repo, page: 1, pageSize: 50 }),
@@ -53,14 +50,6 @@ function NewDataPage() {
         )
         setProperties((result?.repo?.properties ?? []) as PropertyForEditorFragment[])
         setDataList(result?.repo?.dataList as DataListForDataListCardFragment)
-        const canManage = Boolean(
-          session?.user && result?.repo?.policies?.some(
-            policy =>
-              policy.userId === session.user.id &&
-              (policy.role === 'writer' || policy.role === 'owner'),
-          ),
-        )
-        setCanManageTemplates(canManage)
       } catch (error) {
         console.error('Failed to load data editor:', error)
       } finally {
@@ -73,7 +62,10 @@ function NewDataPage() {
 
   useEffect(() => {
     const accessToken = session?.user?.accessToken
-    if (!canManageTemplates || !accessToken) {
+    setCanManageTemplates(false)
+    setRichTextTemplates([])
+    setTemplatesError(null)
+    if (!accessToken) {
       setRichTextTemplates([])
       setTemplatesLoading(false)
       return
@@ -87,10 +79,14 @@ function NewDataPage() {
       { accessToken },
     )
       .then(result => {
-        if (!cancelled) setRichTextTemplates(result.richTextTemplates)
+        if (!cancelled) {
+          setRichTextTemplates(result.richTextTemplates)
+          setCanManageTemplates(true)
+        }
       })
       .catch(error => {
         if (!cancelled) {
+          setCanManageTemplates(false)
           setTemplatesError(
             error instanceof Error ? error.message : t.v1beta.richTextTemplates.loadFailed,
           )
@@ -102,7 +98,7 @@ function NewDataPage() {
     return () => {
       cancelled = true
     }
-  }, [org, repo, canManageTemplates, session?.user?.accessToken, t.v1beta.richTextTemplates.loadFailed])
+  }, [org, repo, session?.user?.accessToken, t.v1beta.richTextTemplates.loadFailed])
 
   const draftData: DataForDataDetailFragment = {
     __typename: 'Data',
@@ -159,6 +155,11 @@ function NewDataPage() {
           loading={templatesLoading}
           loadError={templatesError}
         />
+      ) : null}
+      {templatesError && session?.user?.accessToken ? (
+        <p role='alert' className='mx-6 mt-4 text-sm text-destructive'>
+          {templatesError}
+        </p>
       ) : null}
       <DataDetailUi
         data={draftData}

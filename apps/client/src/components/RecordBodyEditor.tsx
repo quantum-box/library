@@ -551,7 +551,10 @@ function BlockRecordBodyEditor({
       onCompositionEndCapture={() => {
         composing.current = false
         valueBeforeComposition.current = null
-        if (pendingValue.current !== null) schedulePendingCommit()
+        if (pendingValue.current !== null) {
+          onDraftChangeRef.current?.(pendingValue.current)
+          schedulePendingCommit()
+        }
         live?.compositionEnded()
       }}
     >

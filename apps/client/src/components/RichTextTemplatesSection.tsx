@@ -36,6 +36,7 @@ export function RichTextTemplatesSection({
   const { t } = useI18n()
   const [templates, setTemplates] = useState<RichTextTemplate[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [newDraftGeneration, setNewDraftGeneration] = useState(0)
   const [name, setName] = useState('')
   const [richText, setRichText] = useState('[]')
   const [editing, setEditing] = useState(false)
@@ -63,6 +64,7 @@ export function RichTextTemplatesSection({
   }, [load])
 
   const startNew = () => {
+    setNewDraftGeneration((generation) => generation + 1)
     setSelectedId(null)
     setName('')
     setRichText('[]')
@@ -189,7 +191,7 @@ export function RichTextTemplatesSection({
             <div className="space-y-1.5">
               <Label>{t('richTextTemplates.body')}</Label>
               <RecordBodyEditor
-                key={selectedId ?? 'new-rich-text-template'}
+                key={selectedId ?? `new-rich-text-template-${newDraftGeneration}`}
                 value={richText}
                 format="richText"
                 editable={!busy && !readOnly}

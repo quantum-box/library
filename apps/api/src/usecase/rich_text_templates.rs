@@ -15,7 +15,7 @@ use crate::domain::{
 use super::{ViewRepoInputData, ViewRepoInputPort};
 
 const MAX_TEMPLATE_NAME_LENGTH: usize = 255;
-const MAX_TEMPLATE_BODY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_TEMPLATE_BODY_BYTES: usize = 1_048_576;
 
 pub struct ListRichTextTemplatesInputData<'a> {
     pub executor: &'a dyn ExecutorAction,

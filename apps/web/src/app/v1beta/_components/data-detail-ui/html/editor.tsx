@@ -161,12 +161,12 @@ export function RichTextEditor({
 			if (lastSyncedValueRef.current === initial) {
 				return
 			}
-			let blocks: typeof editor.document
+			let blocks: Parameters<typeof editor.replaceBlocks>[1]
 			if (format === 'markdown') {
 				blocks = await editor.tryParseMarkdownToBlocks(initial)
 			} else if (format === 'richText') {
 				const parsed = JSON.parse(initial) as typeof editor.document
-				blocks = parsed.length > 0 ? parsed : editor.document
+				blocks = parsed.length > 0 ? parsed : [{ type: 'paragraph' }]
 			} else {
 				blocks = await editor.tryParseHTMLToBlocks(initial)
 			}
