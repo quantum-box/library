@@ -76,7 +76,6 @@ import { collisionPaddingFor, useSafeAreaInsets } from '../lib/ui/safeAreaInsets
 import { fetchLibraryAccessibleTenants } from '../lib/recordsApi'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { shareableUrl } from '../lib/shareUrl'
-import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
@@ -508,18 +507,7 @@ export function Sidebar() {
       </>
     )
 
-    const item = link.id === 'data' ? (
-      <SidebarItem asChild active={active} className={denseSidebarItemClass}>
-        <DataLink
-          data-testid={`view-${link.id}${suffix}`}
-          aria-label={t(link.labelKey)}
-          databaseId={selectedDatabaseId}
-          view={currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType}
-        >
-          {linkContent}
-        </DataLink>
-      </SidebarItem>
-    ) : (
+    const item = (
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
         <Link data-testid={`view-${link.id}${suffix}`} aria-label={t(link.labelKey)} to={link.to}>
           {linkContent}
