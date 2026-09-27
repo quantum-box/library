@@ -9,6 +9,7 @@
 mod client;
 mod commands;
 mod config;
+mod oauth;
 mod output;
 
 use anyhow::Result;
@@ -107,31 +108,40 @@ async fn run() -> Result<()> {
             commands::auth::run(command, &overrides, format).await
         }
         Command::Org(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::org::run(command, &client, format).await
         }
         Command::Repo(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::repo::run(command, &client, format).await
         }
         Command::Data(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::data::run(command, &client, format).await
         }
         Command::Property(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::property::run(command, &client, format).await
         }
         Command::Source(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::source::run(command, &client, format).await
         }
         Command::ApiKey(command) => {
-            let client = build_client(&overrides)?;
+            let client = build_client(&overrides).await?;
             commands::api_key::run(command, &client, format).await
         }
         Command::Mcp(command) => {
-            let client = build_client(&overrides)?;
+            let client = if matches!(
+                &command,
+                commands::mcp::McpCommand::Config { .. }
+            ) {
+                // The emitted config lets the MCP client perform OAuth itself
+                // instead of embedding this CLI's short-lived access token.
+                build_client(&overrides).await?
+            } else {
+                build_mcp_client(&overrides).await?
+            };
             commands::mcp::run(command, &client, format).await
         }
         // `food import --offline` must work without credentials, so it
@@ -142,10 +152,16 @@ async fn run() -> Result<()> {
     }
 }
 
-fn build_client(
+async fn build_client(
     overrides: &ConfigOverrides,
 ) -> Result<client::LibraryClient> {
     client::LibraryClient::new(config::resolve(overrides)?)
+}
+
+async fn build_mcp_client(
+    overrides: &ConfigOverrides,
+) -> Result<client::LibraryClient> {
+    client::LibraryClient::new(config::resolve_fresh(overrides).await?)
 }
 
 #[cfg(test)]

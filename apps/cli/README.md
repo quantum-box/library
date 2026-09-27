@@ -16,23 +16,31 @@ cargo build -p library-cli --release
 
 ## 認証
 
-`pk_` で始まる Library API key を使います。key は Library client の API keys 画面で発行します。
+既定はブラウザでのサインインです。
 
 ```bash
-library auth login --api-key pk_xxx --api-url https://library-api.txcloud.app
+library auth login          # ブラウザが開き、Tachyon でサインインする
 library auth status
 library auth logout
 ```
 
-`auth login` は保存前に key を API に問い合わせて検証します。飛ばす場合は `--no-verify`。`auth status` は key 全体ではなく prefix だけを表示します。
+Library API が `/.well-known/oauth-protected-resource` で案内する認可サーバーを使い、PKCE 付きの Authorization Code フローで MCP 用トークンを取得します。トークンは MCP の `/mcp` リソースに発行され、CLI の MCP 呼び出しにだけ送信し、REST / GraphQL には送りません。期限前に refresh token で自動更新されます。`--no-browser` では URL を表示するので、CLI と同じマシン上のブラウザで開いてください。REST / GraphQL には API key が必要です。
+
+CI やサービスアカウントでは、Library client の API keys 画面で発行した `pk_` で始まるキーを使います。
+
+```bash
+library auth login --api-key pk_xxx
+```
+
+`--api-key` の場合、保存前に key を API に問い合わせて検証します。飛ばす場合は `--no-verify`。`auth status` は key 全体ではなく prefix だけを表示し、ブラウザのトークンは表示しません。
 
 解決順序は次のとおりで、先に見つかったものが勝ちます。
 
 1. `--api-key` / `--api-url` / `--operator-id` フラグ
 2. 環境変数 `LIBRARY_API_KEY` / `LIBRARY_API_BASE_URL`
-3. `library auth login` が保存したローカル profile
+3. `library auth login` が保存したローカル profile（API key は REST / GraphQL / MCP、ブラウザのサインインは MCP のみ）
 
-いずれも無い場合、API URL は `http://localhost:50055` にフォールバックします。
+いずれも無い場合、API URL は本番の `https://library-api.txcloud.app` を使います。ローカルの library-api に向けるときは `--api-url http://localhost:50055` か `LIBRARY_API_BASE_URL` を指定します。
 
 profile の保存先:
 
@@ -45,7 +53,6 @@ profile の保存先:
 CI や agent からは、保存済み profile に依存させず環境変数だけで完結させます。
 
 ```bash
-export LIBRARY_API_BASE_URL=https://library-api.txcloud.app
 export LIBRARY_API_KEY=pk_xxx
 library --json repo list acme
 ```
