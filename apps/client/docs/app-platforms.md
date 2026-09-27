@@ -27,6 +27,10 @@ does not keep a production `wrangler.jsonc`; `npm run worker:dev` uses
 `wrangler.local.jsonc` for local development, and production deploys are
 handled by Tachyon.
 
+Preview keeps `PHOTON_LIVE_ENABLED=false`. Cloudflare deploy still requires
+`PHOTON_LIVE_ALLOWED_ORIGINS`, so `tachyon.yaml` uses the reserved
+`https://preview-disabled.invalid` origin to keep real clients excluded.
+
 This replaced a manual deployment path that let the screen follow `main` through
 its own Cloud App while the Worker did not. On 2026-09-08 production still ran
 the 09-05 build. Every Live room answered the WebSocket upgrade with 409, and
