@@ -3648,17 +3648,20 @@ name = "library-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "calamine",
  "chrono",
  "clap",
  "futures",
  "ingredient_notation",
+ "rand 0.8.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
  "tokio",
  "ulid 1.2.1",
+ "url",
 ]
 
 [[package]]
