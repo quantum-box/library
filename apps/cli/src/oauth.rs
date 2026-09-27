@@ -294,9 +294,7 @@ fn open_browser(url: &str) -> bool {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(url).status();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .status();
+    let result = std::process::Command::new("explorer.exe").arg(url).status();
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = std::process::Command::new("xdg-open").arg(url).status();
     result.map(|s| s.success()).unwrap_or(false)
