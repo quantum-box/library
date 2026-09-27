@@ -31,7 +31,7 @@ test.describe('Library mobile shell', () => {
     await page.getByRole('button', { name: 'Back to data' }).click()
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
-    await page.getByPlaceholder('Filter data...').fill(title)
+    await page.getByTestId('library-table-global-filter').fill(title)
     await expect(page.getByTestId('mobile-record-card')).toHaveCount(1)
     await expect(page.getByTestId('mobile-record-card').getByText(title)).toBeVisible()
 

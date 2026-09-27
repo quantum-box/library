@@ -1038,6 +1038,9 @@ function RepositoryTable({
               ? <RefreshCw className="animate-spin" aria-hidden="true" />
               : <Plus aria-hidden="true" />}
             {t('data.new')}
+            <span className="hidden md:inline-flex">
+              <Kbd className="border-white/25 bg-white/15 text-white shadow-none">C</Kbd>
+            </span>
           </Button>
         </div>
       </div>

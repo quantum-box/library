@@ -104,7 +104,7 @@ test.describe('Library shell', () => {
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data(\?|$)/)
     expect((await e2eFixtureData(page)).length).toBe(created)
 
-    await page.getByPlaceholder('Filter data...').fill(title)
+    await page.getByTestId('library-table-global-filter').fill(title)
     await expect(page.locator('tbody tr', { hasText: title })).toBeVisible()
   })
 
@@ -176,7 +176,7 @@ test.describe('Library shell', () => {
     await addDatabaseView(page, 'board')
     await page.getByTestId('view-table').click()
 
-    await expect(page.getByTestId('open-create-record').locator('kbd').filter({ hasText: 'C' })).toBeVisible()
+    await expect(page.getByTestId('library-table-add-row').locator('kbd').filter({ hasText: 'C' })).toBeVisible()
     await expect(page.locator('kbd').filter({ hasText: '/' }).first()).toBeVisible()
 
     await page.keyboard.press('ControlOrMeta+F')
@@ -674,16 +674,13 @@ test.describe('Library shell', () => {
     await expect(page.getByRole('button', { name: /Saved Board/ })).toHaveCount(0)
   })
 
-  test('uses repository status filters from the right panel', async ({ page }) => {
+  test('searches data within the selected repository', async ({ page }) => {
     await page.goto('/quantum-box/photon-core/data')
 
-    await page.getByTestId('toggle-database-filters').click()
-    await expect(page.getByTestId('database-filter-panel')).toBeVisible()
-    await page.getByRole('button', { name: /Todo/ }).click()
-    await expect(page.getByTestId('status-filter-pill')).toHaveText(/Todo/)
-    await expect(page.getByTestId('save-view')).toBeVisible()
-    await page.getByTestId('save-view').click()
-    await expect(page.getByTestId('save-view')).toHaveCount(0)
+    await expect(page.getByTestId('library-table-view')).toBeVisible()
+    await page.getByTestId('library-table-global-filter').fill('Prepare release notes')
+    await expect(page.locator('tbody tr')).toHaveCount(1)
+    await expect(page.locator('tbody tr').first()).toContainText('Prepare release notes')
   })
 
   test('opens a database context menu from the sidebar', async ({ page }) => {
@@ -744,7 +741,7 @@ test.describe('Library shell', () => {
     const secondContext = await browser.newContext({ storageState: e2eAuthState })
     const secondPage = await secondContext.newPage()
     await secondPage.goto('/quantum-box/photon-core/data')
-    await secondPage.getByPlaceholder('Filter data...').fill(title)
+    await secondPage.getByTestId('library-table-global-filter').fill(title)
 
     await page.getByRole('button', { name: 'New data', exact: true }).first().click()
     await selectCreateRepository(page)
