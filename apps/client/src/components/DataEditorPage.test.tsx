@@ -183,7 +183,7 @@ describe('DataEditorPage', () => {
     const detail = deferredDetail()
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Delete data' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Delete data' })).toBeDisabled()
     expect(screen.getByTestId('data-editor-share')).toBeDisabled()
     expect(screen.getByTestId('record-attach-file')).toBeDisabled()
 

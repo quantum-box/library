@@ -1913,6 +1913,10 @@ type PublicApiKey {
 
 type Query {
 	errTest: String!
+	"""
+	Whether this caller may delete Library data in the active tenant.
+	"""
+	canDeleteData: Boolean!
 	me: User!
 	tenantSeedCandidates: [TenantSeedCandidate!]!
 	"""
@@ -1926,10 +1930,6 @@ type Query {
 	null out sibling results in a batched GraphQL query.
 	"""
 	canViewRepo(orgUsername: String!, repoUsername: String!): Boolean!
-	"""
-	Whether the caller may delete Library data in the active tenant.
-	"""
-	canDeleteData: Boolean!
 	data(orgUsername: String!, repoUsername: String!, dataId: String!): Data!
 	dataList(orgUsername: String!, repoUsername: String!, pageSize: Int, page: Int): DataList!
 	properties(orgUsername: String!, repoUsername: String!): [Property!]!

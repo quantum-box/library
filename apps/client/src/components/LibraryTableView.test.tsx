@@ -528,7 +528,7 @@ describe('LibraryTableView', () => {
 
       expect(screen.getByText('Remembered item')).toBeInTheDocument()
       expect(screen.queryByTestId('library-table-loading')).not.toBeInTheDocument()
-      expect(screen.getByTestId('library-table-delete-data-1')).toBeDisabled()
+      expect(await screen.findByTestId('library-table-delete-data-1')).toBeDisabled()
       expect(screen.getByTestId('library-table-add-row')).toBeDisabled()
 
       listing.resolve({
