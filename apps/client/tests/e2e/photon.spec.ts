@@ -856,7 +856,7 @@ test.describe('Library shell', () => {
     })
 
     await page.goto('/quantum-box/photon-core/data')
-    await page.getByPlaceholder('Filter data...').fill(title)
+    await page.getByTestId('library-table-global-filter').fill(title)
     await expect(page.getByText(title)).toBeVisible()
 
     await page.getByTestId('view-chat').click()
@@ -897,7 +897,7 @@ test.describe('Library shell', () => {
     })
 
     await page.goto('/quantum-box/photon-core/data')
-    await page.getByPlaceholder('Filter data...').fill(title)
+    await page.getByTestId('library-table-global-filter').fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
   })
