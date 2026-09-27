@@ -57,6 +57,35 @@ export const v1betaTranslations = {
 				action: 'Action',
 			},
 		},
+		organizationAccess: {
+			title: 'Access management',
+			description:
+				'Manage organization roles for members. Repository-specific access is managed in each repository settings.',
+			membersTitle: 'Organization members',
+			membersDescription: 'Choose the level of access each member has across this organization.',
+			searchMembers: 'Search members',
+			roleLabel: 'Organization role',
+			you: 'You',
+			noMembersFound: 'No members match your search.',
+			updated: 'Updated the organization role for {name}.',
+			updateFailed: 'Could not update the member role.',
+			lastOwnerError: 'At least one organization owner must remain.',
+			lastOwnerHelp: 'The last organization owner cannot be downgraded.',
+			roles: {
+				general: {
+					name: 'General',
+					description: 'Basic organization membership. Private repository access may need a separate grant.',
+				},
+				manager: {
+					name: 'Manager',
+					description: 'Elevated permissions for organization management.',
+				},
+				owner: {
+					name: 'Owner',
+					description: 'Full access to all repositories and organization administration.',
+				},
+			},
+		},
 		newOrg: {
 			title: 'Create a new organization and project',
 			description:
@@ -914,6 +943,35 @@ export const v1betaTranslations = {
 				role: '役割',
 				email: 'メール',
 				action: 'アクション',
+			},
+		},
+		organizationAccess: {
+			title: 'アクセス管理',
+			description:
+				'組織メンバーのロールを管理します。リポジトリごとのアクセス権は各リポジトリの設定で管理します。',
+			membersTitle: '組織メンバー',
+			membersDescription: '組織内で各メンバーが持つアクセスレベルを選択します。',
+			searchMembers: 'メンバーを検索',
+			roleLabel: '組織ロール',
+			you: '自分',
+			noMembersFound: '一致するメンバーがいません。',
+			updated: '{name} の組織ロールを更新しました。',
+			updateFailed: 'メンバーのロールを更新できませんでした。',
+			lastOwnerError: '組織には少なくとも1人のOwnerが必要です。',
+			lastOwnerHelp: '最後のOwnerはGeneralまたはManagerに変更できません。',
+			roles: {
+				general: {
+					name: 'General',
+					description: '基本的な組織メンバー権限です。非公開リポジトリには個別の権限付与が必要な場合があります。',
+				},
+				manager: {
+					name: 'Manager',
+					description: '組織管理に関する追加権限を持ちます。',
+				},
+				owner: {
+					name: 'Owner',
+					description: 'すべてのリポジトリと組織管理への完全なアクセス権を持ちます。',
+				},
 			},
 		},
 		newOrg: {

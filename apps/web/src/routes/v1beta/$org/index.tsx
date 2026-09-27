@@ -76,6 +76,19 @@ function OrganizationPage() {
       organization={organization}
       hasLinearConnection={false}
       tenantId={organization.id}
+      currentUserId={session?.user.id}
+      onMemberRoleChanged={(userId, role) => {
+        setOrganization((current) =>
+          current
+            ? {
+                ...current,
+                users: current.users.map((member) =>
+                  member.id === userId ? { ...member, role } : member,
+                ),
+              }
+            : current,
+        )
+      }}
       onSubmit={async () => undefined}
     />
   )
