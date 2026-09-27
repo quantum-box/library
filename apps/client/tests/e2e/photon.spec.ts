@@ -855,7 +855,7 @@ test.describe('Library shell', () => {
       markdown: 'Seed data for deterministic E2E coverage.',
     })
 
-    await page.getByTestId('view-data').click()
+    await page.goto('/quantum-box/photon-core/data')
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title)).toBeVisible()
 
@@ -896,7 +896,7 @@ test.describe('Library shell', () => {
       timeout: 15_000,
     })
 
-    await page.getByTestId('view-data').click()
+    await page.goto('/quantum-box/photon-core/data')
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('tbody tr', { hasText: recordIdentifier }).first()).toBeVisible()
