@@ -40,7 +40,6 @@ import {
   ChevronsUpDown,
   Cloud,
   Copy,
-  Database,
   FolderGit2,
   Home,
   LogOut,
@@ -89,16 +88,15 @@ import { LanguageMenuSection } from './LanguageMenuSection'
 import { useDialogFocus } from './useDialogFocus'
 
 type WorkspaceLink = {
-  id: 'home' | 'data' | 'chat' | 'sync'
+  id: 'home' | 'chat' | 'sync'
   labelKey: MessageKey
   icon: LucideIcon
-  to: '/home' | '/databases' | '/chat' | '/sync'
+  to: '/home' | '/chat' | '/sync'
   shortcut?: string
 }
 
 const workspaceLinks: WorkspaceLink[] = [
   { id: 'home', labelKey: 'sidebar.nav.home', icon: Home, to: '/home', shortcut: 'H' },
-  { id: 'data', labelKey: 'sidebar.nav.allData', icon: Database, to: '/databases', shortcut: 'D' },
   { id: 'chat', labelKey: 'sidebar.nav.askLibrary', icon: Bot, to: '/chat' },
   { id: 'sync', labelKey: 'sidebar.nav.syncStatus', icon: Cloud, to: '/sync' },
 ]
@@ -667,11 +665,7 @@ export function Sidebar() {
                       }`}
                       onClick={() => {
                         closeMobileNav()
-                        if (link.id === 'data') {
-                          handleDatabaseSelect(selectedDatabaseId ?? null)
-                        } else {
-                          void navigate({ to: link.to })
-                        }
+                        void navigate({ to: link.to })
                       }}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden="true" />

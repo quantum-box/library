@@ -73,6 +73,15 @@ function findDatabaseForRecord(
   return canonicalMatch ?? databases.find((database) => database.label === record.project)
 }
 
+function recordBelongsToOrganization(
+  record: DatabaseRecord,
+  databases: WorkspaceDatabase[],
+  organizationId: string,
+) {
+  if (record.operatorId) return record.operatorId === organizationId
+  return findDatabaseForRecord(databases, record)?.operatorId === organizationId
+}
+
 export function LibraryHome() {
   const navigate = useNavigate()
   const i18n = useI18n()
@@ -86,17 +95,34 @@ export function LibraryHome() {
   const {
     databases,
     organizations,
+    selectedOrganizationId,
     repositoriesError,
     repositoriesLoading,
     refreshRepositories,
   } = useWorkspaceDatabases()
 
+  const visibleDatabases = useMemo(
+    () => selectedOrganizationId
+      ? databases.filter((database) => database.operatorId === selectedOrganizationId)
+      : databases,
+    [databases, selectedOrganizationId],
+  )
+
+  const visibleRecords = useMemo(
+    () => selectedOrganizationId
+      ? records.filter((record) =>
+          recordBelongsToOrganization(record, visibleDatabases, selectedOrganizationId),
+        )
+      : records,
+    [records, selectedOrganizationId, visibleDatabases],
+  )
+
   const recentRecords = useMemo(
     () =>
-      [...records]
+      [...visibleRecords]
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
         .slice(0, 8),
-    [records],
+    [visibleRecords],
   )
 
   const workingSet = useMemo(
@@ -106,15 +132,15 @@ export function LibraryHome() {
 
   const recordCountsByRepository = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const record of records) {
-      const database = findDatabaseForRecord(databases, record)
+    for (const record of visibleRecords) {
+      const database = findDatabaseForRecord(visibleDatabases, record)
       if (database) counts.set(database.id, (counts.get(database.id) ?? 0) + 1)
     }
     return counts
-  }, [databases, records])
+  }, [visibleDatabases, visibleRecords])
 
   const openRecord = (record: DatabaseRecord) => {
-    const database = findDatabaseForRecord(databases, record)
+    const database = findDatabaseForRecord(visibleDatabases, record)
     void navigateToData(navigate, database?.id, {}, { recordId: record.id })
   }
 
@@ -154,24 +180,6 @@ export function LibraryHome() {
           {t('data.new')}
         </Button>
       </header>
-
-      <div className="hidden h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-surface px-2 pt-1.5 md:flex">
-        <div className="flex h-8 shrink-0 items-center gap-2 rounded-t-md border border-b-background border-border bg-background px-3 text-xs font-medium">
-          <img src={libraryAppIcon} alt="" className="size-3.5" />
-          {t('home.title')}
-        </div>
-        {recentRecords.slice(0, 2).map((record) => (
-          <button
-            key={record.id}
-            type="button"
-            className="flex h-7 max-w-48 shrink-0 items-center gap-2 rounded-t-md px-3 text-xs text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            onClick={() => openRecord(record)}
-          >
-            <FileText className="size-3.5" aria-hidden="true" />
-            <span className="truncate">{record.identifier}</span>
-          </button>
-        ))}
-      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-surface">
         <div className="mx-auto w-full max-w-[1320px] px-4 py-5 md:px-6 md:py-6">
@@ -321,7 +329,7 @@ export function LibraryHome() {
               <section className="overflow-hidden rounded-lg border border-border bg-background shadow-soft" aria-labelledby="repositories-heading">
                 <div className="flex h-11 items-center gap-2 border-b border-border px-3.5">
                   <h2 id="repositories-heading" className="text-sm font-semibold">{t('sidebar.repositories.heading')}</h2>
-                  <Badge variant="neutral">{databases.length}</Badge>
+                  <Badge variant="neutral">{visibleDatabases.length}</Badge>
                   <Button className="ml-auto" variant="ghost" size="sm" asChild>
                     <Link to="/repositories">
                       {t('common.viewAll')}
@@ -348,8 +356,8 @@ export function LibraryHome() {
                       {t('common.tryAgain')}
                     </Button>
                   </div>
-                ) : databases.length > 0 ? (
-                  databases.slice(0, 7).map((database) => {
+                ) : visibleDatabases.length > 0 ? (
+                  visibleDatabases.slice(0, 7).map((database) => {
                     const path = databasePath(database)
                     const count = recordCountsByRepository.get(database.id) ?? 0
                     const repositoryContent = (
