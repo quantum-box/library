@@ -203,8 +203,8 @@ export function RichTextTemplateManager({
 							disabled={busy}
 						/>
 					</div>
-					<div className='space-y-1.5'>
-						<label className='text-sm font-medium'>{copy.body}</label>
+					<fieldset className='space-y-1.5 border-0 p-0'>
+						<legend className='text-sm font-medium'>{copy.body}</legend>
 						<HtmlViewAndEditor
 							key={selectedId ?? `new-${org}-${repo}`}
 							isEditing
@@ -213,9 +213,9 @@ export function RichTextTemplateManager({
 							onChange={setRichText}
 							className='min-h-[260px] w-full rounded-md border border-border px-3 py-2'
 						/>
-					</div>
+					</fieldset>
 					{error ? <p role='alert' className='text-sm text-destructive'>{error}</p> : null}
-					{notice ? <p role='status' className='text-sm text-green-700'>{notice}</p> : null}
+					{notice ? <output className='block text-sm text-green-700'>{notice}</output> : null}
 					<div className='flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3'>
 						<Button
 							type='button'

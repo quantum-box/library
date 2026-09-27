@@ -19,7 +19,7 @@
 
 ## 未実施
 
-- Rust tests、workspace全体の重いRust検証、CI。
+- ローカルではRust testsとworkspace全体の重い検証を未実施。
 - Photon v2の型チェックとWeb v1 / Photon v2のブラウザ操作確認。
 - migrationのDB適用、本番deploy。
 
@@ -30,4 +30,11 @@
 - `apps/client/package.json`と`apps/client/package-lock.json`を`npm version patch --no-git-tag-version --force`で同期した。
 - taskdocを`docs/src/tasks/completed/v0.1.69/plt-5398-richtext-templates/`へ移動した。
 - repositoryに`docs/SUMMARY.md`は存在しないため、summary navigation更新は不要。
-- CI、Photon v2型チェック、ブラウザ操作、DB migration適用、本番deployは未実施。
+- Photon v2型チェック、ブラウザ操作、DB migration適用、本番deployは未実施。
+
+
+## PR後のCIフォロー
+
+- 初回GitHub ActionsでWeb lintが未関連付けlabelとstatus要素を指摘したため、fieldset/legendとoutputへ修正した。対象WebファイルのBiome lintは成功。
+- 初回client package buildで未使用の`selected`変数がTypeScript errorになったため削除した。
+- 初回Tachyon CloudのLibrary client buildも同じ未使用変数で失敗した。修正commit push後の再実行結果を確認予定。

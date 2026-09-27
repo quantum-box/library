@@ -11,7 +11,7 @@ import {
   Label,
 } from '@tachyon-sdk/native-ui'
 import { FileText, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   createRichTextTemplate,
   deleteRichTextTemplate,
@@ -44,11 +44,6 @@ export function RichTextTemplatesSection({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-
-  const selected = useMemo(
-    () => templates.find((template) => template.id === selectedId) ?? null,
-    [selectedId, templates],
-  )
 
   const load = useCallback(async () => {
     setLoading(true)
