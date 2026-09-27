@@ -390,10 +390,7 @@ export function Sidebar() {
     if (organizationId === 'all') {
       setSelectedOrganizationId(null)
       void navigate({
-        to: '/databases',
-        search: {
-          view: currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType,
-        },
+        to: '/repositories',
       })
       return
     }

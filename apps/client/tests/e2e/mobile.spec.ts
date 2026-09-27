@@ -4,11 +4,11 @@ test.describe('Library mobile shell', () => {
   test('supports core workspace flows on a phone viewport', async ({ page }) => {
     const title = `Mobile smoke data ${Date.now()}`
 
-    await page.goto('/databases')
+    await page.goto('/home')
 
     await expect(page.getByTestId('sync-presence-status-mobile')).toBeVisible()
     await expect(page.getByTestId('side-nav')).toBeHidden()
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
     // The workspace nav lives behind the app bar's drawer on a phone.
     await expect(page.getByTestId('mobile-nav')).toHaveCount(0)
@@ -20,7 +20,7 @@ test.describe('Library mobile shell', () => {
     await page.getByTestId('close-mobile-nav').click()
     await expect(page.getByTestId('mobile-nav')).toHaveCount(0)
 
-    await page.getByTestId('open-create-record').click()
+    await page.getByRole('button', { name: 'New data', exact: true }).click()
     await page.getByTestId('create-record-repository').selectOption('quantum-box/photon-core')
     await expect(page.getByTestId('create-record-repository')).toHaveValue('quantum-box/photon-core')
     await page.getByLabel(/Data name/i).fill(title)
@@ -28,8 +28,8 @@ test.describe('Library mobile shell', () => {
 
     // Created data opens in its editor; the list is one step back.
     await expect(page.getByTestId('data-editor-title')).toHaveText(title)
-    await page.goBack()
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await page.getByRole('button', { name: 'Back to data' }).click()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.getByTestId('mobile-record-card')).toHaveCount(1)

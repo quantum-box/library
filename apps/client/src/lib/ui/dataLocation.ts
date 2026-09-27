@@ -38,11 +38,7 @@ export function databaseIdFromLocation(
 }
 
 export function isDataListPath(pathname: string): boolean {
-  return (
-    pathname === '/databases' ||
-    pathname === '/databases/' ||
-    /^\/[^/]+\/[^/]+\/data\/?$/.test(pathname)
-  )
+  return /^\/[^/]+\/[^/]+\/data\/?$/.test(pathname)
 }
 
 declare module '@tanstack/history' {
@@ -91,5 +87,8 @@ export function navigateToData(
       replace,
     })
   }
-  return navigate({ to: '/databases', search: { ...search, database }, replace })
+  if (database) {
+    return navigate({ to: '/databases', search: { ...search, database }, replace })
+  }
+  return navigate({ to: '/repositories', replace })
 }

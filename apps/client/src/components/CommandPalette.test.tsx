@@ -7,10 +7,14 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   scrollIntoView: vi.fn(),
   records: [] as DatabaseRecord[],
+  databases: [] as { id: string; label: string; orgUsername?: string; repoUsername?: string }[],
+  location: { pathname: '/home', search: {} as Record<string, unknown> },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
+  useRouterState: ({ select }: { select: (state: { location: typeof mocks.location }) => unknown }) =>
+    select({ location: mocks.location }),
 }))
 
 vi.mock('../contexts/RecordsContext', () => ({
@@ -18,13 +22,15 @@ vi.mock('../contexts/RecordsContext', () => ({
 }))
 
 vi.mock('../contexts/DatabasesContext', () => ({
-  useWorkspaceDatabases: () => ({ databases: [] }),
+  useWorkspaceDatabases: () => ({ databases: mocks.databases }),
 }))
 
 describe('CommandPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.records = []
+    mocks.databases = []
+    mocks.location = { pathname: '/home', search: {} }
     mocks.navigate.mockResolvedValue(undefined)
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
@@ -49,7 +55,8 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalled())
     mocks.scrollIntoView.mockClear()
     fireEvent.keyDown(input, { key: 'ArrowDown' })
-    expect(input).toHaveAttribute('aria-activedescendant', 'command-nav-table')
+    expect(input).toHaveAttribute('aria-activedescendant', 'command-nav-chat')
+    expect(within(listbox).getAllByRole('option')).toHaveLength(3)
     await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' }))
 
     fireEvent.keyDown(input, { key: 'End' })
@@ -59,8 +66,22 @@ describe('CommandPalette', () => {
 
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/databases' }))
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chat' })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers database views only inside a repository data page', () => {
+    mocks.location = { pathname: '/quantum-box/photon-core/data', search: {} }
+    render(<CommandPalette open onClose={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('option', { name: /Board/ }))
+
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/$organization/$repository/data',
+      params: { organization: 'quantum-box', repository: 'photon-core' },
+      search: { view: 'board' },
+      replace: undefined,
+    })
   })
 
   it('removes the active descendant and announces an empty result set', () => {

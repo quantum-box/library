@@ -80,9 +80,6 @@ test.describe('Library shell', () => {
     await expect(page).toHaveURL(/\/home/)
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'New data', exact: true }).first().click()
-    await expect(page).toHaveURL(/\/databases/)
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
-    await expect(page.getByText(/\d+ data/)).toBeVisible()
 
     // Only the repository is asked for; the name is written in the editor.
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
@@ -107,16 +104,23 @@ test.describe('Library shell', () => {
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data(\?|$)/)
     expect((await e2eFixtureData(page)).length).toBe(created)
 
-    await page.goto('/databases')
     await page.getByPlaceholder('Filter data...').fill(title)
     await expect(page.locator('tbody tr', { hasText: title })).toBeVisible()
   })
 
-  test('opens the new-data form from the All data table and names it there', async ({ page }) => {
+  test('redirects the removed all-repositories data page to Home', async ({ page }) => {
+    await page.goto('/databases')
+
+    await expect(page).toHaveURL(/\/home$/)
+    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+    await expect(page.getByTestId('library-table-view')).toHaveCount(0)
+  })
+
+  test('opens the new-data form from Home and names it there', async ({ page }) => {
     const title = `E2E named data ${Date.now()}`
 
-    await page.goto('/databases')
-    await page.locator('tbody').getByRole('button', { name: /New data/ }).click()
+    await page.goto('/home')
+    await page.getByRole('button', { name: 'New data', exact: true }).first().click()
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
     await selectCreateRepository(page)
     await page.getByLabel(/Data name/i).fill(title)
@@ -128,7 +132,7 @@ test.describe('Library shell', () => {
   })
 
   test('switches between table, board, workflow, timeline, and chat views', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/quantum-box/photon-core/data')
     await addDatabaseView(page, 'board')
     await addDatabaseView(page, 'workflow')
     await addDatabaseView(page, 'timeline')
@@ -136,13 +140,13 @@ test.describe('Library shell', () => {
     await page.getByTestId('view-kanban').click()
 
     await expect(page).toHaveURL(/view=/)
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByText('drag to move')).toBeVisible()
 
     await page.getByTestId('view-workflow').click()
 
     await expect(page).toHaveURL(/view=/)
-    await expect(page.getByRole('heading', { name: 'All repository data' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
     await expect(page.getByTestId('workflow-template-business-flow')).toBeVisible()
@@ -166,7 +170,7 @@ test.describe('Library shell', () => {
   })
 
   test('supports global keyboard shortcuts for fast navigation and creation', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/quantum-box/photon-core/data')
     // The board toggle switches to a board the user has added; without one
     // there is nothing to toggle to.
     await addDatabaseView(page, 'board')
@@ -189,7 +193,7 @@ test.describe('Library shell', () => {
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible()
 
     await page.keyboard.press('c')
-    await expect(page).toHaveURL(/\/databases/)
+    await expect(page).toHaveURL(/\/home$/)
     await expect(page.getByTestId('create-record-modal')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('create-record-modal')).toHaveCount(0)
@@ -335,7 +339,7 @@ test.describe('Library shell', () => {
   })
 
   test('preserves the selected database when switching database views', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/home')
 
     await page.getByTestId('database-quantum-box/photon-core').click()
 
@@ -630,7 +634,7 @@ test.describe('Library shell', () => {
   })
 
   test('creates, renames, duplicates, and deletes named database views', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/quantum-box/photon-core/data')
 
     await page.getByTestId('view-options').click()
     await page.getByTestId('new-board-view').click()
@@ -671,7 +675,7 @@ test.describe('Library shell', () => {
   })
 
   test('uses repository status filters from the right panel', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/quantum-box/photon-core/data')
 
     await page.getByTestId('toggle-database-filters').click()
     await expect(page.getByTestId('database-filter-panel')).toBeVisible()
@@ -683,7 +687,7 @@ test.describe('Library shell', () => {
   })
 
   test('opens a database context menu from the sidebar', async ({ page }) => {
-    await page.goto('/databases')
+    await page.goto('/home')
 
     await expect(page.getByTestId('nav-databases')).toHaveCount(0)
     await page.getByTestId('database-quantum-box/photon-core').hover()
@@ -707,14 +711,14 @@ test.describe('Library shell', () => {
   })
 
   test('shows sync presence as clients connect', async ({ page, context }) => {
-    await page.goto('/databases')
+    await page.goto('/home')
 
     await expect(page.getByTestId('sync-presence-status')).toHaveText(/\d+ online/)
     const initialOnlineText = await page.getByTestId('sync-presence-status').innerText()
     const initialOnlineCount = Number(initialOnlineText.split(' ')[0])
 
     const secondPage = await context.newPage()
-    await secondPage.goto('/databases')
+    await secondPage.goto('/home')
 
     await expect
       .poll(
@@ -736,13 +740,13 @@ test.describe('Library shell', () => {
     test.setTimeout(90_000)
     const title = `E2E synced data ${Date.now()}`
 
-    await page.goto('/databases')
+    await page.goto('/home')
     const secondContext = await browser.newContext({ storageState: e2eAuthState })
     const secondPage = await secondContext.newPage()
-    await secondPage.goto('/databases')
+    await secondPage.goto('/quantum-box/photon-core/data')
     await secondPage.getByPlaceholder('Filter data...').fill(title)
 
-    await page.getByTestId('open-create-record').click()
+    await page.getByRole('button', { name: 'New data', exact: true }).first().click()
     await selectCreateRepository(page)
     await page.getByLabel(/Data name/i).fill(title)
     await page.getByTestId('create-record-submit').click()

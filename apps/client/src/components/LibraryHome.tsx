@@ -19,9 +19,13 @@ import {
   useWorkspaceDatabases,
 } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
+import type { CreateRecordData } from '../contexts/RecordsContext'
+import { useCreateModal } from '../contexts/CreateModalContext'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import { navigateToData } from '../lib/ui/dataLocation'
 import { useI18n, type I18nContextValue } from '../i18n'
+import { CreateRecordModal } from './CreateRecordModal'
+import { isPendingRecordId } from '../lib/pendingRecordId'
 
 /**
  * Compact "how long ago" label for dense list rows. Anything older than a week
@@ -91,7 +95,8 @@ export function LibraryHome() {
     month: 'long',
     day: 'numeric',
   })
-  const { records, hydrationLoading, hydrationError } = useDatabaseRecords()
+  const { records, hydrationLoading, hydrationError, handleCreateRecord } = useDatabaseRecords()
+  const { open: createModalOpen, setOpen: setCreateModalOpen } = useCreateModal()
   const {
     databases,
     organizations,
@@ -144,7 +149,25 @@ export function LibraryHome() {
     void navigateToData(navigate, database?.id, {}, { recordId: record.id })
   }
 
+  const handleCreateAndOpenRecord = async (data: CreateRecordData) => {
+    const title = data.title.trim()
+    const { record, delivered } = await handleCreateRecord({
+      ...data,
+      title: title || t('common.untitled'),
+    })
+    if (!delivered || !record.orgUsername || !record.repoUsername || isPendingRecordId(record.id)) return
+
+    setCreateModalOpen(false)
+    await navigateToData(
+      navigate,
+      `${record.orgUsername}/${record.repoUsername}`,
+      {},
+      { recordId: record.id, focusTitle: !title },
+    )
+  }
+
   return (
+    <>
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
       {/*
         Desktop chrome only. On a phone the shell's own app bar already carries
@@ -243,12 +266,6 @@ export function LibraryHome() {
                 <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
                 <h2 id="activity-heading" className="text-sm font-semibold">{t('home.recentActivity')}</h2>
                 <Badge variant="neutral">{recentRecords.length}</Badge>
-                <Button className="ml-auto" variant="ghost" size="sm" asChild>
-                  <Link to="/databases">
-                    {t('common.viewAll')}
-                    <ChevronRight aria-hidden="true" />
-                  </Link>
-                </Button>
               </div>
 
               {recentRecords.length > 0 ? (
@@ -404,5 +421,13 @@ export function LibraryHome() {
         </div>
       </div>
     </main>
+    <CreateRecordModal
+      open={createModalOpen}
+      onClose={() => setCreateModalOpen(false)}
+      onCreate={handleCreateAndOpenRecord}
+      repositories={visibleDatabases}
+      requireRepository
+    />
+    </>
   )
 }
