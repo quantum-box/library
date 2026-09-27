@@ -5,6 +5,7 @@ import type { CachedRepoTable } from '../lib/libraryReadCache'
 
 const mocks = vi.hoisted(() => ({
   fetchLibraryRepoTableData: vi.fn(),
+  canDeleteLibraryData: vi.fn(() => Promise.resolve(true)),
   // One row per page, so a test can express "there is another page" without
   // building a hundred rows to fill one.
   libraryPageSize: vi.fn(() => 1),
@@ -48,6 +49,7 @@ vi.mock('../lib/libraryReadCache', () => cache)
 
 vi.mock('../lib/recordsApi', () => ({
   fetchLibraryRepoTableData: mocks.fetchLibraryRepoTableData,
+  canDeleteLibraryData: mocks.canDeleteLibraryData,
   libraryPageSize: mocks.libraryPageSize,
   // The table reads Property types back from the create-Property response and
   // writes them back on rename, so both directions have to exist here.

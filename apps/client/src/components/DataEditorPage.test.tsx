@@ -8,6 +8,7 @@ import type { LibraryDataItem, LibraryProperty } from '../lib/recordsApi'
 const mocks = vi.hoisted(() => ({
   fetchLibraryDataDetail: vi.fn(),
   fetchLibraryRepoTableData: vi.fn(),
+  canDeleteLibraryData: vi.fn(() => Promise.resolve(true)),
   updateLibraryData: vi.fn(),
   deleteLibraryData: vi.fn(),
 }))
@@ -22,6 +23,7 @@ vi.mock('../lib/recordsApi', () => ({
   },
   fetchLibraryDataDetail: mocks.fetchLibraryDataDetail,
   fetchLibraryRepoTableData: mocks.fetchLibraryRepoTableData,
+  canDeleteLibraryData: mocks.canDeleteLibraryData,
   libraryDataToRecord: () => ({ identifier: '' }),
 }))
 
