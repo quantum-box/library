@@ -19,6 +19,7 @@ persistence = { path = "../../packages/persistence" }
 value_object = { path = "../../packages/value_object", features = ["axum"] }
 util = { path = "../../packages/util" }
 errors = { path = "../../packages/errors", features = ["axum-extension", "graphql"] }
+ingredient_notation = { path = "../../packages/ingredient_notation" }
 telemetry = { path = "../../packages/telemetry", features = ["axum"] }
 csv_importer = { path = "../../packages/csv_importer" }
 

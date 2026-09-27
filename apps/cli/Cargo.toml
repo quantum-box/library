@@ -28,5 +28,13 @@ tokio = { workspace = true, features = [
 ], default-features = false }
 base64 = { workspace = true }
 rand = { workspace = true }
+
+# `library food import` (COM-861): the MEXT Excel reader and the value
+# rules shared with library-api.
+calamine = "0.36"
+chrono = { workspace = true }
+futures = { workspace = true }
+ingredient_notation = { path = "../../packages/ingredient_notation" }
 sha2 = { workspace = true }
+ulid = { workspace = true }
 url = { workspace = true }
