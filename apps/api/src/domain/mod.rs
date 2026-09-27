@@ -4,6 +4,7 @@ pub mod ingredient_catalog;
 mod organization;
 pub mod policy;
 pub mod repo;
+pub mod rich_text_template;
 mod role;
 pub mod share_link;
 // Not glob re-exported: `source_hash` and `LanguageTag` are generic
@@ -16,6 +17,7 @@ pub use ingredient_catalog::*;
 pub use organization::*;
 pub use policy::*;
 pub use repo::*;
+pub use rich_text_template::*;
 pub use role::*;
 pub use share_link::*;
 

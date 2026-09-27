@@ -80,6 +80,8 @@ export interface RecordBodyEditorProps {
    * failed.
    */
   onCommit: (value: string, options?: { keepalive?: boolean }) => void | Promise<boolean>
+  /** Receive the current local draft without committing it to storage. */
+  onDraftChange?: (value: string) => void
   /**
    * Save a Live body only if the record is still at `expectedRecordVersion`,
    * in a request that outlives the page (see LiveBodySession). A page that
@@ -325,6 +327,7 @@ function BlockRecordBodyEditor({
   value,
   format = 'markdown',
   onCommit,
+  onDraftChange,
   editable = true,
   surface = 'panel',
   theme,
@@ -348,11 +351,16 @@ function BlockRecordBodyEditor({
   const commitTimer = useRef<number | null>(null)
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
+  const onDraftChangeRef = useRef(onDraftChange)
   const editor = useBodyEditor(imageTarget, collaboration)
 
   useEffect(() => {
     onCommitRef.current = onCommit
   }, [onCommit])
+
+  useEffect(() => {
+    onDraftChangeRef.current = onDraftChange
+  }, [onDraftChange])
 
   useEffect(() => {
     if (!live) return
@@ -518,6 +526,7 @@ function BlockRecordBodyEditor({
       valueBeforeComposition.current = null
       live?.compositionEnded()
     }
+    onDraftChangeRef.current?.(pendingValue.current)
     schedulePendingCommit()
   }, editor)
 

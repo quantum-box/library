@@ -68,6 +68,17 @@ export interface RepositorySettingsTarget {
   operatorId?: string
 }
 
+export interface RichTextTemplate {
+  id: string
+  name: string
+  richText: string
+}
+
+export interface RichTextTemplateDraft {
+  name: string
+  richText: string
+}
+
 export interface RepositoryPropertyDraft {
   name: string
   displayName?: string
@@ -148,6 +159,47 @@ interface RepositoryDeleteResponse {
 interface RepositoryUpdateResponse {
   updateRepo?: RepositorySettingsData['repository'] | null
 }
+
+interface RichTextTemplatesResponse {
+  richTextTemplates?: RichTextTemplate[] | null
+}
+
+interface RichTextTemplateMutationResponse {
+  saveRichTextTemplate?: RichTextTemplate | null
+  updateRichTextTemplate?: RichTextTemplate | null
+}
+
+interface RichTextTemplateDeleteResponse {
+  deleteRichTextTemplate?: boolean | null
+}
+
+const richTextTemplatesQuery = `
+  query LibraryClientRichTextTemplates($orgUsername: String!, $repoUsername: String!) {
+    richTextTemplates(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+      id
+      name
+      richText
+    }
+  }
+`
+
+const saveRichTextTemplateMutation = `
+  mutation LibraryClientSaveRichTextTemplate($input: RichTextTemplateInput!) {
+    saveRichTextTemplate(input: $input) { id name richText }
+  }
+`
+
+const updateRichTextTemplateMutation = `
+  mutation LibraryClientUpdateRichTextTemplate($templateId: String!, $input: RichTextTemplateInput!) {
+    updateRichTextTemplate(templateId: $templateId, input: $input) { id name richText }
+  }
+`
+
+const deleteRichTextTemplateMutation = `
+  mutation LibraryClientDeleteRichTextTemplate($orgUsername: String!, $repoUsername: String!, $templateId: String!) {
+    deleteRichTextTemplate(orgUsername: $orgUsername, repoUsername: $repoUsername, templateId: $templateId)
+  }
+`
 
 const repositorySettingsQuery = `
   query LibraryClientRepositorySettings($orgUsername: String!, $repoUsername: String!) {
@@ -581,4 +633,126 @@ export async function updateRepositorySettings(
     )
   }
   return payload.updateRepo
+}
+
+function richTextTemplateInput(
+  target: RepositorySettingsTarget,
+  draft: RichTextTemplateDraft,
+): Record<string, unknown> {
+  const name = draft.name.trim()
+  if (!name || [...name].length > 255) {
+    throw new RepositorySettingsApiError(
+      'Template names must contain between 1 and 255 characters.',
+      422,
+      'validation',
+    )
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(draft.richText)
+  } catch {
+    throw new RepositorySettingsApiError(
+      'The RichText body must be a valid block document.',
+      422,
+      'validation',
+    )
+  }
+  if (!Array.isArray(parsed) || new TextEncoder().encode(draft.richText).length > 4 * 1024 * 1024) {
+    throw new RepositorySettingsApiError(
+      'The RichText body must be a block document under 4 MiB.',
+      422,
+      'validation',
+    )
+  }
+  return {
+    orgUsername: target.orgUsername,
+    repoUsername: target.repoUsername,
+    name,
+    richText: draft.richText,
+  }
+}
+
+export async function fetchRichTextTemplates(
+  target: RepositorySettingsTarget,
+): Promise<RichTextTemplate[]> {
+  const payload = await requestRepositoryGraphQL<RichTextTemplatesResponse>(
+    richTextTemplatesQuery,
+    { orgUsername: target.orgUsername, repoUsername: target.repoUsername },
+    target,
+  )
+  if (!Array.isArray(payload.richTextTemplates)) {
+    throw new RepositorySettingsApiError(
+      'Repository did not return RichText templates.',
+      200,
+      'invalid-response',
+    )
+  }
+  return payload.richTextTemplates
+}
+
+export async function createRichTextTemplate(
+  target: RepositorySettingsTarget,
+  draft: RichTextTemplateDraft,
+): Promise<RichTextTemplate> {
+  const payload = await requestRepositoryGraphQL<RichTextTemplateMutationResponse>(
+    saveRichTextTemplateMutation,
+    { input: richTextTemplateInput(target, draft) },
+    target,
+  )
+  if (!payload.saveRichTextTemplate) {
+    throw new RepositorySettingsApiError(
+      'Repository did not return the created RichText template.',
+      200,
+      'invalid-response',
+    )
+  }
+  return payload.saveRichTextTemplate
+}
+
+export async function updateRichTextTemplate(
+  target: RepositorySettingsTarget,
+  templateId: string,
+  draft: RichTextTemplateDraft,
+): Promise<RichTextTemplate> {
+  if (!templateId.trim()) {
+    throw new RepositorySettingsApiError('A template ID is required.', 422, 'validation')
+  }
+  const payload = await requestRepositoryGraphQL<RichTextTemplateMutationResponse>(
+    updateRichTextTemplateMutation,
+    { templateId, input: richTextTemplateInput(target, draft) },
+    target,
+  )
+  if (!payload.updateRichTextTemplate) {
+    throw new RepositorySettingsApiError(
+      'Repository did not return the updated RichText template.',
+      200,
+      'invalid-response',
+    )
+  }
+  return payload.updateRichTextTemplate
+}
+
+export async function deleteRichTextTemplate(
+  target: RepositorySettingsTarget,
+  templateId: string,
+): Promise<void> {
+  if (!templateId.trim()) {
+    throw new RepositorySettingsApiError('A template ID is required.', 422, 'validation')
+  }
+  const payload = await requestRepositoryGraphQL<RichTextTemplateDeleteResponse>(
+    deleteRichTextTemplateMutation,
+    {
+      orgUsername: target.orgUsername,
+      repoUsername: target.repoUsername,
+      templateId,
+    },
+    target,
+  )
+  if (payload.deleteRichTextTemplate !== true) {
+    throw new RepositorySettingsApiError(
+      'Repository did not confirm the deleted RichText template.',
+      200,
+      'invalid-response',
+    )
+  }
 }

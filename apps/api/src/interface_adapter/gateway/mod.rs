@@ -38,5 +38,8 @@ pub use translation_repository::*;
 pub mod glossary_repository;
 pub use glossary_repository::*;
 
+mod rich_text_template_repository;
+pub use rich_text_template_repository::*;
+
 mod share_link_repository;
 pub use share_link_repository::*;

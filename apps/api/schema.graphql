@@ -1385,6 +1385,9 @@ type Mutation {
 	Delete a data item from a Library repository.
 	"""
 	check: String!
+	saveRichTextTemplate(input: RichTextTemplateInput!): RichTextTemplate!
+	updateRichTextTemplate(templateId: String!, input: RichTextTemplateInput!): RichTextTemplate!
+	deleteRichTextTemplate(orgUsername: String!, repoUsername: String!, templateId: String!): Boolean!
 	"""
 	[AUTH] Verify the token and return the user
 	"""
@@ -1921,6 +1924,7 @@ type Query {
 	accessibleTenants: [AccessibleTenant!]!
 	organization(username: String!): Organization!
 	repo(orgUsername: String!, repoUsername: String!): Repo!
+	richTextTemplates(orgUsername: String!, repoUsername: String!): [RichTextTemplate!]!
 	"""
 	Check repository visibility without making one authorization failure
 	null out sibling results in a batched GraphQL query.
@@ -2157,6 +2161,22 @@ input RevokeApiKeyInput {
 	Identifier of the key to revoke, as returned by `apiKeys`.
 	"""
 	apiKeyId: String!
+}
+
+type RichTextTemplate {
+	id: String!
+	name: String!
+	richText: String!
+}
+
+input RichTextTemplateInput {
+	orgUsername: String!
+	repoUsername: String!
+	name: String!
+	"""
+	Serialized RichText block document JSON.
+	"""
+	richText: String!
 }
 
 type RichTextValue {

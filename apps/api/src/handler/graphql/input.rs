@@ -30,6 +30,15 @@ pub struct UpdateRepoInput {
     pub tags: Option<Vec<String>>,
 }
 
+#[derive(InputObject, Debug, Clone)]
+pub struct RichTextTemplateInput {
+    pub org_username: String,
+    pub repo_username: String,
+    pub name: String,
+    /// Serialized RichText block document JSON.
+    pub rich_text: String,
+}
+
 #[derive(InputObject, Debug)]
 pub struct CreateOrganizationInput {
     pub name: String,

@@ -1,0 +1,35 @@
+query richTextTemplates($orgUsername: String!, $repoUsername: String!) {
+  richTextTemplates(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    id
+    name
+    richText
+  }
+}
+
+mutation saveRichTextTemplate($input: RichTextTemplateInput!) {
+  saveRichTextTemplate(input: $input) {
+    id
+    name
+    richText
+  }
+}
+
+mutation updateRichTextTemplate($templateId: String!, $input: RichTextTemplateInput!) {
+  updateRichTextTemplate(templateId: $templateId, input: $input) {
+    id
+    name
+    richText
+  }
+}
+
+mutation deleteRichTextTemplate(
+  $orgUsername: String!
+  $repoUsername: String!
+  $templateId: String!
+) {
+  deleteRichTextTemplate(
+    orgUsername: $orgUsername
+    repoUsername: $repoUsername
+    templateId: $templateId
+  )
+}

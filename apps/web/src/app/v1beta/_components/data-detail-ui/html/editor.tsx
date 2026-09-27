@@ -42,7 +42,7 @@ export type RichTextEditorProps = {
 	className?: string
 	isEditable?: boolean
 	theme?: 'light' | 'dark'
-	format?: 'markdown' | 'html'
+	format?: 'markdown' | 'html' | 'richText'
 	/** When provided, enables real-time collaboration. */
 	collaboration?: CollaborationState
 }
@@ -140,6 +140,12 @@ export function RichTextEditor({
 			onChange(markdown)
 			return
 		}
+		if (format === 'richText') {
+			const document = JSON.stringify(editor.document)
+			lastSyncedValueRef.current = document
+			onChange(document)
+			return
+		}
 		const html = await editor.blocksToFullHTML(editor.document)
 		lastSyncedValueRef.current = html
 		onChange(html)
@@ -155,10 +161,15 @@ export function RichTextEditor({
 			if (lastSyncedValueRef.current === initial) {
 				return
 			}
-			const blocks =
-				format === 'markdown'
-					? await editor.tryParseMarkdownToBlocks(initial)
-					: await editor.tryParseHTMLToBlocks(initial)
+			let blocks: typeof editor.document
+			if (format === 'markdown') {
+				blocks = await editor.tryParseMarkdownToBlocks(initial)
+			} else if (format === 'richText') {
+				const parsed = JSON.parse(initial) as typeof editor.document
+				blocks = parsed.length > 0 ? parsed : editor.document
+			} else {
+				blocks = await editor.tryParseHTMLToBlocks(initial)
+			}
 			editor.replaceBlocks(editor.document, blocks)
 			lastSyncedValueRef.current = initial
 		}

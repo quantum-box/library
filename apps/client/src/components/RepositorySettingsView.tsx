@@ -40,6 +40,7 @@ import {
 } from '../lib/repositorySettingsApi'
 import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
 import { ExternalSyncSection } from './ExternalSyncSection'
+import { RichTextTemplatesSection } from './RichTextTemplatesSection'
 import { RepositoryTabs } from './RepositoryTabs'
 import { useI18n, t as translate } from '../i18n'
 
@@ -219,6 +220,9 @@ export function RepositorySettingsView({
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const repositoryPath = `${organization}/${repository}`
+  const markWritePermissionDenied = useCallback(() => {
+    setWritePermissionDenied(true)
+  }, [])
 
   const loadSettings = useCallback(async () => {
     const revision = ++loadRevision.current
@@ -539,6 +543,12 @@ export function RepositorySettingsView({
               repositoryId={settings.repository.id}
               operatorId={operatorId}
               readOnly={writePermissionDenied}
+            />
+
+            <RichTextTemplatesSection
+              target={target}
+              readOnly={writePermissionDenied}
+              onPermissionDenied={markWritePermissionDenied}
             />
 
             <section

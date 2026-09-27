@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Input } from '@tachyon-sdk/native-ui'
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+} from '@tachyon-sdk/native-ui'
 import {
   DndContext,
   PointerSensor,
@@ -36,10 +47,12 @@ import {
   type LibraryProperty,
 } from '../lib/recordsApi'
 import {
+  fetchRichTextTemplates,
   createRepositoryProperty,
   deleteRepositoryProperty,
   isRepositoryPermissionError,
   updateRepositoryProperty,
+  type RichTextTemplate,
   type RepositoryPropertyType,
 } from '../lib/repositorySettingsApi'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
@@ -52,6 +65,10 @@ import {
   warmDataDetails,
   type CachedRepoTable,
 } from '../lib/libraryReadCache'
+import {
+  bodyPropertyValue,
+  getBodyProperty,
+} from '../lib/libraryTable/bodyProperty'
 import {
   getLibraryDataPropertyValue,
   propertyValueDisplayText,
@@ -329,6 +346,11 @@ function RepositoryTable({
   const [propertyWritesDenied, setPropertyWritesDenied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [createTemplateId, setCreateTemplateId] = useState('')
+  const [richTextTemplates, setRichTextTemplates] = useState<RichTextTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templateLoadError, setTemplateLoadError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<LibraryDataItem | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -350,6 +372,35 @@ function RepositoryTable({
     () => ({ orgUsername: org, repoUsername: repo, ...(operatorId ? { operatorId } : {}) }),
     [operatorId, org, repo]
   )
+
+  const bodyProperty = useMemo(() => getBodyProperty(properties), [properties])
+
+  useEffect(() => {
+    if (bodyProperty?.typ !== 'RichText') {
+      setRichTextTemplates([])
+      setTemplatesLoading(false)
+      setTemplateLoadError(null)
+      return
+    }
+    let cancelled = false
+    setTemplatesLoading(true)
+    setTemplateLoadError(null)
+    void fetchRichTextTemplates(propertyTarget)
+      .then((templates) => {
+        if (!cancelled) setRichTextTemplates(templates)
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setTemplateLoadError(loadError instanceof Error ? loadError.message : t('richTextTemplates.loadFailed'))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [bodyProperty, propertyTarget, t])
 
   /**
    * The column arrangement for this repository, read once per repository and
@@ -535,23 +586,42 @@ function RepositoryTable({
    * anything to write in; a record named "Untitled" that opens with its title
    * selected asks for the same name where the rest of it gets written.
    */
-  const handleCreateRow = useCallback(async () => {
+  const createRow = useCallback(async (templateId?: string) => {
     if (creatingRow) return
     setCreatingRow(true)
     setMutationError(null)
     try {
+      const template = richTextTemplates.find((candidate) => candidate.id === templateId)
+      const propertyData = template && bodyProperty?.typ === 'RichText'
+        ? [{
+          propertyId: bodyProperty.id,
+          value: bodyPropertyValue(bodyProperty, template.richText),
+        }]
+        : []
       const created = await addLibraryData(repoTarget, properties, {
         name: translate('common.untitled'),
-        propertyData: [],
+        propertyData,
       })
       setItems((current) => [created, ...current])
+      setCreateDialogOpen(false)
+      setCreateTemplateId('')
       onDataCreated?.(created)
     } catch (createError: unknown) {
       setMutationError(repositoryLoadErrorMessage(createError))
     } finally {
       setCreatingRow(false)
     }
-  }, [creatingRow, onDataCreated, properties, repoTarget])
+  }, [bodyProperty, creatingRow, onDataCreated, properties, repoTarget, richTextTemplates])
+
+  const handleCreateRow = useCallback(() => {
+    if (creatingRow) return
+    if (bodyProperty?.typ === 'RichText' && (templatesLoading || richTextTemplates.length > 0)) {
+      setCreateTemplateId('')
+      setCreateDialogOpen(true)
+      return
+    }
+    void createRow()
+  }, [bodyProperty, createRow, creatingRow, richTextTemplates.length, templatesLoading])
 
   // Only a new request creates: `handleCreateRow` changes while it runs, and
   // re-running this effect for that must not create a second record.
@@ -561,7 +631,7 @@ function RepositoryTable({
     createRequestSeen.current = createRequested
     if (!createRequested) return
     onCreateRequestHandled?.()
-    void handleCreateRow()
+    handleCreateRow()
   }, [createRequested, handleCreateRow, onCreateRequestHandled])
 
   const handleConfirmDelete = useCallback(async () => {
@@ -1047,6 +1117,11 @@ function RepositoryTable({
           {mutationError}
         </div>
       )}
+      {templateLoadError && (
+        <div role="status" className="border-b border-border bg-surface px-4 py-2 text-xs text-muted-foreground">
+          <span className="text-destructive">{templateLoadError}</span>
+        </div>
+      )}
 
       {error && !listingFailed && (
         <div
@@ -1327,6 +1402,54 @@ function RepositoryTable({
           </Button>
         </div>
       )}
+
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => !creatingRow && setCreateDialogOpen(open)}
+      >
+        <DialogContent className="max-w-lg" aria-busy={creatingRow || templatesLoading}>
+          <DialogHeader>
+            <DialogTitle>{t('richTextTemplates.title')}</DialogTitle>
+            <DialogDescription>{t('richTextTemplates.description')}</DialogDescription>
+          </DialogHeader>
+          {templatesLoading ? (
+            <p className="py-3 text-sm text-muted-foreground">{t('common.loading')}</p>
+          ) : richTextTemplates.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="new-record-rich-text-template">{t('richTextTemplates.select')}</Label>
+              <select
+                id="new-record-rich-text-template"
+                value={createTemplateId}
+                onChange={(event) => setCreateTemplateId(event.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                <option value="">{t('richTextTemplates.selectNone')}</option>
+                {richTextTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p className="py-3 text-sm text-muted-foreground">{t('richTextTemplates.empty')}</p>
+          )}
+          {templateLoadError ? (
+            <p role="alert" className="text-xs text-destructive">{templateLoadError}</p>
+          ) : null}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={creatingRow}>{t('common.cancel')}</Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={creatingRow || templatesLoading}
+              onClick={() => void createRow(createTemplateId || undefined)}
+            >
+              {creatingRow ? t('common.loading') : t('data.new')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

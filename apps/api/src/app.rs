@@ -33,6 +33,14 @@ pub struct LibraryApp {
         Arc<dyn crate::domain::translation::TranslationRepository>,
     pub get_glossary: Arc<dyn usecase::GetGlossaryInputPort>,
     pub set_glossary: Arc<dyn usecase::SetGlossaryInputPort>,
+    pub list_rich_text_templates:
+        Arc<dyn usecase::ListRichTextTemplatesInputPort>,
+    pub save_rich_text_template:
+        Arc<dyn usecase::SaveRichTextTemplateInputPort>,
+    pub update_rich_text_template:
+        Arc<dyn usecase::UpdateRichTextTemplateInputPort>,
+    pub delete_rich_text_template:
+        Arc<dyn usecase::DeleteRichTextTemplateInputPort>,
     pub search_data: Arc<dyn usecase::SearchDataInputPort>,
     /// Location, filter and text search over a repo's records.
     pub data_search: Arc<dyn usecase::data_search::DataSearchInputPort>,
@@ -459,6 +467,38 @@ impl LibraryApp {
             glossary_repo.clone(),
         ));
 
+        let rich_text_template_repo: Arc<
+            dyn crate::domain::RichTextTemplateRepository,
+        > = Arc::new(
+            interface_adapter::RichTextTemplateRepositoryImpl::new(
+                library_db.clone(),
+            ),
+        );
+        let list_rich_text_templates =
+            Arc::new(usecase::ListRichTextTemplates::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                rich_text_template_repo.clone(),
+            ));
+        let save_rich_text_template =
+            Arc::new(usecase::SaveRichTextTemplate::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                rich_text_template_repo.clone(),
+            ));
+        let update_rich_text_template =
+            Arc::new(usecase::UpdateRichTextTemplate::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                rich_text_template_repo.clone(),
+            ));
+        let delete_rich_text_template =
+            Arc::new(usecase::DeleteRichTextTemplate::new(
+                auth_app.clone(),
+                view_repo.clone(),
+                rich_text_template_repo,
+            ));
+
         let tachyon_translator =
             interface_adapter::TachyonTranslator::from_env(sdk.clone());
         let translation_model = tachyon_translator
@@ -633,6 +673,10 @@ impl LibraryApp {
             translation_repo,
             get_glossary,
             set_glossary,
+            list_rich_text_templates,
+            save_rich_text_template,
+            update_rich_text_template,
+            delete_rich_text_template,
             search_data,
             data_search,
             search_repo,
