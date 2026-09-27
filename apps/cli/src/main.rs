@@ -78,6 +78,9 @@ enum Command {
     /// Talk to the Library MCP server directly
     #[command(subcommand)]
     Mcp(commands::mcp::McpCommand),
+    /// Common ingredient catalog: import the MEXT food composition tables
+    #[command(subcommand)]
+    Food(commands::food::FoodCommand),
 }
 
 #[tokio::main]
@@ -130,6 +133,11 @@ async fn run() -> Result<()> {
         Command::Mcp(command) => {
             let client = build_client(&overrides)?;
             commands::mcp::run(command, &client, format).await
+        }
+        // `food import --offline` must work without credentials, so it
+        // builds its client only when it needs the repos.
+        Command::Food(command) => {
+            commands::food::run(command, &overrides, format).await
         }
     }
 }

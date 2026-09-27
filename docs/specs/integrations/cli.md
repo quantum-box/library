@@ -149,6 +149,14 @@ property key はASCII英字で始まり、ASCII英字・数字・`_`・`-` の�
 | `library source update <org/repo> <source-id> [--name --url --clear-url]` | source を更新。`--clear-url` で URL を外す |
 | `library source delete <org/repo> <source-id> [--yes]` | source を削除 |
 
+### `food`
+
+| コマンド | 説明 |
+| --- | --- |
+| `library food import --table <xlsx> [--errata <xlsx>] [--apply]` | 日本食品標準成分表（八訂）増補2023年の公式Excel（＋正誤表）を COM-860 の下書き repo（食材・成分定義・成分値）へ取り込む。既定は dry run（書き込まない）。`--offline` は repo も読まずにファイルだけ検証する |
+
+書き込みは `data upsert` と同じ `PUT .../data/{data_id}/upsert` だけを使い、data ID は業務キー（repo・出典・食品番号・成分識別子）の SHA-256 から決まるので、再実行しても record は増えない。人が編集する項目（`standard_name` / `reading` / `aliases` / `attribute_review_status`、成分定義の表示名・`default_display`・`method`）は新規作成時にしか書かない。隔離した行・セル・正誤表の食い違いがあると `--accept-quarantine` なしでは `--apply` を拒否する。公開（release）はしない。詳細・列の対応・出典の記録は [COM-861 タスク](../../tasks/in-progress/com-861-food-composition-import/task.md)。
+
 ### 削除の確認
 
 `delete` は取り消せないため確認を求める。非対話環境 (CI / agent) には答える端末が無いので、prompt を黙って通すのではなく `--yes` が無ければ失敗する。

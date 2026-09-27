@@ -68,7 +68,8 @@ Field: ingredient_key + release_id で参照
 | `not_measured` | `-` | なし |
 | `not_listed` | （値レコードなし） | なし。読み取り時のみ返す |
 
-`NutrientValueStatus::from_notation`で原典表記から変換できる（COM-861の取込で使う）。
+`NutrientValueStatus::from_notation`で原典表記から変換できる。`NormalizedDecimal`・`NutrientValueStatus`・キー／状態の検証は
+`packages/ingredient_notation` にあり、公開処理（library-api）とCOM-861の取込（library CLI）が同じ規則を使う。
 
 ### 公開版の不変性
 
@@ -110,7 +111,7 @@ Field: ingredient_key + release_id で参照
 
 ## 対象外・後続
 
-- 公式Excel・正誤表の取込: COM-861（`from_notation`を使う）
+- 公式Excel・正誤表の取込: COM-861 `library food import`（[タスク](../com-861-food-composition-import/task.md)）
 - Field側の検索adapter・紐付け: COM-832
 - 公開処理は下書きを1ページ100件ずつ読む。全件（約2,500食品×約50成分）での所要時間は
   COM-861の取込後に計測する。長ければ非同期ジョブ化かdatabase-managerへの一括読み取り追加を検討する。
