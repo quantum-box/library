@@ -387,8 +387,10 @@ spec:
           envVars:
             - name: PHOTON_LIVE_ENABLED
               value: "false"
+            # Cloudflare deploy requires this even while Live is disabled.
+            # This reserved origin keeps Preview fail-closed for real clients.
             - name: PHOTON_LIVE_ALLOWED_ORIGINS
-              value: ""
+              value: "https://preview-disabled.invalid"
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
               value: "false"
             # Plain sentinel removes the previously stored preview secret binding.
