@@ -130,7 +130,10 @@ impl PropertyDataValue {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct PropertyResponse {
     pub id: String,
+    /// Stable key used by API clients to identify this Property.
     pub name: String,
+    /// Human-readable label shown in the user interface.
+    pub display_name: String,
     pub property_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_generate: Option<bool>,
@@ -250,7 +253,11 @@ pub struct UpsertDataRequest {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct AddPropertyRequest {
+    /// Stable key used by API clients to identify this Property.
     pub name: String,
+    /// Human-readable label; defaults to `name` when omitted.
+    #[serde(default)]
+    pub display_name: Option<String>,
     pub property_type: String,
     #[serde(default)]
     pub auto_generate: Option<bool>,
@@ -258,7 +265,12 @@ pub struct AddPropertyRequest {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct UpdatePropertyRequest {
-    pub name: String,
+    /// New stable key used by API clients to identify this Property.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// New human-readable label shown in the user interface.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

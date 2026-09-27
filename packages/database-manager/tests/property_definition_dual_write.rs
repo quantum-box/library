@@ -82,6 +82,7 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source.id(),
+            display_name: None,
             name: "title",
             property_type: PropertyType::String,
         })
@@ -93,7 +94,8 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source.id(),
-            name: "canonical probe",
+            display_name: Some("canonical probe"),
+            name: "canonical_probe",
             property_type: PropertyType::String,
         })
         .await?;
@@ -104,6 +106,7 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source.id(),
+            display_name: None,
             name: "relation",
             property_type: PropertyType::Relation(TypeRelation::new(
                 target.id().clone(),
@@ -145,7 +148,8 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             tenant_id: &tenant_id,
             database_id: source.id(),
             property_id: title.id(),
-            name: Some("renamed title"),
+            display_name: None,
+            name: Some("renamed_title"),
             property_type: None,
             meta_json: Some(Some(
                 r#"{"integration":"github"}"#.to_string(),
@@ -163,7 +167,7 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
     .await?;
     assert_eq!(
         updated.try_get::<String, _>("field_name")?,
-        "renamed title"
+        "renamed_title"
     );
     assert_eq!(updated.try_get::<String, _>("datatype")?, "STRING");
     assert_eq!(updated.try_get::<String, _>("type_key")?, "string");
@@ -374,7 +378,8 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             tenant_id: &tenant_id,
             database_id: source.id(),
             property_id: title.id(),
-            name: Some("legacy must not overwrite"),
+            display_name: None,
+            name: Some("legacy_must_not_overwrite"),
             property_type: None,
             meta_json: None,
         })
@@ -406,7 +411,8 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
             tenant_id: &tenant_id,
             database_id: source.id(),
             property_id: title.id(),
-            name: Some("must not overwrite"),
+            display_name: None,
+            name: Some("must_not_overwrite"),
             property_type: None,
             meta_json: None,
         })
@@ -424,7 +430,7 @@ async fn property_definitions_dual_write_and_read_without_downgrading_unknown_ty
     assert_eq!(
         after_rejection,
         (
-            "renamed title".to_string(),
+            "renamed_title".to_string(),
             "future_type".to_string(),
             7,
             opaque_config.to_string(),

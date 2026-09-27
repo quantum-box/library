@@ -161,9 +161,15 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 repo_username: input.repo_username.clone(),
             })
             .await?;
+        let mut used_property_keys = existing_properties
+            .iter()
+            .map(|property| property.name().to_ascii_lowercase())
+            .collect::<HashSet<_>>();
 
         // Create properties from mappings if they don't exist
         let mut property_map: HashMap<String, String> = HashMap::new();
+        let mut created_property_ids: HashMap<String, String> =
+            HashMap::new();
 
         // First, ensure ext_github property exists
         let ext_github_prop = existing_properties
@@ -179,17 +185,33 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     multi_tenancy: input.multi_tenancy,
                     org_username: input.org_username.clone(),
                     repo_username: input.repo_username.clone(),
+                    property_display_name: None,
                     property_name: "ext_github".to_string(),
                     property_type: db::PropertyType::String,
                 })
                 .await?;
             prop.id().to_string()
         };
+        used_property_keys.insert("ext_github".to_string());
 
         // Ensure content property exists
+        let content_display_name = db::property_display_name_for_label(
+            &input.content_property_name,
+        );
         let content_prop = existing_properties
             .iter()
             .find(|p| p.name() == &input.content_property_name);
+        let content_prop = content_prop.or_else(|| {
+            if db::validate_property_key(&input.content_property_name)
+                .is_err()
+            {
+                existing_properties
+                    .iter()
+                    .find(|p| p.display_name() == &content_display_name)
+            } else {
+                None
+            }
+        });
         let (content_prop_id, content_is_rich_text) = if let Some(prop) =
             content_prop
         {
@@ -199,6 +221,10 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 matches!(prop.property_type(), db::PropertyType::RichText),
             )
         } else {
+            let content_property_key = db::unique_property_key_for_label(
+                &input.content_property_name,
+                &mut used_property_keys,
+            );
             let prop = self
                 .add_property
                 .execute(AddPropertyInputData {
@@ -206,7 +232,8 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     multi_tenancy: input.multi_tenancy,
                     org_username: input.org_username.clone(),
                     repo_username: input.repo_username.clone(),
-                    property_name: input.content_property_name.clone(),
+                    property_display_name: Some(content_display_name),
+                    property_name: content_property_key,
                     property_type: db::PropertyType::RichText,
                 })
                 .await?;
@@ -222,8 +249,26 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
             let existing = existing_properties
                 .iter()
                 .find(|p| p.name() == &mapping.property_name);
+            let display_name = db::property_display_name_for_label(
+                &mapping.frontmatter_key,
+            );
+            let existing = existing.or_else(|| {
+                if db::validate_property_key(&mapping.property_name)
+                    .is_err()
+                {
+                    existing_properties
+                        .iter()
+                        .find(|p| p.display_name() == &display_name)
+                } else {
+                    None
+                }
+            });
 
-            let prop_id = if let Some(prop) = existing {
+            let prop_id = if let Some(prop_id) =
+                created_property_ids.get(&mapping.property_name)
+            {
+                prop_id.clone()
+            } else if let Some(prop) = existing {
                 validate_import_target(prop)?;
                 prop.id().to_string()
             } else {
@@ -280,6 +325,10 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                     _ => db::PropertyType::String,
                 };
 
+                let property_key = db::unique_property_key_for_label(
+                    &mapping.property_name,
+                    &mut used_property_keys,
+                );
                 let prop = self
                     .add_property
                     .execute(AddPropertyInputData {
@@ -287,13 +336,17 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                         multi_tenancy: input.multi_tenancy,
                         org_username: input.org_username.clone(),
                         repo_username: input.repo_username.clone(),
-                        property_name: mapping.property_name.clone(),
+                        property_display_name: Some(display_name),
+                        property_name: property_key,
                         property_type: prop_type,
                     })
                     .await?;
                 prop.id().to_string()
             };
 
+            created_property_ids
+                .entry(mapping.property_name.clone())
+                .or_insert_with(|| prop_id.clone());
             property_map.insert(mapping.frontmatter_key.clone(), prop_id);
         }
 

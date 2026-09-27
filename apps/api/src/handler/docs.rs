@@ -284,7 +284,7 @@ pub async fn view_doc(
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
-    let properties = apply_property_name_translations(
+    let properties = apply_property_display_name_translations(
         &properties,
         &language.property_names,
     );
@@ -394,7 +394,7 @@ pub async fn view_doc_markdown(
     };
 
     let (data, properties) = library_app.view_data.execute(&input).await?;
-    let properties = apply_property_name_translations(
+    let properties = apply_property_display_name_translations(
         &properties,
         &language.property_names,
     );
@@ -589,12 +589,11 @@ async fn translated_texts(
         .collect())
 }
 
-/// Rebuilds the property list with translated headings.
+/// Rebuilds the property list with translated display labels.
 ///
-/// Only the definition name changes; ids, types and configuration are
-/// carried through untouched, so nothing downstream can tell the
-/// difference apart from the label.
-fn apply_property_name_translations(
+/// Stable Property keys and ids stay unchanged; types and configuration are
+/// carried through untouched.
+fn apply_property_display_name_translations(
     properties: &[database_manager::domain::Property],
     names: &std::collections::HashMap<String, String>,
 ) -> Vec<database_manager::domain::Property> {
@@ -602,10 +601,11 @@ fn apply_property_name_translations(
         .iter()
         .map(|property| match names.get(&property.id().to_string()) {
             Some(translated) => {
-                database_manager::domain::Property::with_meta_json(
+                database_manager::domain::Property::with_display_name_and_meta_json(
                     property.id(),
                     property.tenant_id(),
                     property.database_id(),
+                    property.name(),
                     translated,
                     property.property_type(),
                     *property.is_indexed(),

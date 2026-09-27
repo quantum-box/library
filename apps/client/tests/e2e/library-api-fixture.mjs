@@ -422,6 +422,7 @@ function wirePropertyType(typ) {
 function wireProperties(properties = state.properties) {
   return properties.map((property) => ({
     ...clone(property),
+    displayName: property.displayName ?? property.name,
     typ: wirePropertyType(property.typ),
   }))
 }
@@ -459,6 +460,7 @@ function addProperty(input = {}) {
   const property = {
     id: `e2e-property-${number}`,
     name: input.propertyName,
+    displayName: input.displayName ?? input.propertyName,
     typ: input.propertyType,
     meta: propertyMetaFromInput(input),
   }
@@ -470,6 +472,7 @@ function updateProperty(id, input = {}) {
   const property = state.properties.find((candidate) => candidate.id === id)
   if (!property) return null
   property.name = input.propertyName
+  property.displayName = input.displayName ?? input.propertyName
   property.typ = input.propertyType
   property.meta = propertyMetaFromInput(input)
   return clone(property)
@@ -858,6 +861,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, readable.properties.map((property) => ({
           id: property.id,
           name: property.name,
+          display_name: property.displayName ?? property.name,
           property_type: wirePropertyType(property.typ),
         })))
         return

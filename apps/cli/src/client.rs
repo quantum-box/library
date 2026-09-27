@@ -97,6 +97,33 @@ impl LibraryClient {
         Ok((status, value))
     }
 
+    /// Send a JSON request and hand back the status and body whatever the
+    /// status is. Only a transport failure is an error. For callers that
+    /// decide per status what to do, such as a bulk import that retries a
+    /// 503 but not a 400.
+    pub async fn try_request(
+        &self,
+        method: Method,
+        path: &str,
+        body: &Value,
+    ) -> Result<(StatusCode, String)> {
+        let url = format!("{}{path}", self.config.api_base_url);
+        let mut request =
+            self.http.request(method.clone(), &url).json(body);
+        if let Some(api_key) = &self.config.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        if let Some(operator_id) = &self.config.operator_id {
+            request = request.header("x-operator-id", operator_id);
+        }
+        let response = request.send().await.with_context(|| {
+            format!("{method} {url} failed to reach the Library API")
+        })?;
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        Ok((status, text))
+    }
+
     pub async fn get(
         &self,
         path: &str,

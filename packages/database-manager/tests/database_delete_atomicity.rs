@@ -71,6 +71,7 @@ async fn add_property(
     let multi_tenancy = auth::MultiTenancy::new_operator(tenant_id.clone());
     app.add_property()
         .execute(AddPropertyInputData {
+            display_name: None,
             executor: &auth::Executor::SystemUser,
             multi_tenancy: &multi_tenancy,
             tenant_id,

@@ -13,9 +13,12 @@
 # CLI reads, as library-api-key-policies.yml does for the API key ones.
 #
 # Everything a signed-in user asks for is authorized as that user, using
-# the caller's own credential (see `sdk_config_with_context`). What is
-# left is provisioning the API performs itself, and this policy covers
-# exactly that:
+# the caller's own credential (see `sdk_config_with_context`). The one
+# exception is a caller signed in with a token issued for Library's MCP
+# resource: that token must not be forwarded, so Library asks for the
+# user's decision itself (`auth:EvaluatePoliciesForUser`). What is left is
+# provisioning the API performs itself, and this policy covers exactly
+# that:
 #
 #   auth:AttachUserPolicy   sign-in seeds the Library policy for the
 #                           user in the platform tenant
@@ -35,6 +38,15 @@
   spec:
     description: Library API service runtime permissions (operator lookup and user policy attachment)
     actions:
+      # Policy decisions for a user signed in with a Library-resource
+      # OAuth token (MCP, CLI browser sign-in). tachyon-api rejects that
+      # token by design, so Library verifies it and asks with this
+      # credential, naming the user and their organization (a descendant
+      # of this platform tenant). Registered in tachyon-apps as
+      # auth:EvaluatePoliciesForUser; covers /v1/auth/policies/check-for-user
+      # and /check-for-resource-for-user.
+      - action: auth:EvaluatePoliciesForUser
+        effect: allow
       - action: auth:GetOperatorByAlias
         effect: allow
       - action: auth:AttachUserPolicy

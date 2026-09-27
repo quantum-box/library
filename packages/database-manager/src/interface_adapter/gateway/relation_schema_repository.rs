@@ -391,7 +391,8 @@ async fn load_locked_schema(
 
     let source_row = sqlx::query_as::<_, FieldRow>(
         r#"
-        SELECT id, tenant_id, object_id, field_name, datatype,
+        SELECT id, tenant_id, object_id, field_name,
+               field_display_name, datatype,
                datatype_meta, is_indexed, field_num, meta_json,
                type_key, type_version, type_config
         FROM fields
@@ -410,7 +411,8 @@ async fn load_locked_schema(
 
     let target_rows = sqlx::query_as::<_, FieldRow>(
         r#"
-        SELECT id, tenant_id, object_id, field_name, datatype,
+        SELECT id, tenant_id, object_id, field_name,
+               field_display_name, datatype,
                datatype_meta, is_indexed, field_num, meta_json,
                type_key, type_version, type_config
         FROM fields
@@ -464,16 +466,18 @@ async fn insert_property(
     let result = sqlx::query(
         r#"
         INSERT INTO fields
-            (id, tenant_id, object_id, field_name, datatype,
+            (id, tenant_id, object_id, field_name,
+             field_display_name, datatype,
              datatype_meta, is_indexed, field_num, meta_json,
              type_key, type_version, type_config)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(property.id().to_string())
     .bind(property.tenant_id().to_string())
     .bind(property.database_id().to_string())
     .bind(property.name())
+    .bind(property.display_name())
     .bind(property.property_type().to_string())
     .bind(property.property_type().get_meta()?)
     .bind(property.is_indexed())
@@ -500,13 +504,15 @@ async fn replace_property(
     let result = sqlx::query(
         r#"
         UPDATE fields
-        SET field_name = ?, datatype = ?, datatype_meta = ?,
+        SET field_name = ?, field_display_name = ?,
+            datatype = ?, datatype_meta = ?,
             is_indexed = ?, meta_json = ?, type_key = ?,
             type_version = ?, type_config = ?
         WHERE tenant_id = ? AND object_id = ? AND id = ?
         "#,
     )
     .bind(property.name())
+    .bind(property.display_name())
     .bind(property.property_type().to_string())
     .bind(property.property_type().get_meta()?)
     .bind(property.is_indexed())

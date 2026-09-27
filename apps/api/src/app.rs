@@ -34,6 +34,8 @@ pub struct LibraryApp {
     pub get_glossary: Arc<dyn usecase::GetGlossaryInputPort>,
     pub set_glossary: Arc<dyn usecase::SetGlossaryInputPort>,
     pub search_data: Arc<dyn usecase::SearchDataInputPort>,
+    /// Location, filter and text search over a repo's records.
+    pub data_search: Arc<dyn usecase::data_search::DataSearchInputPort>,
     pub search_repo: Arc<dyn usecase::SearchRepoInputPort>,
     pub add_data: Arc<dyn usecase::AddDataInputPort>,
     pub save_data: Arc<dyn usecase::AddDataInputPort>,
@@ -71,6 +73,13 @@ pub struct LibraryApp {
         Arc<dyn usecase::GetGlobalIdMappingInputPort>,
     pub find_global_id_mappings:
         Arc<dyn usecase::FindGlobalIdMappingsInputPort>,
+    // COM-860 common ingredient master
+    pub create_ingredient_catalog:
+        Arc<dyn usecase::CreateIngredientCatalogInputPort>,
+    pub publish_ingredient_release:
+        Arc<dyn usecase::PublishIngredientReleaseInputPort>,
+    pub read_ingredient_catalog:
+        Arc<dyn usecase::ReadIngredientCatalogInputPort>,
     pub share_links: Arc<dyn usecase::ManageShareLinksInputPort>,
     pub view_shared_data: Arc<dyn usecase::ViewSharedDataInputPort>,
     pub sign_in: Arc<dyn usecase::SignInInputPort>,
@@ -173,6 +182,13 @@ impl LibraryApp {
                 library_db.clone(),
             ),
         );
+        let ingredient_catalog_repo: Arc<
+            dyn crate::domain::IngredientCatalogRepository,
+        > = Arc::new(
+            interface_adapter::IngredientCatalogRepositoryImpl::new(
+                library_db.clone(),
+            ),
+        );
         let find_all_repo_query =
             Arc::new(interface_adapter::AllRepoQueryServiceImpl::new(
                 library_db.clone(),
@@ -244,6 +260,12 @@ impl LibraryApp {
                 published_language_repo.clone(),
             ));
         let search_data = usecase::SearchData::new(
+            database_app.clone(),
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            auth_app.clone(),
+        );
+        let data_search = usecase::data_search::DataSearch::new(
             database_app.clone(),
             get_organization_by_username.clone(),
             get_repo_by_username.clone(),
@@ -552,6 +574,32 @@ impl LibraryApp {
                 auth_app.clone(),
             ));
 
+        // COM-860 common ingredient master
+        let create_ingredient_catalog =
+            usecase::CreateIngredientCatalog::new(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                repo_repo.clone(),
+                ingredient_catalog_repo.clone(),
+                auth_app.clone(),
+            );
+        let publish_ingredient_release =
+            usecase::PublishIngredientRelease::new(
+                get_organization_by_username.clone(),
+                get_repo_by_username.clone(),
+                repo_repo.clone(),
+                ingredient_catalog_repo.clone(),
+                auth_app.clone(),
+                database_app.clone(),
+            );
+        let read_ingredient_catalog = usecase::ReadIngredientCatalog::new(
+            get_organization_by_username.clone(),
+            get_repo_by_username.clone(),
+            repo_repo.clone(),
+            ingredient_catalog_repo,
+            auth_app.clone(),
+        );
+
         // GitHub Import usecases
         let list_github_directory =
             usecase::ListGitHubDirectory::new(auth_app.clone());
@@ -586,6 +634,7 @@ impl LibraryApp {
             get_glossary,
             set_glossary,
             search_data,
+            data_search,
             search_repo,
             save_data,
             share_links: share_links.clone(),
@@ -619,6 +668,9 @@ impl LibraryApp {
             update_global_id_mapping,
             get_global_id_mapping,
             find_global_id_mappings,
+            create_ingredient_catalog,
+            publish_ingredient_release,
+            read_ingredient_catalog,
             sign_in,
             organization_repo,
             auth_app,

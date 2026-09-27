@@ -68,8 +68,11 @@ pub enum PropertyCommand {
     Create {
         /// Repository as `org/repo`
         repo: String,
-        /// Property name
+        /// Stable Property key (ASCII letter first; then letters, digits, underscores, or hyphens; max 64 characters)
         name: String,
+        /// Human-readable label; defaults to the key
+        #[arg(long)]
+        display_name: Option<String>,
         #[arg(long = "type", value_name = "TYPE")]
         property_type: PropertyTypeArg,
         /// Whether an `id` property generates its own values. Required
@@ -83,9 +86,12 @@ pub enum PropertyCommand {
         repo: String,
         /// Property id
         property_id: String,
-        /// New property name
+        /// New stable property key
         #[arg(long)]
-        name: String,
+        name: Option<String>,
+        /// New human-readable label
+        #[arg(long)]
+        display_name: Option<String>,
     },
     /// Delete a property
     Delete {
@@ -130,12 +136,14 @@ pub async fn run(
         PropertyCommand::Create {
             repo,
             name,
+            display_name,
             property_type,
             auto_generate,
         } => {
             let (org, repo) = parse_repo_ref(&repo)?;
             let mut body = json!({
                 "name": name,
+                "display_name": display_name,
                 "property_type": property_type.as_api_str(),
             });
             if let Some(auto_generate) = auto_generate {
@@ -154,15 +162,29 @@ pub async fn run(
             repo,
             property_id,
             name,
+            display_name,
         } => {
             let (org, repo) = parse_repo_ref(&repo)?;
+            if name.is_none() && display_name.is_none() {
+                anyhow::bail!("provide --name and/or --display-name");
+            }
+            let mut body = serde_json::Map::new();
+            if let Some(name) = name {
+                body.insert("name".to_string(), json!(name));
+            }
+            if let Some(display_name) = display_name {
+                body.insert(
+                    "display_name".to_string(),
+                    json!(display_name),
+                );
+            }
             let response = client
                 .put(
                     &format!(
                         "/v1beta/repos/{org}/{repo}/properties/\
                          {property_id}"
                     ),
-                    json!({ "name": name }),
+                    Value::Object(body),
                 )
                 .await?;
             render_property(&response, format);
@@ -203,11 +225,12 @@ fn render_properties(response: &Value, format: Format) {
     }
 
     let properties = response.as_array().cloned().unwrap_or_default();
-    let mut table = Table::new(&["ID", "NAME", "TYPE"]);
+    let mut table = Table::new(&["ID", "KEY", "DISPLAY NAME", "TYPE"]);
     for property in &properties {
         table.push(vec![
             field(property, "id"),
             field(property, "name"),
+            field(property, "display_name"),
             field(property, "property_type"),
         ]);
     }
@@ -220,8 +243,9 @@ fn render_property(response: &Value, format: Format) {
         return;
     }
 
-    println!("{}", field(response, "name"));
+    println!("{}", field(response, "display_name"));
     println!("  id:            {}", field(response, "id"));
+    println!("  key:           {}", field(response, "name"));
     println!("  type:          {}", field(response, "property_type"));
     println!("  auto_generate: {}", field(response, "auto_generate"));
 }

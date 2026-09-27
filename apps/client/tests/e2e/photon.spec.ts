@@ -445,7 +445,8 @@ test.describe('Library shell', () => {
 
     await page.getByRole('button', { name: 'Add Property' }).click()
     const propertyDialog = page.getByRole('dialog')
-    await propertyDialog.getByLabel('Name').fill('Related people')
+    await propertyDialog.getByLabel('Property key').fill('related_people')
+    await propertyDialog.getByLabel('Display name').fill('Related people')
     await propertyDialog.getByRole('combobox', { name: 'Type' }).click()
     await page.getByRole('option', { name: 'Relation' }).click()
     await propertyDialog.getByRole('combobox', { name: 'Related repository' }).click()

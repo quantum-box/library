@@ -653,6 +653,7 @@ pub struct AddPropertyInputData<'a> {
 
     pub org_username: String,
     pub repo_username: String,
+    pub property_display_name: Option<String>,
     pub property_name: String,
     pub property_type: database_manager::domain::PropertyType,
 }
@@ -668,6 +669,7 @@ pub struct UpdatePropertyInputData<'a> {
 
     pub property_id: String,
     pub property_name: Option<String>,
+    pub property_display_name: Option<String>,
     pub property_type: Option<&'a database_manager::domain::PropertyType>,
     /// JSON metadata for property configuration (e.g., ext_github repos)
     pub meta_json: Option<Option<String>>,

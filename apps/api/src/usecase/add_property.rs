@@ -84,6 +84,7 @@ impl AddPropertyInputPort for AddProperty {
                 multi_tenancy: input.multi_tenancy,
                 tenant_id: org.id(),
                 database_id: &repo.databases().first().unwrap().clone(),
+                display_name: input.property_display_name.as_deref(),
                 name: &input.property_name,
                 property_type: input.property_type,
             })

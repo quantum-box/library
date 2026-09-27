@@ -23,7 +23,7 @@ export function DataTable({ dataList, selectedProperties }: DataTableProps) {
 				<TableRow>
 					{selectedProperties.map(prop => (
 						<TableHead key={prop.id}>
-							{prop.name.charAt(0).toUpperCase() + prop.name.slice(1)}
+							{prop.displayName}
 						</TableHead>
 					))}
 				</TableRow>

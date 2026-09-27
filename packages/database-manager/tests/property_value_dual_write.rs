@@ -71,6 +71,7 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "primary",
             property_type: PropertyType::String,
         })
@@ -82,6 +83,7 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "future",
             property_type: PropertyType::String,
         })
@@ -93,6 +95,7 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "integer",
             property_type: PropertyType::Integer,
         })
@@ -458,6 +461,7 @@ async fn dual_write_is_atomic_patch_safe_and_mode_aware(
             multi_tenancy,
             tenant_id: &tenant_id,
             database_id: database.id(),
+            display_name: None,
             name: "body",
             property_type: PropertyType::RichText,
         })

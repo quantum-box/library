@@ -18,14 +18,17 @@ use gateway::{
     PropertyRepositoryImpl, RelationRepositoryImpl,
 };
 pub use usecase::boundary::*;
-pub use usecase::{DataQuery, FindAllPropertiesInputPort};
+pub use usecase::{
+    DataQuery, DataRevision, DataSnapshotInputPort,
+    FindAllPropertiesInputPort,
+};
 
 use interface_adapter::*;
 use std::fmt::Debug;
 use std::sync::Arc;
 use usecase::{
     AddDataInteractorImpl, AddPropertyInteractorImpl,
-    CreateDatabaseInteractorImpl, DeleteDataInteractor,
+    CreateDatabaseInteractorImpl, DataSnapshot, DeleteDataInteractor,
     DeleteDatabaseInteractor, DeletePropertyInteractor, FindAllProperties,
     FindDatabasesInteractorImpl, GetDataInteractorImpl,
     GetDatabaseDefinition, GetDatabaseInteractorImpl,
@@ -81,6 +84,9 @@ pub struct App {
     search_data: Arc<dyn SearchDataInputPort>,
     find_all_properties: Arc<dyn FindAllPropertiesInputPort>,
     update_property: Arc<dyn UpdatePropertyInputPort>,
+    /// Whole-Database reads for callers that keep a derived copy of the
+    /// records, such as the Library search index.
+    data_snapshot: Arc<dyn DataSnapshotInputPort>,
 }
 
 impl Debug for App {
@@ -110,6 +116,7 @@ impl App {
         search_data: Arc<dyn SearchDataInputPort>,
         find_all_properties: Arc<dyn FindAllPropertiesInputPort>,
         update_property: Arc<dyn UpdatePropertyInputPort>,
+        data_snapshot: Arc<dyn DataSnapshotInputPort>,
     ) -> Self {
         Self {
             create_database: create_database_usecase,
@@ -128,6 +135,7 @@ impl App {
             search_data,
             find_all_properties,
             update_property,
+            data_snapshot,
         }
     }
 }
@@ -252,6 +260,11 @@ pub fn factory_client_with_db(
     );
     let delete_data_usecase =
         DeleteDataInteractor::new(database_repo.clone(), data_repo.clone());
+    let data_snapshot = DataSnapshot::new(
+        database_repo.clone(),
+        data_repo.clone(),
+        data_query.clone(),
+    );
     let search_data = SearchData::new(
         database_repo.clone(),
         data_repo.clone(),
@@ -282,6 +295,7 @@ pub fn factory_client_with_db(
         search_data,
         find_all_properties,
         update_property,
+        data_snapshot,
     ))
 }
 

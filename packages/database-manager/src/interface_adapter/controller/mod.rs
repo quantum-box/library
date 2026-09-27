@@ -25,6 +25,7 @@ impl From<Property> for pb::Property {
             id: val.id().to_string(),
             database_id: val.database_id().to_string(),
             name: val.name().to_string(),
+            display_name: val.display_name().to_string(),
             r#type: val.property_type().to_string(),
             is_indexed: *val.is_indexed(),
             property_num: *val.property_num(),
@@ -168,6 +169,8 @@ where
             .map_err(|_| {
                 tonic::Status::not_found("database_id not found")
             })?;
+        let display_name = (!inner.display_name.is_empty())
+            .then_some(inner.display_name.as_str());
         let property = self
             .add_property
             .execute(AddPropertyInputData {
@@ -175,6 +178,7 @@ where
                 multi_tenancy: &tachyon_sdk::auth::MultiTenancy::default(),
                 tenant_id,
                 database_id,
+                display_name,
                 name: &inner.name,
                 // property_type: &inner.property_type,
                 property_type: domain::PropertyType::String,

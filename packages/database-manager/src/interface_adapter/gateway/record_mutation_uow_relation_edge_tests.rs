@@ -151,6 +151,7 @@ async fn dormant_relation_writer_dual_writes_and_serializes_cardinality(
             multi_tenancy: &multi_tenancy,
             tenant_id: &tenant_id,
             database_id: source_database.id(),
+            display_name: None,
             name: "related",
             property_type: PropertyType::Relation(TypeRelation::new(
                 target_database.id().clone(),
@@ -697,7 +698,7 @@ async fn dormant_relation_writer_dual_writes_and_serializes_cardinality(
                 RelationGeneration::new(1)?,
                 None,
                 None,
-                RelationInverseChange::SetAlias("related from".to_string()),
+                RelationInverseChange::SetAlias("related_from".to_string()),
                 None,
             ),
         )

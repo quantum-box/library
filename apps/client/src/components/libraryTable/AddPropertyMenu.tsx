@@ -10,7 +10,7 @@ import type { RepositoryPropertyType } from '../../lib/repositorySettingsApi'
 import { useI18n } from '../../i18n'
 
 /**
- * The `+` that ends the header row: a name, a type, and the column exists.
+ * The `+` that ends the header row: a key, a display name, a type, and the column exists.
  *
  * Anything richer -- Select options, a Relation target -- is left to the
  * repository's Properties screen; this is the two-field version that keeps a
@@ -23,24 +23,31 @@ export function AddPropertyMenu({
 }: {
   busy: boolean
   error: string | null
-  onCreate: (name: string, type: RepositoryPropertyType) => Promise<boolean>
+  onCreate: (name: string, displayName: string, type: RepositoryPropertyType) => Promise<boolean>
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [type, setType] = useState<RepositoryPropertyType>('STRING')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const trimmedName = name.trim()
+  const validKey = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(trimmedName)
+  const trimmedDisplayName = displayName.trim()
+  const validDisplayName =
+    trimmedDisplayName.length > 0 && [...trimmedDisplayName].length <= 255
 
   useEffect(() => {
     if (open) nameRef.current?.focus()
   }, [open])
 
   const submit = async () => {
-    if (!name.trim() || busy) return
-    const created = await onCreate(name, type)
+    if (!validKey || !validDisplayName || busy) return
+    const created = await onCreate(name, displayName, type)
     if (!created) return
     setName('')
+    setDisplayName('')
     setType('STRING')
     setOpen(false)
   }
@@ -75,13 +82,37 @@ export function AddPropertyMenu({
             ref={nameRef}
             data-testid="library-table-add-column-name"
             value={name}
-            placeholder={t('libraryTable.propertyNamePlaceholder')}
+            aria-label={t('repoSettings.propertyKey')}
+            aria-invalid={Boolean(trimmedName) && !validKey}
+            placeholder={t('repoSettings.propertyKey')}
             className="h-8 w-full rounded-md border border-border-strong bg-background px-2 text-xs font-normal normal-case text-foreground outline-none focus-visible:border-primary"
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') void submit()
             }}
           />
+          <p className={`px-1 pt-1 text-2xs ${trimmedName && !validKey ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {trimmedName && !validKey
+              ? t('repoSettings.propertyKeyInvalid')
+              : t('repoSettings.propertyKeyHint')}
+          </p>
+          <input
+            data-testid="library-table-add-column-display-name"
+            value={displayName}
+            aria-label={t('repoSettings.propertyDisplayName')}
+            aria-invalid={Boolean(trimmedDisplayName) && !validDisplayName}
+            placeholder={t('repoSettings.propertyDisplayName')}
+            className="mt-1.5 h-8 w-full rounded-md border border-border-strong bg-background px-2 text-xs font-normal normal-case text-foreground outline-none focus-visible:border-primary"
+            onChange={(event) => setDisplayName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submit()
+            }}
+          />
+          {trimmedDisplayName && !validDisplayName ? (
+            <p className="px-1 pt-1 text-2xs text-destructive" role="alert">
+              {t('repoSettings.propertyDisplayNameInvalid')}
+            </p>
+          ) : null}
           <select
             data-testid="library-table-add-column-type"
             value={type}
@@ -114,7 +145,7 @@ export function AddPropertyMenu({
               type="button"
               data-testid="library-table-add-column-submit"
               className="rounded bg-primary px-2 py-1 text-2xs font-medium normal-case text-primary-foreground disabled:opacity-50"
-              disabled={busy || !name.trim()}
+              disabled={busy || !validKey || !validDisplayName}
               onClick={() => void submit()}
             >
               {busy ? t('common.creating') : t('common.create')}

@@ -79,7 +79,7 @@ export function ColumnVisibilityMenu({
                 >
                   <PropertyTypeIcon typ={property.typ} className="size-3.5 shrink-0 opacity-70" />
                   <span className={`min-w-0 flex-1 truncate ${isHidden ? 'opacity-50' : ''}`}>
-                    {property.name}
+                    {property.displayName ?? property.name}
                   </span>
                   {isHidden ? (
                     <EyeOff className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />

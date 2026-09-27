@@ -10,6 +10,7 @@ pub struct AddPropertyCommand {
     tenant_id: TenantId,
     database_id: DatabaseId,
     name: String,
+    display_name: String,
     property_type: PropertyType,
 }
 
@@ -21,6 +22,7 @@ pub struct UpdatePropertyCommand {
     database_id: DatabaseId,
     property_id: PropertyId,
     name: Option<String>,
+    display_name: Option<String>,
     property_type: Option<PropertyType>,
     meta_json: Option<Option<String>>,
 }
@@ -34,11 +36,32 @@ impl UpdatePropertyCommand {
         property_type: Option<&PropertyType>,
         meta_json: Option<Option<String>>,
     ) -> Self {
+        Self::new_with_display_name(
+            tenant_id,
+            database_id,
+            property_id,
+            name,
+            None,
+            property_type,
+            meta_json,
+        )
+    }
+
+    pub fn new_with_display_name(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        property_id: &PropertyId,
+        name: Option<&str>,
+        display_name: Option<&str>,
+        property_type: Option<&PropertyType>,
+        meta_json: Option<Option<String>>,
+    ) -> Self {
         Self {
             tenant_id: tenant_id.clone(),
             database_id: database_id.clone(),
             property_id: property_id.clone(),
             name: name.map(str::to_string),
+            display_name: display_name.map(str::to_string),
             property_type: property_type.cloned(),
             meta_json,
         }
@@ -67,8 +90,11 @@ impl UpdatePropertyCommand {
         {
             return Err(errors::Error::not_found("resource not found"));
         }
+        let name =
+            self.name.as_deref().filter(|name| *name != current.name());
         current.update_known(
-            self.name.as_deref(),
+            name,
+            self.display_name.as_deref(),
             self.property_type.as_ref(),
             self.meta_json.clone(),
         )
@@ -82,10 +108,27 @@ impl AddPropertyCommand {
         name: &str,
         property_type: &PropertyType,
     ) -> Self {
+        Self::new_with_display_name(
+            tenant_id,
+            database_id,
+            name,
+            name,
+            property_type,
+        )
+    }
+
+    pub fn new_with_display_name(
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        name: &str,
+        display_name: &str,
+        property_type: &PropertyType,
+    ) -> Self {
         Self {
             tenant_id: tenant_id.clone(),
             database_id: database_id.clone(),
             name: name.to_string(),
+            display_name: display_name.to_string(),
             property_type: property_type.clone(),
         }
     }
@@ -100,6 +143,10 @@ impl AddPropertyCommand {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
     }
 
     pub fn property_type(&self) -> &PropertyType {
@@ -135,17 +182,28 @@ impl PropertySchema {
         existing_definitions: &[PropertyDefinition],
         command: &AddPropertyCommand,
     ) -> errors::Result<PropertySchemaMutation> {
+        validate_property_key(command.name())?;
+        validate_property_display_name(command.display_name())?;
+        if existing_definitions.iter().any(|definition| {
+            definition.name().eq_ignore_ascii_case(command.name())
+        }) {
+            return Err(errors::Error::conflict(format!(
+                "Property key `{}` is already in use",
+                command.name()
+            )));
+        }
         validate_property_definition_addition(
             existing_definitions,
             command.property_type(),
         )?;
         let property_num =
             next_property_definition_num(existing_definitions)?;
-        let property = Property::new(
+        let property = Property::new_with_display_name(
             &PropertyId::default(),
             command.tenant_id(),
             command.database_id(),
             command.name(),
+            command.display_name(),
             command.property_type(),
             false,
             property_num,
