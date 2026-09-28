@@ -14,7 +14,7 @@ import { platformAction } from '@/app/v1beta/_lib/platform-action'
 import type { RichTextTemplate } from '@/gen/graphql'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { FileText, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export function RichTextTemplateManager({
 	org,
@@ -43,6 +43,7 @@ export function RichTextTemplateManager({
 	const [error, setError] = useState<string | null>(null)
 	const [notice, setNotice] = useState<string | null>(null)
 	const [deleteOpen, setDeleteOpen] = useState(false)
+	const scopeRevision = useRef(0)
 
 	const selectedTemplate = useMemo(
 		() => templates.find(template => template.id === selectedId),
@@ -50,12 +51,18 @@ export function RichTextTemplateManager({
 	)
 
 	useEffect(() => {
+		scopeRevision.current += 1
 		setSelectedId(null)
 		setName('')
 		setRichText('[]')
 		setEditing(false)
+		setBusy(false)
 		setError(null)
 		setNotice(null)
+		setDeleteOpen(false)
+		return () => {
+			scopeRevision.current += 1
+		}
 	}, [org, repo])
 
 	const startNew = () => {
@@ -77,6 +84,7 @@ export function RichTextTemplateManager({
 	}
 
 	const save = async () => {
+		const revision = scopeRevision.current
 		setBusy(true)
 		setError(null)
 		setNotice(null)
@@ -102,6 +110,7 @@ export function RichTextTemplateManager({
 				saved = result.saveRichTextTemplate
 			}
 			if (!saved) throw new Error(copy.saveFailed)
+			if (revision !== scopeRevision.current) return
 			onTemplatesChange(
 				[...templates.filter(template => template.id !== saved.id), saved]
 					.sort((left, right) => left.name.localeCompare(right.name)),
@@ -111,14 +120,16 @@ export function RichTextTemplateManager({
 			setRichText(saved.richText)
 			setNotice(copy.saveSuccess)
 		} catch (cause) {
+			if (revision !== scopeRevision.current) return
 			setError(cause instanceof Error ? cause.message : copy.saveFailed)
 		} finally {
-			setBusy(false)
+			if (revision === scopeRevision.current) setBusy(false)
 		}
 	}
 
 	const remove = async () => {
 		if (!selectedId) return
+		const revision = scopeRevision.current
 		setBusy(true)
 		setError(null)
 		try {
@@ -132,6 +143,7 @@ export function RichTextTemplateManager({
 				{ accessToken },
 			)
 			if (!result.deleteRichTextTemplate) throw new Error(copy.deleteFailed)
+			if (revision !== scopeRevision.current) return
 			onTemplatesChange(templates.filter(template => template.id !== selectedId))
 			setSelectedId(null)
 			setName('')
@@ -140,9 +152,10 @@ export function RichTextTemplateManager({
 			setDeleteOpen(false)
 			setNotice(null)
 		} catch (cause) {
+			if (revision !== scopeRevision.current) return
 			setError(cause instanceof Error ? cause.message : copy.deleteFailed)
 		} finally {
-			setBusy(false)
+			if (revision === scopeRevision.current) setBusy(false)
 		}
 	}
 

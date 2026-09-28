@@ -410,6 +410,7 @@ function RepositoryTable({
       return
     }
     let cancelled = false
+    setRichTextTemplates([])
     setTemplatesLoading(true)
     setTemplateLoadError(null)
     void fetchRichTextTemplates(propertyTarget)
@@ -417,9 +418,12 @@ function RepositoryTable({
         if (!cancelled) setRichTextTemplates(templates)
       })
       .catch((loadError: unknown) => {
-        if (!cancelled) {
-          setTemplateLoadError(loadError instanceof Error ? loadError.message : t('richTextTemplates.loadFailed'))
+        if (cancelled) return
+        if (isRepositoryPermissionError(loadError)) {
+          setRichTextTemplates([])
+          return
         }
+        setTemplateLoadError(loadError instanceof Error ? loadError.message : t('richTextTemplates.loadFailed'))
       })
       .finally(() => {
         if (!cancelled) setTemplatesLoading(false)
