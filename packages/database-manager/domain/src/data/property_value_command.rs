@@ -108,6 +108,11 @@ impl PropertyValueCommand {
             (PropertyType::Location(_), Self::Location(value)) => {
                 PropertyDataValue::Location(value)
             }
+            (PropertyType::Date(_), Self::Date(value))
+                if value.is_empty() =>
+            {
+                return Ok(None);
+            }
             (PropertyType::Date(_), Self::Date(value)) => {
                 PropertyDataValue::new(&value, property.property_type())?
             }
