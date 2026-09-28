@@ -423,7 +423,15 @@ function CopyLinkToast({ status }: { status: CopyLinkStatus }) {
   )
 }
 
-function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function KeyboardShortcutsPanel({
+  open,
+  onClose,
+  hasDatabase,
+}: {
+  open: boolean
+  onClose: () => void
+  hasDatabase: boolean
+}) {
   const { t } = useI18n()
   const desktop = useDesktopShell()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -433,20 +441,25 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
   if (!open) return null
 
   const modifier = modifierKeyLabel()
+  const dataViewShortcuts = hasDatabase
+    ? [
+        { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
+        { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
+        { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
+        { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
+        { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
+        { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
+        { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
+      ]
+    : []
   const shortcuts = [
     { keys: renderShortcutKeys(['C']), label: t('data.new') },
-    { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
-    { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
-    { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
+    ...dataViewShortcuts,
     { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
     // Only the desktop shell hides the address of the current route.
     ...(desktop
       ? [{ keys: renderShortcutKeys([modifier, 'L']), label: t('shortcuts.copyPageUrl') }]
       : []),
-    { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
-    { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
-    { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
-    { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
     { keys: renderShortcutSequence(['G', 'C']), label: t(shortcutViewLabelKey('chat')) },
     { keys: renderShortcutSequence(['G', 'S']), label: t(shortcutViewLabelKey('sync')) },
     { keys: renderShortcutKeys(['?']), label: t('shortcuts.showShortcuts') },
@@ -502,6 +515,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   const goModeTimerRef = useRef<number | null>(null)
   const location = useRouterState({ select: (state) => state.location })
   const search = location.search as RecordSearchParams
+  const hasDatabase = Boolean(databaseIdFromLocation(location.pathname, search.database))
 
   const closeGoMode = useCallback(() => {
     if (goModeTimerRef.current !== null) {
@@ -513,7 +527,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   const navigateToDatabaseView = useCallback(
     (type: DatabaseViewType) => {
       const database = databaseIdFromLocation(location.pathname, search.database)
-      if (!database) return navigate({ to: '/repositories' })
+      if (!database) return Promise.resolve()
       return navigateToData(navigate, database, {
         view: type === 'table' ? undefined : type,
       })
@@ -674,6 +688,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     closeShortcuts: () => setShortcutsOpen(false),
     commandPaletteOpen,
     closeCommandPalette: () => setCommandPaletteOpen(false),
+    hasDatabase,
   }
 }
 
@@ -686,6 +701,7 @@ function AuthenticatedWorkspaceRoot() {
     closeShortcuts,
     commandPaletteOpen,
     closeCommandPalette,
+    hasDatabase,
   } = useGlobalKeyboardShortcuts(setCreateModalOpen)
   // The address bar is the workspace's own state: an organization in the URL
   // is the organization the shell is scoped to.
@@ -709,7 +725,11 @@ function AuthenticatedWorkspaceRoot() {
               </div>
               <WorkspaceHydrationStatus />
               <WorkspaceMutationError />
-              <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
+              <KeyboardShortcutsPanel
+                open={shortcutsOpen}
+                onClose={closeShortcuts}
+                hasDatabase={hasDatabase}
+              />
               <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
             </CreateModalContext.Provider>
           </AttachmentsProvider>

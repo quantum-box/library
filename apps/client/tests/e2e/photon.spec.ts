@@ -171,6 +171,10 @@ test.describe('Library shell', () => {
 
   test('supports global keyboard shortcuts for fast navigation and creation', async ({ page }) => {
     await page.goto('/quantum-box/photon-core/data')
+    await page.keyboard.press('?')
+    await expect(page.getByTestId('keyboard-shortcuts-panel')).toContainText('Toggle table or board')
+    await page.keyboard.press('Escape')
+
     // The board toggle switches to a board the user has added; without one
     // there is nothing to toggle to.
     await addDatabaseView(page, 'board')
@@ -191,6 +195,13 @@ test.describe('Library shell', () => {
     await page.keyboard.press('c')
     await expect(page).toHaveURL(/\/chat$/)
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible()
+
+    await page.keyboard.press('?')
+    await expect(page.getByTestId('keyboard-shortcuts-panel')).not.toContainText('Toggle table or board')
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('g')
+    await page.keyboard.press('b')
+    await expect(page).toHaveURL(/\/chat$/)
 
     await page.keyboard.press('c')
     await expect(page).toHaveURL(/\/home$/)
