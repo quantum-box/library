@@ -131,6 +131,26 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('data-editor-title-input')).toHaveCount(0)
   })
 
+  test('does not create data when leaving Home with the new-data form open', async ({ page }) => {
+    await page.goto('/quantum-box/photon-core/data')
+    await expect(page.getByTestId('library-table-view')).toBeVisible()
+
+    await page.getByTestId('view-home').click()
+    await expect(page).toHaveURL(/\/home$/)
+    await page.getByRole('button', { name: 'New data', exact: true }).first().click()
+    await expect(page.getByTestId('create-record-modal')).toBeVisible()
+
+    const createDataRequest = page.waitForRequest(
+      (request) => request.method() === 'POST' && request.postData()?.includes('LibraryClientAddData'),
+      { timeout: 1_000 },
+    ).then(() => true, () => false)
+
+    await page.goBack()
+    await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data(\?|$)/)
+    await expect(page.getByTestId('library-table-view')).toBeVisible()
+    expect(await createDataRequest).toBe(false)
+  })
+
   test('switches between table, board, workflow, timeline, and chat views', async ({ page }) => {
     await page.goto('/quantum-box/photon-core/data')
     await addDatabaseView(page, 'board')

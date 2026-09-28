@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import { openCommandPalette, openCreateData } from '../lib/ui/workspaceEvents'
 import {
@@ -97,6 +97,7 @@ export function LibraryHome() {
   })
   const { records, hydrationLoading, hydrationError, handleCreateRecord } = useDatabaseRecords()
   const { open: createModalOpen, setOpen: setCreateModalOpen } = useCreateModal()
+  useEffect(() => () => setCreateModalOpen(false), [setCreateModalOpen])
   const {
     databases,
     organizations,
