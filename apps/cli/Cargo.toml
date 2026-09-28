@@ -19,11 +19,15 @@ reqwest = { workspace = true, default-features = false, features = [
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [
+    "io-util",
     "macros",
+    "net",
     "rt",
     "rt-multi-thread",
     "time",
 ], default-features = false }
+base64 = { workspace = true }
+rand = { workspace = true }
 
 # `library food import` (COM-861): the MEXT Excel reader and the value
 # rules shared with library-api.
@@ -33,3 +37,4 @@ futures = { workspace = true }
 ingredient_notation = { path = "../../packages/ingredient_notation" }
 sha2 = { workspace = true }
 ulid = { workspace = true }
+url = { workspace = true }
