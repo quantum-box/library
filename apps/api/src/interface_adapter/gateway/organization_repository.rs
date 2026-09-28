@@ -19,7 +19,7 @@ use crate::domain::OrganizationRepository;
 use crate::domain::LIBRARY_TENANT;
 use derive_new::new;
 use std::sync::Arc;
-use value_object::{Identifier, TenantId};
+use value_object::{Identifier, TenantId, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct OrganizationRow {
@@ -28,18 +28,24 @@ pub struct OrganizationRow {
     username: String,
     description: Option<String>,
     website: Option<String>,
+    personal_owner_user_id: Option<String>,
 }
 
 impl TryFrom<OrganizationRow> for Organization {
     type Error = errors::Error;
     fn try_from(value: OrganizationRow) -> Result<Self, Self::Error> {
-        Ok(Organization::new(
+        let mut organization = Organization::new(
             &value.id.parse()?,
             &value.name.parse()?,
             &value.username.parse()?,
             value.description.map(|d| d.parse()).transpose()?.as_ref(),
             value.website.map(|w| w.parse()).transpose()?.as_ref(),
-        ))
+        );
+        if let Some(user_id) = value.personal_owner_user_id {
+            organization = organization
+                .with_personal_owner(&user_id.parse::<UserId>()?);
+        }
+        Ok(organization)
     }
 }
 
@@ -64,7 +70,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     ) -> errors::Result<Option<Organization>> {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website
+            SELECT id, name, username, description, website, personal_owner_user_id
             FROM organizations
             WHERE platform_id = ? AND id = ?
             "#,
@@ -84,7 +90,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     ) -> errors::Result<Option<Organization>> {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website
+            SELECT id, name, username, description, website, personal_owner_user_id
             FROM organizations
             WHERE platform_id = ? AND username = ?
             "#,
@@ -98,10 +104,30 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         Ok(row.map(|r| r.try_into()).transpose()?)
     }
 
+    async fn get_by_personal_owner_user_id(
+        &self,
+        user_id: &UserId,
+    ) -> errors::Result<Option<Organization>> {
+        let row = sqlx::query_as::<_, OrganizationRow>(
+            r#"
+            SELECT id, name, username, description, website, personal_owner_user_id
+            FROM organizations
+            WHERE platform_id = ? AND personal_owner_user_id = ?
+            "#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(user_id.to_string())
+        .fetch_optional(self.db.pool().as_ref())
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+
+        Ok(row.map(|r| r.try_into()).transpose()?)
+    }
+
     async fn find_all(&self) -> errors::Result<Vec<Organization>> {
         let orgs = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website
+            SELECT id, name, username, description, website, personal_owner_user_id
             FROM organizations
             WHERE platform_id = ?
             "#,
@@ -135,8 +161,8 @@ impl OrganizationRepositoryImpl {
     async fn save(&self, entity: &Organization) -> errors::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO organizations (id, name, username, description, website, platform_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO organizations (id, name, username, description, website, personal_owner_user_id, platform_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
                 description = VALUES(description),
@@ -148,6 +174,7 @@ impl OrganizationRepositoryImpl {
         .bind(entity.username().to_string())
         .bind(entity.description().as_ref().map(|d| d.to_string()))
         .bind(entity.website().as_ref().map(|w| w.to_string()))
+        .bind(entity.personal_owner_user_id().as_ref().map(|id| id.to_string()))
         .bind(LIBRARY_TENANT.to_string())
         .execute(self.db.pool().as_ref())
         .await

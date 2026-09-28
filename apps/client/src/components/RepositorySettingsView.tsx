@@ -38,8 +38,9 @@ import {
   type RepositorySettingsData,
   type RepositorySettingsTarget,
 } from '../lib/repositorySettingsApi'
-import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
 import { ExternalSyncSection } from './ExternalSyncSection'
+import { RepositoryAccessSection } from './RepositoryAccessSection'
+import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
 import { RepositoryTabs } from './RepositoryTabs'
 import { useI18n, t as translate } from '../i18n'
 
@@ -534,6 +535,8 @@ export function RepositorySettingsView({
                 onPermissionDenied={() => setWritePermissionDenied(true)}
               />
             </div>
+
+            <RepositoryAccessSection target={target} repositoryId={settings.repository.id} />
 
             <ExternalSyncSection
               repositoryId={settings.repository.id}

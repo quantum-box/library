@@ -99,6 +99,7 @@ pub async fn create_organization(
         username: payload.username,
         description: payload.description,
         website: payload.website,
+        personal_owner_user_id: None,
     };
 
     let output = library_app.create_organization.execute(&input).await?;

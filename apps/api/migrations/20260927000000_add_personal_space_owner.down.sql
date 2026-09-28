@@ -1,0 +1,3 @@
+ALTER TABLE library.organizations
+DROP INDEX uniq_org_personal_owner_user_id_platform,
+DROP COLUMN personal_owner_user_id;

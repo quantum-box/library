@@ -43,6 +43,7 @@ import {
   Database,
   FolderGit2,
   Home,
+  Loader2,
   LogOut,
   Menu,
   Monitor,
@@ -55,6 +56,7 @@ import {
   Search,
   Sun,
   WifiOff,
+  UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -269,9 +271,11 @@ export function Sidebar() {
     repositoriesError,
     refreshRepositories,
     createOrganization,
+    createPersonalSpace,
     importOrganization,
     createRepository,
   } = useWorkspaceDatabases()
+  const personalOrganization = organizations.find((organization) => organization.isPersonalSpace)
   const navigate = useNavigate()
   const { t, tPlural } = useI18n()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
@@ -288,6 +292,8 @@ export function Sidebar() {
   const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
   const [createRepositoryOpen, setCreateRepositoryOpen] = useState(false)
   const [createRepositoryOrganizationId, setCreateRepositoryOrganizationId] = useState<string | null>(null)
+  const [personalSpaceBusy, setPersonalSpaceBusy] = useState(false)
+  const [personalSpaceError, setPersonalSpaceError] = useState<string | null>(null)
 
   const pathSegments = pathname.split('/').filter(Boolean).map(decodePathSegment)
   const repositoryPathSegments = pathSegments[0] === 'repositories'
@@ -340,7 +346,9 @@ export function Sidebar() {
       { value: 'all', label: t('sidebar.organizations.all') },
       ...organizations.map((organization) => ({
         value: organization.id,
-        label: organization.label,
+        label: organization.isPersonalSpace
+          ? t('sidebar.personalSpace.option', { username: organization.label })
+          : organization.label,
         description: organization.platformTenantId,
       })),
     ],
@@ -413,6 +421,30 @@ export function Sidebar() {
       to: '/organizations/$organization',
       params: { organization: organizationPath },
     })
+  }
+
+  const openPersonalSpace = async (closeMobile = false) => {
+    if (personalSpaceBusy) return
+    setPersonalSpaceError(null)
+    setPersonalSpaceBusy(true)
+    try {
+      const organization = organizations.find((item) => item.isPersonalSpace)
+        ?? await createPersonalSpace()
+      setSelectedOrganizationId(organization.id)
+      const organizationPath = databases.find(
+        (database) => database.operatorId === organization.id && database.orgUsername,
+      )?.orgUsername ?? organization.label
+      await navigate({
+        to: '/organizations/$organization',
+        params: { organization: organizationPath },
+      })
+      if (closeMobile) closeMobileNav()
+    } catch (error) {
+      if (!closeMobile && !expanded) setExpanded(true)
+      setPersonalSpaceError(error instanceof Error ? error.message : t('common.error'))
+    } finally {
+      setPersonalSpaceBusy(false)
+    }
   }
 
   const handleCreateOrganization = async (name: string, username: string) => {
@@ -650,6 +682,32 @@ export function Sidebar() {
                   <Plus aria-hidden="true" />
                   {organizations.length === 0 && t('sidebar.organizations.add')}
                 </Button>
+              </div>
+              <div className="pb-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  data-testid="open-personal-space-mobile"
+                  disabled={personalSpaceBusy}
+                  onClick={() => void openPersonalSpace(true)}
+                >
+                  {personalSpaceBusy
+                    ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    : <UserRound aria-hidden="true" />}
+                  <span>{t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}</span>
+                  {personalOrganization && (
+                    <span className="ml-auto truncate text-xs text-muted-foreground">
+                      {personalOrganization.label}
+                    </span>
+                  )}
+                </Button>
+                {personalSpaceError && (
+                  <p role="alert" className="px-2 pt-1 text-2xs text-destructive">
+                    {t('sidebar.personalSpace.error', { message: personalSpaceError })}
+                  </p>
+                )}
               </div>
 
               <nav className="flex flex-col gap-0.5" aria-label={t('sidebar.navigationLabel')}>
@@ -911,6 +969,55 @@ export function Sidebar() {
               <TooltipContent side="right">{t('sidebar.organizations.add')}</TooltipContent>
             </Tooltip>
           </div>
+        )}
+
+        {expanded ? (
+          <div className="px-1.5 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              data-testid="open-personal-space"
+              disabled={personalSpaceBusy}
+              onClick={() => void openPersonalSpace()}
+            >
+              {personalSpaceBusy
+                ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                : <UserRound aria-hidden="true" />}
+              <span>{t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}</span>
+              {personalOrganization && (
+                <span className="ml-auto truncate text-2xs text-muted-foreground">
+                  {personalOrganization.label}
+                </span>
+              )}
+            </Button>
+            {personalSpaceError && (
+              <p role="alert" className="px-2 pt-1 text-2xs text-destructive">
+                {t('sidebar.personalSpace.error', { message: personalSpaceError })}
+              </p>
+            )}
+          </div>
+        ) : (
+          <SidebarSection className="gap-0 [&:not(:first-child)]:mt-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarItem
+                  data-testid="open-personal-space-collapsed"
+                  onClick={() => void openPersonalSpace()}
+                  aria-label={t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
+                  aria-disabled={personalSpaceBusy}
+                >
+                  {personalSpaceBusy
+                    ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    : <UserRound aria-hidden="true" />}
+                </SidebarItem>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
+              </TooltipContent>
+            </Tooltip>
+          </SidebarSection>
         )}
 
         <SidebarSection className="gap-0 [&:not(:first-child)]:mt-2">
