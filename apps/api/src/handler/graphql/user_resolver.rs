@@ -1,7 +1,7 @@
 use super::model::{Operator, PersonalSpace, User};
 use crate::domain::{OrganizationRepository, LIBRARY_TENANT};
 use crate::sdk_auth::SdkAuthApp;
-use async_graphql::{Context, Result};
+use async_graphql::{Context, ErrorExtensions, Result};
 use futures_util::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;

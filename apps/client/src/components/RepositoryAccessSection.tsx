@@ -122,7 +122,7 @@ export function RepositoryAccessSection({
         </div>
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
           size="sm"
           aria-expanded={expanded}
           data-testid="repository-access-toggle"
