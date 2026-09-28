@@ -282,6 +282,7 @@ function RepositoryTable({
   /** Read where a callback needs the source as of now, not as of its render. */
   const sourceRef = useRef(source)
   const recordsRevisionRef = useRef(recordsRevision)
+  const pendingRecordsRefreshRef = useRef(false)
   const setSource = useCallback((next: TableSource) => {
     sourceRef.current = next
     setSourceState(next)
@@ -495,9 +496,18 @@ function RepositoryTable({
     }
     if (recordsRevisionRef.current === recordsRevision) return
     recordsRevisionRef.current = recordsRevision
-    if (sourceRef.current !== 'listed') return
+    if (sourceRef.current !== 'listed') {
+      pendingRecordsRefreshRef.current = true
+      return
+    }
     void reload()
   }, [recordsRevision, reload])
+
+  useEffect(() => {
+    if (source !== 'listed' || !pendingRecordsRefreshRef.current) return
+    pendingRecordsRefreshRef.current = false
+    void reload()
+  }, [reload, source])
 
   useEffect(() => {
     const handleAuthChange = () => {

@@ -1131,7 +1131,6 @@ function DataWorkspace({
   const viewId = viewParam
   const {
     records,
-    hydrationLoading,
     handleMoveRecord,
     handleUpdateRecord,
     handleCreateRecord,
@@ -1147,7 +1146,6 @@ function DataWorkspace({
   const selectedDatabase = getDatabaseProject(databases, database)
   const repositoryRecordsRevision = useMemo(() => {
     if (
-      hydrationLoading ||
       !selectedDatabase?.orgUsername ||
       !selectedDatabase.repoUsername
     ) {
@@ -1162,7 +1160,6 @@ function DataWorkspace({
       .map((record) => `${record.id}:${record.updatedAt}:${record.title}`)
       .join('|')
   }, [
-    hydrationLoading,
     records,
     selectedDatabase?.orgUsername,
     selectedDatabase?.repoUsername,

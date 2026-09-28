@@ -744,26 +744,58 @@ test.describe('Library shell', () => {
     await secondPage.close()
   })
 
-  test('syncs record creation between browser tabs', async ({ page, browser }) => {
+  test('syncs creation received during the initial repository listing', async ({ page, browser }) => {
     test.setTimeout(90_000)
     const title = `E2E synced data ${Date.now()}`
 
     await page.goto('/home')
     const secondContext = await browser.newContext({ storageState: e2eAuthState })
     const secondPage = await secondContext.newPage()
-    await secondPage.goto('/quantum-box/photon-core/data')
-    await secondPage.getByTestId('library-table-global-filter').fill(title)
+    let releaseInitialListing!: () => void
+    const initialListingRelease = new Promise<void>((resolve) => {
+      releaseInitialListing = resolve
+    })
+    let signalInitialListingCaptured!: () => void
+    const initialListingCaptured = new Promise<void>((resolve) => {
+      signalInitialListingCaptured = resolve
+    })
+    let delayFirstRepositoryListing = true
+    await secondPage.route('**/v1/graphql', async (route) => {
+      const body = route.request().postDataJSON() as { query?: string }
+      if (
+        !delayFirstRepositoryListing ||
+        !body.query?.includes('query LibraryClientRepoData')
+      ) {
+        await route.continue()
+        return
+      }
+      delayFirstRepositoryListing = false
+      const response = await route.fetch()
+      signalInitialListingCaptured()
+      await initialListingRelease
+      await route.fulfill({ response })
+    })
 
-    await page.getByRole('button', { name: 'New data', exact: true }).first().click()
-    await selectCreateRepository(page)
-    await page.getByLabel(/Data name/i).fill(title)
-    await page.getByTestId('create-record-submit').click()
-    await expect(page.getByTestId('create-record-modal')).toBeHidden()
-    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    try {
+      await secondPage.goto('/quantum-box/photon-core/data')
+      await initialListingCaptured
 
-    await expect(secondPage.getByText(title).first()).toBeVisible({ timeout: 60_000 })
+      await page.getByRole('button', { name: 'New data', exact: true }).first().click()
+      await selectCreateRepository(page)
+      await page.getByLabel(/Data name/i).fill(title)
+      await page.getByTestId('create-record-submit').click()
+      await expect(page.getByTestId('create-record-modal')).toBeHidden()
+      await expect(page.getByTestId('data-editor-title')).toHaveText(title)
 
-    await secondContext.close()
+      // The second tab is still holding an API snapshot from before the
+      // create. Its Yjs update must trigger a fresh repository listing after
+      // that stale initial response is applied.
+      releaseInitialListing()
+      await expect(secondPage.getByText(title).first()).toBeVisible({ timeout: 60_000 })
+    } finally {
+      releaseInitialListing()
+      await secondContext.close()
+    }
   })
 
   test('marks local chat as demo mode and streams a supported response', async ({ page }) => {
