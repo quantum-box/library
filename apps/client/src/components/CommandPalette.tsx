@@ -118,7 +118,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           },
           {
             id: 'nav-board',
-            label: t('palette.nav.board.label'),
+            label: t('palette.nav.repository.board.label'),
             detail: t('palette.nav.board.detail'),
             icon: KanbanSquare,
             keywords: t('palette.nav.board.keywords'),
@@ -126,7 +126,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           },
           {
             id: 'nav-workflow',
-            label: t('palette.nav.workflow.label'),
+            label: t('palette.nav.repository.workflow.label'),
             detail: t('palette.nav.workflow.detail'),
             icon: Network,
             keywords: t('palette.nav.workflow.keywords'),
@@ -134,7 +134,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           },
           {
             id: 'nav-timeline',
-            label: t('palette.nav.timeline.label'),
+            label: t('palette.nav.repository.timeline.label'),
             detail: t('palette.nav.timeline.detail'),
             icon: CalendarRange,
             keywords: t('palette.nav.timeline.keywords'),
