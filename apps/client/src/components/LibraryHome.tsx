@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
-import { useLayoutEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import libraryAppIcon from '../assets/brand/library-logo/app-icon.svg'
 import { openCommandPalette, openCreateData } from '../lib/ui/workspaceEvents'
 import {
@@ -97,9 +97,6 @@ export function LibraryHome() {
   })
   const { records, hydrationLoading, hydrationError, handleCreateRecord } = useDatabaseRecords()
   const { open: createModalOpen, setOpen: setCreateModalOpen } = useCreateModal()
-  // Clear the shared request before the repository table's passive effect can
-  // mistake an abandoned Home modal for a command to create a row.
-  useLayoutEffect(() => () => setCreateModalOpen(false), [setCreateModalOpen])
   const {
     databases,
     organizations,

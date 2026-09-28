@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
 import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RefreshCw, RotateCcw, X } from 'lucide-react'
-import { useMemo, useCallback, useState, useEffect, useRef, type ReactNode } from 'react'
+import { useMemo, useCallback, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { PublicShell } from './components/public/PublicShell'
@@ -695,7 +695,23 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 // ── Root Route ─────────────────────────────────────────────────
 
 function AuthenticatedWorkspaceRoot() {
-  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpenState] = useState(false)
+  const [createModalLocationKey, setCreateModalLocationKey] = useState<string | null>(null)
+  const location = useRouterState({ select: (state) => state.location })
+  const locationKeyRef = useRef(location.key)
+  locationKeyRef.current = location.key
+  const setCreateModalOpen = useCallback((open: boolean) => {
+    setCreateModalOpenState(open)
+    setCreateModalLocationKey(open ? locationKeyRef.current : null)
+  }, [])
+  const createModalOpenAtCurrentLocation = createModalOpen && createModalLocationKey === location.key
+
+  useLayoutEffect(() => {
+    if (createModalOpen && createModalLocationKey !== location.key) {
+      setCreateModalOpen(false)
+    }
+  }, [createModalLocationKey, createModalOpen, location.key, setCreateModalOpen])
+
   const {
     shortcutsOpen,
     closeShortcuts,
@@ -718,7 +734,7 @@ function AuthenticatedWorkspaceRoot() {
       <DatabasesProvider organizationUsername={organizationUsername}>
         <DatabaseViewsProvider>
           <AttachmentsProvider>
-            <CreateModalContext.Provider value={{ open: createModalOpen, setOpen: setCreateModalOpen }}>
+            <CreateModalContext.Provider value={{ open: createModalOpenAtCurrentLocation, setOpen: setCreateModalOpen }}>
               <div className="flex h-full min-w-0 flex-col overflow-hidden md:flex-row">
                 <Sidebar />
                 <Outlet />
