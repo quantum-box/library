@@ -43,6 +43,7 @@ import {
   updateRepositoryProperty,
   type RepositoryPropertyType,
 } from '../lib/repositorySettingsApi'
+import type { DatePropertyOptions } from '../lib/propertyDateFormat'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
   forgetData,
@@ -654,13 +655,18 @@ function RepositoryTable({
   )
 
   const handleCreateProperty = useCallback(
-    async (name: string, displayName: string, type: RepositoryPropertyType) => {
+    async (
+      name: string,
+      displayName: string,
+      type: RepositoryPropertyType,
+      dateOptions?: DatePropertyOptions,
+    ) => {
       setPropertyBusy(true)
       setPropertyError(null)
       try {
         const created = await createRepositoryProperty(
           propertyTarget,
-          newPropertyDraft(name, type, displayName),
+          newPropertyDraft(name, type, displayName, dateOptions),
         )
         setProperties((current) => [
           ...current,
@@ -672,15 +678,34 @@ function RepositoryTable({
             // The two Property shapes disagree about whether an option carries
             // an id: the settings API models one that has not been saved yet,
             // and a Property coming back from the server always has.
-            meta: created.meta?.options
+            meta: created.meta
               ? {
-                  options: created.meta.options
-                    .filter((option) => Boolean(option.id))
-                    .map((option) => ({
-                      id: option.id as string,
-                      key: option.key,
-                      name: option.name,
-                    })),
+                  ...(created.meta.options
+                    ? {
+                        options: created.meta.options
+                          .filter((option) => Boolean(option.id))
+                          .map((option) => ({
+                            id: option.id as string,
+                            key: option.key,
+                            name: option.name,
+                          })),
+                      }
+                    : {}),
+                  ...(typeof created.meta.autoGenerate === 'boolean'
+                    ? { autoGenerate: created.meta.autoGenerate }
+                    : {}),
+                  ...(created.meta.databaseId
+                    ? { databaseId: created.meta.databaseId }
+                    : {}),
+                  ...(typeof created.meta.includeTime === 'boolean'
+                    ? { includeTime: created.meta.includeTime }
+                    : {}),
+                  ...(created.meta.dateFormat
+                    ? { dateFormat: created.meta.dateFormat }
+                    : {}),
+                  ...(created.meta.timeFormat
+                    ? { timeFormat: created.meta.timeFormat }
+                    : {}),
                 }
               : null,
           },

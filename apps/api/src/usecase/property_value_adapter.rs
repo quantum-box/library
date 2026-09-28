@@ -108,9 +108,10 @@ pub(crate) fn property_value_command(
             PropertyType::Location(_),
             PropertyDataValueInputData::Location(value),
         ) => PropertyValueCommand::Location(value.clone()),
-        (PropertyType::Date, PropertyDataValueInputData::Date(value)) => {
-            string_or_clear(value, PropertyValueCommand::Date)
-        }
+        (
+            PropertyType::Date(_),
+            PropertyDataValueInputData::Date(value),
+        ) => string_or_clear(value, PropertyValueCommand::Date),
         (PropertyType::Image, PropertyDataValueInputData::Image(value)) => {
             string_or_clear(value, PropertyValueCommand::Image)
         }

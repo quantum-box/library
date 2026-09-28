@@ -71,7 +71,14 @@ impl LegacyPropertyTypeReader {
                 serde_json::from_value(legacy_config)
                     .map_err(errors::Error::invalid)?,
             )),
-            PropertyKind::Date => Ok(PropertyType::Date),
+            PropertyKind::Date => {
+                Ok(PropertyType::Date(if legacy_config.is_null() {
+                    Default::default()
+                } else {
+                    serde_json::from_value(legacy_config)
+                        .map_err(errors::Error::invalid)?
+                }))
+            }
             PropertyKind::Image => Ok(PropertyType::Image),
             PropertyKind::RichText => Ok(PropertyType::RichText),
             PropertyKind::Boolean => Ok(PropertyType::Boolean),

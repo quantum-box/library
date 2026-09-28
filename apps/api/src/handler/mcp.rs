@@ -2207,10 +2207,17 @@ fn property_to_mcp(property: &Property) -> McpProperty {
         name: property.name().to_string(),
         display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
-        meta: property
-            .meta_json()
-            .as_deref()
-            .and_then(|meta| serde_json::from_str(meta).ok()),
+        meta: match property.property_type() {
+            database_manager::domain::PropertyType::Date(_) => property
+                .property_type()
+                .get_meta()
+                .ok()
+                .filter(|meta| !meta.is_null()),
+            _ => property
+                .meta_json()
+                .as_deref()
+                .and_then(|meta| serde_json::from_str(meta).ok()),
+        },
     }
 }
 
@@ -2553,12 +2560,12 @@ fn tools_list_result(is_authenticated: bool) -> Value {
             }),
             json!({
                 "name": "create_property",
-                "description": "Create a repository Property. name is its stable API key; display_name is its user-facing label.",
+                "description": "Create a repository Property. name is its stable API key; display_name is its user-facing label. Date properties accept date settings in meta.",
                 "inputSchema": property_write_schema(["org", "repo", "name", "property_type"])
             }),
             json!({
                 "name": "update_property",
-                "description": "Update a repository Property key, display name, type, or metadata.",
+                "description": "Update a repository Property key, display name, type, or metadata. A Date property's date-only/date-time mode is fixed at creation.",
                 "inputSchema": property_write_schema(["org", "repo", "property_id"])
             }),
             json!({
@@ -2884,7 +2891,10 @@ fn mcp_property_schema() -> Value {
                 "description": "Human-readable label shown in the user interface."
             },
             "property_type": { "type": "string" },
-            "meta": {}
+            "meta": {
+                "type": ["object", "null"],
+                "description": "Property type settings. For Date, use include_time (boolean), date_format (locale, month_day_year, day_month_year, or year_month_day), and time_format (twelve_hour or twenty_four_hour). The date-only/date-time mode is fixed after creation."
+            }
         }),
         &["id", "name", "display_name", "property_type", "meta"],
     )

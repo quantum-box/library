@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 use value_object::Location;
 
 use crate::{
-    DataId, DatabaseId, PropertyDataValue, SelectItemId, TypeMultiSelect,
-    TypeSelect,
+    DataId, DatabaseId, PropertyDataValue, SelectItemId, TypeDate,
+    TypeMultiSelect, TypeSelect,
 };
 
 use super::{
@@ -178,9 +178,10 @@ impl BuiltinPropertyTypeHandler {
                 PropertyConfig::Markdown,
                 PropertyDataValue::Markdown(value),
             ) => validate_max_bytes(value, 65_535, "Markdown"),
-            (PropertyConfig::Date, PropertyDataValue::Date(value)) => {
-                validate_date(value)
-            }
+            (
+                PropertyConfig::Date(config),
+                PropertyDataValue::Date(value),
+            ) => validate_date(value, config.include_time),
             (PropertyConfig::Image, PropertyDataValue::Image(value)) => {
                 validate_max_bytes(value, 2_048, "Image URL")
             }
@@ -235,7 +236,6 @@ impl BuiltinPropertyTypeHandler {
             | PropertyConfig::Integer
             | PropertyConfig::Html
             | PropertyConfig::Markdown
-            | PropertyConfig::Date
             | PropertyConfig::Image
             | PropertyConfig::RichText
             | PropertyConfig::Boolean => Ok(Value::Null),
@@ -244,6 +244,12 @@ impl BuiltinPropertyTypeHandler {
             PropertyConfig::MultiSelect(value) => to_json(value),
             PropertyConfig::Id(value) => to_json(value),
             PropertyConfig::Location(value) => to_json(value),
+            PropertyConfig::Date(value)
+                if value == &TypeDate::default() =>
+            {
+                Ok(Value::Null)
+            }
+            PropertyConfig::Date(value) => to_json(value),
         }
     }
 
@@ -279,10 +285,11 @@ impl BuiltinPropertyTypeHandler {
             PropertyKind::Location => {
                 PropertyConfig::Location(from_json(raw)?)
             }
-            PropertyKind::Date => {
-                require_empty_config(&raw)?;
-                PropertyConfig::Date
-            }
+            PropertyKind::Date => PropertyConfig::Date(if raw.is_null() {
+                TypeDate::default()
+            } else {
+                from_json(raw)?
+            }),
             PropertyKind::Image => {
                 require_empty_config(&raw)?;
                 PropertyConfig::Image
@@ -581,17 +588,30 @@ fn validate_max_bytes(
     }
 }
 
-fn validate_date(value: &str) -> errors::Result<()> {
-    if value.len() != 10
-        || value.as_bytes().get(4) != Some(&b'-')
-        || value.as_bytes().get(7) != Some(&b'-')
-    {
+fn validate_date(value: &str, include_time: bool) -> errors::Result<()> {
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        if date.format("%Y-%m-%d").to_string() == value {
+            return Ok(());
+        }
         return Err(errors::Error::invalid(
-            "date must use the canonical YYYY-MM-DD format",
+            "date-only properties require the canonical YYYY-MM-DD format",
         ));
     }
-    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+    if !include_time {
+        return Err(errors::Error::invalid(
+            "date-only properties require the canonical YYYY-MM-DD format",
+        ));
+    }
+    let datetime = chrono::DateTime::parse_from_rfc3339(value)
         .map_err(errors::Error::invalid)?;
+    let canonical = datetime
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    if canonical != value {
+        return Err(errors::Error::invalid(
+            "date-time values must use canonical UTC RFC 3339 format",
+        ));
+    }
     Ok(())
 }
 

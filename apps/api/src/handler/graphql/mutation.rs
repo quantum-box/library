@@ -2529,6 +2529,14 @@ fn property_type_from_input(
 ) -> errors::Result<database_manager::domain::PropertyType> {
     use database_manager::domain as db;
 
+    if matches!(&value.meta, Some(PropertyMetaInput::Date(_)))
+        && !matches!(&value.property_type, PropertyType::Date)
+    {
+        return Err(errors::Error::invalid(
+            "date metadata is only valid for a Date Property",
+        ));
+    }
+
     let changes_option_property_type = match existing {
         Some(db::PropertyType::Select(current)) => {
             !current.items().is_empty()
@@ -2612,6 +2620,52 @@ fn property_type_from_input(
             }
         }
         Ok(updated)
+    }
+
+    match &value {
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: Some(PropertyMetaInput::Date(date)),
+            ..
+        } => {
+            let updated = db::TypeDate {
+                include_time: date.include_time,
+                date_format: date
+                    .date_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+                time_format: date
+                    .time_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+            };
+            return Ok(db::PropertyType::Date(updated));
+        }
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: None,
+            ..
+        } => {
+            return Ok(match existing {
+                Some(db::PropertyType::Date(current)) => {
+                    db::PropertyType::Date(current.clone())
+                }
+                _ => db::PropertyType::Date(Default::default()),
+            });
+        }
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: Some(PropertyMetaInput::Json(_)),
+            ..
+        } => {
+            return Ok(match existing {
+                Some(db::PropertyType::Date(current)) => {
+                    db::PropertyType::Date(current.clone())
+                }
+                _ => db::PropertyType::Date(Default::default()),
+            });
+        }
+        _ => {}
     }
 
     match value {
@@ -2720,8 +2774,29 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
             } => Ok(db::PropertyType::Location(Default::default())),
             PropertyInput {
                 property_type: PropertyType::Date,
+                meta: Some(PropertyMetaInput::Date(date)),
                 ..
-            } => Ok(db::PropertyType::Date),
+            } => Ok(db::PropertyType::Date(db::TypeDate {
+                include_time: date.include_time,
+                date_format: date
+                    .date_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+                time_format: date
+                    .time_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+            })),
+            PropertyInput {
+                property_type: PropertyType::Date,
+                meta: None,
+                ..
+            } => Ok(db::PropertyType::Date(Default::default())),
+            PropertyInput {
+                property_type: PropertyType::Date,
+                meta: Some(PropertyMetaInput::Json(_)),
+                ..
+            } => Ok(db::PropertyType::Date(Default::default())),
             PropertyInput {
                 property_type: PropertyType::Image,
                 ..
@@ -2766,8 +2841,17 @@ pub enum PropertyMetaInput {
     MultiSelect(Vec<OptionInput>),
     /// TODO: add English documentation
     Id(bool),
+    /// Date/time behavior and display formats.
+    Date(DateTypeInput),
     /// TODO: add English documentation
     Json(String),
+}
+
+#[derive(InputObject, Debug, Clone)]
+pub struct DateTypeInput {
+    pub include_time: bool,
+    pub date_format: String,
+    pub time_format: String,
 }
 
 #[derive(InputObject, Debug, Clone)]

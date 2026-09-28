@@ -32,7 +32,7 @@ pub fn record_value_is_translatable_by_default(
 
         PropertyType::Integer
         | PropertyType::Boolean
-        | PropertyType::Date
+        | PropertyType::Date(_)
         | PropertyType::Image
         | PropertyType::Id(_)
         | PropertyType::Location(_)
@@ -95,7 +95,7 @@ mod tests {
             &PropertyType::Integer
         ));
         assert!(!record_value_is_translatable_by_default(
-            &PropertyType::Date
+            &PropertyType::Date(Default::default())
         ));
         assert!(!record_value_is_translatable_by_default(
             &PropertyType::Image

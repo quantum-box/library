@@ -18,6 +18,31 @@ components:
           type:
           - boolean
           - 'null'
+        include_time:
+          description: Enable time input and storage for a Date property.
+          type:
+          - boolean
+          - 'null'
+        date_format:
+          description: Date display format: locale, month_day_year, day_month_year, or year_month_day.
+          enum:
+          - locale
+          - month_day_year
+          - day_month_year
+          - year_month_day
+          - 'null'
+          type:
+          - string
+          - 'null'
+        time_format:
+          description: Time display format: twelve_hour or twenty_four_hour.
+          enum:
+          - twelve_hour
+          - twenty_four_hour
+          - 'null'
+          type:
+          - string
+          - 'null'
         name:
           description: Stable key used by API clients to identify the Property.
           minLength: 1
@@ -243,7 +268,9 @@ components:
             value (Select/MultiSelect options by id, key or label; Boolean
             `true`/`false`, where no value counts as `false`; Relation by
             record id; text exactly). `key:a|b` matches any of several.
-            `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
+            `key>=n` and `key<=n` compare Integer values and Date values in
+            `YYYY-MM-DD` or RFC 3339 date-time format. A date-only upper bound
+            includes the entire calendar day.
           items:
             type: string
           type:
@@ -953,6 +980,7 @@ components:
         type: object
       - properties:
           date:
+            description: Date as YYYY-MM-DD or RFC 3339 date-time. Responses use canonical UTC RFC 3339.
             type: string
         required:
         - date
@@ -1000,6 +1028,31 @@ components:
         auto_generate:
           type:
           - boolean
+          - 'null'
+        include_time:
+          description: Whether new values for a Date property can include a time.
+          type:
+          - boolean
+          - 'null'
+        date_format:
+          description: Date display format: locale, month_day_year, day_month_year, or year_month_day.
+          enum:
+          - locale
+          - month_day_year
+          - day_month_year
+          - year_month_day
+          - 'null'
+          type:
+          - string
+          - 'null'
+        time_format:
+          description: Time display format: twelve_hour or twenty_four_hour.
+          enum:
+          - twelve_hour
+          - twenty_four_hour
+          - 'null'
+          type:
+          - string
           - 'null'
         database_id:
           description: Canonical target repository id of a `RELATION` property.
@@ -2562,7 +2615,9 @@ paths:
           value (Select/MultiSelect options by id, key or label; Boolean
           `true`/`false`, where no value counts as `false`; Relation by
           record id; text exactly). `key:a|b` matches any of several.
-          `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
+          `key>=n` and `key<=n` compare Integer values and Date values in
+          `YYYY-MM-DD` or RFC 3339 date-time format. A date-only upper bound
+          includes the entire calendar day.
         example: category:home_center
         in: query
         name: filter

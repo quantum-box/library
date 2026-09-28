@@ -4,6 +4,11 @@ import type {
   RepositoryPropertyDraft,
   RepositoryPropertyType,
 } from '../repositorySettingsApi'
+import {
+  DEFAULT_DATE_PROPERTY_OPTIONS,
+  normalizeDatePropertyOptions,
+  type DatePropertyOptions,
+} from '../propertyDateFormat'
 
 /**
  * Whether a rename can be sent for this Property from the table header.
@@ -45,6 +50,9 @@ export function propertyRenameDraft(
   }
   if (type === 'ID') draft.autoGenerateId = property.meta?.autoGenerate
   if (type === 'RELATION') draft.relationDatabaseId = property.meta?.databaseId
+  if (type === 'DATE') {
+    draft.dateOptions = normalizeDatePropertyOptions(property.meta)
+  }
   return draft
 }
 
@@ -66,6 +74,7 @@ export function newPropertyDraft(
   name: string,
   type: RepositoryPropertyType,
   displayName = name,
+  dateOptions: DatePropertyOptions = DEFAULT_DATE_PROPERTY_OPTIONS,
 ): RepositoryPropertyDraft {
   const draft: RepositoryPropertyDraft = {
     name: name.trim(),
@@ -74,5 +83,6 @@ export function newPropertyDraft(
   }
   if (type === 'SELECT' || type === 'MULTI_SELECT') draft.options = []
   if (type === 'ID') draft.autoGenerateId = true
+  if (type === 'DATE') draft.dateOptions = normalizeDatePropertyOptions(dateOptions)
   return draft
 }

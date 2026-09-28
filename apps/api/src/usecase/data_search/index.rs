@@ -352,14 +352,30 @@ impl SearchIndex {
                     },
                 })
             }
-            (PropertyType::Date, op) => {
-                let parse = |value: &str| {
-                    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-                        .map(|_| value.to_string())
+            (PropertyType::Date(_), op) => {
+                let parse = |value: &str, upper_bound: bool| {
+                    if chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                        .is_ok()
+                    {
+                        return Ok(if upper_bound {
+                            format!("{value}T23:59:59.999999999Z")
+                        } else {
+                            value.to_string()
+                        });
+                    }
+                    chrono::DateTime::parse_from_rfc3339(value)
+                        .map(|datetime| {
+                            datetime
+                                .with_timezone(&chrono::Utc)
+                                .to_rfc3339_opts(
+                                    chrono::SecondsFormat::Nanos,
+                                    true,
+                                )
+                        })
                         .map_err(|_| {
                             errors::Error::invalid(format!(
-                                "filter `{}` needs a YYYY-MM-DD date, got \
-                                 `{value}`",
+                                "filter `{}` needs a YYYY-MM-DD date or \
+                                 RFC 3339 date-time, got `{value}`",
                                 filter.key
                             ))
                         })
@@ -370,7 +386,7 @@ impl SearchIndex {
                         allowed: Some(
                             values
                                 .iter()
-                                .map(|v| parse(v))
+                                .map(|v| parse(v, false))
                                 .collect::<errors::Result<_>>()?,
                         ),
                         min: None,
@@ -379,14 +395,14 @@ impl SearchIndex {
                     FilterOp::AtLeast(v) => Predicate::DateRange {
                         property_id,
                         allowed: None,
-                        min: Some(parse(v)?),
+                        min: Some(parse(v, false)?),
                         max: None,
                     },
                     FilterOp::AtMost(v) => Predicate::DateRange {
                         property_id,
                         allowed: None,
                         min: None,
-                        max: Some(parse(v)?),
+                        max: Some(parse(v, true)?),
                     },
                 })
             }
@@ -513,8 +529,15 @@ impl Predicate {
                 max,
             } => match value_of(data, property_id) {
                 Some(PropertyDataValue::Date(value)) => {
-                    allowed.as_ref().is_none_or(|a| a.contains(value))
-                        && min.as_ref().is_none_or(|min| value >= min)
+                    allowed.as_ref().is_none_or(|a| {
+                        a.iter().any(|candidate| {
+                            value == candidate
+                                || (candidate.len() == 10
+                                    && value.starts_with(candidate)
+                                    && value.as_bytes().get(10)
+                                        == Some(&b'T'))
+                        })
+                    }) && min.as_ref().is_none_or(|min| value >= min)
                         && max.as_ref().is_none_or(|max| value <= max)
                 }
                 _ => false,
@@ -687,7 +710,7 @@ mod tests {
                 ),
                 ("large_dog_allowed", PropertyType::Boolean),
                 ("max_dog_weight", PropertyType::Integer),
-                ("verified_at", PropertyType::Date),
+                ("verified_at", PropertyType::Date(Default::default())),
                 ("address", PropertyType::String),
             ];
             if with_publication {
