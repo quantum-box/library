@@ -1923,6 +1923,11 @@ type PublicApiKey {
 
 type Query {
 	errTest: String!
+	"""
+	Whether this caller may delete Library data in the active tenant.
+	Keep this decision aligned with the policy checked by `delete_data`.
+	"""
+	canDeleteData: Boolean!
 	me: User!
 	tenantSeedCandidates: [TenantSeedCandidate!]!
 	"""
