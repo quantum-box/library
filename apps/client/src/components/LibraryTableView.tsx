@@ -113,6 +113,8 @@ interface LibraryTableViewProps {
   repoLabel?: string
   /** The repository's immutable id, which names its cached table when known. */
   databaseId?: string
+  /** Changes when this repository's shared record projection changes. */
+  recordsRevision?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
   /** Called with a blank record the moment "New" has created it, so the
@@ -252,6 +254,7 @@ function RepositoryTable({
   operatorId,
   repoLabel,
   databaseId,
+  recordsRevision,
   selectedDataId,
   onSelectData,
   onDataCreated,
@@ -278,6 +281,7 @@ function RepositoryTable({
   const [source, setSourceState] = useState<TableSource>(cachedTable ? 'cached' : 'none')
   /** Read where a callback needs the source as of now, not as of its render. */
   const sourceRef = useRef(source)
+  const recordsRevisionRef = useRef(recordsRevision)
   const setSource = useCallback((next: TableSource) => {
     sourceRef.current = next
     setSourceState(next)
@@ -479,6 +483,21 @@ function RepositoryTable({
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // The repository listing comes from the Library API, while records created
+  // in another tab first arrive through the shared Yjs projection. Refresh
+  // only this repository's listing when that projection changes.
+  useEffect(() => {
+    if (recordsRevision === undefined) return
+    if (recordsRevisionRef.current === undefined) {
+      recordsRevisionRef.current = recordsRevision
+      return
+    }
+    if (recordsRevisionRef.current === recordsRevision) return
+    recordsRevisionRef.current = recordsRevision
+    if (sourceRef.current !== 'listed') return
+    void reload()
+  }, [recordsRevision, reload])
 
   useEffect(() => {
     const handleAuthChange = () => {

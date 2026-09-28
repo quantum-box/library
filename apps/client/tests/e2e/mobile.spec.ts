@@ -32,10 +32,10 @@ test.describe('Library mobile shell', () => {
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
     await page.getByTestId('library-table-global-filter').fill(title)
-    await expect(page.getByTestId('mobile-record-card')).toHaveCount(1)
-    await expect(page.getByTestId('mobile-record-card').getByText(title)).toBeVisible()
+    await expect(page.getByTestId('library-table-card')).toHaveCount(1)
+    await expect(page.getByTestId('library-table-card').getByText(title)).toBeVisible()
 
-    await page.getByTestId('mobile-record-card').click()
+    await page.getByTestId('library-table-card').click()
     await expect(page.getByTestId('detail-panel')).toBeVisible()
     await expect(page.getByTestId('detail-panel')).toHaveCSS('position', 'fixed')
     await page.getByTestId('detail-panel-close').click()

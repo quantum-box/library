@@ -1131,6 +1131,7 @@ function DataWorkspace({
   const viewId = viewParam
   const {
     records,
+    hydrationLoading,
     handleMoveRecord,
     handleUpdateRecord,
     handleCreateRecord,
@@ -1144,6 +1145,28 @@ function DataWorkspace({
     repositoriesError,
   } = useWorkspaceDatabases()
   const selectedDatabase = getDatabaseProject(databases, database)
+  const repositoryRecordsRevision = useMemo(() => {
+    if (
+      hydrationLoading ||
+      !selectedDatabase?.orgUsername ||
+      !selectedDatabase.repoUsername
+    ) {
+      return undefined
+    }
+    return records
+      .filter(
+        (record) =>
+          record.orgUsername === selectedDatabase.orgUsername &&
+          record.repoUsername === selectedDatabase.repoUsername,
+      )
+      .map((record) => `${record.id}:${record.updatedAt}:${record.title}`)
+      .join('|')
+  }, [
+    hydrationLoading,
+    records,
+    selectedDatabase?.orgUsername,
+    selectedDatabase?.repoUsername,
+  ])
   const visibleDatabases = selectedOrganizationId
     ? databases.filter((item) => item.operatorId === selectedOrganizationId)
     : databases
@@ -1536,6 +1559,7 @@ function DataWorkspace({
               repo={selectedDatabase!.repoUsername!}
               operatorId={selectedDatabase?.operatorId}
               databaseId={selectedDatabase?.databaseId}
+              recordsRevision={repositoryRecordsRevision}
               repoLabel={selectedDatabase?.label}
               selectedDataId={selectedRecord?.id ?? null}
               onSelectData={(item) => {

@@ -184,7 +184,7 @@ test.describe('Library shell', () => {
     await expect(page.locator('kbd').filter({ hasText: '/' }).first()).toBeVisible()
 
     await page.keyboard.press('ControlOrMeta+F')
-    await expect(page.getByTestId('records-global-filter')).toBeFocused()
+    await expect(page.getByTestId('library-table-global-filter')).toBeFocused()
 
     await page.keyboard.press('Escape')
     await page.keyboard.press('ControlOrMeta+B')
