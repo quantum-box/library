@@ -699,12 +699,15 @@ function AuthenticatedWorkspaceRoot() {
   const [createModalOriginPath, setCreateModalOriginPath] = useState<string | null>(null)
   const location = useRouterState({ select: (state) => state.location })
   const locationPathnameRef = useRef(location.pathname)
-  locationPathnameRef.current = location.pathname
   const setCreateModalOpen = useCallback((open: boolean) => {
     setCreateModalOpenState(open)
     setCreateModalOriginPath(open ? locationPathnameRef.current : null)
   }, [])
   const createModalOpenAtCurrentLocation = createModalOpen && createModalOriginPath === location.pathname
+
+  useLayoutEffect(() => {
+    locationPathnameRef.current = location.pathname
+  }, [location.pathname])
 
   useLayoutEffect(() => {
     if (createModalOpen && createModalOriginPath !== location.pathname) {
