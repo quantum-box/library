@@ -6,14 +6,14 @@ describe('tabTitleForPath', () => {
     expect(tabTitleForPath('/')).toBe('Library')
     expect(tabTitleForPath('/home')).toBe('Home')
     expect(tabTitleForPath('/repositories')).toBe('Repositories')
-    expect(tabTitleForPath('/databases')).toBe('All data')
+    expect(tabTitleForPath('/databases')).toBe('Data')
     expect(tabTitleForPath('/chat')).toBe('Ask Library')
     expect(tabTitleForPath('/sync')).toBe('Sync status')
   })
 
-  it('keeps the view name for the all-data boards', () => {
-    expect(tabTitleForPath('/databases/board')).toBe('All data · Board')
-    expect(tabTitleForPath('/databases/workflow')).toBe('All data · Workflow')
+  it('keeps the view name for legacy database view routes', () => {
+    expect(tabTitleForPath('/databases/board')).toBe('Board')
+    expect(tabTitleForPath('/databases/workflow')).toBe('Workflow')
   })
 
   it('scopes repository routes to organization/repository', () => {
@@ -25,7 +25,7 @@ describe('tabTitleForPath', () => {
 
   it('stays on the repository scope for a single record', () => {
     expect(tabTitleForPath('/acme/handbook/data/rec-1')).toBe('acme/handbook · Data')
-    expect(tabTitleForPath('/databases/rec-1')).toBe('All data')
+    expect(tabTitleForPath('/databases/rec-1')).toBe('Data')
   })
 
   it('handles the legacy and public route prefixes', () => {

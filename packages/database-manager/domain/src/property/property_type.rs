@@ -23,7 +23,7 @@ pub enum PropertyType {
     MultiSelect(TypeMultiSelect),
     Id(TypeId),
     Location(TypeLocation),
-    Date,
+    Date(TypeDate),
     Image,
     RichText,
     Boolean,
@@ -67,7 +67,7 @@ impl From<&PropertyType> for PropertyConfig {
             }
             PropertyType::Id(value) => Self::Id(value.clone()),
             PropertyType::Location(value) => Self::Location(value.clone()),
-            PropertyType::Date => Self::Date,
+            PropertyType::Date(value) => Self::Date(value.clone()),
             PropertyType::Image => Self::Image,
             PropertyType::RichText => Self::RichText,
             PropertyType::Boolean => Self::Boolean,
@@ -93,7 +93,7 @@ impl From<&PropertyConfig> for PropertyType {
             PropertyConfig::Location(value) => {
                 Self::Location(value.clone())
             }
-            PropertyConfig::Date => Self::Date,
+            PropertyConfig::Date(value) => Self::Date(value.clone()),
             PropertyConfig::Image => Self::Image,
             PropertyConfig::RichText => Self::RichText,
             PropertyConfig::Boolean => Self::Boolean,
@@ -141,6 +141,56 @@ pub struct TypeLocation {
     pub default_longitude: Option<f64>,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum DateFormat {
+    #[default]
+    Locale,
+    MonthDayYear,
+    DayMonthYear,
+    YearMonthDay,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum TimeFormat {
+    TwelveHour,
+    #[default]
+    TwentyFourHour,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TypeDate {
+    pub include_time: bool,
+    pub date_format: DateFormat,
+    pub time_format: TimeFormat,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,7 +213,7 @@ mod tests {
     )]
     #[case(PropertyType::Id(TypeId::default()), "ID")]
     #[case(PropertyType::Location(TypeLocation::default()), "LOCATION")]
-    #[case(PropertyType::Date, "DATE")]
+    #[case(PropertyType::Date(TypeDate::default()), "DATE")]
     #[case(PropertyType::Image, "IMAGE")]
     #[case(PropertyType::RichText, "RICH_TEXT")]
     #[case(PropertyType::Boolean, "BOOLEAN")]

@@ -7,7 +7,8 @@ import {
 } from './libraryPropertyFormat'
 import { isEmptyPropertyValue } from './libraryPropertyInput'
 import { handleExternalLinkClick } from '../desktop/openExternalUrl'
-import { formatDateTime, getActiveLocale, t, tPlural } from '../../i18n'
+import { t, tPlural } from '../../i18n'
+import { formatPropertyDate } from '../propertyDateFormat'
 
 /**
  * One checkbox look for the whole table.
@@ -23,16 +24,6 @@ function optionLabel(property: LibraryProperty, optionId: string | undefined) {
   if (!optionId) return undefined
   const option = property.meta?.options?.find((item) => item.id === optionId)
   return option?.name ?? option?.key ?? optionId
-}
-
-function formatDate(value: string) {
-  return (
-    formatDateTime(getActiveLocale(), value, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    }) ?? value
-  )
 }
 
 function PlainTextCell({ text }: { text: string }) {
@@ -135,7 +126,7 @@ function renderByTyp(
   }
 
   if (typ === 'Date' && value.date) {
-    return <PlainTextCell text={formatDate(value.date)} />
+    return <PlainTextCell text={formatPropertyDate(value.date, property.meta)} />
   }
 
   if (typ === 'Image' && value.url) {

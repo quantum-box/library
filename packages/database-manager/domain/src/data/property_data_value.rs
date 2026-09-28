@@ -13,7 +13,7 @@ pub enum PropertyDataValue {
     Location(Location),
     Select(SelectItemId),
     MultiSelect(Vec<SelectItemId>),
-    Date(String),  // ISO 8601 format: YYYY-MM-DD
+    Date(String), // YYYY-MM-DD or canonical UTC RFC 3339 date-time
     Image(String), // Image URL
     /// A block document, stored as the editor's own JSON.
     RichText(serde_json::Value),
@@ -82,7 +82,9 @@ impl PropertyDataValue {
             PropertyDataValue::MultiSelect(_) => {
                 PropertyType::MultiSelect(TypeMultiSelect::default())
             }
-            PropertyDataValue::Date(_) => PropertyType::Date,
+            PropertyDataValue::Date(_) => {
+                PropertyType::Date(Default::default())
+            }
             PropertyDataValue::Image(_) => PropertyType::Image,
             PropertyDataValue::RichText(_) => PropertyType::RichText,
             PropertyDataValue::Boolean(_) => PropertyType::Boolean,
@@ -154,7 +156,7 @@ impl PropertyDataValue {
             PropertyType::Location(_) => Self::parse_location(text),
             PropertyType::Select(_) => Self::parse_select(text),
             PropertyType::MultiSelect(_) => Self::parse_multi_select(text),
-            PropertyType::Date => Self::parse_date(text),
+            PropertyType::Date(_) => Self::parse_date(text),
             PropertyType::Image => Self::parse_image(text),
             PropertyType::RichText => Self::parse_rich_text(text),
             PropertyType::Boolean => Self::parse_boolean(text),
@@ -317,47 +319,23 @@ impl PropertyDataValue {
                 "Date value cannot be empty",
             ));
         }
-        // Validate ISO 8601 date format (YYYY-MM-DD)
-        let parts: Vec<&str> = input.split('-').collect();
-        if parts.len() != 3 {
+        if input.starts_with("0000-") {
             return Err(errors::Error::business_logic(
-                "Invalid date format. Expected YYYY-MM-DD",
+                "Date year must be greater than 0000",
             ));
         }
-        let year: i32 = parts[0].parse().map_err(|_| {
-            errors::Error::business_logic("Invalid year in date")
-        })?;
-        let month: u32 = parts[1].parse().map_err(|_| {
-            errors::Error::business_logic("Invalid month in date")
-        })?;
-        let day: u32 = parts[2].parse().map_err(|_| {
-            errors::Error::business_logic("Invalid day in date")
-        })?;
-
-        // Basic validation
-        if !matches!(year, 1..=9999) {
-            return Err(errors::Error::business_logic(
-                "Year must be between 1 and 9999",
-            ));
+        if chrono::NaiveDate::parse_from_str(input, "%Y-%m-%d").is_ok() {
+            return Ok(PropertyDataValue::Date(input.to_string()));
         }
-        if !matches!(month, 1..=12) {
-            return Err(errors::Error::business_logic(
-                "Month must be between 1 and 12",
-            ));
-        }
-        if !matches!(day, 1..=31) {
-            return Err(errors::Error::business_logic(
-                "Day must be between 1 and 31",
-            ));
-        }
-
-        // Validate date using chrono
-        use chrono::NaiveDate;
-        NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
-            errors::Error::business_logic("Invalid date value")
-        })?;
-
-        Ok(PropertyDataValue::Date(input.to_string()))
+        let datetime = chrono::DateTime::parse_from_rfc3339(input)
+            .map_err(|error| {
+                errors::Error::business_logic(error.to_string())
+            })?;
+        Ok(PropertyDataValue::Date(
+            datetime
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+        ))
     }
 
     fn parse_image(input: &str) -> errors::Result<PropertyDataValue> {
@@ -734,7 +712,10 @@ mod unit {
     // as it parses successfully (year=2024, month=1, day=1)
     #[case("2024-1-1", true)] // Missing zero padding (accepted by current implementation)
     fn test_parse_date(#[case] input: &str, #[case] should_succeed: bool) {
-        let result = PropertyDataValue::new(input, &PropertyType::Date);
+        let result = PropertyDataValue::new(
+            input,
+            &PropertyType::Date(Default::default()),
+        );
         if should_succeed {
             assert!(
                 result.is_ok(),
@@ -773,8 +754,10 @@ mod unit {
             "2024-02-29",
         ];
         for date_str in leap_years {
-            let result =
-                PropertyDataValue::new(date_str, &PropertyType::Date);
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_ok(),
                 "Leap year date '{}' should be valid, but got error: {:?}",
@@ -792,8 +775,10 @@ mod unit {
             "2100-02-29",
         ];
         for date_str in non_leap_years {
-            let result =
-                PropertyDataValue::new(date_str, &PropertyType::Date);
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_err(),
                 "Non-leap year date '{}' should be invalid, but got success: {:?}",
@@ -821,8 +806,10 @@ mod unit {
             "2023-12-31",
         ];
         for date_str in valid_month_ends {
-            let result =
-                PropertyDataValue::new(date_str, &PropertyType::Date);
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_ok(),
                 "Month end date '{}' should be valid, but got error: {:?}",
@@ -847,8 +834,10 @@ mod unit {
             "2023-12-32",
         ];
         for date_str in invalid_dates {
-            let result =
-                PropertyDataValue::new(date_str, &PropertyType::Date);
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_err(),
                 "Invalid date '{}' should be rejected, but got success: {:?}",

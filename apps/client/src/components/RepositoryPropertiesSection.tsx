@@ -37,6 +37,7 @@ import {
   propertyTypeLabel,
 } from '../lib/repositoryPropertyTypes'
 import { PropertyOptionsEditor } from './PropertyOptionsEditor'
+import { DatePropertyOptionsFields } from './libraryTable/DatePropertyOptionsFields'
 import {
   optionDraftsFromProperty,
   optionDraftsToPayload,
@@ -44,6 +45,11 @@ import {
 } from '../lib/propertyOptionDrafts'
 import { useI18n, t as translate } from '../i18n'
 import { fetchLibraryRepositories, type LibraryRepository } from '../lib/recordsApi'
+import {
+  DEFAULT_DATE_PROPERTY_OPTIONS,
+  normalizeDatePropertyOptions,
+  type DatePropertyOptions,
+} from '../lib/propertyDateFormat'
 
 interface PropertyDialogState {
   mode: 'create' | 'edit'
@@ -134,6 +140,9 @@ function PropertyEditorDialog({
   const [relationRepositoriesLoading, setRelationRepositoriesLoading] = useState(false)
   const [relationRepositoriesError, setRelationRepositoriesError] = useState<string | null>(null)
   const [autoGenerateId, setAutoGenerateId] = useState(property?.meta?.autoGenerate ?? true)
+  const [dateOptions, setDateOptions] = useState<DatePropertyOptions>(() =>
+    normalizeDatePropertyOptions(property?.meta ?? DEFAULT_DATE_PROPERTY_OPTIONS),
+  )
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const loadRelationRepositories = async () => {
@@ -238,6 +247,7 @@ function PropertyEditorDialog({
           : {}),
         ...(type === 'RELATION' ? { relationDatabaseId: relationDatabaseId.trim() } : {}),
         ...(type === 'ID' ? { autoGenerateId } : {}),
+        ...(type === 'DATE' ? { dateOptions } : {}),
       })
     } catch (parseError) {
       setValidationError(errorMessage(parseError))
@@ -314,6 +324,15 @@ function PropertyEditorDialog({
               {propertyTypeDetail(type)}
             </p>
           </div>
+
+          {type === 'DATE' ? (
+            <DatePropertyOptionsFields
+              options={dateOptions}
+              disabled={busy}
+              modeDisabled={state.mode === 'edit' && property?.typ === 'DATE'}
+              onChange={setDateOptions}
+            />
+          ) : null}
 
           {(type === 'SELECT' || type === 'MULTI_SELECT') ? (
             <div className="space-y-1.5" role="group" aria-label={t('repoSettings.optionsLabel')}>

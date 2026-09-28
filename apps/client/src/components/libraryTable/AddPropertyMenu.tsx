@@ -8,6 +8,11 @@ import {
 import { tablePropertyTypeChoices } from '../../lib/libraryTable/propertyDrafts'
 import type { RepositoryPropertyType } from '../../lib/repositorySettingsApi'
 import { useI18n } from '../../i18n'
+import {
+  DEFAULT_DATE_PROPERTY_OPTIONS,
+  type DatePropertyOptions,
+} from '../../lib/propertyDateFormat'
+import { DatePropertyOptionsFields } from './DatePropertyOptionsFields'
 
 /**
  * The `+` that ends the header row: a key, a display name, a type, and the column exists.
@@ -23,13 +28,21 @@ export function AddPropertyMenu({
 }: {
   busy: boolean
   error: string | null
-  onCreate: (name: string, displayName: string, type: RepositoryPropertyType) => Promise<boolean>
+  onCreate: (
+    name: string,
+    displayName: string,
+    type: RepositoryPropertyType,
+    dateOptions?: DatePropertyOptions,
+  ) => Promise<boolean>
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [type, setType] = useState<RepositoryPropertyType>('STRING')
+  const [dateOptions, setDateOptions] = useState<DatePropertyOptions>(
+    DEFAULT_DATE_PROPERTY_OPTIONS,
+  )
   const triggerRef = useRef<HTMLButtonElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const trimmedName = name.trim()
@@ -44,11 +57,17 @@ export function AddPropertyMenu({
 
   const submit = async () => {
     if (!validKey || !validDisplayName || busy) return
-    const created = await onCreate(name, displayName, type)
+    const created = await onCreate(
+      name,
+      displayName,
+      type,
+      type === 'DATE' ? dateOptions : undefined,
+    )
     if (!created) return
     setName('')
     setDisplayName('')
     setType('STRING')
+    setDateOptions(DEFAULT_DATE_PROPERTY_OPTIONS)
     setOpen(false)
   }
 
@@ -126,6 +145,16 @@ export function AddPropertyMenu({
               </option>
             ))}
           </select>
+
+          {type === 'DATE' ? (
+            <div className="mt-2">
+              <DatePropertyOptionsFields
+                options={dateOptions}
+                disabled={busy}
+                onChange={setDateOptions}
+              />
+            </div>
+          ) : null}
 
           {error && (
             <p className="mt-1.5 text-2xs font-normal normal-case leading-4 text-destructive" role="alert">

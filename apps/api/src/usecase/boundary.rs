@@ -447,6 +447,7 @@ pub enum PropertyDataValueInputData {
     Select(String),
     MultiSelect(Vec<String>),
     Location(Location),
+    /// YYYY-MM-DD or RFC 3339 date-time; date-times are normalized to UTC.
     Date(String),
     Image(String),
     /// A block document, carried as JSON text.

@@ -43,6 +43,7 @@ import {
   storeAuthTokens,
 } from './auth'
 import { t } from '../i18n'
+import type { DateFormat, TimeFormat } from './propertyDateFormat'
 
 export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
@@ -104,6 +105,9 @@ export interface LibraryProperty {
     options?: LibrarySelectOption[]
     autoGenerate?: boolean
     databaseId?: string
+    includeTime?: boolean
+    dateFormat?: DateFormat
+    timeFormat?: TimeFormat
   } | null
 }
 
@@ -405,6 +409,9 @@ interface LibraryRestPropertyResponse {
   auto_generate?: boolean
   database_id?: string
   options?: LibrarySelectOption[]
+  include_time?: boolean
+  date_format?: DateFormat
+  time_format?: TimeFormat
 }
 
 export interface LibraryRepoTableData {
@@ -542,6 +549,7 @@ const libraryRepoDataQuery = `
         typ
         meta {
           ... on IdType { autoGenerate }
+          ... on DateType { includeTime dateFormat timeFormat }
           ... on RelationType { databaseId }
           ... on SelectType {
             options { id key name }
@@ -563,6 +571,7 @@ const libraryPropertiesQuery = `
       displayName
       typ
       meta {
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
         }
@@ -712,6 +721,7 @@ const libraryDataDetailQuery = `
       displayName
       typ
       meta {
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
         }
@@ -1868,6 +1878,15 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
       : {}),
     ...(typeof property.database_id === 'string'
       ? { databaseId: property.database_id }
+      : {}),
+    ...(typeof property.include_time === 'boolean'
+      ? { includeTime: property.include_time }
+      : {}),
+    ...(typeof property.date_format === 'string'
+      ? { dateFormat: property.date_format as DateFormat }
+      : {}),
+    ...(typeof property.time_format === 'string'
+      ? { timeFormat: property.time_format as TimeFormat }
       : {}),
   }
   return {

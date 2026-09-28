@@ -3,7 +3,11 @@ import type {
   LibraryProperty,
   LibraryPropertyDataValue,
 } from '../recordsApi'
-import { formatDateTime, getActiveLocale } from '../../i18n'
+import {
+  dateTimeLocalInputValue,
+  formatPropertyDate,
+  isDateTimeValue,
+} from '../propertyDateFormat'
 
 /**
  * How much text a table cell shows.
@@ -77,13 +81,7 @@ export function propertyValueDisplayText(
   value: LibraryPropertyDataValue
 ): string | undefined {
   if (property.typ === 'Date' && typeof value.date === 'string') {
-    return (
-      formatDateTime(getActiveLocale(), value.date, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      }) ?? value.date
-    )
+    return formatPropertyDate(value.date, property.meta)
   }
   return propertyValueText(property, value)
 }
@@ -104,6 +102,14 @@ export function propertyValueEditText(
   // editor would stage the preview as the new body, so the caller has to
   // load the record itself before it can edit one.
   if (value.preview) return undefined
+  if (
+    property.typ === 'Date'
+    && property.meta?.includeTime
+    && typeof value.date === 'string'
+    && isDateTimeValue(value.date)
+  ) {
+    return dateTimeLocalInputValue(value.date)
+  }
   return propertyValueText(property, value)
 }
 

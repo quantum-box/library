@@ -2,7 +2,6 @@ import { Link } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
 import {
   Activity,
-  ArrowRight,
   Building2,
   ChevronRight,
   Database,
@@ -206,7 +205,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
 
   const slug = organizationSlug(organization, databases)
   const openCount = repositoryStats.reduce((total, entry) => total + entry.open, 0)
-  const allDataSearch = {}
 
   return (
     <main
@@ -227,14 +225,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
         >
           <Plus aria-hidden="true" />
           {t('sidebar.repositories.new')}
-        </Button>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/databases" search={allDataSearch} aria-label={t('organization.openAllData')}>
-            <Database aria-hidden="true" />
-            {/* Two labelled buttons leave a phone header no room for the
-                organization name, so the secondary one goes icon-only. */}
-            <span className="hidden sm:inline">{t('organization.openAllData')}</span>
-          </Link>
         </Button>
       </header>
 
@@ -342,12 +332,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                   {t('repository.recentlyUpdated')}
                 </h2>
                 <Badge variant="neutral">{recentRecords.length}</Badge>
-                <Button className="ml-auto" variant="ghost" size="sm" asChild>
-                  <Link to="/databases" search={allDataSearch}>
-                    {t('common.viewAll')}
-                    <ChevronRight aria-hidden="true" />
-                  </Link>
-                </Button>
               </div>
               {recentRecords.length > 0 ? recentRecords.map((record) => {
                 const repository = repositories.find((candidate) =>
@@ -447,13 +431,6 @@ export function OrganizationOverview({ organization: organizationPath }: { organ
                 ) : null}
               </div>
             </section>
-
-            <Button className="m-3.5" variant="ghost" size="sm" asChild>
-              <Link to="/databases" search={allDataSearch}>
-                {t('organization.browseData')}
-                <ArrowRight aria-hidden="true" />
-              </Link>
-            </Button>
           </aside>
         </div>
       </div>

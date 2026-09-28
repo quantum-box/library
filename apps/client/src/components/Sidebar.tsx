@@ -40,7 +40,6 @@ import {
   ChevronsUpDown,
   Cloud,
   Copy,
-  Database,
   FolderGit2,
   Home,
   Loader2,
@@ -79,7 +78,6 @@ import { collisionPaddingFor, useSafeAreaInsets } from '../lib/ui/safeAreaInsets
 import { fetchLibraryAccessibleTenants } from '../lib/recordsApi'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { shareableUrl } from '../lib/shareUrl'
-import { DataLink } from './DataLink'
 import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
@@ -91,16 +89,15 @@ import { LanguageMenuSection } from './LanguageMenuSection'
 import { useDialogFocus } from './useDialogFocus'
 
 type WorkspaceLink = {
-  id: 'home' | 'data' | 'chat' | 'sync'
+  id: 'home' | 'chat' | 'sync'
   labelKey: MessageKey
   icon: LucideIcon
-  to: '/home' | '/databases' | '/chat' | '/sync'
+  to: '/home' | '/chat' | '/sync'
   shortcut?: string
 }
 
 const workspaceLinks: WorkspaceLink[] = [
   { id: 'home', labelKey: 'sidebar.nav.home', icon: Home, to: '/home', shortcut: 'H' },
-  { id: 'data', labelKey: 'sidebar.nav.allData', icon: Database, to: '/databases', shortcut: 'D' },
   { id: 'chat', labelKey: 'sidebar.nav.askLibrary', icon: Bot, to: '/chat' },
   { id: 'sync', labelKey: 'sidebar.nav.syncStatus', icon: Cloud, to: '/sync' },
 ]
@@ -401,10 +398,7 @@ export function Sidebar() {
     if (organizationId === 'all') {
       setSelectedOrganizationId(null)
       void navigate({
-        to: '/databases',
-        search: {
-          view: currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType,
-        },
+        to: '/repositories',
       })
       return
     }
@@ -542,18 +536,7 @@ export function Sidebar() {
       </>
     )
 
-    const item = link.id === 'data' ? (
-      <SidebarItem asChild active={active} className={denseSidebarItemClass}>
-        <DataLink
-          data-testid={`view-${link.id}${suffix}`}
-          aria-label={t(link.labelKey)}
-          databaseId={selectedDatabaseId}
-          view={currentDatabaseViewType === 'table' ? undefined : currentDatabaseViewType}
-        >
-          {linkContent}
-        </DataLink>
-      </SidebarItem>
-    ) : (
+    const item = (
       <SidebarItem asChild active={active} className={denseSidebarItemClass}>
         <Link data-testid={`view-${link.id}${suffix}`} aria-label={t(link.labelKey)} to={link.to}>
           {linkContent}
@@ -725,11 +708,7 @@ export function Sidebar() {
                       }`}
                       onClick={() => {
                         closeMobileNav()
-                        if (link.id === 'data') {
-                          handleDatabaseSelect(selectedDatabaseId ?? null)
-                        } else {
-                          void navigate({ to: link.to })
-                        }
+                        void navigate({ to: link.to })
                       }}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden="true" />

@@ -110,7 +110,7 @@ impl TryFrom<AddPropertyInput> for domain::PropertyType {
             AddPropertyInput {
                 property_type: PropertyType::Date,
                 ..
-            } => Ok(domain::PropertyType::Date),
+            } => Ok(domain::PropertyType::Date(Default::default())),
             other => {
                 tracing::error!("not supported property type: {:?}", other);
                 Err(errors::Error::invalid("Not supported property type"))

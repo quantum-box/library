@@ -184,6 +184,17 @@ impl PropertyDefinition {
         meta_json: Option<Option<String>>,
     ) -> errors::Result<Self> {
         self.config.ensure_writable()?;
+        if let (
+            ResolvedPropertyConfig::Known(PropertyConfig::Date(current)),
+            Some(PropertyType::Date(updated)),
+        ) = (&self.config, property_type)
+            && current.include_time != updated.include_time
+        {
+            return Err(errors::Error::invalid(
+                "date-only/date-time mode cannot be changed after \
+                 Property creation",
+            ));
+        }
         let property =
             self.to_property()?.update_with_display_name_and_meta_json(
                 name,

@@ -542,7 +542,7 @@ mod tests {
             property(
                 "prop_01hkz3700yt46snfewzpakeyj5",
                 "期限",
-                PropertyType::Date,
+                PropertyType::Date(Default::default()),
             ),
         ]);
 

@@ -14,6 +14,7 @@ import { LibraryPropertyCell, checkboxClassName } from './libraryPropertyCells'
 import { LibraryRelationEditor } from '../../components/libraryTable/LibraryRelationEditor'
 import type { LibraryRelationRecordLoader } from './relationRecords'
 import { t } from '../../i18n'
+import { isDateTimeValue } from '../propertyDateFormat'
 
 const editableFieldClassName =
   'w-full rounded-md border border-primary bg-background px-1.5 py-1 text-sm text-foreground outline-none ring-2 ring-ring/30'
@@ -27,13 +28,14 @@ function EditableTextInput({
   onCancel,
 }: {
   value: string
-  inputType?: 'text' | 'date'
+  inputType?: 'text' | 'date' | 'datetime-local'
   multiline?: boolean
   testId?: string
   onCommit: (next: string) => void
   onCancel: () => void
 }) {
   const [editValue, setEditValue] = useState(value)
+  const [dirty, setDirty] = useState(false)
   const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -42,8 +44,8 @@ function EditableTextInput({
   }, [])
 
   const commit = useCallback(() => {
-    onCommit(editValue)
-  }, [editValue, onCommit])
+    if (dirty) onCommit(editValue)
+  }, [dirty, editValue, onCommit])
 
   if (multiline) {
     return (
@@ -54,7 +56,10 @@ function EditableTextInput({
         data-testid={testId}
         value={editValue}
         rows={Math.min(12, Math.max(2, editValue.split('\n').length))}
-        onChange={(event) => setEditValue(event.target.value)}
+        onChange={(event) => {
+          setDirty(true)
+          setEditValue(event.target.value)
+        }}
         onBlur={commit}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
@@ -78,7 +83,10 @@ function EditableTextInput({
       data-testid={testId}
       type={inputType}
       value={editValue}
-      onChange={(event) => setEditValue(event.target.value)}
+      onChange={(event) => {
+        setDirty(true)
+        setEditValue(event.target.value)
+      }}
       onBlur={commit}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -212,6 +220,9 @@ export function LibraryPropertyEditableCell({
   }
 
   const editText = currentValue ? propertyValueEditText(property, currentValue) ?? '' : ''
+  const useDateTimeInput = property.typ === 'Date'
+    && property.meta?.includeTime === true
+    && (!currentValue?.date || isDateTimeValue(currentValue.date))
 
   const handleCommitRaw = (raw: string) => {
     setEditing(false)
@@ -246,7 +257,9 @@ export function LibraryPropertyEditableCell({
       <EditableTextInput
         value={editText}
         testId={`library-editable-input-${property.id}`}
-        inputType={property.typ === 'Date' ? 'date' : 'text'}
+        inputType={property.typ === 'Date'
+          ? useDateTimeInput ? 'datetime-local' : 'date'
+          : 'text'}
         multiline={isMultilineEditableProperty(property, editText)}
         onCommit={handleCommitRaw}
         onCancel={() => setEditing(false)}

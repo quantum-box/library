@@ -16,7 +16,8 @@ use crate::usecase::{
     GetPropertyInputData,
 };
 use database_manager::domain::{
-    Property as DomainProperty, PropertyType, TypeId,
+    DateFormat, Property as DomainProperty, PropertyType, TimeFormat,
+    TypeDate, TypeId,
 };
 
 fn property_type_from_request(
@@ -25,6 +26,15 @@ fn property_type_from_request(
     if payload.property_type != "id" && payload.auto_generate.is_some() {
         return Err(errors::Error::invalid(
             "auto_generate is only valid for an Id property",
+        ));
+    }
+    if payload.property_type != "date"
+        && (payload.include_time.is_some()
+            || payload.date_format.is_some()
+            || payload.time_format.is_some())
+    {
+        return Err(errors::Error::invalid(
+            "date options are only valid for a Date property",
         ));
     }
 
@@ -44,7 +54,21 @@ fn property_type_from_request(
             })?,
         ))),
         "location" => Ok(PropertyType::Location(Default::default())),
-        "date" => Ok(PropertyType::Date),
+        "date" => Ok(PropertyType::Date(TypeDate {
+            include_time: payload.include_time.unwrap_or(false),
+            date_format: payload
+                .date_format
+                .as_deref()
+                .unwrap_or("locale")
+                .parse::<DateFormat>()
+                .map_err(errors::Error::invalid)?,
+            time_format: payload
+                .time_format
+                .as_deref()
+                .unwrap_or("twenty_four_hour")
+                .parse::<TimeFormat>()
+                .map_err(errors::Error::invalid)?,
+        })),
         "image" => Ok(PropertyType::Image),
         "rich_text" => Ok(PropertyType::RichText),
         "boolean" => Ok(PropertyType::Boolean),
@@ -137,6 +161,9 @@ mod tests {
                 display_name: None,
                 property_type: "id".to_string(),
                 auto_generate: Some(true),
+                include_time: None,
+                date_format: None,
+                time_format: None,
             })
             .expect("Id must be supported by the REST adapter");
 
@@ -155,6 +182,9 @@ mod tests {
             display_name: None,
             property_type: "id".to_string(),
             auto_generate: None,
+            include_time: None,
+            date_format: None,
+            time_format: None,
         })
         .expect_err("Id metadata must not silently default");
 
@@ -173,10 +203,13 @@ mod tests {
                 display_name: None,
                 property_type: "date".to_string(),
                 auto_generate: None,
+                include_time: None,
+                date_format: None,
+                time_format: None,
             })
             .expect("Date must be supported by the REST adapter");
 
-        assert!(matches!(property_type, PropertyType::Date));
+        assert!(matches!(property_type, PropertyType::Date(_)));
     }
 
     #[test]
@@ -186,6 +219,9 @@ mod tests {
             display_name: None,
             property_type: "string".to_string(),
             auto_generate: Some(true),
+            include_time: None,
+            date_format: None,
+            time_format: None,
         })
         .expect_err("Id metadata must not leak into other property types");
 
@@ -335,6 +371,18 @@ fn to_property_response(property: &DomainProperty) -> PropertyResponse {
         options: crate::handler::types::property_select_options(
             property.property_type(),
         ),
+        include_time: match property.property_type() {
+            PropertyType::Date(date) => Some(date.include_time),
+            _ => None,
+        },
+        date_format: match property.property_type() {
+            PropertyType::Date(date) => Some(date.date_format.to_string()),
+            _ => None,
+        },
+        time_format: match property.property_type() {
+            PropertyType::Date(date) => Some(date.time_format.to_string()),
+            _ => None,
+        },
     }
 }
 
