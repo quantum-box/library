@@ -186,6 +186,7 @@ test('generic Yjs relay serves its stored log to joiners and compacts it only in
   await until(async () => (await room())['yjs:snapshot:meta']?.seq === 60, 'log folded')
   assert.equal(Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length, 0)
   a.edit('after')
+  await until(async () => (await room())['yjs:update:000000000061'], 'post-compaction update persisted')
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === `${expected}after`)
 })
 test('clients joining while another edits receive every edit', async (t) => {
