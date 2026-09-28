@@ -27,6 +27,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -226,9 +227,15 @@ export function RepositorySettingsView({
     target.repoUsername,
     target.operatorId ?? null,
   ])
+  const repositoryScopeKeyRef = useRef(repositoryScopeKey)
+  useLayoutEffect(() => {
+    repositoryScopeKeyRef.current = repositoryScopeKey
+  }, [repositoryScopeKey])
   const markWritePermissionDenied = useCallback(() => {
-    setWritePermissionDenied(true)
-  }, [])
+    if (repositoryScopeKeyRef.current === repositoryScopeKey) {
+      setWritePermissionDenied(true)
+    }
+  }, [repositoryScopeKey])
 
   const loadSettings = useCallback(async () => {
     const revision = ++loadRevision.current

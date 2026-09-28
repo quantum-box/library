@@ -4,7 +4,11 @@ import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
 import { RichTextTemplateManager } from '@/app/v1beta/_components/rich-text-template-manager'
 import { useTranslation } from '@/lib/i18n/useTranslation'
 import { convertPropertyData } from '@/app/v1beta/_lib/property-data-converter'
-import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import {
+  ErrorCode,
+  PlatformActionError,
+  platformAction,
+} from '@/app/v1beta/_lib/platform-action'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   DataForDataDetailFragment,
@@ -85,12 +89,18 @@ function NewDataPage() {
         }
       })
       .catch(error => {
-        if (!cancelled) {
-          setCanManageTemplates(false)
-          setTemplatesError(
-            error instanceof Error ? error.message : t.v1beta.richTextTemplates.loadFailed,
-          )
+        if (cancelled) return
+        setCanManageTemplates(false)
+        if (
+          error instanceof PlatformActionError &&
+          error.code === ErrorCode.PERMISSION_DENIED
+        ) {
+          setTemplatesError(null)
+          return
         }
+        setTemplatesError(
+          error instanceof Error ? error.message : t.v1beta.richTextTemplates.loadFailed,
+        )
       })
       .finally(() => {
         if (!cancelled) setTemplatesLoading(false)
