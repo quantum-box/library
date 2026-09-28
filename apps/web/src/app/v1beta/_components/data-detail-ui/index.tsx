@@ -19,7 +19,7 @@ import { ChevronLeft, Loader2, PanelLeft } from 'lucide-react'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useState, useTransition } from 'react'
 import { DataListCard } from './data-list-card'
-import { HtmlSection } from './html-section'
+import { HtmlSection, type RichTextTemplateOption } from './html-section'
 import type { CollaborationConfig } from './html/use-collaboration'
 import { PropertiesSection } from './property-value'
 import { LinearSyncSection } from './linear-sync-section'
@@ -51,6 +51,7 @@ export function DataDetailUi({
 	collaborationWsUrl,
 	collaborationOperatorId,
 	collaborationUserName,
+	richTextTemplates = [],
 }: {
 	data?: DataForDataDetailFragment
 	properties: PropertyForEditorFragment[]
@@ -70,6 +71,7 @@ export function DataDetailUi({
 	collaborationOperatorId?: string
 	/** Display name of the current user. */
 	collaborationUserName?: string
+	richTextTemplates?: RichTextTemplateOption[]
 }) {
 	const { t } = useTranslation()
 	const { toast } = useToast()
@@ -92,6 +94,7 @@ export function DataDetailUi({
 
 	const richTextProperty = useMemo(() => {
 		return (
+			properties.find(property => property.typ === PropertyType.RichText) ??
 			properties.find(property => property.typ === PropertyType.Markdown) ??
 			properties.find(property => property.typ === PropertyType.Html)
 		)
@@ -318,6 +321,7 @@ export function DataDetailUi({
 										onPropertyChange={handleOnChange}
 									/>
 								}
+								richTextTemplates={onlyEdit ? richTextTemplates : undefined}
 							/>
 						)}
 						<LinearSyncSection

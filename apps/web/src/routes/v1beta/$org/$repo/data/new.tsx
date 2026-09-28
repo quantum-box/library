@@ -1,13 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { DataDetailUi } from '@/app/v1beta/_components/data-detail-ui'
+import { RichTextTemplateManager } from '@/app/v1beta/_components/rich-text-template-manager'
+import { useTranslation } from '@/lib/i18n/useTranslation'
 import { convertPropertyData } from '@/app/v1beta/_lib/property-data-converter'
-import { platformAction } from '@/app/v1beta/_lib/platform-action'
+import {
+  ErrorCode,
+  PlatformActionError,
+  platformAction,
+} from '@/app/v1beta/_lib/platform-action'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   DataForDataDetailFragment,
   DataListForDataListCardFragment,
   PropertyForEditorFragment,
+  RichTextTemplate,
 } from '@/gen/graphql'
 import { useEffect, useState } from 'react'
 
@@ -18,8 +25,13 @@ export const Route = createFileRoute('/v1beta/$org/$repo/data/new')({
 function NewDataPage() {
   const { org, repo } = Route.useParams()
   const { session, isLoading: isAuthLoading } = useAuth()
+  const { t } = useTranslation()
   const [properties, setProperties] = useState<PropertyForEditorFragment[]>([])
   const [dataList, setDataList] = useState<DataListForDataListCardFragment>()
+  const [canManageTemplates, setCanManageTemplates] = useState(false)
+  const [richTextTemplates, setRichTextTemplates] = useState<RichTextTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -51,6 +63,52 @@ function NewDataPage() {
 
     fetchEditorData()
   }, [org, repo, session?.user?.accessToken, isAuthLoading])
+
+  useEffect(() => {
+    const accessToken = session?.user?.accessToken
+    setCanManageTemplates(false)
+    setRichTextTemplates([])
+    setTemplatesError(null)
+    if (!accessToken) {
+      setRichTextTemplates([])
+      setTemplatesLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    void platformAction(
+      sdk => sdk.richTextTemplates({ orgUsername: org, repoUsername: repo }),
+      { accessToken },
+    )
+      .then(result => {
+        if (!cancelled) {
+          setRichTextTemplates(result.richTextTemplates)
+          setCanManageTemplates(true)
+        }
+      })
+      .catch(error => {
+        if (cancelled) return
+        setCanManageTemplates(false)
+        if (
+          error instanceof PlatformActionError &&
+          error.code === ErrorCode.PERMISSION_DENIED
+        ) {
+          setTemplatesError(null)
+          return
+        }
+        setTemplatesError(
+          error instanceof Error ? error.message : t.v1beta.richTextTemplates.loadFailed,
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [org, repo, session?.user?.accessToken, t.v1beta.richTextTemplates.loadFailed])
 
   const draftData: DataForDataDetailFragment = {
     __typename: 'Data',
@@ -96,13 +154,32 @@ function NewDataPage() {
   }
 
   return (
-    <DataDetailUi
-      data={draftData}
-      properties={properties}
-      dataList={dataList}
-      onSave={handleSave}
-      onlyEdit
-      viewOnly={!session?.user}
-    />
+    <>
+      {canManageTemplates && session?.user?.accessToken ? (
+        <RichTextTemplateManager
+          org={org}
+          repo={repo}
+          accessToken={session.user.accessToken}
+          templates={richTextTemplates}
+          onTemplatesChange={setRichTextTemplates}
+          loading={templatesLoading}
+          loadError={templatesError}
+        />
+      ) : null}
+      {templatesError && session?.user?.accessToken ? (
+        <p role='alert' className='mx-6 mt-4 text-sm text-destructive'>
+          {templatesError}
+        </p>
+      ) : null}
+      <DataDetailUi
+        data={draftData}
+        properties={properties}
+        dataList={dataList}
+        onSave={handleSave}
+        onlyEdit
+        viewOnly={!session?.user}
+        richTextTemplates={richTextTemplates}
+      />
+    </>
   )
 }

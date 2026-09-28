@@ -45,7 +45,7 @@ function RichTextEditor(props: RichTextEditorProps) {
 	)
 }
 
-type RichTextFormat = 'markdown' | 'html'
+type RichTextFormat = 'markdown' | 'html' | 'richText'
 
 export const HtmlViewAndEditor = ({
 	className,

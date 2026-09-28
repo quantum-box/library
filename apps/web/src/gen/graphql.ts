@@ -1056,6 +1056,7 @@ export type Mutation = {
   deleteProperty: Scalars['String']['output'];
   /** TODO: add English documentation */
   deleteRepo: Scalars['String']['output'];
+  deleteRichTextTemplate: Scalars['Boolean']['output'];
   /** TODO: add English documentation */
   deleteSource: Scalars['String']['output'];
   /** Delete a webhook endpoint. */
@@ -1119,6 +1120,7 @@ export type Mutation = {
   revokeApiKey: Scalars['Boolean']['output'];
   /** Replace a GitHub endpoint signing key. Returned only by this mutation. */
   rotateGithubWebhookSecret: CreateWebhookEndpointOutput;
+  saveRichTextTemplate: RichTextTemplate;
   /** [LIBRARY-API] Seed a tachyon tenant into Library organizations. */
   seedLibraryTenant: SeedLibraryTenantPayload;
   /** Send a test webhook to an endpoint. */
@@ -1152,6 +1154,7 @@ export type Mutation = {
   updateProperty: Property;
   /** TODO: add English documentation */
   updateRepo: Repo;
+  updateRichTextTemplate: RichTextTemplate;
   /** TODO: add English documentation */
   updateSource: Source;
   /** Update webhook endpoint configuration. */
@@ -1285,6 +1288,13 @@ export type MutationDeleteRepoArgs = {
 };
 
 
+export type MutationDeleteRichTextTemplateArgs = {
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
+  templateId: Scalars['String']['input'];
+};
+
+
 export type MutationDeleteSourceArgs = {
   orgUsername: Scalars['String']['input'];
   repoUsername: Scalars['String']['input'];
@@ -1390,6 +1400,11 @@ export type MutationRotateGithubWebhookSecretArgs = {
 };
 
 
+export type MutationSaveRichTextTemplateArgs = {
+  input: RichTextTemplateInput;
+};
+
+
 export type MutationSeedLibraryTenantArgs = {
   tenantId: Scalars['String']['input'];
 };
@@ -1458,6 +1473,12 @@ export type MutationUpdatePropertyArgs = {
 
 export type MutationUpdateRepoArgs = {
   input: UpdateRepoInput;
+};
+
+
+export type MutationUpdateRichTextTemplateArgs = {
+  input: RichTextTemplateInput;
+  templateId: Scalars['String']['input'];
 };
 
 
@@ -1567,12 +1588,14 @@ export enum PermissionSource {
 export type Property = {
   __typename?: 'Property';
   databaseId: Scalars['String']['output'];
+  /** Human-readable label shown in the user interface. */
+  displayName: Scalars['String']['output'];
   id: Scalars['String']['output'];
   isIndexed: Scalars['Boolean']['output'];
   /** TODO: add English documentation */
   meta?: Maybe<PropertyTypeMeta>;
+  /** Stable key used by API clients to identify this Property. */
   name: Scalars['String']['output'];
-  displayName: Scalars['String']['output'];
   propertyNum: Scalars['Int']['output'];
   tenantId: Scalars['String']['output'];
   /**
@@ -1611,9 +1634,15 @@ export type PropertyDataValueInputData =
   |  { boolean?: never; date?: never; html?: never; image?: never; integer?: never; location?: never; markdown?: never; multiSelect?: never; relation?: never; richText?: never; select?: never; string: Scalars['String']['input']; };
 
 export type PropertyInput = {
+  /** Human-readable label shown in the user interface; defaults to the key. */
   displayName?: InputMaybe<Scalars['String']['input']>;
   meta?: InputMaybe<PropertyMetaInput>;
   orgUsername: Scalars['String']['input'];
+  /**
+   * Stable key used by API clients to identify this Property. It must start
+   * with an ASCII letter and contain only ASCII letters, digits,
+   * underscores, or hyphens, up to 64 characters.
+   */
   propertyName: Scalars['String']['input'];
   propertyType: PropertyType;
   repoUsername: Scalars['String']['input'];
@@ -1687,6 +1716,11 @@ export type Query = {
    * that created them.
    */
   apiKeys: Array<PublicApiKey>;
+  /**
+   * Check repository visibility without making one authorization failure
+   * null out sibling results in a batched GraphQL query.
+   */
+  canViewRepo: Scalars['Boolean']['output'];
   /** Get a single connection by ID. */
   connection?: Maybe<GqlConnection>;
   /** Get all connections for a tenant. */
@@ -1733,6 +1767,7 @@ export type Query = {
   outboundDeliveries: Array<GqlOutboundDelivery>;
   properties: Array<Property>;
   repo: Repo;
+  richTextTemplates: Array<RichTextTemplate>;
   source: Source;
   /** Get a single sync operation by ID. */
   syncOperation?: Maybe<GqlSyncOperation>;
@@ -1752,6 +1787,12 @@ export type Query = {
 
 export type QueryApiKeysArgs = {
   orgUsername: Scalars['String']['input'];
+};
+
+
+export type QueryCanViewRepoArgs = {
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
 };
 
 
@@ -1872,6 +1913,12 @@ export type QueryPropertiesArgs = {
 
 
 export type QueryRepoArgs = {
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
+};
+
+
+export type QueryRichTextTemplatesArgs = {
   orgUsername: Scalars['String']['input'];
   repoUsername: Scalars['String']['input'];
 };
@@ -2018,6 +2065,21 @@ export type RevokeApiKeyInput = {
   apiKeyId: Scalars['String']['input'];
   /** Organization that owns the key. */
   organizationUsername: Scalars['String']['input'];
+};
+
+export type RichTextTemplate = {
+  __typename?: 'RichTextTemplate';
+  id: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  richText: Scalars['String']['output'];
+};
+
+export type RichTextTemplateInput = {
+  name: Scalars['String']['input'];
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
+  /** Serialized RichText block document JSON. */
+  richText: Scalars['String']['input'];
 };
 
 export type RichTextValue = {
@@ -2380,6 +2442,38 @@ export type AddDataMutationVariables = Exact<{
 
 
 export type AddDataMutation = { __typename?: 'Mutation', addData: { __typename?: 'Data', id: string, name: string, propertyData: Array<{ __typename?: 'PropertyData', propertyId: string, value: { __typename?: 'BooleanValue' } | { __typename?: 'DateValue', date: string } | { __typename?: 'HtmlValue', html: string } | { __typename?: 'IdValue', id: string } | { __typename?: 'ImageValue', url: string } | { __typename?: 'IntegerValue', number: string } | { __typename?: 'LocationValue', latitude: number, longitude: number } | { __typename?: 'MarkdownValue', markdown: string } | { __typename?: 'MultiSelectValue', optionIds: Array<string> } | { __typename?: 'RelationValue', databaseId: string, dataIds: Array<string> } | { __typename?: 'RichTextValue', richText: string, markdown: string } | { __typename?: 'SelectValue', optionId: string } | { __typename?: 'StringValue', string: string } }> } };
+
+export type RichTextTemplatesQueryVariables = Exact<{
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
+}>;
+
+
+export type RichTextTemplatesQuery = { __typename?: 'Query', richTextTemplates: Array<{ __typename?: 'RichTextTemplate', id: string, name: string, richText: string }> };
+
+export type SaveRichTextTemplateMutationVariables = Exact<{
+  input: RichTextTemplateInput;
+}>;
+
+
+export type SaveRichTextTemplateMutation = { __typename?: 'Mutation', saveRichTextTemplate: { __typename?: 'RichTextTemplate', id: string, name: string, richText: string } };
+
+export type UpdateRichTextTemplateMutationVariables = Exact<{
+  templateId: Scalars['String']['input'];
+  input: RichTextTemplateInput;
+}>;
+
+
+export type UpdateRichTextTemplateMutation = { __typename?: 'Mutation', updateRichTextTemplate: { __typename?: 'RichTextTemplate', id: string, name: string, richText: string } };
+
+export type DeleteRichTextTemplateMutationVariables = Exact<{
+  orgUsername: Scalars['String']['input'];
+  repoUsername: Scalars['String']['input'];
+  templateId: Scalars['String']['input'];
+}>;
+
+
+export type DeleteRichTextTemplateMutation = { __typename?: 'Mutation', deleteRichTextTemplate: boolean };
 
 export type RepoOgpMetaQueryVariables = Exact<{
   org: Scalars['String']['input'];
@@ -3407,6 +3501,42 @@ export const AddDataDocument = gql`
   }
 }
     ${DataForDataDetailFragmentDoc}`;
+export const RichTextTemplatesDocument = gql`
+    query richTextTemplates($orgUsername: String!, $repoUsername: String!) {
+  richTextTemplates(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+    id
+    name
+    richText
+  }
+}
+    `;
+export const SaveRichTextTemplateDocument = gql`
+    mutation saveRichTextTemplate($input: RichTextTemplateInput!) {
+  saveRichTextTemplate(input: $input) {
+    id
+    name
+    richText
+  }
+}
+    `;
+export const UpdateRichTextTemplateDocument = gql`
+    mutation updateRichTextTemplate($templateId: String!, $input: RichTextTemplateInput!) {
+  updateRichTextTemplate(templateId: $templateId, input: $input) {
+    id
+    name
+    richText
+  }
+}
+    `;
+export const DeleteRichTextTemplateDocument = gql`
+    mutation deleteRichTextTemplate($orgUsername: String!, $repoUsername: String!, $templateId: String!) {
+  deleteRichTextTemplate(
+    orgUsername: $orgUsername
+    repoUsername: $repoUsername
+    templateId: $templateId
+  )
+}
+    `;
 export const RepoOgpMetaDocument = gql`
     query repoOgpMeta($org: String!, $repo: String!) {
   repo(orgUsername: $org, repoUsername: $repo) {
@@ -3897,6 +4027,18 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     addData(variables: AddDataMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<AddDataMutation> {
       return withWrapper((wrappedRequestHeaders) => client.request<AddDataMutation>(AddDataDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'addData', 'mutation');
     },
+    richTextTemplates(variables: RichTextTemplatesQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<RichTextTemplatesQuery> {
+      return withWrapper((wrappedRequestHeaders) => client.request<RichTextTemplatesQuery>(RichTextTemplatesDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'richTextTemplates', 'query');
+    },
+    saveRichTextTemplate(variables: SaveRichTextTemplateMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<SaveRichTextTemplateMutation> {
+      return withWrapper((wrappedRequestHeaders) => client.request<SaveRichTextTemplateMutation>(SaveRichTextTemplateDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'saveRichTextTemplate', 'mutation');
+    },
+    updateRichTextTemplate(variables: UpdateRichTextTemplateMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<UpdateRichTextTemplateMutation> {
+      return withWrapper((wrappedRequestHeaders) => client.request<UpdateRichTextTemplateMutation>(UpdateRichTextTemplateDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'updateRichTextTemplate', 'mutation');
+    },
+    deleteRichTextTemplate(variables: DeleteRichTextTemplateMutationVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<DeleteRichTextTemplateMutation> {
+      return withWrapper((wrappedRequestHeaders) => client.request<DeleteRichTextTemplateMutation>(DeleteRichTextTemplateDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'deleteRichTextTemplate', 'mutation');
+    },
     repoOgpMeta(variables: RepoOgpMetaQueryVariables, requestHeaders?: GraphQLClientRequestHeaders): Promise<RepoOgpMetaQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<RepoOgpMetaQuery>(RepoOgpMetaDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'repoOgpMeta', 'query');
     },
@@ -4345,10 +4487,10 @@ export function PropertyDataValueInputDataSchema(): z.ZodObject<Properties<Prope
 
 export function PropertyInputSchema(): z.ZodObject<Properties<PropertyInput>> {
   return z.object({
+    displayName: z.string().nullish(),
     meta: z.lazy(() => PropertyMetaInputSchema().nullish()),
     orgUsername: z.string().min(1),
     propertyName: z.string().min(1),
-    displayName: z.string().min(1).nullish(),
     propertyType: PropertyTypeSchema,
     repoUsername: z.string().min(1)
   })
@@ -4384,6 +4526,15 @@ export function RevokeApiKeyInputSchema(): z.ZodObject<Properties<RevokeApiKeyIn
   return z.object({
     apiKeyId: z.string().min(1),
     organizationUsername: z.string().min(1)
+  })
+}
+
+export function RichTextTemplateInputSchema(): z.ZodObject<Properties<RichTextTemplateInput>> {
+  return z.object({
+    name: z.string().min(1),
+    orgUsername: z.string().min(1),
+    repoUsername: z.string().min(1),
+    richText: z.string().min(1)
   })
 }
 

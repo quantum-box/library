@@ -217,6 +217,23 @@ pub struct Repo {
     pub policies: Vec<RepoPolicy>,
 }
 
+#[derive(SimpleObject, Debug, Clone)]
+pub struct RichTextTemplate {
+    pub id: String,
+    pub name: String,
+    pub rich_text: String,
+}
+
+impl From<domain::RichTextTemplate> for RichTextTemplate {
+    fn from(template: domain::RichTextTemplate) -> Self {
+        Self {
+            id: template.id().to_string(),
+            name: template.name().clone(),
+            rich_text: template.rich_text().clone(),
+        }
+    }
+}
+
 #[derive(async_graphql::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyType {
     String,

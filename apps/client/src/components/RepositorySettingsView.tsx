@@ -27,6 +27,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -41,6 +42,7 @@ import {
 import { ExternalSyncSection } from './ExternalSyncSection'
 import { RepositoryAccessSection } from './RepositoryAccessSection'
 import { RepositoryPropertiesSection } from './RepositoryPropertiesSection'
+import { RichTextTemplatesSection } from './RichTextTemplatesSection'
 import { RepositoryTabs } from './RepositoryTabs'
 import { useI18n, t as translate } from '../i18n'
 
@@ -220,6 +222,20 @@ export function RepositorySettingsView({
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const repositoryPath = `${organization}/${repository}`
+  const repositoryScopeKey = JSON.stringify([
+    target.orgUsername,
+    target.repoUsername,
+    target.operatorId ?? null,
+  ])
+  const repositoryScopeKeyRef = useRef(repositoryScopeKey)
+  useLayoutEffect(() => {
+    repositoryScopeKeyRef.current = repositoryScopeKey
+  }, [repositoryScopeKey])
+  const markWritePermissionDenied = useCallback(() => {
+    if (repositoryScopeKeyRef.current === repositoryScopeKey) {
+      setWritePermissionDenied(true)
+    }
+  }, [repositoryScopeKey])
 
   const loadSettings = useCallback(async () => {
     const revision = ++loadRevision.current
@@ -542,6 +558,13 @@ export function RepositorySettingsView({
               repositoryId={settings.repository.id}
               operatorId={operatorId}
               readOnly={writePermissionDenied}
+            />
+
+            <RichTextTemplatesSection
+              key={repositoryScopeKey}
+              target={target}
+              readOnly={writePermissionDenied}
+              onPermissionDenied={markWritePermissionDenied}
             />
 
             <section

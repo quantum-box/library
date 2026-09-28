@@ -342,6 +342,37 @@ impl LibraryQuery {
         Ok(output.repo.into())
     }
 
+    #[tracing::instrument(
+        name = "library_rich_text_templates",
+        skip(self, ctx)
+    )]
+    async fn rich_text_templates(
+        &self,
+        ctx: &Context<'_>,
+        org_username: String,
+        repo_username: String,
+    ) -> Result<Vec<RichTextTemplate>> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+        app.list_rich_text_templates
+            .execute(&usecase::ListRichTextTemplatesInputData {
+                executor,
+                multi_tenancy,
+                org_username,
+                repo_username,
+            })
+            .await
+            .map(|templates| {
+                templates.into_iter().map(Into::into).collect()
+            })
+            .map_err(|error| {
+                super::log_graphql_operation_error("library_query", &error);
+                error.extend()
+            })
+    }
+
     /// Check repository visibility without making one authorization failure
     /// null out sibling results in a batched GraphQL query.
     #[tracing::instrument(name = "library_can_view_repo", skip(self, ctx))]

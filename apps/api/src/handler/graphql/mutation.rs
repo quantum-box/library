@@ -4,7 +4,8 @@ use super::input;
 use super::model::{
     ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, GlobalIdMapping,
     Operator, Organization, PersonalSpace, Property, PropertyType,
-    PublicApiKey, Repo, SeedLibraryTenantPayload, Source, SyncResult, User,
+    PublicApiKey, Repo, RichTextTemplate, SeedLibraryTenantPayload, Source,
+    SyncResult, User,
 };
 use crate::app::LibraryApp;
 use crate::domain::{library_repo_owner_policy_id, library_user_policy_id};
@@ -181,6 +182,89 @@ impl LibraryMutation {
     #[tracing::instrument(name = "health_check", skip_all)]
     async fn check(&self) -> String {
         "ok".to_string()
+    }
+
+    #[tracing::instrument(
+        name = "save_rich_text_template",
+        skip(self, ctx)
+    )]
+    async fn save_rich_text_template(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        input: input::RichTextTemplateInput,
+    ) -> Result<RichTextTemplate> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        ctx.data::<Arc<LibraryApp>>()?
+            .save_rich_text_template
+            .execute(&usecase::SaveRichTextTemplateInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username,
+                repo_username: input.repo_username,
+                name: input.name,
+                rich_text: input.rich_text,
+            })
+            .await
+            .map(Into::into)
+            .map_err(|error| error.extend())
+    }
+
+    #[tracing::instrument(
+        name = "update_rich_text_template",
+        skip(self, ctx)
+    )]
+    async fn update_rich_text_template(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        template_id: String,
+        input: input::RichTextTemplateInput,
+    ) -> Result<RichTextTemplate> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        ctx.data::<Arc<LibraryApp>>()?
+            .update_rich_text_template
+            .execute(&usecase::UpdateRichTextTemplateInputData {
+                executor,
+                multi_tenancy,
+                org_username: input.org_username,
+                repo_username: input.repo_username,
+                template_id,
+                name: input.name,
+                rich_text: input.rich_text,
+            })
+            .await
+            .map(Into::into)
+            .map_err(|error| error.extend())
+    }
+
+    #[tracing::instrument(
+        name = "delete_rich_text_template",
+        skip(self, ctx)
+    )]
+    async fn delete_rich_text_template(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        org_username: String,
+        repo_username: String,
+        template_id: String,
+    ) -> Result<bool> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        ctx.data::<Arc<LibraryApp>>()?
+            .delete_rich_text_template
+            .execute(&usecase::DeleteRichTextTemplateInputData {
+                executor,
+                multi_tenancy,
+                org_username,
+                repo_username,
+                template_id,
+            })
+            .await
+            .map_err(|error| error.extend())
     }
 
     /// [AUTH] Verify the token and return the user
