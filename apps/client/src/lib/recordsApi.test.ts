@@ -855,6 +855,7 @@ describe('recordsApi', () => {
         id: 'org-1',
         operatorName: 'quantum-box',
         platformTenantId: 'platform-1',
+        isPersonalSpace: false,
         repos: [
           {
             id: 'repo-1',
