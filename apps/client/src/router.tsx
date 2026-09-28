@@ -696,21 +696,21 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
 
 function AuthenticatedWorkspaceRoot() {
   const [createModalOpen, setCreateModalOpenState] = useState(false)
-  const [createModalLocationKey, setCreateModalLocationKey] = useState<string | null>(null)
+  const [createModalOriginPath, setCreateModalOriginPath] = useState<string | null>(null)
   const location = useRouterState({ select: (state) => state.location })
-  const locationKeyRef = useRef(location.key)
-  locationKeyRef.current = location.key
+  const locationPathnameRef = useRef(location.pathname)
+  locationPathnameRef.current = location.pathname
   const setCreateModalOpen = useCallback((open: boolean) => {
     setCreateModalOpenState(open)
-    setCreateModalLocationKey(open ? locationKeyRef.current : null)
+    setCreateModalOriginPath(open ? locationPathnameRef.current : null)
   }, [])
-  const createModalOpenAtCurrentLocation = createModalOpen && createModalLocationKey === location.key
+  const createModalOpenAtCurrentLocation = createModalOpen && createModalOriginPath === location.pathname
 
   useLayoutEffect(() => {
-    if (createModalOpen && createModalLocationKey !== location.key) {
+    if (createModalOpen && createModalOriginPath !== location.pathname) {
       setCreateModalOpen(false)
     }
-  }, [createModalLocationKey, createModalOpen, location.key, setCreateModalOpen])
+  }, [createModalOriginPath, createModalOpen, location.pathname, setCreateModalOpen])
 
   const {
     shortcutsOpen,
