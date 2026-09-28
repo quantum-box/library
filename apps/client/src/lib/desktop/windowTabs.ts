@@ -73,10 +73,10 @@ export function listenWindowTabsChanged(onChange: () => void) {
 const STATIC_TITLE_KEYS: Record<string, MessageKey> = {
   home: 'sidebar.nav.home',
   repositories: 'sidebar.repositories.heading',
-  databases: 'sidebar.nav.allData',
+  databases: 'repository.tab.data',
   chat: 'sidebar.nav.askLibrary',
   sync: 'sidebar.nav.syncStatus',
-  kanban: 'palette.nav.board.label',
+  kanban: 'viewTabs.board',
 }
 
 const REPOSITORY_SECTION_TITLE_KEYS: Record<string, MessageKey> = {
@@ -105,10 +105,10 @@ export function tabTitleForPath(pathname: string): string {
 
   const [first, second, third] = segments
 
-  if (first === 'databases' && second === 'board') return t('palette.nav.board.label')
-  if (first === 'databases' && second === 'workflow') return t('palette.nav.workflow.label')
+  if (first === 'databases' && second === 'board') return t('viewTabs.board')
+  if (first === 'databases' && second === 'workflow') return t('viewTabs.workflow')
   if (segments.length === 1 && first in STATIC_TITLE_KEYS) return t(STATIC_TITLE_KEYS[first])
-  if (first === 'databases') return t('sidebar.nav.allData')
+  if (first === 'databases') return t('repository.tab.data')
 
   if (first === 'organizations' && second) return second
   if (first === 'public' && second && third) {

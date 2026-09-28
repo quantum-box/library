@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   Bot,
   CalendarRange,
@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspaceDatabases } from '../contexts/DatabasesContext'
 import { useDatabaseRecords } from '../contexts/RecordsContext'
 import type { DatabaseRecord } from '../data/mock'
-import { navigateToData } from '../lib/ui/dataLocation'
+import { databaseIdFromLocation, navigateToData } from '../lib/ui/dataLocation'
 import type { DatabaseViewType } from '../lib/databaseViews/types'
 import { useI18n } from '../i18n'
 import { useDialogFocus } from './useDialogFocus'
@@ -50,9 +50,20 @@ function recordRepositoryId(
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const navigate = useNavigate()
+  const { pathname, search } = useRouterState({
+    select: (state) => ({
+      pathname: state.location.pathname,
+      search: state.location.search,
+    }),
+  })
   const { t } = useI18n()
   const { records } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
+  const isDatabaseViewPath = /^\/[^/]+\/[^/]+\/data(?:\/|$)/.test(pathname)
+    || /^\/databases(?:\/|$)/.test(pathname)
+  const scopedDatabaseId = isDatabaseViewPath
+    ? databaseIdFromLocation(pathname, (search as { database?: string }).database)
+    : undefined
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -63,9 +74,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   const items = useMemo<PaletteItem[]>(() => {
     const databaseView = (type: DatabaseViewType) => () => {
-      void navigate({
-        to: '/databases',
-        search: type === 'table' ? {} : { view: type },
+      if (!scopedDatabaseId) return
+      void navigateToData(navigate, scopedDatabaseId, {
+        view: type === 'table' ? undefined : type,
       })
     }
 
@@ -77,38 +88,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: Home,
         keywords: t('palette.nav.home.keywords'),
         run: () => void navigate({ to: '/home' }),
-      },
-      {
-        id: 'nav-table',
-        label: t('palette.nav.table.label'),
-        detail: t('palette.nav.table.detail'),
-        icon: Table2,
-        keywords: t('palette.nav.table.keywords'),
-        run: databaseView('table'),
-      },
-      {
-        id: 'nav-board',
-        label: t('palette.nav.board.label'),
-        detail: t('palette.nav.board.detail'),
-        icon: KanbanSquare,
-        keywords: t('palette.nav.board.keywords'),
-        run: databaseView('board'),
-      },
-      {
-        id: 'nav-workflow',
-        label: t('palette.nav.workflow.label'),
-        detail: t('palette.nav.workflow.detail'),
-        icon: Network,
-        keywords: t('palette.nav.workflow.keywords'),
-        run: databaseView('workflow'),
-      },
-      {
-        id: 'nav-timeline',
-        label: t('palette.nav.timeline.label'),
-        detail: t('palette.nav.timeline.detail'),
-        icon: CalendarRange,
-        keywords: t('palette.nav.timeline.keywords'),
-        run: databaseView('timeline'),
       },
       {
         id: 'nav-chat',
@@ -127,6 +106,42 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         run: () => void navigate({ to: '/sync' }),
       },
     ]
+    const databaseViewItems: PaletteItem[] = scopedDatabaseId
+      ? [
+          {
+            id: 'nav-table',
+            label: t('repository.tab.data'),
+            detail: t('palette.nav.table.detail'),
+            icon: Table2,
+            keywords: t('palette.nav.table.keywords'),
+            run: databaseView('table'),
+          },
+          {
+            id: 'nav-board',
+            label: t('palette.nav.repository.board.label'),
+            detail: t('palette.nav.board.detail'),
+            icon: KanbanSquare,
+            keywords: t('palette.nav.board.keywords'),
+            run: databaseView('board'),
+          },
+          {
+            id: 'nav-workflow',
+            label: t('palette.nav.repository.workflow.label'),
+            detail: t('palette.nav.workflow.detail'),
+            icon: Network,
+            keywords: t('palette.nav.workflow.keywords'),
+            run: databaseView('workflow'),
+          },
+          {
+            id: 'nav-timeline',
+            label: t('palette.nav.repository.timeline.label'),
+            detail: t('palette.nav.timeline.detail'),
+            icon: CalendarRange,
+            keywords: t('palette.nav.timeline.keywords'),
+            run: databaseView('timeline'),
+          },
+        ]
+      : []
 
     const repositoryItems = databases.map<PaletteItem>((database) => ({
       id: `repository-${database.id}`,
@@ -164,8 +179,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     })
 
-    return [...navigationItems, ...repositoryItems, ...recordItems]
-  }, [databases, navigate, records, t])
+    return [...navigationItems.slice(0, 1), ...databaseViewItems, ...navigationItems.slice(1), ...repositoryItems, ...recordItems]
+  }, [databases, navigate, records, scopedDatabaseId, t])
 
   const results = useMemo(() => {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)

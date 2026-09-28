@@ -34,9 +34,9 @@ describe('databaseIdFromLocation', () => {
 })
 
 describe('isDataListPath', () => {
-  it('matches all-data and repo data list paths but not detail pages', () => {
-    expect(isDataListPath('/databases')).toBe(true)
-    expect(isDataListPath('/databases/')).toBe(true)
+  it('matches repo data list paths but not legacy aggregate or detail pages', () => {
+    expect(isDataListPath('/databases')).toBe(false)
+    expect(isDataListPath('/databases/')).toBe(false)
     expect(isDataListPath('/quantum-box/library/data')).toBe(true)
     expect(isDataListPath('/quantum-box/library/data/rec-1')).toBe(false)
     expect(isDataListPath('/databases/rec-1')).toBe(false)
@@ -83,5 +83,8 @@ describe('navigateToData', () => {
       search: { database: undefined },
       replace: undefined,
     })
+
+    navigateToData(navigate as never, undefined, {})
+    expect(navigate).toHaveBeenLastCalledWith({ to: '/repositories', replace: undefined })
   })
 })
