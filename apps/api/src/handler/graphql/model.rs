@@ -278,7 +278,13 @@ impl From<database_manager::domain::Property> for Property {
                     }))
                 }
                 database_manager::domain::PropertyType::Location(_) => None,
-                database_manager::domain::PropertyType::Date => None,
+                database_manager::domain::PropertyType::Date(date) => {
+                    Some(PropertyTypeMeta::Date(DateType {
+                        include_time: date.include_time,
+                        date_format: date.date_format.to_string(),
+                        time_format: date.time_format.to_string(),
+                    }))
+                }
                 database_manager::domain::PropertyType::Image => None,
                 database_manager::domain::PropertyType::RichText => None,
                 database_manager::domain::PropertyType::Boolean => None,
@@ -323,7 +329,7 @@ impl From<database_manager::domain::PropertyType> for PropertyType {
             database_manager::domain::PropertyType::Location(_) => {
                 Self::Location
             }
-            database_manager::domain::PropertyType::Date => Self::Date,
+            database_manager::domain::PropertyType::Date(_) => Self::Date,
             database_manager::domain::PropertyType::Image => Self::Image,
             database_manager::domain::PropertyType::RichText => {
                 Self::RichText
@@ -341,7 +347,15 @@ pub enum PropertyTypeMeta {
     Select(SelectType),
     MultiSelect(MultiSelectType),
     Id(IdType),
+    Date(DateType),
     Json(JsonType),
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct DateType {
+    pub include_time: bool,
+    pub date_format: String,
+    pub time_format: String,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -565,7 +579,7 @@ pub struct LocationValue {
 
 #[derive(SimpleObject, Debug, Clone)]
 pub struct DateValue {
-    /// Date in ISO 8601 format (YYYY-MM-DD)
+    /// Date as YYYY-MM-DD, or a date-time as canonical UTC RFC 3339.
     pub date: String,
 }
 

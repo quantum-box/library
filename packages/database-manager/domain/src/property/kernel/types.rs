@@ -1,5 +1,5 @@
 use crate::{
-    DataId, DatabaseId, SelectItemId, TypeId, TypeLocation,
+    DataId, DatabaseId, SelectItemId, TypeDate, TypeId, TypeLocation,
     TypeMultiSelect, TypeRelation, TypeSelect,
 };
 use serde::{Deserialize, Serialize};
@@ -255,7 +255,7 @@ pub enum PropertyConfig {
     MultiSelect(TypeMultiSelect),
     Id(TypeId),
     Location(TypeLocation),
-    Date,
+    Date(TypeDate),
     Image,
     RichText,
     Boolean,
@@ -273,7 +273,7 @@ impl PropertyConfig {
             Self::MultiSelect(_) => PropertyKind::MultiSelect,
             Self::Id(_) => PropertyKind::Id,
             Self::Location(_) => PropertyKind::Location,
-            Self::Date => PropertyKind::Date,
+            Self::Date(_) => PropertyKind::Date,
             Self::Image => PropertyKind::Image,
             Self::RichText => PropertyKind::RichText,
             Self::Boolean => PropertyKind::Boolean,

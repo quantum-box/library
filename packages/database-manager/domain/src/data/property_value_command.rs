@@ -108,8 +108,8 @@ impl PropertyValueCommand {
             (PropertyType::Location(_), Self::Location(value)) => {
                 PropertyDataValue::Location(value)
             }
-            (PropertyType::Date, Self::Date(value)) => {
-                PropertyDataValue::Date(value)
+            (PropertyType::Date(_), Self::Date(value)) => {
+                PropertyDataValue::new(&value, property.property_type())?
             }
             (PropertyType::Image, Self::Image(value)) => {
                 PropertyDataValue::Image(value)
@@ -230,7 +230,7 @@ mod tests {
                 PropertyValueCommand::Id(String::new()),
             ),
             (
-                PropertyType::Date,
+                PropertyType::Date(Default::default()),
                 PropertyValueCommand::Date(String::new()),
             ),
             (

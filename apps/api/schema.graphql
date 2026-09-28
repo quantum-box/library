@@ -316,9 +316,15 @@ scalar DateTime
 
 type DateValue {
 	"""
-	Date in ISO 8601 format (YYYY-MM-DD)
+	Date as YYYY-MM-DD, or a date-time as canonical UTC RFC 3339.
 	"""
 	date: String!
+}
+
+type DateType {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
 }
 
 """
@@ -1806,6 +1812,9 @@ input PropertyDataValueInputData @oneOf {
 	select: String
 	multiSelect: [String!]
 	location: Location
+	"""
+	YYYY-MM-DD or RFC 3339 date-time; date-times are normalized to UTC.
+	"""
 	date: String
 	image: String
 	"""
@@ -1872,9 +1881,19 @@ input PropertyMetaInput @oneOf {
 	"""
 	id: Boolean
 	"""
+	Date/time behavior and display formats.
+	"""
+	date: DateTypeInput
+	"""
 	TODO: add English documentation
 	"""
 	json: String
+}
+
+input DateTypeInput {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
 }
 
 enum PropertyType {
@@ -1896,7 +1915,7 @@ enum PropertyType {
 	BOOLEAN
 }
 
-union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | JsonType
+union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | DateType | JsonType
 
 type PublicApiKey {
 	id: String!

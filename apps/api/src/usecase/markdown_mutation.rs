@@ -299,7 +299,7 @@ fn input_value(
             database_manager::domain::rich_text::from_markdown(&text())
                 .to_string(),
         ),
-        PropertyType::Date => PropertyDataValueInputData::Date(text()),
+        PropertyType::Date(_) => PropertyDataValueInputData::Date(text()),
         PropertyType::Image => PropertyDataValueInputData::Image(text()),
         PropertyType::Select(select) => PropertyDataValueInputData::Select(
             select_option_id(select.items(), &text()),
@@ -765,7 +765,13 @@ mod tests {
             (fixture.property("slug", PropertyType::String), "v1-shipped"),
             (fixture.property("count", PropertyType::Integer), "3"),
             (fixture.property("done", PropertyType::Boolean), "true"),
-            (fixture.property("due", PropertyType::Date), "2026-09-07"),
+            (
+                fixture.property(
+                    "due",
+                    PropertyType::Date(Default::default()),
+                ),
+                "2026-09-07",
+            ),
             (
                 fixture.property("cover", PropertyType::Image),
                 "https://example.test/cover.png",

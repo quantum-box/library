@@ -3,6 +3,13 @@ import {
   libraryGraphqlHeaders,
 } from './libraryGraphql'
 import { t } from '../i18n'
+import {
+  DEFAULT_DATE_PROPERTY_OPTIONS,
+  normalizeDatePropertyOptions,
+  type DatePropertyOptions,
+  type DateFormat,
+  type TimeFormat,
+} from './propertyDateFormat'
 
 export const repositoryPropertyTypes = [
   'STRING',
@@ -29,11 +36,14 @@ export interface RepositoryPropertyOption {
 }
 
 export interface RepositoryPropertyMeta {
-  __typename?: 'IdType' | 'JsonType' | 'MultiSelectType' | 'RelationType' | 'SelectType'
+  __typename?: 'DateType' | 'IdType' | 'JsonType' | 'MultiSelectType' | 'RelationType' | 'SelectType'
   autoGenerate?: boolean
   databaseId?: string
   json?: string
   options?: RepositoryPropertyOption[]
+  includeTime?: boolean
+  dateFormat?: DateFormat
+  timeFormat?: TimeFormat
 }
 
 export interface RepositoryPropertyDefinition {
@@ -80,6 +90,7 @@ export interface RepositoryPropertyDraft {
   }>
   relationDatabaseId?: string
   autoGenerateId?: boolean
+  dateOptions?: DatePropertyOptions
 }
 
 export interface RepositoryMetadataUpdate {
@@ -169,6 +180,7 @@ const repositorySettingsQuery = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
@@ -187,6 +199,7 @@ const addRepositoryPropertyMutation = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
@@ -205,6 +218,7 @@ const updateRepositoryPropertyMutation = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
@@ -398,6 +412,17 @@ function propertyInput(
     meta = { relation: databaseId }
   } else if (draft.type === 'ID') {
     meta = { id: draft.autoGenerateId ?? false }
+  } else if (draft.type === 'DATE') {
+    const options = normalizeDatePropertyOptions(
+      draft.dateOptions ?? DEFAULT_DATE_PROPERTY_OPTIONS,
+    )
+    meta = {
+      date: {
+        includeTime: options.includeTime,
+        dateFormat: options.dateFormat,
+        timeFormat: options.timeFormat,
+      },
+    }
   }
 
   return {

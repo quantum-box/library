@@ -73,6 +73,7 @@ pub enum PropertyDataValue {
     Select(String),
     MultiSelect(Vec<String>),
     Location(Location),
+    /// YYYY-MM-DD or RFC 3339 date-time; responses use canonical UTC.
     Date(String),
     Image(String),
     /// A block document, carried as JSON text.
@@ -147,6 +148,16 @@ pub struct PropertyResponse {
     /// every other property type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<PropertySelectOptionResponse>>,
+    /// Whether new values for a Date property can include a time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_time: Option<bool>,
+    /// Display format: locale, month_day_year, day_month_year, or
+    /// year_month_day.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_format: Option<String>,
+    /// Display time format: twelve_hour or twenty_four_hour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_format: Option<String>,
 }
 
 /// One choice of a `SELECT` or `MULTI_SELECT` property.
@@ -261,6 +272,15 @@ pub struct AddPropertyRequest {
     pub property_type: String,
     #[serde(default)]
     pub auto_generate: Option<bool>,
+    /// Enable time input and storage for a Date property.
+    #[serde(default)]
+    pub include_time: Option<bool>,
+    /// Date display format for a Date property.
+    #[serde(default)]
+    pub date_format: Option<String>,
+    /// Time display format for a Date property.
+    #[serde(default)]
+    pub time_format: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
