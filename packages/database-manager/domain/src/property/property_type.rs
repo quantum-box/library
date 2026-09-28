@@ -142,8 +142,16 @@ pub struct TypeLocation {
 }
 
 #[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, Display,
-    Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -156,8 +164,16 @@ pub enum DateFormat {
 }
 
 #[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, Display,
-    Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

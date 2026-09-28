@@ -13,7 +13,7 @@ pub enum PropertyDataValue {
     Location(Location),
     Select(SelectItemId),
     MultiSelect(Vec<SelectItemId>),
-    Date(String),  // YYYY-MM-DD or canonical UTC RFC 3339 date-time
+    Date(String), // YYYY-MM-DD or canonical UTC RFC 3339 date-time
     Image(String), // Image URL
     /// A block document, stored as the editor's own JSON.
     RichText(serde_json::Value),
@@ -317,6 +317,11 @@ impl PropertyDataValue {
         if input.is_empty() {
             return Err(errors::Error::business_logic(
                 "Date value cannot be empty",
+            ));
+        }
+        if input.starts_with("0000-") {
+            return Err(errors::Error::business_logic(
+                "Date year must be greater than 0000",
             ));
         }
         if chrono::NaiveDate::parse_from_str(input, "%Y-%m-%d").is_ok() {
@@ -749,11 +754,10 @@ mod unit {
             "2024-02-29",
         ];
         for date_str in leap_years {
-            let result =
-                PropertyDataValue::new(
-                    date_str,
-                    &PropertyType::Date(Default::default()),
-                );
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_ok(),
                 "Leap year date '{}' should be valid, but got error: {:?}",
@@ -771,11 +775,10 @@ mod unit {
             "2100-02-29",
         ];
         for date_str in non_leap_years {
-            let result =
-                PropertyDataValue::new(
-                    date_str,
-                    &PropertyType::Date(Default::default()),
-                );
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_err(),
                 "Non-leap year date '{}' should be invalid, but got success: {:?}",
@@ -803,11 +806,10 @@ mod unit {
             "2023-12-31",
         ];
         for date_str in valid_month_ends {
-            let result =
-                PropertyDataValue::new(
-                    date_str,
-                    &PropertyType::Date(Default::default()),
-                );
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_ok(),
                 "Month end date '{}' should be valid, but got error: {:?}",
@@ -832,11 +834,10 @@ mod unit {
             "2023-12-32",
         ];
         for date_str in invalid_dates {
-            let result =
-                PropertyDataValue::new(
-                    date_str,
-                    &PropertyType::Date(Default::default()),
-                );
+            let result = PropertyDataValue::new(
+                date_str,
+                &PropertyType::Date(Default::default()),
+            );
             assert!(
                 result.is_err(),
                 "Invalid date '{}' should be rejected, but got success: {:?}",

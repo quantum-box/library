@@ -181,9 +181,7 @@ impl BuiltinPropertyTypeHandler {
             (
                 PropertyConfig::Date(config),
                 PropertyDataValue::Date(value),
-            ) => {
-                validate_date(value, config.include_time)
-            }
+            ) => validate_date(value, config.include_time),
             (PropertyConfig::Image, PropertyDataValue::Image(value)) => {
                 validate_max_bytes(value, 2_048, "Image URL")
             }

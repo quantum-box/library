@@ -329,7 +329,7 @@ function PropertyEditorDialog({
             <DatePropertyOptionsFields
               options={dateOptions}
               disabled={busy}
-              modeDisabled={state.mode === 'edit'}
+              modeDisabled={state.mode === 'edit' && property?.typ === 'DATE'}
               onChange={setDateOptions}
             />
           ) : null}

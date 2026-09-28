@@ -537,8 +537,7 @@ impl Predicate {
                                     && value.as_bytes().get(10)
                                         == Some(&b'T'))
                         })
-                    })
-                        && min.as_ref().is_none_or(|min| value >= min)
+                    }) && min.as_ref().is_none_or(|min| value >= min)
                         && max.as_ref().is_none_or(|max| value <= max)
                 }
                 _ => false,

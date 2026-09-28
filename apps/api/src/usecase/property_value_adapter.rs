@@ -111,9 +111,7 @@ pub(crate) fn property_value_command(
         (
             PropertyType::Date(_),
             PropertyDataValueInputData::Date(value),
-        ) => {
-            string_or_clear(value, PropertyValueCommand::Date)
-        }
+        ) => string_or_clear(value, PropertyValueCommand::Date),
         (PropertyType::Image, PropertyDataValueInputData::Image(value)) => {
             string_or_clear(value, PropertyValueCommand::Image)
         }

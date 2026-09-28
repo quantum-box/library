@@ -2208,13 +2208,11 @@ fn property_to_mcp(property: &Property) -> McpProperty {
         display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
         meta: match property.property_type() {
-            database_manager::domain::PropertyType::Date(_) => {
-                property
-                    .property_type()
-                    .get_meta()
-                    .ok()
-                    .filter(|meta| !meta.is_null())
-            }
+            database_manager::domain::PropertyType::Date(_) => property
+                .property_type()
+                .get_meta()
+                .ok()
+                .filter(|meta| !meta.is_null()),
             _ => property
                 .meta_json()
                 .as_deref()

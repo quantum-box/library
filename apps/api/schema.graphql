@@ -314,17 +314,23 @@ The input/output is a string in RFC3339 format.
 """
 scalar DateTime
 
+type DateType {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
+}
+
+input DateTypeInput {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
+}
+
 type DateValue {
 	"""
 	Date as YYYY-MM-DD, or a date-time as canonical UTC RFC 3339.
 	"""
 	date: String!
-}
-
-type DateType {
-	includeTime: Boolean!
-	dateFormat: String!
-	timeFormat: String!
 }
 
 """
@@ -1888,12 +1894,6 @@ input PropertyMetaInput @oneOf {
 	TODO: add English documentation
 	"""
 	json: String
-}
-
-input DateTypeInput {
-	includeTime: Boolean!
-	dateFormat: String!
-	timeFormat: String!
 }
 
 enum PropertyType {
