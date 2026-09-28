@@ -148,6 +148,10 @@ function stubRepository(rows: typeof items) {
       const query = body.query ?? ''
       const variables = body.variables ?? {}
 
+      if (query.includes('LibraryClientCanDeleteData')) {
+        return jsonResponse({ data: { canDeleteData: true } })
+      }
+
       if (query.includes('addProperty')) {
         created += 1
         const property = {

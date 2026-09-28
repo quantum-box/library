@@ -8,6 +8,7 @@ import type { LibraryDataItem, LibraryProperty } from '../lib/recordsApi'
 const mocks = vi.hoisted(() => ({
   fetchLibraryDataDetail: vi.fn(),
   fetchLibraryRepoTableData: vi.fn(),
+  canDeleteLibraryData: vi.fn(() => Promise.resolve(true)),
   updateLibraryData: vi.fn(),
   deleteLibraryData: vi.fn(),
 }))
@@ -22,6 +23,7 @@ vi.mock('../lib/recordsApi', () => ({
   },
   fetchLibraryDataDetail: mocks.fetchLibraryDataDetail,
   fetchLibraryRepoTableData: mocks.fetchLibraryRepoTableData,
+  canDeleteLibraryData: mocks.canDeleteLibraryData,
   libraryDataToRecord: () => ({ identifier: '' }),
 }))
 
@@ -181,7 +183,7 @@ describe('DataEditorPage', () => {
     const detail = deferredDetail()
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Delete data' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Delete data' })).toBeDisabled()
     expect(screen.getByTestId('data-editor-share')).toBeDisabled()
     expect(screen.getByTestId('record-attach-file')).toBeDisabled()
 

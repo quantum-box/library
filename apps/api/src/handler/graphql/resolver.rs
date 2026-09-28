@@ -33,6 +33,53 @@ impl LibraryQuery {
         Ok("test".to_string())
     }
 
+    /// Whether this caller may delete Library data in the active tenant.
+    /// Keep this decision aligned with the policy checked by `delete_data`.
+    #[tracing::instrument(
+        name = "library_can_delete_data",
+        skip(self, ctx)
+    )]
+    async fn can_delete_data(&self, ctx: &Context<'_>) -> bool {
+        let executor = match ctx.data::<tachyon_sdk::auth::Executor>() {
+            Ok(executor) => executor,
+            Err(_) => return false,
+        };
+        let multi_tenancy =
+            match ctx.data::<tachyon_sdk::auth::MultiTenancy>() {
+                Ok(multi_tenancy) => multi_tenancy,
+                Err(_) => return false,
+            };
+        let auth_app =
+            match ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>() {
+                Ok(auth_app) => auth_app,
+                Err(_) => return false,
+            };
+        let outcomes = match auth_app
+            .evaluate_policies_batch(
+                &tachyon_sdk::auth::EvaluatePoliciesBatchInput {
+                    executor,
+                    multi_tenancy,
+                    actions: &[crate::usecase::DELETE_DATA_ACTION],
+                },
+            )
+            .await
+        {
+            Ok(outcomes) => outcomes,
+            Err(error) => {
+                super::log_graphql_operation_error(
+                    "library_can_delete_data",
+                    &error,
+                );
+                return false;
+            }
+        };
+
+        outcomes.iter().any(|outcome| {
+            outcome.action == crate::usecase::DELETE_DATA_ACTION
+                && outcome.allowed
+        })
+    }
+
     #[tracing::instrument(name = "library_me", skip(self, ctx))]
     async fn me(&self, ctx: &Context<'_>) -> Result<User> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
