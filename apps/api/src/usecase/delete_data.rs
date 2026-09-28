@@ -3,6 +3,8 @@ use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 use crate::usecase::{DeleteDataInputData, DeleteDataInputPort};
 use std::sync::Arc;
 
+pub const DELETE_DATA_ACTION: &str = "library:DeleteData";
+
 #[derive(Clone, Debug)]
 pub struct DeleteData {
     get_org_by_username:
@@ -43,7 +45,7 @@ impl DeleteDataInputPort for DeleteData {
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
                 multi_tenancy: input.multi_tenancy,
-                action: "library:DeleteData",
+                action: DELETE_DATA_ACTION,
             })
             .await?;
 

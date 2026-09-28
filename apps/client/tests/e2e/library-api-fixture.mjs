@@ -479,6 +479,10 @@ function updateProperty(id, input = {}) {
 }
 
 function graphqlResponse(query, variables) {
+  if (query.includes('LibraryClientCanDeleteData')) {
+    return { canDeleteData: true }
+  }
+
   if (query.includes('LibraryClientMeOrganizations')) {
     return {
       me: {

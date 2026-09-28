@@ -42,6 +42,7 @@ import { GitHubImportDialog } from './github-import-dialog'
 import { LinearImportDialog } from './linear-import-dialog'
 import { GitHubSettings } from './github-settings'
 import { OrganizationForm } from './organization-edit-form'
+import { OrganizationAccessManagement } from './organization-access-management'
 
 export interface OrganizationPageUiProps {
 	org: string
@@ -49,6 +50,8 @@ export interface OrganizationPageUiProps {
 	isViewOnly: boolean
 	hasLinearConnection: boolean
 	tenantId: string
+	currentUserId?: string
+	onMemberRoleChanged: (userId: string, role: DefaultRole) => void
 	organization: {
 		name: string
 		username: string
@@ -97,6 +100,8 @@ export function OrganizationPageUi({
 	isViewOnly,
 	hasLinearConnection,
 	tenantId,
+	currentUserId,
+	onMemberRoleChanged,
 	organization,
 	onSubmit,
 	apiKeyListSlot,
@@ -529,6 +534,13 @@ export function OrganizationPageUi({
 														/>
 													</CardContent>
 												</Card>
+
+												<OrganizationAccessManagement
+													tenantId={tenantId}
+													members={organization.users}
+													currentUserId={currentUserId}
+													onMemberRoleChanged={onMemberRoleChanged}
+												/>
 
 												<GitHubSettings org={org} />
 

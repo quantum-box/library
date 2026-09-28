@@ -29,6 +29,7 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
+  canDeleteLibraryData,
   fetchLibraryRepoTableData,
   libraryPageSize,
   normalizeLibraryPropertyType,
@@ -146,6 +147,7 @@ function LibraryDataCard({
   properties,
   selected,
   disabled,
+  canDelete,
   onSelect,
   onDelete,
 }: {
@@ -153,6 +155,7 @@ function LibraryDataCard({
   properties: LibraryProperty[]
   selected: boolean
   disabled: boolean
+  canDelete: boolean
   onSelect: () => void
   onDelete: () => void
 }) {
@@ -191,19 +194,21 @@ function LibraryDataCard({
         <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
           {item.name}
         </span>
-        <button
-          type="button"
-          data-testid={`library-table-delete-${item.id}`}
-          className="-my-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded-md text-subtle-foreground hover:bg-destructive/10 hover:text-destructive"
-          disabled={disabled}
-          aria-label={t('repoSettings.deleteNamed', { name: item.name })}
-          onClick={(event) => {
-            event.stopPropagation()
-            onDelete()
-          }}
-        >
-          <Trash2 className="size-4" aria-hidden="true" />
-        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            data-testid={`library-table-delete-${item.id}`}
+            className="-my-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded-md text-subtle-foreground hover:bg-destructive/10 hover:text-destructive"
+            disabled={disabled}
+            aria-label={t('repoSettings.deleteNamed', { name: item.name })}
+            onClick={(event) => {
+              event.stopPropagation()
+              onDelete()
+            }}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       {shownProperties.length > 0 && (
@@ -245,7 +250,12 @@ type TableSource = 'none' | 'cached' | 'listed'
  * own remembered rows -- or from nothing -- rather than from the last one's.
  */
 export function LibraryTableView(props: LibraryTableViewProps) {
-  return <RepositoryTable key={`${props.databaseId ?? ''}:${props.org}/${props.repo}`} {...props} />
+  return (
+    <RepositoryTable
+      key={`${props.databaseId ?? ''}:${props.org}/${props.repo}:${props.operatorId ?? ''}`}
+      {...props}
+    />
+  )
 }
 
 function RepositoryTable({
@@ -335,6 +345,7 @@ function RepositoryTable({
   const [saving, setSaving] = useState(false)
   const [creatingRow, setCreatingRow] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<LibraryDataItem | null>(null)
+  const [canDeleteData, setCanDeleteData] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
@@ -349,6 +360,16 @@ function RepositoryTable({
     () => ({ org, repo, operatorId, repoName: repoLabel }),
     [org, repo, operatorId, repoLabel]
   )
+
+  useEffect(() => {
+    let cancelled = false
+    void canDeleteLibraryData(operatorId).then((allowed) => {
+      if (!cancelled) setCanDeleteData(allowed)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [operatorId])
 
   /** What the Property mutations address: the repository, by username. */
   const propertyTarget = useMemo(
@@ -594,7 +615,7 @@ function RepositoryTable({
   }, [createRequested, handleCreateRow, onCreateRequestHandled])
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!pendingDelete) return
+    if (!canDeleteData || !pendingDelete) return
     setDeleteBusy(true)
     setDeleteError(null)
     try {
@@ -610,7 +631,7 @@ function RepositoryTable({
     } finally {
       setDeleteBusy(false)
     }
-  }, [cacheTarget, onDataDeleted, pendingDelete, repoTarget])
+  }, [cacheTarget, canDeleteData, onDataDeleted, pendingDelete, repoTarget])
 
   /** Row writes, which a remembered row may not make; see `TableSource`. */
   const rowWritesLocked = saving || stale
@@ -795,31 +816,35 @@ function RepositoryTable({
 
   const columns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'actions',
-        header: '',
-        size: ACTIONS_COLUMN_WIDTH,
-        enableSorting: false,
-        // The delete icon stays out of the way until the row is under the
-        // pointer: one on every row reads as clutter, and as a hazard.
-        cell: ({ row }) => (
-          <button
-            type="button"
-            data-testid={`library-table-delete-${row.original.id}`}
-            className="flex size-6 items-center justify-center rounded text-subtle-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
-            disabled={rowWritesLocked}
-            title={t('libraryTable.deleteRow')}
-            aria-label={t('repoSettings.deleteNamed', { name: row.original.name })}
-            onClick={(event) => {
-              event.stopPropagation()
-              setPendingDelete(row.original)
-              setDeleteError(null)
-            }}
-          >
-            <Trash2 className="size-3.5" aria-hidden="true" />
-          </button>
-        ),
-      }),
+      ...(canDeleteData
+        ? [
+            columnHelper.display({
+              id: 'actions',
+              header: '',
+              size: ACTIONS_COLUMN_WIDTH,
+              enableSorting: false,
+              // The delete icon stays out of the way until the row is under the
+              // pointer: one on every row reads as clutter, and as a hazard.
+              cell: ({ row }) => (
+                <button
+                  type="button"
+                  data-testid={`library-table-delete-${row.original.id}`}
+                  className="flex size-6 items-center justify-center rounded text-subtle-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+                  disabled={rowWritesLocked}
+                  title={t('libraryTable.deleteRow')}
+                  aria-label={t('repoSettings.deleteNamed', { name: row.original.name })}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setPendingDelete(row.original)
+                    setDeleteError(null)
+                  }}
+                >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                </button>
+              ),
+            }),
+          ]
+        : []),
       columnHelper.accessor('name', {
         id: 'name',
         header: t('apiKeys.nameLabel'),
@@ -908,6 +933,7 @@ function RepositoryTable({
       }),
     ],
     [
+      canDeleteData,
       columnWidth,
       formatDate,
       handleNameCommit,
@@ -951,7 +977,7 @@ function RepositoryTable({
    */
   const tableMinWidth = useMemo(
     () =>
-      ACTIONS_COLUMN_WIDTH +
+      (canDeleteData ? ACTIONS_COLUMN_WIDTH : 0) +
       columnWidth('name', 260) +
       shownProperties.reduce(
         (total, property) => total + columnWidth(property.id, defaultColumnWidth(property)),
@@ -959,7 +985,7 @@ function RepositoryTable({
       ) +
       columnWidth('updatedAt', 120) +
       ADD_COLUMN_WIDTH,
-    [columnWidth, shownProperties]
+    [canDeleteData, columnWidth, shownProperties]
   )
 
   /**
@@ -1150,6 +1176,7 @@ function RepositoryTable({
                     properties={properties}
                     selected={row.original.id === selectedDataId}
                     disabled={rowWritesLocked}
+                    canDelete={canDeleteData}
                     onSelect={() => onSelectData(row.original)}
                     onDelete={() => {
                       setPendingDelete(row.original)
