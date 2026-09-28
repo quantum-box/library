@@ -59,7 +59,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { t } = useI18n()
   const { records } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
-  const scopedDatabaseId = /^\/[^/]+\/[^/]+\/data(?:\/|$)/.test(pathname)
+  const isDatabaseViewPath = /^\/[^/]+\/[^/]+\/data(?:\/|$)/.test(pathname)
+    || /^\/databases(?:\/|$)/.test(pathname)
+  const scopedDatabaseId = isDatabaseViewPath
     ? databaseIdFromLocation(pathname, (search as { database?: string }).database)
     : undefined
   const [query, setQuery] = useState('')
