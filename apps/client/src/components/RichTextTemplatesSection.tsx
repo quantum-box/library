@@ -11,7 +11,7 @@ import {
   Label,
 } from '@tachyon-sdk/native-ui'
 import { FileText, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createRichTextTemplate,
   deleteRichTextTemplate,
@@ -45,22 +45,30 @@ export function RichTextTemplatesSection({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const loadRevision = useRef(0)
 
   const load = useCallback(async () => {
+    const revision = ++loadRevision.current
     setLoading(true)
     setError(null)
     try {
-      setTemplates(await fetchRichTextTemplates(target))
+      const nextTemplates = await fetchRichTextTemplates(target)
+      if (revision !== loadRevision.current) return
+      setTemplates(nextTemplates)
     } catch (cause) {
+      if (revision !== loadRevision.current) return
       if (isRepositoryPermissionError(cause)) onPermissionDenied?.()
       setError(cause instanceof Error ? cause.message : t('richTextTemplates.loadFailed'))
     } finally {
-      setLoading(false)
+      if (revision === loadRevision.current) setLoading(false)
     }
   }, [onPermissionDenied, t, target])
 
   useEffect(() => {
     void load()
+    return () => {
+      loadRevision.current += 1
+    }
   }, [load])
 
   const startNew = () => {

@@ -221,6 +221,11 @@ export function RepositorySettingsView({
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const repositoryPath = `${organization}/${repository}`
+  const repositoryScopeKey = JSON.stringify([
+    target.orgUsername,
+    target.repoUsername,
+    target.operatorId ?? null,
+  ])
   const markWritePermissionDenied = useCallback(() => {
     setWritePermissionDenied(true)
   }, [])
@@ -549,6 +554,7 @@ export function RepositorySettingsView({
             />
 
             <RichTextTemplatesSection
+              key={repositoryScopeKey}
               target={target}
               readOnly={writePermissionDenied}
               onPermissionDenied={markWritePermissionDenied}
