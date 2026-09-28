@@ -705,15 +705,14 @@ function AuthenticatedWorkspaceRoot() {
   }, [])
   const createModalOpenAtCurrentLocation = createModalOpen && createModalOriginPath === location.pathname
 
+  if (createModalOpen && createModalOriginPath !== location.pathname) {
+    setCreateModalOpenState(false)
+    setCreateModalOriginPath(null)
+  }
+
   useLayoutEffect(() => {
     locationPathnameRef.current = location.pathname
   }, [location.pathname])
-
-  useLayoutEffect(() => {
-    if (createModalOpen && createModalOriginPath !== location.pathname) {
-      setCreateModalOpen(false)
-    }
-  }, [createModalOriginPath, createModalOpen, location.pathname, setCreateModalOpen])
 
   const {
     shortcutsOpen,
