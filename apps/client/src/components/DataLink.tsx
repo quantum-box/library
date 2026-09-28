@@ -10,8 +10,8 @@ type DataLinkProps = {
 
 /**
  * Links to a data view using the clean URL scheme: repo-backed databases get
- * GitHub-style paths (/$org/$repo/data), everything else falls back to
- * /databases search params.
+ * GitHub-style paths (/$org/$repo/data), legacy repository ids fall back to
+ * /databases search params, and unscoped navigation opens the repository list.
  */
 export function DataLink({ databaseId, view, recordId, ...rest }: DataLinkProps) {
   const repo = splitRepoDatabaseId(databaseId)
@@ -46,5 +46,8 @@ export function DataLink({ databaseId, view, recordId, ...rest }: DataLinkProps)
       />
     )
   }
-  return <Link to="/databases" search={{ ...search, database: databaseId }} {...rest} />
+  if (databaseId) {
+    return <Link to="/databases" search={{ ...search, database: databaseId }} {...rest} />
+  }
+  return <Link to="/repositories" {...rest} />
 }

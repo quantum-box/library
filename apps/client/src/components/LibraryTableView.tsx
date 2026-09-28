@@ -56,6 +56,7 @@ import {
   type RichTextTemplate,
   type RepositoryPropertyType,
 } from '../lib/repositorySettingsApi'
+import type { DatePropertyOptions } from '../lib/propertyDateFormat'
 import { addLibraryData, deleteLibraryData, updateLibraryData } from '../lib/libraryTable/libraryDataCrud'
 import {
   forgetData,
@@ -131,6 +132,8 @@ interface LibraryTableViewProps {
   repoLabel?: string
   /** The repository's immutable id, which names its cached table when known. */
   databaseId?: string
+  /** Changes when this repository's shared record projection changes. */
+  recordsRevision?: string
   selectedDataId?: string | null
   onSelectData: (item: LibraryDataItem) => void
   /** Called with a blank record the moment "New" has created it, so the
@@ -279,6 +282,7 @@ function RepositoryTable({
   operatorId,
   repoLabel,
   databaseId,
+  recordsRevision,
   selectedDataId,
   onSelectData,
   onDataCreated,
@@ -305,6 +309,8 @@ function RepositoryTable({
   const [source, setSourceState] = useState<TableSource>(cachedTable ? 'cached' : 'none')
   /** Read where a callback needs the source as of now, not as of its render. */
   const sourceRef = useRef(source)
+  const recordsRevisionRef = useRef(recordsRevision)
+  const pendingRecordsRefreshRef = useRef(false)
   const setSource = useCallback((next: TableSource) => {
     sourceRef.current = next
     setSourceState(next)
@@ -552,6 +558,30 @@ function RepositoryTable({
     void reload()
   }, [reload])
 
+  // The repository listing comes from the Library API, while records created
+  // in another tab first arrive through the shared Yjs projection. Refresh
+  // only this repository's listing when that projection changes.
+  useEffect(() => {
+    if (recordsRevision === undefined) return
+    if (recordsRevisionRef.current === undefined) {
+      recordsRevisionRef.current = recordsRevision
+      return
+    }
+    if (recordsRevisionRef.current === recordsRevision) return
+    recordsRevisionRef.current = recordsRevision
+    if (sourceRef.current !== 'listed') {
+      pendingRecordsRefreshRef.current = true
+      return
+    }
+    void reload()
+  }, [recordsRevision, reload])
+
+  useEffect(() => {
+    if (source !== 'listed' || !pendingRecordsRefreshRef.current) return
+    pendingRecordsRefreshRef.current = false
+    void reload()
+  }, [reload, source])
+
   useEffect(() => {
     const handleAuthChange = () => {
       void reload()
@@ -695,13 +725,18 @@ function RepositoryTable({
   )
 
   const handleCreateProperty = useCallback(
-    async (name: string, displayName: string, type: RepositoryPropertyType) => {
+    async (
+      name: string,
+      displayName: string,
+      type: RepositoryPropertyType,
+      dateOptions?: DatePropertyOptions,
+    ) => {
       setPropertyBusy(true)
       setPropertyError(null)
       try {
         const created = await createRepositoryProperty(
           propertyTarget,
-          newPropertyDraft(name, type, displayName),
+          newPropertyDraft(name, type, displayName, dateOptions),
         )
         setProperties((current) => [
           ...current,
@@ -713,15 +748,34 @@ function RepositoryTable({
             // The two Property shapes disagree about whether an option carries
             // an id: the settings API models one that has not been saved yet,
             // and a Property coming back from the server always has.
-            meta: created.meta?.options
+            meta: created.meta
               ? {
-                  options: created.meta.options
-                    .filter((option) => Boolean(option.id))
-                    .map((option) => ({
-                      id: option.id as string,
-                      key: option.key,
-                      name: option.name,
-                    })),
+                  ...(created.meta.options
+                    ? {
+                        options: created.meta.options
+                          .filter((option) => Boolean(option.id))
+                          .map((option) => ({
+                            id: option.id as string,
+                            key: option.key,
+                            name: option.name,
+                          })),
+                      }
+                    : {}),
+                  ...(typeof created.meta.autoGenerate === 'boolean'
+                    ? { autoGenerate: created.meta.autoGenerate }
+                    : {}),
+                  ...(created.meta.databaseId
+                    ? { databaseId: created.meta.databaseId }
+                    : {}),
+                  ...(typeof created.meta.includeTime === 'boolean'
+                    ? { includeTime: created.meta.includeTime }
+                    : {}),
+                  ...(created.meta.dateFormat
+                    ? { dateFormat: created.meta.dateFormat }
+                    : {}),
+                  ...(created.meta.timeFormat
+                    ? { timeFormat: created.meta.timeFormat }
+                    : {}),
                 }
               : null,
           },
@@ -1134,6 +1188,9 @@ function RepositoryTable({
               ? <RefreshCw className="animate-spin" aria-hidden="true" />
               : <Plus aria-hidden="true" />}
             {t('data.new')}
+            <span className="hidden md:inline-flex">
+              <Kbd className="border-white/25 bg-white/15 text-white shadow-none">C</Kbd>
+            </span>
           </Button>
         </div>
       </div>

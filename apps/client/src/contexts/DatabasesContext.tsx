@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import {
   createLibraryOrganization,
+  createLibraryPersonalSpace,
   createLibraryRepository,
   fetchLibraryOrganizations,
   fetchLibraryRepositories,
@@ -37,6 +38,7 @@ export interface WorkspaceOrganization {
   id: string
   label: string
   platformTenantId: string
+  isPersonalSpace?: boolean
 }
 
 interface DatabasesContextValue {
@@ -48,6 +50,7 @@ interface DatabasesContextValue {
   setSelectedOrganizationId: (organizationId: string | null) => void
   refreshRepositories: () => Promise<void>
   createOrganization: (name: string, username: string) => Promise<WorkspaceOrganization>
+  createPersonalSpace: () => Promise<WorkspaceOrganization>
   importOrganization: (tenantId: string) => Promise<WorkspaceOrganization>
   createRepository: (
     organizationId: string,
@@ -89,6 +92,7 @@ function orgToWorkspaceOrganization(org: LibraryOrganization): WorkspaceOrganiza
     id: org.id,
     label: org.operatorName,
     platformTenantId: org.platformTenantId,
+    isPersonalSpace: org.isPersonalSpace,
   }
 }
 
@@ -99,7 +103,7 @@ function uniqueOrganizations(orgs: LibraryOrganization[]): WorkspaceOrganization
     if (seen.has(key)) return []
     seen.add(key)
     return [orgToWorkspaceOrganization(org)]
-  })
+  }).sort((a, b) => Number(Boolean(b.isPersonalSpace)) - Number(Boolean(a.isPersonalSpace)))
 }
 
 /**
@@ -293,19 +297,34 @@ export function DatabasesProvider({
     })
   }, [])
 
-  const adoptOrganization = useCallback(async (created: CreatedLibraryOrganization) => {
+  const adoptOrganization = useCallback(async (
+    created: CreatedLibraryOrganization,
+    isPersonalSpace = false,
+  ) => {
     await refreshRepositories()
     const organization = {
       id: created.id,
       label: created.username,
       platformTenantId: '',
+      isPersonalSpace,
     }
     rememberCreated({
-      organization: { id: created.id, operatorName: created.username, platformTenantId: '', repos: [] },
+      organization: {
+        id: created.id,
+        operatorName: created.username,
+        platformTenantId: '',
+        repos: [],
+        isPersonalSpace,
+      },
     })
-    setOrganizations((current) => current.some((candidate) => candidate.id === created.id)
-      ? current
-      : [...current, organization])
+    setOrganizations((current) => {
+      const existing = current.some((candidate) => candidate.id === created.id)
+      return existing
+        ? current.map((candidate) => candidate.id === created.id
+          ? { ...candidate, ...organization, isPersonalSpace: candidate.isPersonalSpace || isPersonalSpace }
+          : candidate)
+        : [...current, organization]
+    })
     setSelectedOrganizationId(created.id)
     return organization
   }, [refreshRepositories, rememberCreated, setSelectedOrganizationId])
@@ -315,6 +334,12 @@ export function DatabasesProvider({
       adoptOrganization(await createLibraryOrganization({ name, username })),
     [adoptOrganization],
   )
+
+  const createPersonalSpace = useCallback(async () => {
+    const existing = organizations.find((organization) => organization.isPersonalSpace)
+    if (existing) return existing
+    return adoptOrganization(await createLibraryPersonalSpace(), true)
+  }, [adoptOrganization, organizations])
 
   const importOrganization = useCallback(
     async (tenantId: string) => adoptOrganization(await importLibraryTenant(tenantId)),
@@ -473,6 +498,7 @@ export function DatabasesProvider({
       setSelectedOrganizationId,
       refreshRepositories,
       createOrganization,
+      createPersonalSpace,
       importOrganization,
       createRepository,
       deleteRepository,
@@ -486,6 +512,7 @@ export function DatabasesProvider({
       canRemoveDatabase,
       databases,
       createOrganization,
+      createPersonalSpace,
       importOrganization,
       createRepository,
       deleteRepository,

@@ -188,7 +188,7 @@ fn fixtures() -> Vec<ContractFixture> {
                 true, false, true, true,
             ),
             expected_references: vec![],
-            config: PropertyConfig::Date,
+            config: PropertyConfig::Date(Default::default()),
             value: PropertyDataValue::Date("2024-02-29".to_string()),
         },
         ContractFixture {
@@ -630,7 +630,7 @@ fn representative_builtin_values_have_deterministic_ordering() {
         PropertyDataValue::Integer(42),
     );
     assert_ordered(
-        PropertyConfig::Date,
+        PropertyConfig::Date(Default::default()),
         PropertyDataValue::Date("2024-02-28".to_string()),
         PropertyDataValue::Date("2024-02-29".to_string()),
     );

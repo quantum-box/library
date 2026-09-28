@@ -43,6 +43,7 @@ import {
   storeAuthTokens,
 } from './auth'
 import { t } from '../i18n'
+import type { DateFormat, TimeFormat } from './propertyDateFormat'
 
 export { getLibraryDataPropertyValue, propertyValueText } from './libraryTable/libraryPropertyFormat'
 
@@ -104,6 +105,9 @@ export interface LibraryProperty {
     options?: LibrarySelectOption[]
     autoGenerate?: boolean
     databaseId?: string
+    includeTime?: boolean
+    dateFormat?: DateFormat
+    timeFormat?: TimeFormat
   } | null
 }
 
@@ -266,6 +270,7 @@ export interface LibraryOrganization {
   operatorName: string
   platformTenantId: string
   repos: LibraryRepository[]
+  isPersonalSpace?: boolean
 }
 
 interface LibraryMeOrganizationsResponse {
@@ -273,6 +278,11 @@ interface LibraryMeOrganizationsResponse {
     id: string
     email?: string | null
     tenantIdList?: string[]
+    personalSpace?: {
+      id: string
+      name: string
+      username: string
+    } | null
     organizations: LibraryOrganization[]
   } | null
 }
@@ -296,8 +306,16 @@ export interface CreatedLibraryOrganization {
   username: string
 }
 
+export interface CreatedLibraryPersonalSpace extends CreatedLibraryOrganization {
+  isPersonalSpace: true
+}
+
 interface LibraryCreateOrganizationResponse {
   createOrganization: CreatedLibraryOrganization
+}
+
+interface LibraryCreatePersonalSpaceResponse {
+  createPersonalSpace: CreatedLibraryOrganization
 }
 
 /**
@@ -391,6 +409,9 @@ interface LibraryRestPropertyResponse {
   auto_generate?: boolean
   database_id?: string
   options?: LibrarySelectOption[]
+  include_time?: boolean
+  date_format?: DateFormat
+  time_format?: TimeFormat
 }
 
 export interface LibraryRepoTableData {
@@ -528,6 +549,7 @@ const libraryRepoDataQuery = `
         typ
         meta {
           ... on IdType { autoGenerate }
+          ... on DateType { includeTime dateFormat timeFormat }
           ... on RelationType { databaseId }
           ... on SelectType {
             options { id key name }
@@ -549,6 +571,7 @@ const libraryPropertiesQuery = `
       displayName
       typ
       meta {
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
         }
@@ -582,6 +605,11 @@ const libraryMeOrganizationsQuery = `
       id
       email
       tenantIdList
+      personalSpace {
+        id
+        name
+        username
+      }
       organizations {
         id
         operatorName
@@ -604,6 +632,16 @@ const libraryMeTenantListQuery = `
 const libraryCreateOrganizationMutation = `
   mutation LibraryClientCreateOrganization($input: CreateOrganizationInput!) {
     createOrganization(input: $input) {
+      id
+      name
+      username
+    }
+  }
+`
+
+const libraryCreatePersonalSpaceMutation = `
+  mutation LibraryClientCreatePersonalSpace {
+    createPersonalSpace {
       id
       name
       username
@@ -683,6 +721,7 @@ const libraryDataDetailQuery = `
       displayName
       typ
       meta {
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
         }
@@ -1538,7 +1577,11 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
     // The API already returns only what Library treats as an organization.
     // Narrowing it again by platform here dropped every tenant adopted from
     // Tachyon, because an adopted tenant keeps the platform it came from.
-    const organizations = payload.me?.organizations ?? []
+    const personalSpaceId = payload.me?.personalSpace?.id
+    const organizations = (payload.me?.organizations ?? []).map((organization) => ({
+      ...organization,
+      isPersonalSpace: Boolean(personalSpaceId && organization.id === personalSpaceId),
+    }))
 
     return Promise.all(
       organizations.map(async (organization) => {
@@ -1606,6 +1649,14 @@ export async function createLibraryOrganization(
     }
   )
   return payload.createOrganization
+}
+
+export async function createLibraryPersonalSpace(): Promise<CreatedLibraryPersonalSpace> {
+  const payload = await requestLibraryGraphQL<LibraryCreatePersonalSpaceResponse>(
+    libraryCreatePersonalSpaceMutation,
+    {}
+  )
+  return { ...payload.createPersonalSpace, isPersonalSpace: true }
 }
 
 export async function fetchLibraryAccessibleTenants(): Promise<LibraryAccessibleTenant[]> {
@@ -1827,6 +1878,15 @@ function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): L
       : {}),
     ...(typeof property.database_id === 'string'
       ? { databaseId: property.database_id }
+      : {}),
+    ...(typeof property.include_time === 'boolean'
+      ? { includeTime: property.include_time }
+      : {}),
+    ...(typeof property.date_format === 'string'
+      ? { dateFormat: property.date_format as DateFormat }
+      : {}),
+    ...(typeof property.time_format === 'string'
+      ? { timeFormat: property.time_format as TimeFormat }
       : {}),
   }
   return {

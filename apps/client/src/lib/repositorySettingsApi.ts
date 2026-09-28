@@ -3,6 +3,13 @@ import {
   libraryGraphqlHeaders,
 } from './libraryGraphql'
 import { t } from '../i18n'
+import {
+  DEFAULT_DATE_PROPERTY_OPTIONS,
+  normalizeDatePropertyOptions,
+  type DatePropertyOptions,
+  type DateFormat,
+  type TimeFormat,
+} from './propertyDateFormat'
 
 export const repositoryPropertyTypes = [
   'STRING',
@@ -29,11 +36,14 @@ export interface RepositoryPropertyOption {
 }
 
 export interface RepositoryPropertyMeta {
-  __typename?: 'IdType' | 'JsonType' | 'MultiSelectType' | 'RelationType' | 'SelectType'
+  __typename?: 'DateType' | 'IdType' | 'JsonType' | 'MultiSelectType' | 'RelationType' | 'SelectType'
   autoGenerate?: boolean
   databaseId?: string
   json?: string
   options?: RepositoryPropertyOption[]
+  includeTime?: boolean
+  dateFormat?: DateFormat
+  timeFormat?: TimeFormat
 }
 
 export interface RepositoryPropertyDefinition {
@@ -48,6 +58,21 @@ export interface RepositoryPropertyDefinition {
 export interface RepositoryPolicy {
   userId: string
   role: string
+}
+
+export type RepositoryMemberRole = 'reader' | 'writer' | 'owner'
+
+export interface RepositoryMember {
+  userId: string
+  policyId: string
+  policyName?: string | null
+  permissionSource: 'REPO' | 'ORG'
+  user?: {
+    id: string
+    name?: string | null
+    email?: string | null
+    image?: string | null
+  } | null
 }
 
 export interface RepositorySettingsData {
@@ -91,6 +116,7 @@ export interface RepositoryPropertyDraft {
   }>
   relationDatabaseId?: string
   autoGenerateId?: boolean
+  dateOptions?: DatePropertyOptions
 }
 
 export interface RepositoryMetadataUpdate {
@@ -141,6 +167,13 @@ interface RepositorySettingsResponse {
     policies?: RepositoryPolicy[]
   } | null
   properties?: RepositoryPropertyDefinition[] | null
+}
+
+interface RepositoryMembersResponse {
+  repo?: {
+    id: string
+    members?: RepositoryMember[] | null
+  } | null
 }
 
 interface RepositoryPropertyMutationResponse {
@@ -221,12 +254,46 @@ const repositorySettingsQuery = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
         ... on MultiSelectType { options { id key name } }
       }
     }
+  }
+`
+
+const repositoryMembersQuery = `
+  query LibraryClientRepositoryMembers($orgUsername: String!, $repoUsername: String!) {
+    repo(orgUsername: $orgUsername, repoUsername: $repoUsername) {
+      id
+      members {
+        userId
+        policyId
+        policyName
+        permissionSource
+        user { id name email image }
+      }
+    }
+  }
+`
+
+const inviteRepositoryMemberMutation = `
+  mutation LibraryClientInviteRepositoryMember($input: InviteRepoMemberInput!) {
+    inviteRepoMember(input: $input)
+  }
+`
+
+const changeRepositoryMemberRoleMutation = `
+  mutation LibraryClientChangeRepositoryMemberRole($input: ChangeRepoMemberRoleInput!) {
+    changeRepoMemberRole(input: $input)
+  }
+`
+
+const removeRepositoryMemberMutation = `
+  mutation LibraryClientRemoveRepositoryMember($input: RemoveRepoMemberInput!) {
+    removeRepoMember(input: $input)
   }
 `
 
@@ -239,6 +306,7 @@ const addRepositoryPropertyMutation = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
@@ -257,6 +325,7 @@ const updateRepositoryPropertyMutation = `
       typ
       meta {
         ... on IdType { autoGenerate }
+        ... on DateType { includeTime dateFormat timeFormat }
         ... on JsonType { json }
         ... on RelationType { databaseId }
         ... on SelectType { options { id key name } }
@@ -450,6 +519,17 @@ function propertyInput(
     meta = { relation: databaseId }
   } else if (draft.type === 'ID') {
     meta = { id: draft.autoGenerateId ?? false }
+  } else if (draft.type === 'DATE') {
+    const options = normalizeDatePropertyOptions(
+      draft.dateOptions ?? DEFAULT_DATE_PROPERTY_OPTIONS,
+    )
+    meta = {
+      date: {
+        includeTime: options.includeTime,
+        dateFormat: options.dateFormat,
+        timeFormat: options.timeFormat,
+      },
+    }
   }
 
   return {
@@ -501,6 +581,99 @@ export async function fetchRepositorySettings(
     },
     properties: payload.properties,
     policies: payload.repo.policies ?? [],
+  }
+}
+
+export async function fetchRepositoryMembers(
+  target: RepositorySettingsTarget,
+): Promise<RepositoryMember[]> {
+  const payload = await requestRepositoryGraphQL<RepositoryMembersResponse>(
+    repositoryMembersQuery,
+    {
+      orgUsername: target.orgUsername,
+      repoUsername: target.repoUsername,
+    },
+    target,
+  )
+  if (!payload.repo) {
+    throw new RepositorySettingsApiError(
+      `${target.orgUsername}/${target.repoUsername} was not found.`,
+      404,
+      'not-found',
+    )
+  }
+  if (!Array.isArray(payload.repo.members)) {
+    throw new RepositorySettingsApiError(
+      'Repository member access could not be loaded.',
+      200,
+      'invalid-response',
+    )
+  }
+  return payload.repo.members
+}
+
+export async function inviteRepositoryMember(input: {
+  target: RepositorySettingsTarget
+  repoId: string
+  username: string
+  role: RepositoryMemberRole
+}): Promise<void> {
+  const username = input.username.trim()
+  if (!username) {
+    throw new RepositorySettingsApiError(t('repoAccess.usernameRequired'), 422, 'validation')
+  }
+  const payload = await requestRepositoryGraphQL<{ inviteRepoMember?: boolean | null }>(
+    inviteRepositoryMemberMutation,
+    {
+      input: {
+        orgUsername: input.target.orgUsername,
+        repoUsername: input.target.repoUsername,
+        repoId: input.repoId,
+        usernameOrEmail: username,
+        role: input.role,
+      },
+    },
+    input.target,
+  )
+  if (!payload.inviteRepoMember) {
+    throw new RepositorySettingsApiError('Repository member was not added.', 400, 'graphql')
+  }
+}
+
+export async function changeRepositoryMemberRole(input: {
+  target: RepositorySettingsTarget
+  repoId: string
+  userId: string
+  role: RepositoryMemberRole
+}): Promise<void> {
+  const payload = await requestRepositoryGraphQL<{ changeRepoMemberRole?: boolean | null }>(
+    changeRepositoryMemberRoleMutation,
+    {
+      input: {
+        repoId: input.repoId,
+        userId: input.userId,
+        newRole: input.role,
+      },
+    },
+    input.target,
+  )
+  if (!payload.changeRepoMemberRole) {
+    throw new RepositorySettingsApiError('Repository member role was not changed.', 400, 'graphql')
+  }
+}
+
+export async function removeRepositoryMember(input: {
+  target: RepositorySettingsTarget
+  repoId: string
+  userId: string
+}): Promise<void> {
+  const payload = await requestRepositoryGraphQL<{ removeRepoMember?: boolean | null }>(
+    removeRepositoryMemberMutation,
+    { input: { repoId: input.repoId, userId: input.userId } },
+    input.target,
+  )
+  if (!payload.removeRepoMember) {
+    throw new RepositorySettingsApiError('Repository member was not removed.', 400, 'graphql')
   }
 }
 

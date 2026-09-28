@@ -1,13 +1,31 @@
-use super::model::{Operator, User};
+use super::model::{Operator, PersonalSpace, User};
 use crate::domain::{OrganizationRepository, LIBRARY_TENANT};
 use crate::sdk_auth::SdkAuthApp;
-use async_graphql::{Context, Result};
+use async_graphql::{Context, ErrorExtensions, Result};
 use futures_util::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;
+use value_object::UserId;
 
 #[async_graphql::ComplexObject]
 impl User {
+    /// Resolve the Library space owned by this account, if it has been created.
+    async fn personal_space(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<PersonalSpace>> {
+        let organization_repo =
+            ctx.data::<Arc<dyn OrganizationRepository>>()?;
+        let user_id = UserId::new(&self.id).map_err(|error| {
+            async_graphql::Error::new(error.to_string())
+        })?;
+        let organization = organization_repo
+            .get_by_personal_owner_user_id(&user_id)
+            .await
+            .map_err(|error| error.extend())?;
+        Ok(organization.map(Into::into))
+    }
+
     /// Resolve operator organizations accessible to this user
     #[tracing::instrument(name = "organizations_by_user", skip_all)]
     async fn organizations(

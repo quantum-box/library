@@ -314,9 +314,21 @@ The input/output is a string in RFC3339 format.
 """
 scalar DateTime
 
+type DateType {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
+}
+
+input DateTypeInput {
+	includeTime: Boolean!
+	dateFormat: String!
+	timeFormat: String!
+}
+
 type DateValue {
 	"""
-	Date in ISO 8601 format (YYYY-MM-DD)
+	Date as YYYY-MM-DD, or a date-time as canonical UTC RFC 3339.
 	"""
 	date: String!
 }
@@ -1470,6 +1482,10 @@ type Mutation {
 	"""
 	createOrganization(input: CreateOrganizationInput!): Organization!
 	"""
+	Create the signed-in user's personal Library space, or return it if it exists.
+	"""
+	createPersonalSpace: PersonalSpace!
+	"""
 	[LIBRARY-API] Issue an API key for an organization.
 	
 	The returned `apiKey.value` is the only time the key itself is
@@ -1763,6 +1779,12 @@ enum PermissionSource {
 	ORG
 }
 
+type PersonalSpace {
+	id: String!
+	name: String!
+	username: String!
+}
+
 type Property {
 	id: String!
 	tenantId: String!
@@ -1809,6 +1831,9 @@ input PropertyDataValueInputData @oneOf {
 	select: String
 	multiSelect: [String!]
 	location: Location
+	"""
+	YYYY-MM-DD or RFC 3339 date-time; date-times are normalized to UTC.
+	"""
 	date: String
 	image: String
 	"""
@@ -1875,6 +1900,10 @@ input PropertyMetaInput @oneOf {
 	"""
 	id: Boolean
 	"""
+	Date/time behavior and display formats.
+	"""
+	date: DateTypeInput
+	"""
 	TODO: add English documentation
 	"""
 	json: String
@@ -1899,7 +1928,7 @@ enum PropertyType {
 	BOOLEAN
 }
 
-union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | JsonType
+union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | DateType | JsonType
 
 type PublicApiKey {
 	id: String!
@@ -2512,6 +2541,10 @@ type User {
 	tenantIdList: [String!]!
 	createdAt: DateTime!
 	updatedAt: DateTime!
+	"""
+	Resolve the Library space owned by this account, if it has been created.
+	"""
+	personalSpace: PersonalSpace
 	"""
 	Resolve operator organizations accessible to this user
 	"""

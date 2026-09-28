@@ -24,6 +24,7 @@ export {
 } from './translate'
 export {
   collator,
+  dateTimeFormatter,
   formatBytes,
   formatDateTime,
   formatNumber,

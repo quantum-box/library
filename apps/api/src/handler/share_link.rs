@@ -376,6 +376,24 @@ pub async fn view_shared_data(
                 // `op_...` id, which is not the document the owner
                 // shared.
                 options: property_select_options(property.property_type()),
+                include_time: match property.property_type() {
+                    database_manager::domain::PropertyType::Date(date) => {
+                        Some(date.include_time)
+                    }
+                    _ => None,
+                },
+                date_format: match property.property_type() {
+                    database_manager::domain::PropertyType::Date(date) => {
+                        Some(date.date_format.to_string())
+                    }
+                    _ => None,
+                },
+                time_format: match property.property_type() {
+                    database_manager::domain::PropertyType::Date(date) => {
+                        Some(date.time_format.to_string())
+                    }
+                    _ => None,
+                },
             })
             .collect(),
     }))

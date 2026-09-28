@@ -3,6 +3,7 @@ import type {
   LibraryProperty,
   LibraryPropertyDataValue,
 } from '../recordsApi'
+import { dateTimeLocalToIso } from '../propertyDateFormat'
 
 export type GraphqlPropertyDataInput = {
   propertyId: string
@@ -153,7 +154,12 @@ export function parseEditablePropertyValue(
     case 'Integer':
       return { number: trimmed }
     case 'Date':
-      return trimmed ? { date: trimmed } : null
+      if (!trimmed) return null
+      if (property.meta?.includeTime && trimmed.includes('T')) {
+        const dateTime = dateTimeLocalToIso(trimmed)
+        return dateTime ? { date: dateTime } : null
+      }
+      return { date: trimmed }
     case 'Boolean':
       // The checkbox commits `true`/`false`; anything else is a stray call.
       return trimmed === 'true' || trimmed === 'false'

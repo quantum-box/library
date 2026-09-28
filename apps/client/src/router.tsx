@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-router'
 import { Badge, Button } from '@tachyon-sdk/native-ui'
 import { AlertTriangle, ChevronRight, Database, Filter, FolderGit2, Home, Plus, RefreshCw, RotateCcw, X } from 'lucide-react'
-import { useMemo, useCallback, useState, createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { useMemo, useCallback, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { AuthGate } from './components/AuthGate'
 import { PublicShell } from './components/public/PublicShell'
@@ -49,6 +49,7 @@ import { useDesktopShell } from './lib/desktop/useDesktopShell'
 import { useCopyPageUrlShortcut, type CopyLinkStatus } from './lib/desktop/useCopyPageUrl'
 import { useDialogFocus } from './components/useDialogFocus'
 import { DatabaseRecordsProvider, useDatabaseRecords } from './contexts/RecordsContext'
+import { CreateModalContext, useCreateModal } from './contexts/CreateModalContext'
 import {
   DatabasesProvider,
   type WorkspaceDatabase,
@@ -224,17 +225,6 @@ function filterRecordsByDatabase(
   return database
     ? records.filter((record) => recordMatchesDatabase(record, database))
     : []
-}
-
-// ── Create DatabaseRecord Modal context ─────────────────────────────────
-
-const CreateModalContext = createContext<{
-  open: boolean
-  setOpen: (v: boolean) => void
-}>({ open: false, setOpen: () => {} })
-
-function useCreateModal() {
-  return useContext(CreateModalContext)
 }
 
 function DatabaseHeader({
@@ -433,7 +423,15 @@ function CopyLinkToast({ status }: { status: CopyLinkStatus }) {
   )
 }
 
-function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function KeyboardShortcutsPanel({
+  open,
+  onClose,
+  hasDatabase,
+}: {
+  open: boolean
+  onClose: () => void
+  hasDatabase: boolean
+}) {
   const { t } = useI18n()
   const desktop = useDesktopShell()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -443,20 +441,25 @@ function KeyboardShortcutsPanel({ open, onClose }: { open: boolean; onClose: () 
   if (!open) return null
 
   const modifier = modifierKeyLabel()
+  const dataViewShortcuts = hasDatabase
+    ? [
+        { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
+        { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
+        { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
+        { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
+        { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
+        { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
+        { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
+      ]
+    : []
   const shortcuts = [
     { keys: renderShortcutKeys(['C']), label: t('data.new') },
-    { keys: renderShortcutKeys(['/']), label: t('shortcuts.focusSearch') },
-    { keys: renderShortcutKeys([modifier, 'F']), label: t('shortcuts.focusSearch') },
-    { keys: renderShortcutKeys([modifier, 'B']), label: t('shortcuts.toggleTableBoard') },
+    ...dataViewShortcuts,
     { keys: renderShortcutKeys(['⌘', 'K']), label: t('shortcuts.openCommandMenu') },
     // Only the desktop shell hides the address of the current route.
     ...(desktop
       ? [{ keys: renderShortcutKeys([modifier, 'L']), label: t('shortcuts.copyPageUrl') }]
       : []),
-    { keys: renderShortcutSequence(['G', 'T']), label: t(shortcutViewLabelKey('table')) },
-    { keys: renderShortcutSequence(['G', 'B']), label: t(shortcutViewLabelKey('board')) },
-    { keys: renderShortcutSequence(['G', 'W']), label: t(shortcutViewLabelKey('workflow')) },
-    { keys: renderShortcutSequence(['G', 'L']), label: t(shortcutViewLabelKey('timeline')) },
     { keys: renderShortcutSequence(['G', 'C']), label: t(shortcutViewLabelKey('chat')) },
     { keys: renderShortcutSequence(['G', 'S']), label: t(shortcutViewLabelKey('sync')) },
     { keys: renderShortcutKeys(['?']), label: t('shortcuts.showShortcuts') },
@@ -512,6 +515,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   const goModeTimerRef = useRef<number | null>(null)
   const location = useRouterState({ select: (state) => state.location })
   const search = location.search as RecordSearchParams
+  const hasDatabase = Boolean(databaseIdFromLocation(location.pathname, search.database))
 
   const closeGoMode = useCallback(() => {
     if (goModeTimerRef.current !== null) {
@@ -523,6 +527,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   const navigateToDatabaseView = useCallback(
     (type: DatabaseViewType) => {
       const database = databaseIdFromLocation(location.pathname, search.database)
+      if (!database) return Promise.resolve()
       return navigateToData(navigate, database, {
         view: type === 'table' ? undefined : type,
       })
@@ -544,6 +549,8 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
   )
 
   const focusRecordSearch = useCallback(() => {
+    const database = databaseIdFromLocation(location.pathname, search.database)
+    if (!database) return
     const isDatabaseRoute = isDataListPath(location.pathname)
     const isDefaultTable =
       !search.view || search.view === 'table' || search.view.includes(':table')
@@ -554,7 +561,7 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     if (isDatabaseRoute && focusRecordSearchInput()) return
 
     void navigateToDatabaseView('table').then(() => focusRecordSearchInputWhenReady())
-  }, [location.pathname, navigateToDatabaseView, search.view])
+  }, [location.pathname, navigateToDatabaseView, search.database, search.view])
 
   const openCreateDataAtDatabaseIndex = useCallback(() => {
     if (isDataListPath(location.pathname)) {
@@ -563,6 +570,14 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     }
 
     const database = databaseIdFromLocation(location.pathname, search.database)
+    if (!database) {
+      if (location.pathname === '/home') {
+        setCreateModalOpen(true)
+      } else {
+        void navigate({ to: '/home' }).then(() => setCreateModalOpen(true))
+      }
+      return
+    }
     void navigateToData(navigate, database, {}).then(() => setCreateModalOpen(true))
   }, [location.pathname, navigate, search.database, setCreateModalOpen])
 
@@ -673,18 +688,38 @@ function useGlobalKeyboardShortcuts(setCreateModalOpen: (open: boolean) => void)
     closeShortcuts: () => setShortcutsOpen(false),
     commandPaletteOpen,
     closeCommandPalette: () => setCommandPaletteOpen(false),
+    hasDatabase,
   }
 }
 
 // ── Root Route ─────────────────────────────────────────────────
 
 function AuthenticatedWorkspaceRoot() {
-  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpenState] = useState(false)
+  const [createModalOriginPath, setCreateModalOriginPath] = useState<string | null>(null)
+  const location = useRouterState({ select: (state) => state.location })
+  const locationPathnameRef = useRef(location.pathname)
+  const setCreateModalOpen = useCallback((open: boolean) => {
+    setCreateModalOpenState(open)
+    setCreateModalOriginPath(open ? locationPathnameRef.current : null)
+  }, [])
+  const createModalOpenAtCurrentLocation = createModalOpen && createModalOriginPath === location.pathname
+
+  if (createModalOpen && createModalOriginPath !== location.pathname) {
+    setCreateModalOpenState(false)
+    setCreateModalOriginPath(null)
+  }
+
+  useLayoutEffect(() => {
+    locationPathnameRef.current = location.pathname
+  }, [location.pathname])
+
   const {
     shortcutsOpen,
     closeShortcuts,
     commandPaletteOpen,
     closeCommandPalette,
+    hasDatabase,
   } = useGlobalKeyboardShortcuts(setCreateModalOpen)
   // The address bar is the workspace's own state: an organization in the URL
   // is the organization the shell is scoped to.
@@ -701,14 +736,18 @@ function AuthenticatedWorkspaceRoot() {
       <DatabasesProvider organizationUsername={organizationUsername}>
         <DatabaseViewsProvider>
           <AttachmentsProvider>
-            <CreateModalContext.Provider value={{ open: createModalOpen, setOpen: setCreateModalOpen }}>
+            <CreateModalContext.Provider value={{ open: createModalOpenAtCurrentLocation, setOpen: setCreateModalOpen }}>
               <div className="flex h-full min-w-0 flex-col overflow-hidden md:flex-row">
                 <Sidebar />
                 <Outlet />
               </div>
               <WorkspaceHydrationStatus />
               <WorkspaceMutationError />
-              <KeyboardShortcutsPanel open={shortcutsOpen} onClose={closeShortcuts} />
+              <KeyboardShortcutsPanel
+                open={shortcutsOpen}
+                onClose={closeShortcuts}
+                hasDatabase={hasDatabase}
+              />
               <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
             </CreateModalContext.Provider>
           </AttachmentsProvider>
@@ -1047,6 +1086,11 @@ const databasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'databases',
   validateSearch: validateRecordSearch,
+  beforeLoad: ({ location, search }) => {
+    if (location.pathname.replace(/\/+$/, '') === '/databases' && !search.database) {
+      throw redirect({ to: '/home' })
+    }
+  },
   component: DatabasesLayout,
 })
 
@@ -1118,6 +1162,26 @@ function DataWorkspace({
     repositoriesError,
   } = useWorkspaceDatabases()
   const selectedDatabase = getDatabaseProject(databases, database)
+  const repositoryRecordsRevision = useMemo(() => {
+    if (
+      !selectedDatabase?.orgUsername ||
+      !selectedDatabase.repoUsername
+    ) {
+      return undefined
+    }
+    return records
+      .filter(
+        (record) =>
+          record.orgUsername === selectedDatabase.orgUsername &&
+          record.repoUsername === selectedDatabase.repoUsername,
+      )
+      .map((record) => `${record.id}:${record.updatedAt}:${record.title}`)
+      .join('|')
+  }, [
+    records,
+    selectedDatabase?.orgUsername,
+    selectedDatabase?.repoUsername,
+  ])
   const visibleDatabases = selectedOrganizationId
     ? databases.filter((item) => item.operatorId === selectedOrganizationId)
     : databases
@@ -1442,9 +1506,9 @@ function DataWorkspace({
         description={t('route.repositoryNotFoundHint')}
         action={(
           <Button variant="secondary" asChild>
-            <Link to="/databases">
-              <Database aria-hidden="true" />
-              {t('organization.openAllData')}
+            <Link to="/repositories">
+              <FolderGit2 aria-hidden="true" />
+              {t('sidebar.repositories.viewAll')}
             </Link>
           </Button>
         )}
@@ -1466,8 +1530,8 @@ function DataWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Header */}
         <DatabaseHeader
-          title={selectedDatabase?.repoUsername ?? t('databaseHeader.allRepositoryData')}
-          databaseLabel={selectedDatabase?.label ?? t('databaseHeader.allRepositoryData')}
+          title={selectedDatabase?.repoUsername ?? t('repository.tab.data')}
+          databaseLabel={selectedDatabase?.label ?? t('repository.tab.data')}
           organization={selectedDatabase?.orgUsername}
           repository={selectedDatabase?.repoUsername}
           views={scopedViews}
@@ -1510,6 +1574,7 @@ function DataWorkspace({
               repo={selectedDatabase!.repoUsername!}
               operatorId={selectedDatabase?.operatorId}
               databaseId={selectedDatabase?.databaseId}
+              recordsRevision={repositoryRecordsRevision}
               repoLabel={selectedDatabase?.label}
               selectedDataId={selectedRecord?.id ?? null}
               onSelectData={(item) => {
@@ -1895,6 +1960,15 @@ const kanbanRoute = createRoute({
     status: parseRecordStatus(search.status),
   }),
   beforeLoad: ({ search }) => {
+    const repository = splitRepoDatabaseId(search.database)
+    if (!search.database) throw redirect({ to: '/repositories' })
+    if (repository) {
+      throw redirect({
+        to: '/$organization/$repository/data',
+        params: repository,
+        search: { view: 'board', ...(search.status ? { status: search.status } : {}) },
+      })
+    }
     throw redirect({
       to: '/databases',
       search: {
@@ -1915,6 +1989,15 @@ const workflowRoute = createRoute({
     database: typeof search.database === 'string' ? search.database : undefined,
   }),
   beforeLoad: ({ search }) => {
+    const repository = splitRepoDatabaseId(search.database)
+    if (!search.database) throw redirect({ to: '/repositories' })
+    if (repository) {
+      throw redirect({
+        to: '/$organization/$repository/data',
+        params: repository,
+        search: { view: 'workflow' },
+      })
+    }
     throw redirect({
       to: '/databases',
       search: {
@@ -1972,6 +2055,15 @@ const legacyKanbanRoute = createRoute({
     status: parseRecordStatus(search.status),
   }),
   beforeLoad: ({ search }) => {
+    const repository = splitRepoDatabaseId(search.database)
+    if (!search.database) throw redirect({ to: '/repositories' })
+    if (repository) {
+      throw redirect({
+        to: '/$organization/$repository/data',
+        params: repository,
+        search: { view: 'board', ...(search.status ? { status: search.status } : {}) },
+      })
+    }
     throw redirect({
       to: '/databases',
       search: {

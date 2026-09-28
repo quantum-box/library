@@ -293,6 +293,8 @@ pub struct CreateOrganizationInputData<'a> {
     pub username: String,
     pub description: Option<String>,
     pub website: Option<String>,
+    /// Set only when creating an account's personal Library space.
+    pub personal_owner_user_id: Option<String>,
 }
 
 /// TODO: add English documentation
@@ -445,6 +447,7 @@ pub enum PropertyDataValueInputData {
     Select(String),
     MultiSelect(Vec<String>),
     Location(Location),
+    /// YYYY-MM-DD or RFC 3339 date-time; date-times are normalized to UTC.
     Date(String),
     Image(String),
     /// A block document, carried as JSON text.

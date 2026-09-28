@@ -49,8 +49,8 @@ export function DetailPanel({
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null)
   const { createAttachment, attachmentsForSurface } = useWorkspaceAttachments()
 
-  // The other record screen: All Data, a local database and the workflow
-  // preview all land here rather than in the Library editor.
+  // Repository details, local databases and the workflow preview land here
+  // rather than in the Library editor.
   useDocumentTitle(record?.title)
 
   // Reset confirm dialog when record changes
@@ -71,7 +71,7 @@ export function DetailPanel({
           </Button>
           <Database className="size-4 text-primary" aria-hidden="true" />
           <span className="truncate text-sm text-muted-foreground">
-            {repositoryPath ?? t('sidebar.nav.allData')}
+            {repositoryPath ?? t('repository.tab.data')}
           </span>
           <span className="text-subtle-foreground">/</span>
           <span className="truncate font-mono text-xs font-medium">

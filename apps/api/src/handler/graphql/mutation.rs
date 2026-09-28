@@ -3,8 +3,9 @@ use std::sync::Arc;
 use super::input;
 use super::model::{
     ApiKeyResponse, Data, GitHubAuthUrl, GitHubConnection, GlobalIdMapping,
-    Operator, Organization, Property, PropertyType, PublicApiKey, Repo,
-    RichTextTemplate, SeedLibraryTenantPayload, Source, SyncResult, User,
+    Operator, Organization, PersonalSpace, Property, PropertyType,
+    PublicApiKey, Repo, RichTextTemplate, SeedLibraryTenantPayload, Source,
+    SyncResult, User,
 };
 use crate::app::LibraryApp;
 use crate::domain::{library_repo_owner_policy_id, library_user_policy_id};
@@ -1051,6 +1052,7 @@ impl LibraryMutation {
                 username: input.username,
                 description: input.description,
                 website: input.website,
+                personal_owner_user_id: None,
             })
             .await
             .map_err(|e| {
@@ -1058,6 +1060,81 @@ impl LibraryMutation {
                 e.extend()
             })?
             .into())
+    }
+
+    /// Create the signed-in user's personal Library space, or return it if it exists.
+    #[tracing::instrument(name = "create_personal_space", skip(self, ctx))]
+    async fn create_personal_space(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+    ) -> Result<PersonalSpace> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+        let user_id =
+            executor.get_user_id().map_err(|error| error.extend())?;
+
+        if let Some(organization) = app
+            .organization_repo
+            .get_by_personal_owner_user_id(&user_id)
+            .await
+            .map_err(|error| error.extend())?
+        {
+            return Ok(organization.into());
+        }
+
+        let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
+        let caller = sdk.get_caller_user().await.map_err(|error| {
+            super::log_graphql_operation_error("library_mutation", &error);
+            error.extend()
+        })?;
+        if caller.id() != &user_id {
+            return Err(async_graphql::Error::new(
+                "Authenticated user identity did not match the request executor",
+            ));
+        }
+
+        let username = caller.username().to_string();
+        let created = app
+            .create_organization
+            .execute(&usecase::CreateOrganizationInputData {
+                executor,
+                multi_tenancy,
+                name: caller
+                    .name()
+                    .map(|name| name.to_string())
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| username.clone()),
+                username,
+                description: None,
+                website: None,
+                personal_owner_user_id: Some(user_id.to_string()),
+            })
+            .await;
+
+        match created {
+            Ok(organization) => Ok(organization.into()),
+            Err(create_error) => {
+                // Two first-use requests can race after both observed no
+                // personal space. If the other request committed, return its
+                // row; otherwise preserve the original creation failure.
+                if let Some(organization) = app
+                    .organization_repo
+                    .get_by_personal_owner_user_id(&user_id)
+                    .await
+                    .map_err(|lookup_error| lookup_error.extend())?
+                {
+                    return Ok(organization.into());
+                }
+                tracing::error!(
+                    error = ?create_error,
+                    user_id = %user_id,
+                    "Failed to create personal Library space"
+                );
+                Err(create_error.extend())
+            }
+        }
     }
 
     /// [LIBRARY-API] Issue an API key for an organization.
@@ -2612,6 +2689,14 @@ fn property_type_from_input(
 ) -> errors::Result<database_manager::domain::PropertyType> {
     use database_manager::domain as db;
 
+    if matches!(&value.meta, Some(PropertyMetaInput::Date(_)))
+        && !matches!(&value.property_type, PropertyType::Date)
+    {
+        return Err(errors::Error::invalid(
+            "date metadata is only valid for a Date Property",
+        ));
+    }
+
     let changes_option_property_type = match existing {
         Some(db::PropertyType::Select(current)) => {
             !current.items().is_empty()
@@ -2695,6 +2780,52 @@ fn property_type_from_input(
             }
         }
         Ok(updated)
+    }
+
+    match &value {
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: Some(PropertyMetaInput::Date(date)),
+            ..
+        } => {
+            let updated = db::TypeDate {
+                include_time: date.include_time,
+                date_format: date
+                    .date_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+                time_format: date
+                    .time_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+            };
+            return Ok(db::PropertyType::Date(updated));
+        }
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: None,
+            ..
+        } => {
+            return Ok(match existing {
+                Some(db::PropertyType::Date(current)) => {
+                    db::PropertyType::Date(current.clone())
+                }
+                _ => db::PropertyType::Date(Default::default()),
+            });
+        }
+        PropertyInput {
+            property_type: PropertyType::Date,
+            meta: Some(PropertyMetaInput::Json(_)),
+            ..
+        } => {
+            return Ok(match existing {
+                Some(db::PropertyType::Date(current)) => {
+                    db::PropertyType::Date(current.clone())
+                }
+                _ => db::PropertyType::Date(Default::default()),
+            });
+        }
+        _ => {}
     }
 
     match value {
@@ -2803,8 +2934,29 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
             } => Ok(db::PropertyType::Location(Default::default())),
             PropertyInput {
                 property_type: PropertyType::Date,
+                meta: Some(PropertyMetaInput::Date(date)),
                 ..
-            } => Ok(db::PropertyType::Date),
+            } => Ok(db::PropertyType::Date(db::TypeDate {
+                include_time: date.include_time,
+                date_format: date
+                    .date_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+                time_format: date
+                    .time_format
+                    .parse()
+                    .map_err(errors::Error::invalid)?,
+            })),
+            PropertyInput {
+                property_type: PropertyType::Date,
+                meta: None,
+                ..
+            } => Ok(db::PropertyType::Date(Default::default())),
+            PropertyInput {
+                property_type: PropertyType::Date,
+                meta: Some(PropertyMetaInput::Json(_)),
+                ..
+            } => Ok(db::PropertyType::Date(Default::default())),
             PropertyInput {
                 property_type: PropertyType::Image,
                 ..
@@ -2849,8 +3001,17 @@ pub enum PropertyMetaInput {
     MultiSelect(Vec<OptionInput>),
     /// TODO: add English documentation
     Id(bool),
+    /// Date/time behavior and display formats.
+    Date(DateTypeInput),
     /// TODO: add English documentation
     Json(String),
+}
+
+#[derive(InputObject, Debug, Clone)]
+pub struct DateTypeInput {
+    pub include_time: bool,
+    pub date_format: String,
+    pub time_format: String,
 }
 
 #[derive(InputObject, Debug, Clone)]

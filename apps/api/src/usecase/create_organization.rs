@@ -97,7 +97,7 @@ impl CreateOrganizationInputPort for CreateOrganization {
             })
             .await?;
 
-        let organization = Organization::new(
+        let mut organization = Organization::new(
             operator.id(),
             &Text::from_str(&input.name)?,
             operator.operator_name(),
@@ -114,6 +114,10 @@ impl CreateOrganizationInputPort for CreateOrganization {
                 .transpose()?
                 .as_ref(),
         );
+        if let Some(user_id) = input.personal_owner_user_id.as_deref() {
+            organization =
+                organization.with_personal_owner(&UserId::new(user_id)?);
+        }
 
         let tenant_id = TenantId::new(operator.id().as_ref())?;
         let user_id = input.executor.get_user_id()?;
@@ -416,6 +420,7 @@ mod tests {
                 username: "test-organization".to_string(),
                 description: None,
                 website: None,
+                personal_owner_user_id: None,
             })
             .await
             .expect("a rejected policy grant must not fail creation");
@@ -511,6 +516,7 @@ mod tests {
                 username: "test-organization".to_string(),
                 description: None,
                 website: None,
+                personal_owner_user_id: None,
             })
             .await
             .expect_err("a failed insert must fail creation");
@@ -559,6 +565,7 @@ mod tests {
                 username: "test-organization".to_string(),
                 description: None,
                 website: None,
+                personal_owner_user_id: None,
             })
             .await
             .expect_err("a failed insert must fail creation");
@@ -604,6 +611,7 @@ mod tests {
                 username: "test-organization".to_string(),
                 description: None,
                 website: None,
+                personal_owner_user_id: None,
             })
             .await
             .unwrap();
