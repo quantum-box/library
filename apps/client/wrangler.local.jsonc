@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "library-client-sync-local",
+  "main": "workers/sync/build/index.js",
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": ["workers/sync/src", "workers/common/src", "workers/Cargo.toml", "workers/Cargo.lock"]
+  },
+  "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
+  "compatibility_date": "2026-05-05",
+  "vars": {
+    "PHOTON_CLOUD_ENGINE_BASE_URL": "http://127.0.0.1:3001",
+    "PHOTON_LIVE_ENABLED": "true",
+    "PHOTON_LIVE_ALLOWED_ORIGINS": "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5187,tauri://localhost,http://tauri.localhost",
+    "PHOTON_LIVE_API_BASE_URL": "http://127.0.0.1:50053",
+    "EXTERNAL_SYNC_SCANNER_ENABLED": "false"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PHOTON_SYNC_ROOMS", "class_name": "PhotonSyncRoom" },
+      { "name": "PHOTON_LIVE_ROOMS", "class_name": "PhotonLiveRoom" },
+      { "name": "PHOTON_LIVE_TICKETS", "class_name": "PhotonLiveTicketStore" },
+      { "name": "EXTERNAL_SYNC_DISPATCH", "class_name": "ExternalSyncDispatcher" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PhotonSyncRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["PhotonLiveRoom", "PhotonLiveTicketStore"] },
+    { "tag": "v3", "new_sqlite_classes": ["ExternalSyncDispatcher"] }
+  ],
+  "workers_dev": true
+}

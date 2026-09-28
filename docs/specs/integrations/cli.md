@@ -24,13 +24,15 @@ cargo build -p library-cli --release
 
 `pk_` で始まる Library API key を使う。key は Library client の API keys 画面で発行する。
 
+ブラウザのサインインは MCP の `/mcp` 用トークンを取得する。REST / GraphQL コマンドには API key が必要で、MCP 用トークンはそちらへ送らない。
+
 解決順序は次のとおりで、先に見つかったものが勝つ。
 
 1. `--api-key` / `--api-url` / `--operator-id` フラグ
 2. 環境変数 `LIBRARY_API_KEY` / `LIBRARY_API_BASE_URL`
 3. `library auth login` が保存したローカル profile
 
-いずれも無い場合、API URL は `http://localhost:50055` にフォールバックする。
+いずれも無い場合、API URL は本番の `https://library-api.txcloud.app` を使う。ローカルの library-api には `--api-url http://localhost:50055` か `LIBRARY_API_BASE_URL` で向ける。
 
 ```bash
 library auth login --api-key pk_xxx --api-url https://api.example.com
@@ -65,7 +67,7 @@ library --json repo list acme
 | オプション | 用途 |
 | --- | --- |
 | `--api-url <URL>` | API base URL |
-| `--api-key <KEY>` | API key |
+| `--api-key <KEY>` | REST / GraphQL / MCP 用 API key |
 | `--operator-id <ID>` | `x-operator-id` header。path に organization を含まない一部 endpoint 用 |
 | `--json` | 表ではなく生の JSON を出す |
 
