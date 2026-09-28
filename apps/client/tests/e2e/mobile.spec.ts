@@ -36,10 +36,9 @@ test.describe('Library mobile shell', () => {
     await expect(page.getByTestId('library-table-card').getByText(title)).toBeVisible()
 
     await page.getByTestId('library-table-card').click()
-    await expect(page.getByTestId('detail-panel')).toBeVisible()
-    await expect(page.getByTestId('detail-panel')).toHaveCSS('position', 'fixed')
-    await page.getByTestId('detail-panel-close').click()
-    await expect(page.getByTestId('detail-panel')).toHaveCount(0)
+    await expect(page.getByTestId('data-editor-title')).toHaveText(title)
+    await page.getByRole('button', { name: 'Back to data' }).click()
+    await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
 
     await page.getByTestId('open-mobile-nav').click()
     await page.getByTestId('view-chat-mobile').click()
