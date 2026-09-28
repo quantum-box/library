@@ -107,6 +107,23 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(SimpleObject, Debug, Clone)]
+pub struct PersonalSpace {
+    pub id: String,
+    pub name: String,
+    pub username: String,
+}
+
+impl From<domain::Organization> for PersonalSpace {
+    fn from(value: domain::Organization) -> Self {
+        Self {
+            id: value.id().to_string(),
+            name: value.name().to_string(),
+            username: value.username().to_string(),
+        }
+    }
+}
+
 impl From<auth_domain::User> for User {
     fn from(user: auth_domain::User) -> Self {
         Self {

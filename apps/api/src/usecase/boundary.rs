@@ -293,6 +293,8 @@ pub struct CreateOrganizationInputData<'a> {
     pub username: String,
     pub description: Option<String>,
     pub website: Option<String>,
+    /// Set only when creating an account's personal Library space.
+    pub personal_owner_user_id: Option<String>,
 }
 
 /// TODO: add English documentation

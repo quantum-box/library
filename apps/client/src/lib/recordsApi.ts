@@ -270,6 +270,7 @@ export interface LibraryOrganization {
   operatorName: string
   platformTenantId: string
   repos: LibraryRepository[]
+  isPersonalSpace?: boolean
 }
 
 interface LibraryMeOrganizationsResponse {
@@ -277,6 +278,11 @@ interface LibraryMeOrganizationsResponse {
     id: string
     email?: string | null
     tenantIdList?: string[]
+    personalSpace?: {
+      id: string
+      name: string
+      username: string
+    } | null
     organizations: LibraryOrganization[]
   } | null
 }
@@ -300,8 +306,16 @@ export interface CreatedLibraryOrganization {
   username: string
 }
 
+export interface CreatedLibraryPersonalSpace extends CreatedLibraryOrganization {
+  isPersonalSpace: true
+}
+
 interface LibraryCreateOrganizationResponse {
   createOrganization: CreatedLibraryOrganization
+}
+
+interface LibraryCreatePersonalSpaceResponse {
+  createPersonalSpace: CreatedLibraryOrganization
 }
 
 /**
@@ -591,6 +605,11 @@ const libraryMeOrganizationsQuery = `
       id
       email
       tenantIdList
+      personalSpace {
+        id
+        name
+        username
+      }
       organizations {
         id
         operatorName
@@ -613,6 +632,16 @@ const libraryMeTenantListQuery = `
 const libraryCreateOrganizationMutation = `
   mutation LibraryClientCreateOrganization($input: CreateOrganizationInput!) {
     createOrganization(input: $input) {
+      id
+      name
+      username
+    }
+  }
+`
+
+const libraryCreatePersonalSpaceMutation = `
+  mutation LibraryClientCreatePersonalSpace {
+    createPersonalSpace {
       id
       name
       username
@@ -1548,7 +1577,11 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
     // The API already returns only what Library treats as an organization.
     // Narrowing it again by platform here dropped every tenant adopted from
     // Tachyon, because an adopted tenant keeps the platform it came from.
-    const organizations = payload.me?.organizations ?? []
+    const personalSpaceId = payload.me?.personalSpace?.id
+    const organizations = (payload.me?.organizations ?? []).map((organization) => ({
+      ...organization,
+      isPersonalSpace: Boolean(personalSpaceId && organization.id === personalSpaceId),
+    }))
 
     return Promise.all(
       organizations.map(async (organization) => {
@@ -1616,6 +1649,14 @@ export async function createLibraryOrganization(
     }
   )
   return payload.createOrganization
+}
+
+export async function createLibraryPersonalSpace(): Promise<CreatedLibraryPersonalSpace> {
+  const payload = await requestLibraryGraphQL<LibraryCreatePersonalSpaceResponse>(
+    libraryCreatePersonalSpaceMutation,
+    {}
+  )
+  return { ...payload.createPersonalSpace, isPersonalSpace: true }
 }
 
 export async function fetchLibraryAccessibleTenants(): Promise<LibraryAccessibleTenant[]> {

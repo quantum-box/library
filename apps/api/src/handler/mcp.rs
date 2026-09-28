@@ -1172,6 +1172,7 @@ async fn create_org(
         username: args.username,
         description: args.description,
         website: args.website,
+        personal_owner_user_id: None,
     };
     let organization = library_app
         .create_organization
