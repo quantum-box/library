@@ -694,6 +694,12 @@ const libraryDataDetailQuery = `
   }
 `
 
+const libraryCanDeleteDataQuery = `
+  query LibraryClientCanDeleteData {
+    canDeleteData
+  }
+`
+
 export type RecordApiFailureKind =
   | 'transport'
   | 'endpoint-unavailable'
@@ -2152,6 +2158,24 @@ export async function fetchLibraryDataDetail(dataId: string, target?: Partial<Li
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'read')) throw error
     return fetchLibraryRestDataDetail(dataId, resolvedTarget)
+  }
+}
+
+/**
+ * Ask the same policy action that the delete mutation enforces. Keep the UI
+ * fail-closed while the decision is unavailable, and never infer this from a
+ * display role or from the ability to read the record.
+ */
+export async function canDeleteLibraryData(operatorId?: string): Promise<boolean> {
+  try {
+    const payload = await requestLibraryGraphQL<{ canDeleteData?: boolean }>(
+      libraryCanDeleteDataQuery,
+      {},
+      { operatorId }
+    )
+    return payload.canDeleteData === true
+  } catch {
+    return false
   }
 }
 

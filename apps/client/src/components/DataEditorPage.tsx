@@ -17,6 +17,7 @@ import {
 import { appKitConfig } from '../app/kitConfig'
 import {
   RecordApiError,
+  canDeleteLibraryData,
   fetchLibraryDataDetail,
   fetchLibraryRepoTableData,
   libraryDataToRecord,
@@ -190,7 +191,12 @@ function PageTitle({
  * remembers of *that* record rather than from the last one's page.
  */
 export function DataEditorPage(props: DataEditorPageProps) {
-  return <RecordPage key={`${props.databaseId ?? ''}:${props.org}/${props.repo}/${props.dataId}`} {...props} />
+  return (
+    <RecordPage
+      key={`${props.databaseId ?? ''}:${props.org}/${props.repo}/${props.dataId}:${props.operatorId ?? ''}`}
+      {...props}
+    />
+  )
 }
 
 function RecordPage({
@@ -241,6 +247,7 @@ function RecordPage({
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [canDeleteData, setCanDeleteData] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -258,6 +265,16 @@ function RecordPage({
     () => ({ org, repo, operatorId, repoName: repoLabel }),
     [operatorId, org, repo, repoLabel],
   )
+
+  useEffect(() => {
+    let cancelled = false
+    void canDeleteLibraryData(operatorId).then((allowed) => {
+      if (!cancelled) setCanDeleteData(allowed)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [operatorId])
 
   /**
    * Find a record by the identifier a route carries.
@@ -818,17 +835,19 @@ function RecordPage({
           >
             <Link2 className="size-3.5" aria-hidden="true" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-muted-foreground hover:text-destructive"
-            disabled={!confirmed}
-            onClick={() => setDeleteOpen(true)}
-            aria-label={t('dataEditor.deleteData')}
-            title={t('dataEditor.deleteData')}
-          >
-            <Trash2 className="size-3.5" aria-hidden="true" />
-          </Button>
+          {canDeleteData ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-destructive"
+              disabled={!confirmed}
+              onClick={() => setDeleteOpen(true)}
+              aria-label={t('dataEditor.deleteData')}
+              title={t('dataEditor.deleteData')}
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
       </header>
 
