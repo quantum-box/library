@@ -1,7 +1,6 @@
 import type { LpLanguage } from '@/app/lp'
 import { LIBRARY_APP_URL } from './links'
 import { ArrowRight, ExternalLink } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
 import { PlanetMark } from './PlanetMark'
 
 type FooterLink = {
@@ -50,8 +49,9 @@ const copy: Record<LpLanguage, FooterContent> = {
 		summaryLine:
 			'We open information technology as a shared infrastructure for everyone.',
 		footerLinks: [
-			{ label: 'Terms', href: '/terms' },
-			{ label: 'Privacy', href: '/privacy' },
+			{ label: 'Terms', href: 'https://quantum-box.com/terms' },
+			{ label: 'Privacy', href: 'https://quantum-box.com/privacy' },
+			{ label: 'Commercial Disclosure', href: 'https://quantum-box.com/legal' },
 			{ label: 'Security', href: '/security' },
 		],
 	},
@@ -81,8 +81,9 @@ const copy: Record<LpLanguage, FooterContent> = {
 		summaryLine:
 			'情報技術を公共財としてひらき、誰もが活用できる知識インフラを届けます。',
 		footerLinks: [
-			{ label: '利用規約', href: '/terms' },
-			{ label: 'プライバシー', href: '/privacy' },
+			{ label: '利用規約', href: 'https://quantum-box.com/terms' },
+			{ label: 'プライバシー', href: 'https://quantum-box.com/privacy' },
+			{ label: '特定商取引法に基づく表記', href: 'https://quantum-box.com/legal' },
 			{ label: 'セキュリティ', href: '/security' },
 		],
 	},
@@ -264,13 +265,15 @@ export function Footer({ lang }: { lang: LpLanguage }) {
 						<p>© {new Date().getFullYear()} Quantum Box, Inc.</p>
 						<div className='flex flex-wrap items-center gap-x-5 gap-y-2'>
 							{t.footerLinks.map(link => (
-								<Link
+								<a
 									key={link.href}
-									to={link.href}
+									href={link.href}
+									target={link.href.startsWith('https://') ? '_blank' : undefined}
+									rel={link.href.startsWith('https://') ? 'noopener noreferrer' : undefined}
 									className='transition-colors hover:text-slate-600'
 								>
 									{link.label}
-								</Link>
+								</a>
 							))}
 						</div>
 					</div>
