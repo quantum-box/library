@@ -12,12 +12,13 @@ import { useI18n } from '../i18n'
 
 interface AuthGateProps {
   children: ReactNode
+  anonymousContent?: ReactNode
 }
 
 const developmentTokenSignInEnabled =
   import.meta.env.VITE_ENABLE_DEV_TOKEN_AUTH === 'true'
 
-export function AuthGate({ children }: AuthGateProps) {
+export function AuthGate({ children, anonymousContent }: AuthGateProps) {
   const { t } = useI18n()
   const [session, setSession] = useState<AuthTokens | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -87,6 +88,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (session?.accessToken) return <>{children}</>
+  if (!checkingSession && anonymousContent) return <>{anonymousContent}</>
 
   return (
     <main className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background text-foreground lg:grid-cols-[minmax(420px,0.9fr)_minmax(480px,1.1fr)]">
