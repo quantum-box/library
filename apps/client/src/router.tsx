@@ -872,9 +872,9 @@ function RouteState({
 }
 
 /**
- * The public read-only routes are the one surface that has to render for a
- * visitor with no session, so they are matched here by path rather than
- * placed under AuthGate. They also stay outside the workspace providers:
+ * Explicit public read-only routes render without a session and bypass
+ * AuthGate. Canonical repository read routes use the same reader as
+ * AuthGate's anonymous fallback. Both stay outside the workspace providers:
  * records, databases, views and attachments all hydrate per signed-in user.
  *
  * `/s/<token>` joins them: a share link is handed to people who have no
@@ -897,6 +897,20 @@ const rootRoute = createRootRoute({
     const publicRoute = useRouterState({
       select: (state) => isPublicRoutePathname(state.location.pathname),
     })
+    const anonymousRepository = useRouterState({
+      select: (state) => {
+        const match = state.matches.find((match) =>
+          match.routeId === repositoryRoute.id || match.routeId === repoDataRoute.id,
+        )
+        if (!match) return null
+        const { organization, repository } = match.params as {
+          organization: string; repository: string
+        }
+        const detail = state.matches.find((match) => match.routeId === repoDataRecordRoute.id)
+        const dataId = (detail?.params as { recordId?: string } | undefined)?.recordId
+        return { organization, repository, dataId }
+      },
+    })
 
     // Every route of the desktop shell answers ⌘L, including the public
     // reader and the sign-in gate, none of which show their address anywhere.
@@ -914,7 +928,11 @@ const rootRoute = createRootRoute({
               <Outlet />
             </PublicShell>
           ) : (
-            <AuthGate>
+            <AuthGate anonymousContent={anonymousRepository ? (
+              <PublicShell>
+                <PublicDocsView {...anonymousRepository} />
+              </PublicShell>
+            ) : undefined}>
               <AuthenticatedWorkspaceRoot />
             </AuthGate>
           )}
