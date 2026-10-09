@@ -45,6 +45,7 @@ mod tests {
     fn mock_auth(
         calls: Arc<Mutex<Vec<String>>>,
         deny_resource: bool,
+        deny_org_wide: bool,
     ) -> MockAuthApp {
         let mut auth = MockAuthApp::new();
         auth.expect_check_policy_for_resource().returning({
@@ -70,16 +71,48 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push(format!("policy:{}", input.action));
-                Box::pin(async { Ok(()) })
+                Box::pin(async move {
+                    if deny_org_wide {
+                        Err(errors::Error::forbidden("denied"))
+                    } else {
+                        Ok(())
+                    }
+                })
             }
         });
         auth
     }
 
     #[tokio::test]
+    async fn denies_private_repo_without_resource_or_org_wide_permission() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth = mock_auth(calls.clone(), true, true);
+        let executor = create_test_executor();
+        let multi_tenancy = create_test_multi_tenancy();
+
+        let error = authorize_private_repo_read(
+            &auth,
+            &executor,
+            &multi_tenancy,
+            "rp_01test",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, errors::Error::Forbidden { .. }));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[
+                "resource:library:ViewRepo:trn:library:repo:rp_01test",
+                "policy:library:ViewPrivateRepo"
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn resource_access_allows_without_org_wide_fallback() {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let auth = mock_auth(calls.clone(), false);
+        let auth = mock_auth(calls.clone(), false, false);
         let executor = create_test_executor();
         let multi_tenancy = create_test_multi_tenancy();
 
@@ -101,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_org_wide_private_repo_policy() {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let auth = mock_auth(calls.clone(), true);
+        let auth = mock_auth(calls.clone(), true, false);
         let executor = create_test_executor();
         let multi_tenancy = create_test_multi_tenancy();
 

@@ -5,6 +5,13 @@ All notable changes to the Library API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.10] - 2026-10-10
+
+### Fixed
+- **PLT-5336: SDK認可応答の検証**: 単一・一括action応答を要求したaction集合と照合し、欠落、余分なaction、不一致、矛盾する重複、Allowとerrorの併存を固定error `Upstream protocol error` で拒否する。正しいAllow/Deny混在応答の判定は維持する。
+  - 認可応答が不完全または矛盾する場合、許可として扱わずfail-closedにする。tokenや上流応答本文をerrorへ含めない。
+  - resource応答の必須booleanが欠落・不正なら拒否する既存挙動の回帰テストを追加する。
+
 ## [1.5.0] - 2026-01-04
 
 ### Added
