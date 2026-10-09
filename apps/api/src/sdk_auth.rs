@@ -2184,6 +2184,43 @@ fn api_key_from_sdk(
 
 // ---- AuthApp trait implementation ----
 
+/// An Allow is usable only when the response completely and unambiguously
+/// accounts for the requested actions. Keep batch order independent while
+/// preserving repeated actions requested by the caller.
+fn validate_policy_decisions(
+    requested_actions: &[&str],
+    results: &[tachyon_sdk::models::PolicyEvaluationOutcome],
+) -> errors::Result<()> {
+    if results.len() != requested_actions.len() {
+        return Err(SdkRequestError::decode().into_public_error());
+    }
+    let mut remaining = BTreeMap::new();
+    let mut decisions = BTreeMap::new();
+    for action in requested_actions {
+        *remaining.entry(*action).or_insert(0_usize) += 1;
+    }
+    for result in results {
+        let Some(count) = remaining.get_mut(result.action.as_str()) else {
+            return Err(SdkRequestError::decode().into_public_error());
+        };
+        if *count == 0
+            || (result.allowed
+                && result.error.as_ref().and_then(Option::as_ref).is_some())
+        {
+            return Err(SdkRequestError::decode().into_public_error());
+        }
+        if let Some(previous) =
+            decisions.insert(result.action.as_str(), result.allowed)
+        {
+            if previous != result.allowed {
+                return Err(SdkRequestError::decode().into_public_error());
+            }
+        }
+        *count -= 1;
+    }
+    Ok(())
+}
+
 #[async_trait::async_trait]
 impl AuthApp for SdkAuthApp {
     async fn check_policy<'a>(
@@ -2224,13 +2261,12 @@ impl AuthApp for SdkAuthApp {
                     failure.error.into_public_error()
                 })?;
 
-        if let Some(result) = resp.results.first() {
-            if !result.allowed {
-                return Err(errors::Error::forbidden(format!(
-                    "action: {}",
-                    input.action
-                )));
-            }
+        validate_policy_decisions(&[input.action], &resp.results)?;
+        if !resp.results[0].allowed {
+            return Err(errors::Error::forbidden(format!(
+                "action: {}",
+                input.action
+            )));
         }
 
         Ok(())
@@ -2273,6 +2309,7 @@ impl AuthApp for SdkAuthApp {
                 }
             };
 
+        validate_policy_decisions(input.actions, &resp.results)?;
         Ok(resp
             .results
             .into_iter()
@@ -4457,7 +4494,10 @@ mod caller_token_scope_tests {
                         .and_then(|value| value.to_str().ok())
                         .map(str::to_string);
                     captured.lock().unwrap().push(auth);
-                    axum::Json(serde_json::json!({ "results": [] }))
+                    axum::Json(serde_json::json!({ "results": [{
+                        "action": "library:CreateOrganization",
+                        "allowed": true,
+                    }] }))
                 }
             }),
         );
@@ -4677,6 +4717,448 @@ mod caller_token_scope_tests {
         .await;
         let seen = requests.lock().unwrap().clone();
         seen
+    }
+
+    fn policy_response_error_class(error: &errors::Error) -> &'static str {
+        match error {
+            errors::Error::Forbidden { .. } => "forbidden",
+            errors::Error::InternalServerError { .. } => "internal",
+            _ => "other",
+        }
+    }
+
+    async fn check_policy_response_as_caller(
+        response: serde_json::Value,
+        resource_bound: bool,
+        executor: &dyn auth::ExecutorAction,
+        batch_actions: Option<&[&str]>,
+    ) -> errors::Result<Vec<auth::EvaluatePoliciesBatchOutcome>> {
+        let expected_path = if resource_bound {
+            CHECK_POLICIES_FOR_USER_PATH
+        } else {
+            "/v1/auth/policies/check"
+        };
+        let expected_authorization = if resource_bound {
+            "Bearer process-level-token"
+        } else {
+            "Bearer caller-jwt"
+        };
+        let expected_actions = serde_json::json!(
+            batch_actions.unwrap_or(&["library:UpdateRepo"])
+        );
+        let app =
+            axum::Router::new().fallback(
+                axum::routing::any(
+                    move |uri: axum::http::Uri,
+                          headers: axum::http::HeaderMap,
+                          axum::Json(body): axum::Json<
+                        serde_json::Value,
+                    >| {
+                        let response = response.clone();
+                        let expected_actions = expected_actions.clone();
+                        async move {
+                            assert_eq!(uri.path(), expected_path);
+                            assert_eq!(
+                                headers[axum::http::header::AUTHORIZATION],
+                                expected_authorization
+                            );
+                            assert_eq!(body["actions"], expected_actions);
+                            if resource_bound {
+                                assert_eq!(
+                                    body["userId"],
+                                    "us_01testcaller"
+                                );
+                                assert_eq!(
+                                    body["tenantId"],
+                                    TEST_TENANT_ID
+                                );
+                            }
+                            axum::Json(response)
+                        }
+                    },
+                ),
+            );
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant_id,
+            "process-level-token",
+        );
+        let multi_tenancy = auth::MultiTenancy::new(
+            Some(tenant_id.clone()),
+            Some(tenant_id),
+        );
+        let token = if resource_bound {
+            library_resource_token()
+        } else {
+            "caller-jwt".to_string()
+        };
+        let result = caller_token_scope(Some(token), async {
+            match batch_actions {
+                Some(actions) => {
+                    AuthApp::evaluate_policies_batch(
+                        &sdk,
+                        &auth::EvaluatePoliciesBatchInput {
+                            executor,
+                            multi_tenancy: &multi_tenancy,
+                            actions,
+                        },
+                    )
+                    .await
+                }
+                None => AuthApp::check_policy(
+                    &sdk,
+                    &auth::CheckPolicyInput {
+                        executor,
+                        multi_tenancy: &multi_tenancy,
+                        action: "library:UpdateRepo",
+                    },
+                )
+                .await
+                .map(|_| Vec::new()),
+            }
+        })
+        .await;
+        server.abort();
+        result
+    }
+
+    #[tokio::test]
+    async fn check_policy_requires_one_matching_decision_for_each_caller() {
+        let service_account = auth::Executor::ServiceAccount(Box::new(
+            auth::ServiceAccount {
+                id: Default::default(),
+                tenant_id: TEST_TENANT_ID.parse().unwrap(),
+                name: "MCP test key".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ));
+        let callers: [(&str, bool, &dyn auth::ExecutorAction); 3] = [
+            ("user", false, &UserExecutor),
+            ("service_account", false, &service_account),
+            ("resource_bound_user", true, &UserExecutor),
+        ];
+        let cases = [
+            ("empty", serde_json::json!({"results": []}), "internal"),
+            ("missing_results", serde_json::json!({}), "internal"),
+            (
+                "null_results",
+                serde_json::json!({"results": null}),
+                "internal",
+            ),
+            (
+                "missing_action",
+                serde_json::json!({"results": [{"allowed": true}]}),
+                "internal",
+            ),
+            (
+                "missing_allowed",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo"}]}),
+                "internal",
+            ),
+            (
+                "unrelated_allow",
+                serde_json::json!({"results": [{"action": "library:ViewPrivateRepo", "allowed": true}]}),
+                "internal",
+            ),
+            (
+                "extra_decision",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:ViewPrivateRepo", "allowed": true}]}),
+                "internal",
+            ),
+            (
+                "duplicate_allow",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:UpdateRepo", "allowed": true}]}),
+                "internal",
+            ),
+            (
+                "conflicting_duplicate",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:UpdateRepo", "allowed": false}]}),
+                "internal",
+            ),
+            (
+                "allow_with_error",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true, "error": "synthetic evaluation failure"}]}),
+                "internal",
+            ),
+            (
+                "deny",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": false}]}),
+                "forbidden",
+            ),
+            (
+                "deny_with_error",
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": false, "error": "synthetic deny"}]}),
+                "forbidden",
+            ),
+        ];
+        for (caller, resource_bound, executor) in callers {
+            for (case, response, expected_class) in &cases {
+                let error = check_policy_response_as_caller(
+                    response.clone(),
+                    resource_bound,
+                    executor,
+                    None,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(
+                    policy_response_error_class(&error),
+                    *expected_class,
+                    "caller={caller}, case={case}"
+                );
+                assert!(!error.to_string().contains("synthetic"));
+            }
+            for response in [
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}]}),
+                serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true, "error": null}]}),
+            ] {
+                check_policy_response_as_caller(
+                    response,
+                    resource_bound,
+                    executor,
+                    None,
+                )
+                .await
+                .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_policy_decisions_must_cover_exactly_the_requested_actions(
+    ) {
+        let service_account = auth::Executor::ServiceAccount(Box::new(
+            auth::ServiceAccount {
+                id: Default::default(),
+                tenant_id: TEST_TENANT_ID.parse().unwrap(),
+                name: "MCP test key".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ));
+        let callers: [(&str, bool, &dyn auth::ExecutorAction); 3] = [
+            ("user", false, &UserExecutor),
+            ("service_account", false, &service_account),
+            ("resource_bound_user", true, &UserExecutor),
+        ];
+        let actions = &["library:UpdateRepo", "library:ViewPrivateRepo"];
+        let invalid_responses = [
+            serde_json::json!({"results": []}),
+            serde_json::json!({}),
+            serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}]}),
+            serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:UpdateRepo", "allowed": false}]}),
+            serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:CreateRepo", "allowed": true}]}),
+            serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:ViewPrivateRepo", "allowed": true, "error": "synthetic error"}]}),
+            serde_json::json!({"results": [{"action": "library:UpdateRepo", "allowed": true}, {"action": "library:ViewPrivateRepo", "allowed": true}, {"action": "library:CreateRepo", "allowed": true}]}),
+        ];
+        for (caller, resource_bound, executor) in callers {
+            for (case, response) in invalid_responses.iter().enumerate() {
+                let error = check_policy_response_as_caller(
+                    response.clone(),
+                    resource_bound,
+                    executor,
+                    Some(actions),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(
+                    policy_response_error_class(&error),
+                    "internal",
+                    "caller={caller}, case={case}"
+                );
+                assert!(!error.to_string().contains("synthetic"));
+            }
+            // Upstream may return decisions in another order, and a batch
+            // carries legitimate Deny outcomes without losing them.
+            let outcomes = check_policy_response_as_caller(
+                serde_json::json!({"results": [
+                    {"action": "library:ViewPrivateRepo", "allowed": false, "error": "synthetic deny"},
+                    {"action": "library:UpdateRepo", "allowed": true}
+                ]}), resource_bound, executor, Some(actions),
+            ).await.unwrap();
+            assert_eq!(outcomes.len(), 2);
+            assert_eq!(outcomes[0].action, "library:ViewPrivateRepo");
+            assert!(!outcomes[0].allowed);
+            assert_eq!(
+                outcomes[0].error.as_deref(),
+                Some("synthetic deny")
+            );
+            assert!(outcomes[1].allowed);
+
+            // A repeated request remains valid when both decisions exist.
+            let repeated = &["library:UpdateRepo", "library:UpdateRepo"];
+            let error = check_policy_response_as_caller(
+                serde_json::json!({"results": [
+                    {"action": "library:UpdateRepo", "allowed": true},
+                    {"action": "library:UpdateRepo", "allowed": false}
+                ]}),
+                resource_bound,
+                executor,
+                Some(repeated),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(policy_response_error_class(&error), "internal");
+            let outcomes = check_policy_response_as_caller(
+                serde_json::json!({"results": [
+                    {"action": "library:UpdateRepo", "allowed": true},
+                    {"action": "library:UpdateRepo", "allowed": true}
+                ]}),
+                resource_bound,
+                executor,
+                Some(repeated),
+            )
+            .await
+            .unwrap();
+            assert_eq!(outcomes.len(), 2);
+            assert!(outcomes.iter().all(|outcome| outcome.allowed));
+            let outcomes = check_policy_response_as_caller(
+                serde_json::json!({"results": [
+                    {"action": "library:UpdateRepo", "allowed": false},
+                    {"action": "library:UpdateRepo", "allowed": false}
+                ]}),
+                resource_bound,
+                executor,
+                Some(repeated),
+            )
+            .await
+            .unwrap();
+            assert_eq!(outcomes.len(), 2);
+            assert!(outcomes.iter().all(|outcome| !outcome.allowed));
+        }
+    }
+
+    #[tokio::test]
+    async fn resource_policy_responses_require_an_explicit_boolean_decision(
+    ) {
+        let service_account = auth::Executor::ServiceAccount(Box::new(
+            auth::ServiceAccount {
+                id: Default::default(),
+                tenant_id: TEST_TENANT_ID.parse().unwrap(),
+                name: "MCP test key".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ));
+        let callers: [(bool, &dyn auth::ExecutorAction); 3] = [
+            (false, &UserExecutor),
+            (false, &service_account),
+            (true, &UserExecutor),
+        ];
+        let cases = [
+            (serde_json::json!({}), Some("internal")),
+            (serde_json::json!({"allowed": null}), Some("internal")),
+            (serde_json::json!({"allowed": "true"}), Some("internal")),
+            (
+                serde_json::json!({"results": [{"allowed": true}]}),
+                Some("internal"),
+            ),
+            (serde_json::json!({"allowed": false}), Some("forbidden")),
+            (serde_json::json!({"allowed": true}), None),
+            (
+                serde_json::json!({"allowed": true, "executionMode": "production", "sandboxRestriction": {"configured": "allow", "result": "not_applicable", "reason": null}}),
+                None,
+            ),
+        ];
+        for (resource_bound, executor) in callers {
+            for (response, expected_error) in &cases {
+                let response = response.clone();
+                let path = if resource_bound {
+                    CHECK_RESOURCE_POLICY_FOR_USER_PATH
+                } else {
+                    "/v1/auth/policies/check-for-resource"
+                };
+                let router = axum::Router::new().route(
+                    path,
+                    axum::routing::post(
+                        move |headers: axum::http::HeaderMap,
+                              axum::Json(body): axum::Json<
+                            serde_json::Value,
+                        >| {
+                            let response = response.clone();
+                            async move {
+                                assert_eq!(
+                                    headers
+                                        [axum::http::header::AUTHORIZATION],
+                                    if resource_bound {
+                                        "Bearer process-level-token"
+                                    } else {
+                                        "Bearer caller-jwt"
+                                    }
+                                );
+                                assert_eq!(
+                                    body["action"],
+                                    "library:ViewRepo"
+                                );
+                                assert_eq!(
+                                    body["resourceTrn"],
+                                    "trn:library:repo:rp_test"
+                                );
+                                if resource_bound {
+                                    assert_eq!(
+                                        body["userId"],
+                                        "us_01testcaller"
+                                    );
+                                    assert_eq!(
+                                        body["tenantId"],
+                                        TEST_TENANT_ID
+                                    );
+                                }
+                                axum::Json(response)
+                            }
+                        },
+                    ),
+                );
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .unwrap();
+                let addr = listener.local_addr().unwrap();
+                let server = tokio::spawn(async move {
+                    axum::serve(listener, router).await.unwrap();
+                });
+                let tenant_id: TenantId = TEST_TENANT_ID.parse().unwrap();
+                let sdk = SdkAuthApp::new(
+                    format!("http://{addr}"),
+                    &tenant_id,
+                    "process-level-token",
+                );
+                let multi_tenancy = auth::MultiTenancy::new(
+                    Some(tenant_id.clone()),
+                    Some(tenant_id),
+                );
+                let token = if resource_bound {
+                    library_resource_token()
+                } else {
+                    "caller-jwt".to_string()
+                };
+                let result = caller_token_scope(Some(token), async {
+                    AuthApp::check_policy_for_resource(
+                        &sdk,
+                        &auth::CheckPolicyForResourceInput {
+                            executor,
+                            multi_tenancy: &multi_tenancy,
+                            action: "library:ViewRepo",
+                            resource_trn: "trn:library:repo:rp_test",
+                        },
+                    )
+                    .await
+                })
+                .await;
+                server.abort();
+                match expected_error {
+                    Some(class) => assert_eq!(
+                        policy_response_error_class(&result.unwrap_err()),
+                        *class
+                    ),
+                    None => result.unwrap(),
+                }
+            }
+        }
     }
 
     fn check_update_repo<'a>(
