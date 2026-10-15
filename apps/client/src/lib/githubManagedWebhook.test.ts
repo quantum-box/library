@@ -12,9 +12,12 @@ describe('GitHub managed webhook API', () => {
 
   it('scopes reads and writes to the binding and organization', async () => {
     let calls = 0
-    const fetch = vi.fn(async (_input: unknown, _init: RequestInit) => response(calls++ === 0
-      ? { githubBindingWebhookStatus: null }
-      : { provisionGithubBindingWebhook: { hookId: '17', endpointId: 'whe_test' } }))
+    const fetch = vi.fn(async (...args: [unknown, RequestInit]) => {
+      expect(args).toHaveLength(2)
+      return response(calls++ === 0
+        ? { githubBindingWebhookStatus: null }
+        : { provisionGithubBindingWebhook: { hookId: '17', endpointId: 'whe_test' } })
+    })
     vi.stubGlobal('fetch', fetch)
     await expect(getGitHubManagedWebhook(target, binding)).resolves.toBeNull()
     await ensureGitHubManagedWebhook(target, binding)
