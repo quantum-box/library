@@ -436,3 +436,168 @@ async fn paged_list_hydrates_like_single_reads_in_every_storage_mode(
     pool.close().await;
     Ok(())
 }
+
+/// The page-scoped canonical read is a separate statement and may select a
+/// shifted page (e.g. a record before the offset was deleted concurrently).
+/// Its result must be used only when it selected exactly the returned rows;
+/// otherwise the values are re-read by the ids the row query returned.
+#[tokio::test]
+#[ignore]
+async fn shifted_canonical_page_is_re_read_by_returned_ids(
+) -> anyhow::Result<()> {
+    use database_manager::interface_adapter::gateway::{
+        canonical_values_for_rows, load_canonical_values_for_page,
+    };
+    use database_manager::property_value_rollout::PropertyValueStorageMode;
+    use value_object::OffsetPage;
+
+    dotenvy::dotenv().ok();
+    let tenant_id = TenantId::default();
+    let dsn: DatabaseUrl = std::env::var("DEV_DATABASE_URL")
+        .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
+        .parse::<DatabaseUrl>()?
+        .use_database("tachyon_apps_database_manager");
+    let mode = PropertyValueStorageMode::DualWriteCanonicalRead;
+    let writer = database_manager::factory_client_with_property_value_mode(
+        &dsn, mode,
+    )
+    .await?;
+    let db = persistence::Db::new(dsn.to_string()).await;
+    let executor = &auth::Executor::SystemUser;
+    let multi_tenancy =
+        &auth::MultiTenancy::new(None, Some(tenant_id.clone()));
+
+    let database = writer
+        .create_database()
+        .execute(CreateDatabaseInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: None,
+            name: "shifted canonical page",
+        })
+        .await?;
+    let property = writer
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            display_name: None,
+            name: "value",
+            property_type: PropertyType::String,
+        })
+        .await?;
+    let mut ids = Vec::new();
+    for index in 0..6 {
+        let data = writer
+            .add_data_usecase()
+            .execute(AddDataInputData {
+                executor,
+                multi_tenancy,
+                tenant_id: &tenant_id,
+                database_id: database.id(),
+                name: &format!("record-{index}"),
+                property_data: vec![PropertyDataInputData {
+                    property_id: property.id().clone(),
+                    value: PropertyValueCommand::String(format!(
+                        "value-{index}"
+                    )),
+                }],
+            })
+            .await?;
+        ids.push(data.id().to_string());
+    }
+    ids.sort();
+    let page = OffsetPage::new(1, 3)?;
+    let key = |id: &str| (id.to_string(), property.id().to_string());
+
+    let canonical = load_canonical_values_for_page(
+        &db,
+        &tenant_id,
+        database.id(),
+        page,
+        mode,
+    )
+    .await?;
+    assert_eq!(canonical.ids, ids[..3]);
+    assert_eq!(canonical.values.len(), 3);
+
+    // Same page: the concurrent result is used as is (no re-read). Clearing
+    // the values makes a re-read observable, since it would restore them.
+    let mut unchanged = canonical.clone();
+    unchanged.values.clear();
+    let values = canonical_values_for_rows(
+        &db,
+        &tenant_id,
+        database.id(),
+        &ids[..3],
+        unchanged,
+        mode,
+    )
+    .await?;
+    assert!(values.is_empty(), "a matching page must not be re-read");
+
+    // Shifted page: the row query returned ids[1..4] (ids[0] was deleted
+    // between the statements), but the canonical read still saw ids[..3].
+    let values = canonical_values_for_rows(
+        &db,
+        &tenant_id,
+        database.id(),
+        &ids[1..4],
+        canonical.clone(),
+        mode,
+    )
+    .await?;
+    let mut keys = values.keys().cloned().collect::<Vec<_>>();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ids[1..4].iter().map(|id| key(id)).collect::<Vec<_>>(),
+        "a shifted page must be re-read by the returned ids"
+    );
+    assert_eq!(
+        values[&key(&ids[3])].envelope()?.raw_value,
+        serde_json::json!("value-3")
+    );
+
+    // A page record without canonical values still counts as selected.
+    let mut missing = canonical;
+    missing.values.remove(&key(&ids[0]));
+    let values = canonical_values_for_rows(
+        &db,
+        &tenant_id,
+        database.id(),
+        &ids[..3],
+        missing,
+        mode,
+    )
+    .await?;
+    assert!(
+        !values.contains_key(&key(&ids[0])),
+        "an unbackfilled record on the same page must not trigger a re-read"
+    );
+
+    // The LEFT JOIN keeps page records that have no canonical rows yet.
+    sqlx::query(
+        "DELETE FROM property_values \
+         WHERE tenant_id = ? AND database_id = ? AND data_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .bind(&ids[0])
+    .execute(db.pool().as_ref())
+    .await?;
+    let canonical = load_canonical_values_for_page(
+        &db,
+        &tenant_id,
+        database.id(),
+        page,
+        mode,
+    )
+    .await?;
+    assert_eq!(canonical.ids, ids[..3]);
+    assert_eq!(canonical.values.len(), 2);
+    Ok(())
+}

@@ -285,7 +285,7 @@ async fn breakdown(
         canonical_read.push(started.elapsed());
     }
     let fields = fields().await?;
-    let canonical_values = canonical().await?;
+    let canonical_values = canonical().await?.values;
     println!(
         "breakdown: legacy page read median={:?}, canonical page read \
          median={:?} ({} values)",
