@@ -100,29 +100,30 @@ impl ViewDataListInputPort for ViewDataList {
             .await?;
         }
 
-        let properties = self
-            .database
-            .find_all_properties()
-            .execute(FindAllPropertiesInputData {
+        let database_id = repo.databases().first().unwrap().clone();
+        let find_all_properties = self.database.find_all_properties();
+        let search_data = self.database.search_data();
+        let search_input = database_manager::SearchDataInputData {
+            executor: input.executor,
+            multi_tenancy: input.multi_tenancy,
+            tenant_id: org.id(),
+            database_id: Some(database_id.clone()),
+            page: input.page,
+            page_size: input.page_size,
+            query: "",
+        };
+        // Both reads are independent, so run them concurrently. `join!`
+        // (not `try_join!`) waits for both and the results are checked in
+        // the original order, so the error a caller sees does not change.
+        let (properties, data) = tokio::join!(
+            find_all_properties.execute(FindAllPropertiesInputData {
                 tenant_id: org.id().clone(),
-                database_id: repo.databases().first().unwrap().clone(),
-            })
-            .await?;
-        let (data_list, paginator) = self
-            .database
-            .search_data()
-            .execute(&database_manager::SearchDataInputData {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                tenant_id: org.id(),
-                database_id: Some(
-                    repo.databases().first().unwrap().clone(),
-                ),
-                page: input.page,
-                page_size: input.page_size,
-                query: "",
-            })
-            .await?;
+                database_id,
+            }),
+            search_data.execute(&search_input),
+        );
+        let properties = properties?;
+        let (data_list, paginator) = data?;
 
         Ok((data_list, properties, paginator))
     }

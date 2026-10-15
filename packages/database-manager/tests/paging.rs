@@ -281,3 +281,155 @@ async fn paging_is_one_origin_stable_and_filtered() -> anyhow::Result<()> {
     pool.close().await;
     Ok(())
 }
+
+/// The concurrent list read loads canonical values for the page by
+/// re-selecting the page in SQL instead of by the fetched ids. Every mode must
+/// still hydrate each listed record exactly as the single-record read does,
+/// and canonical-first reads must pick the canonical row of the right record.
+#[tokio::test]
+#[ignore]
+async fn paged_list_hydrates_like_single_reads_in_every_storage_mode(
+) -> anyhow::Result<()> {
+    use database_manager::{
+        property_definition_rollout::PropertyDefinitionStorageMode,
+        property_value_rollout::PropertyValueStorageMode, GetDataInputData,
+    };
+
+    dotenvy::dotenv().ok();
+    let tenant_id = TenantId::default();
+    let dsn: DatabaseUrl = std::env::var("DEV_DATABASE_URL")
+        .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
+        .parse::<DatabaseUrl>()?
+        .use_database("tachyon_apps_database_manager");
+    let writer = database_manager::factory_client_with_property_value_mode(
+        &dsn,
+        PropertyValueStorageMode::DualWriteLegacyRead,
+    )
+    .await?;
+    let pool = sqlx::MySqlPool::connect(&dsn.to_string()).await?;
+    let executor = &auth::Executor::SystemUser;
+    let multi_tenancy =
+        &auth::MultiTenancy::new(None, Some(tenant_id.clone()));
+
+    let database = writer
+        .create_database()
+        .execute(CreateDatabaseInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: None,
+            name: "paged hydration",
+        })
+        .await?;
+    let property = writer
+        .add_property()
+        .execute(AddPropertyInputData {
+            executor,
+            multi_tenancy,
+            tenant_id: &tenant_id,
+            database_id: database.id(),
+            display_name: None,
+            name: "value",
+            property_type: PropertyType::String,
+        })
+        .await?;
+    let mut ids = Vec::new();
+    for index in 0..12 {
+        let data = writer
+            .add_data_usecase()
+            .execute(AddDataInputData {
+                executor,
+                multi_tenancy,
+                tenant_id: &tenant_id,
+                database_id: database.id(),
+                name: &format!("record-{index}"),
+                property_data: vec![PropertyDataInputData {
+                    property_id: property.id().clone(),
+                    value: PropertyValueCommand::String(format!(
+                        "legacy-{index}"
+                    )),
+                }],
+            })
+            .await?;
+        ids.push(data.id().clone());
+    }
+    ids.sort_by_key(|id| id.to_string());
+
+    // Diverge the canonical copy of the first record on page 2 only.
+    let diverged = ids[5].clone();
+    let updated = sqlx::query(
+        r#"
+        UPDATE tachyon_apps_database_manager.property_values
+        SET value = JSON_QUOTE('canonical-only')
+        WHERE tenant_id = ? AND database_id = ? AND data_id = ?
+        "#,
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .bind(diverged.to_string())
+    .execute(&pool)
+    .await?;
+    assert_eq!(updated.rows_affected(), 1);
+
+    for mode in [
+        PropertyValueStorageMode::LegacyOnly,
+        PropertyValueStorageMode::DualWriteLegacyRead,
+        PropertyValueStorageMode::DualWriteCanonicalRead,
+    ] {
+        let app = database_manager::factory_client_with_storage_modes(
+            &dsn,
+            mode,
+            PropertyDefinitionStorageMode::DualWriteLegacyRead,
+        )
+        .await?;
+        let mut listed = Vec::new();
+        for page in 1..=3 {
+            let (data, paginator) = search(
+                &app,
+                executor,
+                multi_tenancy,
+                &tenant_id,
+                database.id(),
+                "",
+                page,
+                5,
+            )
+            .await?;
+            assert_eq!(paginator.total_items, 12);
+            listed.extend(data);
+        }
+        assert_eq!(
+            listed.iter().map(|data| data.id().clone()).collect::<Vec<_>>(),
+            ids,
+            "{mode:?}: pages must list every record once, in id order"
+        );
+        for data in &listed {
+            let single = app
+                .get_data_usecase()
+                .execute(&GetDataInputData {
+                    executor,
+                    multi_tenancy,
+                    tenant_id: &tenant_id,
+                    database_id: database.id(),
+                    data_id: data.id(),
+                })
+                .await?;
+            let value = |data: &Data| {
+                data.get_property_data(property.id())
+                    .map(|value| value.string_value())
+            };
+            assert_eq!(value(data), value(&single), "{mode:?}");
+            let expected_canonical = data.id() == &diverged
+                && mode == PropertyValueStorageMode::DualWriteCanonicalRead;
+            assert_eq!(
+                value(data).as_deref() == Some("canonical-only"),
+                expected_canonical,
+                "{mode:?}: only canonical-first reads see the canonical copy, \
+                 and only for its own record"
+            );
+        }
+    }
+
+    pool.close().await;
+    Ok(())
+}

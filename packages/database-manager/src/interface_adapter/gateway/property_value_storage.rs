@@ -77,6 +77,56 @@ pub async fn load_canonical_values(
     Ok(values)
 }
 
+/// Load the canonical values of one `data` page without waiting for the page
+/// itself, so the read can run concurrently with the legacy row query.
+///
+/// The page is selected with the same predicate, order and window as
+/// `DataRepository::find_all_with_paging`. Rows are keyed by
+/// `(data_id, property_id)`, so a page that shifts between the two statements
+/// only leaves extra rows unused or a value missing, which hydration already
+/// treats like a value that has not been backfilled yet.
+pub async fn load_canonical_values_for_page(
+    db: &Db,
+    tenant_id: &TenantId,
+    database_id: &DatabaseId,
+    page: OffsetPage,
+    mode: PropertyValueStorageMode,
+) -> errors::Result<HashMap<(String, String), PropertyValueRow>> {
+    if !mode.reads_or_shadows_canonical() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query_as::<_, PropertyValueRow>(
+        r#"
+        SELECT
+            pv.tenant_id, pv.database_id, pv.data_id, pv.property_id,
+            pv.type_key, pv.type_version, pv.value_encoding_version, pv.value
+        FROM (
+            SELECT id
+            FROM data
+            WHERE object_id = ? and tenant_id = ?
+            ORDER BY id ASC
+            LIMIT ? OFFSET ?
+        ) AS page
+        JOIN property_values pv
+            ON pv.tenant_id = ?
+            AND pv.database_id = ?
+            AND pv.data_id = page.id
+        "#,
+    )
+    .bind(database_id.to_string())
+    .bind(tenant_id.to_string())
+    .bind(page.items_per_page())
+    .bind(page.offset())
+    .bind(tenant_id.to_string())
+    .bind(database_id.to_string())
+    .fetch_all(db.pool().as_ref())
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| ((row.data_id.clone(), row.property_id.clone()), row))
+        .collect())
+}
+
 pub async fn load_canonical_values_for_mode(
     db: &Db,
     tenant_id: &TenantId,

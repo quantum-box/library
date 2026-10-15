@@ -635,41 +635,56 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        let fields = sqlx::query_as::<_, FieldRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                fields
-            WHERE
-                object_id = ? and tenant_id = ?
-            "#,
-        )
-        .bind(database_id.to_string())
-        .bind(tenant_id.to_string())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-        let data_rows = sqlx::query_as::<_, DataRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                data
-            WHERE
-                object_id = ? and tenant_id = ?
-            ORDER BY
-                id ASC
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(database_id.to_string())
-        .bind(tenant_id.to_string())
-        .bind(page.items_per_page())
-        .bind(page.offset())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-        let total: i64 = sqlx::query_scalar!(
-            r#"
+        // The four reads are independent, so issue them concurrently: the
+        // list then costs one database round trip instead of four. Every
+        // read is still required, so a failure fails the list exactly as the
+        // sequential version did.
+        let pool = self.db.pool();
+        let fields = async {
+            Ok::<_, errors::Error>(
+                sqlx::query_as::<_, FieldRow>(
+                    r#"
+                    SELECT
+                        *
+                    FROM
+                        fields
+                    WHERE
+                        object_id = ? and tenant_id = ?
+                    "#,
+                )
+                .bind(database_id.to_string())
+                .bind(tenant_id.to_string())
+                .fetch_all(pool.as_ref())
+                .await?,
+            )
+        };
+        let data_rows = async {
+            Ok::<_, errors::Error>(
+                sqlx::query_as::<_, DataRow>(
+                    r#"
+                    SELECT
+                        *
+                    FROM
+                        data
+                    WHERE
+                        object_id = ? and tenant_id = ?
+                    ORDER BY
+                        id ASC
+                    LIMIT ? OFFSET ?
+                    "#,
+                )
+                .bind(database_id.to_string())
+                .bind(tenant_id.to_string())
+                .bind(page.items_per_page())
+                .bind(page.offset())
+                .fetch_all(pool.as_ref())
+                .await?,
+            )
+        };
+        // The SQL literal must stay byte-identical to the `.sqlx` cache entry.
+        let total = async {
+            let total: i64 = sqlx::query_scalar!(
+                r#"
             SELECT
                 COUNT(*)
             FROM
@@ -677,23 +692,22 @@ impl DataRepository for DataRepositoryImpl {
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
-            database_id.to_string(),
-            tenant_id.to_string(),
-        )
-        .fetch_one(self.db.pool().as_ref())
-        .await?;
-        let data_ids = data_rows
-            .iter()
-            .map(|row| row.id.clone())
-            .collect::<Vec<_>>();
-        let canonical = load_canonical_values_for_mode(
+                database_id.to_string(),
+                tenant_id.to_string(),
+            )
+            .fetch_one(pool.as_ref())
+            .await?;
+            Ok::<_, errors::Error>(total)
+        };
+        let canonical = load_canonical_values_for_page(
             self.db.as_ref(),
             tenant_id,
             database_id,
-            &data_ids,
+            page,
             self.property_value_mode,
-        )
-        .await?;
+        );
+        let (fields, data_rows, total, canonical) =
+            tokio::try_join!(fields, data_rows, total, canonical)?;
         let mut data_vec = vec![];
         for data_row in data_rows {
             let data = hydrate_data_row(
