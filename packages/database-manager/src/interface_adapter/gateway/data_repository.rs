@@ -635,10 +635,9 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        // Fields are read before the page (see below); COUNT and the
-        // legacy-first canonical shadow run concurrently with both. Every
-        // read is still required, so a failure fails the list exactly as the
-        // sequential version did.
+        // Reads keep the original fields -> page -> COUNT order (see below);
+        // only canonical values overlap them. Every read is still required,
+        // so a failure fails the list exactly as the sequential version did.
         let pool = self.db.pool();
         let fields = async {
             Ok::<_, errors::Error>(
@@ -714,26 +713,24 @@ impl DataRepository for DataRepositoryImpl {
             .reads_canonical_first()
         {
             // Canonical values decide the response here, so read them
-            // by the ids this page actually returned, chained after the
-            // page (still concurrent with COUNT).
-            let rows_with_canonical = async {
-                let (fields, data_rows) = fields_then_rows.await?;
+            // by the ids this page actually returned, after the page and
+            // concurrently with COUNT (which also follows the page).
+            let (fields, data_rows) = fields_then_rows.await?;
+            let canonical = async {
                 let data_ids = data_rows
                     .iter()
                     .map(|row| row.id.clone())
                     .collect::<Vec<_>>();
-                let canonical = load_canonical_values_for_mode(
+                load_canonical_values_for_mode(
                     self.db.as_ref(),
                     tenant_id,
                     database_id,
                     &data_ids,
                     self.property_value_mode,
                 )
-                .await?;
-                Ok::<_, errors::Error>((fields, data_rows, canonical))
+                .await
             };
-            let ((fields, data_rows, canonical), total) =
-                tokio::try_join!(rows_with_canonical, total)?;
+            let (total, canonical) = tokio::try_join!(total, canonical)?;
             (fields, data_rows, total, canonical)
         } else {
             // Legacy-first reads only shadow canonical values for the
@@ -745,8 +742,10 @@ impl DataRepository for DataRepositoryImpl {
                 page,
                 self.property_value_mode,
             );
-            let ((fields, data_rows), total, canonical) =
-                tokio::try_join!(fields_then_rows, total, canonical)?;
+            let (((fields, data_rows), total), canonical) = tokio::try_join!(
+                page_then_count(fields_then_rows, total),
+                canonical
+            )?;
             let page_records =
                 data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
             let canonical = canonical_values_for_rows(
@@ -771,80 +770,82 @@ impl DataRepository for DataRepositoryImpl {
             )?;
             data_vec.push(data);
         }
-        let total = paged_total(total, page, data_vec.len())?;
+        let total = u32::try_from(total).map_err(|_| {
+            errors::Error::internal_server_error(
+                "data count exceeds the supported pagination range",
+            )
+        })?;
         let paginator = OffsetPaginator::new(page, total);
         Ok((DataCollection::new(data_vec), paginator))
     }
 }
 
-/// COUNT runs concurrently with the page query and may see an older snapshot:
-/// a record inserted between them can be listed while missing from the count.
-/// A non-empty page proves at least `offset + returned` records exist, so the
-/// total never goes below that. An empty page proves nothing and keeps COUNT.
-fn paged_total(
-    count: i64,
-    page: OffsetPage,
-    returned: usize,
-) -> errors::Result<u32> {
-    let out_of_range = || {
-        errors::Error::internal_server_error(
-            "data count exceeds the supported pagination range",
-        )
-    };
-    let count = u32::try_from(count).map_err(|_| out_of_range())?;
-    if returned == 0 {
-        return Ok(count);
-    }
-    let returned = u32::try_from(returned).map_err(|_| out_of_range())?;
-    let listed = page
-        .offset()
-        .checked_add(returned)
-        .ok_or_else(out_of_range)?;
-    Ok(count.max(listed))
+/// Run COUNT only after the page has been read. Futures are lazy, so `count`
+/// does not start until `page` has completed: any record the page could see
+/// was committed before COUNT ran, and the total is never older than the
+/// page (the ordering the sequential implementation had).
+async fn page_then_count<T>(
+    page: impl std::future::Future<Output = errors::Result<T>>,
+    count: impl std::future::Future<Output = errors::Result<i64>>,
+) -> errors::Result<(T, i64)> {
+    let page = page.await?;
+    let count = count.await?;
+    Ok((page, count))
 }
 
 #[cfg(test)]
-mod paged_total_tests {
+mod page_then_count_tests {
     use super::*;
+    use std::sync::atomic::{AtomicI64, Ordering};
 
-    #[test]
-    fn a_record_inserted_after_count_is_counted() {
-        // Empty database: COUNT saw 0, then one record was inserted before
-        // the page query returned it.
-        let page = OffsetPage::new(1, 20).unwrap();
-        let total = paged_total(0, page, 1).unwrap();
-        assert_eq!(total, 1);
-        let paginator = OffsetPaginator::new(page, total);
-        assert_eq!(paginator.total_items, 1);
-        assert_eq!(paginator.total_pages, 1);
-
-        let page = OffsetPage::new(3, 10).unwrap();
-        assert_eq!(paged_total(25, page, 7).unwrap(), 27);
-    }
-
-    #[test]
-    fn a_consistent_count_is_kept() {
-        let page = OffsetPage::new(2, 10).unwrap();
-        assert_eq!(paged_total(31, page, 10).unwrap(), 31);
-        assert_eq!(paged_total(15, page, 5).unwrap(), 15);
-    }
-
-    #[test]
-    fn an_empty_page_keeps_the_count() {
-        // Pages past the end (or an emptied database) must not invent rows.
-        let page = OffsetPage::new(6, 7).unwrap();
-        assert_eq!(paged_total(31, page, 0).unwrap(), 31);
-        assert_eq!(
-            paged_total(0, OffsetPage::new(1, 20).unwrap(), 0).unwrap(),
-            0
+    #[tokio::test]
+    async fn the_count_is_never_older_than_the_page() {
+        // An empty database: one record is committed while the page is
+        // being read, so the page returns it. COUNT must include it.
+        let committed = AtomicI64::new(0);
+        let page = async {
+            committed.fetch_add(1, Ordering::SeqCst);
+            tokio::task::yield_now().await;
+            Ok(vec!["record"])
+        };
+        let count = async { Ok(committed.load(Ordering::SeqCst)) };
+        let (rows, total) = page_then_count(page, count).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(total, 1, "items=1 with total=0 must be impossible");
+        let paginator = OffsetPaginator::new(
+            OffsetPage::new(1, 20).unwrap(),
+            u32::try_from(total).unwrap(),
         );
+        assert_eq!(paginator.total_pages, 1);
     }
 
-    #[test]
-    fn negative_or_oversized_counts_are_rejected() {
-        let page = OffsetPage::new(1, 20).unwrap();
-        assert!(paged_total(-1, page, 0).is_err());
-        assert!(paged_total(i64::from(u32::MAX) + 1, page, 0).is_err());
+    #[tokio::test]
+    async fn an_insert_outside_a_full_page_is_counted() {
+        // 20 records; the 21st is committed while page 1 (10 rows) is read.
+        let committed = AtomicI64::new(20);
+        let page = async {
+            committed.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![(); 10])
+        };
+        let count = async { Ok(committed.load(Ordering::SeqCst)) };
+        let (_, total) = page_then_count(page, count).await.unwrap();
+        assert_eq!(total, 21);
+    }
+
+    #[tokio::test]
+    async fn a_failed_page_does_not_run_the_count() {
+        let counted = AtomicI64::new(0);
+        let error = page_then_count(
+            async { Err::<(), _>(errors::Error::not_found("page")) },
+            async {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Ok(0)
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("page"));
+        assert_eq!(counted.load(Ordering::SeqCst), 0);
     }
 }
 
