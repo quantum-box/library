@@ -635,9 +635,10 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        // Fields, the page, COUNT and canonical values are read concurrently.
-        // Every read is still required, so a failure fails the list exactly
-        // as the sequential version did.
+        // Fields are read before the page (see below); COUNT and the
+        // legacy-first canonical shadow run concurrently with both. Every
+        // read is still required, so a failure fails the list exactly as the
+        // sequential version did.
         let pool = self.db.pool();
         let fields = async {
             Ok::<_, errors::Error>(
@@ -698,15 +699,25 @@ impl DataRepository for DataRepositoryImpl {
             .await?;
             Ok::<_, errors::Error>(total)
         };
+        // `valueN` slots are interpreted through `fields`. A property can be
+        // deleted and its `field_num` reused by a new one, and nothing in a
+        // data row says which property wrote a slot, so a page older than
+        // the fields would show the old value under the new property. Keep
+        // the original fields-then-page order for these two reads.
+        let fields_then_rows = async {
+            let fields = fields.await?;
+            let data_rows = data_rows.await?;
+            Ok::<_, errors::Error>((fields, data_rows))
+        };
         let (fields, data_rows, total, canonical) = if self
             .property_value_mode
             .reads_canonical_first()
         {
             // Canonical values decide the response here, so read them
             // by the ids this page actually returned, chained after the
-            // page (still concurrent with fields and COUNT).
+            // page (still concurrent with COUNT).
             let rows_with_canonical = async {
-                let data_rows = data_rows.await?;
+                let (fields, data_rows) = fields_then_rows.await?;
                 let data_ids = data_rows
                     .iter()
                     .map(|row| row.id.clone())
@@ -719,10 +730,10 @@ impl DataRepository for DataRepositoryImpl {
                     self.property_value_mode,
                 )
                 .await?;
-                Ok::<_, errors::Error>((data_rows, canonical))
+                Ok::<_, errors::Error>((fields, data_rows, canonical))
             };
-            let (fields, (data_rows, canonical), total) =
-                tokio::try_join!(fields, rows_with_canonical, total)?;
+            let ((fields, data_rows, canonical), total) =
+                tokio::try_join!(rows_with_canonical, total)?;
             (fields, data_rows, total, canonical)
         } else {
             // Legacy-first reads only shadow canonical values for the
@@ -734,8 +745,8 @@ impl DataRepository for DataRepositoryImpl {
                 page,
                 self.property_value_mode,
             );
-            let (fields, data_rows, total, canonical) =
-                tokio::try_join!(fields, data_rows, total, canonical)?;
+            let ((fields, data_rows), total, canonical) =
+                tokio::try_join!(fields_then_rows, total, canonical)?;
             let page_records =
                 data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
             let canonical = canonical_values_for_rows(
