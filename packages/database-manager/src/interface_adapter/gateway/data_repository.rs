@@ -699,15 +699,43 @@ impl DataRepository for DataRepositoryImpl {
             .await?;
             Ok::<_, errors::Error>(total)
         };
-        let canonical = load_canonical_values_for_page(
-            self.db.as_ref(),
-            tenant_id,
-            database_id,
-            page,
-            self.property_value_mode,
-        );
+        // Canonical-first reads take their values from the canonical map, so
+        // it must be keyed by the ids this page actually returned: a separate
+        // statement can see a shifted page, and a missing entry would
+        // silently fall back to legacy. Legacy-first reads only shadow
+        // canonical values for the parity log, so they may select the page
+        // again and stay concurrent with the row query.
         let (fields, data_rows, total, canonical) =
-            tokio::try_join!(fields, data_rows, total, canonical)?;
+            if self.property_value_mode.reads_canonical_first() {
+                let rows_with_canonical = async {
+                    let data_rows = data_rows.await?;
+                    let data_ids = data_rows
+                        .iter()
+                        .map(|row| row.id.clone())
+                        .collect::<Vec<_>>();
+                    let canonical = load_canonical_values_for_mode(
+                        self.db.as_ref(),
+                        tenant_id,
+                        database_id,
+                        &data_ids,
+                        self.property_value_mode,
+                    )
+                    .await?;
+                    Ok::<_, errors::Error>((data_rows, canonical))
+                };
+                let (fields, (data_rows, canonical), total) =
+                    tokio::try_join!(fields, rows_with_canonical, total)?;
+                (fields, data_rows, total, canonical)
+            } else {
+                let canonical = load_canonical_values_for_page(
+                    self.db.as_ref(),
+                    tenant_id,
+                    database_id,
+                    page,
+                    self.property_value_mode,
+                );
+                tokio::try_join!(fields, data_rows, total, canonical)?
+            };
         let mut data_vec = vec![];
         for data_row in data_rows {
             let data = hydrate_data_row(

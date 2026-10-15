@@ -81,10 +81,11 @@ pub async fn load_canonical_values(
 /// itself, so the read can run concurrently with the legacy row query.
 ///
 /// The page is selected with the same predicate, order and window as
-/// `DataRepository::find_all_with_paging`. Rows are keyed by
-/// `(data_id, property_id)`, so a page that shifts between the two statements
-/// only leaves extra rows unused or a value missing, which hydration already
-/// treats like a value that has not been backfilled yet.
+/// `DataRepository::find_all_with_paging`. The two statements may see
+/// different snapshots, so the result can miss a returned record's values.
+/// Use it only where canonical values cannot change the response (the
+/// legacy-first parity shadow); canonical-first reads must load by the
+/// fetched ids instead.
 pub async fn load_canonical_values_for_page(
     db: &Db,
     tenant_id: &TenantId,
