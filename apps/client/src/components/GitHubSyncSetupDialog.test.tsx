@@ -31,7 +31,7 @@ describe('GitHubSyncSetupDialog', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('saves only a valid explicit repository and explains that webhook delivery is still required', async () => {
+  it('saves a valid repository after the webhook is provisioned', async () => {
     view()
     const input = await screen.findByLabelText('GitHub repository')
     expect(screen.getByRole('button', { name: 'Save sync settings' })).toBeDisabled()
@@ -39,9 +39,9 @@ describe('GitHubSyncSetupDialog', () => {
     fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'test/docs' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save sync settings' }))
     await screen.findByText('Sync settings saved')
-    expect(mocks.saveGitHubSyncBinding).toHaveBeenCalledWith(target, { repository: 'quantum-box/library-sample', branch: 'test/docs', pathPattern: '**/*.md' })
+    expect(mocks.saveGitHubSyncBinding).toHaveBeenCalledWith(target, { repository: 'quantum-box/library-sample', branch: 'test/docs', pathPattern: 'docs/**/*.md' })
     expect(onSaved).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/Receiving changes requires/)).toBeInTheDocument()
+    expect(screen.queryByText(/Receiving changes requires/)).not.toBeInTheDocument()
   })
 
   it('keeps input for retry and does not claim success after a failed save', async () => {

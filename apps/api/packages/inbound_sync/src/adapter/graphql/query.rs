@@ -1,8 +1,11 @@
 //! GraphQL query resolvers for library sync.
 
-use async_graphql::{Context, Object, Result};
+use async_graphql::{Context, Object, Result, SimpleObject};
 use std::sync::Arc;
 
+use crate::usecase::{
+    ProvisionGitHubBindingWebhook, ProvisionGitHubBindingWebhookInput,
+};
 use inbound_sync_domain::{
     ConnectionRepository, IntegrationRepository, WebhookEndpointId,
     WebhookEndpointRepository, WebhookEventRepository,
@@ -38,6 +41,28 @@ pub struct LibrarySyncQueryState {
     pub external_sync_bindings: Arc<dyn ExternalSyncBindingRepository>,
     pub inbound_change_sets: Arc<dyn InboundChangeSetRepository>,
     pub outbound_deliveries: Arc<dyn OutboundDeliveryRepository>,
+    pub github_webhook: Arc<ProvisionGitHubBindingWebhook>,
+}
+
+#[derive(SimpleObject)]
+pub struct GqlGitHubWebhookDelivery {
+    id: String,
+    guid: String,
+    delivered_at: Option<String>,
+    status: Option<String>,
+    status_code: Option<i32>,
+    redelivery: bool,
+}
+
+#[derive(SimpleObject)]
+pub struct GqlGitHubBindingWebhookStatus {
+    endpoint_id: String,
+    webhook_url: String,
+    hook_id: Option<String>,
+    active: Option<bool>,
+    last_response_code: Option<i32>,
+    last_response_status: Option<String>,
+    deliveries: Vec<GqlGitHubWebhookDelivery>,
 }
 
 async fn authorized_external_sync_tenant(
@@ -59,6 +84,52 @@ async fn authorized_external_sync_tenant(
 
 #[Object]
 impl LibrarySyncQuery {
+    async fn github_binding_webhook_status(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+    ) -> Result<Option<GqlGitHubBindingWebhookStatus>> {
+        let state = ctx.data::<LibrarySyncQueryState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let result = state
+            .github_webhook
+            .status(ProvisionGitHubBindingWebhookInput {
+                executor,
+                multi_tenancy,
+                binding_id: ExternalSyncBindingId::parse(binding_id)?,
+            })
+            .await?;
+        Ok(result.map(|status| GqlGitHubBindingWebhookStatus {
+            endpoint_id: status.endpoint_id.to_string(),
+            webhook_url: status.webhook_url,
+            hook_id: status.hook.as_ref().map(|hook| hook.id.to_string()),
+            active: status.hook.as_ref().map(|hook| hook.active),
+            last_response_code: status
+                .hook
+                .as_ref()
+                .and_then(|hook| hook.last_response.as_ref())
+                .and_then(|response| response.code)
+                .map(i32::from),
+            last_response_status: status.hook.and_then(|hook| {
+                hook.last_response.and_then(|response| response.status)
+            }),
+            deliveries: status
+                .deliveries
+                .into_iter()
+                .map(|delivery| GqlGitHubWebhookDelivery {
+                    id: delivery.id.to_string(),
+                    guid: delivery.guid,
+                    delivered_at: delivery.delivered_at,
+                    status: delivery.status,
+                    status_code: delivery.status_code.map(i32::from),
+                    redelivery: delivery.redelivery,
+                })
+                .collect(),
+        }))
+    }
+
     async fn external_sync_bindings(
         &self,
         ctx: &Context<'_>,

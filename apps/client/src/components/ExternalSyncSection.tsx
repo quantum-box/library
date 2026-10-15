@@ -16,6 +16,7 @@ import {
   decideInboundChange,
   fetchExternalSyncOverview,
   retryOutboundDelivery,
+  scanGitHubBinding,
   setExternalSyncBindingStatus,
   type ExternalSyncBinding,
   type ExternalSyncOverview,
@@ -64,6 +65,7 @@ export function ExternalSyncSection({
   const [overview, setOverview] = useState<ExternalSyncOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [scanResult, setScanResult] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(() => new URLSearchParams(window.location.search).get('github_sync') === 'callback')
   const [webhookBinding, setWebhookBinding] = useState<ExternalSyncBinding | null>(null)
@@ -103,6 +105,21 @@ export function ExternalSyncSection({
       await load()
     } catch {
       setError(t('externalSync.updateFailed'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const scan = async (bindingId: string) => {
+    setBusyId(bindingId)
+    setError(null)
+    setScanResult(null)
+    try {
+      const count = await scanGitHubBinding(target, bindingId)
+      await load()
+      setScanResult(count)
+    } catch {
+      setError(t('externalSync.scanFailed'))
     } finally {
       setBusyId(null)
     }
@@ -164,6 +181,7 @@ export function ExternalSyncSection({
           {error}
         </div>
       ) : null}
+      {scanResult !== null ? <p role="status" className="mx-4 mt-3 text-xs text-success">{t('externalSync.scanResult', { count: scanResult })}</p> : null}
 
       {loading && !overview ? (
         <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-muted-foreground" aria-busy="true">
@@ -206,7 +224,12 @@ export function ExternalSyncSection({
                         {scope.path_pattern ?? t('externalSync.allPaths')} · {binding.objectType}
                       </p>
                     </div>
-                    {binding.provider === 'GITHUB' ? <Button size="sm" variant="secondary" disabled={readOnly || !operatorId} onClick={() => setWebhookBinding(binding)}>{t('githubWebhook.title')}</Button> : null}
+                    {binding.provider === 'GITHUB' ? <>
+                      <Button size="sm" variant="secondary" disabled={!operatorId} onClick={() => setWebhookBinding(binding)}>{t('githubWebhook.title')}</Button>
+                      <Button size="sm" variant="secondary" disabled={readOnly || !operatorId || !active || busyId === binding.id} onClick={() => void scan(binding.id)}>
+                        <ArrowDownToLine aria-hidden="true" />{t('externalSync.scanExisting')}
+                      </Button>
+                    </> : null}
                     {binding.status !== 'REAUTHORIZATION_REQUIRED' ? (
                       <Button
                         size="sm"

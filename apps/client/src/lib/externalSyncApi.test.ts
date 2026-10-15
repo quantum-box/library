@@ -9,6 +9,7 @@ import {
   decideInboundChange,
   fetchExternalSyncOverview,
   retryOutboundDelivery,
+  scanGitHubBinding,
   setExternalSyncBindingStatus,
 } from './externalSyncApi'
 
@@ -45,7 +46,7 @@ describe('externalSyncApi', () => {
     const delivery = { id: 'odl_1', bindingId: 'esb_1', externalObjectId: 'docs/a.md' }
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({ externalSyncBindings: [binding] }))
-      .mockResolvedValueOnce(response({ inboundChangeSets: [change], outboundDeliveries: [delivery] }))
+      .mockResolvedValueOnce(response({ pending: [change], conflicts: [], outboundDeliveries: [delivery] }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchExternalSyncOverview(target)).resolves.toEqual({
@@ -53,6 +54,7 @@ describe('externalSyncApi', () => {
     })
     expect(body(fetchMock, 0).variables).toEqual({ repositoryId: 'repo_1' })
     expect(body(fetchMock, 1).variables).toEqual({ bindingId: 'esb_1' })
+    expect(body(fetchMock, 1).query).toContain('status: PENDING')
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
       'x-operator-id': 'tn_operator1',
     })
@@ -63,14 +65,17 @@ describe('externalSyncApi', () => {
       .mockResolvedValueOnce(response({ updateExternalSyncBindingStatus: { id: 'esb_1' } }))
       .mockResolvedValueOnce(response({ decideInboundChangeSet: { id: 'ics_1' } }))
       .mockResolvedValueOnce(response({ retryOutboundDelivery: { id: 'odl_1' } }))
+      .mockResolvedValueOnce(response({ scanGithubBinding: 3 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await setExternalSyncBindingStatus(target, 'esb_1', 'PAUSED')
     await decideInboundChange(target, 'ics_1', true)
     await retryOutboundDelivery(target, 'odl_1')
+    await expect(scanGitHubBinding(target, 'esb_1')).resolves.toBe(3)
 
     expect(body(fetchMock, 0).variables).toEqual({ bindingId: 'esb_1', status: 'PAUSED' })
     expect(body(fetchMock, 1).variables).toEqual({ changeSetId: 'ics_1', accept: true })
     expect(body(fetchMock, 2).variables).toEqual({ deliveryId: 'odl_1' })
+    expect(body(fetchMock, 3).variables).toEqual({ bindingId: 'esb_1' })
   })
 })

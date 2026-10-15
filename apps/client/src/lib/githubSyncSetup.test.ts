@@ -76,6 +76,7 @@ describe('GitHub sync setup', () => {
       .mockResolvedValueOnce(response({ githubListDirectoryContents: { truncated: false } }))
       .mockResolvedValueOnce(response({ connectGithubSync: { id: 'con_test' } }))
       .mockResolvedValueOnce(response({ createExternalSyncBinding: binding }))
+      .mockResolvedValueOnce(response({ provisionGithubBindingWebhook: { hookId: '42', active: true } }))
     vi.stubGlobal('fetch', fetchMock)
     await expect(saveGitHubSyncBinding(target, scope)).resolves.toEqual(binding)
     expect(requestBody(fetchMock, 1).variables.input).toEqual({ githubRepo: scope.repository, refName: 'main', path: '', recursive: false })
@@ -83,14 +84,18 @@ describe('GitHub sync setup', () => {
       repositoryId: 'rp_test', connectionId: 'con_test', provider: 'GITHUB', objectType: 'markdown_document',
       externalScope: binding.externalScope,
     })
+    expect(requestBody(fetchMock, 4).variables).toEqual({ bindingId: binding.id })
     for (const [, init] of fetchMock.mock.calls) expect(init.headers['x-operator-id']).toBe('tn_test')
   })
 
   it('reuses an existing scope after a lost creation response', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response({ externalSyncBindings: [binding] }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ externalSyncBindings: [binding] }))
+      .mockResolvedValueOnce(response({ provisionGithubBindingWebhook: { hookId: '42', active: true } }))
     vi.stubGlobal('fetch', fetchMock)
     await expect(saveGitHubSyncBinding(target, scope)).resolves.toEqual(binding)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(requestBody(fetchMock, 1).variables).toEqual({ bindingId: binding.id })
   })
 
   it('makes no writes when the remote repository or branch is inaccessible', async () => {
