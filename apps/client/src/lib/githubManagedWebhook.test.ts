@@ -12,7 +12,7 @@ describe('GitHub managed webhook API', () => {
 
   it('scopes reads and writes to the binding and organization', async () => {
     let calls = 0
-    const fetch = vi.fn(async () => response(calls++ === 0
+    const fetch = vi.fn(async (_input: unknown, _init: RequestInit) => response(calls++ === 0
       ? { githubBindingWebhookStatus: null }
       : { provisionGithubBindingWebhook: { hookId: '17', endpointId: 'whe_test' } }))
     vi.stubGlobal('fetch', fetch)
@@ -22,10 +22,10 @@ describe('GitHub managed webhook API', () => {
     await redeliverGitHubManagedWebhook(target, binding, '42')
     expect(fetch).toHaveBeenCalledTimes(4)
     for (const [, init] of fetch.mock.calls) {
-      expect(init.headers['x-operator-id']).toBe('tn_test')
-      expect(JSON.parse(init.body).variables.bindingId).toBe('esb_test')
+      expect(new Headers(init.headers).get('x-operator-id')).toBe('tn_test')
+      expect(JSON.parse(String(init.body)).variables.bindingId).toBe('esb_test')
     }
-    expect(JSON.parse(fetch.mock.calls[3][1].body).variables.deliveryId).toBe('42')
+    expect(JSON.parse(String(fetch.mock.calls[3][1].body)).variables.deliveryId).toBe('42')
   })
 
   it('rejects cross-repository bindings and malformed delivery IDs before a network request', async () => {
