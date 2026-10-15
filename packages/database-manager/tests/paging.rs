@@ -399,7 +399,10 @@ async fn paged_list_hydrates_like_single_reads_in_every_storage_mode(
             listed.extend(data);
         }
         assert_eq!(
-            listed.iter().map(|data| data.id().clone()).collect::<Vec<_>>(),
+            listed
+                .iter()
+                .map(|data| data.id().clone())
+                .collect::<Vec<_>>(),
             ids,
             "{mode:?}: pages must list every record once, in id order"
         );

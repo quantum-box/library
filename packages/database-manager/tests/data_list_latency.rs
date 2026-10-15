@@ -313,7 +313,10 @@ async fn breakdown(
             }
             samples.push(started.elapsed());
         }
-        println!("breakdown: hydrate {mode:?} median={:?}", median(samples));
+        println!(
+            "breakdown: hydrate {mode:?} median={:?}",
+            median(samples)
+        );
     }
     Ok(())
 }
