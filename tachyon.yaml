@@ -105,9 +105,6 @@ spec:
             # a fresh PR unable to create or reuse its connection.
             - name: LIBRARY_GITHUB_OAUTH_BROKER_ENABLED
               value: "true"
-            # PLT-4534 PR #394 Preview delivery test; remove before merge.
-            - name: LIBRARY_API_BASE_URL
-              value: "https://pr394--library-api.txcloud.app"
             - name: LIBRARY_EXTERNAL_SYNC_OUTBOX_SCAN_AFTER
               value: "2026-09-11T00:00:00Z"
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
@@ -289,10 +286,6 @@ spec:
         preview:
           build:
             command: npm run build:preview
-          envVars:
-            # PLT-4534 PR #394 Preview delivery test; remove before merge.
-            - name: VITE_LIBRARY_API_BASE_URL
-              value: https://pr394--library-api.txcloud.app
       envVars:
         - name: VITE_LIBRARY_DEPLOYMENT_MODE
           value: cloud
