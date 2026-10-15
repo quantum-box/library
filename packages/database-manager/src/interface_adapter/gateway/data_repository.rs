@@ -635,10 +635,10 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        // The four reads are independent, so issue them concurrently: the
-        // list then costs one database round trip instead of four. Every
-        // read is still required, so a failure fails the list exactly as the
-        // sequential version did.
+        // Fields, the page and canonical values are read concurrently, with
+        // COUNT chained after the page: two round trips instead of four.
+        // Every read is still required, so a failure fails the list exactly
+        // as the sequential version did.
         let pool = self.db.pool();
         let fields = async {
             Ok::<_, errors::Error>(
@@ -706,17 +706,24 @@ impl DataRepository for DataRepositoryImpl {
             page,
             self.property_value_mode,
         );
-        let (fields, data_rows, total, canonical) =
-            tokio::try_join!(fields, data_rows, total, canonical)?;
-        let data_ids = data_rows
-            .iter()
-            .map(|row| row.id.clone())
-            .collect::<Vec<_>>();
+        // COUNT must not run before the page is read: a record inserted in
+        // between would be listed but missing from the totals. Futures are
+        // lazy, so this keeps the original page-then-count order while both
+        // still overlap the fields and canonical reads.
+        let rows_then_total = async {
+            let data_rows = data_rows.await?;
+            let total = total.await?;
+            Ok::<_, errors::Error>((data_rows, total))
+        };
+        let (fields, (data_rows, total), canonical) =
+            tokio::try_join!(fields, rows_then_total, canonical)?;
+        let page_records =
+            data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
         let canonical = canonical_values_for_rows(
             self.db.as_ref(),
             tenant_id,
             database_id,
-            &data_ids,
+            &page_records,
             canonical,
             self.property_value_mode,
         )

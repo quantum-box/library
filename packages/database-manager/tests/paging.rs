@@ -443,10 +443,11 @@ async fn paged_list_hydrates_like_single_reads_in_every_storage_mode(
 /// otherwise the values are re-read by the ids the row query returned.
 #[tokio::test]
 #[ignore]
-async fn shifted_canonical_page_is_re_read_by_returned_ids(
+async fn changed_canonical_page_is_re_read_by_returned_rows(
 ) -> anyhow::Result<()> {
     use database_manager::interface_adapter::gateway::{
         canonical_values_for_rows, load_canonical_values_for_page,
+        PageRecord,
     };
     use database_manager::property_value_rollout::PropertyValueStorageMode;
     use value_object::OffsetPage;
@@ -512,44 +513,55 @@ async fn shifted_canonical_page_is_re_read_by_returned_ids(
     ids.sort();
     let page = OffsetPage::new(1, 3)?;
     let key = |id: &str| (id.to_string(), property.id().to_string());
+    let load_page = |page| {
+        load_canonical_values_for_page(
+            &db,
+            &tenant_id,
+            database.id(),
+            page,
+            mode,
+        )
+    };
+    let resolve = |rows: Vec<PageRecord>, canonical| {
+        let db = &db;
+        let tenant_id = &tenant_id;
+        let database_id = database.id();
+        async move {
+            canonical_values_for_rows(
+                db,
+                tenant_id,
+                database_id,
+                &rows,
+                canonical,
+                mode,
+            )
+            .await
+        }
+    };
 
-    let canonical = load_canonical_values_for_page(
-        &db,
-        &tenant_id,
-        database.id(),
-        page,
-        mode,
-    )
-    .await?;
-    assert_eq!(canonical.ids, ids[..3]);
+    let canonical = load_page(page).await?;
+    let records = [
+        canonical.records.clone(),
+        load_page(OffsetPage::new(2, 3)?).await?.records,
+    ]
+    .concat();
+    assert_eq!(
+        records.iter().map(|record| &record.id).collect::<Vec<_>>(),
+        ids.iter().collect::<Vec<_>>()
+    );
     assert_eq!(canonical.values.len(), 3);
 
-    // Same page: the concurrent result is used as is (no re-read). Clearing
-    // the values makes a re-read observable, since it would restore them.
+    // Same page, same versions: the concurrent result is used as is (no
+    // re-read). Clearing the values makes a re-read observable, since it
+    // would restore them.
     let mut unchanged = canonical.clone();
     unchanged.values.clear();
-    let values = canonical_values_for_rows(
-        &db,
-        &tenant_id,
-        database.id(),
-        &ids[..3],
-        unchanged,
-        mode,
-    )
-    .await?;
+    let values = resolve(records[..3].to_vec(), unchanged).await?;
     assert!(values.is_empty(), "a matching page must not be re-read");
 
     // Shifted page: the row query returned ids[1..4] (ids[0] was deleted
     // between the statements), but the canonical read still saw ids[..3].
-    let values = canonical_values_for_rows(
-        &db,
-        &tenant_id,
-        database.id(),
-        &ids[1..4],
-        canonical.clone(),
-        mode,
-    )
-    .await?;
+    let values = resolve(records[1..4].to_vec(), canonical.clone()).await?;
     let mut keys = values.keys().cloned().collect::<Vec<_>>();
     keys.sort();
     assert_eq!(
@@ -562,18 +574,31 @@ async fn shifted_canonical_page_is_re_read_by_returned_ids(
         serde_json::json!("value-3")
     );
 
+    // In-place update: same ids, but the row query saw a newer version of
+    // ids[1] than the canonical read. The stale canonical value must not be
+    // paired with the newer row.
+    sqlx::query(
+        "UPDATE property_values SET value = JSON_QUOTE('updated') \
+         WHERE tenant_id = ? AND database_id = ? AND data_id = ?",
+    )
+    .bind(tenant_id.to_string())
+    .bind(database.id().to_string())
+    .bind(&ids[1])
+    .execute(db.pool().as_ref())
+    .await?;
+    let mut newer = records[..3].to_vec();
+    newer[1].record_version += 1;
+    let values = resolve(newer, canonical.clone()).await?;
+    assert_eq!(
+        values[&key(&ids[1])].envelope()?.raw_value,
+        serde_json::json!("updated"),
+        "an in-place update between the reads must trigger a re-read"
+    );
+
     // A page record without canonical values still counts as selected.
     let mut missing = canonical;
     missing.values.remove(&key(&ids[0]));
-    let values = canonical_values_for_rows(
-        &db,
-        &tenant_id,
-        database.id(),
-        &ids[..3],
-        missing,
-        mode,
-    )
-    .await?;
+    let values = resolve(records[..3].to_vec(), missing).await?;
     assert!(
         !values.contains_key(&key(&ids[0])),
         "an unbackfilled record on the same page must not trigger a re-read"
@@ -589,15 +614,8 @@ async fn shifted_canonical_page_is_re_read_by_returned_ids(
     .bind(&ids[0])
     .execute(db.pool().as_ref())
     .await?;
-    let canonical = load_canonical_values_for_page(
-        &db,
-        &tenant_id,
-        database.id(),
-        page,
-        mode,
-    )
-    .await?;
-    assert_eq!(canonical.ids, ids[..3]);
+    let canonical = load_page(page).await?;
+    assert_eq!(canonical.records, records[..3]);
     assert_eq!(canonical.values.len(), 2);
     Ok(())
 }

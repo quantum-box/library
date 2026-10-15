@@ -77,17 +77,38 @@ pub async fn load_canonical_values(
     Ok(values)
 }
 
-/// Canonical values of one `data` page, together with the page ids the same
-/// statement selected.
+/// Identity and version of one listed record, used to tell whether two
+/// statements read the same state of a page.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PageRecord {
+    pub id: String,
+    pub record_version: u64,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<&DataRow> for PageRecord {
+    fn from(row: &DataRow) -> Self {
+        Self {
+            id: row.id.clone(),
+            record_version: row.record_version,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+/// Canonical values of one `data` page, together with the page records the
+/// same statement (and therefore the same snapshot) selected.
 #[derive(Clone, Debug, Default)]
 pub struct CanonicalPage {
-    pub ids: Vec<String>,
+    pub records: Vec<PageRecord>,
     pub values: HashMap<(String, String), PropertyValueRow>,
 }
 
 #[derive(sqlx::FromRow)]
 struct CanonicalPageRow {
     page_id: String,
+    page_record_version: u64,
+    page_updated_at: chrono::DateTime<chrono::Utc>,
     tenant_id: Option<String>,
     database_id: Option<String>,
     data_id: Option<String>,
@@ -103,8 +124,9 @@ struct CanonicalPageRow {
 ///
 /// The page is selected with the same predicate, order and window as
 /// `DataRepository::find_all_with_paging`, but in its own statement, which
-/// may see a different snapshot. The selected ids are returned so the caller
-/// can pass the result through [`canonical_values_for_rows`] before using it.
+/// may see a different snapshot. The selected records are returned so the
+/// caller can pass the result through [`canonical_values_for_rows`] before
+/// using it.
 pub async fn load_canonical_values_for_page(
     db: &Db,
     tenant_id: &TenantId,
@@ -119,10 +141,12 @@ pub async fn load_canonical_values_for_page(
         r#"
         SELECT
             page.id AS page_id,
+            page.record_version AS page_record_version,
+            page.updated_at AS page_updated_at,
             pv.tenant_id, pv.database_id, pv.data_id, pv.property_id,
             pv.type_key, pv.type_version, pv.value_encoding_version, pv.value
         FROM (
-            SELECT id
+            SELECT id, record_version, updated_at
             FROM data
             WHERE object_id = ? and tenant_id = ?
             ORDER BY id ASC
@@ -145,7 +169,11 @@ pub async fn load_canonical_values_for_page(
 
     let mut canonical = CanonicalPage::default();
     for row in rows {
-        canonical.ids.push(row.page_id);
+        canonical.records.push(PageRecord {
+            id: row.page_id,
+            record_version: row.page_record_version,
+            updated_at: row.page_updated_at,
+        });
         let (
             Some(tenant_id),
             Some(database_id),
@@ -183,38 +211,41 @@ pub async fn load_canonical_values_for_page(
             },
         );
     }
-    canonical.ids.sort();
-    canonical.ids.dedup();
+    canonical.records.sort();
+    canonical.records.dedup();
     Ok(canonical)
 }
 
-/// Accept a concurrently loaded [`CanonicalPage`] only if it selected exactly
-/// the records the row query returned. Otherwise the page shifted between
-/// the two statements, and a missing value would silently fall back to
-/// legacy in canonical-first reads, so re-read by the returned ids.
+/// Accept a concurrently loaded [`CanonicalPage`] only if it saw exactly the
+/// records, at exactly the versions, that the row query returned. Otherwise
+/// the page shifted or a record was updated between the two statements, and
+/// canonical-first reads would mix a missing (legacy fallback) or stale value
+/// with the newer row, so re-read by the returned ids.
 pub async fn canonical_values_for_rows(
     db: &Db,
     tenant_id: &TenantId,
     database_id: &DatabaseId,
-    data_ids: &[String],
+    rows: &[PageRecord],
     canonical: CanonicalPage,
     mode: PropertyValueStorageMode,
 ) -> errors::Result<HashMap<(String, String), PropertyValueRow>> {
     if !mode.reads_or_shadows_canonical() {
         return Ok(HashMap::new());
     }
-    let mut returned = data_ids.to_vec();
+    let mut returned = rows.to_vec();
     returned.sort();
     returned.dedup();
-    if returned == canonical.ids {
+    if returned == canonical.records {
         return Ok(canonical.values);
     }
     tracing::info!(
         tenant_id = %tenant_id,
         database_id = %database_id,
-        "data page shifted between concurrent reads; re-reading canonical values by id"
+        "data page changed between concurrent reads; re-reading canonical values by id"
     );
-    load_canonical_values(db, tenant_id, database_id, data_ids).await
+    let data_ids =
+        rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
+    load_canonical_values(db, tenant_id, database_id, &data_ids).await
 }
 
 pub async fn load_canonical_values_for_mode(
