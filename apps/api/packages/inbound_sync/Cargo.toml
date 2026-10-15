@@ -38,7 +38,7 @@ ulid = "1.1"
 # URL encoding for OAuth redirects
 urlencoding = "2.1"
 
-errors = { path = "../../../../packages/errors" }
+errors = { path = "../../../../packages/errors", features = ["graphql"] }
 integration_domain = { path = "../../../../packages/integration_domain" }
 value_object = { path = "../../../../packages/value_object" }
 persistence = { path = "../../../../packages/persistence" }

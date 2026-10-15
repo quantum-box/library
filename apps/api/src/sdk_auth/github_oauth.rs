@@ -183,6 +183,178 @@ fn require_enabled() -> errors::Result<()> {
     }
 }
 
+#[async_trait::async_trait]
+impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
+    async fn ensure(
+        &self,
+        tenant: &TenantId,
+        repository: &str,
+        url: &str,
+        secret: &str,
+    ) -> errors::Result<inbound_sync::usecase::GitHubManagedWebhook> {
+        require_enabled()?;
+        let config = self.github_broker_tenant(
+            &crate::domain::LIBRARY_TENANT,
+            &self.service_auth_token,
+        )?;
+        let response = config
+            .client
+            .put(format!(
+                "{}/v1/integrations/github/webhooks",
+                config.base_path.trim_end_matches('/')
+            ))
+            .query(&[("tenant_id", tenant.as_str())])
+            .json(&serde_json::json!({
+                "repository": repository,
+                "url": url,
+                "secret": secret,
+            }))
+            .timeout(Duration::from_secs(25))
+            .send()
+            .await
+            .map_err(|_| {
+                errors::Error::service_unavailable(
+                    "GitHub webhook broker is unavailable",
+                )
+            })?;
+        handle_rest_response(response).await.map_err(Into::into)
+    }
+
+    async fn find(
+        &self,
+        tenant: &TenantId,
+        repository: &str,
+        url: &str,
+    ) -> errors::Result<Option<inbound_sync::usecase::GitHubManagedWebhook>>
+    {
+        require_enabled()?;
+        let config = self.github_broker_tenant(
+            &crate::domain::LIBRARY_TENANT,
+            &self.service_auth_token,
+        )?;
+        let response = config
+            .client
+            .get(format!(
+                "{}/v1/integrations/github/webhooks",
+                config.base_path.trim_end_matches('/')
+            ))
+            .query(&[
+                ("tenant_id", tenant.as_str()),
+                ("repository", repository),
+                ("url", url),
+            ])
+            .timeout(Duration::from_secs(25))
+            .send()
+            .await
+            .map_err(|_| {
+                errors::Error::service_unavailable(
+                    "GitHub webhook broker is unavailable",
+                )
+            })?;
+        handle_rest_response(response).await.map_err(Into::into)
+    }
+
+    async fn remove(
+        &self,
+        tenant: &TenantId,
+        repository: &str,
+        url: &str,
+        hook_id: u64,
+    ) -> errors::Result<()> {
+        require_enabled()?;
+        let config = self.github_broker_tenant(
+            &crate::domain::LIBRARY_TENANT,
+            &self.service_auth_token,
+        )?;
+        let response = config
+            .client
+            .delete(format!(
+                "{}/v1/integrations/github/webhooks/{hook_id}",
+                config.base_path.trim_end_matches('/')
+            ))
+            .query(&[
+                ("tenant_id", tenant.as_str()),
+                ("repository", repository),
+                ("url", url),
+            ])
+            .timeout(Duration::from_secs(25))
+            .send()
+            .await
+            .map_err(|_| {
+                errors::Error::service_unavailable(
+                    "GitHub webhook broker is unavailable",
+                )
+            })?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(SdkRequestError::http_status(response.status()).into())
+        }
+    }
+
+    async fn deliveries(
+        &self,
+        tenant: &TenantId,
+        repository: &str,
+        url: &str,
+        hook_id: u64,
+    ) -> errors::Result<Vec<inbound_sync::usecase::GitHubWebhookDelivery>>
+    {
+        require_enabled()?;
+        let config = self.github_broker_tenant(
+            &crate::domain::LIBRARY_TENANT,
+            &self.service_auth_token,
+        )?;
+        let response = config
+            .client
+            .get(format!(
+                "{}/v1/integrations/github/webhooks/{hook_id}",
+                config.base_path.trim_end_matches('/')
+            ))
+            .query(&[
+                ("tenant_id", tenant.as_str()),
+                ("repository", repository),
+                ("url", url),
+            ])
+            .timeout(Duration::from_secs(25))
+            .send()
+            .await
+            .map_err(|_| {
+                errors::Error::service_unavailable(
+                    "GitHub webhook broker is unavailable",
+                )
+            })?;
+        handle_rest_response(response).await.map_err(Into::into)
+    }
+
+    async fn redeliver(
+        &self,
+        tenant: &TenantId,
+        repository: &str,
+        url: &str,
+        hook_id: u64,
+        delivery_id: u64,
+    ) -> errors::Result<()> {
+        require_enabled()?;
+        let config = self.github_broker_tenant(
+            &crate::domain::LIBRARY_TENANT,
+            &self.service_auth_token,
+        )?;
+        let response = config.client
+            .post(format!("{}/v1/integrations/github/webhooks/{hook_id}/deliveries/{delivery_id}/redeliver", config.base_path.trim_end_matches('/')))
+            .query(&[("tenant_id", tenant.as_str()), ("repository", repository), ("url", url)])
+            .timeout(Duration::from_secs(25))
+            .send()
+            .await
+            .map_err(|_| errors::Error::service_unavailable("GitHub webhook broker is unavailable"))?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(SdkRequestError::http_status(response.status()).into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

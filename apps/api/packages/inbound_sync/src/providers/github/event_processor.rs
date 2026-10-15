@@ -667,6 +667,15 @@ impl EventProcessor for GitHubEventProcessor {
 /// 2. Dynamically fetch tokens via OAuthTokenProvider (OAuthGitHubClient)
 #[async_trait]
 pub trait GitHubClient: Send + Sync + std::fmt::Debug {
+    /// Resolve a branch once so a full scan reads one immutable snapshot.
+    async fn get_branch_head(
+        &self,
+        _tenant_id: &value_object::TenantId,
+        _repo: &str,
+        _branch: &str,
+    ) -> errors::Result<String> {
+        Err(errors::Error::invalid("Branch snapshots are unavailable"))
+    }
     /// Get file content from a repository.
     ///
     /// # Arguments

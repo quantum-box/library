@@ -4,10 +4,14 @@ use async_graphql::{
     Context, ErrorExtensions, Object, Result, SimpleObject,
 };
 use integration_domain::{
-    ExternalScope, ExternalSyncBinding, ExternalSyncBindingId,
-    ExternalSyncBindingRepository, InboundChangeSetId, LibraryRepoId,
+    ExternalChangeType, ExternalObjectLinkRepository, ExternalScope,
+    ExternalSyncBinding, ExternalSyncBindingId,
+    ExternalSyncBindingRepository, ExternalSyncBindingStatus,
+    ExternalSyncPolicy, InboundChangeSet, InboundChangeSetId,
+    InboundChangeSetRepository, LibraryRepoId, OAuthProvider,
     OutboundDeliveryId, OutboundDeliveryRepository,
 };
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput, MultiTenancyAction};
 
@@ -23,11 +27,12 @@ use crate::usecase::{
     DecideInboundChangeSet, DeleteWebhookEndpoint,
     DeleteWebhookEndpointInputData, DeleteWebhookEndpointInputPort,
     ExternalDeliveryRetrier, InboundChangeSetDecision,
-    InitialSyncInputData, OnDemandPullInputData, RegisterWebhookEndpoint,
-    RegisterWebhookEndpointInputData, RegisterWebhookEndpointInputPort,
-    RetryWebhookEvent, SendTestWebhook, UpdateWebhookEndpoint,
-    UpdateWebhookEndpointInputData, UpdateWebhookEndpointInputPort,
-    WebhookEndpointUpdate,
+    InitialSyncInputData, OnDemandPullInputData,
+    ProvisionGitHubBindingWebhook, ProvisionGitHubBindingWebhookInput,
+    RegisterWebhookEndpoint, RegisterWebhookEndpointInputData,
+    RegisterWebhookEndpointInputPort, RetryWebhookEvent, SendTestWebhook,
+    UpdateWebhookEndpoint, UpdateWebhookEndpointInputData,
+    UpdateWebhookEndpointInputPort, WebhookEndpointUpdate,
 };
 
 use super::types::{
@@ -64,9 +69,25 @@ pub struct LibrarySyncMutationState {
     pub base_url: String,
     pub auth: Arc<dyn AuthApp>,
     pub external_sync_bindings: Arc<dyn ExternalSyncBindingRepository>,
+    pub external_object_links: Arc<dyn ExternalObjectLinkRepository>,
+    pub inbound_change_sets: Arc<dyn InboundChangeSetRepository>,
+    pub github_client: Arc<dyn crate::providers::github::GitHubClient>,
+    pub webhook_endpoints:
+        Arc<dyn inbound_sync_domain::WebhookEndpointRepository>,
     pub outbound_deliveries: Arc<dyn OutboundDeliveryRepository>,
     pub decide_inbound_change_set: Arc<DecideInboundChangeSet>,
     pub external_delivery_retrier: Arc<dyn ExternalDeliveryRetrier>,
+    pub provision_github_webhook: Arc<ProvisionGitHubBindingWebhook>,
+}
+
+#[derive(SimpleObject)]
+pub struct ProvisionedGitHubWebhookOutput {
+    pub hook_id: String,
+    pub endpoint_id: String,
+    pub webhook_url: String,
+    pub active: bool,
+    pub last_response_code: Option<i32>,
+    pub last_response_status: Option<String>,
 }
 
 async fn authorize_external_sync_change(
@@ -98,6 +119,214 @@ pub struct SendTestWebhookOutput {
 
 #[Object]
 impl LibrarySyncMutation {
+    async fn remove_github_binding_webhook(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+    ) -> Result<bool> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        Ok(state
+            .provision_github_webhook
+            .remove(ProvisionGitHubBindingWebhookInput {
+                executor,
+                multi_tenancy,
+                binding_id: ExternalSyncBindingId::parse(binding_id)?,
+            })
+            .await?)
+    }
+
+    async fn redeliver_github_binding_webhook(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+        delivery_id: String,
+    ) -> Result<bool> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let delivery_id = delivery_id.parse::<u64>().map_err(|_| {
+            async_graphql::Error::new("Invalid GitHub delivery ID")
+        })?;
+        state
+            .provision_github_webhook
+            .redeliver(
+                ProvisionGitHubBindingWebhookInput {
+                    executor,
+                    multi_tenancy,
+                    binding_id: ExternalSyncBindingId::parse(binding_id)?,
+                },
+                delivery_id,
+            )
+            .await?;
+        Ok(true)
+    }
+
+    /// Reconcile GitHub's repository hook for an existing sync binding.
+    /// Safe to retry after a lost response or a previous provider failure.
+    async fn provision_github_binding_webhook(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+    ) -> Result<ProvisionedGitHubWebhookOutput> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let output = state
+            .provision_github_webhook
+            .execute(ProvisionGitHubBindingWebhookInput {
+                executor,
+                multi_tenancy,
+                binding_id: ExternalSyncBindingId::parse(binding_id)?,
+            })
+            .await?;
+        Ok(ProvisionedGitHubWebhookOutput {
+            hook_id: output.hook.id.to_string(),
+            endpoint_id: output.endpoint_id.to_string(),
+            webhook_url: output.webhook_url,
+            active: output.hook.active,
+            last_response_code: output
+                .hook
+                .last_response
+                .as_ref()
+                .and_then(|r| r.code)
+                .map(i32::from),
+            last_response_status: output
+                .hook
+                .last_response
+                .and_then(|r| r.status),
+        })
+    }
+
+    /// Scan existing Markdown into the same review queue used by webhooks.
+    /// A repeat scan is safe because ChangeSets are keyed by revision and path.
+    async fn scan_github_binding(
+        &self,
+        ctx: &Context<'_>,
+        binding_id: String,
+    ) -> Result<u32> {
+        let state = ctx.data::<LibrarySyncMutationState>()?;
+        let tenant = authorize_external_sync_change(
+            ctx,
+            state,
+            "library:InboundSyncInitialSync",
+        )
+        .await?;
+        inbound_sync_domain::Provider::Github.ensure_runtime_available()?;
+        let binding = state
+            .external_sync_bindings
+            .find_by_id(&tenant, &ExternalSyncBindingId::parse(binding_id)?)
+            .await?
+            .ok_or_else(|| {
+                errors::Error::not_found("External sync binding")
+            })?;
+        if binding.provider() != OAuthProvider::Github
+            || binding.status() != ExternalSyncBindingStatus::Active
+            || binding.inbound_policy() == ExternalSyncPolicy::Disabled
+        {
+            return Err(errors::Error::invalid(
+                "GitHub inbound sync is inactive",
+            )
+            .extend());
+        }
+        let scope = binding.external_scope().value();
+        let repository = scope["repository"].as_str().ok_or_else(|| {
+            errors::Error::invalid("GitHub repository is missing")
+        })?;
+        let branch = scope["ref"].as_str().ok_or_else(|| {
+            errors::Error::invalid("GitHub branch is missing")
+        })?;
+        let pattern = scope["path_pattern"].as_str();
+        let endpoint_exists = state.webhook_endpoints
+            .find_by_tenant_and_provider(&tenant, inbound_sync_domain::Provider::Github)
+            .await?
+            .into_iter()
+            .any(|endpoint| {
+                endpoint.repository_id() == Some(binding.library_repo_id().as_str())
+                    && matches!(endpoint.config(), ProviderConfig::Github {
+                        repository: configured_repository, branch: configured_branch,
+                        path_pattern: configured_pattern,
+                    } if configured_repository == repository && configured_branch == branch
+                        && configured_pattern.as_deref() == pattern)
+            });
+        if !endpoint_exists {
+            return Err(errors::Error::invalid(
+                "Configure the GitHub webhook before importing existing files",
+            ).extend());
+        }
+        let head = state
+            .github_client
+            .get_branch_head(&tenant, repository, branch)
+            .await?;
+        let files = state
+            .github_client
+            .list_repository_contents(&tenant, repository, branch, pattern)
+            .await?;
+        if state
+            .github_client
+            .get_branch_head(&tenant, repository, branch)
+            .await?
+            != head
+        {
+            return Err(errors::Error::service_unavailable(
+                "GitHub branch changed during the scan; retry",
+            )
+            .extend());
+        }
+        let mut captured = 0;
+        for file in files {
+            if !file.path.to_ascii_lowercase().ends_with(".md")
+                && !file.path.to_ascii_lowercase().ends_with(".markdown")
+            {
+                continue;
+            }
+            let Some(content) = file.content else {
+                continue;
+            };
+            let link = state
+                .external_object_links
+                .find_by_external_object(&tenant, binding.id(), &file.path)
+                .await?;
+            let content_hash =
+                format!("{:x}", Sha256::digest(content.as_bytes()));
+            if link.as_ref().and_then(|link| link.base_content_hash())
+                == Some(content_hash.as_str())
+            {
+                continue;
+            }
+            if link
+                .as_ref()
+                .and_then(|link| link.last_accepted_external_revision())
+                == Some(head.as_str())
+            {
+                continue;
+            }
+            let change = InboundChangeSet::create(
+                tenant.clone(),
+                binding.id().clone(),
+                link.as_ref().map(|link| link.data_id().clone()),
+                &file.path,
+                &head,
+                link.as_ref()
+                    .and_then(|link| link.last_accepted_external_revision())
+                    .map(str::to_owned),
+                ExternalChangeType::Upsert,
+                serde_json::json!({
+                    "repository": repository, "ref": branch,
+                    "path": file.path, "previous_path": null,
+                    "content": content,
+                }),
+            )?;
+            state.inbound_change_sets.save(&change).await?;
+            captured += 1;
+        }
+        Ok(captured)
+    }
+
     /// Attach this organization's saved GitHub OAuth account to external sync.
     /// Repeated calls preserve the existing connection identity and metadata.
     async fn connect_github_sync(
@@ -352,6 +581,7 @@ impl LibrarySyncMutation {
             events: input.events,
             repository_id: input.repository_id,
             mapping,
+            endpoint_id: None,
         };
 
         let output = state.register_endpoint.execute(usecase_input).await?;

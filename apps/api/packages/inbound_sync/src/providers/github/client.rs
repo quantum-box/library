@@ -230,12 +230,46 @@ struct GitHubPullRequestFile {
     previous_filename: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct GitHubCommitHead {
+    sha: String,
+}
+
+async fn parse_branch_head(
+    response: reqwest::Response,
+) -> errors::Result<String> {
+    if !response.status().is_success() {
+        return Err(errors::Error::invalid(format!(
+            "Could not resolve GitHub branch: {}",
+            response.status()
+        )));
+    }
+    let head: GitHubCommitHead =
+        response.json().await.map_err(|error| {
+            errors::Error::internal_server_error(format!(
+                "Could not parse GitHub branch: {error}"
+            ))
+        })?;
+    Ok(head.sha)
+}
+
 /// Static token implementation of GitHubClient.
 ///
 /// This implementation uses a pre-configured access token and ignores the
 /// tenant_id parameter. Useful for testing or simple static configurations.
 #[async_trait]
 impl GitHubClient for GitHubApiClient {
+    async fn get_branch_head(
+        &self,
+        _tenant_id: &TenantId,
+        repo: &str,
+        branch: &str,
+    ) -> errors::Result<String> {
+        let url =
+            format!("{GITHUB_API_BASE}/repos/{repo}/commits/{branch}");
+        parse_branch_head(self.get_with_retry(&url).await?).await
+    }
+
     async fn get_file_content(
         &self,
         _tenant_id: &TenantId,
@@ -373,6 +407,8 @@ impl GitHubClient for GitHubApiClient {
         #[derive(Deserialize)]
         struct TreeResponse {
             tree: Vec<TreeItem>,
+            #[serde(default)]
+            truncated: bool,
         }
 
         #[derive(Deserialize)]
@@ -389,10 +425,21 @@ impl GitHubClient for GitHubApiClient {
                 "Parse error: {e}"
             ))
         })?;
+        if tree.truncated {
+            return Err(errors::Error::service_unavailable(
+                "GitHub returned a truncated repository tree",
+            ));
+        }
 
         let mut results = Vec::new();
         for item in tree.tree {
             if item.item_type != "blob" {
+                continue;
+            }
+            let lower_path = item.path.to_ascii_lowercase();
+            if !lower_path.ends_with(".md")
+                && !lower_path.ends_with(".markdown")
+            {
                 continue;
             }
 
@@ -414,7 +461,7 @@ impl GitHubClient for GitHubApiClient {
                         size: item.size.unwrap_or(0),
                     });
                 }
-                Err(_) => continue,
+                Err(error) => return Err(error),
             }
         }
 
@@ -484,6 +531,24 @@ impl OAuthGitHubClient {
 
 #[async_trait]
 impl GitHubClient for OAuthGitHubClient {
+    async fn get_branch_head(
+        &self,
+        tenant_id: &TenantId,
+        repo: &str,
+        branch: &str,
+    ) -> errors::Result<String> {
+        let token = self.get_access_token(tenant_id).await?;
+        let url =
+            format!("{GITHUB_API_BASE}/repos/{repo}/commits/{branch}");
+        let response = GitHubApiClient::get_with_retry_token(
+            &self.client,
+            &url,
+            &token,
+        )
+        .await?;
+        parse_branch_head(response).await
+    }
+
     async fn get_file_content(
         &self,
         tenant_id: &TenantId,
@@ -648,6 +713,8 @@ impl GitHubClient for OAuthGitHubClient {
         #[derive(Deserialize)]
         struct TreeResponse {
             tree: Vec<TreeItem>,
+            #[serde(default)]
+            truncated: bool,
         }
 
         #[derive(Deserialize)]
@@ -664,10 +731,21 @@ impl GitHubClient for OAuthGitHubClient {
                 "Parse error: {e}"
             ))
         })?;
+        if tree.truncated {
+            return Err(errors::Error::service_unavailable(
+                "GitHub returned a truncated repository tree",
+            ));
+        }
 
         let mut results = Vec::new();
         for item in tree.tree {
             if item.item_type != "blob" {
+                continue;
+            }
+            let lower_path = item.path.to_ascii_lowercase();
+            if !lower_path.ends_with(".md")
+                && !lower_path.ends_with(".markdown")
+            {
                 continue;
             }
 
@@ -689,7 +767,7 @@ impl GitHubClient for OAuthGitHubClient {
                         size: item.size.unwrap_or(0),
                     });
                 }
-                Err(_) => continue,
+                Err(error) => return Err(error),
             }
         }
 

@@ -113,7 +113,10 @@ export async function saveGitHubSyncBinding(target: ExternalSyncTarget, scope: G
         && candidate.ref === externalScope.ref && (candidate.path_pattern ?? null) === externalScope.path_pattern
     } catch { return false }
   })
-  if (existing) return existing
+  if (existing) {
+    await provisionGitHubWebhook(target, existing.id)
+    return existing
+  }
   // Verify access and the chosen ref before saving any connection or binding.
   await externalSyncRequest(target,
     `query VerifyGitHubSyncScope($input: ListGitHubDirectoryInput!) {
@@ -128,5 +131,13 @@ export async function saveGitHubSyncBinding(target: ExternalSyncTarget, scope: G
       repositoryId: target.repositoryId, provider: 'GITHUB', connectionId: connection.connectGithubSync.id,
       externalScope: JSON.stringify(externalScope), objectType: 'markdown_document', mapping: JSON.stringify({ content: 'body' }),
     } })
+  await provisionGitHubWebhook(target, data.createExternalSyncBinding.id)
   return data.createExternalSyncBinding
+}
+
+async function provisionGitHubWebhook(target: ExternalSyncTarget, bindingId: string): Promise<void> {
+  await externalSyncRequest(target,
+    `mutation ProvisionGitHubWebhook($bindingId: String!) {
+      provisionGithubBindingWebhook(bindingId: $bindingId) { hookId active }
+    }`, { bindingId })
 }

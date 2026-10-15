@@ -34,6 +34,8 @@ pub struct RegisterWebhookEndpointInputData<'a> {
     pub repository_id: Option<String>,
     /// Property mapping configuration (optional)
     pub mapping: Option<PropertyMapping>,
+    /// Stable identity for retryable managed registrations.
+    pub endpoint_id: Option<WebhookEndpointId>,
 }
 
 /// Output data for register webhook endpoint.
@@ -174,7 +176,8 @@ impl RegisterWebhookEndpointInputPort for RegisterWebhookEndpoint {
         );
 
         // 5. Create the endpoint
-        let mut endpoint = WebhookEndpoint::create(
+        let mut endpoint = WebhookEndpoint::create_with_id(
+            input.endpoint_id.unwrap_or_default(),
             tenant_id,
             input.name,
             input.provider,

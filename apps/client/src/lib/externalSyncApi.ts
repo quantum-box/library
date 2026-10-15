@@ -127,17 +127,19 @@ export async function fetchExternalSyncOverview(
   )
   const results = await Promise.all(bindingData.externalSyncBindings.map(async (binding) => {
     const data = await request<{
-      inboundChangeSets: InboundChangeSet[]
+      pending: InboundChangeSet[]
+      conflicts: InboundChangeSet[]
       outboundDeliveries: OutboundDelivery[]
     }>(target, `query ExternalSyncActivity($bindingId: String!) {
-      inboundChangeSets(bindingId: $bindingId, limit: 50) { ${CHANGE_FIELDS} }
+      pending: inboundChangeSets(bindingId: $bindingId, status: PENDING, limit: 200) { ${CHANGE_FIELDS} }
+      conflicts: inboundChangeSets(bindingId: $bindingId, status: CONFLICT, limit: 200) { ${CHANGE_FIELDS} }
       outboundDeliveries(bindingId: $bindingId, limit: 50) { ${DELIVERY_FIELDS} }
     }`, { bindingId: binding.id })
     return data
   }))
   return {
     bindings: bindingData.externalSyncBindings,
-    changes: results.flatMap((result) => result.inboundChangeSets),
+    changes: results.flatMap((result) => [...result.pending, ...result.conflicts]),
     deliveries: results.flatMap((result) => result.outboundDeliveries),
   }
 }
@@ -184,4 +186,15 @@ export async function retryOutboundDelivery(
     { deliveryId },
   )
   return data.retryOutboundDelivery
+}
+
+export async function scanGitHubBinding(
+  target: ExternalSyncTarget,
+  bindingId: string,
+): Promise<number> {
+  const data = await request<{ scanGithubBinding: number }>(target,
+    `mutation ScanGitHubBinding($bindingId: String!) {
+      scanGithubBinding(bindingId: $bindingId)
+    }`, { bindingId })
+  return data.scanGithubBinding
 }

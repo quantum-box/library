@@ -213,9 +213,31 @@ impl WebhookEndpoint {
         events: Vec<String>,
         secret_hash: impl Into<String>,
     ) -> Self {
+        Self::create_with_id(
+            WebhookEndpointId::default(),
+            tenant_id,
+            name,
+            provider,
+            config,
+            events,
+            secret_hash,
+        )
+    }
+
+    /// Create a webhook endpoint with a stable caller-derived identity.
+    /// Used to make retries for one external sync binding converge.
+    pub fn create_with_id(
+        id: WebhookEndpointId,
+        tenant_id: TenantId,
+        name: impl Into<String>,
+        provider: Provider,
+        config: ProviderConfig,
+        events: Vec<String>,
+        secret_hash: impl Into<String>,
+    ) -> Self {
         let now = Utc::now();
         Self {
-            id: WebhookEndpointId::default(),
+            id,
             tenant_id,
             repository_id: None,
             name: name.into(),

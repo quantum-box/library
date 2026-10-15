@@ -762,6 +762,25 @@ enum GqlExternalSyncBindingStatus {
 	REAUTHORIZATION_REQUIRED
 }
 
+type GqlGitHubBindingWebhookStatus {
+	endpointId: String!
+	webhookUrl: String!
+	hookId: String
+	active: Boolean
+	lastResponseCode: Int
+	lastResponseStatus: String
+	deliveries: [GqlGitHubWebhookDelivery!]!
+}
+
+type GqlGitHubWebhookDelivery {
+	id: String!
+	guid: String!
+	deliveredAt: String
+	status: String
+	statusCode: Int
+	redelivery: Boolean!
+}
+
 type GqlInboundChangeSet {
 	id: String!
 	bindingId: String!
@@ -1590,6 +1609,18 @@ type Mutation {
 	[LIBRARY-API] Import Markdown files from GitHub
 	"""
 	importMarkdownFromGithub(input: ImportMarkdownFromGitHubInput!): ImportMarkdownResult!
+	removeGithubBindingWebhook(bindingId: String!): Boolean!
+	redeliverGithubBindingWebhook(bindingId: String!, deliveryId: String!): Boolean!
+	"""
+	Reconcile GitHub's repository hook for an existing sync binding.
+	Safe to retry after a lost response or a previous provider failure.
+	"""
+	provisionGithubBindingWebhook(bindingId: String!): ProvisionedGitHubWebhookOutput!
+	"""
+	Scan existing Markdown into the same review queue used by webhooks.
+	A repeat scan is safe because ChangeSets are keyed by revision and path.
+	"""
+	scanGithubBinding(bindingId: String!): Int!
 	"""
 	Attach this organization's saved GitHub OAuth account to external sync.
 	Repeated calls preserve the existing connection identity and metadata.
@@ -1930,6 +1961,15 @@ enum PropertyType {
 
 union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | DateType | JsonType
 
+type ProvisionedGitHubWebhookOutput {
+	hookId: String!
+	endpointId: String!
+	webhookUrl: String!
+	active: Boolean!
+	lastResponseCode: Int
+	lastResponseStatus: String
+}
+
 type PublicApiKey {
 	id: String!
 	tenantId: String!
@@ -2038,6 +2078,7 @@ type Query {
 	[LIBRARY-API] List Linear issues
 	"""
 	linearListIssues(teamId: String, projectId: String): [LinearIssue!]!
+	githubBindingWebhookStatus(bindingId: String!): GqlGitHubBindingWebhookStatus
 	externalSyncBindings(repositoryId: String!): [GqlExternalSyncBinding!]!
 	inboundChangeSets(bindingId: String!, status: GqlInboundChangeSetStatus, limit: Int! = 50): [GqlInboundChangeSet!]!
 	outboundDeliveries(bindingId: String!, status: GqlOutboundDeliveryStatus, limit: Int! = 50): [GqlOutboundDelivery!]!

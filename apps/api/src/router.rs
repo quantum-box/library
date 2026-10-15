@@ -545,6 +545,16 @@ pub async fn router(
             external_outbox.clone(),
         )?;
 
+    let provision_github_webhook = Arc::new(
+        inbound_sync::usecase::ProvisionGitHubBindingWebhook::new(
+            auth_app_trait.clone(),
+            external_sync_bindings.clone(),
+            webhook_endpoint_repo.clone(),
+            register_endpoint.clone(),
+            sdk.clone(),
+            base_url.clone(),
+        ),
+    );
     // GraphQL state for library sync
     let inbound_sync_query_state =
         inbound_sync::adapter::LibrarySyncQueryState {
@@ -558,6 +568,7 @@ pub async fn router(
             external_sync_bindings: external_sync_bindings.clone(),
             inbound_change_sets: external_sync_lifecycle.clone(),
             outbound_deliveries: external_sync_lifecycle.clone(),
+            github_webhook: provision_github_webhook.clone(),
         };
     let inbound_sync_mutation_state =
         inbound_sync::adapter::LibrarySyncMutationState {
@@ -576,9 +587,14 @@ pub async fn router(
             base_url: base_url.clone(),
             auth: auth_app_trait.clone(),
             external_sync_bindings: external_sync_bindings.clone(),
+            external_object_links: external_object_links.clone(),
+            inbound_change_sets: external_sync_lifecycle.clone(),
+            github_client: github_client.clone(),
+            webhook_endpoints: webhook_endpoint_repo.clone(),
             outbound_deliveries: external_sync_lifecycle.clone(),
             decide_inbound_change_set,
             external_delivery_retrier: external_outbox.clone(),
+            provision_github_webhook,
         };
 
     let library_app: Arc<LibraryApp> = Arc::new(

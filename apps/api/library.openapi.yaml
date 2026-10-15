@@ -18,46 +18,31 @@ components:
           type:
           - boolean
           - 'null'
+        date_format:
+          description: Date display format for a Date property.
+          type:
+          - string
+          - 'null'
+        display_name:
+          description: Human-readable label; defaults to `name` when omitted.
+          type:
+          - string
+          - 'null'
         include_time:
           description: Enable time input and storage for a Date property.
           type:
           - boolean
           - 'null'
-        date_format:
-          description: Date display format: locale, month_day_year, day_month_year, or year_month_day.
-          enum:
-          - locale
-          - month_day_year
-          - day_month_year
-          - year_month_day
-          - 'null'
-          type:
-          - string
-          - 'null'
-        time_format:
-          description: Time display format: twelve_hour or twenty_four_hour.
-          enum:
-          - twelve_hour
-          - twenty_four_hour
-          - 'null'
-          type:
-          - string
-          - 'null'
         name:
-          description: Stable key used by API clients to identify the Property.
-          minLength: 1
-          maxLength: 64
-          pattern: ^[A-Za-z][A-Za-z0-9_-]{0,63}$
+          description: Stable key used by API clients to identify this Property.
           type: string
-        display_name:
-          description: Human-readable label. Defaults to name when omitted.
-          minLength: 1
-          maxLength: 255
-          type:
-          - string
-          - 'null'
         property_type:
           type: string
+        time_format:
+          description: Time display format for a Date property.
+          type:
+          - string
+          - 'null'
       required:
       - name
       - property_type
@@ -268,9 +253,7 @@ components:
             value (Select/MultiSelect options by id, key or label; Boolean
             `true`/`false`, where no value counts as `false`; Relation by
             record id; text exactly). `key:a|b` matches any of several.
-            `key>=n` and `key<=n` compare Integer values and Date values in
-            `YYYY-MM-DD` or RFC 3339 date-time format. A date-only upper bound
-            includes the entire calendar day.
+            `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
           items:
             type: string
           type:
@@ -978,9 +961,10 @@ components:
         required:
         - location
         type: object
-      - properties:
+      - description: YYYY-MM-DD or RFC 3339 date-time; responses use canonical UTC.
+        properties:
           date:
-            description: Date as YYYY-MM-DD or RFC 3339 date-time. Responses use canonical UTC RFC 3339.
+            description: YYYY-MM-DD or RFC 3339 date-time; responses use canonical UTC.
             type: string
         required:
         - date
@@ -1029,44 +1013,30 @@ components:
           type:
           - boolean
           - 'null'
-        include_time:
-          description: Whether new values for a Date property can include a time.
-          type:
-          - boolean
-          - 'null'
-        date_format:
-          description: Date display format: locale, month_day_year, day_month_year, or year_month_day.
-          enum:
-          - locale
-          - month_day_year
-          - day_month_year
-          - year_month_day
-          - 'null'
-          type:
-          - string
-          - 'null'
-        time_format:
-          description: Time display format: twelve_hour or twenty_four_hour.
-          enum:
-          - twelve_hour
-          - twenty_four_hour
-          - 'null'
-          type:
-          - string
-          - 'null'
         database_id:
           description: Canonical target repository id of a `RELATION` property.
           type:
           - string
           - 'null'
-        id:
-          type: string
+        date_format:
+          description: |-
+            Display format: locale, month_day_year, day_month_year, or
+            year_month_day.
+          type:
+          - string
+          - 'null'
         display_name:
           description: Human-readable label shown in the user interface.
-          maxLength: 255
           type: string
+        id:
+          type: string
+        include_time:
+          description: Whether new values for a Date property can include a time.
+          type:
+          - boolean
+          - 'null'
         name:
-          description: Stable key used by API clients to identify the Property.
+          description: Stable key used by API clients to identify this Property.
           type: string
         options:
           description: |-
@@ -1082,6 +1052,11 @@ components:
           - 'null'
         property_type:
           type: string
+        time_format:
+          description: 'Display time format: twelve_hour or twenty_four_hour.'
+          type:
+          - string
+          - 'null'
       required:
       - id
       - name
@@ -1513,17 +1488,12 @@ components:
     UpdatePropertyRequest:
       properties:
         display_name:
-          description: New human-readable label for the Property.
-          minLength: 1
-          maxLength: 255
+          description: New human-readable label shown in the user interface.
           type:
           - string
           - 'null'
         name:
-          description: New stable key for the Property.
-          minLength: 1
-          maxLength: 64
-          pattern: ^[A-Za-z][A-Za-z0-9_-]{0,63}$
+          description: New stable key used by API clients to identify this Property.
           type:
           - string
           - 'null'
@@ -1610,7 +1580,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.9
+  version: 1.11.10
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:
@@ -2122,24 +2092,18 @@ paths:
         name: q
         required: false
         schema:
-          type:
-          - string
-          - 'null'
+          type: string
       - in: query
         name: category_code
         required: false
         schema:
-          type:
-          - string
-          - 'null'
+          type: string
       - description: e.g. `raw`, `boiled`. Alias matches do not pick a state for you.
         in: query
         name: cooking_state
         required: false
         schema:
-          type:
-          - string
-          - 'null'
+          type: string
       - description: 1-origin. Defaults to 1.
         in: query
         name: page
@@ -2147,9 +2111,7 @@ paths:
         schema:
           format: int32
           minimum: 0
-          type:
-          - integer
-          - 'null'
+          type: integer
       - description: 1..=100. Defaults to 20.
         in: query
         name: page_size
@@ -2157,9 +2119,7 @@ paths:
         schema:
           format: int32
           minimum: 0
-          type:
-          - integer
-          - 'null'
+          type: integer
       responses:
         '200':
           content:
@@ -2615,9 +2575,7 @@ paths:
           value (Select/MultiSelect options by id, key or label; Boolean
           `true`/`false`, where no value counts as `false`; Relation by
           record id; text exactly). `key:a|b` matches any of several.
-          `key>=n` and `key<=n` compare Integer values and Date values in
-          `YYYY-MM-DD` or RFC 3339 date-time format. A date-only upper bound
-          includes the entire calendar day.
+          `key>=n` and `key<=n` compare Integer and `YYYY-MM-DD` Date values.
         example: category:home_center
         in: query
         name: filter

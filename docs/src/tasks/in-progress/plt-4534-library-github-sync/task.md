@@ -58,6 +58,19 @@ provider-neutral な binding、external object link、ChangeSet、durable delive
 - Library API scenario test で binding 作成から ChangeSet acceptance まで確認
 - 検証用 GitHub repository で import、Library 編集、GitHub 編集、競合、削除を確認
 
+### 2026-10-15 既存 Markdown の初回取り込み
+
+- repository settings の GitHub 同期パス初期値を `docs/**/*.md` に変更。
+- binding と同じ scope の webhook endpoint 設定後、既存ファイルをスキャンして
+  review 用 `InboundChangeSet` に冪等登録する操作を追加。再スキャンでは受理済みの
+  同内容を除外する。受理時は通常の external object link を作成する。
+- ブランチがスキャン中に変化した場合、GitHub の tree が truncated の場合、または
+  対象ファイルを取得できない場合は成功扱いせず再試行を促す。
+- `library-api` の Rust check、`inbound_sync` unit test 128件、GraphQL schema
+  codegen、client TypeScript check、focused client tests 29件が成功。
+  Production の experimental gate は維持し、
+  実 GitHub との往復は別途確認する。
+
 ### 2026-09-11 Phase 0
 
 - `Provider::Github` と marketplace の GitHub integration を Experimental に変更。
@@ -179,3 +192,10 @@ Preview surface で別 gate として記録する。
 - Content Lifecycle BC の ChangeSet 実装状況により Phase 3 の分割が必要になる。
 - Lambda から durable consumer を起動する基盤は Tachyon Cloud Apps 側の対応が必要になる可能性がある。
 - 実 GitHub E2E には検証専用 account / repository と OAuth / webhook 設定が必要である。
+
+### 2026-10-15 GitHub repository hook 管理の実装
+
+- GitHub binding の保存時に Library endpoint を安定 ID で作成または既存 endpoint を再利用し、Tachyon OAuth broker 経由で GitHub hook を同期する。GitHub API 障害後の再保存は同じ endpoint と URL で再試行する。
+- binding 単位の GraphQL 状態照会、hook 削除、配送再送を追加し、設定画面で接続状態、直近配送、失敗配送の再送を確認できるようにした。削除時も Library endpoint と ChangeSet 履歴は残す。
+- ローカルでは `cargo check -p inbound_sync -p library-api`、`library_codegen`、GitHub 設定 UI/API クライアントの対象テスト 35 件、新規 UI/API クライアントの ESLint が成功した。クライアント全体の型検査は未変更の `extractFileContext.ts`、`dataLocation.ts`、`router.tsx` にある 3 件の既存エラーで失敗した。`ExternalSyncSection.tsx` 全体の ESLint は既存の effect 内 setState 規則違反が残る。
+- Preview の GitHub App 権限、許可元 origin、実配送の往復確認は未実施。本番の許可元と inbound engine は有効化していない。Tachyon 側の設計・検証手順は `tachyon-apps/docs/src/tasks/in-progress/plt-4534-library-github-webhook-control/` に記録した。

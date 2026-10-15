@@ -24,7 +24,7 @@ export function GitHubSyncSetupDialog({ open, target, readOnly, onClose, onSaved
   const [error, setError] = useState<string | null>(null)
   const [repository, setRepository] = useState('')
   const [branch, setBranch] = useState('main')
-  const [pathPattern, setPathPattern] = useState('**/*.md')
+  const [pathPattern, setPathPattern] = useState('docs/**/*.md')
   const [saved, setSaved] = useState(false)
   const [revision, setRevision] = useState(0)
   const loadTask = useRef<Promise<GitHubSyncSetup> | null>(null)
@@ -122,7 +122,6 @@ export function GitHubSyncSetupDialog({ open, target, readOnly, onClose, onSaved
           : saved ? (
             <div role="status" className="space-y-3 text-sm">
               <p className="flex items-center gap-2 font-medium"><Check className="size-4 text-success" />{t('githubSetup.saved')}</p>
-              <p className="text-muted-foreground">{t('githubSetup.webhookRequired')}</p>
             </div>
           ) : !setup ? <Button variant="secondary" onClick={refresh}>{t('common.retry')}</Button>
             : !enabled ? <p className="text-sm text-muted-foreground">{t('githubSetup.unavailable')}</p>
@@ -149,7 +148,6 @@ export function GitHubSyncSetupDialog({ open, target, readOnly, onClose, onSaved
                       <Input id="github-sync-path" value={pathPattern} onChange={(e) => setPathPattern(e.target.value)} placeholder="docs/**/*.md" disabled={busy || readOnly} /></div>
                   </div>
                   <p className="text-xs text-muted-foreground">{t('githubSetup.reviewHint')}</p>
-                  <p className="rounded-md border border-border bg-surface p-3 text-xs text-muted-foreground">{t('githubSetup.webhookRequired')}</p>
                 </form>
               )}
         <DialogFooter>

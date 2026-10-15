@@ -20,6 +20,7 @@ use outbound_sync::{
     SyncDataInputData, SyncDataInputPort, SyncPayload, SyncTarget,
 };
 use serde::Serialize;
+use sha2::Digest;
 use sqlx::MySqlPool;
 use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction};
 
@@ -1160,6 +1161,10 @@ impl ExternalSyncOutboxDispatch {
             .await;
         match result {
             Ok(result) => {
+                let content_hash = format!(
+                    "{:x}",
+                    sha2::Sha256::digest(content.as_bytes())
+                );
                 let remote_revision =
                     result.result_id.ok_or_else(|| {
                         errors::Error::service_unavailable(
@@ -1177,7 +1182,7 @@ impl ExternalSyncOutboxDispatch {
                     link.external_object_id(),
                     Some(remote_revision),
                     Some(delivery.library_revision().into()),
-                    link.base_content_hash().map(str::to_owned),
+                    Some(content_hash),
                 )?;
                 self.links
                     .save(delivery.tenant_id(), &updated_link)
