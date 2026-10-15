@@ -5,6 +5,14 @@ All notable changes to the Library API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.11] - 2026-10-16
+
+### Fixed
+- **応答の高速化（失敗は増やさない）**:
+  - 組織を指定したリクエストで組織を解決するとき、組織の取得だけにする。これまでは使わない組織内の全リポジトリまで読み込んでいた（トレースで中央値 約90ms）。
+  - `RepoRepositoryImpl::find_all` で、リポジトリごとに `databases` を引いていた N+1 を、JOIN 1回のクエリにまとめる。
+  - 本番の Lambda のログを `INFO` までにする。共通の既定値が `DEBUG` で終わっていたため、データ一覧1回で数百行の debug ログ（PropertyValue dual-read parity など）が CloudWatch と OpenTelemetry に出ていた。
+
 ## [1.11.10] - 2026-10-10
 
 ### Fixed

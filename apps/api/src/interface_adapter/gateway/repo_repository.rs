@@ -25,6 +25,19 @@ pub struct RepoRepositoryImpl {
     db: Arc<persistence::Db>,
 }
 
+/// Database ids keyed by repository id, each list in the order the rows
+/// arrived.
+fn group_database_ids(
+    rows: Vec<(String, String)>,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut grouped: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (repo_id, database_id) in rows {
+        grouped.entry(repo_id).or_default().push(database_id);
+    }
+    grouped
+}
+
 fn repo_from_stored(
     row: RepoRow,
     database_ids: Vec<String>,
@@ -263,24 +276,34 @@ impl RepoRepository for RepoRepositoryImpl {
         .await
         .map_err(errors::Error::internal_server_error)?;
 
-        let mut repos = vec![];
-        for row in rows.iter() {
-            let database_rows = sqlx::query!(
-                "SELECT id, database_id, repo_id FROM `databases` WHERE platform_id = ? AND repo_id = ?",
-                crate::domain::LIBRARY_TENANT.to_string(),
-                row.id.to_string()
-            )
-            .fetch_all(self.db.pool().as_ref())
-            .await
-            .map_err(errors::Error::internal_server_error)?;
-
-            repos.push(repo_from_stored(
-                row.clone(),
-                database_rows.into_iter().map(|d| d.database_id).collect(),
-                vec![],
-            )?);
+        if rows.is_empty() {
+            return Ok(vec![]);
         }
-        Ok(repos)
+
+        // One query for every repository's databases. Asking per
+        // repository cost a round trip each, and this runs on every
+        // organization view.
+        let database_rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT d.repo_id, d.database_id FROM `databases` d \
+             JOIN repos r ON r.id = d.repo_id \
+             WHERE d.platform_id = ? AND r.platform_id = ? AND r.org_id = ? \
+             ORDER BY d.id",
+        )
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .fetch_all(self.db.pool().as_ref())
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+
+        let database_ids = group_database_ids(database_rows);
+        rows.into_iter()
+            .map(|row| {
+                let ids =
+                    database_ids.get(&row.id).cloned().unwrap_or_default();
+                repo_from_stored(row, ids, vec![])
+            })
+            .collect()
     }
 
     async fn delete(
@@ -326,5 +349,20 @@ mod tests {
         let message = result.unwrap_err().to_string();
         assert!(message.contains("invalid stored repo.name"));
         assert!(message.contains("en.err.empty_type"));
+    }
+
+    /// `find_all` reads every repository's databases in one query, so
+    /// each repository must get back exactly its own ids, in row order.
+    #[test]
+    fn database_ids_are_grouped_by_repo_in_row_order() {
+        let grouped = group_database_ids(vec![
+            ("rp_a".to_string(), "db_1".to_string()),
+            ("rp_b".to_string(), "db_2".to_string()),
+            ("rp_a".to_string(), "db_3".to_string()),
+        ]);
+
+        assert_eq!(grouped["rp_a"], vec!["db_1", "db_3"]);
+        assert_eq!(grouped["rp_b"], vec!["db_2"]);
+        assert!(!grouped.contains_key("rp_c"));
     }
 }

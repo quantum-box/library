@@ -19,6 +19,27 @@ const MIGRATION_GATE_ROUTE_KEY: &str = "LIBRARY_MIGRATION_GATE";
 const MIGRATION_GATE_PATH: &str = "/";
 const MIGRATION_GATE_DOMAIN: &str = "library-api-migration-gate.internal";
 
+/// The tracing filter for this Lambda.
+///
+/// The shared default ends in `DEBUG`, which in production wrote a debug
+/// line per property per record (hundreds for one list request) to
+/// CloudWatch and the OpenTelemetry exporter on the request path.
+/// Production keeps the shared target switches and stops at `INFO`.
+fn lambda_log_filter(environment: &str) -> Vec<&'static str> {
+    let environment = environment.to_ascii_lowercase();
+    let production = environment == "prod" || environment == "production";
+    telemetry::DEFAULT_FILTER
+        .iter()
+        .map(|directive| {
+            if production && *directive == "DEBUG" {
+                "INFO"
+            } else {
+                *directive
+            }
+        })
+        .collect()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let config = library_api::Config::parse();
@@ -30,7 +51,7 @@ async fn main() -> Result<(), Error> {
     telemetry::init_production_tracing(telemetry::TracingConfig {
         environment: config.environment.as_str(),
         crate_name: "library-api",
-        filter: Some(telemetry::DEFAULT_FILTER.to_vec()),
+        filter: Some(lambda_log_filter(config.environment.as_str())),
         otel_endpoint: config.otel_exporter_otlp_endpoint,
         insi: Some(false),
         // OTel/X-Ray: enabled via OTEL_ENABLED env var, uses ADOT Lambda layer
@@ -263,5 +284,24 @@ mod tests {
             MIGRATION_GATE_ROUTE_KEY,
             "library-api.txcloud.app"
         ))));
+    }
+
+    #[test]
+    fn production_logs_stop_at_info() {
+        for environment in ["production", "prod", "Production"] {
+            let filter = lambda_log_filter(environment);
+            assert!(filter.contains(&"INFO"), "{environment}");
+            assert!(!filter.contains(&"DEBUG"), "{environment}");
+            // The per-target switches still apply.
+            assert!(filter.contains(&"sqlx=off"), "{environment}");
+        }
+    }
+
+    #[test]
+    fn non_production_keeps_the_shared_default() {
+        assert_eq!(
+            lambda_log_filter("development"),
+            telemetry::DEFAULT_FILTER.to_vec()
+        );
     }
 }

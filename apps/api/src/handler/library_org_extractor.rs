@@ -44,7 +44,7 @@ where
 
         if let Some(username) = org_username {
             // Parse the username to OperatorAlias
-            let _operator_alias =
+            let operator_alias =
                 match value_object::Identifier::from_str(&username) {
                     Ok(alias) => alias,
                     Err(_) => {
@@ -53,23 +53,18 @@ where
                     }
                 };
 
-            // Get the organization from the repository
-            let org_query = &library_app.view_org;
-
-            // Create a temporary LibraryOrg with the username
-            let temp_library_org = LibraryOrg::with_org(username.clone());
-
-            let org = org_query
-                .execute(&crate::usecase::ViewOrgInputData {
-                    executor: &tachyon_sdk::auth::Executor::SystemUser,
-                    multi_tenancy: &temp_library_org,
-                    organization_username: username.clone(),
-                })
-                .await?;
+            // Only the organization's id is needed here. `view_org` would
+            // also load every repository the organization owns, and this
+            // runs on every org-scoped request.
+            let org = library_app
+                .get_organization_by_username
+                .execute(&operator_alias)
+                .await?
+                .ok_or(errors::not_found!("organization is not found"))?;
 
             Ok(LibraryOrg::with_org_and_operator(
                 username,
-                org.organization.id().clone(),
+                org.id().clone(),
             ))
         } else {
             // If no organization username is found in the path, return a default LibraryOrg

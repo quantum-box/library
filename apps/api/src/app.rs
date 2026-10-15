@@ -12,6 +12,11 @@ use tachyon_sdk::auth::AuthApp;
 #[derive(Clone)]
 pub struct LibraryApp {
     pub view_org: Arc<dyn usecase::ViewOrganizationInputPort>,
+    /// The organization alone, without its repositories. Request-path
+    /// lookups that only need the organization's id use this instead of
+    /// `view_org`, which also loads every repository it owns.
+    pub get_organization_by_username:
+        Arc<dyn usecase::GetOrganizationByUsernameQuery>,
     pub update_organization: Arc<dyn usecase::UpdateOrganizationInputPort>,
     pub create_organization: Arc<dyn usecase::CreateOrganizationInputPort>,
     pub create_repo: Arc<dyn usecase::CreateRepoInputPort>,
@@ -660,6 +665,7 @@ impl LibraryApp {
 
         Self {
             view_org,
+            get_organization_by_username,
             update_organization,
             create_organization,
             create_repo,
