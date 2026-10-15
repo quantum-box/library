@@ -5,7 +5,7 @@
 //!
 //! ```sh
 //! DEV_DATABASE_URL=mysql://root:@127.0.0.1:4000 \
-//!   cargo test -p database_manager --test data_list_latency -- --ignored --nocapture
+//!   cargo test -p database-manager --test data_list_latency -- --ignored --nocapture
 //! ```
 //!
 //! `BENCH_READ_DATABASE_URL` may point the timed reads at a latency-injecting
