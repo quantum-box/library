@@ -126,7 +126,8 @@ struct CanonicalPageRow {
 /// `DataRepository::find_all_with_paging`, but in its own statement, which
 /// may see a different snapshot. The selected records are returned so the
 /// caller can pass the result through [`canonical_values_for_rows`] before
-/// using it.
+/// using it. Only legacy-first reads use this (for the parity shadow);
+/// canonical-first reads load by the ids the page returned instead.
 pub async fn load_canonical_values_for_page(
     db: &Db,
     tenant_id: &TenantId,

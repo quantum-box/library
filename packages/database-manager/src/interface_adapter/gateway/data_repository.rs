@@ -635,8 +635,7 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        // Fields, the page and canonical values are read concurrently, with
-        // COUNT chained after the page: two round trips instead of four.
+        // Fields, the page, COUNT and canonical values are read concurrently.
         // Every read is still required, so a failure fails the list exactly
         // as the sequential version did.
         let pool = self.db.pool();
@@ -699,35 +698,57 @@ impl DataRepository for DataRepositoryImpl {
             .await?;
             Ok::<_, errors::Error>(total)
         };
-        let canonical = load_canonical_values_for_page(
-            self.db.as_ref(),
-            tenant_id,
-            database_id,
-            page,
-            self.property_value_mode,
-        );
-        // COUNT must not run before the page is read: a record inserted in
-        // between would be listed but missing from the totals. Futures are
-        // lazy, so this keeps the original page-then-count order while both
-        // still overlap the fields and canonical reads.
-        let rows_then_total = async {
-            let data_rows = data_rows.await?;
-            let total = total.await?;
-            Ok::<_, errors::Error>((data_rows, total))
+        let (fields, data_rows, total, canonical) = if self
+            .property_value_mode
+            .reads_canonical_first()
+        {
+            // Canonical values decide the response here, so read them
+            // by the ids this page actually returned, chained after the
+            // page (still concurrent with fields and COUNT).
+            let rows_with_canonical = async {
+                let data_rows = data_rows.await?;
+                let data_ids = data_rows
+                    .iter()
+                    .map(|row| row.id.clone())
+                    .collect::<Vec<_>>();
+                let canonical = load_canonical_values_for_mode(
+                    self.db.as_ref(),
+                    tenant_id,
+                    database_id,
+                    &data_ids,
+                    self.property_value_mode,
+                )
+                .await?;
+                Ok::<_, errors::Error>((data_rows, canonical))
+            };
+            let (fields, (data_rows, canonical), total) =
+                tokio::try_join!(fields, rows_with_canonical, total)?;
+            (fields, data_rows, total, canonical)
+        } else {
+            // Legacy-first reads only shadow canonical values for the
+            // parity log, so they may select the page again concurrently.
+            let canonical = load_canonical_values_for_page(
+                self.db.as_ref(),
+                tenant_id,
+                database_id,
+                page,
+                self.property_value_mode,
+            );
+            let (fields, data_rows, total, canonical) =
+                tokio::try_join!(fields, data_rows, total, canonical)?;
+            let page_records =
+                data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
+            let canonical = canonical_values_for_rows(
+                self.db.as_ref(),
+                tenant_id,
+                database_id,
+                &page_records,
+                canonical,
+                self.property_value_mode,
+            )
+            .await?;
+            (fields, data_rows, total, canonical)
         };
-        let (fields, (data_rows, total), canonical) =
-            tokio::try_join!(fields, rows_then_total, canonical)?;
-        let page_records =
-            data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
-        let canonical = canonical_values_for_rows(
-            self.db.as_ref(),
-            tenant_id,
-            database_id,
-            &page_records,
-            canonical,
-            self.property_value_mode,
-        )
-        .await?;
         let mut data_vec = vec![];
         for data_row in data_rows {
             let data = hydrate_data_row(
@@ -739,13 +760,80 @@ impl DataRepository for DataRepositoryImpl {
             )?;
             data_vec.push(data);
         }
-        let total = u32::try_from(total).map_err(|_| {
-            errors::Error::internal_server_error(
-                "data count exceeds the supported pagination range",
-            )
-        })?;
+        let total = paged_total(total, page, data_vec.len())?;
         let paginator = OffsetPaginator::new(page, total);
         Ok((DataCollection::new(data_vec), paginator))
+    }
+}
+
+/// COUNT runs concurrently with the page query and may see an older snapshot:
+/// a record inserted between them can be listed while missing from the count.
+/// A non-empty page proves at least `offset + returned` records exist, so the
+/// total never goes below that. An empty page proves nothing and keeps COUNT.
+fn paged_total(
+    count: i64,
+    page: OffsetPage,
+    returned: usize,
+) -> errors::Result<u32> {
+    let out_of_range = || {
+        errors::Error::internal_server_error(
+            "data count exceeds the supported pagination range",
+        )
+    };
+    let count = u32::try_from(count).map_err(|_| out_of_range())?;
+    if returned == 0 {
+        return Ok(count);
+    }
+    let returned = u32::try_from(returned).map_err(|_| out_of_range())?;
+    let listed = page
+        .offset()
+        .checked_add(returned)
+        .ok_or_else(out_of_range)?;
+    Ok(count.max(listed))
+}
+
+#[cfg(test)]
+mod paged_total_tests {
+    use super::*;
+
+    #[test]
+    fn a_record_inserted_after_count_is_counted() {
+        // Empty database: COUNT saw 0, then one record was inserted before
+        // the page query returned it.
+        let page = OffsetPage::new(1, 20).unwrap();
+        let total = paged_total(0, page, 1).unwrap();
+        assert_eq!(total, 1);
+        let paginator = OffsetPaginator::new(page, total);
+        assert_eq!(paginator.total_items, 1);
+        assert_eq!(paginator.total_pages, 1);
+
+        let page = OffsetPage::new(3, 10).unwrap();
+        assert_eq!(paged_total(25, page, 7).unwrap(), 27);
+    }
+
+    #[test]
+    fn a_consistent_count_is_kept() {
+        let page = OffsetPage::new(2, 10).unwrap();
+        assert_eq!(paged_total(31, page, 10).unwrap(), 31);
+        assert_eq!(paged_total(15, page, 5).unwrap(), 15);
+    }
+
+    #[test]
+    fn an_empty_page_keeps_the_count() {
+        // Pages past the end (or an emptied database) must not invent rows.
+        let page = OffsetPage::new(6, 7).unwrap();
+        assert_eq!(paged_total(31, page, 0).unwrap(), 31);
+        assert_eq!(
+            paged_total(0, OffsetPage::new(1, 20).unwrap(), 0).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn negative_or_oversized_counts_are_rejected() {
+        let page = OffsetPage::new(1, 20).unwrap();
+        assert!(paged_total(-1, page, 0).is_err());
+        assert!(paged_total(i64::from(u32::MAX) + 1, page, 0).is_err());
     }
 }
 

@@ -458,7 +458,7 @@ async fn changed_canonical_page_is_re_read_by_returned_rows(
         .unwrap_or_else(|_| "mysql://root:@localhost:15000".to_string())
         .parse::<DatabaseUrl>()?
         .use_database("tachyon_apps_database_manager");
-    let mode = PropertyValueStorageMode::DualWriteCanonicalRead;
+    let mode = PropertyValueStorageMode::DualWriteLegacyRead;
     let writer = database_manager::factory_client_with_property_value_mode(
         &dsn, mode,
     )
