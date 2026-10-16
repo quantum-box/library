@@ -5,7 +5,7 @@ import {
   buildRecordsRoomId,
   resolveBrowserSyncWebsocketUrl,
 } from '../../app/kitConfig.js'
-import { loadStoredAuthIdentity } from '../auth'
+import { authStorageKey, loadStoredAuthIdentity } from '../auth'
 import { requestSyncTicket } from './syncTicket'
 
 // ---------------------------------------------------------------------------
@@ -321,6 +321,7 @@ export function disconnectWs() {
   setPresence({ onlineCount: 0 })
   window.removeEventListener('online', connectWs)
   window.removeEventListener('library-auth-change', handleAuthChange)
+  window.removeEventListener('storage', handleStorage)
 }
 
 // ---------------------------------------------------------------------------
@@ -413,8 +414,18 @@ function handleAuthChange() {
   connectWs()
 }
 
+/**
+ * Another tab signing out or in changes the shared session too, but only
+ * that tab gets `library-auth-change`; this one sees the storage write.
+ * `key` is null when storage was cleared outright.
+ */
+function handleStorage(event: StorageEvent) {
+  if (event.key === authStorageKey || event.key === null) handleAuthChange()
+}
+
 window.addEventListener('online', connectWs)
 window.addEventListener('library-auth-change', handleAuthChange)
+window.addEventListener('storage', handleStorage)
 window.addEventListener('pagehide', handlePageHide)
 window.addEventListener('pageshow', handlePageShow)
 connectWs()

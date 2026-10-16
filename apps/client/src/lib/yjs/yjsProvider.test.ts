@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../auth', () => ({
+  authStorageKey: 'library_auth',
   loadStoredAuthIdentity: () => (mocks.userId ? { userId: mocks.userId } : null),
 }))
 
@@ -149,6 +150,23 @@ describe('records room connection', () => {
     window.dispatchEvent(new Event('online'))
     expect(mocks.requestSyncTicket).toHaveBeenCalledTimes(1)
     expect(mocks.instances).toHaveLength(1)
+    provider.disconnectWs()
+  })
+
+  it('closes the room when another tab signs out', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    // An unrelated key leaves the room alone.
+    window.dispatchEvent(new StorageEvent('storage', { key: 'library-client-theme' }))
+    mocks.userId = undefined
+    window.dispatchEvent(new StorageEvent('storage', { key: 'library-client-theme' }))
+    expect(mocks.instances[0].readyState).not.toBe(FakeWebSocket.CLOSED)
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'library_auth' }))
+    expect(mocks.instances[0].readyState).toBe(FakeWebSocket.CLOSED)
+    expect(provider.connectionStatus.value).toBe('disconnected')
     provider.disconnectWs()
   })
 

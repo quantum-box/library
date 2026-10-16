@@ -33,7 +33,8 @@ interface LibraryUser {
   email?: string | null
 }
 
-const authStorageKey = 'library_auth'
+/** The localStorage key holding the session; other tabs see it change. */
+export const authStorageKey = 'library_auth'
 const authChangeEvent = 'library-auth-change'
 const refreshEarlySeconds = 5 * 60
 const maximumTimerDelay = 2_147_483_647
