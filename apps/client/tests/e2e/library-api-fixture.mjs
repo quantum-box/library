@@ -133,9 +133,6 @@ const seedRelationData = () => [
 
 let state
 const rooms = new Map()
-// Like the sync Worker's /ws: a room opens only with a one-time ticket from
-// /ws/ticket. The fixture does not check which user a room is named after.
-const syncTickets = new Map()
 let engineOperations = []
 let engineOperationSequences = new Map()
 let nextEngineSequence = 1
@@ -181,7 +178,6 @@ function resetRealtimeState() {
     room.doc.destroy()
   }
   rooms.clear()
-  syncTickets.clear()
 }
 
 function resetEngineState() {
@@ -750,18 +746,6 @@ const server = createServer(async (request, response) => {
       return
     }
 
-    if (request.method === 'POST' && url.pathname === '/ws/ticket') {
-      const { room } = await readJson(request)
-      if (!request.headers.authorization) {
-        sendJson(response, 401, { error: 'Sync authorization failed' })
-        return
-      }
-      const ticket = `${randomUUID()}${randomUUID()}`.replaceAll('-', '')
-      syncTickets.set(ticket, room)
-      sendJson(response, 200, { ticket, room })
-      return
-    }
-
     if (request.method === 'GET' && url.pathname === '/api/health') {
       sendJson(response, 200, { status: 'ok' })
       return
@@ -948,8 +932,8 @@ const websocketServer = new WebSocketServer({ noServer: true })
 
 websocketServer.on('connection', (client, request) => {
   const url = new URL(request.url ?? '/ws', `http://${host}:${port}`)
-  const room = roomFor(syncTickets.get(url.searchParams.get('ticket')))
-  syncTickets.delete(url.searchParams.get('ticket'))
+  const roomId = url.searchParams.get('room')?.trim() || 'default'
+  const room = roomFor(roomId)
   room.clients.add(client)
 
   client.send(Y.encodeStateAsUpdate(room.doc))
@@ -987,11 +971,6 @@ server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url ?? '/', `http://${host}:${port}`)
   if (url.pathname !== '/ws') {
     socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n')
-    socket.destroy()
-    return
-  }
-  if (!syncTickets.has(url.searchParams.get('ticket'))) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
     socket.destroy()
     return
   }

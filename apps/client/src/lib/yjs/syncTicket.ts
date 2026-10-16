@@ -45,11 +45,26 @@ export async function requestSyncTicket(
   }
   if (!room) return { kind: 'signed-out' }
 
-  const requestHeaders = await headers()
-  if (!requestHeaders.Authorization) return { kind: 'signed-out' }
-
+  // One deadline covers getting the token as well: a refresh that stalls
+  // would otherwise hold this attempt, and every reconnect behind it, open.
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
+  const aborted = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener('abort', () => reject(new Error('timed out')))
+  })
+  aborted.catch(() => {})
+  let requestHeaders: Record<string, string>
+  try {
+    requestHeaders = await Promise.race([headers(), aborted])
+  } catch {
+    globalThis.clearTimeout(timeout)
+    return { kind: 'unavailable' }
+  }
+  if (!requestHeaders.Authorization) {
+    globalThis.clearTimeout(timeout)
+    return { kind: 'signed-out' }
+  }
+
   try {
     const response = await fetchImpl(ticketUrl, {
       method: 'POST',
