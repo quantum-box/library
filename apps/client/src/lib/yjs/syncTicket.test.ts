@@ -64,6 +64,17 @@ describe('requestSyncTicket', () => {
     }
   })
 
+  it('gives up when getting the token stalls', async () => {
+    const fetchImpl = vi.fn()
+    const result = await requestSyncTicket(socketUrl, {
+      headers: () => new Promise(() => {}),
+      fetchImpl,
+      timeoutMs: 5,
+    })
+    expect(result).toEqual({ kind: 'unavailable' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('gives up on a ticket request that does not answer', async () => {
     const fetchImpl = (_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
