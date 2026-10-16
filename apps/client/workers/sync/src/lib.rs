@@ -4,9 +4,11 @@ mod document;
 mod edge;
 mod external_dispatch;
 mod live;
+mod maintenance;
 mod model;
 mod outbound_scan;
 mod relay;
+mod room_auth;
 mod storage;
 mod tickets;
 

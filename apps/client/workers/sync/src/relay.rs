@@ -1,5 +1,6 @@
 use crate::{
     document::{self, Document},
+    maintenance,
     model::INTERNAL,
 };
 use library_worker_common::{header, now};
@@ -98,6 +99,21 @@ impl DurableObject for PhotonSyncRoom {
         {
             broadcast(&self.state, &json!({"type":"engine-changed"}));
             return Response::empty();
+        }
+        if header(&request, INTERNAL).as_deref() == Some("1") {
+            match request.path().as_str() {
+                maintenance::INSPECT => {
+                    return Response::from_json(
+                        &maintenance::inspect(&self.state).await?,
+                    )
+                }
+                maintenance::PURGE => {
+                    return Response::from_json(
+                        &maintenance::purge(&self.state).await?,
+                    )
+                }
+                _ => {}
+            }
         }
         if !header(&request, "upgrade")
             .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))

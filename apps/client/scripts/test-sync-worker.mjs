@@ -15,6 +15,9 @@ const productionManifest = clientManifest.split(/^        preview:\s*$/m)[0]
 const productionOrigins = productionManifest.match(/^\s+- name: PHOTON_LIVE_ALLOWED_ORIGINS\s*\n\s+value:\s*"([^"]+)"\s*$/m)?.[1]
 assert.ok(productionOrigins, 'production PHOTON_LIVE_ALLOWED_ORIGINS must be declared in tachyon.yaml')
 const api = 'https://api.example.test'
+// The relay admits each Library user only to their own records room.
+const users = { 'Bearer test-only': 'us_test', 'Bearer other-user': 'us_other' }
+const roomOf = (name, user = 'us_test') => `tenant:test:workspace:${name}:user:${user}:records`
 const identity = { roomId: 'live:test-room', tenant: 'tenant-test', database: 'db-test', data: 'data-test', property: 'body', format: 'markdown' }
 const metaKey = 'live:room:meta:v1'
 const pendingKey = 'live:checkpoint:pending:v1'
@@ -81,6 +84,12 @@ async function scenario(t, overrides = {}) {
       assert.equal(new URL(request.url).origin, api)
       const body = request.method === 'GET' ? undefined : await request.json()
       state.calls.push({ path: new URL(request.url).pathname, body, headers: Object.fromEntries(request.headers) })
+      if (new URL(request.url).pathname === '/v1/graphql') {
+        if (state.meStatus) return Response.json({ error: 'test failure' }, { status: state.meStatus })
+        const user = users[request.headers.get('authorization')]
+        // Like library-api: an unknown token is answered 200 with an error and no user.
+        return Response.json(user ? { data: { me: { id: user } } } : { data: null, errors: [{ message: 'Unauthorized' }] })
+      }
       if (request.url.endsWith('/live/authorize')) {
         if (state.authorizeGate) await state.authorizeGate
         return Response.json({ tenant: identity.tenant, database: identity.database, data: identity.data, property: identity.property, format: state.format ?? identity.format, actor_id: 'actor-test', room_id: state.roomId ?? identity.roomId, record_version: state.recordVersion, body: state.body }, { status: state.authorizationStatus })
@@ -106,7 +115,16 @@ async function scenario(t, overrides = {}) {
     return fetch(`/live/ws?ticket=${ticket}`, { headers: { origin, upgrade: 'websocket' } })
   }
   const live = async () => { const ws = socket(await connect()); sockets.push(ws); await ws.take('live-ready'); return ws }
-  const sync = async (room = 'records') => { const ws = socket(await fetch(`/ws?room=${room}`, { headers: { upgrade: 'websocket' } })); sockets.push(ws); await ws.take('presence'); return ws }
+  const ticketFor = (room, authorization = 'Bearer test-only', extra = {}) => fetch('/ws/ticket', { method: 'POST', headers: { authorization, 'content-type': 'application/json', ...extra }, body: JSON.stringify({ room }) })
+  const openRoom = async (room, authorization) => {
+    const response = await ticketFor(room, authorization); assert.equal(response.status, 200)
+    const { ticket } = await response.json()
+    return fetch(`/ws?room=${encodeURIComponent(room)}&ticket=${ticket}`, { headers: { upgrade: 'websocket' } })
+  }
+  const sync = async (name = 'records', user = 'us_test') => {
+    const authorization = Object.keys(users).find((k) => users[k] === user)
+    const ws = socket(await openRoom(roomOf(name, user), authorization)); sockets.push(ws); await ws.take('presence'); return ws
+  }
   const stub = async (binding = 'PHOTON_LIVE_ROOMS', name = state.roomId ?? identity.roomId) => { const ns = await mf.getDurableObjectNamespace(binding); return ns.get(ns.idFromName(name)) }
   const storage = async (binding, name) => (await (await stub(binding, name)).fetch('https://fixture/__test/state')).json()
   const seed = async (values, binding, name) => { const r = await (await stub(binding, name)).fetch('https://fixture/__test/seed', { method: 'POST', body: JSON.stringify(values) }); assert.equal(r.status, 200) }
@@ -122,7 +140,7 @@ async function scenario(t, overrides = {}) {
   }
   // Rejects the next checkpoint request like a timeout; see workers/tests/runtime.mjs.
   const fault = async (mode) => { const r = await (await stub()).fetch('https://fixture/__test/transport-fault', { method: 'POST', body: JSON.stringify({ mode }) }); assert.equal(r.status, 200) }
-  return { state, fetch, issue, connect, live, sync, storage, seed, stub, pointer, fault, joinDirect,
+  return { state, fetch, issue, connect, live, sync, ticketFor, openRoom, storage, seed, stub, pointer, fault, joinDirect,
     scheduled: async () => (await mf.getWorker()).scheduled(),
     restart: async () => { for (const ws of sockets) ws.close(); await mf.dispose(); mf = start() },
     initialize: async () => { const ws = await live(); ws.seed(state.body); await ws.take('live-ready', (m) => m.initialized); return ws },
@@ -173,20 +191,96 @@ test('generic Yjs relay exchanges edits, presence and engine-changed; recovers a
   await a.take('presence', (v) => v.onlineCount === 2)
   a.edit('hello'); await until(() => b.doc.getText('body').toString() === 'hello')
   b.edit(' world'); await until(() => a.doc.getText('body').toString() === 'hello world')
-  await s.fetch('/api/engine/push', { method: 'POST', body: JSON.stringify({ ops: [] }), headers: { 'content-type': 'application/json', authorization: 'Bearer user-token' } })
-  await a.take('engine-changed'); assert.equal(s.state.calls.at(-1).headers.authorization, 'Bearer user-token')
+  // A client's own engine-changed frame still reaches its other tabs.
+  a.ws.send(JSON.stringify({ type: 'engine-changed' })); await b.take('engine-changed')
+  // A push is proxied with the caller's token. Its broadcast goes to the
+  // legacy "records" room, which no ticket can name, so no user room hears it.
+  const push = await s.fetch('/api/engine/push', { method: 'POST', body: JSON.stringify({ ops: [] }), headers: { 'content-type': 'application/json', authorization: 'Bearer user-token' } })
+  assert.equal(push.status, 200); assert.equal(s.state.calls.at(-1).headers.authorization, 'Bearer user-token')
+  await new Promise((r) => setTimeout(r, 50)); assert.equal(a.messages.some((m) => m.type === 'engine-changed'), false)
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === 'hello world')
+})
+test('/ws admits only a ticket holder, once, and only to the room named after them', async (t) => {
+  const s = await scenario(t)
+  const upgrade = { headers: { upgrade: 'websocket' } }
+  // No ticket, a made-up ticket, or the old shared room by name: refused.
+  for (const path of ['/ws', `/ws?room=${roomOf('records')}`, '/ws?room=tenant:library:workspace:library-default:records', `/ws?ticket=${'x'.repeat(43)}`]) {
+    assert.equal((await s.fetch(path, upgrade)).status, 401, path)
+  }
+  // Tickets need a Library user, and only for their own records room.
+  assert.equal((await s.fetch('/ws/ticket', { method: 'POST', body: JSON.stringify({ room: roomOf('records') }) })).status, 401)
+  assert.equal((await s.ticketFor(roomOf('records'), 'Bearer unknown')).status, 401)
+  for (const room of [roomOf('records', 'us_other'), 'tenant:library:workspace:library-default:records', 'records', `${roomOf('records')}:x`]) {
+    const refused = await s.ticketFor(room); assert.equal(refused.status, 403, room); assert.doesNotMatch(await refused.text(), /ticket"/)
+  }
+  s.state.meStatus = 503; assert.equal((await s.ticketFor(roomOf('records'))).status, 502); delete s.state.meStatus
+  // The caller's credentials, and only theirs, reach the API.
+  const issued = await s.ticketFor(roomOf('records'), 'Bearer test-only', { 'x-platform-id': 'platform-test', 'x-operator-id': 'operator-test' })
+  assert.equal(issued.status, 200); assert.equal(issued.headers.get('access-control-allow-origin'), '*')
+  const me = s.state.calls.at(-1)
+  assert.equal(me.path, '/v1/graphql'); assert.equal(me.headers.authorization, 'Bearer test-only')
+  assert.equal(me.headers['x-platform-id'], 'platform-test'); assert.equal(me.headers['x-operator-id'], 'operator-test')
+  const { ticket, room } = await issued.json(); assert.equal(room, roomOf('records'))
+  // A ticket cannot be pointed at another room, and is spent by trying.
+  assert.equal((await s.fetch(`/ws?room=${encodeURIComponent(roomOf('records', 'us_other'))}&ticket=${ticket}`, upgrade)).status, 403)
+  assert.equal((await s.fetch(`/ws?ticket=${ticket}`, upgrade)).status, 401)
+  const preflight = await s.fetch('/ws/ticket', { method: 'OPTIONS', headers: { origin: 'tauri://localhost' } })
+  assert.equal(preflight.status, 204); assert.match(preflight.headers.get('access-control-allow-headers'), /x-operator-id/)
+})
+test('users in one workspace no longer share a records room', async (t) => {
+  const s = await scenario(t); const mine = await s.sync(); const theirs = await s.sync('records', 'us_other')
+  mine.edit('private')
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', roomOf('records')))['yjs:update:meta'], 'edit stored')
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal(theirs.doc.getText('body').toString(), '')
+  assert.equal((await s.storage('PHOTON_SYNC_ROOMS', roomOf('records', 'us_other')))['yjs:update:meta'], undefined)
+  // Presence counts the user's own connections only.
+  const again = await s.sync(); await mine.take('presence', (v) => v.onlineCount === 2)
+  assert.equal(theirs.messages.some((m) => m.type === 'presence' && m.onlineCount > 1), false)
+  await until(() => again.doc.getText('body').toString() === 'private')
+})
+test('the retired shared room can be inspected and purged only with the maintenance secret', async (t) => {
+  const legacy = 'tenant:library:workspace:library-default:records'
+  const path = '/internal/sync/legacy-room'
+  const secret = 'm'.repeat(40)
+  const off = await scenario(t)
+  assert.equal((await off.fetch(path)).status, 404)
+  const s = await scenario(t, { bindings: { PHOTON_SYNC_MAINTENANCE_TOKEN: secret } })
+  const source = new Y.Doc(); const updates = []; source.on('update', (u) => updates.push(u))
+  for (let i = 0; i < 3; i++) source.getText('body').insert(0, `${i}`)
+  await s.seed({
+    ...Object.fromEntries(updates.map((u, i) => [`yjs:update:${String(i + 1).padStart(12, '0')}`, asBytes(u)])),
+    'yjs:update:meta': { oldestSeq: 1, nextSeq: 4 },
+  }, 'PHOTON_SYNC_ROOMS', legacy)
+  const mine = await s.sync(); mine.edit('kept')
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', roomOf('records')))['yjs:update:meta'], 'user room stored')
+  const auth = { authorization: `Bearer ${secret}` }
+  for (const authorization of [undefined, 'Bearer wrong', `Bearer ${secret}x`, secret]) {
+    assert.equal((await s.fetch(path, { headers: authorization ? { authorization } : {} })).status, 401)
+  }
+  const inspected = await (await s.fetch(path, { headers: auth })).json()
+  assert.equal(inspected.room, legacy); assert.equal(inspected.empty, false); assert.equal(inspected.updates.waiting, 3)
+  assert.doesNotMatch(JSON.stringify(inspected), /\$bytes|yjs:update:0/)
+  assert.equal((await s.fetch(path, { method: 'DELETE', headers: auth })).status, 400)
+  assert.equal((await s.fetch(path, { method: 'DELETE', headers: { ...auth, 'x-confirm-room': roomOf('records') } })).status, 400)
+  assert.equal(Object.keys(await s.storage('PHOTON_SYNC_ROOMS', legacy)).length, 4)
+  const purged = await (await s.fetch(path, { method: 'DELETE', headers: { ...auth, 'x-confirm-room': legacy } })).json()
+  assert.equal(purged.before.empty, false); assert.equal(purged.after.empty, true)
+  assert.deepEqual(await s.storage('PHOTON_SYNC_ROOMS', legacy), {})
+  // Nothing else is touched.
+  assert.ok((await s.storage('PHOTON_SYNC_ROOMS', roomOf('records')))['yjs:update:meta'])
+  assert.equal((await s.fetch(path, { method: 'POST', headers: auth })).status, 405)
 })
 test('generic Yjs relay serves its stored log to joiners and compacts it only in an alarm', async (t) => {
   const s = await scenario(t); const a = await s.sync()
   for (let i = 0; i < 60; i += 1) a.edit(`${i},`)
   const expected = Array.from({ length: 60 }, (_, i) => `${i},`).join('')
-  const room = async () => s.storage('PHOTON_SYNC_ROOMS', 'records')
+  const room = async () => s.storage('PHOTON_SYNC_ROOMS', roomOf('records'))
   // A joiner gets every edit whether or not a compaction has run yet.
   const b = await s.sync(); await until(() => b.doc.getText('body').toString() === expected)
   // The long log is folded by an alarm (scheduled a second out; run here in
   // case it has not fired), not while relaying.
-  await (await s.stub('PHOTON_SYNC_ROOMS', 'records')).fetch('https://fixture/__test/alarm')
+  await (await s.stub('PHOTON_SYNC_ROOMS', roomOf('records'))).fetch('https://fixture/__test/alarm')
   await until(async () => (await room())['yjs:snapshot:meta']?.seq === 60, 'log folded')
   assert.equal(Object.keys(await room()).filter((k) => k.startsWith('yjs:update:0')).length, 0)
   a.edit('after')
@@ -214,8 +308,8 @@ test('a joiner is not sent a stored row that is not a Yjs update', async (t) => 
     'yjs:update:000000000003': asBytes(updates[1]),
     'yjs:update:000000000004': asBytes(updates[2]),
     'yjs:update:meta': { oldestSeq: 1, nextSeq: 5 },
-  }, 'PHOTON_SYNC_ROOMS', 'corrupt')
-  const response = await s.fetch('/ws?room=corrupt', { headers: { upgrade: 'websocket' } })
+  }, 'PHOTON_SYNC_ROOMS', roomOf('corrupt'))
+  const response = await s.openRoom(roomOf('corrupt'))
   const ws = response.webSocket; const doc = new Y.Doc(); const failures = []
   ws.addEventListener('message', ({ data }) => {
     if (typeof data !== 'string') try { Y.applyUpdate(doc, new Uint8Array(data)) } catch (e) { failures.push(e) }
@@ -522,7 +616,7 @@ test('legacy ArrayBuffer snapshots and pending initialization survive the Rust m
   const s = await scenario(t)
   const seed = new Y.Doc(); seed.getText('body').insert(0, 'legacy 日本語 😀')
   const update = Y.encodeStateAsUpdate(seed)
-  await s.seed({ 'yjs:snapshot:bytes': asBytes(update), 'yjs:snapshot:meta': { seq: 4, byteLength: update.length, updatedAt: new Date().toISOString() }, 'yjs:update:meta': { nextSeq: 5, oldestSeq: 5 } }, 'PHOTON_SYNC_ROOMS', 'legacy')
+  await s.seed({ 'yjs:snapshot:bytes': asBytes(update), 'yjs:snapshot:meta': { seq: 4, byteLength: update.length, updatedAt: new Date().toISOString() }, 'yjs:update:meta': { nextSeq: 5, oldestSeq: 5 } }, 'PHOTON_SYNC_ROOMS', roomOf('legacy'))
   const a = await s.sync('legacy'); await until(() => a.doc.getText('body').toString() === 'legacy 日本語 😀')
   await s.live()
   const meta = (await s.storage())[metaKey]
@@ -538,12 +632,12 @@ test('snapshot compaction spans multiple values and preserves out-of-order Yjs d
   // Persist a suffix first: compaction must retain updates whose dependency
   // has not arrived, then integrate them when the first update finally arrives.
   for (const u of updates.slice(1).reverse()) a.ws.send(u)
-  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 60)
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', roomOf('large')))['yjs:update:meta']?.nextSeq === 60)
   a.ws.send(updates[0])
-  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'large'))['yjs:update:meta']?.nextSeq === 61)
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', roomOf('large')))['yjs:update:meta']?.nextSeq === 61)
   // Folded by the alarm the long log scheduled, not while relaying.
-  await (await s.stub('PHOTON_SYNC_ROOMS', 'large')).fetch('https://fixture/__test/alarm')
-  const stored = await s.storage('PHOTON_SYNC_ROOMS', 'large'); assert.ok(stored['yjs:snapshot:meta'].chunks > 1)
+  await (await s.stub('PHOTON_SYNC_ROOMS', roomOf('large'))).fetch('https://fixture/__test/alarm')
+  const stored = await s.storage('PHOTON_SYNC_ROOMS', roomOf('large')); assert.ok(stored['yjs:snapshot:meta'].chunks > 1)
   await s.restart(); const b = await s.sync('large'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
 test('legacy result keys migrate and expire, but pending ACK recovery stays pinned', async (t) => {
@@ -590,15 +684,15 @@ test('backlogged rooms resume over alarms without replaying the same prefix fore
   await s.seed({
     ...Object.fromEntries(updates.map((u, i) => [`yjs:update:${String(i + 1).padStart(12, '0')}`, asBytes(u)])),
     'yjs:update:meta': { oldestSeq: 1, nextSeq: 601 },
-  }, 'PHOTON_SYNC_ROOMS', 'backlog')
+  }, 'PHOTON_SYNC_ROOMS', roomOf('backlog'))
   // A joiner is sent the whole log as stored, without waiting on a fold.
   const a = await s.sync('backlog')
   await until(() => a.doc.getText('body').toString() === source.getText('body').toString(), 'log sent on join')
   // Alarms fold it a bounded pass at a time, each one further than the last.
-  await (await s.stub('PHOTON_SYNC_ROOMS', 'backlog')).fetch('https://fixture/__test/alarm')
-  const partial = await s.storage('PHOTON_SYNC_ROOMS', 'backlog')
+  await (await s.stub('PHOTON_SYNC_ROOMS', roomOf('backlog'))).fetch('https://fixture/__test/alarm')
+  const partial = await s.storage('PHOTON_SYNC_ROOMS', roomOf('backlog'))
   assert.ok(partial['yjs:snapshot:meta'].seq >= 512)
-  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', 'backlog'))['yjs:update:meta'].oldestSeq === 601, 'alarm catch-up')
+  await until(async () => (await s.storage('PHOTON_SYNC_ROOMS', roomOf('backlog')))['yjs:update:meta'].oldestSeq === 601, 'alarm catch-up')
   await s.restart(); const b = await s.sync('backlog'); await until(() => b.doc.getText('body').toString() === source.getText('body').toString())
 })
 test('malformed and oversized frames cannot change document versions or pending state', async (t) => {
@@ -618,6 +712,7 @@ test('expired ticket and session rows are cleaned in bounded pages', async (t) =
   for (let i = 0; i < 140; i++) {
     seed[`live:ticket:${String(i).padStart(43, '0')}`] = { ...template, expiresAt: Date.now() - 1000 }
     seed[`live:session:${String(i).padStart(24, '0')}`] = { ...template, expiresAt: Date.now() - 1000 }
+    seed[`sync:ticket:${String(i).padStart(43, '0')}`] = { room: roomOf('records'), expiresAt: Date.now() - 1000 }
   }
   await s.seed(seed, binding, name)
   await (await s.stub(binding, name)).fetch('https://fixture/__test/alarm')
