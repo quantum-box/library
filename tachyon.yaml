@@ -20,10 +20,16 @@ spec:
       build:
         package: library-api
         binary: lambda-library-api
-        installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --force-reinstall cargo-lambda==1.9.1 ziglang==0.15.2 && rustup toolchain install nightly-2026-06-04 --no-self-update && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
+        # Tachyon Cloud App の GitHub Actions backend で build する。container は
+        # read-only rootfs・非 root で yum / pip は使えない。cargo-lambda / zig /
+        # protoc は digest 固定の builder image に入っており、ここでは toolchain
+        # だけを書き込み可能な RUSTUP_HOME (/tools/rustup) に入れる。
+        runnerBackend: github_actions
+        installCommand: rustup toolchain install nightly-2026-06-04 --profile minimal --no-self-update && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
+        # login shell (-l) は /etc/profile が PATH を上書きして image の
+        # /tools/cargo/bin を落とし得るので使わない。
         command: >-
-          bash -lc 'source "$HOME/.cargo/env";
-          LAMBDA_ARTIFACT_DIR="${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/lambda/lambda-library-api";
+          bash -c 'LAMBDA_ARTIFACT_DIR="${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/lambda/lambda-library-api";
           (while true; do sleep 60; echo "cargo lambda build still running..."; done) &
           HEARTBEAT_PID=$!;
           trap '\''kill "$HEARTBEAT_PID" 2>/dev/null || true'\'' EXIT;
