@@ -81,6 +81,7 @@ spec:
                 secret: library-api/OPENAI_APPS_CHALLENGE_TOKEN
         preview:
           # ADR-0049 provisions one isolated database and scoped user per PR.
+          # PLT-4534 draft Preview is reserved for delivery verification.
           # Production keeps its existing databaseRef below. The migration
           # gate above applies the combined history to this one.
           provisionedDatabase:
