@@ -35,6 +35,12 @@ export const idbSynced: Promise<void> = new Promise((resolve) => {
   persistence.once('synced', () => resolve())
 })
 
+/** Whether `idbSynced` has resolved, for code that cannot wait on it. */
+let localDocLoaded = false
+void idbSynced.then(() => {
+  localDocLoaded = true
+})
+
 // ---------------------------------------------------------------------------
 // Connection status
 // ---------------------------------------------------------------------------
@@ -104,6 +110,13 @@ let backoff = 1000
 const MAX_BACKOFF = 30_000
 /** How long a join to the Rust server waits for more stored state before uploading the rest. */
 const INITIAL_SYNC_QUIET_MS = 1_000
+/**
+ * The latest a join to the Rust server uploads, counted from its first frame.
+ * Edits relayed from other clients keep arriving after the stored state, so
+ * waiting for a lull alone could put the upload off for as long as the room
+ * is busy.
+ */
+const INITIAL_SYNC_MAX_WAIT_MS = 3_000
 let disposed = false
 /** True while this page is frozen or hidden and has given up its socket. */
 let suspended = false
@@ -167,9 +180,14 @@ function scheduleReconnect() {
   backoff = Math.min(backoff * 2, MAX_BACKOFF)
 }
 
-/** Send local Y.Doc updates to the server (skip remote-origin updates). */
+/**
+ * Send local Y.Doc updates to the server. Skipped: updates from the room, and
+ * IndexedDB loading this device's history -- one update as large as the whole
+ * history, which the relay would drop; the join upload sends that part in
+ * pieces it keeps.
+ */
 function onDocUpdate(update: Uint8Array, origin: unknown) {
-  if (origin === WS_REMOTE) return
+  if (origin === WS_REMOTE || origin === persistence) return
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(update)
   }
@@ -246,6 +264,8 @@ function openSocket(wsUrl: string) {
   // room lacks is known and only that is sent, instead of the whole document.
   let roomCopy: Y.Doc | null = new Y.Doc()
   let uploadTimer: ReturnType<typeof setTimeout> | null = null
+  let firstFrameAt: number | null = null
+  let waitingForLocal = false
   // The Cloudflare relay accepts the socket before it reads storage, so an
   // update relayed from another client or presence from a peer leaving can
   // come first; neither a lull nor presence marks the end there, only its
@@ -257,6 +277,16 @@ function openSocket(wsUrl: string) {
     if (uploadTimer) {
       clearTimeout(uploadTimer)
       uploadTimer = null
+    }
+    // Compared against a document IndexedDB has not loaded yet, the whole
+    // local history would look missing later and go out as one update the
+    // relay drops. Keep collecting the room until it has.
+    if (!localDocLoaded) {
+      if (!waitingForLocal) {
+        waitingForLocal = true
+        void idbSynced.then(uploadMissing)
+      }
+      return
     }
     const room = roomCopy
     roomCopy = null
@@ -326,8 +356,13 @@ function openSocket(wsUrl: string) {
         // Rejected above as well; the room copy skips it the same way.
       }
       if (!finishesOnSynced) {
+        const now = Date.now()
+        firstFrameAt ??= now
         if (uploadTimer) clearTimeout(uploadTimer)
-        uploadTimer = setTimeout(uploadMissing, INITIAL_SYNC_QUIET_MS)
+        uploadTimer = setTimeout(
+          uploadMissing,
+          Math.max(0, Math.min(INITIAL_SYNC_QUIET_MS, firstFrameAt + INITIAL_SYNC_MAX_WAIT_MS - now))
+        )
       }
     }
   })
