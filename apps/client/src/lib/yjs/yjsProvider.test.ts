@@ -92,6 +92,19 @@ describe('records room connection', () => {
     }
   })
 
+  it('connects once a signed-out page gets its session back', async () => {
+    mocks.requestSyncTicket
+      .mockResolvedValueOnce({ kind: 'signed-out' })
+      .mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=restored` })
+    const provider = await import('./yjsProvider')
+    await vi.waitFor(() => expect(provider.connectionStatus.value).toBe('disconnected'))
+    expect(mocks.sockets).toEqual([])
+
+    window.dispatchEvent(new Event('library-auth-change'))
+    await vi.waitFor(() => expect(mocks.sockets).toEqual([`${roomUrl}&ticket=restored`]))
+    provider.disconnectWs()
+  })
+
   it('reconnects a page shown again while its ticket request was in flight', async () => {
     const first = deferred<SyncTicketResult>()
     mocks.requestSyncTicket

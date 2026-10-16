@@ -181,8 +181,8 @@ export function connectWs() {
     setStatus('disconnected')
     setPresence({ onlineCount: 0 })
     // Signed out: nothing to retry with until the page has a session again
-    // (`online` and `pageshow` try again). Refused: the token may refresh,
-    // but not soon, so wait the longest interval.
+    // (`library-auth-change`, `online` and `pageshow` try again). Refused:
+    // the token may refresh, but not soon, so wait the longest interval.
     if (result.kind === 'signed-out') return
     if (result.kind === 'refused') backoff = MAX_BACKOFF
     scheduleReconnect()
@@ -284,6 +284,7 @@ export function disconnectWs() {
   setStatus('disconnected')
   setPresence({ onlineCount: 0 })
   window.removeEventListener('online', connectWs)
+  window.removeEventListener('library-auth-change', handleAuthChange)
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +371,18 @@ function handlePageShow(event: PageTransitionEvent) {
   connectWs()
 }
 
+/**
+ * A session that comes back -- a refresh that succeeds after a transient
+ * failure, or signing in again -- connects now instead of waiting for an
+ * unrelated `online` or `pageshow`.
+ */
+function handleAuthChange() {
+  backoff = 1000
+  connectWs()
+}
+
 window.addEventListener('online', connectWs)
+window.addEventListener('library-auth-change', handleAuthChange)
 window.addEventListener('pagehide', handlePageHide)
 window.addEventListener('pageshow', handlePageShow)
 connectWs()

@@ -83,8 +83,26 @@ function upsertYDatabaseView(view: DatabaseViewDefinition) {
   databaseViewsArray.push([ymap])
 }
 
+/**
+ * Seed the default views a database does not have yet.
+ *
+ * Runs whenever the database list changes. Writing a default over a view that
+ * already exists put the seed's settings back over the user's edits and, in the
+ * shared room, logged another full copy of every default view each time.
+ *
+ * An existing default still has its duplicates removed: two clients that seed
+ * the same missing default before seeing each other's update leave two maps
+ * with one id, and deleting the view would otherwise leave the other behind.
+ */
 function ensureDefaultViewsForDatabase(databaseId: string) {
-  getDefaultDatabaseViews(databaseId).forEach(upsertYDatabaseView)
+  for (const view of getDefaultDatabaseViews(databaseId)) {
+    const existing = findYView(view.id)
+    if (existing) {
+      removeDuplicateYDatabaseViews(view.id, existing)
+    } else {
+      upsertYDatabaseView(view)
+    }
+  }
 }
 
 function removeYDatabaseView(viewId: string) {
