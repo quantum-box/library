@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
 import type { SyncTicketResult } from './syncTicket'
 
 const room = 'tenant:library:workspace:library-default:user:us_01abc:records'
 const roomUrl = `wss://sync.example.test/ws?room=${room}`
 
+interface FakeSocketLike extends EventTarget {
+  readyState: number
+}
+
 const mocks = vi.hoisted(() => ({
   requestSyncTicket: vi.fn<(url: string) => Promise<SyncTicketResult>>(),
   sockets: [] as string[],
-  instances: [] as Array<{ readyState: number }>,
+  instances: [] as Array<FakeSocketLike>,
+  sent: [] as unknown[],
+  localLoaded: Promise.resolve() as Promise<void>,
   userId: 'us_01abc' as string | undefined,
   sync: {} as Record<string, unknown>,
 }))
@@ -20,7 +27,9 @@ vi.mock('../auth', () => ({
 vi.mock('./syncTicket', () => ({ requestSyncTicket: mocks.requestSyncTicket }))
 vi.mock('y-indexeddb', () => ({
   IndexeddbPersistence: class {
-    once() {}
+    once(event: string, callback: () => void) {
+      if (event === 'synced') void mocks.localLoaded.then(callback)
+    }
   },
 }))
 vi.mock('../../app/kitConfig.js', () => ({
@@ -58,7 +67,20 @@ class FakeWebSocket extends EventTarget {
     mocks.sockets.push(url)
     mocks.instances.push(this)
   }
-  send() {}
+  send(data: unknown) {
+    mocks.sent.push(data)
+  }
+  /** What the relay does on join: open, its stored state, `synced`, then presence. */
+  join(stored: Uint8Array) {
+    this.readyState = FakeWebSocket.OPEN
+    this.dispatchEvent(new Event('open'))
+    this.dispatchEvent(new MessageEvent('message', { data: stored.slice().buffer }))
+    this.text({ type: 'synced' })
+    this.text({ type: 'presence', onlineCount: 1 })
+  }
+  text(frame: object) {
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) }))
+  }
   close() {
     this.readyState = FakeWebSocket.CLOSED
   }
@@ -78,6 +100,8 @@ describe('records room connection', () => {
     vi.resetModules()
     mocks.sockets.length = 0
     mocks.instances.length = 0
+    mocks.sent.length = 0
+    mocks.localLoaded = Promise.resolve()
     mocks.userId = 'us_01abc'
     for (const key of Object.keys(mocks.sync)) delete mocks.sync[key]
     Object.assign(mocks.sync, baseSync)
@@ -185,4 +209,159 @@ describe('records room connection', () => {
     expect(mocks.requestSyncTicket).toHaveBeenCalledTimes(2)
     provider.disconnectWs()
   })
+
+  it('uploads nothing on join when the room already has the whole document', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    provider.recordsArray.push([new Y.Map<string>()])
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    const socket = mocks.instances[0] as unknown as FakeWebSocket
+    socket.join(Y.encodeStateAsUpdate(provider.ydoc))
+
+    expect(mocks.sent).toEqual([])
+    provider.disconnectWs()
+  })
+
+  it('uploads only what the room lacks, once its stored state has arrived', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    const known = new Y.Map<string>()
+    known.set('id', 'known')
+    provider.recordsArray.push([known])
+    const roomState = Y.encodeStateAsUpdate(provider.ydoc)
+    const offline = new Y.Map<string>()
+    offline.set('id', 'offline')
+    provider.recordsArray.push([offline])
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    const socket = mocks.instances[0] as unknown as FakeWebSocket
+    socket.join(roomState)
+
+    expect(mocks.sent).toHaveLength(1)
+    const sent = mocks.sent[0] as Uint8Array
+    expect(sent.byteLength).toBeLessThan(Y.encodeStateAsUpdate(provider.ydoc).byteLength)
+    const room = new Y.Doc()
+    Y.applyUpdate(room, roomState)
+    Y.applyUpdate(room, sent)
+    expect(room.getArray<Y.Map<string>>('records').toArray().map((m) => m.get('id'))).toEqual([
+      'known',
+      'offline',
+    ])
+    provider.disconnectWs()
+  })
+
+  it('waits for the Cloudflare relay\'s synced frame, whatever arrives before it', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+      const provider = await import('./yjsProvider')
+      const known = new Y.Map<string>()
+      provider.recordsArray.push([known])
+      const roomState = Y.encodeStateAsUpdate(provider.ydoc)
+      await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+      const socket = mocks.instances[0] as unknown as FakeWebSocket
+      socket.readyState = FakeWebSocket.OPEN
+      socket.dispatchEvent(new Event('open'))
+
+      // Another client's update arrives before the room has read its storage.
+      const other = new Y.Doc()
+      other.getArray<string>('records').push(['from another client'])
+      socket.dispatchEvent(
+        new MessageEvent('message', { data: Y.encodeStateAsUpdate(other).slice().buffer })
+      )
+      // A peer leaving broadcasts presence before this socket's stored state.
+      socket.text({ type: 'presence', onlineCount: 1 })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(mocks.sent).toEqual([])
+
+      socket.dispatchEvent(new MessageEvent('message', { data: roomState.slice().buffer }))
+      socket.text({ type: 'synced' })
+      expect(mocks.sent).toEqual([])
+      provider.disconnectWs()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uploads to a Rust server once its stored state stops arriving', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.sync.backend = 'rust-server'
+      const provider = await import('./yjsProvider')
+      const offline = new Y.Map<string>()
+      provider.recordsArray.push([offline])
+      const socket = mocks.instances[0] as unknown as FakeWebSocket
+      socket.readyState = FakeWebSocket.OPEN
+      socket.dispatchEvent(new Event('open'))
+      socket.dispatchEvent(new MessageEvent('message', { data: new Uint8Array([0, 0]).buffer }))
+      expect(mocks.sent).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.sent).toHaveLength(1)
+      provider.disconnectWs()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for IndexedDB before working out what the room lacks', async () => {
+    const local = deferred<void>()
+    mocks.localLoaded = local.promise
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+    const socket = mocks.instances[0] as unknown as FakeWebSocket
+    socket.join(new Uint8Array([0, 0]))
+    expect(mocks.sent).toEqual([])
+
+    // IndexedDB then loads this device's history: many clients' worth, more
+    // than the relay keeps in one update.
+    const stored = new Y.Doc()
+    for (let i = 0; i < 60; i++) {
+      const author = new Y.Doc()
+      const record = new Y.Map<string>()
+      record.set('description', `history ${i} `.padEnd(4_000, 'x'))
+      author.getArray<Y.Map<string>>('records').push([record])
+      Y.applyUpdate(stored, Y.encodeStateAsUpdate(author))
+    }
+    Y.applyUpdate(provider.ydoc, Y.encodeStateAsUpdate(stored), provider.persistence)
+    local.resolve()
+
+    await vi.waitFor(() => expect(mocks.sent.length).toBeGreaterThan(1))
+    const { SYNC_MAX_UPDATE_BYTES } = await import('./initialSyncUpload')
+    for (const update of mocks.sent) {
+      expect((update as Uint8Array).byteLength).toBeLessThanOrEqual(SYNC_MAX_UPDATE_BYTES)
+    }
+    const room = new Y.Doc()
+    for (const update of mocks.sent) Y.applyUpdate(room, update as Uint8Array)
+    expect(room.getArray('records').length).toBe(60)
+    provider.disconnectWs()
+  })
+
+  it('uploads to a busy Rust server room without waiting for it to go quiet', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.sync.backend = 'rust-server'
+      const provider = await import('./yjsProvider')
+      provider.recordsArray.push([new Y.Map<string>()])
+      await vi.advanceTimersByTimeAsync(0)
+      const socket = mocks.instances[0] as unknown as FakeWebSocket
+      socket.readyState = FakeWebSocket.OPEN
+      socket.dispatchEvent(new Event('open'))
+      for (let i = 0; i < 10; i++) {
+        const peer = new Y.Doc()
+        peer.getArray<string>('records').push([`edit ${i}`])
+        socket.dispatchEvent(
+          new MessageEvent('message', { data: Y.encodeStateAsUpdate(peer).slice().buffer })
+        )
+        await vi.advanceTimersByTimeAsync(500)
+      }
+      expect(mocks.sent.length).toBeGreaterThan(0)
+      provider.disconnectWs()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
+

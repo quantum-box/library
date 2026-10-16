@@ -139,6 +139,11 @@ impl DurableObject for PhotonSyncRoom {
         for update in &stored.updates {
             pair.server.send_with_bytes(update)?;
         }
+        // Tells this socket alone that the stored state is complete. A client
+        // uploads what the room lacks only then: an update relayed from another
+        // client, or presence from a peer leaving, can arrive while the reads
+        // above are still in flight, so neither marks the end.
+        send(&pair.server, &json!({"type":"synced"}));
         self.compact_later(stored.updates.len() as u64).await?;
         presence(&self.state, None);
         Response::from_websocket(pair.client)

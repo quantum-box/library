@@ -191,6 +191,13 @@ test('generic Yjs relay exchanges edits and presence, relays no engine-changed; 
   await a.take('presence', (v) => v.onlineCount === 2)
   a.edit('hello'); await until(() => b.doc.getText('body').toString() === 'hello')
   b.edit(' world'); await until(() => a.doc.getText('body').toString() === 'hello world')
+  // A joining socket alone is told, after the stored state, that it is complete.
+  const joiner = await s.sync()
+  assert.equal(joiner.doc.getText('body').toString(), 'hello world')
+  assert.equal(joiner.messages.filter((m) => m.type === 'synced').length, 1)
+  // Peers already in the room keep only the one from their own join.
+  for (const peer of [a, b]) assert.equal(peer.messages.filter((m) => m.type === 'synced').length, 1)
+  joiner.ws.close()
   // No client reads engine-changed, so the room drops one a client sends.
   a.ws.send(JSON.stringify({ type: 'engine-changed' }))
   // A push is proxied with the caller's token and notifies no room.

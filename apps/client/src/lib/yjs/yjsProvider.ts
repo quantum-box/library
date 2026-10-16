@@ -7,6 +7,7 @@ import {
 } from '../../app/kitConfig.js'
 import { authStorageKey, loadStoredAuthIdentity } from '../auth'
 import { requestSyncTicket } from './syncTicket'
+import { missingUpdates } from './initialSyncUpload'
 
 // ---------------------------------------------------------------------------
 // Y.Doc singleton
@@ -32,6 +33,12 @@ export const persistence = new IndexeddbPersistence(appKitConfig.sync.persistenc
 /** Resolves when the local IndexedDB state has been loaded into the Y.Doc. */
 export const idbSynced: Promise<void> = new Promise((resolve) => {
   persistence.once('synced', () => resolve())
+})
+
+/** Whether `idbSynced` has resolved, for code that cannot wait on it. */
+let localDocLoaded = false
+void idbSynced.then(() => {
+  localDocLoaded = true
 })
 
 // ---------------------------------------------------------------------------
@@ -101,6 +108,15 @@ let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let backoff = 1000
 const MAX_BACKOFF = 30_000
+/** How long a join to the Rust server waits for more stored state before uploading the rest. */
+const INITIAL_SYNC_QUIET_MS = 1_000
+/**
+ * The latest a join to the Rust server uploads, counted from its first frame.
+ * Edits relayed from other clients keep arriving after the stored state, so
+ * waiting for a lull alone could put the upload off for as long as the room
+ * is busy.
+ */
+const INITIAL_SYNC_MAX_WAIT_MS = 3_000
 let disposed = false
 /** True while this page is frozen or hidden and has given up its socket. */
 let suspended = false
@@ -164,9 +180,14 @@ function scheduleReconnect() {
   backoff = Math.min(backoff * 2, MAX_BACKOFF)
 }
 
-/** Send local Y.Doc updates to the server (skip remote-origin updates). */
+/**
+ * Send local Y.Doc updates to the server. Skipped: updates from the room, and
+ * IndexedDB loading this device's history -- one update as large as the whole
+ * history, which the relay would drop; the join upload sends that part in
+ * pieces it keeps.
+ */
 function onDocUpdate(update: Uint8Array, origin: unknown) {
-  if (origin === WS_REMOTE) return
+  if (origin === WS_REMOTE || origin === persistence) return
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(update)
   }
@@ -238,7 +259,52 @@ function openSocket(wsUrl: string) {
   socket.binaryType = 'arraybuffer'
   ws = socket
 
-  let isFirstMessage = true
+  // The room as this socket received it. The relay sends its stored state as
+  // it is on join and then a `synced` frame; once that has arrived, what the
+  // room lacks is known and only that is sent, instead of the whole document.
+  let roomCopy: Y.Doc | null = new Y.Doc()
+  let uploadTimer: ReturnType<typeof setTimeout> | null = null
+  let firstFrameAt: number | null = null
+  let waitingForLocal = false
+  // The Cloudflare relay accepts the socket before it reads storage, so an
+  // update relayed from another client or presence from a peer leaving can
+  // come first; neither a lull nor presence marks the end there, only its
+  // `synced` frame. A relay without it sends nothing more, which is safe. The
+  // Rust server sends no `synced` and is taken to be done once frames stop.
+  const finishesOnSynced = appKitConfig.sync.backend === 'cloudflare-durable-object'
+
+  const uploadMissing = () => {
+    if (uploadTimer) {
+      clearTimeout(uploadTimer)
+      uploadTimer = null
+    }
+    // Compared against a document IndexedDB has not loaded yet, the whole
+    // local history would look missing later and go out as one update the
+    // relay drops. Keep collecting the room until it has.
+    if (!localDocLoaded) {
+      if (!waitingForLocal) {
+        waitingForLocal = true
+        void idbSynced.then(uploadMissing)
+      }
+      return
+    }
+    const room = roomCopy
+    roomCopy = null
+    if (!room || ws !== socket || socket.readyState !== WebSocket.OPEN) return
+    const { updates, skippedClients, deletionsSkipped } = missingUpdates(ydoc, room)
+    room.destroy()
+    for (const update of updates) socket.send(update)
+    if (skippedClients.length > 0) {
+      console.warn(
+        `[yjs] ${skippedClients.length} client(s) hold more than the sync relay accepts in one update; their history stays local`
+      )
+    }
+    if (deletionsSkipped) {
+      console.warn(
+        '[yjs] deletions made here are larger than the sync relay accepts in one update; they stay local'
+      )
+    }
+  }
 
   socket.addEventListener('open', () => {
     if (ws !== socket) {
@@ -249,7 +315,6 @@ function openSocket(wsUrl: string) {
     setStatus('connected')
     ydoc.off('update', onDocUpdate)
     ydoc.on('update', onDocUpdate)
-    socket.send(Y.encodeStateAsUpdate(ydoc))
   })
 
   socket.addEventListener('message', (event) => {
@@ -260,6 +325,10 @@ function openSocket(wsUrl: string) {
         const message = JSON.parse(event.data) as {
           type?: string
           onlineCount?: number
+        }
+        if (message.type === 'synced' && roomCopy) {
+          uploadMissing()
+          return
         }
         if (message.type === 'presence' && typeof message.onlineCount === 'number') {
           setPresence({ onlineCount: message.onlineCount })
@@ -280,17 +349,31 @@ function openSocket(wsUrl: string) {
       console.warn('[yjs] skipped an update the document rejected', error)
     }
 
-    if (isFirstMessage) {
-      isFirstMessage = false
-      // Send our full local state so the server gets any offline changes
-      const localUpdate = Y.encodeStateAsUpdate(ydoc)
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(localUpdate)
+    if (roomCopy) {
+      try {
+        Y.applyUpdate(roomCopy, data)
+      } catch {
+        // Rejected above as well; the room copy skips it the same way.
+      }
+      if (!finishesOnSynced) {
+        const now = Date.now()
+        firstFrameAt ??= now
+        if (uploadTimer) clearTimeout(uploadTimer)
+        uploadTimer = setTimeout(
+          uploadMissing,
+          Math.max(0, Math.min(INITIAL_SYNC_QUIET_MS, firstFrameAt + INITIAL_SYNC_MAX_WAIT_MS - now))
+        )
       }
     }
   })
 
   socket.addEventListener('close', () => {
+    if (uploadTimer) {
+      clearTimeout(uploadTimer)
+      uploadTimer = null
+    }
+    roomCopy?.destroy()
+    roomCopy = null
     if (ws !== socket) return
 
     ydoc.off('update', onDocUpdate)
