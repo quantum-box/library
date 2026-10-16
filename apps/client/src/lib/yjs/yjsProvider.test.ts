@@ -67,14 +67,16 @@ class FakeWebSocket extends EventTarget {
   send(data: unknown) {
     mocks.sent.push(data)
   }
-  /** What the relay does on join: open, its stored state, then presence. */
+  /** What the relay does on join: open, its stored state, `synced`, then presence. */
   join(stored: Uint8Array) {
     this.readyState = FakeWebSocket.OPEN
     this.dispatchEvent(new Event('open'))
     this.dispatchEvent(new MessageEvent('message', { data: stored.slice().buffer }))
-    this.dispatchEvent(
-      new MessageEvent('message', { data: JSON.stringify({ type: 'presence', onlineCount: 1 }) })
-    )
+    this.text({ type: 'synced' })
+    this.text({ type: 'presence', onlineCount: 1 })
+  }
+  text(frame: object) {
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) }))
   }
   close() {
     this.readyState = FakeWebSocket.CLOSED
@@ -245,7 +247,7 @@ describe('records room connection', () => {
     provider.disconnectWs()
   })
 
-  it('waits for the Cloudflare relay\'s presence frame, however long its stored state takes', async () => {
+  it('waits for the Cloudflare relay\'s synced frame, whatever arrives before it', async () => {
     vi.useFakeTimers()
     try {
       mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
@@ -264,13 +266,13 @@ describe('records room connection', () => {
       socket.dispatchEvent(
         new MessageEvent('message', { data: Y.encodeStateAsUpdate(other).slice().buffer })
       )
+      // A peer leaving broadcasts presence before this socket's stored state.
+      socket.text({ type: 'presence', onlineCount: 1 })
       await vi.advanceTimersByTimeAsync(5_000)
       expect(mocks.sent).toEqual([])
 
       socket.dispatchEvent(new MessageEvent('message', { data: roomState.slice().buffer }))
-      socket.dispatchEvent(
-        new MessageEvent('message', { data: JSON.stringify({ type: 'presence', onlineCount: 2 }) })
-      )
+      socket.text({ type: 'synced' })
       expect(mocks.sent).toEqual([])
       provider.disconnectWs()
     } finally {

@@ -242,16 +242,16 @@ function openSocket(wsUrl: string) {
   ws = socket
 
   // The room as this socket received it. The relay sends its stored state as
-  // it is on join and then a presence frame; once that has arrived, what the
+  // it is on join and then a `synced` frame; once that has arrived, what the
   // room lacks is known and only that is sent, instead of the whole document.
   let roomCopy: Y.Doc | null = new Y.Doc()
-  let roomFrames = 0
   let uploadTimer: ReturnType<typeof setTimeout> | null = null
-  // The Cloudflare relay accepts the socket before it reads storage and may
-  // relay another client's update first, so a lull proves nothing there; its
-  // presence frame, sent after the stored state, is the only signal. The Rust
-  // server sends no presence and is taken to be done once frames stop.
-  const finishesOnPresence = appKitConfig.sync.backend === 'cloudflare-durable-object'
+  // The Cloudflare relay accepts the socket before it reads storage, so an
+  // update relayed from another client or presence from a peer leaving can
+  // come first; neither a lull nor presence marks the end there, only its
+  // `synced` frame. A relay without it sends nothing more, which is safe. The
+  // Rust server sends no `synced` and is taken to be done once frames stop.
+  const finishesOnSynced = appKitConfig.sync.backend === 'cloudflare-durable-object'
 
   const uploadMissing = () => {
     if (uploadTimer) {
@@ -296,10 +296,12 @@ function openSocket(wsUrl: string) {
           type?: string
           onlineCount?: number
         }
+        if (message.type === 'synced' && roomCopy) {
+          uploadMissing()
+          return
+        }
         if (message.type === 'presence' && typeof message.onlineCount === 'number') {
           setPresence({ onlineCount: message.onlineCount })
-          // The relay sends presence after the room's stored state.
-          if (roomCopy && roomFrames > 0) uploadMissing()
         }
       } catch {
         // Ignore non-protocol text messages.
@@ -323,8 +325,7 @@ function openSocket(wsUrl: string) {
       } catch {
         // Rejected above as well; the room copy skips it the same way.
       }
-      roomFrames += 1
-      if (!finishesOnPresence) {
+      if (!finishesOnSynced) {
         if (uploadTimer) clearTimeout(uploadTimer)
         uploadTimer = setTimeout(uploadMissing, INITIAL_SYNC_QUIET_MS)
       }
