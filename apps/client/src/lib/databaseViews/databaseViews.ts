@@ -12,6 +12,7 @@ import type {
   TimelineScale,
 } from './types'
 import { collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
+import { setIfChanged } from '../yjs/setIfChanged'
 
 export const ALL_DATABASES_ID = '__all__'
 
@@ -249,19 +250,19 @@ export function ymapToDatabaseView(ymap: Y.Map<string>): DatabaseViewDefinition 
 
 export function writeDatabaseViewToYMap(ymap: Y.Map<string>, view: DatabaseViewDefinition) {
   const normalized = normalizeDatabaseView(view)
-  ymap.set('id', normalized.id)
-  ymap.set('databaseId', normalized.databaseId)
-  ymap.set('name', normalized.name)
-  ymap.set('type', normalized.type)
-  ymap.set('filters', JSON.stringify(normalized.filters))
-  ymap.set('sorting', JSON.stringify(normalized.sorting))
-  ymap.set('visibleProperties', JSON.stringify(normalized.visibleProperties))
-  ymap.set('board', JSON.stringify(normalized.board))
-  ymap.set('timeline', JSON.stringify(normalized.timeline))
-  ymap.set('workflowCanvasKey', normalized.workflowCanvasKey)
-  ymap.set('order', String(normalized.order))
-  ymap.set('createdAt', normalized.createdAt)
-  ymap.set('updatedAt', normalized.updatedAt)
+  setIfChanged(ymap, 'id', normalized.id)
+  setIfChanged(ymap, 'databaseId', normalized.databaseId)
+  setIfChanged(ymap, 'name', normalized.name)
+  setIfChanged(ymap, 'type', normalized.type)
+  setIfChanged(ymap, 'filters', JSON.stringify(normalized.filters))
+  setIfChanged(ymap, 'sorting', JSON.stringify(normalized.sorting))
+  setIfChanged(ymap, 'visibleProperties', JSON.stringify(normalized.visibleProperties))
+  setIfChanged(ymap, 'board', JSON.stringify(normalized.board))
+  setIfChanged(ymap, 'timeline', JSON.stringify(normalized.timeline))
+  setIfChanged(ymap, 'workflowCanvasKey', normalized.workflowCanvasKey)
+  setIfChanged(ymap, 'order', String(normalized.order))
+  setIfChanged(ymap, 'createdAt', normalized.createdAt)
+  setIfChanged(ymap, 'updatedAt', normalized.updatedAt)
 }
 
 function includesText(value: string, search: string) {
