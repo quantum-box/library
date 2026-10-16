@@ -244,5 +244,59 @@ describe('records room connection', () => {
     ])
     provider.disconnectWs()
   })
+
+  it('waits for the Cloudflare relay\'s presence frame, however long its stored state takes', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+      const provider = await import('./yjsProvider')
+      const known = new Y.Map<string>()
+      provider.recordsArray.push([known])
+      const roomState = Y.encodeStateAsUpdate(provider.ydoc)
+      await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+      const socket = mocks.instances[0] as unknown as FakeWebSocket
+      socket.readyState = FakeWebSocket.OPEN
+      socket.dispatchEvent(new Event('open'))
+
+      // Another client's update arrives before the room has read its storage.
+      const other = new Y.Doc()
+      other.getArray<string>('records').push(['from another client'])
+      socket.dispatchEvent(
+        new MessageEvent('message', { data: Y.encodeStateAsUpdate(other).slice().buffer })
+      )
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(mocks.sent).toEqual([])
+
+      socket.dispatchEvent(new MessageEvent('message', { data: roomState.slice().buffer }))
+      socket.dispatchEvent(
+        new MessageEvent('message', { data: JSON.stringify({ type: 'presence', onlineCount: 2 }) })
+      )
+      expect(mocks.sent).toEqual([])
+      provider.disconnectWs()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uploads to a Rust server once its stored state stops arriving', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.sync.backend = 'rust-server'
+      const provider = await import('./yjsProvider')
+      const offline = new Y.Map<string>()
+      provider.recordsArray.push([offline])
+      const socket = mocks.instances[0] as unknown as FakeWebSocket
+      socket.readyState = FakeWebSocket.OPEN
+      socket.dispatchEvent(new Event('open'))
+      socket.dispatchEvent(new MessageEvent('message', { data: new Uint8Array([0, 0]).buffer }))
+      expect(mocks.sent).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.sent).toHaveLength(1)
+      provider.disconnectWs()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 

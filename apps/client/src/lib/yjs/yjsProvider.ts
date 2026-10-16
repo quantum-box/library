@@ -102,7 +102,7 @@ let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let backoff = 1000
 const MAX_BACKOFF = 30_000
-/** How long a join waits for more stored state before uploading the rest. */
+/** How long a join to the Rust server waits for more stored state before uploading the rest. */
 const INITIAL_SYNC_QUIET_MS = 1_000
 let disposed = false
 /** True while this page is frozen or hidden and has given up its socket. */
@@ -245,7 +245,13 @@ function openSocket(wsUrl: string) {
   // it is on join and then a presence frame; once that has arrived, what the
   // room lacks is known and only that is sent, instead of the whole document.
   let roomCopy: Y.Doc | null = new Y.Doc()
+  let roomFrames = 0
   let uploadTimer: ReturnType<typeof setTimeout> | null = null
+  // The Cloudflare relay accepts the socket before it reads storage and may
+  // relay another client's update first, so a lull proves nothing there; its
+  // presence frame, sent after the stored state, is the only signal. The Rust
+  // server sends no presence and is taken to be done once frames stop.
+  const finishesOnPresence = appKitConfig.sync.backend === 'cloudflare-durable-object'
 
   const uploadMissing = () => {
     if (uploadTimer) {
@@ -293,7 +299,7 @@ function openSocket(wsUrl: string) {
         if (message.type === 'presence' && typeof message.onlineCount === 'number') {
           setPresence({ onlineCount: message.onlineCount })
           // The relay sends presence after the room's stored state.
-          if (roomCopy && uploadTimer) uploadMissing()
+          if (roomCopy && roomFrames > 0) uploadMissing()
         }
       } catch {
         // Ignore non-protocol text messages.
@@ -317,10 +323,11 @@ function openSocket(wsUrl: string) {
       } catch {
         // Rejected above as well; the room copy skips it the same way.
       }
-      // A relay that sends no presence frame (the Rust server) is taken to
-      // have finished once its stored state has stopped arriving.
-      if (uploadTimer) clearTimeout(uploadTimer)
-      uploadTimer = setTimeout(uploadMissing, INITIAL_SYNC_QUIET_MS)
+      roomFrames += 1
+      if (!finishesOnPresence) {
+        if (uploadTimer) clearTimeout(uploadTimer)
+        uploadTimer = setTimeout(uploadMissing, INITIAL_SYNC_QUIET_MS)
+      }
     }
   })
 
