@@ -7,6 +7,12 @@ const roomUrl = `wss://sync.example.test/ws?room=${room}`
 const mocks = vi.hoisted(() => ({
   requestSyncTicket: vi.fn<(url: string) => Promise<SyncTicketResult>>(),
   sockets: [] as string[],
+  instances: [] as Array<{ readyState: number }>,
+  userId: 'us_01abc' as string | undefined,
+}))
+
+vi.mock('../auth', () => ({
+  loadStoredAuthIdentity: () => (mocks.userId ? { userId: mocks.userId } : null),
 }))
 
 vi.mock('./syncTicket', () => ({ requestSyncTicket: mocks.requestSyncTicket }))
@@ -23,11 +29,15 @@ vi.mock('../../app/kitConfig.js', () => ({
       databaseViewsArrayName: 'databaseViews',
       workflowCanvasesMapName: 'workflowCanvases',
       persistenceKey: 'test',
+      workspaceScope: 'tenant:library:workspace:library-default',
+      recordsRoomId: room,
       websocketUrl: roomUrl,
       websocketPath: `/ws?room=${room}`,
     },
     attachments: { yjsArrayName: 'attachments' },
   },
+  buildRecordsRoomId: (scope: string, actor: string | undefined) =>
+    actor ? `${scope}:user:${actor}:records` : undefined,
   resolveBrowserSyncWebsocketUrl: (configured: string | undefined) => configured,
 }))
 
@@ -41,6 +51,7 @@ class FakeWebSocket extends EventTarget {
   constructor(url: string) {
     super()
     mocks.sockets.push(url)
+    mocks.instances.push(this)
   }
   send() {}
   close() {
@@ -61,6 +72,8 @@ describe('records room connection', () => {
   beforeEach(() => {
     vi.resetModules()
     mocks.sockets.length = 0
+    mocks.instances.length = 0
+    mocks.userId = 'us_01abc'
     mocks.requestSyncTicket.mockReset()
     vi.stubGlobal('WebSocket', FakeWebSocket)
   })
@@ -102,6 +115,25 @@ describe('records room connection', () => {
 
     window.dispatchEvent(new Event('library-auth-change'))
     await vi.waitFor(() => expect(mocks.sockets).toEqual([`${roomUrl}&ticket=restored`]))
+    provider.disconnectWs()
+  })
+
+  it('closes the room when the session ends, and does not reopen it for another account', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    mocks.userId = undefined
+    window.dispatchEvent(new Event('library-auth-change'))
+    expect(mocks.instances[0].readyState).toBe(FakeWebSocket.CLOSED)
+    expect(provider.connectionStatus.value).toBe('disconnected')
+
+    // Signed in as someone else without a reload: this page's room is not theirs.
+    mocks.userId = 'us_someone_else'
+    window.dispatchEvent(new Event('library-auth-change'))
+    window.dispatchEvent(new Event('online'))
+    expect(mocks.requestSyncTicket).toHaveBeenCalledTimes(1)
+    expect(mocks.instances).toHaveLength(1)
     provider.disconnectWs()
   })
 

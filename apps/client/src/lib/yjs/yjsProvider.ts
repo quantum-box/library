@@ -2,8 +2,10 @@ import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import {
   appKitConfig,
+  buildRecordsRoomId,
   resolveBrowserSyncWebsocketUrl,
 } from '../../app/kitConfig.js'
+import { loadStoredAuthIdentity } from '../auth'
 import { requestSyncTicket } from './syncTicket'
 
 // ---------------------------------------------------------------------------
@@ -116,6 +118,34 @@ function getWsUrl(): string | undefined {
   )
 }
 
+/**
+ * Whether the stored session is the user this page's records room is named
+ * after. The room is fixed when the page loads; after a sign-out, or a sign-in
+ * as someone else without a reload, it is no longer this session's to use.
+ */
+function sessionOwnsRoom(): boolean {
+  const roomId = appKitConfig.sync.recordsRoomId
+  return Boolean(roomId) && buildRecordsRoomId(
+    appKitConfig.sync.workspaceScope,
+    loadStoredAuthIdentity()?.userId,
+  ) === roomId
+}
+
+/** Gives up the socket and any attempt in flight, without reconnecting. */
+function releaseSocket() {
+  attempt += 1
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  ydoc.off('update', onDocUpdate)
+  const socket = ws
+  ws = null
+  socket?.close()
+  setStatus('disconnected')
+  setPresence({ onlineCount: 0 })
+}
+
 function scheduleReconnect() {
   if (
     disposed ||
@@ -150,7 +180,7 @@ export function connectWs() {
 
   // No room without a signed-in user: the relay admits each user only to
   // the records room named after them.
-  const roomUrl = getWsUrl()
+  const roomUrl = sessionOwnsRoom() ? getWsUrl() : undefined
   if (!roomUrl) {
     setStatus('disconnected')
     setPresence({ onlineCount: 0 })
@@ -349,17 +379,7 @@ export const initialSyncReady: Promise<void> = new Promise((resolve) => {
  */
 function handlePageHide(event: PageTransitionEvent) {
   suspended = true
-  attempt += 1
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  ydoc.off('update', onDocUpdate)
-  const socket = ws
-  ws = null
-  socket?.close()
-  setStatus('disconnected')
-  setPresence({ onlineCount: 0 })
+  releaseSocket()
   // A page that is not being cached is not coming back to this module.
   if (!event.persisted) disposed = true
 }
@@ -372,11 +392,17 @@ function handlePageShow(event: PageTransitionEvent) {
 }
 
 /**
- * A session that comes back -- a refresh that succeeds after a transient
- * failure, or signing in again -- connects now instead of waiting for an
- * unrelated `online` or `pageshow`.
+ * A session that ends -- signed out, expired, or replaced by another account
+ * without a reload -- closes the room at once, so it stops sending and
+ * receiving the user's records. A session that comes back (a refresh that
+ * succeeds after a transient failure, or signing in again) connects now
+ * instead of waiting for an unrelated `online` or `pageshow`.
  */
 function handleAuthChange() {
+  if (!sessionOwnsRoom()) {
+    releaseSocket()
+    return
+  }
   backoff = 1000
   connectWs()
 }
