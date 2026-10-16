@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
 import type { SyncTicketResult } from './syncTicket'
 
 const room = 'tenant:library:workspace:library-default:user:us_01abc:records'
 const roomUrl = `wss://sync.example.test/ws?room=${room}`
 
+interface FakeSocketLike extends EventTarget {
+  readyState: number
+}
+
 const mocks = vi.hoisted(() => ({
   requestSyncTicket: vi.fn<(url: string) => Promise<SyncTicketResult>>(),
   sockets: [] as string[],
-  instances: [] as Array<{ readyState: number }>,
+  instances: [] as Array<FakeSocketLike>,
+  sent: [] as unknown[],
   userId: 'us_01abc' as string | undefined,
   sync: {} as Record<string, unknown>,
 }))
@@ -58,7 +64,18 @@ class FakeWebSocket extends EventTarget {
     mocks.sockets.push(url)
     mocks.instances.push(this)
   }
-  send() {}
+  send(data: unknown) {
+    mocks.sent.push(data)
+  }
+  /** What the relay does on join: open, its stored state, then presence. */
+  join(stored: Uint8Array) {
+    this.readyState = FakeWebSocket.OPEN
+    this.dispatchEvent(new Event('open'))
+    this.dispatchEvent(new MessageEvent('message', { data: stored.slice().buffer }))
+    this.dispatchEvent(
+      new MessageEvent('message', { data: JSON.stringify({ type: 'presence', onlineCount: 1 }) })
+    )
+  }
   close() {
     this.readyState = FakeWebSocket.CLOSED
   }
@@ -78,6 +95,7 @@ describe('records room connection', () => {
     vi.resetModules()
     mocks.sockets.length = 0
     mocks.instances.length = 0
+    mocks.sent.length = 0
     mocks.userId = 'us_01abc'
     for (const key of Object.keys(mocks.sync)) delete mocks.sync[key]
     Object.assign(mocks.sync, baseSync)
@@ -185,4 +203,46 @@ describe('records room connection', () => {
     expect(mocks.requestSyncTicket).toHaveBeenCalledTimes(2)
     provider.disconnectWs()
   })
+
+  it('uploads nothing on join when the room already has the whole document', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    provider.recordsArray.push([new Y.Map<string>()])
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    const socket = mocks.instances[0] as unknown as FakeWebSocket
+    socket.join(Y.encodeStateAsUpdate(provider.ydoc))
+
+    expect(mocks.sent).toEqual([])
+    provider.disconnectWs()
+  })
+
+  it('uploads only what the room lacks, once its stored state has arrived', async () => {
+    mocks.requestSyncTicket.mockResolvedValue({ kind: 'ticket', url: `${roomUrl}&ticket=one` })
+    const provider = await import('./yjsProvider')
+    const known = new Y.Map<string>()
+    known.set('id', 'known')
+    provider.recordsArray.push([known])
+    const roomState = Y.encodeStateAsUpdate(provider.ydoc)
+    const offline = new Y.Map<string>()
+    offline.set('id', 'offline')
+    provider.recordsArray.push([offline])
+    await vi.waitFor(() => expect(mocks.instances).toHaveLength(1))
+
+    const socket = mocks.instances[0] as unknown as FakeWebSocket
+    socket.join(roomState)
+
+    expect(mocks.sent).toHaveLength(1)
+    const sent = mocks.sent[0] as Uint8Array
+    expect(sent.byteLength).toBeLessThan(Y.encodeStateAsUpdate(provider.ydoc).byteLength)
+    const room = new Y.Doc()
+    Y.applyUpdate(room, roomState)
+    Y.applyUpdate(room, sent)
+    expect(room.getArray<Y.Map<string>>('records').toArray().map((m) => m.get('id'))).toEqual([
+      'known',
+      'offline',
+    ])
+    provider.disconnectWs()
+  })
 })
+

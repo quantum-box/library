@@ -7,6 +7,7 @@ import {
 } from '../../app/kitConfig.js'
 import { authStorageKey, loadStoredAuthIdentity } from '../auth'
 import { requestSyncTicket } from './syncTicket'
+import { missingUpdates } from './initialSyncUpload'
 
 // ---------------------------------------------------------------------------
 // Y.Doc singleton
@@ -101,6 +102,8 @@ let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let backoff = 1000
 const MAX_BACKOFF = 30_000
+/** How long a join waits for more stored state before uploading the rest. */
+const INITIAL_SYNC_QUIET_MS = 1_000
 let disposed = false
 /** True while this page is frozen or hidden and has given up its socket. */
 let suspended = false
@@ -238,7 +241,29 @@ function openSocket(wsUrl: string) {
   socket.binaryType = 'arraybuffer'
   ws = socket
 
-  let isFirstMessage = true
+  // The room as this socket received it. The relay sends its stored state as
+  // it is on join and then a presence frame; once that has arrived, what the
+  // room lacks is known and only that is sent, instead of the whole document.
+  let roomCopy: Y.Doc | null = new Y.Doc()
+  let uploadTimer: ReturnType<typeof setTimeout> | null = null
+
+  const uploadMissing = () => {
+    if (uploadTimer) {
+      clearTimeout(uploadTimer)
+      uploadTimer = null
+    }
+    const room = roomCopy
+    roomCopy = null
+    if (!room || ws !== socket || socket.readyState !== WebSocket.OPEN) return
+    const { updates, skippedClients } = missingUpdates(ydoc, room)
+    room.destroy()
+    for (const update of updates) socket.send(update)
+    if (skippedClients.length > 0) {
+      console.warn(
+        `[yjs] ${skippedClients.length} client(s) hold more than the sync relay accepts in one update; their history stays local`
+      )
+    }
+  }
 
   socket.addEventListener('open', () => {
     if (ws !== socket) {
@@ -249,7 +274,6 @@ function openSocket(wsUrl: string) {
     setStatus('connected')
     ydoc.off('update', onDocUpdate)
     ydoc.on('update', onDocUpdate)
-    socket.send(Y.encodeStateAsUpdate(ydoc))
   })
 
   socket.addEventListener('message', (event) => {
@@ -263,6 +287,8 @@ function openSocket(wsUrl: string) {
         }
         if (message.type === 'presence' && typeof message.onlineCount === 'number') {
           setPresence({ onlineCount: message.onlineCount })
+          // The relay sends presence after the room's stored state.
+          if (roomCopy && uploadTimer) uploadMissing()
         }
       } catch {
         // Ignore non-protocol text messages.
@@ -280,17 +306,26 @@ function openSocket(wsUrl: string) {
       console.warn('[yjs] skipped an update the document rejected', error)
     }
 
-    if (isFirstMessage) {
-      isFirstMessage = false
-      // Send our full local state so the server gets any offline changes
-      const localUpdate = Y.encodeStateAsUpdate(ydoc)
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(localUpdate)
+    if (roomCopy) {
+      try {
+        Y.applyUpdate(roomCopy, data)
+      } catch {
+        // Rejected above as well; the room copy skips it the same way.
       }
+      // A relay that sends no presence frame (the Rust server) is taken to
+      // have finished once its stored state has stopped arriving.
+      if (uploadTimer) clearTimeout(uploadTimer)
+      uploadTimer = setTimeout(uploadMissing, INITIAL_SYNC_QUIET_MS)
     }
   })
 
   socket.addEventListener('close', () => {
+    if (uploadTimer) {
+      clearTimeout(uploadTimer)
+      uploadTimer = null
+    }
+    roomCopy?.destroy()
+    roomCopy = null
     if (ws !== socket) return
 
     ydoc.off('update', onDocUpdate)
