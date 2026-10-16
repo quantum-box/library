@@ -1,0 +1,34 @@
+# Tachyon Cloud App の GitHub Actions build backend が dispatch する workflow。
+# Tachyon は protected ref (refs/heads/main) のこのファイルだけを起動する。
+# dispatch input は build_id のみで、API URL・コマンド・secret は受け取らない。
+name: Tachyon Cloud App build
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Tachyon build ID
+        type: string
+        required: true
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: tachyon-build-${{ inputs.build_id }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # library-api の release cross build (cargo lambda + zig, arm64) はキャッシュなしで走る。
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # install/build は Action の container 内で実行される。
+      # この runner に入れた toolchain は container からは見えない。
+      - uses: quantum-box/tachyon-ops-action/cloud-app-build@REPLACE_WITH_ACTION_SHA
+        with:
+          api-url: https://api.n1.tachy.one
+          build-id: ${{ inputs.build_id }}
+          # cargo lambda app (library-api) 用の digest 固定 toolchain image。
+          rust-builder-image: REPLACE_WITH_RUST_IMAGE_DIGEST_REF
