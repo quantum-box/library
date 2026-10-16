@@ -94,12 +94,6 @@ impl DurableObject for PhotonSyncRoom {
         Self { state }
     }
     async fn fetch(&self, request: Request) -> Result<Response> {
-        if request.path() == "/internal/engine-changed"
-            && header(&request, INTERNAL).as_deref() == Some("1")
-        {
-            broadcast(&self.state, &json!({"type":"engine-changed"}));
-            return Response::empty();
-        }
         if header(&request, INTERNAL).as_deref() == Some("1") {
             match request.path().as_str() {
                 maintenance::INSPECT => {
@@ -156,12 +150,10 @@ impl DurableObject for PhotonSyncRoom {
     ) -> Result<()> {
         match message {
             WebSocketIncomingMessage::String(value) => {
-                if serde_json::from_str::<Value>(&value).ok().is_some_and(
-                    |v| {
-                        v["type"] == "awareness"
-                            || v["type"] == "engine-changed"
-                    },
-                ) {
+                if serde_json::from_str::<Value>(&value)
+                    .ok()
+                    .is_some_and(|v| v["type"] == "awareness")
+                {
                     text(&self.state, &sender, &value)
                 }
             }
