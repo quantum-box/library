@@ -30,6 +30,7 @@ import {
 import { appKitConfig } from '../app/kitConfig'
 import { t } from '../i18n'
 import { createPendingRecordId } from '../lib/pendingRecordId'
+import { setIfChanged } from '../lib/yjs/setIfChanged'
 
 export interface CreateRecordData {
   title: string
@@ -103,20 +104,20 @@ function removeDuplicateYRecords(id: string, keep: Y.Map<string>) {
 }
 
 function writeRecordToYMap(ymap: Y.Map<string>, record: DatabaseRecord) {
-  ymap.set('id', record.id)
-  ymap.set('identifier', record.identifier)
-  ymap.set('title', record.title)
-  ymap.set('status', record.status)
-  ymap.set('priority', record.priority)
-  ymap.set('assignee', record.assignee ?? '')
-  ymap.set('labels', JSON.stringify(record.labels))
-  ymap.set('project', record.project)
-  ymap.set('createdAt', record.createdAt)
-  ymap.set('updatedAt', record.updatedAt)
-  ymap.set('description', record.description)
-  if (record.orgUsername) ymap.set('orgUsername', record.orgUsername)
-  if (record.repoUsername) ymap.set('repoUsername', record.repoUsername)
-  if (record.operatorId) ymap.set('operatorId', record.operatorId)
+  setIfChanged(ymap, 'id', record.id)
+  setIfChanged(ymap, 'identifier', record.identifier)
+  setIfChanged(ymap, 'title', record.title)
+  setIfChanged(ymap, 'status', record.status)
+  setIfChanged(ymap, 'priority', record.priority)
+  setIfChanged(ymap, 'assignee', record.assignee ?? '')
+  setIfChanged(ymap, 'labels', JSON.stringify(record.labels))
+  setIfChanged(ymap, 'project', record.project)
+  setIfChanged(ymap, 'createdAt', record.createdAt)
+  setIfChanged(ymap, 'updatedAt', record.updatedAt)
+  setIfChanged(ymap, 'description', record.description)
+  if (record.orgUsername) setIfChanged(ymap, 'orgUsername', record.orgUsername)
+  if (record.repoUsername) setIfChanged(ymap, 'repoUsername', record.repoUsername)
+  if (record.operatorId) setIfChanged(ymap, 'operatorId', record.operatorId)
 }
 
 function upsertYDatabaseRecord(record: DatabaseRecord) {
