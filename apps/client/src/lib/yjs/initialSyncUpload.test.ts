@@ -18,7 +18,11 @@ describe('missingUpdates', () => {
   it('sends nothing when the room already has the whole document', () => {
     const { local, room } = syncedPair()
 
-    expect(missingUpdates(local, room)).toEqual({ updates: [], skippedClients: [] })
+    expect(missingUpdates(local, room)).toEqual({
+      updates: [],
+      skippedClients: [],
+      deletionsSkipped: false,
+    })
   })
 
   it('sends only what the room lacks, in one update when it fits', () => {
@@ -70,5 +74,21 @@ describe('missingUpdates', () => {
 
     expect(updates).toEqual([])
     expect(skippedClients).toEqual([local.clientID])
+  })
+
+  it('reports deletions too large for one update instead of dropping them silently', () => {
+    const local = new Y.Doc()
+    const records = local.getArray<string>('records')
+    // Many separate items, so their deletion is a long, fragmented delete set.
+    for (let i = 0; i < 400; i++) records.push([`row ${i}`])
+    const room = new Y.Doc()
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(local))
+    for (let i = records.length - 1; i >= 0; i -= 2) records.delete(i, 1)
+
+    const result = missingUpdates(local, room, 64)
+
+    expect(result.updates).toEqual([])
+    expect(result.skippedClients).toEqual([])
+    expect(result.deletionsSkipped).toBe(true)
   })
 })

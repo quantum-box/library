@@ -255,12 +255,17 @@ function openSocket(wsUrl: string) {
     const room = roomCopy
     roomCopy = null
     if (!room || ws !== socket || socket.readyState !== WebSocket.OPEN) return
-    const { updates, skippedClients } = missingUpdates(ydoc, room)
+    const { updates, skippedClients, deletionsSkipped } = missingUpdates(ydoc, room)
     room.destroy()
     for (const update of updates) socket.send(update)
     if (skippedClients.length > 0) {
       console.warn(
         `[yjs] ${skippedClients.length} client(s) hold more than the sync relay accepts in one update; their history stays local`
+      )
+    }
+    if (deletionsSkipped) {
+      console.warn(
+        '[yjs] deletions made here are larger than the sync relay accepts in one update; they stay local'
       )
     }
   }

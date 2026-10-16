@@ -12,6 +12,12 @@ export interface InitialSyncUpload {
   updates: Uint8Array[]
   /** Clients whose missing part alone is longer than `maxBytes`; not sent. */
   skippedClients: number[]
+  /**
+   * Nothing was sent, so deletions this document has that the room lacks (if
+   * any) stay local. Every update carries the whole delete set and a delete
+   * set cannot be split, so a delete set longer than `maxBytes` ends here.
+   */
+  deletionsSkipped: boolean
 }
 
 /**
@@ -33,12 +39,14 @@ export function missingUpdates(
   maxBytes = SYNC_MAX_UPDATE_BYTES,
 ): InitialSyncUpload {
   if (Y.equalSnapshots(Y.snapshot(local), Y.snapshot(room))) {
-    return { updates: [], skippedClients: [] }
+    return { updates: [], skippedClients: [], deletionsSkipped: false }
   }
 
   const roomVector = Y.encodeStateVector(room)
   const whole = Y.encodeStateAsUpdate(local, roomVector)
-  if (whole.byteLength <= maxBytes) return { updates: [whole], skippedClients: [] }
+  if (whole.byteLength <= maxBytes) {
+    return { updates: [whole], skippedClients: [], deletionsSkipped: false }
+  }
 
   const localClocks = Y.decodeStateVector(Y.encodeStateVector(local))
   const roomClocks = Y.decodeStateVector(roomVector)
@@ -58,5 +66,8 @@ export function missingUpdates(
       skippedClients.push(client)
     }
   }
-  return { updates, skippedClients }
+  // Each update carries the whole delete set, so deletions reach the room
+  // with any update sent. With none sent, they do not -- including when the
+  // difference is deletions only, which advance no client's clock.
+  return { updates, skippedClients, deletionsSkipped: updates.length === 0 }
 }
