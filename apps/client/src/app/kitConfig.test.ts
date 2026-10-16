@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   appKitConfig,
+  appendSyncTicket,
+  buildRecordsRoomId,
   buildRoomId,
+  buildSyncTicketUrl,
   buildUserStorageScope,
   buildWorkspaceScope,
   buildSyncWebsocketPath,
@@ -51,15 +54,15 @@ describe('appKitConfig', () => {
     expect(appKitConfig.sync.tenantId).toBe('library')
     expect(appKitConfig.sync.workspaceId).toBe('library-default')
     expect(appKitConfig.sync.workspaceScope).toBe('tenant:library:workspace:library-default')
-    expect(appKitConfig.sync.recordsRoomId).toBe('tenant:library:workspace:library-default:records')
+    // No one is signed in under test, so there is no records room to join.
+    expect(appKitConfig.sync.recordsRoomId).toBeUndefined()
     expect(appKitConfig.sync.persistenceKey).toBe('tenant:library:workspace:library-default:records')
     expect(appKitConfig.sync.yjsArrayName).toBe('records')
     expect(appKitConfig.sync.databasesArrayName).toBe('databases')
     expect(appKitConfig.sync.workflowCanvasesMapName).toBe('workflowCanvases')
-    expect(appKitConfig.sync.websocketPath).toBe(
-      '/ws?room=tenant:library:workspace:library-default:records'
-    )
+    expect(appKitConfig.sync.websocketPath).toBeUndefined()
     expect(appKitConfig.sync.websocketUrl).toBeUndefined()
+    expect(appKitConfig.sync.ticketPath).toBe('/ws/ticket')
     expect(appKitConfig.workflows.pgliteDataDir).toBe(
       'idb://library-workflows-tenant-library-workspace-library-default'
     )
@@ -77,6 +80,35 @@ describe('appKitConfig', () => {
     expect(appKitConfig.chat.stream.transport).toBe('sse')
     expect(appKitConfig.chat.stream.endpoint).toBe('/api/agent/chat/stream')
     expect(appKitConfig.chat.stream.toolResultPath).toBe('/api/agent/tool-results')
+  })
+
+  it('names the records room after the signed-in user, and has none without one', () => {
+    const workspaceScope = buildWorkspaceScope('library', 'library-default')
+
+    expect(buildRecordsRoomId(workspaceScope, 'us_01abc')).toBe(
+      'tenant:library:workspace:library-default:user:us_01abc:records',
+    )
+    // The room and the IndexedDB key share one per-user scope.
+    expect(buildRecordsRoomId(workspaceScope, 'us_01abc')).toBe(
+      buildRoomId(buildUserStorageScope(workspaceScope, 'us_01abc'), 'records'),
+    )
+    // The old workspace-wide room is never produced.
+    for (const actor of [undefined, '', '   ']) {
+      expect(buildRecordsRoomId(workspaceScope, actor)).toBeUndefined()
+    }
+    expect(resolveBrowserSyncWebsocketUrl(undefined, undefined, {
+      protocol: 'https:',
+      host: 'library.example.test',
+    })).toBeUndefined()
+  })
+
+  it('derives the /ws ticket endpoint from the socket URL and appends tickets', () => {
+    const socket = 'wss://sync.example.test/ws?room=tenant:t:workspace:w:user:u:records'
+    expect(buildSyncTicketUrl(socket)).toBe('https://sync.example.test/ws/ticket')
+    expect(buildSyncTicketUrl('ws://127.0.0.1:8787/ws?room=x')).toBe('http://127.0.0.1:8787/ws/ticket')
+    const withTicket = new URL(appendSyncTicket(socket, 'abc_DEF-123'))
+    expect(withTicket.searchParams.get('room')).toBe('tenant:t:workspace:w:user:u:records')
+    expect(withTicket.searchParams.get('ticket')).toBe('abc_DEF-123')
   })
 
   it('isolates local-first storage by user without changing the shared workspace scope', () => {

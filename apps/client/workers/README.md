@@ -92,6 +92,15 @@ or retired-by hop instead of being forwarded.
 Every refused join is logged (`live_join_refused` / `live_open_refused`) with
 its status and a fixed reason, never a ticket, session or credential.
 
+The generic relay (`/ws`) admits only the holder of a one-time ticket. A
+client trades its Library bearer token for one at `POST /ws/ticket` with the
+room it wants; the Worker resolves the caller with library-api's `me` query
+and issues tickets only for that user's own records room,
+`tenant:{t}:workspace:{w}:user:{userId}:records`. Tickets live 60 seconds in
+the Live ticket store (`sync:ticket:` rows) and are consumed on connect. The
+workspace-wide room every account used to share can no longer be named; its
+removal is in `docs/legacy-records-room-removal.md`.
+
 Snapshot replay works in batches of 64 rows, folds at most 512 rows per pass,
 and continues on the next request or alarm. The generic relay (`/ws`) never
 builds its document to serve a request: a join is sent the stored snapshot and

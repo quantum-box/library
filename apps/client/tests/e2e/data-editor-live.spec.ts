@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './test-fixtures'
 import { e2eAuthState } from './auth-state'
-import * as Y from 'yjs'
 
 const api = 'http://127.0.0.1:50063'
 const route = '/quantum-box/photon-core/data/seed-data-201'
@@ -127,28 +126,21 @@ for (const format of ['markdown', 'richText'] as const) {
           .propertyData.find((entry: { propertyId: string }) => entry.propertyId === 'prop-description').value[format] as string
       }).toContain('Ren contribution.')
 
-      // Choosing the same room string on the legacy, unauthenticated endpoint
-      // must not reach the data editor's dedicated Durable Object namespace.
+      // The generic relay (/ws) admits no one without a ticket, so the data
+      // editor's room name cannot be used to open anything there either.
       const exchange = await page.request.post(`${live}/live/session`, {
         headers: { Origin: 'http://127.0.0.1:5187', Authorization: 'Bearer dev:local' },
         data: { org: 'quantum-box', repo: 'photon-core', data_id: 'seed-data-201', property_id: 'prop-description' },
       })
       expect(exchange.ok()).toBe(true)
       const session = await exchange.json() as { room_id: string }
-      const bytes = await page.evaluate((roomId) => new Promise<number[]>((resolve, reject) => {
+      const outcome = await page.evaluate((roomId) => new Promise<string>((resolve) => {
         const socket = new WebSocket(`ws://127.0.0.1:8788/ws?room=${encodeURIComponent(roomId)}`)
         socket.binaryType = 'arraybuffer'
-        socket.onerror = () => reject(new Error('Legacy socket failed'))
-        socket.onmessage = (event) => {
-          if (!(event.data instanceof ArrayBuffer)) return
-          resolve(Array.from(new Uint8Array(event.data)))
-          socket.close()
-        }
+        socket.onmessage = () => { resolve('received'); socket.close() }
+        socket.onclose = () => resolve('refused')
       }), session.room_id)
-      const unrelatedDoc = new Y.Doc()
-      Y.applyUpdate(unrelatedDoc, new Uint8Array(bytes))
-      expect(unrelatedDoc.getXmlFragment('prosemirror').length).toBe(0)
-      unrelatedDoc.destroy()
+      expect(outcome).toBe('refused')
 
       await other.reload()
       // This page types again below and then goes offline, so the room has

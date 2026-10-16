@@ -144,16 +144,23 @@ export interface AppKitConfig {
     tenantId: string
     workspaceId: string
     workspaceScope: string
-    recordsRoomId: string
+    /**
+     * The signed-in user's own records room
+     * (`tenant:{t}:workspace:{w}:user:{actor}:records`), or `undefined` when
+     * no one is signed in. The relay only admits a user to their own room.
+     */
+    recordsRoomId?: string
     yjsArrayName: string
     databasesArrayName: string
     databaseViewsArrayName: string
     workflowCanvasesMapName: string
     persistenceKey: string
-    websocketPath: string
+    websocketPath?: string
     websocketUrl?: string
     websocketBaseUrl?: string
     roomParam: string
+    /** Trades the caller's bearer token for a one-time `/ws` ticket. */
+    ticketPath: string
   }
   server: {
     backend: AppServerBackend
@@ -164,7 +171,7 @@ export interface AppKitConfig {
     enabled: true
     runtime: FrontendWorkerRuntime
     healthPath: string
-    websocketPath: string
+    websocketPath?: string
     role: 'frontend-edge-companion'
   }
   storage: {
@@ -264,10 +271,10 @@ function namespacedDataDir(base: string, workspaceScope: string): string {
 }
 
 /**
- * Keep local-first databases separate per signed-in user without changing the
- * shared realtime room. The room is tenant/workspace scoped so collaborators
- * still meet each other; IndexedDB and PGlite keys additionally include the
- * actor so one account cannot hydrate another account's offline cache.
+ * Keep local-first databases and the realtime records room separate per
+ * signed-in user. IndexedDB and PGlite keys include the actor so one account
+ * cannot hydrate another account's offline cache, and the records room uses
+ * the same scope (see `buildRecordsRoomId`).
  */
 export function buildUserStorageScope(
   workspaceScope: string,
@@ -291,6 +298,39 @@ function browserAuthActorId(): string | undefined {
  */
 export function buildRoomId(workspaceScope: string, surface: string): string {
   return `${workspaceScope}:${surface}`
+}
+
+/**
+ * The signed-in user's records room. It used to be one room per workspace,
+ * shared by every account in it; the relay now admits each user only to the
+ * room named after them, so there is no room without a signed-in user.
+ */
+export function buildRecordsRoomId(
+  workspaceScope: string,
+  actorId: string | undefined,
+): string | undefined {
+  const userScope = buildUserStorageScope(workspaceScope, actorId)
+  return userScope === workspaceScope ? undefined : buildRoomId(userScope, 'records')
+}
+
+/**
+ * The `POST` endpoint that issues one-time `/ws` tickets, next to the socket
+ * itself: `wss://host/ws?room=x` becomes `https://host/ws/ticket`.
+ */
+export function buildSyncTicketUrl(websocketUrl: string, ticketPath = '/ws/ticket'): string {
+  const url = new URL(websocketUrl)
+  url.protocol = url.protocol === 'wss:' ? 'https:' : url.protocol === 'ws:' ? 'http:' : url.protocol
+  url.pathname = ticketPath
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+/** Adds a `/ws` ticket to a room's socket URL. */
+export function appendSyncTicket(websocketUrl: string, ticket: string): string {
+  const url = new URL(websocketUrl)
+  url.searchParams.set('ticket', ticket)
+  return url.toString()
 }
 
 function appendRoomQuery(base: string, roomId: string): string {
@@ -392,8 +432,8 @@ export function buildSyncWebsocketPath(roomId: string): string {
   return appendRoomQuery('/ws', roomId)
 }
 
-export function buildConfiguredSyncWebsocketUrl(roomId: string): string | undefined {
-  return websocketBaseUrl ? appendRoomQuery(websocketBaseUrl, roomId) : undefined
+export function buildConfiguredSyncWebsocketUrl(roomId: string | undefined): string | undefined {
+  return websocketBaseUrl && roomId ? appendRoomQuery(websocketBaseUrl, roomId) : undefined
 }
 
 /**
@@ -405,12 +445,12 @@ export function buildConfiguredSyncWebsocketUrl(roomId: string): string | undefi
  */
 export function resolveBrowserSyncWebsocketUrl(
   configuredUrl: string | undefined,
-  websocketPath: string,
+  websocketPath: string | undefined,
   location: Pick<Location, 'protocol' | 'host'> | undefined =
     typeof window === 'undefined' ? undefined : window.location,
 ): string | undefined {
   if (configuredUrl) return configuredUrl
-  if (!location?.host) return undefined
+  if (!websocketPath || !location?.host) return undefined
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${location.host}${websocketPath}`
@@ -470,10 +510,11 @@ const tenantName = selectedTenantWorkspace.tenantName
 const workspaceId = selectedTenantWorkspace.workspaceId
 const workspaceName = selectedTenantWorkspace.workspaceName
 const workspaceScope = buildWorkspaceScope(tenantId, workspaceId)
-const userStorageScope = buildUserStorageScope(workspaceScope, browserAuthActorId())
-const recordsRoomId = buildRoomId(workspaceScope, 'records')
+const syncActorId = browserAuthActorId()
+const userStorageScope = buildUserStorageScope(workspaceScope, syncActorId)
+const recordsRoomId = buildRecordsRoomId(workspaceScope, syncActorId)
 const recordsPersistenceKey = buildRoomId(userStorageScope, 'records')
-const syncWebsocketPath = appendRoomQuery('/ws', recordsRoomId)
+const syncWebsocketPath = recordsRoomId ? buildSyncWebsocketPath(recordsRoomId) : undefined
 const websocketBaseUrl = viteEnv.VITE_LIBRARY_SYNC_WS_URL ?? viteEnv.VITE_PHOTON_SYNC_WS_URL
 const dataLiveBaseUrl = resolveDataLiveBaseUrl(viteEnv.VITE_LIBRARY_DATA_LIVE_URL)
 const chatStreamEndpoint =
@@ -620,10 +661,11 @@ export const appKitConfig: AppKitConfig = {
     databaseViewsArrayName: 'databaseViews',
     workflowCanvasesMapName: 'workflowCanvases',
     persistenceKey: recordsPersistenceKey,
-    websocketPath: buildSyncWebsocketPath(recordsRoomId),
+    websocketPath: syncWebsocketPath,
     websocketUrl: buildConfiguredSyncWebsocketUrl(recordsRoomId),
     websocketBaseUrl,
     roomParam: 'room',
+    ticketPath: '/ws/ticket',
   },
   server: {
     backend: resolveAppServerBackend(

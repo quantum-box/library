@@ -4,6 +4,7 @@ import {
   appKitConfig,
   resolveBrowserSyncWebsocketUrl,
 } from '../../app/kitConfig.js'
+import { requestSyncTicket } from './syncTicket'
 
 // ---------------------------------------------------------------------------
 // Y.Doc singleton
@@ -101,6 +102,12 @@ const MAX_BACKOFF = 30_000
 let disposed = false
 /** True while this page is frozen or hidden and has given up its socket. */
 let suspended = false
+/**
+ * Counts connection attempts. A ticket request that resolves after a newer
+ * attempt started, or after the page gave up its socket, is dropped.
+ */
+let attempt = 0
+let ticketPending = false
 
 function getWsUrl(): string | undefined {
   return resolveBrowserSyncWebsocketUrl(
@@ -114,6 +121,7 @@ function scheduleReconnect() {
     disposed ||
     suspended ||
     reconnectTimer ||
+    ticketPending ||
     !getWsUrl() ||
     ws?.readyState === WebSocket.OPEN ||
     ws?.readyState === WebSocket.CONNECTING
@@ -135,13 +143,15 @@ function onDocUpdate(update: Uint8Array, origin: unknown) {
 }
 
 export function connectWs() {
-  if (disposed || suspended) return
+  if (disposed || suspended || ticketPending) return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return
   }
 
-  const wsUrl = getWsUrl()
-  if (!wsUrl) {
+  // No room without a signed-in user: the relay admits each user only to
+  // the records room named after them.
+  const roomUrl = getWsUrl()
+  if (!roomUrl) {
     setStatus('disconnected')
     setPresence({ onlineCount: 0 })
     return
@@ -153,7 +163,33 @@ export function connectWs() {
   }
 
   setStatus('connecting')
+  const current = ++attempt
+  ticketPending = true
+  void requestSyncTicket(roomUrl).then((result) => {
+    ticketPending = false
+    if (disposed || suspended) return
+    // The page was hidden and shown again while this was in flight; the
+    // `pageshow` reconnect was skipped for it, so start over now.
+    if (current !== attempt) {
+      connectWs()
+      return
+    }
+    if (result.kind === 'ticket') {
+      openSocket(result.url)
+      return
+    }
+    setStatus('disconnected')
+    setPresence({ onlineCount: 0 })
+    // Signed out: nothing to retry with until the page has a session again
+    // (`online` and `pageshow` try again). Refused: the token may refresh,
+    // but not soon, so wait the longest interval.
+    if (result.kind === 'signed-out') return
+    if (result.kind === 'refused') backoff = MAX_BACKOFF
+    scheduleReconnect()
+  })
+}
 
+function openSocket(wsUrl: string) {
   let socket: WebSocket
   try {
     socket = new WebSocket(wsUrl)
@@ -235,6 +271,7 @@ export function connectWs() {
 
 export function disconnectWs() {
   disposed = true
+  attempt += 1
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -311,6 +348,7 @@ export const initialSyncReady: Promise<void> = new Promise((resolve) => {
  */
 function handlePageHide(event: PageTransitionEvent) {
   suspended = true
+  attempt += 1
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null

@@ -23,7 +23,7 @@ fn cors(response: &mut Response) -> Result<()> {
     h.set("access-control-allow-methods", "GET,POST,OPTIONS")?;
     h.set(
         "access-control-allow-headers",
-        "authorization,content-type,x-request-id,x-photon-request-id",
+        "authorization,content-type,x-request-id,x-photon-request-id,x-platform-id,x-operator-id",
     )?;
     h.set("access-control-expose-headers", "x-photon-request-id")?;
     Ok(())
@@ -116,11 +116,16 @@ pub async fn fetch(mut request: Request, env: Env) -> Result<Response> {
     if path == "/live/session" || path == "/live/ws" {
         return auth::route(request, &env).await;
     }
+    if path == crate::maintenance::PATH {
+        return crate::maintenance::route(request, &env).await;
+    }
     if path == "/external-sync/dispatch" {
         return crate::external_dispatch::enqueue(request, &env).await;
     }
     let mut response = if request.method() == Method::Options {
         Response::empty()?.with_status(204)
+    } else if path == "/ws/ticket" {
+        crate::room_auth::issue(&mut request, &env).await?
     } else if path == "/api/health" {
         json(
             &value!({"status":"ok","backend":"cloudflare-durable-object","edge":"photon-edge-worker","cloudEngineBaseUrl":base(&env)}),
@@ -218,18 +223,8 @@ pub async fn fetch(mut request: Request, env: Env) -> Result<Response> {
         result.headers_mut().set("x-photon-request-id", &id)?;
         result
     } else if path == "/ws" {
-        let room = request
-            .url()?
-            .query_pairs()
-            .find(|(k, _)| k == "room")
-            .map(|(_, v)| v.into_owned())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "records".into());
-        return env
-            .durable_object("PHOTON_SYNC_ROOMS")?
-            .get_by_name(&room)?
-            .fetch_with_request(request)
-            .await;
+        // Only a ticket from `/ws/ticket` opens a room, and only its owner's.
+        return crate::room_auth::open(request, &env).await;
     } else {
         return Response::error("Not found", 404);
     };

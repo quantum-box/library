@@ -1,4 +1,4 @@
-use crate::{model::*, storage::*};
+use crate::{model::*, room_auth::RoomTicket, storage::*};
 use futures::{lock::Mutex, FutureExt};
 use library_worker_common::{
     api_request, json, now, random_id, request_json, response_json,
@@ -8,6 +8,24 @@ use worker::*;
 
 const TICKETS: &str = "live:ticket:";
 const SESSIONS: &str = "live:session:";
+/// One-time tickets for the generic Yjs relay (`/ws`); see `room_auth`.
+const ROOM_TICKETS: &str = "sync:ticket:";
+
+/// When a stored row expires, or `None` for a row that is not valid.
+type Expiry = fn(&wasm_bindgen::JsValue) -> Option<i64>;
+
+fn live_expiry(raw: &wasm_bindgen::JsValue) -> Option<i64> {
+    serde_wasm_bindgen::from_value::<Session>(raw.clone())
+        .ok()
+        .filter(|s| s.valid(false))
+        .map(|s| s.expires_at)
+}
+fn room_expiry(raw: &wasm_bindgen::JsValue) -> Option<i64> {
+    serde_wasm_bindgen::from_value::<RoomTicket>(raw.clone())
+        .ok()
+        .filter(RoomTicket::valid)
+        .map(|t| t.expires_at)
+}
 
 pub async fn call(env: &Env, action: &str, value: &Value) -> Result<Value> {
     let stub = env
@@ -103,6 +121,50 @@ impl DurableObject for PhotonLiveTicketStore {
                     200,
                 )
             }
+            "/issue-room" => {
+                let Some(room) =
+                    input["room"].as_str().filter(|s| bounded(s, 512))
+                else {
+                    return Response::error("Invalid room ticket", 400);
+                };
+                let ticket = random_id(32)?;
+                let entry = RoomTicket {
+                    room: room.to_owned(),
+                    expires_at: now() + TTL,
+                };
+                storage
+                    .put_raw(
+                        &format!("{ROOM_TICKETS}{ticket}"),
+                        to_js(&entry)?,
+                    )
+                    .await?;
+                schedule(&storage, entry.expires_at).await?;
+                json(&value!({ "ticket": ticket }), 200)
+            }
+            "/consume-room" => {
+                let id = input["id"].as_str().unwrap_or_default();
+                if !token(id, 40, 64) {
+                    return json(&Value::Null, 200);
+                }
+                let key = format!("{ROOM_TICKETS}{id}");
+                let entry = transaction(&storage, move |tx| {
+                    async move {
+                        let raw = tx_raw(&tx, &key).await?;
+                        tx.delete(&key).await?;
+                        Ok(raw
+                            .and_then(|v| {
+                                serde_wasm_bindgen::from_value::<
+                                        RoomTicket,
+                                    >(v)
+                                    .ok()
+                            })
+                            .filter(|t| t.valid() && t.expires_at > now()))
+                    }
+                    .boxed_local()
+                })
+                .await?;
+                json(&serde_json::to_value(entry)?, 200)
+            }
             "/consume" | "/session" | "/delete" => {
                 let id = input["id"].as_str().unwrap_or_default();
                 let consume = request.path() == "/consume";
@@ -160,10 +222,12 @@ impl DurableObject for PhotonLiveTicketStore {
         let _guard = self.lock.lock().await;
         let storage = self.state.storage();
         let mut next = None::<i64>;
-        for (prefix, cursor_key) in [
-            (TICKETS, "live:cleanup:cursor:ticket"),
-            (SESSIONS, "live:cleanup:cursor:session"),
-        ] {
+        let prefixes: [(&str, &str, Expiry); 3] = [
+            (TICKETS, "live:cleanup:cursor:ticket", live_expiry),
+            (SESSIONS, "live:cleanup:cursor:session", live_expiry),
+            (ROOM_TICKETS, "sync:cleanup:cursor:ticket", room_expiry),
+        ];
+        for (prefix, cursor_key, expiry) in prefixes {
             let cursor: Option<String> = storage.get(cursor_key).await?;
             let start = cursor.as_ref().map(|s| format!("{s}\0"));
             let mut options = ListOptions::new().prefix(prefix).limit(128);
@@ -172,16 +236,8 @@ impl DurableObject for PhotonLiveTicketStore {
             }
             let rows = entries(storage.list_with_options(options).await?)?;
             for (key, raw) in &rows {
-                match serde_wasm_bindgen::from_value::<Session>(raw.clone())
-                    .ok()
-                    .filter(|s| s.valid(false) && s.expires_at > now())
-                {
-                    Some(s) => {
-                        next =
-                            Some(next.map_or(s.expires_at, |n| {
-                                n.min(s.expires_at)
-                            }))
-                    }
+                match expiry(raw).filter(|at| *at > now()) {
+                    Some(at) => next = Some(next.map_or(at, |n| n.min(at))),
                     None => {
                         storage.delete(key).await?;
                     }
