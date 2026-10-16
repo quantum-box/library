@@ -26,7 +26,7 @@ jobs:
           node-version: '22'
       # install/build は Action の container 内で実行される。
       # この runner に入れた toolchain は container からは見えない。
-      - uses: quantum-box/tachyon-ops-action/cloud-app-build@REPLACE_WITH_ACTION_SHA
+      - uses: quantum-box/tachyon-ops-action/cloud-app-build@e03c7cc9b867ecff53fcbd7fb372fa5a8ddc9a99
         with:
           api-url: https://api.n1.tachy.one
           build-id: ${{ inputs.build_id }}
