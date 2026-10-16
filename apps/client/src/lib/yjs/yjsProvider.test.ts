@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   sockets: [] as string[],
   instances: [] as Array<{ readyState: number }>,
   userId: 'us_01abc' as string | undefined,
+  sync: {} as Record<string, unknown>,
 }))
 
 vi.mock('../auth', () => ({
@@ -23,23 +24,26 @@ vi.mock('y-indexeddb', () => ({
 }))
 vi.mock('../../app/kitConfig.js', () => ({
   appKitConfig: {
-    sync: {
-      yjsArrayName: 'records',
-      databasesArrayName: 'databases',
-      databaseViewsArrayName: 'databaseViews',
-      workflowCanvasesMapName: 'workflowCanvases',
-      persistenceKey: 'test',
-      workspaceScope: 'tenant:library:workspace:library-default',
-      recordsRoomId: room,
-      websocketUrl: roomUrl,
-      websocketPath: `/ws?room=${room}`,
-    },
+    sync: mocks.sync,
     attachments: { yjsArrayName: 'attachments' },
   },
   buildRecordsRoomId: (scope: string, actor: string | undefined) =>
     actor ? `${scope}:user:${actor}:records` : undefined,
   resolveBrowserSyncWebsocketUrl: (configured: string | undefined) => configured,
 }))
+
+const baseSync = {
+  yjsArrayName: 'records',
+  databasesArrayName: 'databases',
+  databaseViewsArrayName: 'databaseViews',
+  workflowCanvasesMapName: 'workflowCanvases',
+  persistenceKey: 'test',
+  workspaceScope: 'tenant:library:workspace:library-default',
+  recordsRoomId: room,
+  websocketUrl: roomUrl,
+  websocketPath: `/ws?room=${room}`,
+  backend: 'cloudflare-durable-object',
+}
 
 class FakeWebSocket extends EventTarget {
   static CONNECTING = 0
@@ -74,6 +78,8 @@ describe('records room connection', () => {
     mocks.sockets.length = 0
     mocks.instances.length = 0
     mocks.userId = 'us_01abc'
+    for (const key of Object.keys(mocks.sync)) delete mocks.sync[key]
+    Object.assign(mocks.sync, baseSync)
     mocks.requestSyncTicket.mockReset()
     vi.stubGlobal('WebSocket', FakeWebSocket)
   })
@@ -87,6 +93,15 @@ describe('records room connection', () => {
 
     expect(mocks.requestSyncTicket).toHaveBeenCalledWith(roomUrl)
     await vi.waitFor(() => expect(mocks.sockets).toEqual([`${roomUrl}&ticket=one`]))
+    provider.disconnectWs()
+  })
+
+  it('connects a Rust server directly, since it has no ticket endpoint', async () => {
+    mocks.sync.backend = 'rust-server'
+    const provider = await import('./yjsProvider')
+
+    expect(mocks.requestSyncTicket).not.toHaveBeenCalled()
+    expect(mocks.sockets).toEqual([roomUrl])
     provider.disconnectWs()
   })
 

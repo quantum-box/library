@@ -193,6 +193,12 @@ export function connectWs() {
   }
 
   setStatus('connecting')
+  // Only the Cloudflare relay asks for a ticket. A Rust server (local and
+  // on-prem) serves `/ws` itself, without `/ws/ticket`.
+  if (appKitConfig.sync.backend !== 'cloudflare-durable-object') {
+    openSocket(roomUrl)
+    return
+  }
   const current = ++attempt
   ticketPending = true
   void requestSyncTicket(roomUrl).then((result) => {
