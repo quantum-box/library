@@ -80,3 +80,7 @@ path = "tests/relation.rs"
 [[test]]
 name = "paging"
 path = "tests/paging.rs"
+
+[[test]]
+name = "data_list_latency"
+path = "tests/data_list_latency.rs"

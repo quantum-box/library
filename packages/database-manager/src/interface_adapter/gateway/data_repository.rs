@@ -635,41 +635,55 @@ impl DataRepository for DataRepositoryImpl {
         database_id: &DatabaseId,
         page: OffsetPage,
     ) -> errors::Result<(DataCollection, OffsetPaginator)> {
-        let fields = sqlx::query_as::<_, FieldRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                fields
-            WHERE
-                object_id = ? and tenant_id = ?
-            "#,
-        )
-        .bind(database_id.to_string())
-        .bind(tenant_id.to_string())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-        let data_rows = sqlx::query_as::<_, DataRow>(
-            r#"
-            SELECT
-                *
-            FROM
-                data
-            WHERE
-                object_id = ? and tenant_id = ?
-            ORDER BY
-                id ASC
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(database_id.to_string())
-        .bind(tenant_id.to_string())
-        .bind(page.items_per_page())
-        .bind(page.offset())
-        .fetch_all(self.db.pool().as_ref())
-        .await?;
-        let total: i64 = sqlx::query_scalar!(
-            r#"
+        // Reads keep the original fields -> page -> COUNT order (see below);
+        // only canonical values overlap them. Every read is still required,
+        // so a failure fails the list exactly as the sequential version did.
+        let pool = self.db.pool();
+        let fields = async {
+            Ok::<_, errors::Error>(
+                sqlx::query_as::<_, FieldRow>(
+                    r#"
+                    SELECT
+                        *
+                    FROM
+                        fields
+                    WHERE
+                        object_id = ? and tenant_id = ?
+                    "#,
+                )
+                .bind(database_id.to_string())
+                .bind(tenant_id.to_string())
+                .fetch_all(pool.as_ref())
+                .await?,
+            )
+        };
+        let data_rows = async {
+            Ok::<_, errors::Error>(
+                sqlx::query_as::<_, DataRow>(
+                    r#"
+                    SELECT
+                        *
+                    FROM
+                        data
+                    WHERE
+                        object_id = ? and tenant_id = ?
+                    ORDER BY
+                        id ASC
+                    LIMIT ? OFFSET ?
+                    "#,
+                )
+                .bind(database_id.to_string())
+                .bind(tenant_id.to_string())
+                .bind(page.items_per_page())
+                .bind(page.offset())
+                .fetch_all(pool.as_ref())
+                .await?,
+            )
+        };
+        // The SQL literal must stay byte-identical to the `.sqlx` cache entry.
+        let total = async {
+            let total: i64 = sqlx::query_scalar!(
+                r#"
             SELECT
                 COUNT(*)
             FROM
@@ -677,23 +691,74 @@ impl DataRepository for DataRepositoryImpl {
             WHERE
                 object_id = ? and tenant_id = ?
             "#,
-            database_id.to_string(),
-            tenant_id.to_string(),
-        )
-        .fetch_one(self.db.pool().as_ref())
-        .await?;
-        let data_ids = data_rows
-            .iter()
-            .map(|row| row.id.clone())
-            .collect::<Vec<_>>();
-        let canonical = load_canonical_values_for_mode(
-            self.db.as_ref(),
-            tenant_id,
-            database_id,
-            &data_ids,
-            self.property_value_mode,
-        )
-        .await?;
+                database_id.to_string(),
+                tenant_id.to_string(),
+            )
+            .fetch_one(pool.as_ref())
+            .await?;
+            Ok::<_, errors::Error>(total)
+        };
+        // `valueN` slots are interpreted through `fields`. A property can be
+        // deleted and its `field_num` reused by a new one, and nothing in a
+        // data row says which property wrote a slot, so a page older than
+        // the fields would show the old value under the new property. Keep
+        // the original fields-then-page order for these two reads.
+        let fields_then_rows = async {
+            let fields = fields.await?;
+            let data_rows = data_rows.await?;
+            Ok::<_, errors::Error>((fields, data_rows))
+        };
+        let (fields, data_rows, total, canonical) = if self
+            .property_value_mode
+            .reads_canonical_first()
+        {
+            // Canonical values decide the response here, so read them
+            // by the ids this page actually returned, after the page and
+            // concurrently with COUNT (which also follows the page).
+            let (fields, data_rows) = fields_then_rows.await?;
+            let canonical = async {
+                let data_ids = data_rows
+                    .iter()
+                    .map(|row| row.id.clone())
+                    .collect::<Vec<_>>();
+                load_canonical_values_for_mode(
+                    self.db.as_ref(),
+                    tenant_id,
+                    database_id,
+                    &data_ids,
+                    self.property_value_mode,
+                )
+                .await
+            };
+            let (total, canonical) = tokio::try_join!(total, canonical)?;
+            (fields, data_rows, total, canonical)
+        } else {
+            // Legacy-first reads only shadow canonical values for the
+            // parity log, so they may select the page again concurrently.
+            let canonical = load_canonical_values_for_page(
+                self.db.as_ref(),
+                tenant_id,
+                database_id,
+                page,
+                self.property_value_mode,
+            );
+            let (((fields, data_rows), total), canonical) = tokio::try_join!(
+                page_then_count(fields_then_rows, total),
+                canonical
+            )?;
+            let page_records =
+                data_rows.iter().map(PageRecord::from).collect::<Vec<_>>();
+            let canonical = canonical_values_for_rows(
+                self.db.as_ref(),
+                tenant_id,
+                database_id,
+                &page_records,
+                canonical,
+                self.property_value_mode,
+            )
+            .await?;
+            (fields, data_rows, total, canonical)
+        };
         let mut data_vec = vec![];
         for data_row in data_rows {
             let data = hydrate_data_row(
@@ -712,6 +777,75 @@ impl DataRepository for DataRepositoryImpl {
         })?;
         let paginator = OffsetPaginator::new(page, total);
         Ok((DataCollection::new(data_vec), paginator))
+    }
+}
+
+/// Run COUNT only after the page has been read. Futures are lazy, so `count`
+/// does not start until `page` has completed: any record the page could see
+/// was committed before COUNT ran, and the total is never older than the
+/// page (the ordering the sequential implementation had).
+async fn page_then_count<T>(
+    page: impl std::future::Future<Output = errors::Result<T>>,
+    count: impl std::future::Future<Output = errors::Result<i64>>,
+) -> errors::Result<(T, i64)> {
+    let page = page.await?;
+    let count = count.await?;
+    Ok((page, count))
+}
+
+#[cfg(test)]
+mod page_then_count_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    #[tokio::test]
+    async fn the_count_is_never_older_than_the_page() {
+        // An empty database: one record is committed while the page is
+        // being read, so the page returns it. COUNT must include it.
+        let committed = AtomicI64::new(0);
+        let page = async {
+            committed.fetch_add(1, Ordering::SeqCst);
+            tokio::task::yield_now().await;
+            Ok(vec!["record"])
+        };
+        let count = async { Ok(committed.load(Ordering::SeqCst)) };
+        let (rows, total) = page_then_count(page, count).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(total, 1, "items=1 with total=0 must be impossible");
+        let paginator = OffsetPaginator::new(
+            OffsetPage::new(1, 20).unwrap(),
+            u32::try_from(total).unwrap(),
+        );
+        assert_eq!(paginator.total_pages, 1);
+    }
+
+    #[tokio::test]
+    async fn an_insert_outside_a_full_page_is_counted() {
+        // 20 records; the 21st is committed while page 1 (10 rows) is read.
+        let committed = AtomicI64::new(20);
+        let page = async {
+            committed.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![(); 10])
+        };
+        let count = async { Ok(committed.load(Ordering::SeqCst)) };
+        let (_, total) = page_then_count(page, count).await.unwrap();
+        assert_eq!(total, 21);
+    }
+
+    #[tokio::test]
+    async fn a_failed_page_does_not_run_the_count() {
+        let counted = AtomicI64::new(0);
+        let error = page_then_count(
+            async { Err::<(), _>(errors::Error::not_found("page")) },
+            async {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Ok(0)
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("page"));
+        assert_eq!(counted.load(Ordering::SeqCst), 0);
     }
 }
 
