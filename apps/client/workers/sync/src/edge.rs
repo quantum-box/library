@@ -1,4 +1,4 @@
-use crate::{auth, model::INTERNAL};
+use crate::auth;
 use library_worker_common::{
     bounded_stream, fetch_timeout, header, json, now, random_id, variable,
 };
@@ -196,27 +196,6 @@ pub async fn fetch(mut request: Request, env: Env) -> Result<Response> {
         };
         let status = result.status_code();
         let log = value!({"event":"engine_proxy","id":random_id(18)?,"requestId":id,"timestamp":js_sys::Date::new_0().to_iso_string().as_string(),"method":request.method().to_string(),"path":path,"target":target,"status":status,"durationMs":now()-start,"requestBytes":request_bytes,"ok":(200..300).contains(&status)});
-        if path == "/api/engine/push" && (200..300).contains(&status) {
-            let h = Headers::new();
-            h.set(INTERNAL, "1")?;
-            let mut init = RequestInit::new();
-            init.with_method(Method::Post).with_headers(h);
-            let notification = Request::new_with_init(
-                "https://sync.internal/internal/engine-changed",
-                &init,
-            )?;
-            if env
-                .durable_object("PHOTON_SYNC_ROOMS")?
-                .get_by_name("records")?
-                .fetch_with_request(notification)
-                .await
-                .is_err()
-            {
-                console_warn!(
-                    "{{\"event\":\"engine_changed_broadcast_failed\"}}"
-                );
-            }
-        }
         // Preserve the upstream response stream; diagnostics do not buffer it.
         let headers = result.headers().clone();
         let mut result = counted(result.with_headers(headers), log, start)?;
