@@ -91,6 +91,27 @@ describe('database view definitions', () => {
     })
   })
 
+  /**
+   * Rewriting an unchanged view used to log a full copy of it in the shared
+   * workspace room on every database-list change; the room grew to ~11 MB of
+   * identical default views.
+   */
+  it('logs no Yjs update when an unchanged view is written again', () => {
+    const doc = new Y.Doc()
+    const ymap = doc.getMap<string>('view')
+    const [view] = getDefaultDatabaseViews(ALL_DATABASES_ID)
+    writeDatabaseViewToYMap(ymap, view)
+
+    let updates = 0
+    doc.on('update', () => {
+      updates += 1
+    })
+    writeDatabaseViewToYMap(ymap, view)
+    writeDatabaseViewToYMap(ymap, { ...view })
+
+    expect(updates).toBe(0)
+  })
+
   it('falls back to the default timeline settings when a stored view has none', () => {
     const doc = new Y.Doc()
     const ymap = doc.getMap<string>('view')
