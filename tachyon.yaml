@@ -115,35 +115,6 @@ spec:
               valueFrom:
                 secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
       envVars:
-        # PLT-4534: IaC currently reconciles base envVars. Mirror the
-        # selected Preview overlay with explicit target scope for this test.
-        # Remove this mirror after the Preview env reconciliation fix ships.
-        - name: LIBRARY_TENANT_ID
-          target: preview
-          value: "tn_01j91h09tpj5ehwbwfwfxpak2b"
-        - name: GITHUB_REDIRECT_URI
-          target: preview
-          value: "https://api.n1.tachy.one/v1/integrations/callback/github"
-        - name: LIBRARY_ENABLE_EXPERIMENTAL_INTEGRATIONS
-          target: preview
-          value: "true"
-        - name: LIBRARY_EXTERNAL_SYNC_ENGINE_ENABLED
-          target: preview
-          value: "true"
-        - name: LIBRARY_GITHUB_OAUTH_BROKER_ENABLED
-          target: preview
-          value: "true"
-        - name: LIBRARY_API_BASE_URL
-          target: preview
-          value: "https://pr400--library-api.txcloud.app"
-        - name: LIBRARY_EXTERNAL_SYNC_OUTBOX_SCAN_AFTER
-          target: preview
-          value: "2026-09-11T00:00:00Z"
-        - name: EXTERNAL_SYNC_SCANNER_TOKEN
-          target: preview
-          type: credential
-          valueFrom:
-            secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
         - name: DATABASE_URL
           type: credential
           valueFrom:
