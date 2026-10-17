@@ -36,3 +36,34 @@
 
 Library の Bounded Context と Photon との境界は、リポジトリルートの
 [`docs/specs/decisions/`](../../../docs/specs/decisions/) にある ADR が正本です。
+
+## Repository node view
+
+The Workflow view can render a KPI tree or another graph of repository Data. KPI
+nodes are ordinary Data, and existing Property definitions supply their values.
+There is no separate metric model.
+
+- Use **Node properties** to select which repository Properties appear on cards.
+- Choose a same-repository **Relation** under **Connections** to draw its links.
+  The direction is source → target: the source Data's selected Relation contains
+  the target Data ID. Drawing or deleting these connections updates that Property.
+- Choose **View annotations** for free-form connections and editable edge labels.
+  These lines do not modify repository Relations; existing canvas lines retain
+  this meaning when a Relation is selected.
+- Enter a title and optionally choose a parent to create Data from the canvas.
+  With a Relation selected, the parent references the new child. Otherwise the
+  parent/child connection is a view annotation. If the second write fails, the
+  new Data remains available and the view reports the missing connection.
+- **Auto arrange** lays out the graph from left to right. Branches can be collapsed
+  and expanded. The KPI template prevents newly drawn cycles in the displayed
+  graph; it does not impose a new constraint on the repository's Relation schema.
+- Select a node and use **Open data**, or double-click it, to edit its ordinary
+  Data and Properties. **Remove from view** removes its placement and attached
+  annotation lines, retaining the Data and its Relations.
+
+Selected Properties, the selected Relation, collapsed branches, labels, and
+positions are saved with the canvas and synchronized using the existing Yjs
+channel. Legacy canvases remain readable. Repository listings are paginated;
+**Load more** includes further Data in the picker, and **Refresh** reloads the
+repository after changes elsewhere. Cross-repository Relations remain editable
+in the Data editor but are not offered as this repo view's connection source.

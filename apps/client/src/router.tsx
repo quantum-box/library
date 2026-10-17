@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+import { RepositoryWorkflowView } from './components/RepositoryWorkflowView'
 import {
   createRouter,
   createRoute,
@@ -1171,6 +1172,7 @@ function DataWorkspace({
     handleUpdateRecord,
     handleCreateRecord,
     handleDeleteRecord,
+    syncRecord,
   } = useDatabaseRecords()
   const {
     databases,
@@ -1180,6 +1182,10 @@ function DataWorkspace({
     repositoriesError,
   } = useWorkspaceDatabases()
   const selectedDatabase = getDatabaseProject(databases, database)
+  const workflowRepoTarget = useMemo(() => selectedDatabase?.orgUsername && selectedDatabase.repoUsername ? {
+    org: selectedDatabase.orgUsername, repo: selectedDatabase.repoUsername,
+    operatorId: selectedDatabase.operatorId,
+  } : null, [selectedDatabase?.orgUsername, selectedDatabase?.repoUsername, selectedDatabase?.operatorId])
   const repositoryRecordsRevision = useMemo(() => {
     if (
       !selectedDatabase?.orgUsername ||
@@ -1495,7 +1501,7 @@ function DataWorkspace({
     selectedDatabase?.orgUsername && selectedDatabase?.repoUsername
   )
   const showDataEditorPage = Boolean(
-    selectedIdentifier && effectiveView.type !== 'workflow' && (!database || selectedDatabase)
+    selectedIdentifier && (effectiveView.type !== 'workflow' || useLibraryRepoTable) && (!database || selectedDatabase)
   )
   const showLibraryRepoTable =
     !showSignedInDashboard && effectiveView.type === 'table' && useLibraryRepoTable
@@ -1679,7 +1685,13 @@ function DataWorkspace({
             />
           )}
           {!showSignedInDashboard && effectiveView.type === 'workflow' && (
-            <WorkflowView
+            selectedDatabase?.orgUsername && selectedDatabase.repoUsername ? <RepositoryWorkflowView
+              key={`${selectedDatabase.id}:${effectiveView.workflowCanvasKey}`}
+              databaseId={effectiveView.workflowCanvasKey}
+              target={workflowRepoTarget!}
+              onOpenRecord={handleSelectRecord}
+              onRecordSaved={syncRecord}
+            /> : <WorkflowView
               databaseId={effectiveView.workflowCanvasKey}
               records={databaseRecords}
               onUpdateRecord={handleUpdateRecord}
@@ -1765,22 +1777,10 @@ function RecordDetailPanel({
     syncRecords,
   } = useDatabaseRecords()
   const { databases } = useWorkspaceDatabases()
-  const { getViewsForDatabase } = useDatabaseViews()
   const navigate = useNavigate()
   const selectedDatabase = getDatabaseProject(databases, database)
-  const selectedView = useMemo(
-    () =>
-      resolveDatabaseViewFromParam(
-        getViewsForDatabase(database),
-        getDatabaseViewScopeId(database),
-        view,
-      ),
-    [database, getViewsForDatabase, view],
-  )
   const useLibraryEditor = Boolean(
-    selectedView?.type !== 'workflow' &&
-    selectedDatabase?.orgUsername &&
-    selectedDatabase.repoUsername,
+    selectedDatabase?.orgUsername && selectedDatabase.repoUsername,
   )
   const [detailFailure, setDetailFailure] = useState<{
     recordId: string

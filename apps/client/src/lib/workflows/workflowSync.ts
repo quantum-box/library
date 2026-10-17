@@ -1,3 +1,4 @@
+import { normalizeWorkflowSettings, type WorkflowSettings } from './workflowGraph'
 import { ydoc, workflowCanvasesMap } from '../yjs/yjsProvider'
 import type { PersistedWorkflowCanvasNode, WorkflowCanvas, WorkflowCanvasTemplateId } from './workflowDb'
 import type { Edge } from '@xyflow/react'
@@ -42,6 +43,7 @@ function parseWorkflowCanvas(value: string | undefined): WorkflowCanvas | null {
         parsed.selectedTemplateId === 'kpi-tree' ? 'kpi-tree' : 'business-flow',
       nodes: parsed.nodes as PersistedWorkflowCanvasNode[],
       edges: parsed.edges as Edge[],
+      settings: normalizeWorkflowSettings(parsed.settings),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
     }
   } catch {
@@ -58,6 +60,7 @@ export function saveSyncedWorkflowCanvas(input: {
   selectedTemplateId: WorkflowCanvasTemplateId
   nodes: PersistedWorkflowCanvasNode[]
   edges: Edge[]
+  settings?: WorkflowSettings
 }): WorkflowCanvas {
   const canvas: WorkflowCanvas = {
     ...input,

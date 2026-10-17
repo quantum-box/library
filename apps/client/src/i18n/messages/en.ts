@@ -13,6 +13,27 @@
  * `src/i18n/catalogs.test.ts` fails until the translations catch up.
  */
 export const en = {
+  "workflow.removeFromView": "Remove from view",
+  "workflow.openData": "Open data",
+  "workflow.arrange": "Auto arrange",
+  "workflow.expandAll": "Expand all",
+  "workflow.expand": "Expand branch",
+  "workflow.collapse": "Collapse branch",
+  "workflow.properties": "Node properties",
+  "workflow.connections": "Connections",
+  "workflow.annotations": "View annotations",
+  "workflow.newData": "New data title",
+  "workflow.parent": "Parent node",
+  "workflow.noParent": "No parent",
+  "workflow.edgeLabel": "Connection label",
+  "workflow.relationHint": "Connections update this Relation (source → target).",
+  "workflow.operationFailed": "Could not save the change. Please try again.",
+  "workflow.cycleRejected": "This connection would create a cycle.",
+  "workflow.loadFailed": "Could not load repository data.",
+  "workflow.retry": "Retry",
+  "workflow.loadMore": "Load more",
+  "workflow.partialData": "Only loaded data is shown.",
+  "workflow.createdUnlinked": "Data was created, but its Relation could not be saved. Add it from the list and reconnect.",
   // ---------------------------------------------------------------- common
   'docs.openPublic': "Open public docs",
   'docs.copyUrl': "Copy URL",
