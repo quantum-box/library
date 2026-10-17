@@ -72,15 +72,15 @@ type WorkflowRecordNode = Node<WorkflowNodeData, 'workflowRecord'>
 const workflowTemplates: WorkflowTemplate[] = [
   {
     id: 'business-flow',
-    labelKey: 'workflow.template.businessFlow.label',
-    descriptionKey: 'workflow.template.businessFlow.description',
-    canvasHintKey: 'workflow.template.businessFlow.canvasHint',
+    labelKey: 'workflow.template.graph.label',
+    descriptionKey: 'workflow.template.graph.description',
+    canvasHintKey: 'workflow.template.graph.canvasHint',
   },
   {
-    id: 'kpi-tree',
-    labelKey: 'workflow.template.kpiTree.label',
-    descriptionKey: 'workflow.template.kpiTree.description',
-    canvasHintKey: 'workflow.template.kpiTree.canvasHint',
+    id: 'tree',
+    labelKey: 'workflow.template.tree.label',
+    descriptionKey: 'workflow.template.tree.description',
+    canvasHintKey: 'workflow.template.tree.canvasHint',
   },
 ]
 
@@ -130,8 +130,8 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
           {statusConfig[data.status].icon} {t(statusConfig[data.status].labelKey)}
         </span>
         <span>
-          {data.templateId === 'kpi-tree'
-            ? t('workflow.node.kpiTreeItem')
+          {data.templateId === 'tree'
+            ? t('workflow.node.treeItem')
             : t('workflow.node.flowItem')}
         </span>
       </div>
@@ -188,7 +188,7 @@ function createRecordNode(
 }
 
 function isWorkflowTemplateId(value: unknown): value is WorkflowTemplateId {
-  return value === 'business-flow' || value === 'kpi-tree'
+  return value === 'business-flow' || value === 'tree'
 }
 
 function isRecordSnapshot(
@@ -747,7 +747,7 @@ export function WorkflowView({
   const handleConnect = (connection: Connection) => {
     if (busy || !connection.source || !connection.target) return
     const cyclic = wouldCreateCycle(allEdges, connection.source, connection.target)
-    if (connection.source === connection.target || (selectedTemplateId === 'kpi-tree' && cyclic)) {
+    if (connection.source === connection.target || (selectedTemplateId === 'tree' && cyclic)) {
       setOperationError(t('workflow.cycleRejected'))
       return
     }

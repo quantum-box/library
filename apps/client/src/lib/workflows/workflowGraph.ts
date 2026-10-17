@@ -1,5 +1,10 @@
 import type { Edge, XYPosition } from '@xyflow/react'
 
+/** Accept the former preview template id without exposing domain terminology. */
+export function normalizeWorkflowTemplateId(value: unknown): 'business-flow' | 'tree' {
+  return value === 'tree' || value === 'kpi-tree' ? 'tree' : 'business-flow'
+}
+
 export interface WorkflowSettings {
   visiblePropertyIds: string[]
   relationPropertyId: string

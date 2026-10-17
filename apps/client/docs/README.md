@@ -39,9 +39,10 @@ Library の Bounded Context と Photon との境界は、リポジトリルー�
 
 ## Repository node view
 
-The Workflow view can render a KPI tree or another graph of repository Data. KPI
-nodes are ordinary Data, and existing Property definitions supply their values.
-There is no separate metric model.
+Library remains a planet-scale CMS. The Workflow view displays repository Data
+as nodes, existing Properties as fields, and Relations as connections. Tree
+layout is a generic way to view hierarchical content, not a domain-specific
+content model.
 
 - Use **Node properties** to select which repository Properties appear on cards.
 - Choose a same-repository **Relation** under **Connections** to draw its links.
@@ -55,7 +56,7 @@ There is no separate metric model.
   parent/child connection is a view annotation. If the second write fails, the
   new Data remains available and the view reports the missing connection.
 - **Auto arrange** lays out the graph from left to right. Branches can be collapsed
-  and expanded. The KPI template prevents newly drawn cycles in the displayed
+  and expanded. The Tree layout prevents newly drawn cycles in the displayed
   graph; it does not impose a new constraint on the repository's Relation schema.
 - Select a node and use **Open data**, or double-click it, to edit its ordinary
   Data and Properties. **Remove from view** removes its placement and attached

@@ -1,10 +1,10 @@
-import { normalizeWorkflowSettings, type WorkflowSettings } from './workflowGraph'
+import { normalizeWorkflowSettings, normalizeWorkflowTemplateId, type WorkflowSettings } from './workflowGraph'
 import { PGlite } from '@electric-sql/pglite'
 import type { Edge, XYPosition } from '@xyflow/react'
 import { appKitConfig } from '../../app/kitConfig'
 import type { Priority, Status } from '../../data/mock'
 
-export type WorkflowCanvasTemplateId = 'business-flow' | 'kpi-tree'
+export type WorkflowCanvasTemplateId = 'business-flow' | 'tree'
 
 export interface PersistedWorkflowCanvasNode {
   id: string
@@ -62,10 +62,6 @@ const dbPromise = PGlite.create({
   return db
 })
 
-function isWorkflowTemplateId(value: unknown): value is WorkflowCanvasTemplateId {
-  return value === 'business-flow' || value === 'kpi-tree'
-}
-
 function parseJsonArray<T>(value: string): T[] {
   try {
     const parsed = JSON.parse(value)
@@ -76,14 +72,14 @@ function parseJsonArray<T>(value: string): T[] {
 }
 
 function toWorkflowCanvas(row: WorkflowCanvasRow): WorkflowCanvas {
-  const selectedTemplateId = isWorkflowTemplateId(row.selected_template_id)
-    ? row.selected_template_id
-    : 'business-flow'
+  const selectedTemplateId = normalizeWorkflowTemplateId(row.selected_template_id)
 
   return {
     databaseId: row.database_id,
     selectedTemplateId,
-    nodes: parseJsonArray<PersistedWorkflowCanvasNode>(row.nodes_json),
+    nodes: parseJsonArray<PersistedWorkflowCanvasNode>(row.nodes_json).map((node) => ({
+      ...node, templateId: normalizeWorkflowTemplateId(node.templateId),
+    })),
     edges: parseJsonArray<Edge>(row.edges_json),
     updatedAt: row.updated_at,
     settings: normalizeWorkflowSettings(JSON.parse(row.settings_json || '{}')),

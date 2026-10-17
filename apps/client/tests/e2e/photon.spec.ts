@@ -170,7 +170,7 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
     await expect(page.getByTestId('workflow-template-business-flow')).toBeVisible()
-    await expect(page.getByTestId('workflow-template-kpi-tree')).toBeVisible()
+    await expect(page.getByTestId('workflow-template-tree')).toBeVisible()
     await expect(page.getByText('Workflow Canvas')).toBeVisible()
     await expect(page.locator('.react-flow__controls')).toBeVisible()
 
@@ -250,14 +250,14 @@ test.describe('Library shell', () => {
     await addDatabaseView(page, 'workflow')
 
     await page.getByTestId('workflow-add-record').first().click()
-    await page.getByTestId('workflow-template-kpi-tree').click()
+    await page.getByTestId('workflow-template-tree').click()
     await page.getByTestId('workflow-add-record').nth(1).click()
 
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
     await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
-    await expect(page.getByText('KPI tree item')).toBeVisible()
+    await expect(page.getByText('Data node')).toBeVisible()
 
     const sourceHandle = page.getByTestId('workflow-handle-source').first()
     const targetHandle = page.getByTestId('workflow-handle-target').nth(1)
@@ -272,14 +272,14 @@ test.describe('Library shell', () => {
     }
     await expect(page.getByTestId('workflow-persistence-status')).toHaveAttribute(
       'data-saved-signature',
-      'kpi-tree:2:1'
+      'tree:2:1'
     )
     await page.waitForTimeout(500)
 
     await page.reload()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.locator('.react-flow__edge')).toHaveCount(1)
-    await expect(page.getByText('KPI tree item')).toBeVisible()
+    await expect(page.getByText('Data node')).toBeVisible()
 
     await page.getByTestId('workflow-node-record').first().getByText('Prepare release notes', { exact: true }).dblclick()
     await expect(page.getByTestId('data-editor-page')).toBeVisible()
@@ -320,7 +320,7 @@ test.describe('Library shell', () => {
     } })
     await page.goto('/quantum-box/photon-core/data')
     await addDatabaseView(page, 'workflow')
-    await page.getByTestId('workflow-template-kpi-tree').click()
+    await page.getByTestId('workflow-template-tree').click()
     await page.getByTestId('workflow-add-record').first().click()
     await page.getByTestId('workflow-add-record').nth(1).click()
     await page.getByText('Node properties', { exact: true }).click()
