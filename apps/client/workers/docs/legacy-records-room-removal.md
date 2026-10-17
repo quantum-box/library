@@ -125,10 +125,13 @@
       ```
 
    2. Tachyon に保存したシークレットを消す（以後のデプロイで、また渡らないようにする）。
+      `tachyon env list` の通常の出力は値を表示するので使わない。`--json` から ID・キー・
+      対象・シークレットかどうかだけを取り出して、消す ID を確かめる。
 
       ```bash
-      tachyon env list library-client-sync --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b
-      tachyon env delete library-client-sync <PHOTON_SYNC_MAINTENANCE_TOKEN の ID> --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b
+      tachyon env list library-client-sync --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b --json \
+        | jq -r '.[] | select(.key == "PHOTON_SYNC_MAINTENANCE_TOKEN") | [.id, .key, .target, .is_secret] | @tsv'
+      tachyon env delete library-client-sync <上で表示された ID> --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b
       ```
 
    3. デプロイ後、`GET /internal/sync/legacy-room` が 404 を返すことを確かめる。
