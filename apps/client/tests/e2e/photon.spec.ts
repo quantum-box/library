@@ -329,12 +329,9 @@ test.describe('Library shell', () => {
     const secondContext = await browser.newContext({ storageState: e2eAuthState })
     const secondPage = await secondContext.newPage()
     await secondPage.goto(sharedViewUrl)
-    await expect(page.getByTestId('sync-presence-status')).toHaveText(/([2-9]|\d{2,}) online/, {
-      timeout: 15_000,
-    })
-    await expect(secondPage.getByTestId('sync-presence-status')).toHaveText(/([2-9]|\d{2,}) online/, {
-      timeout: 15_000,
-    })
+    // Both tabs are in the room before either edits.
+    await expect(page.getByTestId('sync-presence-status')).toHaveText('Synced', { timeout: 15_000 })
+    await expect(secondPage.getByTestId('sync-presence-status')).toHaveText('Synced', { timeout: 15_000 })
 
     await page.getByTestId('workflow-add-record').first().click()
     await expect(page.getByTestId('workflow-persistence-status')).toHaveAttribute(
@@ -738,28 +735,17 @@ test.describe('Library shell', () => {
     await expect(page.getByText('quantum-box/missing-repository is not available')).toBeVisible()
   })
 
-  test('shows sync presence as clients connect', async ({ page, context }) => {
+  test('shows the connection state without a head count', async ({ page, context }) => {
+    // The records room is per user, so a count would only be this user's
+    // own tabs; the sidebar says whether it is synced instead.
     await page.goto('/home')
-
-    await expect(page.getByTestId('sync-presence-status')).toHaveText(/\d+ online/)
-    const initialOnlineText = await page.getByTestId('sync-presence-status').innerText()
-    const initialOnlineCount = Number(initialOnlineText.split(' ')[0])
+    await expect(page.getByTestId('sync-presence-status')).toHaveText('Synced', { timeout: 15_000 })
 
     const secondPage = await context.newPage()
     await secondPage.goto('/home')
-
-    await expect
-      .poll(
-        async () => Number((await secondPage.getByTestId('sync-presence-status').innerText()).split(' ')[0]),
-        { timeout: 15_000 }
-      )
-      .toBeGreaterThanOrEqual(initialOnlineCount + 1)
-    await expect
-      .poll(
-        async () => Number((await page.getByTestId('sync-presence-status').innerText()).split(' ')[0]),
-        { timeout: 15_000 }
-      )
-      .toBeGreaterThanOrEqual(initialOnlineCount + 1)
+    await expect(secondPage.getByTestId('sync-presence-status')).toHaveText('Synced', { timeout: 15_000 })
+    await expect(page.getByTestId('sync-presence-status')).toHaveText('Synced')
+    await expect(page.getByTestId('sync-presence-status')).not.toContainText('online')
 
     await secondPage.close()
   })
