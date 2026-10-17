@@ -69,13 +69,21 @@
    export PHOTON_SYNC_MAINTENANCE_TOKEN="$(openssl rand -base64 48 | tr -d '\n')"
    ```
 
-2. 本番ワーカーにシークレットとして設定する。ワーカーの設定は Tachyon が
-   `tachyon.yaml` の `library-client-sync` から生成しているため、Tachyon の再デプロイで
-   シークレットが保たれるかを事前に確認しておくこと。
+2. 本番ワーカーにシークレットとして渡す。ワーカーの設定は Tachyon が `tachyon.yaml` の
+   `library-client-sync` から生成しているので、Tachyon のシークレットとして保存する。
 
    ```bash
-   printf '%s' "$PHOTON_SYNC_MAINTENANCE_TOKEN" | npx wrangler secret put PHOTON_SYNC_MAINTENANCE_TOKEN --name library-client-sync
+   printf '%s' "$PHOTON_SYNC_MAINTENANCE_TOKEN" | tachyon env set library-client-sync --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b --secret PHOTON_SYNC_MAINTENANCE_TOKEN --value - --target production
    ```
+
+   - このコマンドは手元の `tachyon.yaml` にも参照を書き足すが、書き足し方が崩れることがある。
+     手元の差分は戻し、宣言は `library-client-sync` の `environments.production.envVars` に
+     `type: credential` で手で書いて PR にする。
+   - 保存したシークレットは、次の本番デプロイでワーカーに渡る（宣言がなくても渡ることがあった）。
+     `GET /internal/sync/legacy-room` が 404 から 200 に変わったことで確かめる。
+   - Tachyon を通さずに直接入れるなら
+     `npx wrangler secret put PHOTON_SYNC_MAINTENANCE_TOKEN --name library-client-sync`。
+     この場合も、後片付けは手順 5 と同じにする。
 
 3. 確認（読み取りだけ）。`empty: false` で、サイズが想定（約 15MB）に近いことを見る。
 
@@ -100,17 +108,42 @@
 
    応答の `before` が削除前、`after` が削除後の確認結果。
 
-5. シークレットを消す。以後このルートは 404 になる。
+5. シークレットを外す。**宣言を消すだけでは足りない。** Worker に一度渡ったシークレットは、
+   デプロイでは消えない（`wrangler deploy --help` も、デプロイはシークレットを削除しないと
+   説明している）。宣言を消しても、Tachyon に保存したシークレットが残っていても、ルートは
+   使えるまま、または次のデプロイでまた使えるようになる。次の順に行う。
 
-   ```bash
-   npx wrangler secret delete PHOTON_SYNC_MAINTENANCE_TOKEN --name library-client-sync
-   ```
+   1. `tachyon.yaml` の宣言を、同じ名前の**普通の値（番兵）**に置き換える PR を出してマージ・
+      デプロイする。プレビューの `EXTERNAL_SYNC_SCANNER_TOKEN` と同じやり方で、普通の値で
+      上書きすると、渡っていたシークレットが外れる。値は 32 文字未満にする（保守用ルートは
+      32 文字未満のトークンを無効として扱い、404 を返す）。
+
+      ```yaml
+      # Plain sentinel removes the maintenance secret binding; the route stays 404.
+      - name: PHOTON_SYNC_MAINTENANCE_TOKEN
+        value: "disabled"
+      ```
+
+   2. Tachyon に保存したシークレットを消す（以後のデプロイで、また渡らないようにする）。
+      `tachyon env list` の通常の出力は値を表示するので使わない。`--json` から ID・キー・
+      対象・シークレットかどうかだけを取り出して、消す ID を確かめる。
+
+      ```bash
+      tachyon env list library-client-sync --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b --json \
+        | jq -r '.[] | select(.key == "PHOTON_SYNC_MAINTENANCE_TOKEN") | [.id, .key, .target, .is_secret] | @tsv'
+      tachyon env delete library-client-sync <上で表示された ID> --config tachyon.yaml --tenant-id tn_01j91h09tpj5ehwbwfwfxpak2b
+      ```
+
+   3. デプロイ後、`GET /internal/sync/legacy-room` が 404 を返すことを確かめる。
+      `wrangler` で直接入れた場合は、代わりに
+      `npx wrangler secret delete PHOTON_SYNC_MAINTENANCE_TOKEN --name library-client-sync`
+      でもよいが、番兵の PR も出しておくと、後から誰かが同じ名前で渡し直すのを防げる。
 
 ## 4. 確認方法
 
 1. 手順 3-4 の応答で `after.empty` が `true`、`after.snapshot` と `after.updates` が `null`。
-2. シークレット削除の前に、もう一度「確認」を実行して `empty: true` を確かめてもよい。
-3. シークレット削除後、`GET /internal/sync/legacy-room` が 404 を返すこと。
+2. シークレットを外す前に、もう一度「確認」を実行して `empty: true` を確かめてもよい。
+3. 番兵の PR のデプロイ後、`GET /internal/sync/legacy-room` が 404 を返すこと。
 4. Web クライアントで /home を開き、表示とリアルタイム同期（サイドバーの接続表示）が
    変わらないこと。利用者ごとの room は削除の対象外なので、影響はないはず。
 5. `wrangler tail library-client-sync` に `sync_maintenance`（`action: purge`、
@@ -118,7 +151,7 @@
 
 ## 5. 切り戻し
 
-- **削除前（手順 3-3 まで）**：保存データには何も変更していない。シークレットを消す
+- **削除前（手順 3-3 まで）**：保存データには何も変更していない。シークレットを外す
   （手順 3-5）だけでよい。
 - **削除後**：保守用ルートには復元機能がない。この room は正本ではなく、どのクライアントも
   もう読まないため、通常は復元の必要がない。

@@ -388,6 +388,12 @@ spec:
               value: "https://library-api.txcloud.app"
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
               value: "false"
+            # The old shared records room was purged on 2026-10-17
+            # (apps/client/workers/docs/legacy-records-room-removal.md).
+            # Plain sentinel removes the maintenance secret binding: a token
+            # under 32 characters keeps the maintenance route a 404.
+            - name: PHOTON_SYNC_MAINTENANCE_TOKEN
+              value: "disabled"
         preview:
           envVars:
             - name: PHOTON_CLOUD_ENGINE_BASE_URL
