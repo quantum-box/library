@@ -31,6 +31,17 @@ Preview keeps `PHOTON_LIVE_ENABLED=false`. Cloudflare deploy still requires
 `PHOTON_LIVE_ALLOWED_ORIGINS`, so `tachyon.yaml` uses the reserved
 `https://preview-disabled.invalid` origin to keep real clients excluded.
 
+Preview's `PHOTON_CLOUD_ENGINE_BASE_URL` uses `valueFrom.internalService` to
+resolve the active `library-api` deployment for the same PR. It must never fall
+back to the production API. The API preview must be active before its dependent
+Worker can deploy.
+
+For an isolated frontend preview, set branch-scoped
+`LIBRARY_PREVIEW_API_BASE_URL` and `LIBRARY_PREVIEW_SYNC_WS_URL` together.
+`build:preview` applies them after manifest defaults. Leave
+`LIBRARY_PREVIEW_DATA_LIVE_URL` empty while Live is disabled; provide it only
+when the isolated Worker has Live enabled and its host matches the Sync URL.
+
 This replaced a manual deployment path that let the screen follow `main` through
 its own Cloud App while the Worker did not. On 2026-09-08 production still ran
 the 09-05 build. Every Live room answered the WebSocket upgrade with 409, and
