@@ -94,12 +94,6 @@ impl DurableObject for PhotonSyncRoom {
         Self { state }
     }
     async fn fetch(&self, request: Request) -> Result<Response> {
-        if request.path() == "/internal/engine-changed"
-            && header(&request, INTERNAL).as_deref() == Some("1")
-        {
-            broadcast(&self.state, &json!({"type":"engine-changed"}));
-            return Response::empty();
-        }
         if header(&request, INTERNAL).as_deref() == Some("1") {
             match request.path().as_str() {
                 maintenance::INSPECT => {
@@ -145,6 +139,11 @@ impl DurableObject for PhotonSyncRoom {
         for update in &stored.updates {
             pair.server.send_with_bytes(update)?;
         }
+        // Tells this socket alone that the stored state is complete. A client
+        // uploads what the room lacks only then: an update relayed from another
+        // client, or presence from a peer leaving, can arrive while the reads
+        // above are still in flight, so neither marks the end.
+        send(&pair.server, &json!({"type":"synced"}));
         self.compact_later(stored.updates.len() as u64).await?;
         presence(&self.state, None);
         Response::from_websocket(pair.client)
@@ -156,12 +155,10 @@ impl DurableObject for PhotonSyncRoom {
     ) -> Result<()> {
         match message {
             WebSocketIncomingMessage::String(value) => {
-                if serde_json::from_str::<Value>(&value).ok().is_some_and(
-                    |v| {
-                        v["type"] == "awareness"
-                            || v["type"] == "engine-changed"
-                    },
-                ) {
+                if serde_json::from_str::<Value>(&value)
+                    .ok()
+                    .is_some_and(|v| v["type"] == "awareness")
+                {
                     text(&self.state, &sender, &value)
                 }
             }

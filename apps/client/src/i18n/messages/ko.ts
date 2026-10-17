@@ -86,8 +86,6 @@ export const ko: LocaleMessages = {
   'sidebar.connection.synced': '동기화됨',
   'sidebar.connection.connecting': '연결 중',
   'sidebar.connection.offline': '오프라인',
-  'sidebar.connection.online.one': '{count}명 접속 중',
-  'sidebar.connection.online.other': '{count}명 접속 중',
   'sidebar.organizations.all': '전체 조직',
   'sidebar.organizations.searchPlaceholder': '조직 찾기…',
   'sidebar.organizations.add': '조직 추가',

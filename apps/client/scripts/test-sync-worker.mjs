@@ -186,18 +186,25 @@ test('authorization forwards only caller identity and issues one-time tickets wi
   s.state.authorizationStatus = 403
   const denied = await s.issue(); assert.equal(denied.status, 403); assert.doesNotMatch(await denied.text(), /Seed|tenant-test/)
 })
-test('generic Yjs relay exchanges edits, presence and engine-changed; recovers after restart', async (t) => {
+test('generic Yjs relay exchanges edits and presence, relays no engine-changed; recovers after restart', async (t) => {
   const s = await scenario(t); const a = await s.sync(); const b = await s.sync()
   await a.take('presence', (v) => v.onlineCount === 2)
   a.edit('hello'); await until(() => b.doc.getText('body').toString() === 'hello')
   b.edit(' world'); await until(() => a.doc.getText('body').toString() === 'hello world')
-  // A client's own engine-changed frame still reaches its other tabs.
-  a.ws.send(JSON.stringify({ type: 'engine-changed' })); await b.take('engine-changed')
-  // A push is proxied with the caller's token. Its broadcast goes to the
-  // legacy "records" room, which no ticket can name, so no user room hears it.
+  // A joining socket alone is told, after the stored state, that it is complete.
+  const joiner = await s.sync()
+  assert.equal(joiner.doc.getText('body').toString(), 'hello world')
+  assert.equal(joiner.messages.filter((m) => m.type === 'synced').length, 1)
+  // Peers already in the room keep only the one from their own join.
+  for (const peer of [a, b]) assert.equal(peer.messages.filter((m) => m.type === 'synced').length, 1)
+  joiner.ws.close()
+  // No client reads engine-changed, so the room drops one a client sends.
+  a.ws.send(JSON.stringify({ type: 'engine-changed' }))
+  // A push is proxied with the caller's token and notifies no room.
   const push = await s.fetch('/api/engine/push', { method: 'POST', body: JSON.stringify({ ops: [] }), headers: { 'content-type': 'application/json', authorization: 'Bearer user-token' } })
   assert.equal(push.status, 200); assert.equal(s.state.calls.at(-1).headers.authorization, 'Bearer user-token')
-  await new Promise((r) => setTimeout(r, 50)); assert.equal(a.messages.some((m) => m.type === 'engine-changed'), false)
+  await new Promise((r) => setTimeout(r, 50))
+  for (const c of [a, b]) assert.equal(c.messages.some((m) => m.type === 'engine-changed'), false)
   await s.restart(); const c = await s.sync(); await until(() => c.doc.getText('body').toString() === 'hello world')
 })
 test('/ws admits only a ticket holder, once, and only to the room named after them', async (t) => {
