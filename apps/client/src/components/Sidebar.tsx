@@ -282,7 +282,10 @@ export function Sidebar() {
     view?: string
   }
   const connectionStatus = useConnectionStatus()
-  const [expanded, setExpanded] = useState(true)
+  const [pinned, setPinned] = useState(true)
+  const [sidebarHovered, setSidebarHovered] = useState(false)
+  const [sidebarFocused, setSidebarFocused] = useState(false)
+  const expanded = pinned || sidebarHovered || sidebarFocused
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const mobileNavRef = useRef<HTMLDivElement>(null)
   const [createOrganizationOpen, setCreateOrganizationOpen] = useState(false)
@@ -433,7 +436,7 @@ export function Sidebar() {
       })
       if (closeMobile) closeMobileNav()
     } catch (error) {
-      if (!closeMobile && !expanded) setExpanded(true)
+      if (!closeMobile && !expanded) setPinned(true)
       setPersonalSpaceError(error instanceof Error ? error.message : t('common.error'))
     } finally {
       setPersonalSpaceBusy(false)
@@ -830,303 +833,328 @@ export function Sidebar() {
         </div>
       )}
 
-      <NativeSidebar
-        data-testid="side-nav"
-        collapsed={!expanded}
-        className="hidden gap-0 p-1.5 md:flex"
-        aria-label={t('sidebar.navigationLabel')}
+      <div
+        className={`relative hidden shrink-0 md:block ${pinned ? 'w-60' : 'w-0'}`}
+        onPointerEnter={() => setSidebarHovered(true)}
+        onPointerLeave={() => setSidebarHovered(false)}
+        onFocusCapture={() => setSidebarFocused(true)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setSidebarFocused(false)
+        }}
       >
-        <SidebarHeader className="h-7 px-1.5 text-xs">
-          {expanded ? (
-            <Link
-              to="/home"
-              className="min-w-0 flex-1"
-              aria-label={t('sidebar.workspaceHome', { workspace: appKitConfig.workspace.name })}
-            >
-              <img
-                src={libraryAppbarLogo}
-                alt="Library"
-                className="h-5 w-auto max-w-[7.5rem] object-contain dark:hidden"
-              />
-              <img
-                src={libraryAppbarLogoDark}
-                alt="Library"
-                className="hidden h-5 w-auto max-w-[7.5rem] object-contain dark:block"
-              />
-            </Link>
-          ) : (
-            <img src={libraryAppIcon} alt="Library" className="size-4" />
-          )}
-          {expanded && <span data-testid="sync-presence-status">{connectionIndicator}</span>}
-          {expanded && (
-            <Button
-              data-testid="toggle-side-nav"
-              variant="ghost"
-              size="icon"
-              className="size-6"
-              onClick={() => setExpanded(false)}
-              aria-label={t('sidebar.collapse')}
-            >
-              <PanelLeftClose aria-hidden="true" />
-            </Button>
-          )}
-        </SidebarHeader>
+        {!pinned && (
+          <button
+            type="button"
+            data-testid="reveal-side-nav"
+            aria-label={t('sidebar.expand')}
+            aria-expanded={expanded}
+            className="absolute inset-y-0 left-0 z-40 w-3 focus-visible:bg-selected focus-visible:outline-none"
+            onClick={() => setSidebarHovered(true)}
+          />
+        )}
+        <NativeSidebar
+          data-testid="side-nav"
+          collapsed={!expanded}
+          inert={!expanded}
+          className={`absolute inset-y-0 left-0 z-50 gap-0 p-1.5 ${expanded ? '' : 'invisible pointer-events-none'} ${!pinned ? 'shadow-xl' : ''}`}
+          aria-label={t('sidebar.navigationLabel')}
+        >
+          <SidebarHeader className="h-7 px-1.5 text-xs">
+            {expanded ? (
+              <Link
+                to="/home"
+                className="min-w-0 flex-1"
+                aria-label={t('sidebar.workspaceHome', { workspace: appKitConfig.workspace.name })}
+              >
+                <img
+                  src={libraryAppbarLogo}
+                  alt="Library"
+                  className="h-5 w-auto max-w-[7.5rem] object-contain dark:hidden"
+                />
+                <img
+                  src={libraryAppbarLogoDark}
+                  alt="Library"
+                  className="hidden h-5 w-auto max-w-[7.5rem] object-contain dark:block"
+                />
+              </Link>
+            ) : (
+              <img src={libraryAppIcon} alt="Library" className="size-4" />
+            )}
+            {expanded && <span data-testid="sync-presence-status">{connectionIndicator}</span>}
+            {expanded && (
+              <Button
+                data-testid="toggle-side-nav"
+                variant="ghost"
+                size="icon"
+                className="size-6"
+                onClick={() => {
+                  setPinned(!pinned)
+                  setSidebarHovered(false)
+                  setSidebarFocused(false)
+                }}
+                aria-label={t(pinned ? 'sidebar.collapse' : 'sidebar.expand')}
+              >
+                {pinned ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />}
+              </Button>
+            )}
+          </SidebarHeader>
 
-        {!expanded && (
-          <>
-            <SidebarSection className="gap-0 [&:not(:first-child)]:mt-2">
+          {!expanded && (
+            <>
+              <SidebarSection className="gap-0 [&:not(:first-child)]:mt-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarItem
+                      data-testid="toggle-side-nav"
+                      onClick={() => setPinned(true)}
+                      aria-label={t('sidebar.expand')}
+                    >
+                      <PanelLeftOpen aria-hidden="true" />
+                    </SidebarItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{t('sidebar.expand')}</TooltipContent>
+                </Tooltip>
+              </SidebarSection>
+              <div className="flex justify-center px-2 py-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      data-testid="sync-presence-status"
+                      className="flex size-8 items-center justify-center rounded-md"
+                      aria-label={connectionText}
+                    >
+                      <span
+                        className={`size-1.5 rounded-full ${
+                          connectionStatus === 'connected'
+                            ? 'bg-success'
+                            : connectionStatus === 'connecting'
+                              ? 'bg-warning'
+                              : 'bg-destructive'
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span className="sr-only">{connectionText}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{connectionText}</TooltipContent>
+                </Tooltip>
+              </div>
+            </>
+          )}
+
+          <TenantWorkspaceSwitcher />
+
+          {expanded && (
+            <div className="flex gap-1 px-1.5 pt-1.5">
+              {organizations.length > 0 && (
+                <div className="min-w-0 flex-1">
+                  <Combobox
+                    options={organizationOptions}
+                    value={selectedOrganizationId ?? 'all'}
+                    onValueChange={handleOrganizationSelect}
+                    placeholder={t('sidebar.organizations.all')}
+                    searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
+                    className="bg-surface"
+                  />
+                </div>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    aria-label={t('sidebar.organizations.add')}
+                    onClick={() => setCreateOrganizationOpen(true)}
+                  >
+                    <Plus aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{t('sidebar.organizations.add')}</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
+
+          {expanded ? (
+            <div className="px-1.5 pt-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                data-testid="open-personal-space"
+                disabled={personalSpaceBusy}
+                onClick={() => void openPersonalSpace()}
+              >
+                {personalSpaceBusy
+                  ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  : <UserRound aria-hidden="true" />}
+                <span>{t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}</span>
+                {personalOrganization && (
+                  <span className="ml-auto truncate text-2xs text-muted-foreground">
+                    {personalOrganization.label}
+                  </span>
+                )}
+              </Button>
+              {personalSpaceError && (
+                <p role="alert" className="px-2 pt-1 text-2xs text-destructive">
+                  {t('sidebar.personalSpace.error', { message: personalSpaceError })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <SidebarSection className="gap-0 [&:not(:first-child)]:mt-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <SidebarItem
-                    data-testid="toggle-side-nav"
-                    onClick={() => setExpanded(true)}
-                    aria-label={t('sidebar.expand')}
+                    data-testid="open-personal-space-collapsed"
+                    onClick={() => void openPersonalSpace()}
+                    aria-label={t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
+                    aria-disabled={personalSpaceBusy}
                   >
-                    <PanelLeftOpen aria-hidden="true" />
+                    {personalSpaceBusy
+                      ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      : <UserRound aria-hidden="true" />}
                   </SidebarItem>
                 </TooltipTrigger>
-                <TooltipContent side="right">{t('sidebar.expand')}</TooltipContent>
+                <TooltipContent side="right">
+                  {t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
+                </TooltipContent>
               </Tooltip>
             </SidebarSection>
-            <div className="flex justify-center px-2 py-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    data-testid="sync-presence-status"
-                    className="flex size-8 items-center justify-center rounded-md"
-                    aria-label={connectionText}
-                  >
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        connectionStatus === 'connected'
-                          ? 'bg-success'
-                          : connectionStatus === 'connecting'
-                            ? 'bg-warning'
-                            : 'bg-destructive'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <span className="sr-only">{connectionText}</span>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right">{connectionText}</TooltipContent>
-              </Tooltip>
-            </div>
-          </>
-        )}
+          )}
 
-        <TenantWorkspaceSwitcher />
+          <SidebarSection className="gap-0 [&:not(:first-child)]:mt-2">
+            {workspaceLinks.map((link) => renderWorkspaceLink(link))}
+          </SidebarSection>
 
-        {expanded && (
-          <div className="flex gap-1 px-1.5 pt-1.5">
-            {organizations.length > 0 && (
-              <div className="min-w-0 flex-1">
-                <Combobox
-                  options={organizationOptions}
-                  value={selectedOrganizationId ?? 'all'}
-                  onValueChange={handleOrganizationSelect}
-                  placeholder={t('sidebar.organizations.all')}
-                  searchPlaceholder={t('sidebar.organizations.searchPlaceholder')}
-                  className="bg-surface"
-                />
-              </div>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  aria-label={t('sidebar.organizations.add')}
-                  onClick={() => setCreateOrganizationOpen(true)}
-                >
-                  <Plus aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">{t('sidebar.organizations.add')}</TooltipContent>
-            </Tooltip>
-          </div>
-        )}
+          <SidebarSection className="min-h-0 flex-1 gap-0 overflow-y-auto [&:not(:first-child)]:mt-2">
+            <SidebarSectionLabel className="h-5 px-1.5 text-2xs">
+              {t('sidebar.repositories.heading')}
+              <span className="ml-auto">{visibleDatabases.length}</span>
+              <button
+                type="button"
+                className="ml-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={t('sidebar.repositories.create')}
+                onClick={() => {
+                  setCreateRepositoryOrganizationId(selectedOrganizationId)
+                  setCreateRepositoryOpen(true)
+                }}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+              </button>
+            </SidebarSectionLabel>
 
-        {expanded ? (
-          <div className="px-1.5 pt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              data-testid="open-personal-space"
-              disabled={personalSpaceBusy}
-              onClick={() => void openPersonalSpace()}
-            >
-              {personalSpaceBusy
-                ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                : <UserRound aria-hidden="true" />}
-              <span>{t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}</span>
-              {personalOrganization && (
-                <span className="ml-auto truncate text-2xs text-muted-foreground">
-                  {personalOrganization.label}
-                </span>
-              )}
-            </Button>
-            {personalSpaceError && (
-              <p role="alert" className="px-2 pt-1 text-2xs text-destructive">
-                {t('sidebar.personalSpace.error', { message: personalSpaceError })}
-              </p>
-            )}
-          </div>
-        ) : (
-          <SidebarSection className="gap-0 [&:not(:first-child)]:mt-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <SidebarItem
-                  data-testid="open-personal-space-collapsed"
-                  onClick={() => void openPersonalSpace()}
-                  aria-label={t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
-                  aria-disabled={personalSpaceBusy}
+                  active={pathname === '/repositories'}
+                  aria-label={t('sidebar.repositories.viewAll')}
+                  className={denseSidebarItemClass}
+                  onClick={() => void navigate({ to: '/repositories' })}
                 >
-                  {personalSpaceBusy
-                    ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    : <UserRound aria-hidden="true" />}
+                  <FolderGit2 aria-hidden="true" />
+                  <SidebarItemLabel>{t('sidebar.repositories.viewAll')}</SidebarItemLabel>
+                  <Badge variant="neutral">{databases.length}</Badge>
                 </SidebarItem>
               </TooltipTrigger>
-              <TooltipContent side="right">
-                {t(personalOrganization ? 'sidebar.personalSpace.open' : 'sidebar.personalSpace.create')}
-              </TooltipContent>
+              {!expanded && (
+                <TooltipContent side="right">{t('sidebar.repositories.viewAll')}</TooltipContent>
+              )}
             </Tooltip>
-          </SidebarSection>
-        )}
 
-        <SidebarSection className="gap-0 [&:not(:first-child)]:mt-2">
-          {workspaceLinks.map((link) => renderWorkspaceLink(link))}
-        </SidebarSection>
-
-        <SidebarSection className="min-h-0 flex-1 gap-0 overflow-y-auto [&:not(:first-child)]:mt-2">
-          <SidebarSectionLabel className="h-5 px-1.5 text-2xs">
-            {t('sidebar.repositories.heading')}
-            <span className="ml-auto">{visibleDatabases.length}</span>
-            <button
-              type="button"
-              className="ml-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label={t('sidebar.repositories.create')}
-              onClick={() => {
-                setCreateRepositoryOrganizationId(selectedOrganizationId)
-                setCreateRepositoryOpen(true)
-              }}
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-            </button>
-          </SidebarSectionLabel>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <SidebarItem
-                active={pathname === '/repositories'}
-                aria-label={t('sidebar.repositories.viewAll')}
-                className={denseSidebarItemClass}
-                onClick={() => void navigate({ to: '/repositories' })}
-              >
-                <FolderGit2 aria-hidden="true" />
-                <SidebarItemLabel>{t('sidebar.repositories.viewAll')}</SidebarItemLabel>
-                <Badge variant="neutral">{databases.length}</Badge>
+            {repositoriesLoading && (
+              <SidebarItem disabled className={denseSidebarItemClass}>
+                <RefreshCw className="animate-spin" aria-hidden="true" />
+                <SidebarItemLabel>{t('sidebar.repositories.loading')}</SidebarItemLabel>
               </SidebarItem>
-            </TooltipTrigger>
-            {!expanded && (
-              <TooltipContent side="right">{t('sidebar.repositories.viewAll')}</TooltipContent>
             )}
-          </Tooltip>
 
-          {repositoriesLoading && (
-            <SidebarItem disabled className={denseSidebarItemClass}>
-              <RefreshCw className="animate-spin" aria-hidden="true" />
-              <SidebarItemLabel>{t('sidebar.repositories.loading')}</SidebarItemLabel>
-            </SidebarItem>
-          )}
+            {!repositoriesLoading && repositoriesError && (
+              <SidebarItem className={denseSidebarItemClass} onClick={() => void refreshRepositories()}>
+                <AlertCircle className="text-destructive" aria-hidden="true" />
+                <SidebarItemLabel>{t('sidebar.repositories.retry')}</SidebarItemLabel>
+              </SidebarItem>
+            )}
 
-          {!repositoriesLoading && repositoriesError && (
-            <SidebarItem className={denseSidebarItemClass} onClick={() => void refreshRepositories()}>
-              <AlertCircle className="text-destructive" aria-hidden="true" />
-              <SidebarItemLabel>{t('sidebar.repositories.retry')}</SidebarItemLabel>
-            </SidebarItem>
-          )}
+            {!repositoriesLoading &&
+              !repositoriesError &&
+              visibleDatabases.map((database) => {
+                const path = database.orgUsername && database.repoUsername
+                  ? `${database.orgUsername}/${database.repoUsername}`
+                  : database.label
+                const count = recordCountByProject.get(database.label) ?? 0
 
-          {!repositoriesLoading &&
-            !repositoriesError &&
-            visibleDatabases.map((database) => {
-              const path = database.orgUsername && database.repoUsername
-                ? `${database.orgUsername}/${database.repoUsername}`
-                : database.label
-              const count = recordCountByProject.get(database.label) ?? 0
-
-              return (
-                <SidebarItemRow key={database.id}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <SidebarItem
-                        active={selectedDatabaseId === database.id}
-                        aria-label={path}
-                        className={denseSidebarItemClass}
-                        onClick={() => handleRepositorySelect(database)}
-                        data-testid={`database-${database.id}`}
-                        title={path}
+                return (
+                  <SidebarItemRow key={database.id}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <SidebarItem
+                          active={selectedDatabaseId === database.id}
+                          aria-label={path}
+                          className={denseSidebarItemClass}
+                          onClick={() => handleRepositorySelect(database)}
+                          data-testid={`database-${database.id}`}
+                          title={path}
+                        >
+                          <FolderGit2 aria-hidden="true" />
+                          <SidebarItemLabel>{path}</SidebarItemLabel>
+                          <span className="text-2xs text-subtle-foreground">{count}</span>
+                        </SidebarItem>
+                      </TooltipTrigger>
+                      {!expanded && <TooltipContent side="right">{path}</TooltipContent>}
+                    </Tooltip>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <SidebarItemAction
+                          data-testid={`database-actions-${database.id}`}
+                          aria-label={t('sidebar.repositories.actionsFor', { name: path })}
+                        >
+                          <MoreHorizontal aria-hidden="true" />
+                        </SidebarItemAction>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        data-testid="database-context-menu"
+                        side="right"
+                        align="start"
                       >
-                        <FolderGit2 aria-hidden="true" />
-                        <SidebarItemLabel>{path}</SidebarItemLabel>
-                        <span className="text-2xs text-subtle-foreground">{count}</span>
-                      </SidebarItem>
-                    </TooltipTrigger>
-                    {!expanded && <TooltipContent side="right">{path}</TooltipContent>}
-                  </Tooltip>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarItemAction
-                        data-testid={`database-actions-${database.id}`}
-                        aria-label={t('sidebar.repositories.actionsFor', { name: path })}
-                      >
-                        <MoreHorizontal aria-hidden="true" />
-                      </SidebarItemAction>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      data-testid="database-context-menu"
-                      side="right"
-                      align="start"
-                    >
-                      <DropdownMenuLabel className="max-w-56 truncate normal-case tracking-normal">
-                        {path}
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem
-                        data-testid="database-context-open"
-                        onSelect={() => handleRepositorySelect(database)}
-                      >
-                        <Check aria-hidden="true" />
-                        {t('sidebar.repositories.open')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        data-testid="database-context-copy-link"
-                        onSelect={() => void copyDatabaseLink(database.id)}
-                      >
-                        <Copy aria-hidden="true" />
-                        {t('sidebar.repositories.copyLink')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarItemRow>
-              )
-            })}
+                        <DropdownMenuLabel className="max-w-56 truncate normal-case tracking-normal">
+                          {path}
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem
+                          data-testid="database-context-open"
+                          onSelect={() => handleRepositorySelect(database)}
+                        >
+                          <Check aria-hidden="true" />
+                          {t('sidebar.repositories.open')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          data-testid="database-context-copy-link"
+                          onSelect={() => void copyDatabaseLink(database.id)}
+                        >
+                          <Copy aria-hidden="true" />
+                          {t('sidebar.repositories.copyLink')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </SidebarItemRow>
+                )
+              })}
 
-          {!repositoriesLoading && !repositoriesError && visibleDatabases.length === 0 && (
-            <SidebarItem disabled className={denseSidebarItemClass}>
-              <WifiOff aria-hidden="true" />
-              <SidebarItemLabel>{t('sidebar.repositories.empty')}</SidebarItemLabel>
-            </SidebarItem>
-          )}
-        </SidebarSection>
+            {!repositoriesLoading && !repositoriesError && visibleDatabases.length === 0 && (
+              <SidebarItem disabled className={denseSidebarItemClass}>
+                <WifiOff aria-hidden="true" />
+                <SidebarItemLabel>{t('sidebar.repositories.empty')}</SidebarItemLabel>
+              </SidebarItem>
+            )}
+          </SidebarSection>
 
-        <SidebarFooter className="pt-2">
-          <AccountMenu />
-        </SidebarFooter>
-      </NativeSidebar>
+          <SidebarFooter className="pt-2">
+            <AccountMenu />
+          </SidebarFooter>
+        </NativeSidebar>
+      </div>
       <CreateOrganizationDialog
         open={createOrganizationOpen}
         onClose={() => setCreateOrganizationOpen(false)}
