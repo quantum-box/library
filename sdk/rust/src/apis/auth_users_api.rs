@@ -97,7 +97,8 @@ pub async fn add_user_to_tenant(
     }
     req_builder = req_builder.json(&p_body_add_user_to_tenant_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -145,7 +146,8 @@ pub async fn create_user(
     }
     req_builder = req_builder.json(&p_body_create_user_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -196,7 +198,8 @@ pub async fn find_user_by_username(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -246,7 +249,8 @@ pub async fn get_user(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -295,7 +299,8 @@ pub async fn invite_user(
     }
     req_builder = req_builder.json(&p_body_invite_user_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -343,7 +348,8 @@ pub async fn list_users(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -396,7 +402,8 @@ pub async fn update_user_role(
     }
     req_builder = req_builder.json(&p_body_update_user_role_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

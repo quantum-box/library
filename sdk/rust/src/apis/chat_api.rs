@@ -56,7 +56,8 @@ pub async fn chat_completion(
         .header("Authorization", p_header_authorization.to_string());
     req_builder = req_builder.json(&p_body_chat_completion_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -122,7 +123,8 @@ pub async fn chat_completion_on_chatroom(
         .header("Authorization", p_header_authorization.to_string());
     req_builder = req_builder.json(&p_body_chat_completion_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

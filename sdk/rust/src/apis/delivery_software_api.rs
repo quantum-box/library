@@ -44,7 +44,8 @@ pub async fn get_software_delivery_by_order(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

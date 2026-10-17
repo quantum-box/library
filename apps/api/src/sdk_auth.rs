@@ -60,12 +60,6 @@ const SDK_GET_RETRY_POLICY: SdkGetRetryPolicy = SdkGetRetryPolicy {
     max_jitter: Duration::from_millis(25),
 };
 
-/// How long a client is kept for a given set of headers.
-const CLIENT_CACHE_TTL: Duration = Duration::from_secs(600);
-
-/// How many distinct header sets keep a client of their own.
-const CLIENT_CACHE_CAPACITY: usize = 64;
-
 /// How long an idle connection stays available for reuse.
 ///
 /// Lambda freezes the execution environment between invocations, and a
@@ -91,15 +85,41 @@ const DEFAULT_VERIFY_CACHE_CAPACITY: usize = 1_024;
 /// Clock skew allowed when a token's own expiry bounds its entry.
 const VERIFY_CACHE_EXPIRY_SKEW: Duration = Duration::from_secs(5);
 
-/// Clients to tachyon-api, one per distinct header set.
+/// The one client to tachyon-api.
 ///
-/// A `reqwest::Client` owns its connection pool, so one built per call
-/// reconnects and repeats the TLS handshake every time, and rebuilds
-/// the rustls root store along with it. Keeping a client per header set
-/// lets the callers that repeat — the service credential, and each
-/// token in active use — hold their connections open instead.
-static HTTP_CLIENTS: Lazy<TtlCache<[u8; 32], reqwest::Client>> =
-    Lazy::new(|| TtlCache::new(CLIENT_CACHE_TTL, CLIENT_CACHE_CAPACITY));
+/// A `reqwest::Client` owns its connection pool. Clients used to be kept
+/// per header set, which put every caller's token in a pool of its own:
+/// each new user on an execution environment reconnected and repeated the
+/// TLS handshake, and a connection opened while starting up served nobody.
+/// The headers now travel on the `Configuration` instead (see
+/// `Configuration::apply_headers`), so every request shares these
+/// connections.
+static TACHYON_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .pool_idle_timeout(CLIENT_POOL_IDLE_TIMEOUT)
+        .build()
+        .unwrap_or_default()
+});
+
+/// Send a request built from `config.client` with `config`'s headers, the
+/// way the generated SDK calls send theirs.
+trait SendWithConfig {
+    async fn send_with(
+        self,
+        config: &Configuration,
+    ) -> reqwest::Result<reqwest::Response>;
+}
+
+impl SendWithConfig for reqwest::RequestBuilder {
+    async fn send_with(
+        self,
+        config: &Configuration,
+    ) -> reqwest::Result<reqwest::Response> {
+        let mut request = self.build()?;
+        config.apply_headers(&mut request);
+        config.client.execute(request).await
+    }
+}
 
 /// Users resolved from a bearer token by `/v1/me`.
 ///
@@ -137,50 +157,17 @@ fn verify_cache_capacity() -> usize {
         .unwrap_or(DEFAULT_VERIFY_CACHE_CAPACITY)
 }
 
-/// A client carrying `headers`, reused when one already exists for
-/// exactly those headers.
-fn shared_client(headers: reqwest::header::HeaderMap) -> reqwest::Client {
-    let key = header_fingerprint(&headers);
-    if let Some(client) = HTTP_CLIENTS.get(&key) {
-        return client;
-    }
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .pool_idle_timeout(CLIENT_POOL_IDLE_TIMEOUT)
-        .build()
-        .unwrap_or_default();
-    HTTP_CLIENTS.insert(key, client.clone());
-    client
-}
-
-/// A fingerprint of a header set.
-///
-/// `HeaderMap` defines no iteration order, so the pairs are sorted
-/// before hashing — otherwise one header set could fingerprint two ways
-/// and defeat the reuse this exists for. The digest is a cryptographic
-/// one because a collision here would hand a request someone else's
-/// `Authorization` header.
-fn header_fingerprint(headers: &reqwest::header::HeaderMap) -> [u8; 32] {
-    let mut sorted: BTreeMap<&str, Vec<&[u8]>> = BTreeMap::new();
-    for (name, value) in headers.iter() {
-        sorted
-            .entry(name.as_str())
-            .or_default()
-            .push(value.as_bytes());
-    }
-
-    let mut hasher = Sha256::new();
-    for (name, values) in sorted {
-        hasher.update(name.as_bytes());
-        hasher.update([0]);
-        for value in values {
-            hasher.update(value);
-            hasher.update([0]);
+/// `headers` with every credential marked sensitive, so a `Configuration`
+/// printed with `{:?}` shows no token.
+fn sensitive(
+    mut headers: reqwest::header::HeaderMap,
+) -> reqwest::header::HeaderMap {
+    for (name, value) in headers.iter_mut() {
+        if name == reqwest::header::AUTHORIZATION || name == "x-api-key" {
+            value.set_sensitive(true);
         }
-        hasher.update([1]);
     }
-    hasher.finalize().into()
+    headers
 }
 
 /// A fingerprint of a bearer token, so the cache is keyed by the
@@ -681,11 +668,34 @@ impl SdkAuthApp {
         Configuration {
             base_path: self.base_url.clone(),
             user_agent: Some(SDK_USER_AGENT.to_string()),
-            client: shared_client(headers),
+            client: TACHYON_CLIENT.clone(),
             basic_auth: None,
             oauth_access_token: None,
             bearer_access_token: None,
             api_key: None,
+            headers: sensitive(headers),
+        }
+    }
+
+    /// Open a connection to tachyon-api in the shared client's pool.
+    ///
+    /// Meant for start-up: the first request after a cold start otherwise
+    /// pays for the TCP and TLS handshake itself. Any outcome is fine --
+    /// the response is discarded, and a failure leaves the first request
+    /// to connect as it always has.
+    pub async fn warm_connection(&self, timeout: Duration) {
+        let url = format!("{}/health", self.base_url.trim_end_matches('/'));
+        match TACHYON_CLIENT.get(url).timeout(timeout).send().await {
+            Ok(response) => {
+                let _ = response.bytes().await;
+            }
+            Err(error) => {
+                tracing::info!(
+                    timeout = error.is_timeout(),
+                    connect = error.is_connect(),
+                    "tachyon-api warm-up connection failed; the first request will connect"
+                );
+            }
         }
     }
 
@@ -970,7 +980,7 @@ impl SdkAuthApp {
                 .get(format!("{}{}", config.base_path, path))
                 .query(query)
                 .timeout(policy.per_attempt_timeout.min(remaining_budget))
-                .send()
+                .send_with(config)
                 .await;
 
             match response {
@@ -1030,7 +1040,7 @@ impl SdkAuthApp {
             .client
             .post(format!("{}{}", config.base_path, path))
             .json(body)
-            .send()
+            .send_with(config)
             .await
             .map_err(|error| SdkRequestError::transport(&error))?;
         handle_rest_response(resp).await.map_err(Into::into)
@@ -1050,7 +1060,7 @@ impl SdkAuthApp {
             .client
             .post(format!("{}{}", config.base_path, path))
             .json(body)
-            .send()
+            .send_with(config)
             .await
             .map_err(|error| SdkRequestError::transport(&error))?;
         if !resp.status().is_success() {
@@ -1072,7 +1082,7 @@ impl SdkAuthApp {
             .client
             .post(format!("{}{}", config.base_path, path))
             .json(body)
-            .send()
+            .send_with(config)
             .await
             .map_err(|error| SdkRequestFailure {
                 error: SdkRequestError::transport(&error),
@@ -1102,7 +1112,7 @@ impl SdkAuthApp {
             .client
             .put(format!("{}{}", config.base_path, path))
             .json(body)
-            .send()
+            .send_with(config)
             .await
             .map_err(|error| SdkRequestError::transport(&error))?;
         handle_rest_response(resp).await.map_err(Into::into)
@@ -1116,7 +1126,7 @@ impl SdkAuthApp {
         let resp = config
             .client
             .delete(format!("{}{}", config.base_path, path))
-            .send()
+            .send_with(config)
             .await
             .map_err(|error| SdkRequestError::transport(&error))?;
         if !resp.status().is_success() {
@@ -1525,7 +1535,7 @@ impl SdkAuthApp {
     {
         let url =
             format!("{}/auth/v1beta/sign-in-with-platform", self.base_url);
-        let resp = reqwest::Client::new()
+        let resp = TACHYON_CLIENT
             .post(url)
             .header(
                 reqwest::header::AUTHORIZATION,
@@ -4228,47 +4238,111 @@ mod tests {
         headers
     }
 
-    /// `HeaderMap` defines no iteration order, so a fingerprint that
-    /// depended on it would hand the same caller a fresh connection
-    /// pool at random.
-    #[test]
-    fn the_same_headers_fingerprint_the_same_either_way_round() {
-        let one = headers_from(&[
-            ("authorization", "Bearer token"),
-            ("x-operator-id", "tn_01operator"),
-        ]);
-        let other = headers_from(&[
-            ("x-operator-id", "tn_01operator"),
-            ("authorization", "Bearer token"),
-        ]);
-
-        assert_eq!(header_fingerprint(&one), header_fingerprint(&other));
-    }
-
-    /// A collision here would send a request with someone else's
-    /// credential.
-    #[test]
-    fn a_different_credential_fingerprints_differently() {
-        let one = headers_from(&[("authorization", "Bearer one")]);
-        let other = headers_from(&[("authorization", "Bearer other")]);
-
-        assert_ne!(header_fingerprint(&one), header_fingerprint(&other));
-    }
-
-    /// The point of the fingerprint: a second call with the same
-    /// headers reuses the client, and with it the open connection.
-    #[test]
-    fn a_client_is_reused_for_the_same_headers() {
-        let headers =
-            headers_from(&[("x-operator-id", "tn_01reusedclient")]);
-        let key = header_fingerprint(&headers);
-
-        let _ = shared_client(headers.clone());
-
-        assert!(
-            HTTP_CLIENTS.get(&key).is_some(),
-            "the built client is kept for the next caller"
+    /// Callers with different tokens share one connection, each request
+    /// still carrying its own headers. Clients used to be kept per header
+    /// set, so every new caller reconnected and repeated the TLS handshake.
+    #[tokio::test]
+    async fn callers_with_different_tokens_share_one_connection() {
+        use std::net::SocketAddr;
+        let seen: Arc<std::sync::Mutex<Vec<(SocketAddr, String, String)>>> =
+            Arc::default();
+        let recorded = seen.clone();
+        let app = axum::Router::new().route(
+            "/probe",
+            axum::routing::get(
+                move |axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
+                      headers: axum::http::HeaderMap| {
+                    let recorded = recorded.clone();
+                    async move {
+                        let get = |name: &str| {
+                            headers
+                                .get(name)
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or_default()
+                                .to_string()
+                        };
+                        recorded.lock().unwrap().push((
+                            peer,
+                            get("authorization"),
+                            get("x-operator-id"),
+                        ));
+                        "ok"
+                    }
+                },
+            ),
         );
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await;
+        });
+
+        let tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk = SdkAuthApp::new(
+            format!("http://{addr}"),
+            &tenant,
+            "service-token",
+        );
+        for token in ["token-one", "token-two"] {
+            let config = sdk.sdk_config_with_token(token);
+            let response = config
+                .client
+                .get(format!("{}/probe", config.base_path))
+                .send_with(&config)
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            let _ = response.text().await;
+        }
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].1, "Bearer token-one");
+        assert_eq!(seen[1].1, "Bearer token-two");
+        assert_eq!(seen[0].2, TEST_TENANT_ID);
+        assert_eq!(
+            seen[0].0, seen[1].0,
+            "both requests used one connection"
+        );
+    }
+
+    /// A header the request sets itself wins over the configuration's, as
+    /// it did when the headers were the client's defaults.
+    #[test]
+    fn a_header_set_on_the_request_wins_over_the_configuration() {
+        let config = Configuration {
+            headers: headers_from(&[("x-operator-id", "tn_01configured")]),
+            ..Default::default()
+        };
+        let mut request = reqwest::Client::new()
+            .get("http://localhost/")
+            .header("x-operator-id", "tn_01explicit")
+            .build()
+            .unwrap();
+
+        config.apply_headers(&mut request);
+
+        let values: Vec<_> =
+            request.headers().get_all("x-operator-id").iter().collect();
+        assert_eq!(values, vec!["tn_01explicit"]);
+    }
+
+    /// A configuration printed with `{:?}` shows no token.
+    #[test]
+    fn a_configuration_does_not_print_its_token() {
+        let tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
+        let sdk =
+            SdkAuthApp::new("http://localhost", &tenant, "service-token");
+
+        let printed =
+            format!("{:?}", sdk.sdk_config_with_token("secret-token"));
+
+        assert!(!printed.contains("secret-token"), "{printed}");
     }
 
     /// Serve one GraphQL response and hand back the request it answered.

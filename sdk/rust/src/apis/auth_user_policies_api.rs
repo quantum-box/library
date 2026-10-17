@@ -85,7 +85,8 @@ pub async fn attach_user_policy(
     }
     req_builder = req_builder.json(&p_body_attach_user_policy_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -127,7 +128,8 @@ pub async fn attach_user_policy_with_scope(
     req_builder =
         req_builder.json(&p_body_attach_user_policy_with_scope_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -165,7 +167,8 @@ pub async fn detach_user_policy(
     }
     req_builder = req_builder.json(&p_body_detach_user_policy_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -207,7 +210,8 @@ pub async fn detach_user_policy_with_scope(
     req_builder =
         req_builder.json(&p_body_detach_user_policy_with_scope_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -252,7 +256,8 @@ pub async fn find_user_policy_mappings(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -308,7 +313,8 @@ pub async fn list_user_policies(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

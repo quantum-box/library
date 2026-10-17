@@ -45,7 +45,8 @@ pub async fn calculate_recurring_revenue(
     }
     req_builder = req_builder.json(&p_body_recurring_revenue_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
