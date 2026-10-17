@@ -32,9 +32,12 @@ Preview keeps `PHOTON_LIVE_ENABLED=false`. Cloudflare deploy still requires
 `https://preview-disabled.invalid` origin to keep real clients excluded.
 
 Preview's `PHOTON_CLOUD_ENGINE_BASE_URL` uses `valueFrom.internalService` to
-resolve the active `library-api` deployment for the same PR. It must never fall
-back to the production API. The API preview must be active before its dependent
-Worker can deploy.
+resolve the active `library-api` deployment for the same PR. Tachyon may fall
+back to the production origin if that PR has no active API deployment. Wait for
+the API preview before triggering the Worker, then verify that `/api/health`
+reports the PR API origin before using it. Retrigger the Worker if necessary.
+Leave `PHOTON_LIVE_API_BASE_URL` unset for this preview so records-room
+authentication uses the same resolved origin.
 
 For an isolated frontend preview, set branch-scoped
 `LIBRARY_PREVIEW_API_BASE_URL` and `LIBRARY_PREVIEW_SYNC_WS_URL` together.
