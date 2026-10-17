@@ -403,7 +403,10 @@ spec:
         preview:
           envVars:
             - name: PHOTON_CLOUD_ENGINE_BASE_URL
-              value: "https://library-api.txcloud.app"
+              valueFrom:
+                internalService:
+                  appName: library-api
+                  field: url
             - name: PHOTON_LIVE_ENABLED
               value: "false"
             # Cloudflare deploy requires this even while Live is disabled.

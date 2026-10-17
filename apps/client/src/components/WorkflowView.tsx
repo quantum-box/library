@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, MouseEvent } from 'react'
 import {
@@ -22,6 +21,10 @@ import {
 } from '@xyflow/react'
 import { ListPlus, PanelLeftClose, Search, Trash2 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
+import { hiddenWorkflowNodes, layoutWorkflowNodes, normalizeWorkflowSettings, wouldCreateCycle, type WorkflowSettings } from '../lib/workflows/workflowGraph'
+import { getLibraryDataPropertyValue, type LibraryDataItem, type LibraryProperty } from '../lib/recordsApi'
+import { propertyValueDisplayText } from '../lib/libraryTable/libraryPropertyFormat'
+import { numberFormatter } from '../i18n/format'
 import { priorityConfig, statusConfig, type DatabaseRecord } from '../data/mock'
 import {
   getWorkflowCanvas,
@@ -58,6 +61,10 @@ type WorkflowNodeData = {
   priority: DatabaseRecord['priority']
   accent: string
   templateId: WorkflowTemplateId
+  fields?: { id: string; label: string; value: string }[]
+  collapsed?: boolean
+  hasChildren?: boolean
+  onToggle?: () => void
 }
 
 type WorkflowRecordNode = Node<WorkflowNodeData, 'workflowRecord'>
@@ -65,15 +72,15 @@ type WorkflowRecordNode = Node<WorkflowNodeData, 'workflowRecord'>
 const workflowTemplates: WorkflowTemplate[] = [
   {
     id: 'business-flow',
-    labelKey: 'workflow.template.businessFlow.label',
-    descriptionKey: 'workflow.template.businessFlow.description',
-    canvasHintKey: 'workflow.template.businessFlow.canvasHint',
+    labelKey: 'workflow.template.graph.label',
+    descriptionKey: 'workflow.template.graph.description',
+    canvasHintKey: 'workflow.template.graph.canvasHint',
   },
   {
-    id: 'kpi-tree',
-    labelKey: 'workflow.template.kpiTree.label',
-    descriptionKey: 'workflow.template.kpiTree.description',
-    canvasHintKey: 'workflow.template.kpiTree.canvasHint',
+    id: 'tree',
+    labelKey: 'workflow.template.tree.label',
+    descriptionKey: 'workflow.template.tree.description',
+    canvasHintKey: 'workflow.template.tree.canvasHint',
   },
 ]
 
@@ -93,33 +100,18 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
         className="!-left-2 !z-20 !h-4 !w-4 !border-2 !border-panel !bg-accent"
         data-testid="workflow-handle-target"
       />
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] font-medium text-subtle">{data.identifier}</div>
-          <div className="mt-0.5 line-clamp-2 text-sm font-semibold text-foreground">
-            {data.title}
-          </div>
-        </div>
-        <span
-          className="shrink-0 rounded bg-canvas px-2 py-1 text-[10px] font-medium"
-          style={{ color: data.accent }}
-        >
-          {t(priorityConfig[data.priority].labelKey)}
-        </span>
+      <div className="min-w-0">
+        <div className="line-clamp-2 text-sm font-semibold text-foreground">{data.title}</div>
+        <div className="mt-0.5 truncate text-[10px] text-subtle" title={data.identifier}>{data.identifier}</div>
       </div>
-      <div className="line-clamp-2 text-xs leading-relaxed text-subtle">
-        {data.description}
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-subtle">
-        <span style={{ color: statusConfig[data.status].color }}>
-          {statusConfig[data.status].icon} {t(statusConfig[data.status].labelKey)}
-        </span>
-        <span>
-          {data.templateId === 'kpi-tree'
-            ? t('workflow.node.kpiTreeItem')
-            : t('workflow.node.flowItem')}
-        </span>
-      </div>
+      {data.fields?.map((field) => <div key={field.id} className="mt-2 flex justify-between gap-3 text-xs">
+        <span className="truncate text-subtle">{field.label}</span>
+        <span className="max-w-36 truncate text-foreground" title={field.value}>{field.value}</span>
+      </div>)}
+      {data.hasChildren && <button type="button" className="nodrag nopan mt-2 rounded bg-surface-hover px-2 py-1 text-xs"
+        aria-expanded={!data.collapsed} onClick={(event) => { event.stopPropagation(); data.onToggle?.() }}>
+        {t(data.collapsed ? 'workflow.expand' : 'workflow.collapse')}
+      </button>}
       <Handle
         type="source"
         position={Position.Right}
@@ -145,6 +137,7 @@ type PendingWorkflowSync = {
   edges: Edge[]
   signature: string
   countSignature: string
+  settings: WorkflowSettings
 }
 
 function createRecordNode(
@@ -165,14 +158,14 @@ function createRecordNode(
       description: record.description,
       status: record.status,
       priority: record.priority,
-      accent: priorityConfig[record.priority].color,
+      accent: 'var(--accent)',
       templateId,
     },
   }
 }
 
 function isWorkflowTemplateId(value: unknown): value is WorkflowTemplateId {
-  return value === 'business-flow' || value === 'kpi-tree'
+  return value === 'business-flow' || value === 'tree'
 }
 
 function isRecordSnapshot(
@@ -198,13 +191,26 @@ export function WorkflowView({
   records,
   onUpdateRecord,
   onDeleteRecord,
+  properties = [], items = [], repositoryId, onChangeRelation, onCreateRecord, onOpenRecord,
 }: {
   databaseId: string
+  properties?: LibraryProperty[]
+  items?: LibraryDataItem[]
+  repositoryId?: string
+  onChangeRelation?: (propertyId: string, source: string, target: string, remove: boolean) => Promise<void>
+  onCreateRecord?: (name: string, parentId?: string, relationPropertyId?: string) => Promise<DatabaseRecord>
+  onOpenRecord?: (record: DatabaseRecord) => void
   records: DatabaseRecord[]
   onUpdateRecord?: (recordId: string, field: keyof DatabaseRecord, value: string) => void
   onDeleteRecord?: (recordId: string) => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
+  const [settings, setSettings] = useState<WorkflowSettings>(() => normalizeWorkflowSettings())
+  const [operationError, setOperationError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [parentNodeId, setParentNodeId] = useState('')
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] =
     useState<WorkflowTemplateId>('business-flow')
@@ -245,10 +251,8 @@ export function WorkflowView({
     return records.filter((record) => [
       record.identifier,
       record.title,
-      t(statusConfig[record.status].labelKey),
-      t(priorityConfig[record.priority].labelKey),
     ].some((value) => value.toLowerCase().includes(normalizedRecordQuery)))
-  }, [normalizedRecordQuery, records, t])
+  }, [normalizedRecordQuery, records])
   const recordPageCount = Math.max(
     1,
     Math.ceil(matchingRecords.length / WORKFLOW_ITEM_PAGE_SIZE)
@@ -294,14 +298,57 @@ export function WorkflowView({
     () => `${selectedTemplateId}:${nodes.length}:${edges.length}`,
     [edges.length, nodes.length, selectedTemplateId]
   )
-  const renderedEdges = useMemo(
-    () => edges.map((edge) => ({ ...edge, selected: edge.id === selectedEdgeId })),
-    [edges, selectedEdgeId]
-  )
+  const changeSettings = useCallback((patch: Partial<WorkflowSettings>) => {
+    hasLocalCanvasChanges.current = true
+    setSettings((current) => ({ ...current, ...patch }))
+  }, [])
+  const relationProperties = properties.filter((property) => property.typ === 'Relation' && repositoryId && property.meta?.databaseId === repositoryId)
+  const relationProperty = relationProperties.find((property) => property.id === settings.relationPropertyId)
+  const relationEdges = useMemo<Edge[]>(() => {
+    if (!relationProperty) return []
+    return nodes.flatMap((source) => {
+      const item = items.find((candidate) => candidate.id === source.data.recordId)
+      const ids = item && getLibraryDataPropertyValue(item, relationProperty.id)?.dataIds
+      return nodes.filter((target) => ids?.includes(target.data.recordId)).map((target) => ({
+        id: `relation:${relationProperty.id}:${source.id}:${target.id}`,
+        source: source.id, target: target.id, type: 'smoothstep',
+        label: relationProperty.displayName || relationProperty.name,
+        data: { relation: true, sourceRecordId: source.data.recordId, targetRecordId: target.data.recordId },
+        style: { stroke: 'var(--accent)' },
+      }))
+    })
+  }, [items, nodes, relationProperty])
+  const allEdges = useMemo(() => [...edges, ...relationEdges], [edges, relationEdges])
+  const hidden = useMemo(() => hiddenWorkflowNodes(allEdges, settings.collapsedNodeIds), [allEdges, settings.collapsedNodeIds])
+  const renderedEdges = useMemo(() => allEdges.map((edge) => ({
+    ...edge, selected: edge.id === selectedEdgeId,
+    hidden: hidden.has(edge.source) || hidden.has(edge.target),
+  })), [allEdges, hidden, selectedEdgeId])
+  const fieldsByRecordId = useMemo(() => new Map(items.map((item) => [item.id,
+    properties.filter((property) => settings.visiblePropertyIds.includes(property.id)).map((property) => {
+        const value = getLibraryDataPropertyValue(item, property.id)
+        let text = value ? propertyValueDisplayText(property, value) ?? '' : ''
+        if (value?.number && Number.isFinite(Number(value.number))) text = numberFormatter(locale).format(Number(value.number))
+        if (value?.dataIds) text = value.dataIds.map((id) => items.find((candidate) => candidate.id === id)?.name ?? id).join(', ')
+        return { id: property.id, label: property.displayName || property.name, value: text || '—' }
+      }),
+  ])), [items, properties, settings.visiblePropertyIds, locale])
+  const renderedNodes = useMemo(() => nodes.map((node) => {
+    const record = records.find((candidate) => candidate.id === node.data.recordId)
+    return { ...node, hidden: hidden.has(node.id), data: {
+      ...node.data, ...(record ? { title: record.title, description: record.description, status: record.status, priority: record.priority } : {}),
+      fields: fieldsByRecordId.get(node.data.recordId) ?? [],
+      collapsed: settings.collapsedNodeIds.includes(node.id),
+      hasChildren: allEdges.some((edge) => edge.source === node.id),
+      onToggle: () => changeSettings({ collapsedNodeIds: settings.collapsedNodeIds.includes(node.id)
+        ? settings.collapsedNodeIds.filter((id) => id !== node.id) : [...settings.collapsedNodeIds, node.id] }),
+    } }
+  }), [nodes, records, fieldsByRecordId, settings, hidden, allEdges, changeSettings])
   const canvasSignature = useMemo(
     () =>
       JSON.stringify({
         selectedTemplateId,
+        settings,
         nodes: nodes.map((node) => ({
           id: node.id,
           recordId: node.data.recordId,
@@ -315,9 +362,10 @@ export function WorkflowView({
           target: edge.target,
           sourceHandle: edge.sourceHandle,
           targetHandle: edge.targetHandle,
+          label: edge.label,
         })),
       }),
-    [edges, nodes, selectedTemplateId]
+    [edges, nodes, selectedTemplateId, settings]
   )
   const persistedNodes = useMemo<PersistedWorkflowCanvasNode[]>(
     () =>
@@ -351,6 +399,7 @@ export function WorkflowView({
         selectedTemplateId: payload.selectedTemplateId,
         nodes: payload.nodes,
         edges: payload.edges,
+        settings: payload.settings,
       })
     } catch (error) {
       console.warn('Failed to sync workflow canvas', error)
@@ -392,6 +441,7 @@ export function WorkflowView({
           }
         })
       })
+      setSettings(normalizeWorkflowSettings(canvas.settings))
       setEdges(canvas.edges)
       setSelectedTemplateId(canvas.selectedTemplateId)
       nodeSequence.current = nextNodes.reduce(
@@ -409,6 +459,11 @@ export function WorkflowView({
     setSelectedEdgeId(null)
     setRecordQuery('')
     setRecordPage(0)
+    setSettings(normalizeWorkflowSettings())
+    setOperationError('')
+    setNewTitle('')
+    setParentNodeId('')
+    setSelectedNodeId(null)
   }, [databaseId])
 
   useEffect(() => {
@@ -494,7 +549,8 @@ export function WorkflowView({
       setLoadedDatabaseId(databaseId)
     }
 
-    applyCurrentSyncedCanvas()
+    // Initial hydration is handled above. Re-subscribing after a record changes
+    // must not replace unsaved local placement with the previous canvas.
     return subscribeWorkflowCanvases(applyCurrentSyncedCanvas)
   }, [applyWorkflowCanvas, databaseId])
 
@@ -522,6 +578,7 @@ export function WorkflowView({
         edges,
         signature: nextSignature,
         countSignature: nextCountSignature,
+        settings,
       }
 
       const elapsed = Date.now() - lastSyncAt.current
@@ -542,6 +599,7 @@ export function WorkflowView({
         selectedTemplateId,
         nodes: persistedNodes,
         edges,
+        settings,
       })
         .then(() => {
           if (!active) return
@@ -567,15 +625,19 @@ export function WorkflowView({
     loadedDatabaseId,
     persistedNodes,
     selectedTemplateId,
+    settings,
   ])
 
   useEffect(() => {
+    window.addEventListener('pagehide', flushWorkflowSync)
     return () => {
       if (syncThrottleTimer.current !== null) {
         window.clearTimeout(syncThrottleTimer.current)
       }
+      flushWorkflowSync()
+      window.removeEventListener('pagehide', flushWorkflowSync)
     }
-  }, [])
+  }, [flushWorkflowSync])
 
   const addRecord = useCallback(
     (record: DatabaseRecord, position?: { x: number; y: number }) => {
@@ -650,26 +712,58 @@ export function WorkflowView({
     setEdges((current) => applyEdgeChanges(changes, current))
   }, [selectedEdgeId])
 
-  const handleConnect = useCallback((connection: Connection) => {
+  const runOperation = async (action: () => Promise<void>) => {
+    if (busy) return
+    setBusy(true)
+    setOperationError('')
+    try { await action() } catch (error) {
+      setOperationError(error instanceof Error && error.message === t('workflow.createdUnlinked')
+        ? error.message : t('workflow.operationFailed'))
+    } finally { setBusy(false) }
+  }
+  const handleConnect = (connection: Connection) => {
+    if (busy || !connection.source || !connection.target) return
+    const cyclic = wouldCreateCycle(allEdges, connection.source, connection.target)
+    if (connection.source === connection.target || (selectedTemplateId === 'tree' && cyclic)) {
+      setOperationError(t('workflow.cycleRejected'))
+      return
+    }
+    if (relationProperty && onChangeRelation) {
+      const source = nodes.find((node) => node.id === connection.source)
+      const target = nodes.find((node) => node.id === connection.target)
+      if (source && target) void runOperation(() => onChangeRelation(relationProperty.id, source.data.recordId, target.data.recordId, false))
+    } else {
+      hasLocalCanvasChanges.current = true
+      setEdges((current) => addEdge({ ...connection, type: 'smoothstep', style: { stroke: 'var(--accent)' } }, current))
+    }
+  }
+  const arrange = () => {
+    const positions = layoutWorkflowNodes(nodes, allEdges, 220 + settings.visiblePropertyIds.length * 28)
     hasLocalCanvasChanges.current = true
-    setEdges((current) =>
-      addEdge(
-        {
-          ...connection,
-          type: 'smoothstep',
-          animated: true,
-          style: { stroke: 'var(--accent)' },
-        },
-        current
-      )
-    )
-  }, [])
+    setNodes((current) => current.map((node) => ({ ...node, position: positions.get(node.id)! })))
+    requestAnimationFrame(() => { void reactFlowInstance?.fitView({ padding: 0.25 }) })
+  }
+  const createNode = () => {
+    if (!onCreateRecord || !newTitle.trim()) return
+    const parent = nodes.find((node) => node.id === parentNodeId)
+    void runOperation(async () => {
+      const record = await onCreateRecord(newTitle.trim(), parent?.data.recordId, relationProperty?.id)
+      nodeSequence.current += 1
+      const node = createRecordNode(record, selectedTemplateId, parent
+        ? { x: parent.position.x + 340, y: parent.position.y + 220 } : { x: 80, y: 80 }, nodeSequence.current)
+      hasLocalCanvasChanges.current = true
+      setNodes((current) => [...current, node])
+      if (parent && !relationProperty) setEdges((current) => addEdge({ id: `annotation:${parent.id}:${node.id}`, source: parent.id, target: node.id, type: 'smoothstep' }, current))
+      setNewTitle('')
+    })
+  }
 
   const handleNodeClick = useCallback(
     (_event: MouseEvent, node: WorkflowRecordNode) => {
-      setPreviewRecordId(node.data.recordId)
+      setSelectedNodeId(node.id)
+      if (!onOpenRecord) setPreviewRecordId(node.data.recordId)
     },
-    []
+    [onOpenRecord]
   )
 
   const handleSelectionChange = useCallback(
@@ -677,20 +771,29 @@ export function WorkflowView({
       nodes: WorkflowRecordNode[]
       edges: Edge[]
     }) => {
-      if (selectedNodes.length === 1) {
+      setSelectedNodeId(selectedNodes.length === 1 ? selectedNodes[0].id : null)
+      if (selectedNodes.length === 1 && !onOpenRecord) {
         setPreviewRecordId(selectedNodes[0].data.recordId)
       }
       setSelectedEdgeId(selectedEdges.length === 1 ? selectedEdges[0].id : null)
     },
-    []
+    [onOpenRecord]
   )
 
-  const deleteSelectedEdge = useCallback(() => {
-    if (!selectedEdgeId) return
+  const deleteSelectedEdge = () => {
+    if (!selectedEdgeId || busy) return
+    const relation = relationEdges.find((edge) => edge.id === selectedEdgeId)
+    if (relation && onChangeRelation && relationProperty) {
+      void runOperation(async () => {
+        await onChangeRelation(relationProperty.id, relation.data!.sourceRecordId as string, relation.data!.targetRecordId as string, true)
+        setSelectedEdgeId(null)
+      })
+      return
+    }
     hasLocalCanvasChanges.current = true
     setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId))
     setSelectedEdgeId(null)
-  }, [selectedEdgeId])
+  }
 
   return (
     <div className="relative flex h-full min-h-0 bg-canvas">
@@ -769,26 +872,13 @@ export function WorkflowView({
                 className="group flex items-center gap-2 rounded border border-border bg-surface px-2 py-1.5"
                 data-testid="workflow-database-item"
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: statusConfig[record.status].color }}
-                />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="shrink-0 text-[10px] font-medium text-subtle">
-                      {record.identifier}
-                    </span>
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {record.title}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-subtle">
-                    <span>{t(statusConfig[record.status].labelKey)}</span>
-                    <span style={{ color: priorityConfig[record.priority].color }}>
-                      {priorityConfig[record.priority].icon}{' '}
-                      {t(priorityConfig[record.priority].labelKey)}
-                    </span>
-                  </div>
+                  <div className="truncate text-xs font-medium text-foreground" title={record.title}>{record.title}</div>
+                  <div className="truncate text-[10px] text-subtle" title={record.identifier}>{record.identifier}</div>
+                  {(fieldsByRecordId.get(record.id) ?? []).map((field) => <div key={field.id} className="mt-0.5 flex gap-1 text-[10px] text-subtle">
+                    <span className="truncate">{field.label}</span>
+                    <span className="truncate" title={field.value}>{field.value}</span>
+                  </div>)}
                 </div>
                 <button
                   type="button"
@@ -871,6 +961,7 @@ export function WorkflowView({
               <button
                 type="button"
                 key={template.id}
+                disabled={!workflowLoaded}
                 data-testid={`workflow-template-${template.id}`}
                 className={`rounded px-2.5 py-1.5 text-xs font-medium transition-colors ${
                   selectedTemplateId === template.id
@@ -899,6 +990,54 @@ export function WorkflowView({
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
+          <button type="button" disabled={!workflowLoaded} onClick={arrange} className="rounded bg-surface-hover px-2 py-1">{t('workflow.arrange')}</button>
+          <button type="button" onClick={() => changeSettings({ collapsedNodeIds: [] })} className="rounded bg-surface-hover px-2 py-1">{t('workflow.expandAll')}</button>
+          <>
+            <button type="button" disabled={busy || !selectedNodeId} className="rounded bg-surface-hover px-2 py-1 disabled:opacity-40" onClick={() => {
+              hasLocalCanvasChanges.current = true
+              setNodes((current) => current.filter((node) => node.id !== selectedNodeId))
+              setEdges((current) => current.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId))
+              setSelectedNodeId(null)
+            }}>{t('workflow.removeFromView')}</button>
+            {onOpenRecord && <button type="button" disabled={!selectedNodeId} className="rounded bg-surface-hover px-2 py-1 disabled:opacity-40" onClick={() => {
+              const node = nodes.find((candidate) => candidate.id === selectedNodeId)
+              const record = records.find((candidate) => candidate.id === node?.data.recordId)
+              if (record) onOpenRecord(record)
+            }}>{t('workflow.openData')}</button>}
+          </>
+          {properties.length > 0 && <details className="relative">
+            <summary className="cursor-pointer rounded bg-surface-hover px-2 py-1">{t('workflow.properties')}</summary>
+            <div className="absolute left-0 top-full z-30 mt-1 max-h-64 w-56 overflow-auto rounded border border-border bg-panel p-2 shadow-soft">
+              {properties.map((property) => <label key={property.id} className="flex items-center gap-2 p-1">
+                <input type="checkbox" checked={settings.visiblePropertyIds.includes(property.id)} onChange={(event) => changeSettings({ visiblePropertyIds: event.target.checked ? [...settings.visiblePropertyIds, property.id] : settings.visiblePropertyIds.filter((id) => id !== property.id) })} />
+                {property.displayName || property.name}
+              </label>)}
+            </div>
+          </details>}
+          {relationProperties.length > 0 && <label className="flex items-center gap-2">{t('workflow.connections')}
+            <select aria-label={t('workflow.connections')} disabled={busy} className="rounded border border-border bg-panel p-1" value={relationProperty?.id ?? ''}
+              onChange={(event) => { setSelectedEdgeId(null); changeSettings({ relationPropertyId: event.target.value }) }}>
+              <option value="">{t('workflow.annotations')}</option>
+              {relationProperties.map((property) => <option key={property.id} value={property.id}>{property.displayName || property.name}</option>)}
+            </select>
+          </label>}
+          {onCreateRecord && <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); createNode() }}>
+            <input className="rounded border border-border bg-panel p-1" aria-label={t('workflow.newData')} placeholder={t('workflow.newData')} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} disabled={busy} />
+            <select className="max-w-40 rounded border border-border bg-panel p-1" aria-label={t('workflow.parent')} value={parentNodeId} onChange={(event) => setParentNodeId(event.target.value)} disabled={busy}>
+              <option value="">{t('workflow.noParent')}</option>
+              {nodes.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}
+            </select>
+            <button type="submit" disabled={busy || !newTitle.trim() || !workflowLoaded} className="rounded bg-surface-hover px-2 py-1 disabled:opacity-40">{t('common.add')}</button>
+          </form>}
+          {selectedEdgeId && !relationEdges.some((edge) => edge.id === selectedEdgeId) && <label className="flex items-center gap-2">{t('workflow.edgeLabel')}
+            <input aria-label={t('workflow.edgeLabel')} className="rounded border border-border bg-panel p-1" value={String(edges.find((edge) => edge.id === selectedEdgeId)?.label ?? '')}
+              onChange={(event) => { hasLocalCanvasChanges.current = true; setEdges((current) => current.map((edge) => edge.id === selectedEdgeId ? { ...edge, label: event.target.value } : edge)) }} />
+          </label>}
+          {relationProperty && <span className="text-subtle">{t('workflow.relationHint')}</span>}
+          {operationError && <div role="alert" className="w-full text-red-500">{operationError}</div>}
+        </div>
+
         <div
           ref={wrapperRef}
           className="relative min-h-0 flex-1 overflow-hidden rounded-md bg-canvas"
@@ -907,7 +1046,7 @@ export function WorkflowView({
           onDragOver={handleDragOver}
         >
           <ReactFlow<WorkflowRecordNode>
-            nodes={nodes}
+            nodes={renderedNodes}
             edges={renderedEdges}
             nodeTypes={nodeTypes}
             nodesDraggable
@@ -915,9 +1054,14 @@ export function WorkflowView({
             connectOnClick
             edgesFocusable
             onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
+            onEdgesChange={(changes) => handleEdgesChange(changes.filter((change) => !('id' in change) || !String(change.id).startsWith('relation:')))}
+            deleteKeyCode={null}
             onConnect={handleConnect}
             onNodeClick={handleNodeClick}
+            onNodeDoubleClick={(_event, node) => {
+              const record = records.find((candidate) => candidate.id === node.data.recordId)
+              if (record) onOpenRecord?.(record)
+            }}
             onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)}
             onSelectionChange={handleSelectionChange}
             onPaneClick={() => setSelectedEdgeId(null)}

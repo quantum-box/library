@@ -132,7 +132,8 @@ describe('RepositorySettingsView', () => {
     })
     recordsMocks.fetchLibraryRepositories.mockResolvedValue([
       {
-        id: 'database-people',
+        id: 'rp_people',
+        databases: ['database-people'],
         username: 'people',
         name: 'People',
         orgUsername: 'quantum-box',

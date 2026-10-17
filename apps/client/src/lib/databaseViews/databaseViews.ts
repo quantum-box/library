@@ -11,7 +11,7 @@ import type {
   TimelineDateField,
   TimelineScale,
 } from './types'
-import { collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
+import { t, collator, getActiveLocale, type Locale, type MessageKey } from '../../i18n'
 import { setIfChanged } from '../yjs/setIfChanged'
 
 export const ALL_DATABASES_ID = '__all__'
@@ -193,11 +193,13 @@ type DatabaseViewInput = Omit<Partial<DatabaseViewDefinition>, 'filters' | 'time
 export function normalizeDatabaseView(input: DatabaseViewInput): DatabaseViewDefinition {
   const type: DatabaseViewType = isDatabaseViewType(input.type) ? input.type : 'table'
   const now = new Date().toISOString()
+  const name = input.name?.trim()
+  const legacyNodeName = type === 'workflow' && (name === 'Workflow' || name === 'New Workflow')
 
   return {
     id: input.id,
     databaseId: input.databaseId,
-    name: input.name?.trim() || type[0].toUpperCase() + type.slice(1),
+    name: legacyNodeName ? t('viewTabs.workflow') : name || (type === 'workflow' ? t('viewTabs.workflow') : type[0].toUpperCase() + type.slice(1)),
     type,
     filters: normalizeFilters(input.filters),
     sorting: normalizeSorting(input.sorting),
@@ -383,7 +385,7 @@ export function createNewDatabaseView(
   return normalizeDatabaseView({
     id,
     databaseId,
-    name: name || `New ${type[0].toUpperCase()}${type.slice(1)}`,
+    name: name || (type === 'workflow' ? t('viewTabs.workflow') : `New ${type[0].toUpperCase()}${type.slice(1)}`),
     type,
     filters: { ...DEFAULT_FILTERS },
     sorting: null,

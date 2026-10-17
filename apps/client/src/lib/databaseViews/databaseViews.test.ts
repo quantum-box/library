@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
   ALL_DATABASES_ID,
+  normalizeDatabaseView,
   createNewDatabaseView,
   createViewFromLegacySearch,
   databaseViewUrlParam,
@@ -59,6 +60,11 @@ function seededViews(databaseId: string) {
 }
 
 describe('database view definitions', () => {
+  it('uses Node view for default names while retaining custom names', () => {
+    expect(createNewDatabaseView('repo', 'workflow', 0).name).toBe('Node view')
+    expect(normalizeDatabaseView({ id: 'view', databaseId: 'repo', type: 'workflow', name: 'New Workflow' }).name).toBe('Node view')
+    expect(normalizeDatabaseView({ id: 'view', databaseId: 'repo', type: 'workflow', name: 'Content map' }).name).toBe('Content map')
+  })
   it('seeds a database scope with the table view only', () => {
     const views = getDefaultDatabaseViews('photon-core')
 
