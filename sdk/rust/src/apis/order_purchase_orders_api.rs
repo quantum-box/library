@@ -52,7 +52,8 @@ pub async fn get_purchase_order(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -96,7 +97,8 @@ pub async fn list_purchase_orders(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

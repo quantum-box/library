@@ -65,7 +65,8 @@ pub async fn create_chatroom(
         .header("Authorization", p_header_authorization.to_string());
     req_builder = req_builder.json(&p_body_create_chat_room_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -124,7 +125,8 @@ pub async fn delete_chatroom(
     req_builder = req_builder
         .header("Authorization", p_header_authorization.to_string());
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -175,7 +177,8 @@ pub async fn update_chatroom(
         .header("Authorization", p_header_authorization.to_string());
     req_builder = req_builder.json(&p_body_update_chatroom_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

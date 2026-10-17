@@ -67,7 +67,8 @@ pub async fn execute_agent(
         .header("Authorization", p_header_authorization.to_string());
     req_builder = req_builder.json(&p_body_agent_execute_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -138,7 +139,8 @@ pub async fn get_agent_messages(
     req_builder = req_builder
         .header("Authorization", p_header_authorization.to_string());
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -197,7 +199,8 @@ pub async fn get_agent_status(
     req_builder = req_builder
         .header("Authorization", p_header_authorization.to_string());
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

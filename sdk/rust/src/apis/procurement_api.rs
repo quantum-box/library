@@ -52,7 +52,8 @@ pub async fn delete_variant_link(
             .header(reqwest::header::USER_AGENT, user_agent.clone());
     }
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();
@@ -101,7 +102,8 @@ pub async fn upsert_variant_link(
     }
     req_builder = req_builder.json(&p_body_upsert_variant_link_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

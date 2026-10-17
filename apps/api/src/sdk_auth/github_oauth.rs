@@ -150,7 +150,7 @@ impl SdkAuthApp {
             .get(format!("{}{}", config.base_path, TOKEN_PATH))
             .query(&[("tenant_id", tenant.as_str())])
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(config)
             .await
             .map_err(|_| {
                 errors::Error::service_unavailable(
@@ -210,7 +210,7 @@ impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
                 "secret": secret,
             }))
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(&config)
             .await
             .map_err(|_| {
                 errors::Error::service_unavailable(
@@ -244,7 +244,7 @@ impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
                 ("url", url),
             ])
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(&config)
             .await
             .map_err(|_| {
                 errors::Error::service_unavailable(
@@ -278,7 +278,7 @@ impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
                 ("url", url),
             ])
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(&config)
             .await
             .map_err(|_| {
                 errors::Error::service_unavailable(
@@ -317,7 +317,7 @@ impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
                 ("url", url),
             ])
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(&config)
             .await
             .map_err(|_| {
                 errors::Error::service_unavailable(
@@ -344,7 +344,7 @@ impl inbound_sync::usecase::GitHubWebhookControl for SdkAuthApp {
             .post(format!("{}/v1/integrations/github/webhooks/{hook_id}/deliveries/{delivery_id}/redeliver", config.base_path.trim_end_matches('/')))
             .query(&[("tenant_id", tenant.as_str()), ("repository", repository), ("url", url)])
             .timeout(Duration::from_secs(25))
-            .send()
+            .send_with(&config)
             .await
             .map_err(|_| errors::Error::service_unavailable("GitHub webhook broker is unavailable"))?;
         if response.status().is_success() {

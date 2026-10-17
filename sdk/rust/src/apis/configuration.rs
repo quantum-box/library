@@ -17,6 +17,12 @@ pub struct Configuration {
     pub oauth_access_token: Option<String>,
     pub bearer_access_token: Option<String>,
     pub api_key: Option<ApiKey>,
+    /// Headers sent with every request made with this configuration, except
+    /// where the request sets the same header itself -- the rule `reqwest`
+    /// applies to a client's default headers. Carrying them here instead of
+    /// in `client` lets configurations that differ only in their headers (a
+    /// caller's token, a tenant) share one client and its open connections.
+    pub headers: reqwest::header::HeaderMap,
 }
 
 pub type BasicAuth = (String, Option<String>);
@@ -31,6 +37,18 @@ impl Configuration {
     pub fn new() -> Configuration {
         Configuration::default()
     }
+
+    /// Add `headers` to `request`, skipping any header it already has.
+    pub fn apply_headers(&self, request: &mut reqwest::Request) {
+        for name in self.headers.keys() {
+            if request.headers().contains_key(name) {
+                continue;
+            }
+            for value in self.headers.get_all(name) {
+                request.headers_mut().append(name.clone(), value.clone());
+            }
+        }
+    }
 }
 
 impl Default for Configuration {
@@ -43,6 +61,7 @@ impl Default for Configuration {
             oauth_access_token: None,
             bearer_access_token: None,
             api_key: None,
+            headers: reqwest::header::HeaderMap::new(),
         }
     }
 }
