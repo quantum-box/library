@@ -290,6 +290,30 @@ jobs:
         run: npm run build
       - name: Verify desktop Live configuration and bundle
         run: node scripts/verify-desktop-live.mjs
+
+  # Split out of `client` so the E2E suites run alongside the checks above
+  # instead of after them. Every test resets the fixture API
+  # (tests/e2e/test-fixtures.ts), so tests are independent and can be spread
+  # across shards; each shard runs its own fixture server and dev server.
+  client-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+      - name: Install client dependencies
+        run: npm ci
       - name: Install Playwright Chromium
         run: |
           "${{ github.workspace }}/scripts/ci/apt-harden.sh"
@@ -299,16 +323,58 @@ jobs:
       - name: Run client E2E
         id: client_e2e
         timeout-minutes: 20
-        run: npm run test:e2e
-      - name: Run Photon Live E2E
-        id: client_live_e2e
-        timeout-minutes: 10
-        run: npm run test:e2e:live
+        run: npm run test:e2e -- --fully-parallel --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Upload client Playwright diagnostics
-        if: ${{ always() && (steps.client_e2e.outcome == 'failure' || steps.client_live_e2e.outcome == 'failure') }}
+        if: ${{ always() && steps.client_e2e.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
-          name: client-playwright-report
+          name: client-playwright-report-${{ matrix.shard }}
+          path: |
+            apps/client/playwright-report/
+            apps/client/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  client-live-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-06-04
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/workers -> target
+          cache-directories: ~/.cache/.wasm-pack
+      - name: Install Rust Worker build tool
+        run: cargo install worker-build --version 0.8.5 --locked
+      - name: Install client dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: |
+          "${{ github.workspace }}/scripts/ci/apt-harden.sh"
+          "${{ github.workspace }}/scripts/ci/with-retry.sh" --attempts 3 --timeout 300 \
+            --cleanup "${{ github.workspace }}/scripts/ci/apt-unlock.sh" -- \
+            npx playwright install --with-deps chromium
+      - name: Run Photon Live E2E
+        id: client_live_e2e
+        timeout-minutes: 15
+        run: npm run test:e2e:live
+      - name: Upload client Playwright diagnostics
+        if: ${{ always() && steps.client_live_e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-live-playwright-report
           path: |
             apps/client/playwright-report/
             apps/client/test-results/
