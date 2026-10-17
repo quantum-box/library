@@ -31,4 +31,4 @@ jobs:
           api-url: https://api.n1.tachy.one
           build-id: ${{ inputs.build_id }}
           # cargo lambda app (library-api) 用の digest 固定 toolchain image。
-          rust-builder-image: REPLACE_WITH_RUST_IMAGE_DIGEST_REF
+          rust-builder-image: ghcr.io/quantum-box/cloud-app-rust-builder@sha256:bc003cf0ffca3e8259a2480092d612195193a99a4dcdab1eaa2afabff191dcba
