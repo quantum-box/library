@@ -1,3 +1,4 @@
+import { getRepositoryDatabaseId } from '../lib/libraryTable/repositoryDatabaseId'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkflowView } from './WorkflowView'
 import {
@@ -53,9 +54,11 @@ export function RepositoryWorkflowView({ databaseId, target, onOpenRecord, onRec
     }), [table?.properties, table?.repoName, target])
   const records = useMemo(() => table?.items.map(asRecord) ?? [], [table?.items, asRecord])
 
+  const databaseIdForRelations = table?.databaseId ?? getRepositoryDatabaseId({ id: table?.repoId ?? '' })
+
   const changeRelation = async (propertyId: string, source: string, destination: string, remove: boolean) => {
     const property = table?.properties.find((candidate) => candidate.id === propertyId)
-    if (!property || property.typ !== 'Relation' || (!property.meta?.databaseId || property.meta.databaseId !== table?.repoId)) throw new Error('Invalid relation')
+    if (!property || property.typ !== 'Relation' || (!property.meta?.databaseId || property.meta.databaseId !== databaseIdForRelations)) throw new Error('Invalid relation')
     // Read the latest record, then patch only this Relation. Never resubmit preview bodies.
     const { item } = await fetchLibraryDataDetail(source, target)
     const previous = item.propertyData.find((entry) => entry.propertyId === propertyId)?.value.dataIds ?? []
@@ -98,7 +101,7 @@ export function RepositoryWorkflowView({ databaseId, target, onOpenRecord, onRec
     </div>}
     {table && <div className="min-h-0 flex-1"><WorkflowView
       databaseId={databaseId} records={records} properties={table.properties} items={table.items}
-      repositoryId={table.repoId} onOpenRecord={onOpenRecord}
+      repositoryId={databaseIdForRelations} onOpenRecord={onOpenRecord}
       onChangeRelation={changeRelation} onCreateRecord={createRecord}
     /></div>}
   </div>

@@ -1,3 +1,4 @@
+import { getRepositoryDatabaseId } from '../lib/libraryTable/repositoryDatabaseId'
 import {
   Badge,
   Button,
@@ -171,7 +172,7 @@ function PropertyEditorDialog({
   const relationRepositoryOptions = useMemo(() => {
     const options = relationRepositories
       .filter((repository) => {
-        if (!repository.id || !repository.orgUsername) return false
+        if (!getRepositoryDatabaseId(repository) || !repository.orgUsername) return false
         if (target.operatorId && repository.operatorId) {
           return target.operatorId === repository.operatorId
         }
@@ -179,9 +180,9 @@ function PropertyEditorDialog({
           === target.orgUsername.toLocaleLowerCase()
       })
       .map((repository) => ({
-        value: repository.id,
+        value: getRepositoryDatabaseId(repository)!,
         label: `${repository.orgUsername} / ${repository.name || repository.username}`,
-        description: repository.id,
+        description: getRepositoryDatabaseId(repository)!,
       }))
     if (relationDatabaseId && !options.some((option) => option.value === relationDatabaseId)) {
       options.unshift({

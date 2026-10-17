@@ -9,6 +9,7 @@ const platformId = 'tn_01j702qf86pc2j35s0kv0gv3gy'
 
 const repositoryTemplate = {
   id: 'repo-1',
+  databases: ['db_main'],
   username: 'photon-core',
   name: 'Photon Core',
   description: 'Library E2E repository',
@@ -306,6 +307,7 @@ function publicRepository(repository = state.repository) {
   if (!repository) return null
   return {
     id: repository.id,
+    databases: repository.databases,
     username: repository.username,
     name: repository.name,
     description: repository.description,

@@ -86,4 +86,13 @@ describe('repository workflow persistence', () => {
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith(target, 2))
   })
 
+  it('uses the backing database ID when the repository has a distinct ID', async () => {
+    const relation = { ...table.properties[0], meta: { databaseId: 'db_records' } }
+    mocks.fetch.mockResolvedValue({ ...table, repoId: 'rp_repo', databaseId: 'db_records', properties: [relation] })
+    mount()
+    fireEvent.click(await screen.findByText('connect'))
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled())
+    expect(mocks.update.mock.calls[0][2].propertyData[0].value.databaseId).toBe('db_records')
+  })
+
 })

@@ -178,7 +178,8 @@ describe('recordsApi', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       data: {
         repo: {
-          id: 'repo-1',
+          id: 'rp_repository',
+          databases: ['db_records'],
           name: 'Docs',
           dataList: {
             items: [
@@ -215,7 +216,8 @@ describe('recordsApi', () => {
       repoName: 'Docs',
       // The repository's canonical id comes back with the table: it is what
       // names the collection these rows are cached in.
-      repoId: 'repo-1',
+      repoId: 'rp_repository',
+      databaseId: 'db_records',
       hasMore: false,
     })
   })

@@ -316,7 +316,7 @@ test.describe('Library shell', () => {
   test('uses repository relations and properties in the node view', async ({ page }, testInfo) => {
     await page.request.post(`${e2eApiUrl}/v1/graphql`, { data: {
       query: 'mutation LibraryClientAddRepositoryProperty { addProperty { id } }',
-      variables: { input: { orgUsername: 'quantum-box', repoUsername: 'photon-core', propertyName: 'children', displayName: 'Children', propertyType: 'RELATION', meta: { relation: 'repo-1' } } },
+      variables: { input: { orgUsername: 'quantum-box', repoUsername: 'photon-core', propertyName: 'children', displayName: 'Children', propertyType: 'RELATION', meta: { relation: 'db_main' } } },
     } })
     await page.goto('/quantum-box/photon-core/data')
     await addDatabaseView(page, 'workflow')

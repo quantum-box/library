@@ -210,6 +210,7 @@ export interface LibraryDataItem {
 interface LibraryRepoDataResponse {
   repo?: {
     id: string
+    databases?: string[]
     name: string
     dataList: {
       items: LibraryDataItem[]
@@ -237,6 +238,7 @@ interface LibraryDataResponse {
 
 export interface LibraryRepository {
   id: string
+  databases?: string[]
   username: string
   name: string
   description?: string | null
@@ -426,6 +428,8 @@ export interface LibraryRepoTableData {
    * asks for it on a request of its own, which is allowed to fail.
    */
   repoId?: string
+  /** Backing Database ID used by Relation properties, distinct from repoId. */
+  databaseId?: string
   /** Whether the repository holds records beyond the ones returned. */
   hasMore: boolean
   /** The page to ask for next, when `hasMore`. */
@@ -507,6 +511,7 @@ const libraryRepoDataQuery = `
   query LibraryClientRepoData($org: String!, $repo: String!, $pageSize: Int, $page: Int) {
     repo(orgUsername: $org, repoUsername: $repo) {
       id
+      databases
       name
       dataList(pageSize: $pageSize, page: $page) {
         items {
@@ -591,6 +596,7 @@ const libraryOrganizationReposQuery = `
       username
       repos {
         id
+        databases
         username
         name
         description
@@ -1386,6 +1392,7 @@ async function fetchLibraryGraphqlRepoTableData(
     properties: repoData.properties.map(normalizeLibraryProperty),
     repoName: target.repoName ?? repoData.name,
     ...(repoId ? { repoId } : {}),
+    ...(repoData.databases?.[0] ? { databaseId: repoData.databases[0] } : {}),
     ...paginationTail(page, paginator?.totalPages, paginator?.totalItems),
   }
 }
