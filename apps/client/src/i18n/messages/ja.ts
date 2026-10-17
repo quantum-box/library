@@ -89,8 +89,6 @@ export const ja: LocaleMessages = {
   'sidebar.connection.synced': '同期済み',
   'sidebar.connection.connecting': '接続中',
   'sidebar.connection.offline': 'オフライン',
-  'sidebar.connection.online.one': '{count} 人がオンライン',
-  'sidebar.connection.online.other': '{count} 人がオンライン',
   'sidebar.organizations.all': 'すべての組織',
   'sidebar.organizations.searchPlaceholder': '組織を検索…',
   'sidebar.organizations.add': '組織を追加',

@@ -86,8 +86,6 @@ export const fr: LocaleMessages = {
   'sidebar.connection.synced': 'Synchronisé',
   'sidebar.connection.connecting': 'Connexion',
   'sidebar.connection.offline': 'Hors ligne',
-  'sidebar.connection.online.one': '{count} en ligne',
-  'sidebar.connection.online.other': '{count} en ligne',
   'sidebar.organizations.all': 'Toutes les organisations',
   'sidebar.organizations.searchPlaceholder': 'Trouver une organisation…',
   'sidebar.organizations.add': 'Ajouter une organisation',

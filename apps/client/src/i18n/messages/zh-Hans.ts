@@ -86,8 +86,6 @@ export const zhHans: LocaleMessages = {
   'sidebar.connection.synced': '已同步',
   'sidebar.connection.connecting': '连接中',
   'sidebar.connection.offline': '离线',
-  'sidebar.connection.online.one': '{count} 人在线',
-  'sidebar.connection.online.other': '{count} 人在线',
   'sidebar.organizations.all': '全部组织',
   'sidebar.organizations.searchPlaceholder': '查找组织…',
   'sidebar.organizations.add': '添加组织',

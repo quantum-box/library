@@ -86,8 +86,6 @@ export const zhHant: LocaleMessages = {
   'sidebar.connection.synced': '已同步',
   'sidebar.connection.connecting': '連線中',
   'sidebar.connection.offline': '離線',
-  'sidebar.connection.online.one': '{count} 人在線',
-  'sidebar.connection.online.other': '{count} 人在線',
   'sidebar.organizations.all': '全部組織',
   'sidebar.organizations.searchPlaceholder': '尋找組織…',
   'sidebar.organizations.add': '新增組織',
