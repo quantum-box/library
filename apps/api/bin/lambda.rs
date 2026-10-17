@@ -139,6 +139,10 @@ async fn main() -> Result<(), Error> {
     let provider_secrets =
         Arc::new(inbound_sync::WebhookSecretStore::new());
 
+    // Kept for the warm-up below; the router takes ownership of both.
+    let warm_pools = pools.clone();
+    let warm_sdk = sdk.clone();
+
     let app = library_api::router(
         pools,
         sdk,
@@ -152,6 +156,8 @@ async fn main() -> Result<(), Error> {
     .await
     .expect("library api router error");
 
+    warm_start(&warm_pools, &warm_sdk).await;
+
     tracing::info!("start lambda...");
     // Tachyon invokes the candidate alias with a synthetic API Gateway event
     // before promoting it to stable traffic. Migrations run only for that
@@ -162,6 +168,60 @@ async fn main() -> Result<(), Error> {
         raw_database_url,
     ))
     .await
+}
+
+/// How long start-up spends opening connections before it serves anyway.
+const WARM_START_BUDGET: std::time::Duration =
+    std::time::Duration::from_millis(1_500);
+
+/// Database connections opened per pool at start-up. The data list reads
+/// up to three statements at once, so one would leave it waiting on the
+/// rest.
+const WARM_DB_CONNECTIONS: usize = 3;
+
+/// Open the connections the first request would otherwise open itself.
+///
+/// The pools connect lazily and the Tachyon client has no connection yet,
+/// so the first request after a cold start paid for the database handshakes
+/// and a TLS handshake to tachyon-api -- at the execution environment's
+/// throttled CPU. Start-up runs with the full CPU, so they are opened here.
+/// Nothing depends on this: anything that fails or runs out of time is left
+/// for the first request to open, as before, and start-up never fails here.
+async fn warm_start(pools: &library_api::DatabasePools, sdk: &SdkAuthApp) {
+    let started = std::time::Instant::now();
+    let db = async {
+        let mut pools_to_warm = vec![pools.library.clone()];
+        if !Arc::ptr_eq(&pools.library, &pools.database_manager) {
+            pools_to_warm.push(pools.database_manager.clone());
+        }
+        let acquires = pools_to_warm.iter().flat_map(|db| {
+            (0..WARM_DB_CONNECTIONS).map(move |_| async move {
+                // Held until every acquire has finished, so each opens a
+                // connection of its own; dropped back into the pool after.
+                let pool = db.pool();
+                pool.acquire().await
+            })
+        });
+        let connections = futures_util::future::join_all(acquires).await;
+        connections.iter().filter(|c| c.is_ok()).count()
+    };
+    let tachyon = sdk.warm_connection(WARM_START_BUDGET);
+    match tokio::time::timeout(
+        WARM_START_BUDGET,
+        futures_util::future::join(db, tachyon),
+    )
+    .await
+    {
+        Ok((opened, ())) => tracing::info!(
+            db_connections = opened,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "warm start finished"
+        ),
+        Err(_) => tracing::info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "warm start ran out of time; the first request opens the rest"
+        ),
+    }
 }
 
 struct DeployMigrationGate<S> {

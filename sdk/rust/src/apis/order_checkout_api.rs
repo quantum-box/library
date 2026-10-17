@@ -42,7 +42,8 @@ pub async fn process_checkout(
     }
     req_builder = req_builder.json(&p_body_checkout_request);
 
-    let req = req_builder.build()?;
+    let mut req = req_builder.build()?;
+    configuration.apply_headers(&mut req);
     let resp = configuration.client.execute(req).await?;
 
     let status = resp.status();

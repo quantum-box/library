@@ -5,6 +5,14 @@ All notable changes to the Library API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.12] - 2026-10-17
+
+### Fixed
+- **コールドスタート後の最初のリクエストを速くする（失敗は増やさない）**:
+  - Lambda の起動時（CPU を全部使える段階）に、DB の接続（プールごとに3本）と tachyon-api への TLS 接続を先に張る。最大 1.5 秒で打ち切り、失敗や時間切れでも起動は止めず、残りは最初のリクエストが張る。
+  - tachyon-api への HTTP クライアントを1つにして全員で共有する。これまではヘッダーの組（呼び出し元のトークンなど）ごとにクライアントを作っていたため、新しい利用者ごとに接続と TLS ハンドシェイクをやり直し、起動時に張った接続も使えなかった。ヘッダーは `tachyon_sdk::Configuration::headers` に持たせ、送るときに足す（リクエスト側で付けたヘッダーは上書きしない。これまでの既定ヘッダーと同じ規則）。
+  - `Configuration` を `{:?}` で表示しても、`Authorization` などのトークンは出ないようにする。
+
 ## [1.11.11] - 2026-10-16
 
 ### Fixed
