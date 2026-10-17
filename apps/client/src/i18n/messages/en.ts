@@ -106,8 +106,6 @@ export const en = {
   'sidebar.connection.synced': 'Synced',
   'sidebar.connection.connecting': 'Connecting',
   'sidebar.connection.offline': 'Offline',
-  'sidebar.connection.online.one': '{count} online',
-  'sidebar.connection.online.other': '{count} online',
   'sidebar.organizations.all': 'All organizations',
   'sidebar.organizations.searchPlaceholder': 'Find an organization…',
   'sidebar.organizations.add': 'Add organization',

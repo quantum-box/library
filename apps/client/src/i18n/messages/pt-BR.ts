@@ -86,8 +86,6 @@ export const ptBR: LocaleMessages = {
   'sidebar.connection.synced': 'Sincronizado',
   'sidebar.connection.connecting': 'Conectando',
   'sidebar.connection.offline': 'Offline',
-  'sidebar.connection.online.one': '{count} online',
-  'sidebar.connection.online.other': '{count} online',
   'sidebar.organizations.all': 'Todas as organizações',
   'sidebar.organizations.searchPlaceholder': 'Encontrar uma organização…',
   'sidebar.organizations.add': 'Adicionar organização',

@@ -78,7 +78,7 @@ import { collisionPaddingFor, useSafeAreaInsets } from '../lib/ui/safeAreaInsets
 import { fetchLibraryAccessibleTenants } from '../lib/recordsApi'
 import { clearAuthTokens, loadAuthTokens } from '../lib/auth'
 import { shareableUrl } from '../lib/shareUrl'
-import { useConnectionStatus, useSyncPresence } from '../lib/yjs/useYjsRecords'
+import { useConnectionStatus } from '../lib/yjs/useYjsRecords'
 import { CreateOrganizationDialog } from './CreateOrganizationDialog'
 import { CreateRepositoryDialog } from './CreateRepositoryDialog'
 import { OPEN_CREATE_REPOSITORY_EVENT, openCommandPalette } from '../lib/ui/workspaceEvents'
@@ -274,7 +274,7 @@ export function Sidebar() {
   } = useWorkspaceDatabases()
   const personalOrganization = organizations.find((organization) => organization.isPersonalSpace)
   const navigate = useNavigate()
-  const { t, tPlural } = useI18n()
+  const { t } = useI18n()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const search = useRouterState({ select: (state) => state.location.search }) as {
     database?: string
@@ -282,7 +282,6 @@ export function Sidebar() {
     view?: string
   }
   const connectionStatus = useConnectionStatus()
-  const { onlineCount } = useSyncPresence()
   const [expanded, setExpanded] = useState(true)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const mobileNavRef = useRef<HTMLDivElement>(null)
@@ -506,9 +505,9 @@ export function Sidebar() {
     await navigator.clipboard.writeText(shareableUrl(url.toString()))
   }
 
-  const connectionText = connectionStatus === 'connected'
-    ? tPlural('sidebar.connection.online', onlineCount)
-    : t(connectionLabelKeys[connectionStatus])
+  // No head count: the records room is per user, so its presence would only
+  // count this user's own tabs and devices.
+  const connectionText = t(connectionLabelKeys[connectionStatus])
 
   const connectionIndicator = (
     <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
