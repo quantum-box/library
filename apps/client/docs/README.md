@@ -39,11 +39,12 @@ Library の Bounded Context と Photon との境界は、リポジトリルー�
 
 ## Repository node view
 
-Library remains a planet-scale CMS. The Workflow view displays repository Data
+Library remains a planet-scale CMS. The Node view displays repository Data
 as nodes, existing Properties as fields, and Relations as connections. Tree
 layout is a generic way to view hierarchical content, not a domain-specific
 content model.
 
+- Cards and the data picker show only selected repository Properties; status and priority are not implicit fields.
 - Use **Node properties** to select which repository Properties appear on cards.
 - Choose a same-repository **Relation** under **Connections** to draw its links.
   The direction is source → target: the source Data's selected Relation contains

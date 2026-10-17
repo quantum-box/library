@@ -100,22 +100,9 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
         className="!-left-2 !z-20 !h-4 !w-4 !border-2 !border-panel !bg-accent"
         data-testid="workflow-handle-target"
       />
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] font-medium text-subtle">{data.identifier}</div>
-          <div className="mt-0.5 line-clamp-2 text-sm font-semibold text-foreground">
-            {data.title}
-          </div>
-        </div>
-        <span
-          className="shrink-0 rounded bg-canvas px-2 py-1 text-[10px] font-medium"
-          style={{ color: data.accent }}
-        >
-          {t(priorityConfig[data.priority].labelKey)}
-        </span>
-      </div>
-      <div className="line-clamp-2 text-xs leading-relaxed text-subtle">
-        {data.description}
+      <div className="min-w-0">
+        <div className="line-clamp-2 text-sm font-semibold text-foreground">{data.title}</div>
+        <div className="mt-0.5 truncate text-[10px] text-subtle" title={data.identifier}>{data.identifier}</div>
       </div>
       {data.fields?.map((field) => <div key={field.id} className="mt-2 flex justify-between gap-3 text-xs">
         <span className="truncate text-subtle">{field.label}</span>
@@ -125,16 +112,6 @@ function WorkflowRecordNode({ data, selected }: NodeProps<WorkflowRecordNode>) {
         aria-expanded={!data.collapsed} onClick={(event) => { event.stopPropagation(); data.onToggle?.() }}>
         {t(data.collapsed ? 'workflow.expand' : 'workflow.collapse')}
       </button>}
-      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-subtle">
-        <span style={{ color: statusConfig[data.status].color }}>
-          {statusConfig[data.status].icon} {t(statusConfig[data.status].labelKey)}
-        </span>
-        <span>
-          {data.templateId === 'tree'
-            ? t('workflow.node.treeItem')
-            : t('workflow.node.flowItem')}
-        </span>
-      </div>
       <Handle
         type="source"
         position={Position.Right}
@@ -181,7 +158,7 @@ function createRecordNode(
       description: record.description,
       status: record.status,
       priority: record.priority,
-      accent: priorityConfig[record.priority].color,
+      accent: 'var(--accent)',
       templateId,
     },
   }
@@ -274,10 +251,8 @@ export function WorkflowView({
     return records.filter((record) => [
       record.identifier,
       record.title,
-      t(statusConfig[record.status].labelKey),
-      t(priorityConfig[record.priority].labelKey),
     ].some((value) => value.toLowerCase().includes(normalizedRecordQuery)))
-  }, [normalizedRecordQuery, records, t])
+  }, [normalizedRecordQuery, records])
   const recordPageCount = Math.max(
     1,
     Math.ceil(matchingRecords.length / WORKFLOW_ITEM_PAGE_SIZE)
@@ -349,24 +324,26 @@ export function WorkflowView({
     ...edge, selected: edge.id === selectedEdgeId,
     hidden: hidden.has(edge.source) || hidden.has(edge.target),
   })), [allEdges, hidden, selectedEdgeId])
-  const renderedNodes = useMemo(() => nodes.map((node) => {
-    const item = items.find((candidate) => candidate.id === node.data.recordId)
-    const record = records.find((candidate) => candidate.id === node.data.recordId)
-    return { ...node, hidden: hidden.has(node.id), data: {
-      ...node.data, ...(record ? { title: record.title, description: record.description, status: record.status, priority: record.priority } : {}),
-      fields: properties.filter((property) => settings.visiblePropertyIds.includes(property.id)).map((property) => {
-        const value = item && getLibraryDataPropertyValue(item, property.id)
+  const fieldsByRecordId = useMemo(() => new Map(items.map((item) => [item.id,
+    properties.filter((property) => settings.visiblePropertyIds.includes(property.id)).map((property) => {
+        const value = getLibraryDataPropertyValue(item, property.id)
         let text = value ? propertyValueDisplayText(property, value) ?? '' : ''
         if (value?.number && Number.isFinite(Number(value.number))) text = numberFormatter(locale).format(Number(value.number))
         if (value?.dataIds) text = value.dataIds.map((id) => items.find((candidate) => candidate.id === id)?.name ?? id).join(', ')
         return { id: property.id, label: property.displayName || property.name, value: text || '—' }
       }),
+  ])), [items, properties, settings.visiblePropertyIds, locale])
+  const renderedNodes = useMemo(() => nodes.map((node) => {
+    const record = records.find((candidate) => candidate.id === node.data.recordId)
+    return { ...node, hidden: hidden.has(node.id), data: {
+      ...node.data, ...(record ? { title: record.title, description: record.description, status: record.status, priority: record.priority } : {}),
+      fields: fieldsByRecordId.get(node.data.recordId) ?? [],
       collapsed: settings.collapsedNodeIds.includes(node.id),
       hasChildren: allEdges.some((edge) => edge.source === node.id),
       onToggle: () => changeSettings({ collapsedNodeIds: settings.collapsedNodeIds.includes(node.id)
         ? settings.collapsedNodeIds.filter((id) => id !== node.id) : [...settings.collapsedNodeIds, node.id] }),
     } }
-  }), [nodes, items, records, properties, settings, hidden, allEdges, locale, changeSettings])
+  }), [nodes, records, fieldsByRecordId, settings, hidden, allEdges, changeSettings])
   const canvasSignature = useMemo(
     () =>
       JSON.stringify({
@@ -895,26 +872,13 @@ export function WorkflowView({
                 className="group flex items-center gap-2 rounded border border-border bg-surface px-2 py-1.5"
                 data-testid="workflow-database-item"
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: statusConfig[record.status].color }}
-                />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="shrink-0 text-[10px] font-medium text-subtle">
-                      {record.identifier}
-                    </span>
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {record.title}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-subtle">
-                    <span>{t(statusConfig[record.status].labelKey)}</span>
-                    <span style={{ color: priorityConfig[record.priority].color }}>
-                      {priorityConfig[record.priority].icon}{' '}
-                      {t(priorityConfig[record.priority].labelKey)}
-                    </span>
-                  </div>
+                  <div className="truncate text-xs font-medium text-foreground" title={record.title}>{record.title}</div>
+                  <div className="truncate text-[10px] text-subtle" title={record.identifier}>{record.identifier}</div>
+                  {(fieldsByRecordId.get(record.id) ?? []).map((field) => <div key={field.id} className="mt-0.5 flex gap-1 text-[10px] text-subtle">
+                    <span className="truncate">{field.label}</span>
+                    <span className="truncate" title={field.value}>{field.value}</span>
+                  </div>)}
                 </div>
                 <button
                   type="button"
@@ -1029,19 +993,19 @@ export function WorkflowView({
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <button type="button" disabled={!workflowLoaded} onClick={arrange} className="rounded bg-surface-hover px-2 py-1">{t('workflow.arrange')}</button>
           <button type="button" onClick={() => changeSettings({ collapsedNodeIds: [] })} className="rounded bg-surface-hover px-2 py-1">{t('workflow.expandAll')}</button>
-          {selectedNodeId && <>
-            <button type="button" disabled={busy} className="rounded bg-surface-hover px-2 py-1" onClick={() => {
+          <>
+            <button type="button" disabled={busy || !selectedNodeId} className="rounded bg-surface-hover px-2 py-1 disabled:opacity-40" onClick={() => {
               hasLocalCanvasChanges.current = true
               setNodes((current) => current.filter((node) => node.id !== selectedNodeId))
               setEdges((current) => current.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId))
               setSelectedNodeId(null)
             }}>{t('workflow.removeFromView')}</button>
-            {onOpenRecord && <button type="button" className="rounded bg-surface-hover px-2 py-1" onClick={() => {
+            {onOpenRecord && <button type="button" disabled={!selectedNodeId} className="rounded bg-surface-hover px-2 py-1 disabled:opacity-40" onClick={() => {
               const node = nodes.find((candidate) => candidate.id === selectedNodeId)
               const record = records.find((candidate) => candidate.id === node?.data.recordId)
               if (record) onOpenRecord(record)
             }}>{t('workflow.openData')}</button>}
-          </>}
+          </>
           {properties.length > 0 && <details className="relative">
             <summary className="cursor-pointer rounded bg-surface-hover px-2 py-1">{t('workflow.properties')}</summary>
             <div className="absolute left-0 top-full z-30 mt-1 max-h-64 w-56 overflow-auto rounded border border-border bg-panel p-2 shadow-soft">
