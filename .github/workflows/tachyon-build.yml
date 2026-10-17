@@ -12,6 +12,8 @@ on:
 permissions:
   contents: read
   id-token: write
+  # Rust builder image (ghcr.io/quantum-box/cloud-app-rust-builder) の pull に使う。
+  packages: read
 concurrency:
   group: tachyon-build-${{ inputs.build_id }}
   cancel-in-progress: false
@@ -24,6 +26,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Action は runner の docker CLI で builder image を pull する（HOME は引き継がれる）。
+      # package が private の間は、この login と package 側での library への read 付与が必要。
+      # build container には runner の home を mount しないので、この credential は build から見えない。
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       # install/build は Action の container 内で実行される。
       # この runner に入れた toolchain は container からは見えない。
       - uses: quantum-box/tachyon-ops-action/cloud-app-build@e03c7cc9b867ecff53fcbd7fb372fa5a8ddc9a99
