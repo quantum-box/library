@@ -388,6 +388,14 @@ spec:
               value: "https://library-api.txcloud.app"
             - name: EXTERNAL_SYNC_SCANNER_ENABLED
               value: "false"
+            # Temporary: enables the maintenance route that purges the old
+            # shared records room (apps/client/workers/docs/
+            # legacy-records-room-removal.md). Remove this entry and the
+            # secret once the purge is done; without it the route is a 404.
+            - name: PHOTON_SYNC_MAINTENANCE_TOKEN
+              type: credential
+              valueFrom:
+                secret: library-client-sync/PHOTON_SYNC_MAINTENANCE_TOKEN
         preview:
           envVars:
             - name: PHOTON_CLOUD_ENGINE_BASE_URL
