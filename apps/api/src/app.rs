@@ -230,6 +230,8 @@ impl LibraryApp {
             repo_repo.clone(),
             get_organization_by_username.clone(),
             database_app.clone(),
+            organization_repo.clone(),
+            sdk.clone(),
         ));
         let update_repo = usecase::UpdateRepo::new(
             get_organization_by_username.clone(),
