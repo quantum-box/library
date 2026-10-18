@@ -23,7 +23,7 @@ spec:
         # Tachyon Cloud App の GitHub Actions backend で build する。command と
         # installCommand は書かない。Tachyon が package / binary / release / arch から
         # `cargo lambda build` を組み立て、rust-toolchain.toml の toolchain と arch の
-        # target を入れる (PLT-5946)。SQLX_OFFLINE は下の envVars で渡す。
+        # target を入れる (PLT-5946)。SQLX_OFFLINE は environments の envVars で渡す。
         runnerBackend: github_actions
         release: true
         arch: arm64
@@ -61,6 +61,11 @@ spec:
       environments:
         production:
           envVars:
+            # Compile against the committed .sqlx cache; the build has no
+            # database to check queries against. Declared per environment
+            # because an environment's envVars replace the app-level list.
+            - name: SQLX_OFFLINE
+              value: "true"
             - name: PROPERTY_VALUE_STORAGE_MODE
               value: dual_write_legacy_read
             - name: LIBRARY_PHOTON_LIVE_ENABLED
@@ -81,6 +86,11 @@ spec:
             engine: mysql
             envVar: DATABASE_URL
           envVars:
+            # Compile against the committed .sqlx cache; the build has no
+            # database to check queries against. Declared per environment
+            # because an environment's envVars replace the app-level list.
+            - name: SQLX_OFFLINE
+              value: "true"
             # Keep the OAuth provider lookup on Library's platform tenant.
             # Preview otherwise fell back to the historical development ID.
             - name: LIBRARY_TENANT_ID
@@ -105,10 +115,6 @@ spec:
               valueFrom:
                 secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
       envVars:
-        # Compile against the committed .sqlx cache. The GitHub Actions build
-        # has no database to check queries against.
-        - name: SQLX_OFFLINE
-          value: "true"
         - name: DATABASE_URL
           type: credential
           valueFrom:
