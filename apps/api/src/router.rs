@@ -890,6 +890,8 @@ async fn build_image_store(
             base_url,
             auth_token,
             crate::domain::LIBRARY_TENANT.to_string(),
+            std::env::var("LIBRARY_TACHYON_IMAGE_PREFIX")
+                .unwrap_or_else(|_| "library/images".to_string()),
         )));
     }
 

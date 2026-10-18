@@ -132,6 +132,10 @@ spec:
             # production library/ namespace, even when using the same bucket.
             - name: LIBRARY_PARQUET_PREFIX
               value: "preview/library"
+            # Keep Lambda's production runtime mode while separating preview
+            # images from objects served by the production image endpoint.
+            - name: LIBRARY_TACHYON_IMAGE_PREFIX
+              value: "preview/library/images"
             # Keep the OAuth provider lookup on Library's platform tenant.
             # Preview otherwise fell back to the historical development ID.
             - name: LIBRARY_TENANT_ID

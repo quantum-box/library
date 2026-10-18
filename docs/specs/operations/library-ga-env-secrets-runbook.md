@@ -36,6 +36,12 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 本番は未設定時の `library/{org}/{repo}/...` を使う。同じ bucket を使っても
 両者のオブジェクトキーとエクスポートキャッシュは分離される。
 
+Tachyon画像ストアのプレビューには
+`LIBRARY_TACHYON_IMAGE_PREFIX=preview/library/images` を設定する。
+保存・取得は `{org_tenant}/preview/library/images/{image_id}` を使い、
+本番の既定値 `{org_tenant}/library/images/{image_id}` とは分離される。
+Lambdaの起動要件である `ENVIRONMENT=production` は変更しない。
+
 ## 本番推奨 env
 
 | Env | Scope | Source | 用途 |
