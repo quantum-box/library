@@ -86,6 +86,22 @@ spec:
               valueFrom:
                 secret: library-api/OPENAI_APPS_CHALLENGE_TOKEN
         preview:
+          # The GitHub build backend currently completes compilation without
+          # confirming required IaC. Keep PR verification on the full pipeline.
+          build:
+            runnerBackend: kubernetes_kata
+            installCommand: if ! command -v protoc >/dev/null 2>&1; then if command -v yum >/dev/null 2>&1; then yum install -y protobuf-compiler; elif command -v dnf >/dev/null 2>&1; then dnf install -y protobuf-compiler; elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends protobuf-compiler; else echo "No supported package manager for protoc"; exit 1; fi; fi && PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --force-reinstall cargo-lambda==1.9.1 ziglang==0.15.2 && rustup toolchain install nightly-2026-06-04 --no-self-update && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
+            command: >-
+              bash -lc 'source "$HOME/.cargo/env";
+              LAMBDA_ARTIFACT_DIR="${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/lambda/lambda-library-api";
+              (while true; do sleep 60; echo "cargo lambda build still running..."; done) &
+              HEARTBEAT_PID=$!;
+              trap '\''kill "$HEARTBEAT_PID" 2>/dev/null || true'\'' EXIT;
+              SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir "$LAMBDA_ARTIFACT_DIR" --flatten lambda-library-api;
+              BUILD_STATUS=$?;
+              kill "$HEARTBEAT_PID" 2>/dev/null || true;
+              wait "$HEARTBEAT_PID" 2>/dev/null || true;
+              if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
           # ADR-0049 provisions one isolated database and scoped user per PR.
           # Production keeps its existing databaseRef below. The migration
           # gate above applies the combined history to this one.
