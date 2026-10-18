@@ -20,6 +20,7 @@ interface CapturedFlowProps {
   nodes: TestNode[]
   edges: TestEdge[]
   children?: ReactNode
+  onConnect?: (connection: { source: string; target: string; sourceHandle: null; targetHandle: null }) => void
   onNodeClick?: (event: React.MouseEvent, node: TestNode) => void
   onEdgeClick?: (event: React.MouseEvent, edge: TestEdge) => void
   onSelectionChange?: (selection: { nodes: TestNode[]; edges: TestEdge[] }) => void
@@ -284,4 +285,62 @@ describe('WorkflowView', () => {
       expect(screen.queryByTestId('mock-workflow-edge-edge-one-two')).not.toBeInTheDocument()
     })
   })
+  it('persists connection labels and graph display settings', async () => {
+    const first = record('one', 'First')
+    const second = record('two', 'Second')
+    workflowMocks.canvas = {
+      databaseId: 'graph', selectedTemplateId: 'business-flow',
+      nodes: [first, second].map((item) => ({ id: `node-${item.id}`, recordId: item.id, templateId: 'business-flow', position: { x: 0, y: 0 } })),
+      edges: [{ id: 'edge', source: 'node-one', target: 'node-two' }], updatedAt: '',
+    }
+    render(<WorkflowView databaseId="graph" records={[first, second]}
+      properties={[{ id: 'target', name: 'Target', typ: 'Integer' }]} />)
+    fireEvent.click(await screen.findByTestId('mock-workflow-edge-edge'))
+    fireEvent.change(screen.getByLabelText('Connection label'), { target: { value: '×' } })
+    fireEvent.click(screen.getByLabelText('Target'))
+    await waitFor(() => expect(workflowMocks.saveSyncedWorkflowCanvas).toHaveBeenCalledWith(expect.objectContaining({
+      settings: expect.objectContaining({ visiblePropertyIds: ['target'] }),
+      edges: [expect.objectContaining({ label: '×' })],
+    })))
+  })
+
+  it('routes relation removal through the repository and reports failure without removing the line', async () => {
+    const first = record('one', 'First')
+    const second = record('two', 'Second')
+    workflowMocks.canvas = {
+      databaseId: 'graph', selectedTemplateId: 'business-flow',
+      nodes: [first, second].map((item) => ({ id: `node-${item.id}`, recordId: item.id, templateId: 'business-flow', position: { x: 0, y: 0 } })),
+      edges: [], updatedAt: '',
+    }
+    const update = vi.fn().mockRejectedValue(new Error('denied'))
+    render(<WorkflowView databaseId="graph" records={[first, second]} repositoryId="repo"
+      properties={[{ id: 'parent', name: 'Children', typ: 'Relation', meta: { databaseId: 'repo' } }]}
+      items={[{ id: 'one', name: 'First', propertyData: [{ propertyId: 'parent', value: { dataIds: ['two'] } }] }]}
+      onChangeRelation={update} />)
+    await screen.findByTestId('mock-workflow-node-node-one')
+    fireEvent.change(screen.getByLabelText('Connections'), { target: { value: 'parent' } })
+    const edge = await screen.findByTestId('mock-workflow-edge-relation:parent:node-one:node-two')
+    fireEvent.click(edge)
+    fireEvent.click(screen.getByTestId('workflow-delete-edge'))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('parent', 'one', 'two', true))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save')
+    expect(edge).toBeInTheDocument()
+  })
+
+  it('removes a node only from the view', async () => {
+    const first = record('one', 'First')
+    workflowMocks.canvas = {
+      databaseId: 'graph', selectedTemplateId: 'business-flow',
+      nodes: [{ id: 'node-one', recordId: 'one', templateId: 'business-flow', position: { x: 0, y: 0 } }],
+      edges: [], updatedAt: '',
+    }
+    const remove = vi.fn()
+    render(<WorkflowView databaseId="graph" records={[first]} onDeleteRecord={remove} />)
+    fireEvent.click(await screen.findByTestId('mock-workflow-node-node-one'))
+    fireEvent.click(screen.getByText('Remove from view'))
+    expect(screen.queryByTestId('mock-workflow-node-node-one')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('workflow-database-item')).toHaveLength(1)
+    expect(remove).not.toHaveBeenCalled()
+  })
+
 })

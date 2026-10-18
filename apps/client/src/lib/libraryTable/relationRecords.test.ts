@@ -116,4 +116,10 @@ describe('createLibraryRelationRecordLoader', () => {
     })
     expect(mocks.fetchLibraryRepositories).toHaveBeenCalledTimes(2)
   })
+  it('resolves a backing Database ID for a distinct Repo ID', async () => {
+    mocks.fetchLibraryRepositories.mockResolvedValue([{ id: 'rp_people', databases: ['db_people'], username: 'people', name: 'People', orgUsername: 'example' }])
+    await createLibraryRelationRecordLoader().loadPage('db_people')
+    expect(mocks.fetchLibraryRepoTableData).toHaveBeenCalledWith(expect.objectContaining({ databaseId: 'db_people', repo: 'people' }), 1)
+  })
+
 })

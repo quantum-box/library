@@ -1,29 +1,41 @@
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
-// Dedicated keys survive the manifest's normal VITE_* defaults. Apply them
-// immediately before Vite starts so a Live preview cannot use production API.
-const overrides = [
-  ['LIBRARY_PREVIEW_API_BASE_URL', 'VITE_LIBRARY_API_BASE_URL'],
-  ['LIBRARY_PREVIEW_SYNC_WS_URL', 'VITE_LIBRARY_SYNC_WS_URL'],
-  ['LIBRARY_PREVIEW_DATA_LIVE_URL', 'VITE_LIBRARY_DATA_LIVE_URL'],
-]
-const env = { ...process.env }
-const configured = overrides.filter(([key]) => env[key]?.trim())
-if (configured.length > 0 && configured.length !== overrides.length) {
-  throw new Error('Preview API, Sync and Live URLs must be configured together')
-}
-if (configured.length > 0) {
-  for (const [source, target] of overrides) env[target] = env[source].trim()
-  const api = new URL(env.VITE_LIBRARY_API_BASE_URL)
-  const live = new URL(env.VITE_LIBRARY_DATA_LIVE_URL)
-  const sync = new URL(env.VITE_LIBRARY_SYNC_WS_URL)
-  if (api.protocol !== 'https:' || live.protocol !== 'https:' || sync.protocol !== 'wss:' ||
-      api.hostname === 'library-api.txcloud.app' || live.host !== sync.host) {
-    throw new Error('Live preview requires an isolated HTTPS API and matching secure Live/Sync host')
+// Dedicated keys survive the manifest's normal VITE_* defaults. Live is
+// optional so an isolated preview can use the ordinary Data editor.
+export function previewEnvironment(source) {
+  const env = { ...source }
+  const api = env.LIBRARY_PREVIEW_API_BASE_URL?.trim()
+  const sync = env.LIBRARY_PREVIEW_SYNC_WS_URL?.trim()
+  const live = env.LIBRARY_PREVIEW_DATA_LIVE_URL?.trim()
+  if (api || sync || live) {
+    if (!api || !sync) throw new Error('Preview API and Sync URLs must be configured together')
+    const apiUrl = new URL(api)
+    const syncUrl = new URL(sync)
+    if (apiUrl.protocol !== 'https:' || syncUrl.protocol !== 'wss:' ||
+        apiUrl.hostname === 'library-api.txcloud.app' ||
+        syncUrl.hostname === 'library-client-sync.quantum-box.workers.dev' ||
+        syncUrl.hostname === 'photon-sync.quantum-box.workers.dev') {
+      throw new Error('Preview requires an isolated HTTPS API and secure Sync host')
+    }
+    if (live) {
+      const liveUrl = new URL(live)
+      if (liveUrl.protocol !== 'https:' || liveUrl.host !== syncUrl.host) {
+        throw new Error('Live preview requires matching secure Live/Sync hosts')
+      }
+    }
+    env.VITE_LIBRARY_API_BASE_URL = api
+    env.VITE_LIBRARY_SYNC_WS_URL = sync
   }
-} else {
-  env.VITE_LIBRARY_DATA_LIVE_URL = ''
+  env.VITE_LIBRARY_DATA_LIVE_URL = live || ''
+  return env
 }
-const result = spawnSync('npm', ['run', 'build:cloud'], { env, stdio: 'inherit' })
-if (result.error) throw result.error
-process.exit(result.status ?? 1)
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = spawnSync('npm', ['run', 'build:cloud'], {
+    env: previewEnvironment(process.env), stdio: 'inherit',
+  })
+  if (result.error) throw result.error
+  process.exit(result.status ?? 1)
+}

@@ -170,8 +170,8 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('workflow-canvas')).toBeVisible()
     await expect(page.getByTestId('workflow-elements-panel')).toBeVisible()
     await expect(page.getByTestId('workflow-template-business-flow')).toBeVisible()
-    await expect(page.getByTestId('workflow-template-kpi-tree')).toBeVisible()
-    await expect(page.getByText('Workflow Canvas')).toBeVisible()
+    await expect(page.getByTestId('workflow-template-tree')).toBeVisible()
+    await expect(page.getByText('Node view', { exact: true }).last()).toBeVisible()
     await expect(page.locator('.react-flow__controls')).toBeVisible()
 
     await page.getByTestId('view-timeline').click()
@@ -250,14 +250,14 @@ test.describe('Library shell', () => {
     await addDatabaseView(page, 'workflow')
 
     await page.getByTestId('workflow-add-record').first().click()
-    await page.getByTestId('workflow-template-kpi-tree').click()
+    await page.getByTestId('workflow-template-tree').click()
     await page.getByTestId('workflow-add-record').nth(1).click()
 
     await expect(page).toHaveURL(/\/quantum-box\/photon-core\/data/)
     await expect(page).toHaveURL(/view=/)
     await expect(page.getByRole('heading', { name: 'Data', exact: true })).toBeVisible()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
-    await expect(page.getByText('KPI tree item')).toBeVisible()
+    await expect(page.getByTestId('workflow-node-record').getByText('Backlog', { exact: true })).toHaveCount(0)
 
     const sourceHandle = page.getByTestId('workflow-handle-source').first()
     const targetHandle = page.getByTestId('workflow-handle-target').nth(1)
@@ -272,22 +272,19 @@ test.describe('Library shell', () => {
     }
     await expect(page.getByTestId('workflow-persistence-status')).toHaveAttribute(
       'data-saved-signature',
-      'kpi-tree:2:1'
+      'tree:2:1'
     )
     await page.waitForTimeout(500)
 
     await page.reload()
     await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
     await expect(page.locator('.react-flow__edge')).toHaveCount(1)
-    await expect(page.getByText('KPI tree item')).toBeVisible()
+    await expect(page.getByTestId('workflow-node-record').getByText('Backlog', { exact: true })).toHaveCount(0)
 
-    await page.locator('.react-flow__node').first().dblclick()
-    await expect(page.getByTestId('detail-panel')).toBeVisible()
-    await expect(page.getByTestId('detail-panel').locator('.font-mono').filter({ hasText: /DATA-/ })).toBeVisible()
-    await page.getByTestId('detail-panel').locator('h2').click()
-    await expect(page.getByTestId('detail-panel').locator('input').first()).toBeVisible()
-    await page.getByTestId('detail-panel-close').click()
-    await expect(page.getByTestId('detail-panel')).toHaveCount(0)
+    await page.getByTestId('workflow-node-record').first().getByText('Prepare release notes', { exact: true }).dblclick()
+    await expect(page.getByTestId('data-editor-page')).toBeVisible()
+    await page.getByTestId('data-editor-back').click()
+    await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
 
     const firstNode = page.locator('.react-flow__node').first()
     const beforeDrag = await firstNode.boundingBox()
@@ -321,6 +318,59 @@ test.describe('Library shell', () => {
     await expect(page.getByTestId('side-nav')).toBeVisible()
     await page.getByTestId('toggle-side-nav').click()
     await expect(page.getByTestId('view-home').getByText('Home')).toBeVisible()
+  })
+
+  test('uses repository relations and properties in the node view', async ({ page }, testInfo) => {
+    await page.request.post(`${e2eApiUrl}/v1/graphql`, { data: {
+      query: 'mutation LibraryClientAddRepositoryProperty { addProperty { id } }',
+      variables: { input: { orgUsername: 'quantum-box', repoUsername: 'photon-core', propertyName: 'children', displayName: 'Children', propertyType: 'RELATION', meta: { relation: 'db_main' } } },
+    } })
+    await page.goto('/quantum-box/photon-core/data')
+    await addDatabaseView(page, 'workflow')
+    await page.getByTestId('workflow-template-tree').click()
+    await page.getByTestId('workflow-add-record').first().click()
+    await page.getByTestId('workflow-add-record').nth(1).click()
+    await page.getByText('Node properties', { exact: true }).click()
+    const cards = page.getByTestId('workflow-node-record')
+    await expect(cards.getByText('High', { exact: true })).toHaveCount(0)
+    await expect(cards.getByText('Todo', { exact: true })).toHaveCount(0)
+    await page.getByRole('checkbox', { name: 'Priority', exact: true }).check()
+    await expect(cards.getByText('High', { exact: true })).toBeVisible()
+    await page.getByRole('checkbox', { name: 'Priority', exact: true }).uncheck()
+    await expect(cards.getByText('High', { exact: true })).toHaveCount(0)
+    await page.getByRole('checkbox', { name: 'Status', exact: true }).check()
+    await expect(cards.getByText('Todo', { exact: true })).toBeVisible()
+    await page.getByRole('checkbox', { name: 'Status', exact: true }).uncheck()
+    await expect(cards.getByText('Todo', { exact: true })).toHaveCount(0)
+    await page.getByRole('checkbox', { name: 'Priority', exact: true }).check()
+    await page.getByText('Node properties', { exact: true }).click()
+    await page.getByLabel('Connections', { exact: true }).selectOption('e2e-property-1')
+    await page.getByRole('button', { name: 'Auto arrange', exact: true }).click()
+    await page.getByTestId('workflow-handle-source').first().click()
+    await page.getByTestId('workflow-handle-target').nth(1).click()
+    await expect.poll(async () => {
+      const data = await e2eFixtureData(page)
+      return fixtureProperty(data[0], 'e2e-property-1')?.dataIds
+    }).toEqual(['seed-data-202'])
+    await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Auto arrange', exact: true }).click()
+    await page.getByRole('button', { name: 'Collapse branch', exact: true }).click()
+    await expect(page.getByTestId('workflow-node-record')).toHaveCount(1)
+    await expect(page.getByTestId('workflow-persistence-status')).toHaveText('Saved')
+    await page.reload()
+    await expect(page.getByLabel('Connections', { exact: true })).toHaveValue('e2e-property-1')
+    await expect(page.getByRole('button', { name: 'Expand branch', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Expand all', exact: true }).click()
+    await expect(page.getByTestId('workflow-node-record')).toHaveCount(2)
+    await page.getByLabel('New data title', { exact: true }).fill('Revenue per customer')
+    const firstNodeId = await page.locator('.react-flow__node').first().getAttribute('data-id')
+    await page.getByLabel('Parent node', { exact: true }).selectOption(firstNodeId!)
+    await page.locator('form').getByRole('button', { name: 'Add', exact: true }).click()
+    await expect(page.getByTestId('workflow-node-record')).toHaveCount(3)
+    await expect(page.locator('.react-flow__edge')).toHaveCount(2)
+    await page.getByRole('button', { name: 'Auto arrange', exact: true }).click()
+    await expect(page.getByTestId('workflow-persistence-status')).toHaveText('Saved')
+    await page.screenshot({ path: testInfo.outputPath('node-view.png'), fullPage: true })
   })
 
   test('syncs workflow canvas changes between browser tabs', async ({ page, browser }) => {

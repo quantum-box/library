@@ -13,7 +13,7 @@ describe('tabTitleForPath', () => {
 
   it('keeps the view name for legacy database view routes', () => {
     expect(tabTitleForPath('/databases/board')).toBe('Board')
-    expect(tabTitleForPath('/databases/workflow')).toBe('Workflow')
+    expect(tabTitleForPath('/databases/workflow')).toBe('Node view')
   })
 
   it('scopes repository routes to organization/repository', () => {

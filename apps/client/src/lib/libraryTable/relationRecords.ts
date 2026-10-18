@@ -1,3 +1,4 @@
+import { getRepositoryDatabaseId } from './repositoryDatabaseId'
 import {
   fetchLibraryDataDetail,
   fetchLibraryRepositories,
@@ -36,7 +37,7 @@ function relationTarget(
   repositories: readonly LibraryRepository[],
   databaseId: string,
 ): RelationTarget {
-  const repository = repositories.find((candidate) => candidate.id === databaseId)
+  const repository = repositories.find((candidate) => getRepositoryDatabaseId(candidate) === databaseId)
   if (!repository?.orgUsername) {
     throw new Error(t('repoSettings.relationUnavailable'))
   }
@@ -44,7 +45,7 @@ function relationTarget(
     org: repository.orgUsername,
     repo: repository.username,
     operatorId: repository.operatorId,
-    databaseId: repository.id,
+    databaseId,
     repoName: repository.name || repository.username,
   }
 }

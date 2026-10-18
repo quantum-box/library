@@ -1,9 +1,10 @@
+import { normalizeWorkflowSettings, normalizeWorkflowTemplateId, type WorkflowSettings } from './workflowGraph'
 import { PGlite } from '@electric-sql/pglite'
 import type { Edge, XYPosition } from '@xyflow/react'
 import { appKitConfig } from '../../app/kitConfig'
 import type { Priority, Status } from '../../data/mock'
 
-export type WorkflowCanvasTemplateId = 'business-flow' | 'kpi-tree'
+export type WorkflowCanvasTemplateId = 'business-flow' | 'tree'
 
 export interface PersistedWorkflowCanvasNode {
   id: string
@@ -26,6 +27,7 @@ export interface WorkflowCanvas {
   nodes: PersistedWorkflowCanvasNode[]
   edges: Edge[]
   updatedAt: string
+  settings?: WorkflowSettings
 }
 
 interface WorkflowCanvasRow {
@@ -34,6 +36,7 @@ interface WorkflowCanvasRow {
   nodes_json: string
   edges_json: string
   updated_at: string
+  settings_json: string
 }
 
 const dbPromise = PGlite.create({
@@ -51,15 +54,13 @@ const dbPromise = PGlite.create({
         PRIMARY KEY (workspace_id, database_id)
       );
 
+      ALTER TABLE workflow_canvases ADD COLUMN IF NOT EXISTS settings_json TEXT NOT NULL DEFAULT '{}';
+
       CREATE INDEX IF NOT EXISTS workflow_canvases_workspace_updated_idx
         ON workflow_canvases (workspace_id, updated_at DESC);
     `)
   return db
 })
-
-function isWorkflowTemplateId(value: unknown): value is WorkflowCanvasTemplateId {
-  return value === 'business-flow' || value === 'kpi-tree'
-}
 
 function parseJsonArray<T>(value: string): T[] {
   try {
@@ -71,16 +72,17 @@ function parseJsonArray<T>(value: string): T[] {
 }
 
 function toWorkflowCanvas(row: WorkflowCanvasRow): WorkflowCanvas {
-  const selectedTemplateId = isWorkflowTemplateId(row.selected_template_id)
-    ? row.selected_template_id
-    : 'business-flow'
+  const selectedTemplateId = normalizeWorkflowTemplateId(row.selected_template_id)
 
   return {
     databaseId: row.database_id,
     selectedTemplateId,
-    nodes: parseJsonArray<PersistedWorkflowCanvasNode>(row.nodes_json),
+    nodes: parseJsonArray<PersistedWorkflowCanvasNode>(row.nodes_json).map((node) => ({
+      ...node, templateId: normalizeWorkflowTemplateId(node.templateId),
+    })),
     edges: parseJsonArray<Edge>(row.edges_json),
     updatedAt: row.updated_at,
+    settings: normalizeWorkflowSettings(JSON.parse(row.settings_json || '{}')),
   }
 }
 
@@ -90,7 +92,7 @@ export async function getWorkflowCanvas(
   const db = await dbPromise
   const result = await db.query<WorkflowCanvasRow>(
     `
-      SELECT database_id, selected_template_id, nodes_json, edges_json, updated_at
+      SELECT database_id, selected_template_id, nodes_json, edges_json, updated_at, settings_json
       FROM workflow_canvases
       WHERE workspace_id = $1 AND database_id = $2
       LIMIT 1
@@ -106,6 +108,7 @@ export async function saveWorkflowCanvas(input: {
   selectedTemplateId: WorkflowCanvasTemplateId
   nodes: PersistedWorkflowCanvasNode[]
   edges: Edge[]
+  settings?: WorkflowSettings
 }): Promise<WorkflowCanvas> {
   const db = await dbPromise
   const updatedAt = new Date().toISOString()
@@ -118,16 +121,18 @@ export async function saveWorkflowCanvas(input: {
         selected_template_id,
         nodes_json,
         edges_json,
-        updated_at
+        updated_at,
+        settings_json
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (workspace_id, database_id)
       DO UPDATE SET
         selected_template_id = EXCLUDED.selected_template_id,
         nodes_json = EXCLUDED.nodes_json,
         edges_json = EXCLUDED.edges_json,
-        updated_at = EXCLUDED.updated_at
-      RETURNING database_id, selected_template_id, nodes_json, edges_json, updated_at
+        updated_at = EXCLUDED.updated_at,
+        settings_json = EXCLUDED.settings_json
+      RETURNING database_id, selected_template_id, nodes_json, edges_json, updated_at, settings_json
     `,
     [
       input.databaseId,
@@ -136,6 +141,7 @@ export async function saveWorkflowCanvas(input: {
       JSON.stringify(input.nodes),
       JSON.stringify(input.edges),
       updatedAt,
+      JSON.stringify(normalizeWorkflowSettings(input.settings)),
     ]
   )
 
