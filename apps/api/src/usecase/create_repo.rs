@@ -1,6 +1,10 @@
 use std::{fmt::Debug, sync::Arc};
 
-use crate::domain::{Repo, RepoId, RepoRepository};
+use crate::domain::{
+    Organization, OrganizationRepository, Repo, RepoId, RepoRepository,
+    LIBRARY_TENANT,
+};
+use crate::sdk_auth::{OperatorResp, SdkAuthApp};
 
 use super::{
     CreateRepoInputData, CreateRepoInputPort,
@@ -13,13 +17,43 @@ use database_manager::usecase::CreateDatabaseInputData;
 use database_manager::{domain::DatabaseId, AddPropertyInputData};
 use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
-use value_object::LongText;
+use value_object::{Identifier, LongText, TenantId};
 
 #[derive(Debug, Clone, new)]
 pub struct CreateRepo {
     repo_repository: Arc<dyn RepoRepository>,
     get_organization_by_username: Arc<dyn GetOrganizationByUsernameQuery>,
     database_client: Arc<database_manager::App>,
+    organization_repository: Arc<dyn OrganizationRepository>,
+    sdk: Arc<SdkAuthApp>,
+}
+
+/// Older Library tenants can exist in auth without a local organization row.
+/// Restore only the already-authorized request's native Library tenant; never
+/// implicitly import a tenant from another platform or grant any policies.
+async fn restore_library_organization(
+    repository: &dyn OrganizationRepository,
+    operator: &OperatorResp,
+    tenant_id: &TenantId,
+    username: &Identifier,
+) -> errors::Result<Organization> {
+    if operator.id != tenant_id.as_str()
+        || operator.platform_id != LIBRARY_TENANT.as_str()
+        || operator.operator_name != username.value().as_str()
+    {
+        return Err(errors::Error::not_found(
+            "organization not found in create repo",
+        ));
+    }
+    let organization = Organization::new(
+        tenant_id,
+        &operator.name.parse()?,
+        username,
+        None,
+        None,
+    );
+    repository.insert(&organization).await?;
+    Ok(organization)
 }
 
 fn parse_optional_description(
@@ -51,13 +85,29 @@ impl CreateRepoInputPort for CreateRepo {
             .await?;
 
         // TODO: add English comment
-        let org = self
-            .get_organization_by_username
-            .execute(&input.org_username.parse()?)
-            .await?
-            .ok_or(errors::not_found!(
-                "organization not found in create repo"
-            ))?;
+        let username = input.org_username.parse::<Identifier>()?;
+        let org =
+            self.get_organization_by_username.execute(&username).await?;
+        let org = match org {
+            Some(org) => org,
+            None => {
+                let tenant_id = input.multi_tenancy.get_operator_id()?;
+                let operator = self
+                    .sdk
+                    .get_operator(tenant_id.as_str())
+                    .await?
+                    .ok_or(errors::not_found!(
+                        "organization not found in create repo"
+                    ))?;
+                restore_library_organization(
+                    self.organization_repository.as_ref(),
+                    &operator,
+                    &tenant_id,
+                    &username,
+                )
+                .await?
+            }
+        };
         let description =
             parse_optional_description(input.description.as_deref())?;
 
@@ -181,7 +231,99 @@ impl CreateRepoInputPort for CreateRepo {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_optional_description;
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Default)]
+    struct Organizations(Mutex<Option<Organization>>);
+
+    #[async_trait::async_trait]
+    impl OrganizationRepository for Organizations {
+        async fn insert(&self, org: &Organization) -> errors::Result<()> {
+            *self.0.lock().unwrap() = Some(org.clone());
+            Ok(())
+        }
+        async fn update(&self, _: &Organization) -> errors::Result<()> {
+            unreachable!()
+        }
+        async fn get_by_id(
+            &self,
+            id: &TenantId,
+        ) -> errors::Result<Option<Organization>> {
+            Ok(self.0.lock().unwrap().clone().filter(|org| org.id() == id))
+        }
+        async fn get_by_username(
+            &self,
+            _: &Identifier,
+        ) -> errors::Result<Option<Organization>> {
+            unreachable!()
+        }
+        async fn find_all(&self) -> errors::Result<Vec<Organization>> {
+            unreachable!()
+        }
+        async fn delete(&self, _: &TenantId) -> errors::Result<()> {
+            unreachable!()
+        }
+    }
+
+    fn native_operator() -> OperatorResp {
+        OperatorResp {
+            id: TenantId::default().to_string(),
+            name: "Test organization".into(),
+            operator_name: "test1".into(),
+            platform_id: LIBRARY_TENANT.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn restores_missing_native_organization_for_authorized_tenant() {
+        let repository = Organizations::default();
+        let operator = native_operator();
+        let tenant_id = operator.id.parse().unwrap();
+        let org = restore_library_organization(
+            &repository,
+            &operator,
+            &tenant_id,
+            &"test1".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(org.id(), &tenant_id);
+        assert_eq!(org.username().value().as_str(), "test1");
+        assert_eq!(org.name().as_str(), "Test organization");
+        assert!(repository.get_by_id(&tenant_id).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn restore_rejects_foreign_platform_or_mismatched_tenant_or_alias(
+    ) {
+        for mismatch in ["platform", "tenant", "alias"] {
+            let repository = Organizations::default();
+            let mut operator = native_operator();
+            let tenant_id = operator.id.parse().unwrap();
+            match mismatch {
+                "platform" => {
+                    operator.platform_id = TenantId::default().to_string()
+                }
+                "tenant" => operator.id = TenantId::default().to_string(),
+                "alias" => operator.operator_name = "other-org".into(),
+                _ => unreachable!(),
+            }
+            assert!(
+                restore_library_organization(
+                    &repository,
+                    &operator,
+                    &tenant_id,
+                    &"test1".parse().unwrap(),
+                )
+                .await
+                .is_err(),
+                "{mismatch}"
+            );
+            assert!(repository.0.lock().unwrap().is_none(), "{mismatch}");
+        }
+    }
 
     #[test]
     fn empty_description_is_treated_as_absent() {
