@@ -20,24 +20,11 @@ spec:
       build:
         package: library-api
         binary: lambda-library-api
-        # Tachyon Cloud App の GitHub Actions backend で build する。container は
-        # read-only rootfs・非 root で yum / pip は使えない。cargo-lambda / zig /
-        # protoc は digest 固定の builder image に入っており、ここでは toolchain
-        # だけを書き込み可能な RUSTUP_HOME (/tools/rustup) に入れる。
+        # Tachyon Cloud App の GitHub Actions backend で build する。command と
+        # installCommand は書かない。Tachyon が package / binary / release / arch から
+        # `cargo lambda build` を組み立て、rust-toolchain.toml の toolchain と arch の
+        # target を入れる (PLT-5946)。SQLX_OFFLINE は environments の envVars で渡す。
         runnerBackend: github_actions
-        installCommand: rustup toolchain install nightly-2026-06-04 --profile minimal --no-self-update && rustup target add aarch64-unknown-linux-gnu --toolchain nightly-2026-06-04
-        # login shell (-l) は /etc/profile が PATH を上書きして image の
-        # /tools/cargo/bin を落とし得るので使わない。
-        command: >-
-          bash -c 'LAMBDA_ARTIFACT_DIR="${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/lambda/lambda-library-api";
-          (while true; do sleep 60; echo "cargo lambda build still running..."; done) &
-          HEARTBEAT_PID=$!;
-          trap '\''kill "$HEARTBEAT_PID" 2>/dev/null || true'\'' EXIT;
-          SQLX_OFFLINE=true cargo +nightly-2026-06-04 lambda build --package library-api --bin lambda-library-api --release --arm64 --lambda-dir "$LAMBDA_ARTIFACT_DIR" --flatten lambda-library-api;
-          BUILD_STATUS=$?;
-          kill "$HEARTBEAT_PID" 2>/dev/null || true;
-          wait "$HEARTBEAT_PID" 2>/dev/null || true;
-          if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
         release: true
         arch: arm64
       # Both environments migrate through the app's own Lambda, invoked on
@@ -74,6 +61,11 @@ spec:
       environments:
         production:
           envVars:
+            # Compile against the committed .sqlx cache; the build has no
+            # database to check queries against. Declared per environment
+            # because an environment's envVars replace the app-level list.
+            - name: SQLX_OFFLINE
+              value: "true"
             - name: PROPERTY_VALUE_STORAGE_MODE
               value: dual_write_legacy_read
             - name: LIBRARY_PHOTON_LIVE_ENABLED
@@ -110,6 +102,11 @@ spec:
             engine: mysql
             envVar: DATABASE_URL
           envVars:
+            # Compile against the committed .sqlx cache; the build has no
+            # database to check queries against. Declared per environment
+            # because an environment's envVars replace the app-level list.
+            - name: SQLX_OFFLINE
+              value: "true"
             # Keep the OAuth provider lookup on Library's platform tenant.
             # Preview otherwise fell back to the historical development ID.
             - name: LIBRARY_TENANT_ID
