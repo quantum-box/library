@@ -128,6 +128,10 @@ spec:
               value: "10"
             - name: LIBRARY_PARQUET_BUCKET
               value: "tachyon-library-parquet-production"
+            # Export objects from isolated preview data must not share the
+            # production library/ namespace, even when using the same bucket.
+            - name: LIBRARY_PARQUET_PREFIX
+              value: "preview/library"
             # Keep the OAuth provider lookup on Library's platform tenant.
             # Preview otherwise fell back to the historical development ID.
             - name: LIBRARY_TENANT_ID

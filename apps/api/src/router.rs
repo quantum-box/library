@@ -850,7 +850,14 @@ async fn build_parquet_storage(
     let bucket = std::env::var("LIBRARY_PARQUET_BUCKET")
         .unwrap_or_else(|_| "library-parquet".to_string());
     let (storage, presign_storage) = build_bucket_storage(&bucket).await?;
-    Ok(ParquetStorage::new(storage, presign_storage, bucket))
+    let key_prefix = std::env::var("LIBRARY_PARQUET_PREFIX")
+        .unwrap_or_else(|_| "library".to_string());
+    Ok(ParquetStorage::new(
+        storage,
+        presign_storage,
+        bucket,
+        key_prefix,
+    ))
 }
 
 /// Where record body images go. Production speaks to Tachyon storage as

@@ -31,6 +31,11 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 | `LIBRARY_PARQUET_BUCKET` | required | Terraform `aws_s3_bucket.library_parquet.id` | production bucket name |
 | `PORT` | required for server binary | deploy platform | Lambda runtime では通常不要、Cloud App では `8080` |
 
+プレビューでは `LIBRARY_PARQUET_PREFIX=preview/library` を設定し、
+エクスポートを `preview/library/{org}/{repo}/...` に保存する。
+本番は未設定時の `library/{org}/{repo}/...` を使う。同じ bucket を使っても
+両者のオブジェクトキーとエクスポートキャッシュは分離される。
+
 ## 本番推奨 env
 
 | Env | Scope | Source | 用途 |
