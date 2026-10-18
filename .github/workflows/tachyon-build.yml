@@ -35,7 +35,7 @@ jobs:
         run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       # install/build は Action の container 内で実行される。
       # この runner に入れた toolchain は container からは見えない。
-      - uses: quantum-box/tachyon-ops-action/cloud-app-build@e03c7cc9b867ecff53fcbd7fb372fa5a8ddc9a99
+      - uses: quantum-box/tachyon-ops-action/cloud-app-build@e583793952cab912869e1baa040a3701bcaf068a
         with:
           api-url: https://api.n1.tachy.one
           build-id: ${{ inputs.build_id }}
