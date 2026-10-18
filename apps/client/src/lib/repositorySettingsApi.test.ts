@@ -277,7 +277,7 @@ describe('repositorySettingsApi', () => {
           id: 'property-owner',
           name: 'Parent',
           typ: 'RELATION',
-          meta: { databaseId: 'database-2' },
+          meta: { databaseId: 'db_2' },
         },
       },
     }))
@@ -286,7 +286,7 @@ describe('repositorySettingsApi', () => {
     await updateRepositoryProperty(target, 'property-owner', {
       name: 'Parent',
       type: 'RELATION',
-      relationDatabaseId: 'database-2',
+      relationDatabaseId: 'db_2',
     })
 
     expect(requestBody(fetchMock).variables).toEqual({
@@ -296,24 +296,27 @@ describe('repositorySettingsApi', () => {
         repoUsername: 'library',
         propertyName: 'Parent',
         propertyType: 'RELATION',
-        meta: { relation: 'database-2' },
+        meta: { relation: 'db_2' },
       },
     })
   })
 
-  it('validates Relation metadata before issuing a mutation', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+  it.each([undefined, '', 'rp_kpi', 'quantumbox/kpi', 'database-kpi'])(
+    'rejects invalid Relation database ID %s before issuing a mutation', async (relationDatabaseId) => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
 
-    await expect(createRepositoryProperty(target, {
-      name: 'Parent',
-      type: 'RELATION',
-    })).rejects.toEqual(expect.objectContaining<Partial<RepositorySettingsApiError>>({
-      kind: 'validation',
-      status: 422,
-    }))
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
+      await expect(createRepositoryProperty(target, {
+        name: 'Parent',
+        type: 'RELATION',
+        relationDatabaseId,
+      })).rejects.toEqual(expect.objectContaining<Partial<RepositorySettingsApiError>>({
+        kind: 'validation',
+        status: 422,
+      }))
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
 
   it('deletes a Property only after GraphQL confirms its id', async () => {
     const fetchMock = vi.fn(async () => graphqlResponse({

@@ -133,13 +133,14 @@ describe('RepositorySettingsView', () => {
     recordsMocks.fetchLibraryRepositories.mockResolvedValue([
       {
         id: 'rp_people',
-        databases: ['database-people'],
+        databases: ['db_people'],
         username: 'people',
         name: 'People',
         orgUsername: 'quantum-box',
       },
       {
-        id: 'database-other-tenant',
+        id: 'rp_other_tenant',
+        databases: ['db_other_tenant'],
         username: 'private-people',
         name: 'Private people',
         orgUsername: 'other-tenant',
@@ -404,7 +405,7 @@ describe('RepositorySettingsView', () => {
       name: 'related_people',
       displayName: 'Related people',
       typ: 'RELATION',
-      meta: { databaseId: 'database-people' },
+      meta: { databaseId: 'db_people' },
     })
     renderView()
     await screen.findByTestId('repository-settings-body')
@@ -433,7 +434,7 @@ describe('RepositorySettingsView', () => {
         name: 'related_people',
         displayName: 'Related people',
         type: 'RELATION',
-        relationDatabaseId: 'database-people',
+        relationDatabaseId: 'db_people',
       },
     ))
   })

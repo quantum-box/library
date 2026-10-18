@@ -509,9 +509,9 @@ function propertyInput(
     meta = draft.type === 'SELECT' ? { select: options } : { multiSelect: options }
   } else if (draft.type === 'RELATION') {
     const databaseId = draft.relationDatabaseId?.trim()
-    if (!databaseId) {
+    if (!databaseId?.startsWith('db_')) {
       throw new RepositorySettingsApiError(
-        'Relation properties require a repository database ID.',
+        t('repoSettings.relationRequired'),
         422,
         'validation',
       )
