@@ -1138,12 +1138,14 @@ impl SdkAuthApp {
     // ---- OAuth bootstrap (raw reqwest - IaC not in SDK) ----
 
     /// Fetch OAuth provider configurations from tachyon-api.
-    /// Uses public endpoint (no auth required).
+    ///
+    /// The result is shared by the whole process, so the request always
+    /// carries the process-level service credential, never a caller's.
     pub async fn fetch_oauth_config(
         &self,
         tenant_id: &TenantId,
     ) -> errors::Result<OAuthBootstrapConfig> {
-        let config = self.sdk_config_public();
+        let config = self.sdk_config_with_token(&self.service_auth_token);
         let body: OAuthProvidersResp = Self::rest_get_query(
             &config,
             "/v1/iac/oauth-providers",

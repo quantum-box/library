@@ -173,9 +173,18 @@ mod tests {
 
         let app = axum::Router::new().route(
             "/v1/iac/oauth-providers",
-            axum::routing::get(move || {
+            axum::routing::get(move |headers: axum::http::HeaderMap| {
                 let seen = counter.fetch_add(1, Ordering::SeqCst);
                 async move {
+                    // tachyon-api only serves OAuth credentials to an
+                    // authenticated service account.
+                    if headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok())
+                        != Some("Bearer process-level-token")
+                    {
+                        return Err(axum::http::StatusCode::UNAUTHORIZED);
+                    }
                     if seen < failures {
                         return Err(
                             axum::http::StatusCode::SERVICE_UNAVAILABLE,
