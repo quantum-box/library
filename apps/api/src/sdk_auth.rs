@@ -1145,7 +1145,7 @@ impl SdkAuthApp {
         &self,
         tenant_id: &TenantId,
     ) -> errors::Result<OAuthBootstrapConfig> {
-        let config = self.sdk_config_with_token(&self.service_auth_token);
+        let config = self.sdk_config_as_service();
         let body: OAuthProvidersResp = Self::rest_get_query(
             &config,
             "/v1/iac/oauth-providers",
