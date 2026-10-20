@@ -8,7 +8,9 @@
 //!
 //! In production the object store is Tachyon storage (`/v1/storage/*`).
 //! Objects live in each organization's own tenant storage, keyed
-//! `{org_tenant}/library/images/{id}`. The service account's credential
+//! `{org_tenant}/library/images/{id}` by default. Preview deployments set
+//! `LIBRARY_TACHYON_IMAGE_PREFIX` to isolate both uploads and reads under
+//! `{org_tenant}/preview/library/images/{id}`. The service account's credential
 //! only verifies in the Library platform tenant, so requests act in that
 //! scope and name the organization through the storage API's `tenant_id`
 //! delegation field: Tachyon verifies the organization is a descendant of
@@ -102,6 +104,7 @@ pub struct TachyonImageStore {
     auth_token: String,
     /// The Library platform tenant the service account acts as.
     platform_tenant: String,
+    key_prefix: String,
     http: reqwest::Client,
 }
 
@@ -115,17 +118,22 @@ impl TachyonImageStore {
         base_url: String,
         auth_token: String,
         platform_tenant: String,
+        key_prefix: String,
     ) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             auth_token,
             platform_tenant,
+            key_prefix,
             http: reqwest::Client::new(),
         }
     }
 
-    fn object_key(org_tenant: &str, image_id: &str) -> String {
-        format!("{org_tenant}/library/images/{image_id}")
+    fn object_key(&self, org_tenant: &str, image_id: &str) -> String {
+        format!(
+            "{org_tenant}/{}/{image_id}",
+            self.key_prefix.trim_matches('/')
+        )
     }
 
     async fn storage_call<T: serde::de::DeserializeOwned>(
@@ -177,7 +185,7 @@ impl ImageObjectStore for TachyonImageStore {
         content_type: &str,
         bytes: Bytes,
     ) -> errors::Result<()> {
-        let key = Self::object_key(org_tenant, image_id);
+        let key = self.object_key(org_tenant, image_id);
         let presign: StoragePresignResponse = self
             .storage_call(
                 "/v1/storage/presigned-url",
@@ -229,7 +237,7 @@ impl ImageObjectStore for TachyonImageStore {
         org_tenant: &str,
         image_id: &str,
     ) -> errors::Result<Url> {
-        let key = Self::object_key(org_tenant, image_id);
+        let key = self.object_key(org_tenant, image_id);
         let presign: StoragePresignResponse = self
             .storage_call(
                 "/v1/storage/get-url",
@@ -722,6 +730,15 @@ mod tests {
 
     #[tokio::test]
     async fn tachyon_store_delegates_org_keys_under_platform_credentials() {
+        assert_tachyon_store_namespace("library/images").await;
+    }
+
+    #[tokio::test]
+    async fn preview_images_use_isolated_keys_for_upload_and_download() {
+        assert_tachyon_store_namespace("preview/library/images").await;
+    }
+
+    async fn assert_tachyon_store_namespace(key_prefix: &str) {
         let seen = Arc::new(Mutex::new(SeenStorageCalls::default()));
         let addr = stub_tachyon(seen.clone()).await;
 
@@ -729,6 +746,7 @@ mod tests {
             format!("http://{addr}"),
             "svc-token".to_string(),
             "tn_01platform".to_string(),
+            key_prefix.to_string(),
         );
 
         store
@@ -748,7 +766,9 @@ mod tests {
             .await
             .unwrap();
 
-        let expected_key = "tn_01orgtenant/library/images/0123456789abcdef0123456789abcdef.png";
+        let expected_key = format!(
+            "tn_01orgtenant/{key_prefix}/0123456789abcdef0123456789abcdef.png"
+        );
         let seen = seen.lock().unwrap();
 
         let (bearer, operator, presign_body) =

@@ -544,7 +544,7 @@ test.describe('Library shell', () => {
 
     await expect(page.getByText('Property added.')).toBeVisible()
     await expect(page.getByTestId('repository-property-list')).toContainText('Related people')
-    await expect(page.getByTestId('repository-property-list')).toContainText('repo-people')
+    await expect(page.getByTestId('repository-property-list')).toContainText('db_people')
 
     await page.goto('/quantum-box/photon-core/data/seed-data-201')
     await expect(page.getByTestId('data-editor-page')).toBeVisible()

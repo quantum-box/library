@@ -20,11 +20,11 @@ vi.mock('./WorkflowView', () => ({ WorkflowView: (props: {
 </> }))
 const target = { org: 'org', repo: 'repo' }
 const source: LibraryDataItem = { id: 'a', name: 'A', propertyData: [
-  { propertyId: 'parent', value: { dataIds: ['b'], databaseId: 'repo-id' } },
+  { propertyId: 'parent', value: { dataIds: ['b'], databaseId: 'db_records' } },
   { propertyId: 'body', value: { richText: 'preserve full body' } },
 ] }
-const table: LibraryRepoTableData = { repoId: 'repo-id', repoName: 'Repo', hasMore: false, items: [source], properties: [
-  { id: 'parent', name: 'Children', typ: 'Relation', meta: { databaseId: 'repo-id' } },
+const table: LibraryRepoTableData = { repoId: 'rp_repo', databaseId: 'db_records', repoName: 'Repo', hasMore: false, items: [source], properties: [
+  { id: 'parent', name: 'Children', typ: 'Relation', meta: { databaseId: 'db_records' } },
   { id: 'body', name: 'Body', typ: 'RichText' },
 ] }
 
@@ -43,7 +43,7 @@ describe('repository workflow persistence', () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalled())
     expect(mocks.detail).toHaveBeenCalledWith('a', target)
     expect(mocks.update.mock.calls[0][2].propertyData).toEqual([
-      { propertyId: 'parent', value: { dataIds: ['b', 'c'], databaseId: 'repo-id' } },
+      { propertyId: 'parent', value: { dataIds: ['b', 'c'], databaseId: 'db_records' } },
     ])
     expect(mocks.update.mock.calls[0][1]).toEqual([table.properties[0]])
   })

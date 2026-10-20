@@ -31,6 +31,17 @@ Library GA の初回デプロイ、ロールバック、障害対応で確認す
 | `LIBRARY_PARQUET_BUCKET` | required | Terraform `aws_s3_bucket.library_parquet.id` | production bucket name |
 | `PORT` | required for server binary | deploy platform | Lambda runtime では通常不要、Cloud App では `8080` |
 
+プレビューでは `LIBRARY_PARQUET_PREFIX=preview/library` を設定し、
+エクスポートを `preview/library/{org}/{repo}/...` に保存する。
+本番は未設定時の `library/{org}/{repo}/...` を使う。同じ bucket を使っても
+両者のオブジェクトキーとエクスポートキャッシュは分離される。
+
+Tachyon画像ストアのプレビューには
+`LIBRARY_TACHYON_IMAGE_PREFIX=preview/library/images` を設定する。
+保存・取得は `{org_tenant}/preview/library/images/{image_id}` を使い、
+本番の既定値 `{org_tenant}/library/images/{image_id}` とは分離される。
+Lambdaの起動要件である `ENVIRONMENT=production` は変更しない。
+
 ## 本番推奨 env
 
 | Env | Scope | Source | 用途 |

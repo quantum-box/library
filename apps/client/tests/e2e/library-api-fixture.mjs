@@ -19,6 +19,7 @@ const repositoryTemplate = {
 
 const relationRepositoryTemplate = {
   id: 'repo-people',
+  databases: ['db_people'],
   username: 'people',
   name: 'People',
   description: 'Related people records for Library E2E',

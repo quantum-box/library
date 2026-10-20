@@ -14,7 +14,8 @@ describe('createLibraryRelationRecordLoader', () => {
     vi.clearAllMocks()
     mocks.fetchLibraryRepositories.mockResolvedValue([
       {
-        id: 'database-target',
+        id: 'rp_people',
+        databases: ['db_target'],
         username: 'people',
         name: 'People',
         orgUsername: 'example',
@@ -32,7 +33,7 @@ describe('createLibraryRelationRecordLoader', () => {
 
   it('resolves the canonical database id and keeps pagination', async () => {
     const loader = createLibraryRelationRecordLoader()
-    await expect(loader.loadPage('database-target')).resolves.toEqual({
+    await expect(loader.loadPage('db_target')).resolves.toEqual({
       items: [{ id: 'data-1', name: 'Aoi Example' }],
       hasMore: true,
       nextPage: 2,
@@ -42,7 +43,7 @@ describe('createLibraryRelationRecordLoader', () => {
       org: 'example',
       repo: 'people',
       operatorId: 'operator-example',
-      databaseId: 'database-target',
+      databaseId: 'db_target',
       repoName: 'People',
     }, 1)
   })
@@ -53,7 +54,7 @@ describe('createLibraryRelationRecordLoader', () => {
       .mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
     const loader = createLibraryRelationRecordLoader()
 
-    await expect(loader.loadSelected('database-target', ['data-2', 'removed', 'data-2']))
+    await expect(loader.loadSelected('db_target', ['data-2', 'removed', 'data-2']))
       .resolves.toEqual([
         { id: 'data-2', name: 'Haru Example' },
         { id: 'removed', name: 'removed', unavailable: true },
@@ -74,8 +75,8 @@ describe('createLibraryRelationRecordLoader', () => {
     const loader = createLibraryRelationRecordLoader()
 
     await Promise.all([
-      loader.loadSelected('database-target', ['data-2']),
-      loader.loadSelected('database-target', ['data-2']),
+      loader.loadSelected('db_target', ['data-2']),
+      loader.loadSelected('db_target', ['data-2']),
     ])
 
     expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledTimes(1)
@@ -90,9 +91,9 @@ describe('createLibraryRelationRecordLoader', () => {
       })
     const loader = createLibraryRelationRecordLoader()
 
-    await expect(loader.loadSelected('database-target', ['data-2']))
+    await expect(loader.loadSelected('db_target', ['data-2']))
       .rejects.toThrow('temporary failure')
-    await expect(loader.loadSelected('database-target', ['data-2']))
+    await expect(loader.loadSelected('db_target', ['data-2']))
       .resolves.toEqual([{ id: 'data-2', name: 'Haru Example' }])
     expect(mocks.fetchLibraryDataDetail).toHaveBeenCalledTimes(2)
   })
@@ -102,7 +103,8 @@ describe('createLibraryRelationRecordLoader', () => {
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce([
         {
-          id: 'database-target',
+          id: 'rp_people',
+          databases: ['db_target'],
           username: 'people',
           name: 'People',
           orgUsername: 'example',
@@ -110,8 +112,8 @@ describe('createLibraryRelationRecordLoader', () => {
       ])
     const loader = createLibraryRelationRecordLoader()
 
-    await expect(loader.loadPage('database-target')).rejects.toThrow('temporary failure')
-    await expect(loader.loadPage('database-target')).resolves.toMatchObject({
+    await expect(loader.loadPage('db_target')).rejects.toThrow('temporary failure')
+    await expect(loader.loadPage('db_target')).resolves.toMatchObject({
       repositoryLabel: 'example / People',
     })
     expect(mocks.fetchLibraryRepositories).toHaveBeenCalledTimes(2)

@@ -53,6 +53,7 @@ pub struct ParquetStorage {
     storage: Arc<dyn Storage>,
     presign_storage: Arc<dyn Storage>,
     bucket: String,
+    key_prefix: String,
 }
 
 impl ParquetStorage {
@@ -60,11 +61,13 @@ impl ParquetStorage {
         storage: Arc<dyn Storage>,
         presign_storage: Arc<dyn Storage>,
         bucket: String,
+        key_prefix: String,
     ) -> Self {
         Self {
             storage,
             presign_storage,
             bucket,
+            key_prefix,
         }
     }
 }
@@ -592,8 +595,16 @@ pub async fn view_data_parquet(
 
     let fingerprint = build_parquet_fingerprint(&data_list, &properties);
     let file_name = format!("data-{fingerprint}.parquet");
-    let object_path = format!("library/{org}/{repo}/{file_name}");
-    let cache_key = format!("{org}/{repo}");
+    let object_path = parquet_object_path(
+        &parquet_storage.key_prefix,
+        &org,
+        &repo,
+        &file_name,
+    );
+    let cache_key = format!(
+        "{}/{}/{org}/{repo}",
+        parquet_storage.bucket, parquet_storage.key_prefix
+    );
     let should_upload = {
         let mut cache = PARQUET_CACHE.lock().map_err(|_| {
             errors::Error::internal_server_error("cache lock")
@@ -812,4 +823,41 @@ fn build_parquet_bytes(
         .map_err(|e| errors::Error::internal_server_error(e.to_string()))?;
 
     Ok(buffer)
+}
+
+fn parquet_object_path(
+    prefix: &str,
+    org: &str,
+    repo: &str,
+    file_name: &str,
+) -> String {
+    format!("{}/{org}/{repo}/{file_name}", prefix.trim_matches('/'))
+}
+
+#[cfg(test)]
+mod parquet_path_tests {
+    use super::parquet_object_path;
+
+    #[test]
+    fn production_exports_keep_the_existing_path() {
+        assert_eq!(
+            parquet_object_path("library", "org", "repo", "data.parquet"),
+            "library/org/repo/data.parquet"
+        );
+    }
+
+    #[test]
+    fn preview_exports_do_not_share_production_object_keys() {
+        let preview = parquet_object_path(
+            "preview/library",
+            "org",
+            "repo",
+            "data.parquet",
+        );
+        assert_eq!(preview, "preview/library/org/repo/data.parquet");
+        assert_ne!(
+            preview,
+            parquet_object_path("library", "org", "repo", "data.parquet")
+        );
+    }
 }

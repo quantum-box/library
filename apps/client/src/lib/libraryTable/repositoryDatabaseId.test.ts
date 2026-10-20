@@ -11,4 +11,13 @@ describe('repository relation targets', () => {
   it('supports legacy repositories identified by Database IDs', () => {
     expect(getRepositoryDatabaseId({ id: 'db_records' })).toBe('db_records')
   })
+  it.each(['kpi', 'quantumbox/kpi', 'database-kpi'])(
+    'does not treat a legacy repository identifier %s as a Database ID', (id) => {
+      expect(getRepositoryDatabaseId({ id })).toBeUndefined()
+    },
+  )
+  it('does not offer invalid database metadata as a relation target', () => {
+    expect(getRepositoryDatabaseId({ id: 'rp_repository', databases: ['rp_other'] })).toBeUndefined()
+  })
+
 })
