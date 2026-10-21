@@ -3,6 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
+        - test "$(node --version)" = "v24.22.1"
         - corepack enable
         - yarn install --immutable
     build:
