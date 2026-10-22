@@ -272,7 +272,7 @@ spec:
         installCommand: yarn install --immutable
         command: yarn build
         outputDirectory: dist
-        nodeVersion: "20"
+        nodeVersion: "24.22.1"
       envVars:
         - name: VITE_BACKEND_API_URL
           value: https://library-api.txcloud.app
@@ -301,7 +301,7 @@ spec:
         installCommand: yarn install --immutable
         command: yarn build
         outputDirectory: dist
-        nodeVersion: "20"
+        nodeVersion: "24.22.1"
       envVars:
         # The guide reads this API's OpenAPI document and GraphQL schema at
         # page load, so a preview build documents whatever API it points at.
@@ -325,7 +325,7 @@ spec:
           npm ci --ignore-scripts && bash scripts/install-worker-toolchain.sh
         command: npm run build:cloud
         outputDirectory: dist
-        nodeVersion: "22"
+        nodeVersion: "24.22.1"
       environments:
         production:
           envVars:
@@ -385,7 +385,7 @@ spec:
         # Prepare Rust/Wasm artifacts before the provider collects the bundle.
         installCommand: npm ci --ignore-scripts && bash scripts/install-worker-toolchain.sh
         command: npm run build:worker
-        nodeVersion: "22"
+        nodeVersion: "24.22.1"
       # `/` は 404 を返す。明示しないと serving smoke が落ちてデプロイが failed に
       # 記録され、txcloud.app URL が発行されない (SOL-431)。
       readinessProof:

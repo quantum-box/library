@@ -42,7 +42,7 @@ MCP と CLI はどちらも既存の usecase / policy check を通ります。�
 
 ## はじめに
 
-前提: Rust は `rust-toolchain.toml` の `nightly-2026-06-04` に固定。Node は 20 以上、パッケージマネージャは Yarn 4（`apps/client` のみ npm）。
+前提: Rust は `rust-toolchain.toml` の `nightly-2026-06-04` に固定。Node は 24.22.1、パッケージマネージャは Yarn 4（`apps/client` のみ npm）。
 
 ```bash
 # API
