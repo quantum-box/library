@@ -34,6 +34,7 @@ import {
   createServerRecordWithDelivery,
   deleteServerRecord,
   fetchLibraryOrganizations,
+  fetchOrganizationMembers,
   fetchAllLibraryRepoTableData,
   fetchLibraryRepoTableData,
   fetchLibraryRepositories,
@@ -1449,5 +1450,29 @@ describe('the destination of a write', () => {
     // deleted an id in whichever repository the build happened to name.
     expect(fetchMock).not.toHaveBeenCalled()
     expect(photonEngine.deleteClientEngineRecord).toHaveBeenCalledWith('records', 'never-fetched')
+  })
+})
+
+
+describe('fetchOrganizationMembers', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); clearAuthTokens() })
+
+  it('uses the target organization scope and keeps API roles', async () => {
+    vi.stubEnv('VITE_LIBRARY_ACCESS_TOKEN', 'member-token')
+    const users = [{ id: 'user-1', name: 'Alice', role: 'OWNER' }]
+    const fetchMock = vi.fn(async () => Response.json({ data: { organization: { users } } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchOrganizationMembers('acme', 'tenant-acme')).resolves.toEqual(users)
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ 'x-operator-id': 'tenant-acme', Authorization: 'Bearer member-token' }),
+      body: expect.stringContaining('"username":"acme"'),
+    }))
+  })
+
+  it('rejects partial GraphQL failures instead of showing an empty list', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      data: { organization: { users: [] } }, errors: [{ message: 'Forbidden' }],
+    })))
+    await expect(fetchOrganizationMembers('acme', 'tenant-acme')).rejects.toThrow('Forbidden')
   })
 })

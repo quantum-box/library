@@ -2,6 +2,22 @@ import type { LocaleMessages } from '../translate'
 
 /** Korean catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const ko: LocaleMessages = {
+  "orgMembers.title": "멤버 및 권한",
+  "orgMembers.refresh": "멤버 새로고침",
+  "orgMembers.description": "조직 역할을 표시합니다. 저장소별 권한도 적용됩니다.",
+  "orgMembers.OWNER": "소유자",
+  "orgMembers.MANAGER": "관리자",
+  "orgMembers.GENERAL": "일반",
+  "orgMembers.OWNERHint": "조직 및 저장소에 대한 전체 접근 권한.",
+  "orgMembers.MANAGERHint": "추가 조직 관리 권한.",
+  "orgMembers.GENERALHint": "기본 멤버십. 비공개 저장소에는 별도 권한이 필요할 수 있습니다.",
+  "orgMembers.loading": "멤버 로딩 중…",
+  "orgMembers.failed": "멤버를 불러올 수 없습니다.",
+  "orgMembers.search": "이름, 이메일 또는 ID로 검색",
+  "orgMembers.member": "멤버",
+  "orgMembers.role": "조직 역할",
+  "orgMembers.empty": "일치하는 멤버가 없습니다.",
+
   "workflow.removeFromView": "뷰에서 제거",
   "workflow.openData": "데이터 열기",
   "workflow.arrange": "자동 정렬",

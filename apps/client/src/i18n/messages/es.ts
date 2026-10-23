@@ -2,6 +2,22 @@ import type { LocaleMessages } from '../translate'
 
 /** Spanish catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const es: LocaleMessages = {
+  "orgMembers.title": "Miembros y permisos",
+  "orgMembers.refresh": "Actualizar miembros",
+  "orgMembers.description": "Se muestran los roles de la organización. También se aplican los permisos específicos de cada repositorio.",
+  "orgMembers.OWNER": "Propietario",
+  "orgMembers.MANAGER": "Administrador",
+  "orgMembers.GENERAL": "Miembro",
+  "orgMembers.OWNERHint": "Acceso completo a la organización y los repositorios.",
+  "orgMembers.MANAGERHint": "Permisos adicionales de gestión de la organización.",
+  "orgMembers.GENERALHint": "Membresía básica. Los repositorios privados pueden requerir acceso independiente.",
+  "orgMembers.loading": "Cargando miembros…",
+  "orgMembers.failed": "No se pudieron cargar los miembros.",
+  "orgMembers.search": "Buscar por nombre, correo o ID",
+  "orgMembers.member": "Miembro",
+  "orgMembers.role": "Rol de la organización",
+  "orgMembers.empty": "No hay miembros coincidentes.",
+
   "workflow.removeFromView": "Quitar de la vista",
   "workflow.openData": "Abrir datos",
   "workflow.arrange": "Organizar automáticamente",

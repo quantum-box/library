@@ -5,6 +5,22 @@ import type { LocaleMessages } from '../translate'
  * and `many` plural categories Russian needs and English has no form for.
  */
 export const ru: LocaleMessages = {
+  "orgMembers.title": "Участники и права",
+  "orgMembers.refresh": "Обновить участников",
+  "orgMembers.description": "Ниже показаны роли в организации. Также действуют отдельные права репозиториев.",
+  "orgMembers.OWNER": "Владелец",
+  "orgMembers.MANAGER": "Менеджер",
+  "orgMembers.GENERAL": "Участник",
+  "orgMembers.OWNERHint": "Полный доступ к организации и репозиториям.",
+  "orgMembers.MANAGERHint": "Дополнительные права управления организацией.",
+  "orgMembers.GENERALHint": "Базовое участие. Для закрытых репозиториев могут потребоваться отдельные права.",
+  "orgMembers.loading": "Загрузка участников…",
+  "orgMembers.failed": "Не удалось загрузить участников.",
+  "orgMembers.search": "Поиск по имени, почте или ID",
+  "orgMembers.member": "Участник",
+  "orgMembers.role": "Роль в организации",
+  "orgMembers.empty": "Подходящих участников нет.",
+
   "workflow.removeFromView": "Убрать из представления",
   "workflow.openData": "Открыть данные",
   "workflow.arrange": "Расположить автоматически",

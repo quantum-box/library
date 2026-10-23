@@ -3215,3 +3215,31 @@ export function createLibraryRecordsResource(
     },
   }
 }
+
+
+export interface OrganizationMember {
+  id: string
+  name?: string | null
+  email?: string | null
+  image?: string | null
+  role: string
+}
+
+export async function fetchOrganizationMembers(
+  username: string,
+  operatorId: string,
+): Promise<OrganizationMember[]> {
+  const payload = await requestLibraryGraphQL<{
+    organization?: { users: OrganizationMember[] } | null
+  }>(`
+    query LibraryClientOrganizationMembers($username: String!) {
+      organization(username: $username) {
+        users { id name email image role }
+      }
+    }
+  `, { username }, { operatorId })
+  if (!payload.organization || !Array.isArray(payload.organization.users)) {
+    throw new Error('Organization members were not returned')
+  }
+  return payload.organization.users
+}

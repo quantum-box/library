@@ -5,6 +5,22 @@ import type { LocaleMessages } from '../translate'
  * text differs. `src/i18n/catalogs.test.ts` fails if the two drift apart.
  */
 export const ja: LocaleMessages = {
+  "orgMembers.title": "メンバーと権限",
+  "orgMembers.refresh": "メンバーを再読み込み",
+  "orgMembers.description": "組織内のロールを表示します。リポジトリへのアクセスには、個別の権限設定も適用されます。",
+  "orgMembers.OWNER": "オーナー",
+  "orgMembers.MANAGER": "マネージャー",
+  "orgMembers.GENERAL": "一般",
+  "orgMembers.OWNERHint": "組織とリポジトリへの完全なアクセス権。",
+  "orgMembers.MANAGERHint": "組織管理に関する追加権限。",
+  "orgMembers.GENERALHint": "基本的な所属権限。非公開リポジトリには個別の権限が必要な場合があります。",
+  "orgMembers.loading": "メンバーを読み込み中…",
+  "orgMembers.failed": "メンバーを読み込めませんでした。",
+  "orgMembers.search": "名前・メール・IDで検索",
+  "orgMembers.member": "メンバー",
+  "orgMembers.role": "組織ロール",
+  "orgMembers.empty": "一致するメンバーがいません。",
+
   "workflow.removeFromView": "viewから取り除く",
   "workflow.openData": "Dataを開く",
   "workflow.arrange": "自動整列",
