@@ -2,6 +2,22 @@ import type { LocaleMessages } from '../translate'
 
 /** Traditional Chinese catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const zhHant: LocaleMessages = {
+  "orgMembers.title": "成員與權限",
+  "orgMembers.refresh": "重新整理成員",
+  "orgMembers.description": "下方顯示組織角色。儲存庫存取亦取決於儲存庫的個別權限。",
+  "orgMembers.OWNER": "擁有者",
+  "orgMembers.MANAGER": "管理員",
+  "orgMembers.GENERAL": "一般成員",
+  "orgMembers.OWNERHint": "擁有組織與儲存庫的完整存取權限。",
+  "orgMembers.MANAGERHint": "額外的組織管理權限。",
+  "orgMembers.GENERALHint": "基本成員權限。私人儲存庫可能需要個別授權。",
+  "orgMembers.loading": "正在載入成員…",
+  "orgMembers.failed": "無法載入成員。",
+  "orgMembers.search": "依姓名、電子郵件或 ID 搜尋",
+  "orgMembers.member": "成員",
+  "orgMembers.role": "組織角色",
+  "orgMembers.empty": "沒有符合的成員。",
+
   "workflow.removeFromView": "從檢視移除",
   "workflow.openData": "開啟資料",
   "workflow.arrange": "自動排列",

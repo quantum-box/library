@@ -13,6 +13,22 @@
  * `src/i18n/catalogs.test.ts` fails until the translations catch up.
  */
 export const en = {
+  "orgMembers.title": "Members & permissions",
+  "orgMembers.refresh": "Refresh members",
+  "orgMembers.description": "Organization roles are shown below. Repository access also depends on repository-specific permissions.",
+  "orgMembers.OWNER": "Owner",
+  "orgMembers.MANAGER": "Manager",
+  "orgMembers.GENERAL": "General",
+  "orgMembers.OWNERHint": "Full organization and repository access.",
+  "orgMembers.MANAGERHint": "Additional organization management permissions.",
+  "orgMembers.GENERALHint": "Basic membership. Private repositories may require separate access.",
+  "orgMembers.loading": "Loading members…",
+  "orgMembers.failed": "Could not load members.",
+  "orgMembers.search": "Search by name, email, or ID",
+  "orgMembers.member": "Member",
+  "orgMembers.role": "Organization role",
+  "orgMembers.empty": "No matching members.",
+
   "workflow.removeFromView": "Remove from view",
   "workflow.openData": "Open data",
   "workflow.arrange": "Auto arrange",

@@ -2,6 +2,22 @@ import type { LocaleMessages } from '../translate'
 
 /** Simplified Chinese catalog. Keys and `{placeholders}` mirror `en.ts`. */
 export const zhHans: LocaleMessages = {
+  "orgMembers.title": "成员与权限",
+  "orgMembers.refresh": "刷新成员",
+  "orgMembers.description": "下方显示组织角色。仓库访问还取决于仓库的专属权限。",
+  "orgMembers.OWNER": "所有者",
+  "orgMembers.MANAGER": "管理员",
+  "orgMembers.GENERAL": "普通成员",
+  "orgMembers.OWNERHint": "拥有组织和仓库的完整访问权限。",
+  "orgMembers.MANAGERHint": "额外的组织管理权限。",
+  "orgMembers.GENERALHint": "基本成员权限。私有仓库可能需要单独授权。",
+  "orgMembers.loading": "正在加载成员…",
+  "orgMembers.failed": "无法加载成员。",
+  "orgMembers.search": "按姓名、邮箱或 ID 搜索",
+  "orgMembers.member": "成员",
+  "orgMembers.role": "组织角色",
+  "orgMembers.empty": "没有匹配的成员。",
+
   "workflow.removeFromView": "从视图移除",
   "workflow.openData": "打开数据",
   "workflow.arrange": "自动排列",
