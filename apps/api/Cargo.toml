@@ -1,11 +1,12 @@
 [package]
 name = "library-api"
-version = "1.11.12"
+version = "1.11.13"
 edition = "2021"
 license.workspace = true
 
 
 [dependencies]
+strategy_projection = { path = "../../packages/strategy_projection" }
 database-manager = { path = "../../packages/database-manager" }
 # The migration gate applies the ADR-0049 combined history to preview
 # databases, and both crates must agree on what a per-PR database is named.

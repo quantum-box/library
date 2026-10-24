@@ -5,6 +5,18 @@ All notable changes to the Library API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.13] - 2026-10-24
+
+### Added
+- Private online PM projection routes with live Tachyon authorization, atomic
+  checkpoint/replay, shared Initiative–Project relations and legacy writer fencing.
+- Immutable authorized document releases for field, including revocation and
+  current source-document access checks.
+- Reviewed legacy-ID adoption with resumable versioned field scrubbing, preserved
+  local documents/relations, and safe rollback.
+- Automatic read-through refresh, bounded paged recovery, and live resource checks.
+- Explicit opt-in runtime configuration and an operational migration/runbook.
+
 ## [1.11.12] - 2026-10-17
 
 ### Fixed

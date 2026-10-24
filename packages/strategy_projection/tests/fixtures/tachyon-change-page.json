@@ -1,0 +1,110 @@
+{
+  "changes": [
+    {
+      "event_id": "pms_fixture:1:1",
+      "generation": 1,
+      "observed_at": "2026-10-24T00:00:00Z",
+      "observed_revision": 1,
+      "operation": "upsert",
+      "payload_hash": "9637192eca7c60622e63cc01ee444badaba53ce9dbc8f48eee9670cf8c25b477",
+      "projection": {
+        "archived": false,
+        "name": "p",
+        "owner": null,
+        "resource_ref": {
+          "external_id": "p",
+          "kind": "project",
+          "provider": "linear",
+          "workspace_id": "workspace"
+        },
+        "source_updated_at": null,
+        "status": null,
+        "target_date": null,
+        "url": null
+      },
+      "run_id": "pmr_fixture",
+      "schema_version": 1,
+      "scope_revision": "scope-v1",
+      "sequence": 1,
+      "subscription_id": "pms_fixture"
+    },
+    {
+      "event_id": "pms_fixture:1:2",
+      "generation": 1,
+      "observed_at": "2026-10-24T00:00:00Z",
+      "observed_revision": 1,
+      "operation": "archived",
+      "payload_hash": "2547df2a4f9dfafe27ad03d31854f652355659efb43b0a285abb25dac0de2990",
+      "projection": {
+        "archived": true,
+        "name": "p",
+        "owner": {
+          "external_id": "user",
+          "name": "Owner"
+        },
+        "resource_ref": {
+          "external_id": "p",
+          "kind": "project",
+          "provider": "linear",
+          "workspace_id": "workspace"
+        },
+        "source_updated_at": null,
+        "status": null,
+        "target_date": null,
+        "url": null
+      },
+      "run_id": "pmr_fixture",
+      "schema_version": 1,
+      "scope_revision": "scope-v1",
+      "sequence": 2,
+      "subscription_id": "pms_fixture"
+    },
+    {
+      "event_id": "pms_fixture:1:3",
+      "generation": 1,
+      "observed_at": "2026-10-24T00:00:00Z",
+      "observed_revision": 1,
+      "operation": "relation_change",
+      "payload_hash": "30a85340bb5e32dae494a6fb2f328dc497aa19267c8552ab9590d8af92998e92",
+      "relation": {
+        "kind": "initiative_project",
+        "source": {
+          "external_id": "i",
+          "kind": "initiative",
+          "provider": "linear",
+          "workspace_id": "workspace"
+        },
+        "target": {
+          "external_id": "p",
+          "kind": "project",
+          "provider": "linear",
+          "workspace_id": "workspace"
+        }
+      },
+      "removed": false,
+      "run_id": "pmr_fixture",
+      "schema_version": 1,
+      "scope_revision": "scope-v1",
+      "sequence": 3,
+      "subscription_id": "pms_fixture"
+    },
+    {
+      "event_id": "pms_fixture:1:4",
+      "generation": 1,
+      "observed_at": "2026-10-24T00:00:00Z",
+      "observed_revision": 0,
+      "operation": "access_revoked",
+      "payload_hash": "e7c29c224ef52a6312aaad00df39f94d30fcdf8edd7c878302b0c7fde1cbf767",
+      "run_id": "pmr_fixture",
+      "schema_version": 1,
+      "scope_revision": "scope-v1",
+      "sequence": 4,
+      "subscription_id": "pms_fixture"
+    }
+  ],
+  "has_more": false,
+  "next_cursor": {
+    "generation": 1,
+    "sequence": 4
+  }
+}
