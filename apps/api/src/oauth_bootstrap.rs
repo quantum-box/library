@@ -168,35 +168,71 @@ mod tests {
         failures: usize,
         empty_responses: usize,
     ) -> (Arc<OAuthBootstrap>, Arc<AtomicUsize>) {
+        bootstrap_for_caller(failures, empty_responses, None).await
+    }
+
+    /// Like [`bootstrap_with_empty_responses`], with the SDK optionally
+    /// scoped to a caller's token, as request handlers hold it.
+    async fn bootstrap_for_caller(
+        failures: usize,
+        empty_responses: usize,
+        caller_token: Option<&str>,
+    ) -> (Arc<OAuthBootstrap>, Arc<AtomicUsize>) {
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = hits.clone();
 
         let app = axum::Router::new().route(
             "/v1/iac/oauth-providers",
-            axum::routing::get(move || {
-                let seen = counter.fetch_add(1, Ordering::SeqCst);
-                async move {
-                    if seen < failures {
-                        return Err(
-                            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                        );
+            axum::routing::get(
+                move |headers: axum::http::HeaderMap,
+                      axum::extract::Query(query): axum::extract::Query<
+                    std::collections::HashMap<String, String>,
+                >| {
+                    let seen = counter.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        // tachyon-api only serves OAuth credentials to an
+                        // authenticated service account.
+                        if headers
+                            .get(axum::http::header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            != Some("Bearer process-level-token")
+                        {
+                            return Err(
+                                axum::http::StatusCode::UNAUTHORIZED,
+                            );
+                        }
+                        // The request scope and the tenant read must match.
+                        if headers
+                            .get("x-operator-id")
+                            .and_then(|value| value.to_str().ok())
+                            != Some(TEST_TENANT_ID)
+                            || query.get("tenant_id").map(String::as_str)
+                                != Some(TEST_TENANT_ID)
+                        {
+                            return Err(axum::http::StatusCode::FORBIDDEN);
+                        }
+                        if seen < failures {
+                            return Err(
+                                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                            );
+                        }
+                        if seen < failures + empty_responses {
+                            return Ok(axum::Json(
+                                serde_json::json!({"providers": []}),
+                            ));
+                        }
+                        Ok(axum::Json(serde_json::json!({
+                            "providers": [{
+                                "provider": "github",
+                                "client_id": "client-id",
+                                "client_secret": "client-secret",
+                                "redirect_uri": "https://example.test/cb",
+                                "webhook_secret": null,
+                            }],
+                        })))
                     }
-                    if seen < failures + empty_responses {
-                        return Ok(axum::Json(
-                            serde_json::json!({"providers": []}),
-                        ));
-                    }
-                    Ok(axum::Json(serde_json::json!({
-                        "providers": [{
-                            "provider": "github",
-                            "client_id": "client-id",
-                            "client_secret": "client-secret",
-                            "redirect_uri": "https://example.test/cb",
-                            "webhook_secret": null,
-                        }],
-                    })))
-                }
-            }),
+                },
+            ),
         );
 
         let listener =
@@ -207,13 +243,34 @@ mod tests {
         });
 
         let tenant: TenantId = TEST_TENANT_ID.parse().unwrap();
-        let sdk = Arc::new(SdkAuthApp::new(
+        let sdk = SdkAuthApp::new(
             format!("http://{addr}"),
             &tenant,
             "process-level-token",
-        ));
+        );
+        let sdk = Arc::new(match caller_token {
+            Some(token) => sdk.with_caller_token(token),
+            None => sdk,
+        });
 
         (Arc::new(OAuthBootstrap::new(sdk, tenant)), hits)
+    }
+
+    /// The configuration is shared by the whole process, so a request
+    /// handler's caller-scoped SDK still fetches it as the service.
+    #[tokio::test]
+    async fn fetches_with_the_service_credential_inside_a_caller_scope() {
+        let (bootstrap, _) =
+            bootstrap_for_caller(0, 0, Some("caller-jwt")).await;
+
+        let credentials = crate::sdk_auth::caller_token_scope(
+            Some("caller-jwt".into()),
+            bootstrap.credentials(OAuthProvider::Github),
+        )
+        .await
+        .expect("the service credential is sent, not the caller's");
+
+        assert_eq!(credentials.client_id, "client-id");
     }
 
     #[tokio::test]
