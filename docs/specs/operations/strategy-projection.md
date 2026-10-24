@@ -262,3 +262,30 @@ wire golden data comes from the actual Tachyon producer. Native client checks
 are recorded separately in `apps/client/docs/strategy-projection.md` by its
 owner. No production rollout, production migration, merge or commit was
 performed as part of these checks.
+
+## CI target coverage fix — 2026-10-24
+
+The strategy handler imports `LibraryApp` from `crate::app`, matching other
+handlers. The API library re-exports that type at its root, but the standalone
+API binary does not; library-only compilation therefore missed the invalid
+root import. The unused `ChangePage` import and obsolete, unreferenced
+`Snapshot` DTO were removed. No runtime behavior or lint policy was changed.
+
+Verification uses the pinned `nightly-2026-06-04` toolchain and the same local
+Swagger UI ZIP described above. Library and binary targets are both included
+to cover the original failure.
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| API library and all binaries | `cargo check -p library-api --lib --bins` | PASS. Before removing the obsolete `Snapshot` DTO; final Clippy compilation below covers that removal. |
+| Scoped strict Clippy | `cargo clippy -p library-api -p strategy_projection --lib --bins -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names` | PASS. Uses the existing CI lint policy unchanged. |
+| Strategy tests in library and binary targets | `cargo test -p library-api --lib --bins handler::strategy` | PASS: library 2 passed / 2 ignored; main binary 2 passed / 2 ignored. Other binaries had no matching tests. |
+| Projection unit tests | `cargo test -p strategy_projection --lib` | PASS: 11 passed, 0 failed, 0 ignored. |
+| Patch validation | `git diff --check` | PASS. |
+
+The ignored API cases are the existing disposable-MySQL read-through and
+reviewed-adoption tests (each appears in the library and main binary). No
+disposable database was started for this import/dead-code fix; the earlier
+database verification above remains a separate run. The Cargo manifest still
+reports the existing shared `bin/migrate.rs` target-path warning. No full
+workspace validation or CI rerun is claimed here.

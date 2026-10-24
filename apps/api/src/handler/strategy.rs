@@ -3,9 +3,9 @@
 #[path = "strategy_migration.rs"]
 mod migration_api;
 use crate::{
+    app::LibraryApp,
     handler::library_executor_extractor::LibraryExecutor,
     usecase::{LibraryOrg, ViewDataInputData, ViewRepoInputData},
-    LibraryApp,
 };
 use axum::{
     extract::{Extension, Path, Query},
@@ -21,7 +21,7 @@ use sqlx::MySqlPool;
 use std::{sync::Arc, time::Duration};
 use strategy_projection::{
     store::{Binding, DocumentRelease, Store},
-    ChangePage, ResourceRef,
+    ResourceRef,
 };
 use tachyon_sdk::auth::{CheckPolicyForResourceInput, ExecutorAction};
 
@@ -902,14 +902,6 @@ async fn revoke(
     Ok(Json(json!({"status":"revoked"})))
 }
 
-#[derive(Deserialize)]
-struct Snapshot {
-    generation: u64,
-    sequence: u64,
-    nodes: Vec<strategy_projection::Projection>,
-    edges: Vec<strategy_projection::wire::WireRelation>,
-    complete: bool,
-}
 async fn resync(
     Path((org, repo)): Path<(String, String)>,
     Extension(app): Extension<Arc<LibraryApp>>,
