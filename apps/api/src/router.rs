@@ -323,10 +323,20 @@ pub async fn router(
     let linear_client: Arc<
         dyn inbound_sync::providers::linear::LinearClient,
     > = Arc::new(OAuthLinearClient::new(linear_token_provider));
+    // Legacy writes hold a fence while the normal data handler uses the
+    // application pools. Keep waiters off those pools to avoid exhausting
+    // every application connection with row-lock waits.
+    let linear_writer_fence_pool = sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(2)
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .connect_lazy_with(
+            library_db.pool().connect_options().as_ref().clone(),
+        );
     let linear_data_handler: Arc<
         dyn inbound_sync::providers::linear::LinearDataHandler,
-    > = Arc::new(DefaultLinearDataHandler::new(
+    > = Arc::new(DefaultLinearDataHandler::with_writer_fence(
         library_data_repository.clone(),
+        linear_writer_fence_pool,
     ));
     let hubspot_client: Arc<
         dyn inbound_sync::providers::hubspot::HubSpotClient,
@@ -789,6 +799,7 @@ pub async fn router(
             get(graphql::graphql_introspection),
         )
         .merge(handler::create_router())
+        .merge(handler::strategy::router((*library_db.pool()).clone()))
         .merge(docs_router)
         .merge(image_router)
         .merge(collab_router)

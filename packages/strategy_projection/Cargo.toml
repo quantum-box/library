@@ -1,0 +1,19 @@
+[package]
+name = "strategy_projection"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex = "0.4"
+chrono.workspace = true
+thiserror.workspace = true
+sqlx.workspace = true
+uuid = { version = "1.5.0", features = ["v4", "serde"] }
+
+[dev-dependencies]
+url.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

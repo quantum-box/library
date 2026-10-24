@@ -37,6 +37,7 @@ import { CreateRecordModal } from './components/CreateRecordModal'
 import { isPendingRecordId } from './lib/pendingRecordId'
 import { LibraryHome } from './components/LibraryHome'
 import { OrganizationOverview } from './components/OrganizationOverview'
+import { RepositoryStrategyView } from './components/RepositoryStrategyView'
 import { RepositoryOverview } from './components/RepositoryOverview'
 import { ApiKeysView } from './components/ApiKeysView'
 import { RepositorySettingsView } from './components/RepositorySettingsView'
@@ -998,6 +999,19 @@ const repositoryRoute = createRoute({
 function RepositoryPage() {
   const { organization, repository } = repositoryRoute.useParams()
   return <RepositoryOverview organization={organization} repository={repository} />
+}
+
+const repositoryStrategyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$organization/$repository/strategy',
+  component: RepositoryStrategyPage,
+})
+
+function RepositoryStrategyPage() {
+  const { organization, repository } = repositoryStrategyRoute.useParams()
+  const { databases } = useWorkspaceDatabases()
+  const operatorId = databases.find(database => database.orgUsername === organization && database.repoUsername === repository)?.operatorId
+  return <RepositoryStrategyView key={`${organization}/${repository}/${operatorId ?? ''}`} organization={organization} repository={repository} operatorId={operatorId} />
 }
 
 const repositorySettingsRoute = createRoute({
@@ -2151,6 +2165,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   organizationRoute,
   repositoryRoute,
+  repositoryStrategyRoute,
   repositorySettingsRoute,
   repositoryPropertiesRoute,
   repositoryApiKeysRoute,

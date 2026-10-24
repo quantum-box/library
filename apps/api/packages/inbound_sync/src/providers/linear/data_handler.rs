@@ -15,12 +15,48 @@ use crate::providers::github::LibraryDataRepository;
 #[derive(Debug)]
 pub struct DefaultLinearDataHandler {
     data_repo: Arc<dyn LibraryDataRepository>,
+    writer_pool: Option<sqlx::MySqlPool>,
 }
 
 impl DefaultLinearDataHandler {
     /// Create a new handler with a data repository.
     pub fn new(data_repo: Arc<dyn LibraryDataRepository>) -> Self {
-        Self { data_repo }
+        Self {
+            data_repo,
+            writer_pool: None,
+        }
+    }
+
+    /// Production wiring uses a database fence shared with the new PM consumer.
+    pub fn with_writer_fence(
+        data_repo: Arc<dyn LibraryDataRepository>,
+        pool: sqlx::MySqlPool,
+    ) -> Self {
+        Self {
+            data_repo,
+            writer_pool: Some(pool),
+        }
+    }
+
+    async fn acquire_legacy_writer(
+        &self,
+        endpoint: &WebhookEndpoint,
+    ) -> errors::Result<Option<sqlx::Transaction<'_, sqlx::MySql>>> {
+        let Some(pool) = &self.writer_pool else {
+            return Ok(None);
+        };
+        let repo = endpoint.repository_id().ok_or_else(|| {
+            errors::Error::invalid("Linear target repository missing")
+        })?;
+        let mut tx = pool.begin().await?;
+        sqlx::query("INSERT IGNORE INTO library_pm_writer_fences(repo_id,writer) VALUES (?,'legacy')").bind(repo.to_string()).execute(&mut *tx).await?;
+        let writer: String = sqlx::query_scalar("SELECT writer FROM library_pm_writer_fences WHERE repo_id=? FOR UPDATE").bind(repo.to_string()).fetch_one(&mut *tx).await?;
+        if writer != "legacy" {
+            return Err(errors::Error::conflict(
+                "Legacy Linear writer is fenced; Tachyon cutover active",
+            ));
+        }
+        Ok(Some(tx))
     }
 
     /// Map Linear issue properties to Library properties.
@@ -317,6 +353,7 @@ impl LinearDataHandler for DefaultLinearDataHandler {
         issue: &Issue,
         mapping: Option<&PropertyMapping>,
     ) -> errors::Result<String> {
+        let _writer_guard = self.acquire_legacy_writer(endpoint).await?;
         let mut properties = Self::map_issue_properties(issue, mapping);
 
         // Add ext_linear property for Linear integration tracking
@@ -362,6 +399,7 @@ impl LinearDataHandler for DefaultLinearDataHandler {
         endpoint: &WebhookEndpoint,
         data_id: &str,
     ) -> errors::Result<()> {
+        let _writer_guard = self.acquire_legacy_writer(endpoint).await?;
         self.data_repo.delete_data(endpoint, data_id).await
     }
 
@@ -371,6 +409,7 @@ impl LinearDataHandler for DefaultLinearDataHandler {
         project: &Project,
         mapping: Option<&PropertyMapping>,
     ) -> errors::Result<String> {
+        let _writer_guard = self.acquire_legacy_writer(endpoint).await?;
         let mut properties = Self::map_project_properties(project, mapping);
 
         // Add ext_linear property for Linear integration tracking
@@ -415,6 +454,7 @@ impl LinearDataHandler for DefaultLinearDataHandler {
         endpoint: &WebhookEndpoint,
         data_id: &str,
     ) -> errors::Result<()> {
+        let _writer_guard = self.acquire_legacy_writer(endpoint).await?;
         self.data_repo.delete_data(endpoint, data_id).await
     }
 }
