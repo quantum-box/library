@@ -19,6 +19,30 @@ use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
 use value_object::{Identifier, LongText, TenantId};
 
+async fn authorize_creation_in_destination(
+    input: &CreateRepoInputData<'_>,
+    destination: &TenantId,
+) -> errors::Result<super::LibraryOrg> {
+    // GraphQL supports an omitted tenant header. Resolve that case from the
+    // destination, but reject a conflicting explicit header before any writes.
+    if input.multi_tenancy.operator_id().is_some() {
+        ensure_creation_tenant(input.multi_tenancy, destination)?;
+    }
+    let scope = super::LibraryOrg::with_org_and_operator(
+        input.org_username.clone(),
+        destination.clone(),
+    );
+    input
+        .auth
+        .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
+            executor: input.executor,
+            multi_tenancy: &scope,
+            action: "library:CreateRepo",
+        })
+        .await?;
+    Ok(scope)
+}
+
 fn ensure_creation_tenant(
     scope: &dyn tachyon_sdk::auth::MultiTenancyAction,
     destination: &TenantId,
@@ -137,16 +161,6 @@ impl CreateRepoInputPort for CreateRepo {
         input: CreateRepoInputData<'a>,
     ) -> errors::Result<Repo> {
         // TODO: add English comment
-        input
-            .auth
-            .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:CreateRepo",
-            })
-            .await?;
-
-        // TODO: add English comment
         let username = input.org_username.parse::<Identifier>()?;
         let org =
             self.get_organization_by_username.execute(&username).await?;
@@ -154,6 +168,9 @@ impl CreateRepoInputPort for CreateRepo {
             Some(org) => org,
             None => {
                 let tenant_id = input.multi_tenancy.get_operator_id()?;
+                // Restoring a local organization row is a write too.
+                authorize_creation_in_destination(&input, &tenant_id)
+                    .await?;
                 let operator = self
                     .sdk
                     .get_operator(tenant_id.as_str())
@@ -170,9 +187,12 @@ impl CreateRepoInputPort for CreateRepo {
                 .await?
             }
         };
-        // GraphQL's tenant header and organization argument are independent.
-        // Bind the authorization to the destination before any database writes.
-        ensure_creation_tenant(input.multi_tenancy, org.id())?;
+        let scope =
+            authorize_creation_in_destination(&input, org.id()).await?;
+        let input = CreateRepoInputData {
+            multi_tenancy: &scope,
+            ..input
+        };
         let description =
             parse_optional_description(input.description.as_deref())?;
 
