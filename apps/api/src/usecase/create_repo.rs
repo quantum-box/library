@@ -321,6 +321,7 @@ mod tests {
                         if oauth {
                             assert_eq!(uri.path(), "/v1/auth/policies/check-for-resource-for-user");
                             assert_eq!(headers["authorization"], "Bearer service-token");
+                            assert_eq!(headers["x-operator-id"], LIBRARY_TENANT.as_str());
                             assert_eq!(body["userId"], "us_01testcaller");
                             assert_eq!(body["tenantId"], "tn_01kshr165k3wwr8xyk0e6vy36c");
                         } else {
@@ -358,7 +359,7 @@ mod tests {
         };
         let sdk = crate::sdk_auth::SdkAuthApp::new(
             format!("http://{address}"),
-            &tenant,
+            &LIBRARY_TENANT,
             "service-token",
         )
         .with_caller_token(&token);

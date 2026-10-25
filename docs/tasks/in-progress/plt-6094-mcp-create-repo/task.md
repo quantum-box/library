@@ -20,7 +20,7 @@ grant, not a missing end-user membership or a base-credential regression.
 ## Production configuration repair
 
 The exact request body is retained in
-`.tachyon/manifests/library-delegate-bernard-square.json`. This is a REST
+`delegation-policy.json` in this directory. This is a REST
 policy registration payload, **not** a `tachyon manifest apply` document:
 the installed manifest schema does not support `resourceScope`.
 
@@ -73,6 +73,10 @@ authorized provisioning design; no service-credential fallback was added.
 - Local owner-access and existing organization restoration tests: 9 passed.
 - SDK credential selection / delegated policy response regression tests: 21 passed.
 - Changed Rust file passes rustfmt; git diff --check passes.
+- `cargo clippy -p library-api --lib -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names` passes.
+- An additional `--tests` Clippy run found four existing lints outside the
+  changed file (live.rs, strategy.rs, strategy_migration.rs, markdown_mutation.rs);
+  those unrelated files were left unchanged.
 - Deployment of the code repair: pending.
 - Successful creation and private readback using the original MCP connection:
   pending deployment. Do not mark PLT-6093 unblocked before this succeeds.
