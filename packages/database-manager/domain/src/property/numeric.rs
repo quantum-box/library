@@ -152,14 +152,19 @@ impl TypeQuantity {
                 "cannot convert different dimensions",
             ));
         }
-        let result = self
-            .decimal
-            .parse(&value.value)?
-            .checked_mul(from_factor)
-            .and_then(|v| v.checked_div(to_factor))
-            .ok_or_else(overflow)?;
+        // Convert exactly before enforcing the destination scale. Decimal's
+        // fixed-width division can underflow tiny values to zero.
+        let amount = bigdecimal::BigDecimal::from_str(&value.value)
+            .map_err(errors::Error::invalid)?;
+        let from_factor =
+            bigdecimal::BigDecimal::from_str(&from_factor.to_string())
+                .map_err(errors::Error::invalid)?;
+        let to_factor =
+            bigdecimal::BigDecimal::from_str(&to_factor.to_string())
+                .map_err(errors::Error::invalid)?;
+        let result = amount * from_factor / to_factor;
         self.normalize(&QuantityValue {
-            value: result.normalize().to_string(),
+            value: result.normalized().to_plain_string(),
             unit: target.into(),
         })
     }
@@ -266,9 +271,6 @@ fn parse_numeric(text: &str) -> errors::Result<Decimal> {
     .parse(text)
 }
 
-fn overflow() -> errors::Error {
-    errors::Error::invalid("decimal overflow")
-}
 impl FormulaExpr {
     pub fn dependencies(&self) -> errors::Result<BTreeSet<String>> {
         let mut ids = BTreeSet::new();
@@ -1177,6 +1179,34 @@ mod precision_tests {
             ComputedValue::Error {
                 code: "inexact_division".into()
             }
+        );
+    }
+}
+
+#[cfg(test)]
+mod quantity_precision_tests {
+    use super::*;
+    #[test]
+    fn conversion_never_underflows_to_zero() {
+        let quantity = TypeQuantity {
+            decimal: TypeDecimal {
+                precision: 28,
+                scale: 28,
+            },
+            ..TypeQuantity::default()
+        };
+        let tiny = QuantityValue {
+            value: "0.0000000000000000000000000001".into(),
+            unit: "g".into(),
+        };
+        assert!(quantity.convert(&tiny, "kg").is_err());
+        let representable = QuantityValue {
+            value: "0.000000001".into(),
+            unit: "g".into(),
+        };
+        assert_eq!(
+            quantity.convert(&representable, "kg").unwrap().value,
+            "0.000000000001"
         );
     }
 }
