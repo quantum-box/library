@@ -307,6 +307,10 @@ mod tests {
                 "image",
                 "rich_text",
                 "boolean",
+                "decimal",
+                "quantity",
+                "formula",
+                "rollup",
             ]
         );
     }
