@@ -307,6 +307,16 @@ fn numeric_property_mcp_contracts() {
     )
     .unwrap();
     assert!(matches!(decimal, PropertyType::Decimal(_)));
+    let property = Property::new(
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        "cost",
+        &decimal,
+        false,
+        0,
+    );
+    assert_eq!(property_to_mcp(&property).meta.unwrap()["precision"], 28);
     assert!(property_type_from_value(
         "decimal",
         json!({"precision":0,"scale":0})

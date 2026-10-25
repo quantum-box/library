@@ -2232,7 +2232,11 @@ fn property_to_mcp(property: &Property) -> McpProperty {
         display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
         meta: match property.property_type() {
-            database_manager::domain::PropertyType::Date(_) => property
+            database_manager::domain::PropertyType::Date(_)
+            | database_manager::domain::PropertyType::Decimal(_)
+            | database_manager::domain::PropertyType::Quantity(_)
+            | database_manager::domain::PropertyType::Formula(_)
+            | database_manager::domain::PropertyType::Rollup(_) => property
                 .property_type()
                 .get_meta()
                 .ok()
