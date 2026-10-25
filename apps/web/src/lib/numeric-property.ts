@@ -62,7 +62,8 @@ export function compareDecimal(left: string, right: string): number {
     const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.')
     return { coefficient: BigInt(`${negative ? '-' : ''}${whole}${fraction}`), scale: fraction.length }
   }
-  const a = parts(left), b = parts(right)
+  const a = parts(left)
+  const b = parts(right)
   if (!a || !b) return left.localeCompare(right)
   const scale = Math.max(a.scale, b.scale)
   const av = a.coefficient * 10n ** BigInt(scale - a.scale)
@@ -82,7 +83,8 @@ export function compareQuantity(left: string, right: string): number {
     const coefficient = BigInt(`${whole}${fraction}`) * factor
     return { coefficient, scale: fraction.length, dimension }
   }
-  const a = parse(left), b = parse(right)
+  const a = parse(left)
+  const b = parse(right)
   if (!a || !b || a.dimension !== b.dimension) return left.localeCompare(right)
   const scale = Math.max(a.scale, b.scale)
   const av = a.coefficient * 10n ** BigInt(scale - a.scale)

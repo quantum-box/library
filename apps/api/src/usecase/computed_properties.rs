@@ -15,12 +15,12 @@ pub(super) async fn evaluate(
     database: &database_manager::App,
     repos: &dyn GetRepoByUsernameQuery,
     auth: &dyn AuthApp,
-    executor: &dyn ExecutorAction,
-    tenancy: &dyn MultiTenancyAction,
+    actor: (&dyn ExecutorAction, &dyn MultiTenancyAction),
     tenant_id: &TenantId,
     records: Vec<Data>,
     properties: &[Property],
 ) -> errors::Result<Vec<Data>> {
+    let (executor, tenancy) = actor;
     if !properties.iter().any(|p| {
         matches!(
             p.property_type(),
@@ -283,12 +283,12 @@ pub(super) async fn authorize_definition(
     database: &database_manager::App,
     repos: &dyn GetRepoByUsernameQuery,
     auth: &dyn AuthApp,
-    executor: &dyn ExecutorAction,
-    tenancy: &dyn MultiTenancyAction,
+    actor: (&dyn ExecutorAction, &dyn MultiTenancyAction),
     tenant: &TenantId,
     source: &domain::DatabaseId,
     typ: &PropertyType,
 ) -> errors::Result<()> {
+    let (executor, tenancy) = actor;
     let PropertyType::Rollup(config) = typ else {
         return Ok(());
     };

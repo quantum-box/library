@@ -69,8 +69,7 @@ impl UpdatePropertyInputPort for UpdateProperty {
                 &self.database,
                 self.get_repo_by_username.as_ref(),
                 self.auth.as_ref(),
-                input.executor,
-                input.multi_tenancy,
+                (input.executor, input.multi_tenancy),
                 org.id(),
                 repo.databases()
                     .first()

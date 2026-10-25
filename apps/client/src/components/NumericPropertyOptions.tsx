@@ -24,12 +24,11 @@ export function NumericPropertyOptions({ type, initial, properties, disabled, on
   const [operation, setOperation] = useState(saved.function ?? 'sum')
   const [targets, setTargets] = useState<LibraryProperty[]>([])
   const [loadError, setLoadError] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(type === 'ROLLUP' && Boolean(saved.relation_property_id))
   useEffect(() => {
     if (type !== 'ROLLUP' || !relation) return
     let cancelled = false
     const source = properties.find((p) => p.id === relation)
-    setLoading(true); setTargets([]); setLoadError(false)
     void (async () => {
       const repositories = await fetchLibraryRepositories()
       const repository = repositories.find((r) => r.databases?.includes(source?.meta?.databaseId ?? ''))
@@ -61,7 +60,7 @@ export function NumericPropertyOptions({ type, initial, properties, disabled, on
     {type === 'QUANTITY' && <label className="block text-sm">{t('numeric.unit')}<select className={inputClass} value={unit} disabled={disabled} onChange={(e) => setUnit(e.target.value)}>{['g', 'kg', 'mL', 'L', 'count'].map((u) => <option key={u}>{u}</option>)}</select></label>}
     {type === 'FORMULA' && <label className="block text-sm">{t('propertyType.formula')}<input className={inputClass} value={expression} disabled={disabled} onChange={(e) => setExpression(e.target.value)} /><span className="text-xs text-muted-foreground">{t('numeric.formulaHelp')} {properties.filter((p) => ['DECIMAL', 'INTEGER', 'FORMULA', 'ROLLUP'].includes(p.typ)).map((p) => p.name).join(', ')}</span></label>}
     {type === 'ROLLUP' && <>
-      <label className="block text-sm">{t('propertyType.relation')}<select className={inputClass} value={relation} disabled={disabled} onChange={(e) => {setRelation(e.target.value); setTargetId('')}}><option value="">—</option>{properties.filter((p) => p.typ === 'RELATION').map((p) => <option key={p.id} value={p.id}>{p.displayName ?? p.name}</option>)}</select></label>
+      <label className="block text-sm">{t('propertyType.relation')}<select className={inputClass} value={relation} disabled={disabled} onChange={(e) => {setRelation(e.target.value); setTargetId(''); setLoading(Boolean(e.target.value)); setTargets([]); setLoadError(false)}}><option value="">—</option>{properties.filter((p) => p.typ === 'RELATION').map((p) => <option key={p.id} value={p.id}>{p.displayName ?? p.name}</option>)}</select></label>
       <label className="block text-sm">{t('numeric.target')}<select className={inputClass} value={targetId} disabled={disabled || loading} onChange={(e) => setTargetId(e.target.value)}><option value="">—</option>{targets.map((p) => <option key={p.id} value={p.id}>{p.displayName ?? p.name}</option>)}</select></label>
       <label className="block text-sm">{t('numeric.operation')}<select className={inputClass} value={operation} disabled={disabled} onChange={(e) => setOperation(e.target.value)}>{['count','sum','avg','min','max'].map((op) => <option key={op}>{op}</option>)}</select></label>
     </>}

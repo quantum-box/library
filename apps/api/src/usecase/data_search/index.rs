@@ -389,7 +389,7 @@ impl SearchIndex {
                     }
                 };
                 Ok(Predicate::Numeric {
-                    property: property.clone(),
+                    property: Box::new(property.clone()),
                     allowed,
                     min,
                     max,
@@ -511,7 +511,7 @@ impl SearchIndex {
 #[derive(Debug)]
 enum Predicate {
     Numeric {
-        property: Property,
+        property: Box<Property>,
         allowed: Option<Vec<PropertyDataValue>>,
         min: Option<PropertyDataValue>,
         max: Option<PropertyDataValue>,

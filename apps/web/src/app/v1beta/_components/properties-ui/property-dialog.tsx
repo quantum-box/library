@@ -241,13 +241,13 @@ export function PropertyDialog({
 				<Form {...form}>
 					<form onSubmit={form.handleSubmit(onSubmit)} className='space-y-4'>
                         {[PropertyType.Decimal, PropertyType.Quantity, PropertyType.Formula, PropertyType.Rollup].includes(form.watch('type')) && <div className="space-y-2">
-                          <label>Precision<Input type="number" value={form.watch('precision')} onChange={e => form.setValue('precision', Number(e.target.value))} /></label>
-                          <label>Decimal places<Input type="number" value={form.watch('scale')} onChange={e => form.setValue('scale', Number(e.target.value))} /></label>
+                          <label htmlFor="numeric-precision">Precision<Input id="numeric-precision" type="number" value={form.watch('precision')} onChange={e => form.setValue('precision', Number(e.target.value))} /></label>
+                          <label htmlFor="numeric-scale">Decimal places<Input id="numeric-scale" type="number" value={form.watch('scale')} onChange={e => form.setValue('scale', Number(e.target.value))} /></label>
                           {form.watch('type') === PropertyType.Quantity && <label>Unit<select value={form.watch('unit')} onChange={e => form.setValue('unit', e.target.value)}>{['g','kg','mL','L','count'].map(unit => <option key={unit}>{unit}</option>)}</select></label>}
-                          {form.watch('type') === PropertyType.Formula && <label>Formula<Input value={form.watch('expression')} onChange={e => form.setValue('expression', e.target.value)} placeholder="total_cost / servings" /><small>{properties.map(p => p.name).join(', ')}</small></label>}
+                          {form.watch('type') === PropertyType.Formula && <label htmlFor="numeric-expression">Formula<Input id="numeric-expression" value={form.watch('expression')} onChange={e => form.setValue('expression', e.target.value)} placeholder="total_cost / servings" /><small>{properties.map(p => p.name).join(', ')}</small></label>}
                           {form.watch('type') === PropertyType.Rollup && <>
                             <label>Relation<select value={form.watch('relation')} onChange={e => form.setValue('relation', e.target.value)}><option value="">—</option>{properties.filter(p => p.typ === PropertyType.Relation).map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label>
-                            <label>Target property ID<Input value={form.watch('target')} onChange={e => form.setValue('target', e.target.value)} /></label>
+                            <label htmlFor="numeric-target">Target property ID<Input id="numeric-target" value={form.watch('target')} onChange={e => form.setValue('target', e.target.value)} /></label>
                             <label>Aggregation<select value={form.watch('aggregation')} onChange={e => form.setValue('aggregation', e.target.value)}>{['sum','count','avg','min','max'].map(op => <option key={op}>{op}</option>)}</select></label>
                           </>}
                           {form.formState.errors.expression && <p role="alert">{form.formState.errors.expression.message}</p>}
