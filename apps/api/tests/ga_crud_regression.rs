@@ -1100,6 +1100,33 @@ async fn create_repo_forwards_general_users_caller_token_and_operator(
         string_at(&created_org, &["createOrganization", "id"])?;
     assert_ne!(operator_id, LIBRARY_TENANT_ID);
 
+    // An explicit tenant-A header must not authorize creation in tenant B.
+    // The normal no-header GraphQL lifecycle above remains supported.
+    let mismatched_scope = graphql_for_operator(
+        &client,
+        &server_url,
+        LIBRARY_TENANT_ID,
+        "mutation CreateRepo($input: CreateRepoInput!) {
+            createRepo(input: $input) { id username }
+        }",
+        json!({"input": {
+            "orgUsername": org,
+            "repoName": "Rejected cross-tenant repo",
+            "repoUsername": repo,
+            "userId": USER_ID,
+            "isPublic": false
+        }}),
+    )
+    .await
+    .unwrap_err();
+    assert!(mismatched_scope.to_string().contains("FORBIDDEN"));
+    assert!(!auth_state
+        .policy_checks
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|check| check.actions == ["library:CreateRepo"]));
+
     let created_repo = graphql_for_operator(
         &client,
         &server_url,
