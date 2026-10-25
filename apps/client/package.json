@@ -1,7 +1,7 @@
 {
   "name": "@quantum-box/library-client",
   "private": true,
-  "version": "0.1.86",
+  "version": "0.1.87",
   "type": "module",
   "engines": {
     "node": "24.22.1"

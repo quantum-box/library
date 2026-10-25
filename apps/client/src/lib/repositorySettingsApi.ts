@@ -25,6 +25,7 @@ export const repositoryPropertyTypes = [
   'HTML',
   'RICH_TEXT',
   'BOOLEAN',
+  'DECIMAL', 'QUANTITY', 'FORMULA', 'ROLLUP',
 ] as const
 
 export type RepositoryPropertyType = (typeof repositoryPropertyTypes)[number]
@@ -105,6 +106,7 @@ export interface RichTextTemplateDraft {
 }
 
 export interface RepositoryPropertyDraft {
+  configJson?: string
   name: string
   displayName?: string
   type: RepositoryPropertyType
@@ -490,7 +492,10 @@ function propertyInput(
   }
 
   let meta: Record<string, unknown> | undefined
-  if (draft.type === 'SELECT' || draft.type === 'MULTI_SELECT') {
+  if (['DECIMAL', 'QUANTITY', 'FORMULA', 'ROLLUP'].includes(draft.type)) {
+    const config = JSON.parse(draft.configJson ?? (draft.type === 'DECIMAL' ? '{"precision":28,"scale":12}' : draft.type === 'QUANTITY' ? '{"decimal":{"precision":28,"scale":12},"allowed_units":["g","kg"],"default_unit":"g","unit_version":1}' : '{}'))
+    meta = { json: JSON.stringify(config) }
+  } else if (draft.type === 'SELECT' || draft.type === 'MULTI_SELECT') {
     const options = (draft.options ?? []).map((option) => {
       const id = option.id?.trim()
       return {

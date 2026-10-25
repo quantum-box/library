@@ -23,6 +23,16 @@ use database_manager::domain::{
 fn property_type_from_request(
     payload: &AddPropertyRequest,
 ) -> errors::Result<PropertyType> {
+    if payload.config.is_some()
+        && !matches!(
+            payload.property_type.as_str(),
+            "decimal" | "quantity" | "formula" | "rollup"
+        )
+    {
+        return Err(errors::Error::invalid(
+            "config is only supported for numeric property types",
+        ));
+    }
     if payload.property_type != "id" && payload.auto_generate.is_some() {
         return Err(errors::Error::invalid(
             "auto_generate is only valid for an Id property",
@@ -39,6 +49,20 @@ fn property_type_from_request(
     }
 
     match payload.property_type.as_str() {
+        "decimal" | "quantity" | "formula" | "rollup" => {
+            let config = payload
+                .config
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let typ = PropertyType::from_meta(
+                &payload.property_type.to_ascii_uppercase(),
+                config,
+            )?;
+            typ.canonical_config()
+                .handler()
+                .validate_config(&typ.canonical_config())?;
+            Ok(typ)
+        }
         "string" => Ok(PropertyType::String),
         "integer" => Ok(PropertyType::Integer),
         "html" => Ok(PropertyType::Html),
@@ -157,6 +181,7 @@ mod tests {
     fn rest_id_property_preserves_auto_generate() {
         let property_type =
             property_type_from_request(&AddPropertyRequest {
+                config: None,
                 name: "id".to_string(),
                 display_name: None,
                 property_type: "id".to_string(),
@@ -178,6 +203,7 @@ mod tests {
     #[test]
     fn rest_id_property_requires_auto_generate() {
         let error = property_type_from_request(&AddPropertyRequest {
+            config: None,
             name: "id".to_string(),
             display_name: None,
             property_type: "id".to_string(),
@@ -199,6 +225,7 @@ mod tests {
     fn rest_date_property_is_accepted() {
         let property_type =
             property_type_from_request(&AddPropertyRequest {
+                config: None,
                 name: "published".to_string(),
                 display_name: None,
                 property_type: "date".to_string(),
@@ -215,6 +242,7 @@ mod tests {
     #[test]
     fn rest_non_id_property_rejects_auto_generate() {
         let error = property_type_from_request(&AddPropertyRequest {
+            config: None,
             name: "title".to_string(),
             display_name: None,
             property_type: "string".to_string(),
@@ -331,11 +359,28 @@ pub async fn update_property(
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Json(payload): Json<UpdatePropertyRequest>,
 ) -> errors::Result<Json<PropertyResponse>> {
-    if payload.name.is_none() && payload.display_name.is_none() {
+    if payload.name.is_none()
+        && payload.display_name.is_none()
+        && payload.config.is_none()
+    {
         return Err(errors::Error::invalid(
             "provide a Property key or display name to update",
         ));
     }
+    let numeric_type =
+        match (payload.property_type.as_deref(), payload.config) {
+            (
+                Some(typ @ ("decimal" | "quantity" | "formula" | "rollup")),
+                Some(config),
+            ) => Some(PropertyType::from_meta(
+                &typ.to_ascii_uppercase(),
+                config,
+            )?),
+            (None, None) => None,
+            _ => return Err(errors::Error::invalid(
+                "numeric config update requires property_type and config",
+            )),
+        };
     let input = crate::usecase::UpdatePropertyInputData {
         executor: &executor,
         multi_tenancy: &library_org,
@@ -344,7 +389,7 @@ pub async fn update_property(
         property_id,
         property_name: payload.name,
         property_display_name: payload.display_name,
-        property_type: None,
+        property_type: numeric_type.as_ref(),
         meta_json: None,
     };
 
@@ -354,6 +399,12 @@ pub async fn update_property(
 }
 fn to_property_response(property: &DomainProperty) -> PropertyResponse {
     PropertyResponse {
+        config: Some(
+            property
+                .property_type()
+                .get_meta()
+                .unwrap_or(serde_json::Value::Null),
+        ),
         id: property.id().to_string(),
         name: property.name().to_string(),
         display_name: property.display_name().to_string(),

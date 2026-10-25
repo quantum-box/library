@@ -1,3 +1,4 @@
+import { NumericPropertyOptions } from './NumericPropertyOptions'
 import { getRepositoryDatabaseId } from '../lib/libraryTable/repositoryDatabaseId'
 import {
   Badge,
@@ -110,6 +111,7 @@ function errorMessage(error: unknown): string {
 }
 
 function PropertyEditorDialog({
+  properties,
   state,
   target,
   busy,
@@ -117,6 +119,7 @@ function PropertyEditorDialog({
   onClose,
   onSave,
 }: {
+  properties: RepositoryPropertyDefinition[]
   state: PropertyDialogState
   target: RepositorySettingsTarget
   busy: boolean
@@ -126,6 +129,7 @@ function PropertyEditorDialog({
 }) {
   const { t } = useI18n()
   const property = state.property
+  const [numericConfig, setNumericConfig] = useState<string | null>(property?.meta?.json ?? null)
   const [name, setName] = useState(property?.name ?? '')
   const [displayName, setDisplayName] = useState(
     property?.displayName ?? property?.name ?? '',
@@ -239,6 +243,7 @@ function PropertyEditorDialog({
           )
         }
       }
+      if (['DECIMAL', 'QUANTITY', 'FORMULA', 'ROLLUP'].includes(type) && !numericConfig) throw new Error(t('numeric.invalid'))
       onSave({
         name: unchangedKey ? property.name : trimmedName,
         displayName: trimmedDisplayName,
@@ -249,6 +254,7 @@ function PropertyEditorDialog({
         ...(type === 'RELATION' ? { relationDatabaseId: relationDatabaseId.trim() } : {}),
         ...(type === 'ID' ? { autoGenerateId } : {}),
         ...(type === 'DATE' ? { dateOptions } : {}),
+        ...(numericConfig ? { configJson: numericConfig } : {}),
       })
     } catch (parseError) {
       setValidationError(errorMessage(parseError))
@@ -326,6 +332,7 @@ function PropertyEditorDialog({
             </p>
           </div>
 
+          {['DECIMAL', 'QUANTITY', 'FORMULA', 'ROLLUP'].includes(type) && <NumericPropertyOptions key={type} type={type} initial={property?.meta?.json} properties={properties} disabled={busy} onChange={setNumericConfig} />}
           {type === 'DATE' ? (
             <DatePropertyOptionsFields
               options={dateOptions}
@@ -730,6 +737,7 @@ export function RepositoryPropertiesSection({
       {propertyDialog ? (
         <PropertyEditorDialog
           key={`${propertyDialog.mode}:${propertyDialog.property?.id ?? 'new'}`}
+          properties={properties}
           state={propertyDialog}
           target={target}
           busy={propertyBusy}

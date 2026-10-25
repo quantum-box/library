@@ -31,6 +31,13 @@ export function libraryPropertyValueToGraphqlInput(
   value: LibraryPropertyDataValue
 ): Record<string, unknown> | null {
   switch (property.typ) {
+    case 'Decimal':
+      return value.decimal != null ? { decimal: value.decimal } : null
+    case 'Quantity':
+      return value.quantity != null ? { quantity: typeof value.quantity === 'string' ? value.quantity : JSON.stringify(value.quantity) } : null
+    case 'Formula':
+    case 'Rollup':
+      return null
     case 'String':
       return value.string != null ? { string: value.string } : null
     case 'Integer':
@@ -101,6 +108,10 @@ export function libraryPropertyValueToRestValue(
   value: LibraryPropertyDataValue
 ): unknown {
   switch (property.typ) {
+    case 'Decimal': return { decimal: value.decimal ?? '' }
+    case 'Quantity': return { quantity: value.quantity === '' ? null : typeof value.quantity === 'string' ? JSON.parse(value.quantity) : value.quantity }
+    case 'Formula':
+    case 'Rollup': return undefined
     case 'String':
     case 'Html':
     case 'Markdown':
@@ -140,6 +151,15 @@ export function parseEditablePropertyValue(
 ): LibraryPropertyDataValue | null {
   const trimmed = raw.trim()
   switch (property.typ) {
+    case 'Decimal':
+      return /^-?\d+(?:\.\d+)?$/.test(trimmed) ? { decimal: trimmed } : (trimmed === '' ? { decimal: '' } : null)
+    case 'Quantity': {
+      if (!trimmed) return { quantity: '' }
+      const match = /^(-?\d+(?:\.\d+)?)\s+(g|kg|mL|L|count)$/.exec(trimmed)
+      return match ? { quantity: { value: match[1], unit: match[2] } } : null
+    }
+    case 'Formula':
+    case 'Rollup': return null
     case 'String':
       return { string: raw }
     case 'Html':
@@ -222,6 +242,8 @@ export function clearedPropertyValue(
   property: LibraryProperty
 ): LibraryPropertyDataValue | null {
   switch (property.typ) {
+    case 'Decimal': return { decimal: '' }
+    case 'Quantity': return { quantity: '' }
     case 'String':
       return { string: '' }
     case 'Integer':
@@ -250,7 +272,7 @@ export function clearedPropertyValue(
 }
 
 export function isInlineEditableProperty(property: LibraryProperty): boolean {
-  return ['String', 'Integer', 'Html', 'Markdown', 'Select', 'Date', 'MultiSelect', 'Id'].includes(
+  return ['Decimal', 'Quantity', 'String', 'Integer', 'Html', 'Markdown', 'Select', 'Date', 'MultiSelect', 'Id'].includes(
     property.typ
   )
 }

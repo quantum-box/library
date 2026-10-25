@@ -115,6 +115,17 @@ impl SearchDataInputPort for SearchData {
             .await?;
 
         // TODO: add English comment
+        let data = super::computed_properties::evaluate(
+            &self.database,
+            self.get_repo_by_username.as_ref(),
+            self.auth_app.as_ref(),
+            input.executor,
+            input.multi_tenancy,
+            org.id(),
+            data,
+            &properties,
+        )
+        .await?;
         Ok((data, properties, paginator))
     }
 }

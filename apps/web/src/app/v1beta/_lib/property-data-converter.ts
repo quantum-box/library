@@ -85,6 +85,13 @@ export const convertPropertyData = (
 						},
 					} satisfies PropertyDataInputData
 				}
+                case PropertyType.Decimal:
+                    return { propertyId: x.propertyId, value: { decimal: (x.value as { decimal: string }).decimal } }
+                case PropertyType.Quantity:
+                    return { propertyId: x.propertyId, value: { quantity: (x.value as { quantity: string }).quantity } }
+                case PropertyType.Formula:
+                case PropertyType.Rollup:
+                    return null
 				case PropertyType.Integer:
 					return {
 						propertyId: x.propertyId,

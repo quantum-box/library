@@ -48,6 +48,7 @@ export function propertyRenameDraft(
       label: option.name ?? option.key ?? option.id,
     }))
   }
+  if (['DECIMAL', 'QUANTITY', 'FORMULA', 'ROLLUP'].includes(type)) draft.configJson = property.meta?.json
   if (type === 'ID') draft.autoGenerateId = property.meta?.autoGenerate
   if (type === 'RELATION') draft.relationDatabaseId = property.meta?.databaseId
   if (type === 'DATE') {
@@ -66,7 +67,7 @@ export function propertyRenameDraft(
 export function tablePropertyTypeChoices<T extends { value: RepositoryPropertyType }>(
   choices: T[],
 ): T[] {
-  return choices.filter((choice) => choice.value !== 'RELATION')
+  return choices.filter((choice) => !['RELATION', 'FORMULA', 'ROLLUP'].includes(choice.value))
 }
 
 /** The draft that creates a column from the table header. */

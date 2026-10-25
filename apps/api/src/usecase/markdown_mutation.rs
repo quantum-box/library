@@ -287,6 +287,16 @@ fn input_value(
         PropertyType::String => {
             PropertyDataValueInputData::String(text_or_json(value)?)
         }
+        PropertyType::Decimal(_) => {
+            PropertyDataValueInputData::Decimal(text_or_json(value)?)
+        }
+        PropertyType::Quantity(_) => PropertyDataValueInputData::Quantity(
+            serde_json::to_string(value)
+                .map_err(|error| error.to_string())?,
+        ),
+        PropertyType::Formula(_) | PropertyType::Rollup(_) => {
+            return Err("computed properties are read-only".into())
+        }
         PropertyType::Id(_) => PropertyDataValueInputData::String(text()),
         PropertyType::Integer => {
             PropertyDataValueInputData::Integer(text())

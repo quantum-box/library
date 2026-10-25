@@ -236,7 +236,15 @@ function getPropertyValue(
 ) {
 	if (!propertyData) return null
 
-	switch (property.typ) {
+    switch (property.typ) {
+        case PropertyType.Decimal: return (propertyData.value as { decimal?: string }).decimal ?? ''
+        case PropertyType.Quantity: {
+            try { const q = JSON.parse((propertyData.value as { quantity: string }).quantity); return `${q.value} ${q.unit}` } catch { return '' }
+        }
+        case PropertyType.Formula:
+        case PropertyType.Rollup: {
+            try { const raw = propertyData.value as { formula?: string; rollup?: string }; const result = JSON.parse(raw.formula ?? raw.rollup ?? '{}'); return result.status === 'ready' ? result.value : result.status === 'pending' ? '…' : result.status === 'error' ? `⚠ ${result.code}` : '—' } catch { return '—' }
+        }
 		case PropertyType.String:
 			return (propertyData.value as StringValueForEditorFragment).string
 		case PropertyType.Integer:
@@ -337,6 +345,12 @@ export function PropertyValue({
 	const handleTextChange = useCallback(
 		(event: React.ChangeEvent<HTMLInputElement>) => {
 			const nextValue = event.target.value
+            if (property.typ === PropertyType.Decimal) { emit({ __typename: 'DecimalValue', decimal: nextValue }); return }
+            if (property.typ === PropertyType.Quantity) {
+                const match = /^(-?\d+(?:\.\d+)?)\s+(g|kg|mL|L|count)$/.exec(nextValue)
+                if (match) emit({ __typename: 'QuantityValue', quantity: JSON.stringify({ value: match[1], unit: match[2] }) })
+                return
+            }
 			if (property.typ === PropertyType.Integer) {
 				emit({
 					__typename: 'IntegerValue',
@@ -449,6 +463,7 @@ export function PropertyValue({
 
 	const options = getOptions()
 
+    if (property.typ === PropertyType.Formula || property.typ === PropertyType.Rollup) return <span>{String(value ?? '—')}</span>
 	if (isEditing) {
 		switch (property.typ) {
 			case PropertyType.Id:
@@ -474,6 +489,8 @@ export function PropertyValue({
 						className='h-10 w-full rounded-xl border-border/60 bg-muted/60'
 					/>
 				)
+			case PropertyType.Decimal:
+			case PropertyType.Quantity:
 			case PropertyType.String:
 			case PropertyType.Integer:
 			case PropertyType.Relation:

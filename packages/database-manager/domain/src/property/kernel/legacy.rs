@@ -35,6 +35,11 @@ impl LegacyPropertyTypeReader {
             "IMAGE" => PropertyKind::Image,
             "RICH_TEXT" => PropertyKind::RichText,
             "BOOLEAN" => PropertyKind::Boolean,
+            "DECIMAL" => PropertyKind::Decimal,
+            "QUANTITY" => PropertyKind::Quantity,
+            "FORMULA" => PropertyKind::Formula,
+            "ROLLUP" => PropertyKind::Rollup,
+
             _ => {
                 return Err(errors::Error::invalid(format!(
                     "unknown legacy property type {legacy_type}"
@@ -82,6 +87,30 @@ impl LegacyPropertyTypeReader {
             PropertyKind::Image => Ok(PropertyType::Image),
             PropertyKind::RichText => Ok(PropertyType::RichText),
             PropertyKind::Boolean => Ok(PropertyType::Boolean),
+            PropertyKind::Decimal => Ok(PropertyType::Decimal(
+                serde_json::from_value(if legacy_config.is_null() {
+                    serde_json::json!({})
+                } else {
+                    legacy_config
+                })
+                .map_err(errors::Error::invalid)?,
+            )),
+            PropertyKind::Quantity => Ok(PropertyType::Quantity(
+                serde_json::from_value(if legacy_config.is_null() {
+                    serde_json::json!({})
+                } else {
+                    legacy_config
+                })
+                .map_err(errors::Error::invalid)?,
+            )),
+            PropertyKind::Formula => Ok(PropertyType::Formula(
+                serde_json::from_value(legacy_config)
+                    .map_err(errors::Error::invalid)?,
+            )),
+            PropertyKind::Rollup => Ok(PropertyType::Rollup(
+                serde_json::from_value(legacy_config)
+                    .map_err(errors::Error::invalid)?,
+            )),
         }
     }
 
@@ -156,6 +185,16 @@ impl LegacyPropertyValueCodec {
             | PropertyDataValue::Image(value) => value.clone(),
             PropertyDataValue::Integer(value) => value.to_string(),
             PropertyDataValue::Boolean(value) => value.to_string(),
+            PropertyDataValue::Decimal(value) => value.clone(),
+            PropertyDataValue::Quantity(value) => {
+                serde_json::to_string(value)
+                    .map_err(errors::Error::invalid)?
+            }
+            PropertyDataValue::Formula(value)
+            | PropertyDataValue::Rollup(value) => {
+                serde_json::to_string(value)
+                    .map_err(errors::Error::invalid)?
+            }
             PropertyDataValue::Relation(database_id, data_ids) => {
                 std::iter::once(database_id.to_string())
                     .chain(data_ids.iter().map(ToString::to_string))

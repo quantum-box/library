@@ -75,6 +75,22 @@ fn repo_from_stored(
 
 #[async_trait::async_trait]
 impl GetRepoByUsernameQuery for GetRepoByUsernameQueryImpl {
+    async fn find_by_database(
+        &self,
+        tenant_id: &value_object::TenantId,
+        database_id: &database_manager::domain::DatabaseId,
+    ) -> Result<Option<Repo>> {
+        let row = sqlx::query_as::<_, (String,String)>("SELECT r.org_username, r.username FROM repos r JOIN `databases` d ON d.repo_id = r.id AND d.platform_id = r.platform_id WHERE r.platform_id = ? AND r.org_id = ? AND d.database_id = ?")
+            .bind(crate::domain::LIBRARY_TENANT.to_string()).bind(tenant_id.to_string()).bind(database_id.to_string())
+            .fetch_optional(self.db.pool().as_ref()).await?;
+        match row {
+            Some((org, repo)) => {
+                self.execute(&org.parse()?, &repo.parse()?).await
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn execute(
         &self,
         operator_alias: &Identifier,

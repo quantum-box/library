@@ -208,6 +208,18 @@ impl UpdateDataInputPort for UpdateData {
                 .await?
         };
 
+        let mut computed = super::computed_properties::evaluate(
+            &self.database,
+            self.get_repo_by_username.as_ref(),
+            self.auth.as_ref(),
+            input.executor,
+            input.multi_tenancy,
+            org.id(),
+            vec![data],
+            &properties,
+        )
+        .await?;
+        let data = computed.remove(0);
         Ok((data, properties))
     }
 }

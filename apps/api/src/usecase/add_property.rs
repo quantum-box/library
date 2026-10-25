@@ -76,6 +76,19 @@ impl AddPropertyInputPort for AddProperty {
         //     .ok_or(errors::Error::not_found("user"))?;
         // repo.can_write(user.id())?;
 
+        super::computed_properties::authorize_definition(
+            &self.database,
+            self.get_repo_by_username.as_ref(),
+            self.auth.as_ref(),
+            input.executor,
+            input.multi_tenancy,
+            org.id(),
+            repo.databases()
+                .first()
+                .ok_or_else(|| errors::Error::not_found("database"))?,
+            &input.property_type,
+        )
+        .await?;
         let property = self
             .database
             .add_property()

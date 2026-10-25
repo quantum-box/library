@@ -50,6 +50,14 @@ export function propertyValueText(
     return option?.name ?? option?.key ?? optionId
   }
 
+  if (typeof value.decimal === 'string') return value.decimal
+  if (value.quantity) {
+    try { const q = typeof value.quantity === 'string' ? JSON.parse(value.quantity) : value.quantity; return `${q.value} ${q.unit}` } catch { return undefined }
+  }
+  const computed = value.formula ?? value.rollup
+  if (computed) {
+    try { const result = typeof computed === 'string' ? JSON.parse(computed) : computed; return result.status === 'ready' ? result.value : result.status === 'error' ? `⚠ ${result.code}` : result.status === 'pending' ? '…' : '—' } catch { return undefined }
+  }
   if (typeof value.boolean === 'boolean') return String(value.boolean)
   if (typeof value.string === 'string') return value.string
   if (typeof value.number === 'string') return value.number

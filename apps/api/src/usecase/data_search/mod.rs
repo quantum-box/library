@@ -213,7 +213,7 @@ impl DataSearchInputPort for DataSearch {
                 "result count exceeds the supported pagination range",
             )
         })?;
-        let hits = matches
+        let mut hits: Vec<DataSearchHit> = matches
             .into_iter()
             .skip(page.offset() as usize)
             .take(page.items_per_page() as usize)
@@ -223,12 +223,45 @@ impl DataSearchInputPort for DataSearch {
             })
             .collect();
 
+        let has_computed = index.properties().iter().any(|p| {
+            matches!(
+                p.property_type(),
+                database_manager::domain::PropertyType::Formula(_)
+                    | database_manager::domain::PropertyType::Rollup(_)
+            )
+        });
+        if has_computed {
+            let computed = super::computed_properties::evaluate(
+                &self.database,
+                self.get_repo_by_username.as_ref(),
+                self.auth_app.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                &tenant_id,
+                hits.iter().map(|hit| hit.data.clone()).collect(),
+                index.properties(),
+            )
+            .await?;
+            for (hit, data) in hits.iter_mut().zip(computed) {
+                hit.data = data;
+            }
+        }
         Ok(DataSearchOutput {
             hits,
             properties: index.properties().to_vec(),
             paginator: OffsetPaginator::new(page, total),
-            fingerprint: format!("{data_fingerprint}:{visibility:?}"),
-            publicly_cacheable: *repo.is_public()
+            fingerprint: if has_computed {
+                format!(
+                    "{data_fingerprint}:{visibility:?}:{}",
+                    chrono::Utc::now()
+                        .timestamp_nanos_opt()
+                        .unwrap_or_default()
+                )
+            } else {
+                format!("{data_fingerprint}:{visibility:?}")
+            },
+            publicly_cacheable: !has_computed
+                && *repo.is_public()
                 && visibility == Visibility::PublishedOnly,
         })
     }

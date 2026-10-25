@@ -22,6 +22,8 @@ pub enum PropertyValueCommand {
     Image(String),
     RichText(serde_json::Value),
     Boolean(bool),
+    Decimal(String),
+    Quantity(crate::QuantityValue),
 }
 
 impl PropertyValueCommand {
@@ -32,6 +34,14 @@ impl PropertyValueCommand {
         property: &Property,
         value: &str,
     ) -> errors::Result<Self> {
+        if matches!(
+            property.property_type(),
+            PropertyType::Formula(_) | PropertyType::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid(
+                "computed properties are read-only",
+            ));
+        }
         if value.is_empty()
             && !matches!(
                 property.property_type(),
@@ -69,6 +79,10 @@ impl PropertyValueCommand {
             PropertyDataValue::Image(value) => Self::Image(value),
             PropertyDataValue::RichText(value) => Self::RichText(value),
             PropertyDataValue::Boolean(value) => Self::Boolean(value),
+            PropertyDataValue::Decimal(value) => Self::Decimal(value),
+            PropertyDataValue::Quantity(value) => Self::Quantity(value),
+            PropertyDataValue::Formula(_)
+            | PropertyDataValue::Rollup(_) => Self::Clear,
         }
     }
 
@@ -76,7 +90,21 @@ impl PropertyValueCommand {
         self,
         property: &Property,
     ) -> errors::Result<Option<PropertyDataValue>> {
+        if matches!(
+            property.property_type(),
+            PropertyType::Formula(_) | PropertyType::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid(
+                "computed properties are read-only",
+            ));
+        }
         let value = match (property.property_type(), self) {
+            (PropertyType::Decimal(config), Self::Decimal(value)) => {
+                PropertyDataValue::Decimal(config.normalize(&value)?)
+            }
+            (PropertyType::Quantity(config), Self::Quantity(value)) => {
+                PropertyDataValue::Quantity(config.normalize(&value)?)
+            }
             (_, Self::Clear) => return Ok(None),
             (PropertyType::String, Self::String(value)) => {
                 PropertyDataValue::String(value)

@@ -2972,6 +2972,66 @@ impl TryFrom<PropertyInput> for database_manager::domain::PropertyType {
                 property_type: PropertyType::Boolean,
                 ..
             } => Ok(db::PropertyType::Boolean),
+            PropertyInput {
+                property_type: PropertyType::Decimal,
+                meta: Some(PropertyMetaInput::Json(config)),
+                ..
+            } => {
+                let typ = db::PropertyType::from_meta(
+                    "DECIMAL",
+                    serde_json::from_str(&config)
+                        .map_err(errors::Error::invalid)?,
+                )?;
+                typ.canonical_config()
+                    .handler()
+                    .validate_config(&typ.canonical_config())?;
+                Ok(typ)
+            }
+            PropertyInput {
+                property_type: PropertyType::Quantity,
+                meta: Some(PropertyMetaInput::Json(config)),
+                ..
+            } => {
+                let typ = db::PropertyType::from_meta(
+                    "QUANTITY",
+                    serde_json::from_str(&config)
+                        .map_err(errors::Error::invalid)?,
+                )?;
+                typ.canonical_config()
+                    .handler()
+                    .validate_config(&typ.canonical_config())?;
+                Ok(typ)
+            }
+            PropertyInput {
+                property_type: PropertyType::Formula,
+                meta: Some(PropertyMetaInput::Json(config)),
+                ..
+            } => {
+                let typ = db::PropertyType::from_meta(
+                    "FORMULA",
+                    serde_json::from_str(&config)
+                        .map_err(errors::Error::invalid)?,
+                )?;
+                typ.canonical_config()
+                    .handler()
+                    .validate_config(&typ.canonical_config())?;
+                Ok(typ)
+            }
+            PropertyInput {
+                property_type: PropertyType::Rollup,
+                meta: Some(PropertyMetaInput::Json(config)),
+                ..
+            } => {
+                let typ = db::PropertyType::from_meta(
+                    "ROLLUP",
+                    serde_json::from_str(&config)
+                        .map_err(errors::Error::invalid)?,
+                )?;
+                typ.canonical_config()
+                    .handler()
+                    .validate_config(&typ.canonical_config())?;
+                Ok(typ)
+            }
             _ => Err(errors::Error::invalid("invalid property type")),
         }
     }

@@ -64,6 +64,21 @@ impl UpdatePropertyInputPort for UpdateProperty {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
+        if let Some(typ) = input.property_type {
+            super::computed_properties::authorize_definition(
+                &self.database,
+                self.get_repo_by_username.as_ref(),
+                self.auth.as_ref(),
+                input.executor,
+                input.multi_tenancy,
+                org.id(),
+                repo.databases()
+                    .first()
+                    .ok_or_else(|| errors::Error::not_found("database"))?,
+                typ,
+            )
+            .await?;
+        }
         let property = self
             .database
             .update_property()

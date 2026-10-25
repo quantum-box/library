@@ -1,3 +1,5 @@
+import { PropertyDialog } from '@/app/v1beta/_components/properties-ui/property-dialog'
+import type { PropertyForPropertiesUiFragment, PropertyInput, PropertyMetaInput } from '@/gen/graphql'
 import { createFileRoute } from '@tanstack/react-router'
 import { useAuth } from '@/auth'
 import { platformAction } from '@/app/v1beta/_lib/platform-action'
@@ -47,6 +49,8 @@ function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const [dialog, setDialog] = useState<PropertyForPropertiesUiFragment | null | undefined>(undefined)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isAuthLoading) return
@@ -88,6 +92,22 @@ function PropertiesPage() {
     )
   }, [properties, query])
 
+  const saveProperty = async (property: PropertyForPropertiesUiFragment) => {
+    try {
+      const metadata = property.meta
+      let meta: PropertyMetaInput | undefined
+      if (metadata?.__typename === 'JsonType') meta = { json: metadata.json }
+      else if (metadata?.__typename === 'RelationType') meta = { relation: metadata.databaseId }
+      else if (metadata?.__typename === 'SelectType') meta = { select: metadata.options.map(o => ({ id: o.id.startsWith('op_') ? o.id : undefined, identifier: o.key, label: o.name })) }
+      else if (metadata?.__typename === 'MultiSelectType') meta = { multiSelect: metadata.options.map(o => ({ id: o.id.startsWith('op_') ? o.id : undefined, identifier: o.key, label: o.name })) }
+      else if (property.typ === PropertyType.Id) meta = { id: false }
+      const input: PropertyInput = { orgUsername: org, repoUsername: repo, propertyName: property.name, displayName: property.displayName, propertyType: property.typ, meta }
+      const result = await platformAction(async sdk => dialog ? (await sdk.updateProperty({ id: dialog.id, input })).updateProperty : (await sdk.addProperty({ input })).addProperty, { accessToken: session?.user?.accessToken })
+      if (result) setProperties(previous => dialog ? previous.map(p => p.id === result.id ? result as Property : p) : [...previous, result as Property])
+      setSaveError(null)
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Property could not be saved') }
+  }
+
   return (
     <div className='container py-6 space-y-6'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -97,12 +117,14 @@ function PropertiesPage() {
             {repo} のデータ項目を管理します。
           </p>
         </div>
-        <Button disabled>
+        <Button disabled={!session?.user} onClick={() => setDialog(null)}>
           <SlidersHorizontal className='mr-2 h-4 w-4' />
           新しいプロパティ
         </Button>
       </div>
 
+      {saveError && <p role='alert' className='text-destructive'>{saveError}</p>}
+      {dialog !== undefined && <PropertyDialog isOpen properties={properties as PropertyForPropertiesUiFragment[]} editingProperty={dialog} onClose={() => setDialog(undefined)} onSave={(property) => { void saveProperty(property) }} />}
       <Card>
         <CardHeader className='space-y-4'>
           <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -138,7 +160,7 @@ function PropertiesPage() {
                 {filteredProperties.map((property) => (
                   <TableRow key={property.id}>
                     <TableCell className='font-medium'>
-                      <div>{property.displayName}</div>
+                      <div>{property.displayName} {session?.user && ['DECIMAL','QUANTITY','FORMULA','ROLLUP'].includes(property.typ) && <button type='button' className='ml-2 text-primary underline' onClick={() => setDialog(property as PropertyForPropertiesUiFragment)}>編集</button>}</div>
                       <code className='text-xs text-muted-foreground'>{property.name}</code>
                     </TableCell>
                     <TableCell>

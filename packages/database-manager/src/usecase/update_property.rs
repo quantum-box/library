@@ -47,6 +47,16 @@ impl UpdatePropertyInputPort for UpdatePropertyInteractorImpl {
             .await?
             .ok_or(errors::not_found!("Database not found"))?;
 
+        if let Some(typ) = input.property_type {
+            super::add_property::validate_rollup_target(
+                self.database_repo.as_ref(),
+                self.property_repo.as_ref(),
+                input.tenant_id,
+                input.database_id,
+                typ,
+            )
+            .await?;
+        }
         let command = UpdatePropertyCommand::new_with_display_name(
             database.tenant_id(),
             database.id(),

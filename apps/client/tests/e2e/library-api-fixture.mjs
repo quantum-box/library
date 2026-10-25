@@ -453,6 +453,7 @@ function propertyMetaFromInput(input) {
       })),
     }
   }
+  if (input.meta?.json) return { json: input.meta.json }
   if (input.meta?.relation) return { databaseId: input.meta.relation }
   if (typeof input.meta?.id === 'boolean') return { autoGenerate: input.meta.id }
   return null
