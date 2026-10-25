@@ -62,6 +62,12 @@ attachment still requires upstream authorization. The optimization only
 applies to a user granting access to themselves. Authentication, dependency,
 and malformed-response failures fail closed.
 
+The authorization tenant must equal the resolved destination organization
+before any database/property writes and before reusing owner access. This
+rejects a GraphQL request combining a tenant-A header with a tenant-B org
+argument. The HTTP regression asserts that no policy request or grant is
+sent for this mismatch.
+
 This does not add a delegated IAM write capability: a resource-bound OAuth
 caller who lacks existing owner access and needs a new scoped grant still
 cannot use the upstream write endpoint. That broader flow needs a separately
@@ -70,7 +76,7 @@ authorized provisioning design; no service-credential fallback was added.
 ## Acceptance
 
 - Production delegation repair: verified above.
-- Local owner-access and existing organization restoration tests: 9 passed.
+- Local owner-access and existing organization restoration tests: 10 passed.
 - SDK credential selection / delegated policy response regression tests: 21 passed.
 - Changed Rust file passes rustfmt; git diff --check passes.
 - `cargo clippy -p library-api --lib -- -D warnings -A clippy::double_must_use -A clippy::redundant_field_names` passes.

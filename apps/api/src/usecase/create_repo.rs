@@ -19,6 +19,18 @@ use database_manager::{AddDataInputData, PropertyDataInputData};
 use derive_new::new;
 use value_object::{Identifier, LongText, TenantId};
 
+fn ensure_creation_tenant(
+    scope: &dyn tachyon_sdk::auth::MultiTenancyAction,
+    destination: &TenantId,
+) -> errors::Result<()> {
+    if scope.get_operator_id()? != *destination {
+        return Err(errors::Error::forbidden(
+            "Repository destination does not match the authorization tenant",
+        ));
+    }
+    Ok(())
+}
+
 /// An organization owner may already manage every repository in the tenant.
 /// Reuse that authorization instead of requiring a redundant IAM mutation.
 /// In particular, a resource-bound OAuth token can request delegated policy
@@ -27,6 +39,7 @@ async fn ensure_creator_owner_access(
     input: &CreateRepoInputData<'_>,
     repo: &Repo,
 ) -> errors::Result<()> {
+    ensure_creation_tenant(input.multi_tenancy, repo.organization_id())?;
     let resource_trn = format!("trn:library:repo:{}", repo.id());
     if input.executor.is_user()
         && input.executor.get_user_id()?.as_str() == input.user_id
@@ -157,6 +170,9 @@ impl CreateRepoInputPort for CreateRepo {
                 .await?
             }
         };
+        // GraphQL's tenant header and organization argument are independent.
+        // Bind the authorization to the destination before any database writes.
+        ensure_creation_tenant(input.multi_tenancy, org.id())?;
         let description =
             parse_optional_description(input.description.as_deref())?;
 
@@ -302,6 +318,25 @@ mod tests {
         grant_status: axum::http::StatusCode,
         grant_to_caller: bool,
     ) -> (errors::Result<()>, Vec<String>) {
+        owner_access_case_with_scope(
+            oauth,
+            owner_status,
+            owner_response,
+            grant_status,
+            grant_to_caller,
+            None,
+        )
+        .await
+    }
+
+    async fn owner_access_case_with_scope(
+        oauth: bool,
+        owner_status: axum::http::StatusCode,
+        owner_response: serde_json::Value,
+        grant_status: axum::http::StatusCode,
+        grant_to_caller: bool,
+        authorization_tenant: Option<TenantId>,
+    ) -> (errors::Result<()>, Vec<String>) {
         let tenant: TenantId =
             "tn_01kshr165k3wwr8xyk0e6vy36c".parse().unwrap();
         let repo_id: RepoId =
@@ -363,7 +398,10 @@ mod tests {
             "service-token",
         )
         .with_caller_token(&token);
-        let scope = MultiTenancy::new(None, Some(tenant.clone()));
+        let scope = MultiTenancy::new(
+            None,
+            Some(authorization_tenant.unwrap_or_else(|| tenant.clone())),
+        );
         let input = CreateRepoInputData {
             auth: Arc::new(sdk),
             executor: &Caller,
@@ -402,6 +440,24 @@ mod tests {
         server.abort();
         let seen = requests.lock().unwrap().clone();
         (result, seen)
+    }
+
+    #[tokio::test]
+    async fn mismatched_authorization_tenant_is_rejected_before_any_grant()
+    {
+        for oauth in [false, true] {
+            let (result, seen) = owner_access_case_with_scope(
+                oauth,
+                axum::http::StatusCode::OK,
+                serde_json::json!({"allowed": true}),
+                axum::http::StatusCode::OK,
+                true,
+                Some(LIBRARY_TENANT.clone()),
+            )
+            .await;
+            assert!(matches!(result, Err(errors::Error::Forbidden { .. })));
+            assert!(seen.is_empty());
+        }
     }
 
     #[tokio::test]
