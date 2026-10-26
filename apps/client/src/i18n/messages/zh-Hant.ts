@@ -158,6 +158,8 @@ export const zhHant: LocaleMessages = {
   'sidebar.openNavigation': '開啟導覽',
   'sidebar.closeNavigation': '關閉導覽',
   'sidebar.collapse': '收合側邊欄',
+  'sidebar.pin': '固定側邊欄',
+  'sidebar.unpin': '取消固定側邊欄',
   'sidebar.expand': '展開側邊欄',
   'sidebar.workspaceHome': '{workspace} 首頁',
   'sidebar.workspace.placeholder': '選擇工作區',

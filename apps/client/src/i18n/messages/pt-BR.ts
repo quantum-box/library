@@ -158,6 +158,8 @@ export const ptBR: LocaleMessages = {
   'sidebar.openNavigation': 'Abrir a navegação',
   'sidebar.closeNavigation': 'Fechar a navegação',
   'sidebar.collapse': 'Recolher a barra lateral',
+  'sidebar.pin': 'Fixar barra lateral',
+  'sidebar.unpin': 'Desafixar barra lateral',
   'sidebar.expand': 'Expandir a barra lateral',
   'sidebar.workspaceHome': 'Início de {workspace}',
   'sidebar.workspace.placeholder': 'Escolha um workspace',

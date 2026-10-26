@@ -158,6 +158,8 @@ export const zhHans: LocaleMessages = {
   'sidebar.openNavigation': '打开导航',
   'sidebar.closeNavigation': '关闭导航',
   'sidebar.collapse': '折叠侧边栏',
+  'sidebar.pin': '固定侧边栏',
+  'sidebar.unpin': '取消固定侧边栏',
   'sidebar.expand': '展开侧边栏',
   'sidebar.workspaceHome': '{workspace} 首页',
   'sidebar.workspace.placeholder': '选择工作区',

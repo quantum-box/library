@@ -158,6 +158,8 @@ export const es: LocaleMessages = {
   'sidebar.openNavigation': 'Abrir la navegación',
   'sidebar.closeNavigation': 'Cerrar la navegación',
   'sidebar.collapse': 'Contraer la barra lateral',
+  'sidebar.pin': 'Fijar barra lateral',
+  'sidebar.unpin': 'Desfijar barra lateral',
   'sidebar.expand': 'Expandir la barra lateral',
   'sidebar.workspaceHome': 'Inicio de {workspace}',
   'sidebar.workspace.placeholder': 'Elige un espacio de trabajo',

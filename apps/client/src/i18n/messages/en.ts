@@ -178,6 +178,8 @@ export const en = {
   'sidebar.openNavigation': 'Open navigation',
   'sidebar.closeNavigation': 'Close navigation',
   'sidebar.collapse': 'Collapse sidebar',
+  'sidebar.pin': 'Pin sidebar',
+  'sidebar.unpin': 'Unpin sidebar',
   'sidebar.expand': 'Expand sidebar',
   'sidebar.workspaceHome': '{workspace} home',
   'sidebar.workspace.placeholder': 'Choose a workspace',

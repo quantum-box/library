@@ -161,6 +161,8 @@ export const ja: LocaleMessages = {
   'sidebar.openNavigation': 'ナビゲーションを開く',
   'sidebar.closeNavigation': 'ナビゲーションを閉じる',
   'sidebar.collapse': 'サイドバーを折りたたむ',
+  'sidebar.pin': 'サイドバーを固定',
+  'sidebar.unpin': 'サイドバーの固定を解除',
   'sidebar.expand': 'サイドバーを開く',
   'sidebar.workspaceHome': '{workspace} のホーム',
   'sidebar.workspace.placeholder': 'ワークスペースを選択',
