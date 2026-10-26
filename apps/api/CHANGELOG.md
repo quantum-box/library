@@ -5,6 +5,14 @@ All notable changes to the Library API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.14] - 2026-10-26
+
+### Security
+- **eMudhra の中間 CA 秘密鍵の漏洩（2026-10-20 公表）への対応**: 証明書から秘密鍵を復元できる eMudhra の中間 CA 8 本と、その上の root（emSign ECC Root CA - G3、Sectigo のクロス署名経由の AAA Certificate Services）を信頼しないようにする。
+  - `rustls-webpki` 0.103.9 → 0.103.16。漏洩した中間 CA の公開鍵を含む証明書パスを、信頼ストアに関係なく拒否する版。rustls 0.23 を使う接続（reqwest 0.12、hyper-rustls 0.27、sqlx、AWS SDK の既定 HTTP クライアント）が対象。`rustls-webpki` 0.103.16 が `aws-lc-rs` 1.18 以上を要るため、`aws-lc-rs` 1.16.1 → 1.18.2、`aws-lc-sys` 0.38.0 → 0.46.0 も上がる。
+  - `webpki-roots` 1.0.6 → 1.0.10（emSign ECC Root CA - G3 を削除した版。0.26.11 はこれを再 export する）。
+  - sentry の `rustls` feature を外し、emSign ECC Root CA - G3 と AAA Certificate Services を含む `webpki-roots` 0.25.4 を依存から除く。0.25.4 を使うのは sentry の ureq transport だけで、library-api は ureq を有効にしていない。sentry の送信は reqwest transport で、reqwest は `default-tls`（OpenSSL と OS の証明書ストア）が有効なため、外す前から OpenSSL で送っており、送信の挙動は変わらない。
+
 ## [1.11.13] - 2026-10-24
 
 ### Added
