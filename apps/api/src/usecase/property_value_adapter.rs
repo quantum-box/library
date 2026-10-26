@@ -13,6 +13,27 @@ pub(crate) fn property_value_command(
 ) -> errors::Result<PropertyValueCommand> {
     let command = match (property.property_type(), input) {
         (
+            PropertyType::Decimal(_),
+            PropertyDataValueInputData::Decimal(value)
+            | PropertyDataValueInputData::String(value),
+        ) => string_or_clear(value, PropertyValueCommand::Decimal),
+        (
+            PropertyType::Quantity(_),
+            PropertyDataValueInputData::String(value),
+        ) if value.is_empty() => PropertyValueCommand::Clear,
+        (
+            PropertyType::Quantity(_),
+            PropertyDataValueInputData::Quantity(value),
+        ) if value.is_empty() || value == "null" => {
+            PropertyValueCommand::Clear
+        }
+        (
+            PropertyType::Quantity(_),
+            PropertyDataValueInputData::Quantity(value),
+        ) => PropertyValueCommand::Quantity(
+            serde_json::from_str(value).map_err(errors::Error::invalid)?,
+        ),
+        (
             PropertyType::String,
             PropertyDataValueInputData::String(value),
         ) => string_or_clear(value, PropertyValueCommand::String),

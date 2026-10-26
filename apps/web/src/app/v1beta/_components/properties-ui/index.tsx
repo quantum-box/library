@@ -403,6 +403,7 @@ export function PropertiesUi({
 				)}
 			</div>
 			<PropertyDialog
+          properties={selectedProperties}
 				isOpen={isAddEditPropertyDialogOpen}
 				onClose={() => {
 					setIsAddEditPropertyDialogOpen(false)

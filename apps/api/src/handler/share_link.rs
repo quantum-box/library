@@ -361,6 +361,7 @@ pub async fn view_shared_data(
         properties: properties
             .iter()
             .map(|property| PropertyResponse {
+                config: None,
                 id: property.id().to_string(),
                 name: property.name().to_string(),
                 display_name: property.display_name().to_string(),

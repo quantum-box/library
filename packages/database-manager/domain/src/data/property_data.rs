@@ -23,6 +23,14 @@ impl PropertyData {
     /// Relation input contains only target DataIds. Its target DatabaseId is
     /// derived from the Property's configured TypeRelation.
     pub fn new(property: &Property, value: String) -> errors::Result<Self> {
+        if matches!(
+            property.property_type(),
+            PropertyType::Formula(_) | PropertyType::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid(
+                "computed properties are read-only",
+            ));
+        }
         let empty_value_is_none =
             !matches!(property.property_type(), PropertyType::Relation(_));
         Self::from_value(
@@ -83,6 +91,19 @@ impl PropertyData {
             value,
             envelope: Some(decoded),
         })
+    }
+
+    pub fn from_computed(
+        property: &Property,
+        value: PropertyDataValue,
+    ) -> errors::Result<Self> {
+        if !matches!(
+            property.property_type(),
+            PropertyType::Formula(_) | PropertyType::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid("not a computed property"));
+        }
+        Self::from_known(property, value)
     }
 
     fn from_known(

@@ -17,6 +17,15 @@ impl PropertyValueChange {
         property: &Property,
         property_data: &PropertyData,
     ) -> errors::Result<Self> {
+        if matches!(
+            property.property_type(),
+            crate::PropertyType::Formula(_)
+                | crate::PropertyType::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid(
+                "computed properties are read-only",
+            ));
+        }
         if property.id() != property_data.property_id() {
             return Err(errors::Error::invalid(
                 "PropertyData does not belong to Property",

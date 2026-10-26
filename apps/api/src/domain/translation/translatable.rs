@@ -25,6 +25,10 @@ pub fn record_value_is_translatable_by_default(
     property_type: &PropertyType,
 ) -> bool {
     match property_type {
+        PropertyType::Decimal(_)
+        | PropertyType::Quantity(_)
+        | PropertyType::Formula(_)
+        | PropertyType::Rollup(_) => false,
         PropertyType::String
         | PropertyType::Markdown
         | PropertyType::RichText

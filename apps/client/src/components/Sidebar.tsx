@@ -48,7 +48,8 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
-  PanelLeftClose,
+  Pin,
+  PinOff,
   PanelLeftOpen,
   Plus,
   RefreshCw,
@@ -834,7 +835,7 @@ export function Sidebar() {
       )}
 
       <div
-        className={`relative hidden shrink-0 md:block ${pinned ? 'w-60' : 'w-0'}`}
+        className={`relative hidden shrink-0 md:block ${pinned ? 'w-60' : 'w-0 md:[&+*>header]:pl-12'}`}
         onPointerEnter={() => setSidebarHovered(true)}
         onPointerLeave={() => setSidebarHovered(false)}
         onFocusCapture={() => setSidebarFocused(true)}
@@ -843,23 +844,33 @@ export function Sidebar() {
         }}
       >
         {!pinned && (
-          <button
+          <div
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 z-40 w-2"
+          />
+        )}
+        {!pinned && (
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             data-testid="reveal-side-nav"
             aria-label={t('sidebar.expand')}
             aria-expanded={expanded}
-            className="absolute inset-y-0 left-0 z-40 w-3 focus-visible:bg-selected focus-visible:outline-none"
-            onClick={() => setSidebarHovered(true)}
-          />
+            className="absolute left-1 top-1.5 z-[60] size-8"
+            onClick={() => setPinned(true)}
+          >
+            <Menu aria-hidden="true" />
+          </Button>
         )}
         <NativeSidebar
           data-testid="side-nav"
           collapsed={!expanded}
           inert={!expanded}
-          className={`absolute inset-y-0 left-0 z-50 gap-0 p-1.5 ${expanded ? '' : 'invisible pointer-events-none'} ${!pinned ? 'shadow-xl' : ''}`}
+          className={`absolute inset-y-0 left-0 z-50 gap-0 p-1.5 ${pinned ? '' : 'shadow-xl'} ${expanded ? '' : 'invisible pointer-events-none'}`}
           aria-label={t('sidebar.navigationLabel')}
         >
-          <SidebarHeader className="h-7 px-1.5 text-xs">
+          <SidebarHeader className={`h-7 pr-1.5 text-xs ${pinned ? 'pl-1.5' : 'pl-9'}`}>
             {expanded ? (
               <Link
                 to="/home"
@@ -892,9 +903,11 @@ export function Sidebar() {
                   setSidebarHovered(false)
                   setSidebarFocused(false)
                 }}
-                aria-label={t(pinned ? 'sidebar.collapse' : 'sidebar.expand')}
+                aria-label={t(pinned ? 'sidebar.unpin' : 'sidebar.pin')}
+                title={t(pinned ? 'sidebar.unpin' : 'sidebar.pin')}
+                aria-pressed={pinned}
               >
-                {pinned ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />}
+                {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
               </Button>
             )}
           </SidebarHeader>

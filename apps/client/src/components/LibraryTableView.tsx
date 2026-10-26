@@ -1,3 +1,4 @@
+import { compareDecimal, compareQuantity } from '../lib/numericPropertyConfig'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
@@ -999,7 +1000,7 @@ function RepositoryTable({
               />
             ),
             sortingFn: (rowA, rowB, columnId) =>
-              collator(locale).compare(
+              (property.typ === 'Quantity' ? compareQuantity : ['Decimal', 'Formula', 'Rollup'].includes(property.typ) ? compareDecimal : collator(locale).compare)(
                 String(rowA.getValue(columnId) ?? ''),
                 String(rowB.getValue(columnId) ?? '')
               ),

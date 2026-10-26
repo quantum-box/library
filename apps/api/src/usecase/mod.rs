@@ -8,6 +8,7 @@ mod change_org_member_role;
 mod change_repo_member_role;
 mod change_repo_policy;
 pub mod change_repo_username;
+mod computed_properties;
 mod create_api_key;
 mod create_global_id_mapping;
 mod create_organization;
@@ -166,6 +167,15 @@ pub trait GetOrganizationByUsernameQuery: Debug + Send + Sync {
 
 #[async_trait::async_trait]
 pub trait GetRepoByUsernameQuery: Debug + Send + Sync {
+    async fn find_by_database(
+        &self,
+        _tenant_id: &value_object::TenantId,
+        _database_id: &database_manager::domain::DatabaseId,
+    ) -> Result<Option<Repo>> {
+        Err(errors::Error::not_supported(
+            "database-to-repo lookup is unavailable",
+        ))
+    }
     async fn execute(
         &self,
         organization_username: &Identifier,

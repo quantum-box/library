@@ -1,3 +1,4 @@
+import { parseFormula, formatFormula } from '@/lib/numeric-property'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -54,6 +55,7 @@ export interface DatabaseConfig {
 
 interface PropertyDialogProps {
 	isOpen: boolean
+	properties?: PropertyForPropertiesUiFragment[]
 	onClose: () => void
 	editingProperty: PropertyForPropertiesUiFragment | null
 	databases?: DatabaseConfig[]
@@ -79,6 +81,13 @@ export const propertyFormSchema = z.object({
 			}),
 		)
 		.optional(),
+	precision: z.number().int().min(1).max(28).default(28),
+	scale: z.number().int().min(0).max(28).default(12),
+	unit: z.string().default('g'),
+	expression: z.string().default('0'),
+	relation: z.string().default(''),
+	target: z.string().default(''),
+	aggregation: z.string().default('sum'),
 	relatedDatabase: z.string().optional(),
 	searchTerm: z.string().default(''),
 })
@@ -87,6 +96,7 @@ export type PropertyFormValues = z.infer<typeof propertyFormSchema>
 
 export function PropertyDialog({
 	isOpen,
+	properties = [],
 	onClose,
 	editingProperty,
 	databases,
@@ -124,6 +134,7 @@ export function PropertyDialog({
 			type: PropertyType.String,
 			options: [],
 			relatedDatabase: '',
+			precision: 28, scale: 12, unit: 'g', expression: '0', relation: '', target: '', aggregation: 'sum',
 			searchTerm: '',
 		},
 	})
@@ -140,6 +151,7 @@ export function PropertyDialog({
 				relatedDatabase:
 					(editingProperty.meta as RelationTypeMetaForPropertiesUiFragment)
 						?.databaseId || '',
+				...numericFormDefaults(editingProperty, properties),
 				searchTerm: '',
 			})
 		} else {
@@ -186,6 +198,20 @@ export function PropertyDialog({
 								}
 							: null,
 		}
+        if ([PropertyType.Decimal, PropertyType.Quantity, PropertyType.Formula, PropertyType.Rollup].includes(values.type)) {
+            try {
+                const decimal = { precision: values.precision, scale: values.scale }
+                if (values.scale > values.precision) throw new Error('Decimal places must not exceed precision')
+                let config: unknown = decimal
+                if (values.type === PropertyType.Quantity) config = { decimal, allowed_units: ['g','kg'].includes(values.unit) ? ['g','kg'] : ['mL','L'].includes(values.unit) ? ['mL','L'] : ['count'], default_unit: values.unit, unit_version: 1 }
+                if (values.type === PropertyType.Formula) config = { decimal, expression: parseFormula(values.expression, properties) }
+                if (values.type === PropertyType.Rollup) {
+                    if (!values.relation || !values.target) throw new Error('Choose a relation and a target property ID')
+                    config = { decimal, relation_property_id: values.relation, target_property_id: values.target, function: values.aggregation }
+                }
+                newProperty.meta = { __typename: 'JsonType', json: JSON.stringify(config) }
+            } catch (error) { form.setError('expression', { message: error instanceof Error ? error.message : 'Invalid numeric configuration' }); return }
+        }
 		onSave(newProperty)
 		form.reset()
 		onClose()
@@ -214,6 +240,18 @@ export function PropertyDialog({
 				</DialogHeader>
 				<Form {...form}>
 					<form onSubmit={form.handleSubmit(onSubmit)} className='space-y-4'>
+                        {[PropertyType.Decimal, PropertyType.Quantity, PropertyType.Formula, PropertyType.Rollup].includes(form.watch('type')) && <div className="space-y-2">
+                          <label htmlFor="numeric-precision">Precision<Input id="numeric-precision" type="number" value={form.watch('precision')} onChange={e => form.setValue('precision', Number(e.target.value))} /></label>
+                          <label htmlFor="numeric-scale">Decimal places<Input id="numeric-scale" type="number" value={form.watch('scale')} onChange={e => form.setValue('scale', Number(e.target.value))} /></label>
+                          {form.watch('type') === PropertyType.Quantity && <label>Unit<select value={form.watch('unit')} onChange={e => form.setValue('unit', e.target.value)}>{['g','kg','mL','L','count'].map(unit => <option key={unit}>{unit}</option>)}</select></label>}
+                          {form.watch('type') === PropertyType.Formula && <label htmlFor="numeric-expression">Formula<Input id="numeric-expression" value={form.watch('expression')} onChange={e => form.setValue('expression', e.target.value)} placeholder="total_cost / servings" /><small>{properties.map(p => p.name).join(', ')}</small></label>}
+                          {form.watch('type') === PropertyType.Rollup && <>
+                            <label>Relation<select value={form.watch('relation')} onChange={e => form.setValue('relation', e.target.value)}><option value="">—</option>{properties.filter(p => p.typ === PropertyType.Relation).map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label>
+                            <label htmlFor="numeric-target">Target property ID<Input id="numeric-target" value={form.watch('target')} onChange={e => form.setValue('target', e.target.value)} /></label>
+                            <label>Aggregation<select value={form.watch('aggregation')} onChange={e => form.setValue('aggregation', e.target.value)}>{['sum','count','avg','min','max'].map(op => <option key={op}>{op}</option>)}</select></label>
+                          </>}
+                          {form.formState.errors.expression && <p role="alert">{form.formState.errors.expression.message}</p>}
+                        </div>}
 						<FormField
 							control={form.control}
 							name='property_name'
@@ -266,7 +304,11 @@ export function PropertyDialog({
 											<SelectItem value={PropertyType.String}>
 												{PropertyType.String}
 											</SelectItem>
-											<SelectItem value={PropertyType.Integer}>
+											<SelectItem value={PropertyType.Decimal}>{PropertyType.Decimal}</SelectItem>
+<SelectItem value={PropertyType.Quantity}>{PropertyType.Quantity}</SelectItem>
+<SelectItem value={PropertyType.Formula}>{PropertyType.Formula}</SelectItem>
+<SelectItem value={PropertyType.Rollup}>{PropertyType.Rollup}</SelectItem>
+<SelectItem value={PropertyType.Integer}>
 												{PropertyType.Integer}
 											</SelectItem>
 											<SelectItem value={PropertyType.Markdown}>
@@ -389,4 +431,11 @@ export function PropertyDialog({
 			</DialogContent>
 		</Dialog>
 	)
+}
+
+function numericFormDefaults(property: PropertyForPropertiesUiFragment, properties: PropertyForPropertiesUiFragment[]) {
+    try {
+        const config = JSON.parse((property.meta as { json?: string })?.json ?? '{}')
+        return { precision: config.decimal?.precision ?? config.precision ?? 28, scale: config.decimal?.scale ?? config.scale ?? 12, unit: config.default_unit ?? 'g', expression: config.expression ? formatFormula(config.expression, properties) : '0', relation: config.relation_property_id ?? '', target: config.target_property_id ?? '', aggregation: config.function ?? 'sum' }
+    } catch { return {} }
 }

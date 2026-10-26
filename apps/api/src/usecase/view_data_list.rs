@@ -123,6 +123,16 @@ impl ViewDataListInputPort for ViewDataList {
             )
             .await?;
 
+        let data_list = super::computed_properties::evaluate(
+            &self.database,
+            self.get_repo_by_username.as_ref(),
+            self.auth_app.as_ref(),
+            (input.executor, input.multi_tenancy),
+            org.id(),
+            data_list,
+            &properties,
+        )
+        .await?;
         Ok((data_list, properties, paginator))
     }
 }

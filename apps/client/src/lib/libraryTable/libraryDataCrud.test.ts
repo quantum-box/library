@@ -6,7 +6,7 @@ import {
   deleteLibraryData,
   updateLibraryData,
 } from './libraryDataCrud'
-import { noteLibraryGraphqlResponse } from '../recordsApi'
+import { noteLibraryGraphqlResponse, type LibraryDataItem } from '../recordsApi'
 
 describe('libraryDataCrud', () => {
   afterEach(() => {
@@ -70,6 +70,74 @@ describe('libraryDataCrud', () => {
         }
       )
     ).resolves.toMatchObject({ name: 'Updated' })
+  })
+
+  it('keeps numeric and computed values across creation and consecutive GraphQL saves', async () => {
+    const properties = [
+      { id: 'decimal', name: 'Cost', typ: 'Decimal' },
+      { id: 'quantity', name: 'Amount', typ: 'Quantity' },
+      { id: 'formula', name: 'Portion', typ: 'Formula' },
+      { id: 'rollup', name: 'Total', typ: 'Rollup' },
+      { id: 'empty', name: 'Optional', typ: 'String' },
+    ]
+    const stored = {
+      id: 'data-1', name: 'Recipe', propertyData: [
+        { propertyId: 'decimal', value: { decimal: '0.1' } },
+        { propertyId: 'quantity', value: { quantity: '{"value":"1.5","unit":"kg"}' } },
+        { propertyId: 'formula', value: { formula: '{"status":"ready","value":"0.1"}' } },
+        { propertyId: 'rollup', value: { rollup: '{"status":"ready","value":"0.3"}' } },
+        { propertyId: 'empty', value: null },
+      ],
+    }
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const { query, variables } = JSON.parse(String(init?.body))
+      for (const [type, field] of [['DecimalValue', 'decimal'], ['QuantityValue', 'quantity'], ['FormulaValue', 'formula'], ['RollupValue', 'rollup']]) {
+        expect(query).toContain(`... on ${type} { ${field} }`)
+      }
+      expect(variables.input.propertyData.map((entry: { propertyId: string }) => entry.propertyId))
+        .not.toEqual(expect.arrayContaining(['formula', 'rollup']))
+      return Response.json({ data: { [query.includes('mutation LibraryClientAddData') ? 'addData' : 'updateData']: stored } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const created = await addLibraryData({ org: 'acme', repo: 'docs' }, properties, { name: 'Recipe' })
+    expect(created.propertyData.at(-1)?.value).toEqual({})
+    const saved = await updateLibraryData({ org: 'acme', repo: 'docs' }, properties, created)
+    expect(saved.propertyData[0].value).toEqual({ decimal: '0.1' })
+    expect(saved.propertyData[1].value).toEqual({ quantity: '{"value":"1.5","unit":"kg"}' })
+    await expect(updateLibraryData({ org: 'acme', repo: 'docs' }, properties, saved)).resolves.toEqual(saved)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('round-trips numeric REST saves without writing computed properties', async () => {
+    const properties = [
+      { id: 'decimal', name: 'Cost', typ: 'Decimal' },
+      { id: 'quantity', name: 'Amount', typ: 'Quantity' },
+      { id: 'formula', name: 'Portion', typ: 'Formula' },
+      { id: 'rollup', name: 'Total', typ: 'Rollup' },
+    ]
+    const item: LibraryDataItem = { id: 'data-1', name: 'Recipe', propertyData: [
+      { propertyId: 'decimal', value: { decimal: '0.100000000001' } },
+      { propertyId: 'quantity', value: { quantity: { value: '1.5', unit: 'kg' } } },
+      { propertyId: 'formula', value: { formula: '{"status":"null"}' } },
+      { propertyId: 'rollup', value: { rollup: '{"status":"null"}' } },
+    ] }
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url).includes('/v1/graphql')) return new Response('missing', { status: 404 })
+      const body = JSON.parse(String(init?.body))
+      expect(body.property_data).toEqual([
+        { property_id: 'decimal', value: { decimal: '0.100000000001' } },
+        { property_id: 'quantity', value: { quantity: { value: '1.5', unit: 'kg' } } },
+      ])
+      return Response.json({ id: item.id, name: item.name, items: [
+        ...body.property_data,
+        { property_id: 'formula', value: { formula: { status: 'null' } } },
+        { property_id: 'rollup', value: { rollup: { status: 'null' } } },
+      ] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const saved = await updateLibraryData({ org: 'acme', repo: 'docs' }, properties, item)
+    expect(saved.propertyData[1].value).toEqual({ quantity: '{"value":"1.5","unit":"kg"}' })
+    await expect(updateLibraryData({ org: 'acme', repo: 'docs' }, properties, saved)).resolves.toEqual(saved)
   })
 
   describe('saving while the page goes away', () => {

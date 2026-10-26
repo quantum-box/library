@@ -453,6 +453,8 @@ pub enum PropertyDataValueInputData {
     /// A block document, carried as JSON text.
     RichText(String),
     Boolean(bool),
+    Decimal(String),
+    Quantity(String),
 }
 
 /// TODO: add English documentation

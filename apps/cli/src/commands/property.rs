@@ -28,6 +28,10 @@ pub enum PropertyTypeArg {
     Image,
     RichText,
     Boolean,
+    Decimal,
+    Quantity,
+    Formula,
+    Rollup,
 }
 
 impl PropertyTypeArg {
@@ -46,6 +50,10 @@ impl PropertyTypeArg {
             Self::Image => "image",
             Self::RichText => "rich_text",
             Self::Boolean => "boolean",
+            Self::Decimal => "decimal",
+            Self::Quantity => "quantity",
+            Self::Formula => "formula",
+            Self::Rollup => "rollup",
         }
     }
 }
@@ -79,6 +87,9 @@ pub enum PropertyCommand {
         /// for `--type id` and rejected for every other type.
         #[arg(long)]
         auto_generate: Option<bool>,
+        /// JSON kernel configuration for numeric and computed properties
+        #[arg(long)]
+        config: Option<String>,
     },
     /// Rename a property
     Update {
@@ -139,6 +150,7 @@ pub async fn run(
             display_name,
             property_type,
             auto_generate,
+            config,
         } => {
             let (org, repo) = parse_repo_ref(&repo)?;
             let mut body = json!({
@@ -146,6 +158,9 @@ pub async fn run(
                 "display_name": display_name,
                 "property_type": property_type.as_api_str(),
             });
+            if let Some(config) = config {
+                body["config"] = serde_json::from_str(&config)?;
+            }
             if let Some(auto_generate) = auto_generate {
                 body["auto_generate"] = json!(auto_generate);
             }
@@ -292,6 +307,10 @@ mod tests {
                 "image",
                 "rich_text",
                 "boolean",
+                "decimal",
+                "quantity",
+                "formula",
+                "rollup",
             ]
         );
     }

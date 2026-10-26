@@ -9,6 +9,7 @@ use util::macros::*;
 use value_object::{Identifier, Text};
 
 use super::{LegacyPropertyTypeReader, PropertyConfig, PropertyTypeRef};
+use super::{TypeDecimal, TypeFormula, TypeQuantity, TypeRollup};
 
 #[derive(Debug, Clone, Default, EnumString, Display)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -27,6 +28,10 @@ pub enum PropertyType {
     Image,
     RichText,
     Boolean,
+    Decimal(TypeDecimal),
+    Quantity(TypeQuantity),
+    Formula(TypeFormula),
+    Rollup(TypeRollup),
 }
 
 impl PropertyType {
@@ -71,6 +76,10 @@ impl From<&PropertyType> for PropertyConfig {
             PropertyType::Image => Self::Image,
             PropertyType::RichText => Self::RichText,
             PropertyType::Boolean => Self::Boolean,
+            PropertyType::Decimal(value) => Self::Decimal(value.clone()),
+            PropertyType::Quantity(value) => Self::Quantity(value.clone()),
+            PropertyType::Formula(value) => Self::Formula(value.clone()),
+            PropertyType::Rollup(value) => Self::Rollup(value.clone()),
         }
     }
 }
@@ -97,6 +106,12 @@ impl From<&PropertyConfig> for PropertyType {
             PropertyConfig::Image => Self::Image,
             PropertyConfig::RichText => Self::RichText,
             PropertyConfig::Boolean => Self::Boolean,
+            PropertyConfig::Decimal(value) => Self::Decimal(value.clone()),
+            PropertyConfig::Quantity(value) => {
+                Self::Quantity(value.clone())
+            }
+            PropertyConfig::Formula(value) => Self::Formula(value.clone()),
+            PropertyConfig::Rollup(value) => Self::Rollup(value.clone()),
         }
     }
 }

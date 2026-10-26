@@ -79,12 +79,54 @@ pub enum PropertyDataValue {
     /// A block document, carried as JSON text.
     RichText(String),
     Boolean(bool),
+    Decimal(String),
+    Quantity(QuantityValue),
+    Formula(ComputedResult),
+    Rollup(ComputedResult),
     /// A capped plain-text rendering of a block document.
     ///
     /// What list endpoints return in place of `richText`, so that a page
     /// of records does not carry every body in full. Ask for the
     /// documents themselves with `?include_body=true`.
     RichTextPreview(TextPreviewResponse),
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct QuantityValue {
+    pub value: String,
+    pub unit: String,
+}
+impl From<database_manager::domain::QuantityValue> for QuantityValue {
+    fn from(value: database_manager::domain::QuantityValue) -> Self {
+        Self {
+            value: value.value,
+            unit: value.unit,
+        }
+    }
+}
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ComputedResult {
+    Ready { value: String },
+    Null,
+    Pending,
+    Error { code: String },
+}
+impl From<database_manager::domain::ComputedValue> for ComputedResult {
+    fn from(value: database_manager::domain::ComputedValue) -> Self {
+        match value {
+            database_manager::domain::ComputedValue::Ready { value } => {
+                Self::Ready { value }
+            }
+            database_manager::domain::ComputedValue::Null => Self::Null,
+            database_manager::domain::ComputedValue::Pending => {
+                Self::Pending
+            }
+            database_manager::domain::ComputedValue::Error { code } => {
+                Self::Error { code }
+            }
+        }
+    }
 }
 
 /// A capped plain-text rendering of a body.
@@ -130,6 +172,7 @@ impl PropertyDataValue {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct PropertyResponse {
+    pub config: Option<serde_json::Value>,
     pub id: String,
     /// Stable key used by API clients to identify this Property.
     pub name: String,
@@ -264,6 +307,9 @@ pub struct UpsertDataRequest {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct AddPropertyRequest {
+    /// Versioned kernel configuration for numeric and computed property types.
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
     /// Stable key used by API clients to identify this Property.
     pub name: String,
     /// Human-readable label; defaults to `name` when omitted.
@@ -285,6 +331,10 @@ pub struct AddPropertyRequest {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct UpdatePropertyRequest {
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
+    #[serde(default)]
+    pub property_type: Option<String>,
     /// New stable key used by API clients to identify this Property.
     #[serde(default)]
     pub name: Option<String>,
@@ -414,6 +464,15 @@ pub fn convert_property_value(
             }
         }
         serde_json::Value::Object(obj) => {
+            if let Some(value) = obj.get("decimal").and_then(|v| v.as_str())
+            {
+                return PropertyDataValueInputData::Decimal(value.into());
+            }
+            if let Some(value) = obj.get("quantity") {
+                return PropertyDataValueInputData::Quantity(
+                    value.to_string(),
+                );
+            }
             // Checked before the `html` fallback below, which stringifies
             // any unrecognized object and would otherwise silently swallow
             // every rich text write.
@@ -499,6 +558,18 @@ impl From<database_manager::domain::PropertyDataValue>
             }
             database_manager::domain::PropertyDataValue::Image(url) => {
                 PropertyDataValue::Image(url)
+            }
+            database_manager::domain::PropertyDataValue::Decimal(value) => {
+                PropertyDataValue::Decimal(value)
+            }
+            database_manager::domain::PropertyDataValue::Quantity(
+                value,
+            ) => PropertyDataValue::Quantity(value.into()),
+            database_manager::domain::PropertyDataValue::Formula(value) => {
+                PropertyDataValue::Formula(value.into())
+            }
+            database_manager::domain::PropertyDataValue::Rollup(value) => {
+                PropertyDataValue::Rollup(value.into())
             }
             database_manager::domain::PropertyDataValue::Boolean(flag) => {
                 PropertyDataValue::Boolean(flag)

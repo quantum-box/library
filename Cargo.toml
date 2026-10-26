@@ -20,6 +20,7 @@ members = [
     "apps/api/packages/outbound_sync/domain",
     "apps/api/packages/github_provider",
     "packages/integration_domain",
+    "packages/strategy_projection",
     "sdk/rust",
 ]
 resolver = "2"

@@ -42,7 +42,7 @@ MCP と CLI はどちらも既存の usecase / policy check を通ります。�
 
 ## はじめに
 
-前提: Rust は `rust-toolchain.toml` の `nightly-2026-06-04` に固定。Node は 20 以上、パッケージマネージャは Yarn 4（`apps/client` のみ npm）。
+前提: Rust は `rust-toolchain.toml` の `nightly-2026-06-04` に固定。Node は 24.22.1、パッケージマネージャは Yarn 4（`apps/client` のみ npm）。
 
 ```bash
 # API
@@ -94,3 +94,55 @@ GitHub Actions が `cargo fmt --all` / `cargo clippy --workspace` / `cargo check
 ## ライセンス
 
 [LICENSE](LICENSE) を参照してください。
+
+### Exact numeric properties
+
+The v1 Property Type kernel also supports `decimal`, `quantity`, `formula`, and
+`rollup`. All decimal values travel as **strings**, including REST, GraphQL,
+MCP, and the client adapters. `precision` defaults to 28 and `scale` to 12;
+exponents, floating JSON numbers, overflow, and excess scale are rejected.
+`quantity` stores `{ "value": "150.5", "unit": "g" }` and preserves that unit.
+Unit dictionary v1 supports `g`/`kg`, `mL`/`L`, and `count`; each property allows
+units of one dimension only. No density or per-item mass is inferred.
+
+Formula config contains a bounded, tagged expression AST and decimal result
+config. The editors translate property keys, arithmetic, comparisons, `if`, and
+`round` into that AST; references are persisted as stable Property IDs. Round
+uses midpoint-away-from-zero. Results are read-only and distinguish
+`ready`, `null`, `pending`, and `error`. Arithmetic never substitutes zero for
+missing inputs. Cycles and nonnumeric dependencies are rejected. Results are
+computed per request and are not persisted in the record or a shared cache.
+
+Rollup config identifies a Relation Property, target Property, and
+`count`/`sum`/`avg`/`min`/`max`. It uses the existing configured Data reader,
+including its canonical/legacy rollout mode, rather than treating an empty
+`relation_edges` table as an empty relationship. The target Repo is resolved in
+the same tenant and authorized before reading values. Target IDs are deduplicated
+and batch-read (maximum 256 per target database per response). A revision or
+schema change during the read returns `pending`; forbidden or missing targets
+return an explicit error. Count includes related records with unset values;
+other aggregations skip unset values and return `null` for an empty input.
+Nonterminating/excess-scale averages fail explicitly. Rollups can target numeric
+inputs and same-record formulas; nested rollups are not supported.
+
+Decimal and Quantity filters use exact numeric comparison. The search endpoint
+accepts `sort=property:<key>` and `sort=property:<key>:desc`; unset values sort
+last. Physical index projections and computed-value sorting/filtering remain
+unsupported and their kernel capabilities explicitly reject declarations.
+
+Existing properties are never silently converted. To preview a String/Integer
+copy into a **new** Decimal property:
+
+```sh
+node scripts/library-decimal-migration.mjs --base-url=https://YOUR_API \
+  --org=YOUR_ORG --repo=YOUR_REPO --source=PROPERTY_ID --target=cost_decimal
+```
+
+Provide `LIBRARY_TOKEN` through the environment. Review the preview and its
+errors, then repeat with `--apply --expected-digest=PREVIEW_DIGEST`. The script
+rechecks source values, preserves the original property, and deletes its new
+property if a copy fails. Rollback is deletion of the new property; the source
+is untouched. Numeric config narrowing is rejected without an explicit
+migration. No schema DDL or RelationEdge/Index cutover is performed by this
+feature. Operators must still complete the existing rollout gates before
+changing those production read/write modes.

@@ -5,6 +5,8 @@ export type AddDataRequest = {
 }
 
 export type AddPropertyRequest = {
+  /** Versioned numeric or computed Property configuration. */
+  config?: Record<string, unknown> | null;
   auto_generate?: boolean | null;
   name: string;
   property_type: string;
@@ -106,9 +108,31 @@ export type PropertyDataValue = {
   multiSelect: string[];
 } | {
   location: Location;
+} | {
+  /** YYYY-MM-DD or RFC 3339 date-time; responses use canonical UTC. */
+  date: string;
+} | {
+  image: string;
+} | {
+  /** A block document, carried as JSON text. */
+  richText: string;
+} | {
+  boolean: boolean;
+} | {
+  decimal: string;
+} | {
+  quantity: QuantityValue;
+} | {
+  formula: ComputedResult;
+} | {
+  rollup: ComputedResult;
+} | {
+  richTextPreview: TextPreviewResponse;
 }
 
 export type PropertyResponse = {
+  /** Versioned numeric or computed Property configuration. */
+  config?: Record<string, unknown> | null;
   auto_generate?: boolean | null;
   database_id?: string | null;
   id: string;
@@ -147,6 +171,9 @@ export type UpdateOrganizationRequest = {
 }
 
 export type UpdatePropertyRequest = {
+  property_type?: string | null;
+  /** Versioned numeric or computed Property configuration. */
+  config?: Record<string, unknown> | null;
   name: string;
 }
 
@@ -167,4 +194,28 @@ export type VerifyRequest = {
 
 export type VerifyResponse = {
   user: User;
+}
+
+export type ComputedResult = {
+  status: 'ready';
+  value: string;
+} | {
+  status: 'null';
+} | {
+  status: 'pending';
+} | {
+  code: string;
+  status: 'error';
+}
+
+export type QuantityValue = {
+  unit: string;
+  value: string;
+}
+
+export type TextPreviewResponse = {
+  /** The leading text, at most `RICH_TEXT_PREVIEW_LIMIT` characters. */
+  text: string;
+  /** Whether the body holds more text than `text` shows. */
+  truncated: boolean;
 }

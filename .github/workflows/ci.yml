@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.22.1'
       - name: Require implementation PR to bump desktop version
         env:
           BASE_REF: origin/${{ github.base_ref }}
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.22.1'
       - run: node --test scripts/desktop-release/*.test.mjs
 
   rust-fmt:
@@ -100,7 +100,7 @@ jobs:
           toolchain: nightly-2026-06-04
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.22.1'
       - run: node scripts/check-rust-workspace-cycles.mjs
 
   rust-test:
@@ -171,10 +171,12 @@ jobs:
           cargo test -p database-manager --test database_delete_atomicity -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_schema -- --ignored --test-threads=1
           cargo test -p database-manager --test index_definition_contract -- --ignored --test-threads=1
+          NUMERIC_TEST_DATABASE_URL="${DEV_DATABASE_URL}/tachyon_apps_database_manager" cargo test -p database-manager --test numeric_properties -- --ignored
           cargo run -p library-api --bin library_api_migrate dev
           cargo test -p library-api --lib ingredient_catalog_db -- --ignored --test-threads=1
           cargo test -p library-api-preview-migrate --lib preview_migrations_replay_on_empty_mysql -- --ignored --test-threads=1
           cargo test -p library-api --features integration_tests --test ga_crud_regression -- --test-threads=1
+          NUMERIC_TEST_DATABASE_URL="${DEV_DATABASE_URL}" cargo test -p library-api --features integration_tests --test ga_crud_regression numeric_recipe_mcp_rest_graphql_round_trip -- --ignored --test-threads=1
 
   node:
     runs-on: ubuntu-latest
@@ -183,7 +185,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.22.1'
       - name: Enable Corepack
         run: corepack enable
       - name: Reject legacy Yarn .yarnrc spec key (PLT-1762)
@@ -256,7 +258,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
       - uses: dtolnay/rust-toolchain@nightly
@@ -309,7 +311,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
       - name: Install client dependencies
@@ -345,7 +347,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: apps/client/package-lock.json
       - uses: dtolnay/rust-toolchain@nightly

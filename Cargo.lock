@@ -1819,12 +1819,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bigdecimal",
  "blocknote",
  "chrono",
  "derive-getters 0.5.0",
  "derive-new 0.7.0",
  "errors",
  "rstest",
+ "rust_decimal",
  "scraper",
  "serde",
  "serde_json",
@@ -3555,7 +3557,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "library-api"
-version = "1.11.13"
+version = "1.11.14"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3609,6 +3611,7 @@ dependencies = [
  "serde_yaml 0.9.34+deprecated",
  "sha2",
  "sqlx",
+ "strategy_projection",
  "strum 0.26.3",
  "tachyon-sdk",
  "telemetry",
@@ -6950,6 +6953,22 @@ name = "static_assertions_next"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
+
+[[package]]
+name = "strategy_projection"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "string_cache"

@@ -12,3 +12,6 @@ packages/*/target/
 
 # Generated mobile projects (tauri ios init / tauri android init)
 src-tauri/gen/
+
+# Local browser binaries used by focused UI verification
+.cache/playwright/

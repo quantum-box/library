@@ -290,6 +290,8 @@ function EditableCell({
 
 	// Get current string value
 	const getCurrentStringValue = (): string => {
+		if (value && typeof value === 'object' && 'decimal' in value) return String(value.decimal)
+		if (value && typeof value === 'object' && 'quantity' in value) { try { const q = JSON.parse(String(value.quantity)); return `${q.value} ${q.unit}` } catch { return '' } }
 		if (value && typeof value === 'object' && 'string' in value) {
 			return (value as { string: string }).string
 		}
@@ -326,7 +328,7 @@ function EditableCell({
 						if (pd.propertyId === propertyId) {
 							return {
 								propertyId: pd.propertyId,
-								value: { string: editValue },
+								value: property.typ === PropertyType.Decimal ? { decimal: editValue } : property.typ === PropertyType.Quantity ? { quantity: JSON.stringify({ value: editValue.split(/\s+/)[0], unit: editValue.split(/\s+/)[1] }) } : { string: editValue },
 							}
 						}
 						return {
@@ -428,7 +430,7 @@ function EditableCell({
 	// String/Text type - inline edit (ID type is read-only)
 	if (
 		property.typ === PropertyType.String ||
-		property.typ === PropertyType.Integer
+		property.typ === PropertyType.Integer || property.typ === PropertyType.Decimal || property.typ === PropertyType.Quantity
 	) {
 		if (isEditing) {
 			return (
@@ -611,7 +613,11 @@ export function DataTableView({
 					.join(', ')
 			}
 
-			if (typeof value === 'object') {
+            if (typeof value === 'object') {
+                if ('decimal' in value) return String(value.decimal)
+                if ('quantity' in value) { try { const q = JSON.parse(String(value.quantity)); return `${q.value} ${q.unit}` } catch { return '—' } }
+                if ('formula' in value || 'rollup' in value) { try { const v = value as { formula?: string; rollup?: string }; const c = JSON.parse(v.formula ?? v.rollup ?? '{}'); return c.status === 'ready' ? c.value : c.status === 'error' ? `⚠ ${c.code}` : c.status === 'pending' ? '…' : '—' } catch { return '—' } }
+
 				// Check __typename first for type safety
 				const typename =
 					'__typename' in value

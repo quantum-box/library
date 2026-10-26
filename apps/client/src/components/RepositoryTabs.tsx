@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import {
   BookOpen,
   FileKey2,
+  GitBranch,
   KeyRound,
   LayoutList,
   Settings,
@@ -12,6 +13,7 @@ import { DataLink } from './DataLink'
 import { useI18n } from '../i18n'
 
 export type RepositoryTab =
+  | 'strategy'
   | 'overview'
   | 'data'
   | 'properties'
@@ -103,6 +105,14 @@ export function RepositoryTabs({
         )}
       </Tab>
 
+      <Tab active={active === 'strategy'} icon={GitBranch} label={t('strategy.title')}>
+        {(className, content) => (
+          <Link to="/$organization/$repository/strategy" params={{ organization, repository }} className={className}>
+            {content}
+          </Link>
+        )}
+      </Tab>
+
       <Tab active={active === 'properties'} icon={FileKey2} label={t('viewSettings.properties')}>
         {(className, content) => (
           <Link
@@ -138,7 +148,7 @@ export function RepositoryTabs({
           </Link>
         )}
       </Tab>
-      <PublicDocsActions organization={organization} repository={repository} />
+      {active !== 'strategy' && <PublicDocsActions organization={organization} repository={repository} />}
     </nav>
   )
 }

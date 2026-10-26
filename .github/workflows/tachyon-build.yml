@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.22.1'
       # Action は runner の docker CLI で builder image を pull する（HOME は引き継がれる）。
       # package が private の間は、この login と package 側での library への read 付与が必要。
       # build container には runner の home を mount しないので、この credential は build から見えない。

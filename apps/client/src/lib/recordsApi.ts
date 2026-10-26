@@ -102,6 +102,7 @@ export interface LibraryProperty {
    * Relation without its target is rejected outright.
    */
   meta?: {
+    json?: string
     options?: LibrarySelectOption[]
     autoGenerate?: boolean
     databaseId?: string
@@ -131,6 +132,7 @@ const libraryPropertyTypeByWireValue: Record<string, LibraryPropertyType> = {
   IMAGE: 'Image',
   RICH_TEXT: 'RichText',
   BOOLEAN: 'Boolean',
+  DECIMAL: 'Decimal', QUANTITY: 'Quantity', FORMULA: 'Formula', ROLLUP: 'Rollup',
 }
 
 export function normalizeLibraryPropertyType(typ: string): LibraryPropertyType {
@@ -163,7 +165,13 @@ export interface LibraryTextPreview {
   truncated: boolean
 }
 
+export type ComputedPropertyValue = { status: 'ready'; value: string } | { status: 'null' | 'pending' } | { status: 'error'; code: string }
+
 export interface LibraryPropertyDataValue {
+  decimal?: string
+  quantity?: string | { value: string; unit: string }
+  formula?: string | ComputedPropertyValue
+  rollup?: string | ComputedPropertyValue
   __typename?: string
   string?: string
   number?: string
@@ -408,6 +416,7 @@ interface LibraryRestPropertyResponse {
   name: string
   display_name?: string
   property_type: string
+  config?: Record<string, unknown>
   auto_generate?: boolean
   database_id?: string
   options?: LibrarySelectOption[]
@@ -531,6 +540,10 @@ const libraryRepoDataQuery = `
               }
               ... on DateValue { date }
               ... on ImageValue { url }
+              ... on DecimalValue { decimal }
+              ... on QuantityValue { quantity }
+              ... on FormulaValue { formula }
+              ... on RollupValue { rollup }
               ... on BooleanValue { boolean }
               ... on IdValue { id }
               ... on RelationValue { dataIds databaseId }
@@ -553,6 +566,7 @@ const libraryRepoDataQuery = `
         displayName
         typ
         meta {
+          ... on JsonType { json }
           ... on IdType { autoGenerate }
           ... on DateType { includeTime dateFormat timeFormat }
           ... on RelationType { databaseId }
@@ -576,6 +590,7 @@ const libraryPropertiesQuery = `
       displayName
       typ
       meta {
+        ... on JsonType { json }
         ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
@@ -712,6 +727,10 @@ const libraryDataDetailQuery = `
           ... on RichTextValue { richText }
           ... on DateValue { date }
           ... on ImageValue { url }
+          ... on DecimalValue { decimal }
+          ... on QuantityValue { quantity }
+          ... on FormulaValue { formula }
+          ... on RollupValue { rollup }
           ... on BooleanValue { boolean }
           ... on IdValue { id }
           ... on RelationValue { dataIds databaseId }
@@ -727,6 +746,7 @@ const libraryDataDetailQuery = `
       displayName
       typ
       meta {
+        ... on JsonType { json }
         ... on DateType { includeTime dateFormat timeFormat }
         ... on SelectType {
           options { id key name }
@@ -1186,6 +1206,8 @@ function standardRecordPropertyData(
 
 function restPropertyValue(property: LibraryProperty, value: LibraryPropertyDataValue): unknown {
   switch (property.typ) {
+    case 'Decimal': return { decimal: value.decimal ?? '' }
+    case 'Quantity': return { quantity: value.quantity === '' ? null : typeof value.quantity === 'string' ? JSON.parse(value.quantity) : value.quantity }
     case 'String':
       return value.string ?? ''
     case 'Id':
@@ -1234,7 +1256,7 @@ function restPropertyData(
   const propertyById = new Map(properties.map((property) => [property.id, property]))
   return propertyData.flatMap((entry) => {
     const property = propertyById.get(entry.propertyId)
-    if (!property) return []
+    if (!property || ['Formula', 'Rollup'].includes(property.typ)) return []
     return [{ property_id: entry.propertyId, value: restPropertyValue(property, entry.value) }]
   })
 }
@@ -1796,6 +1818,10 @@ function restValueToLibraryPropertyDataValue(
   }
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
+    if (typeof record.decimal === 'string') return { decimal: record.decimal }
+    if (record.quantity) return { quantity: JSON.stringify(record.quantity) }
+    if (record.formula) return { formula: JSON.stringify(record.formula) }
+    if (record.rollup) return { rollup: JSON.stringify(record.rollup) }
     if (typeof record.boolean === 'boolean') return { boolean: record.boolean }
     if (typeof record.string === 'string') return { string: record.string }
     if (typeof record.integer === 'string' || typeof record.integer === 'number') {
@@ -1879,6 +1905,7 @@ function restDataToLibraryDataItem(item: LibraryRestDataResponse): LibraryDataIt
 
 function restPropertyToLibraryProperty(property: LibraryRestPropertyResponse): LibraryProperty {
   const meta = {
+    ...(property.config ? { json: JSON.stringify(property.config) } : {}),
     ...(property.options ? { options: property.options } : {}),
     ...(typeof property.auto_generate === 'boolean'
       ? { autoGenerate: property.auto_generate }
@@ -3214,4 +3241,32 @@ export function createLibraryRecordsResource(
       return { recordId: item.id, value: item }
     },
   }
+}
+
+
+export interface OrganizationMember {
+  id: string
+  name?: string | null
+  email?: string | null
+  image?: string | null
+  role: string
+}
+
+export async function fetchOrganizationMembers(
+  username: string,
+  operatorId: string,
+): Promise<OrganizationMember[]> {
+  const payload = await requestLibraryGraphQL<{
+    organization?: { users: OrganizationMember[] } | null
+  }>(`
+    query LibraryClientOrganizationMembers($username: String!) {
+      organization(username: $username) {
+        users { id name email image role }
+      }
+    }
+  `, { username }, { operatorId })
+  if (!payload.organization || !Array.isArray(payload.organization.users)) {
+    throw new Error('Organization members were not returned')
+  }
+  return payload.organization.users
 }

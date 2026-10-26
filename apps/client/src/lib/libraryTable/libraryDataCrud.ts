@@ -55,6 +55,10 @@ const libraryAddDataMutation = `
         value {
           ... on StringValue { string }
           ... on IntegerValue { number }
+          ... on DecimalValue { decimal }
+          ... on QuantityValue { quantity }
+          ... on FormulaValue { formula }
+          ... on RollupValue { rollup }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
           ... on RichTextValue { richText }
@@ -85,6 +89,10 @@ const libraryUpdateDataMutation = `
         value {
           ... on StringValue { string }
           ... on IntegerValue { number }
+          ... on DecimalValue { decimal }
+          ... on QuantityValue { quantity }
+          ... on FormulaValue { formula }
+          ... on RollupValue { rollup }
           ... on HtmlValue { html }
           ... on MarkdownValue { markdown }
           ... on RichTextValue { richText }
@@ -262,6 +270,10 @@ function restValueToLibraryPropertyDataValue(
   if (Array.isArray(value)) return { optionIds: value.map(String) }
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
+    if (typeof record.decimal === 'string') return { decimal: record.decimal }
+    if (record.quantity) return { quantity: JSON.stringify(record.quantity) }
+    if (record.formula) return { formula: JSON.stringify(record.formula) }
+    if (record.rollup) return { rollup: JSON.stringify(record.rollup) }
     if (typeof record.boolean === 'boolean') return { boolean: record.boolean }
     if (typeof record.string === 'string') return { string: record.string }
     if (typeof record.integer === 'number' || typeof record.integer === 'string') {
@@ -314,6 +326,18 @@ function restResponseToLibraryDataItem(payload: LibraryRestDataResponse): Librar
   }
 }
 
+// GraphQL nullable union fields represent an unset property as null. Keep the
+// client shape uniform before a saved record becomes the next edit's input.
+function normalizeGraphqlData(item: LibraryDataItem): LibraryDataItem {
+  return {
+    ...item,
+    propertyData: item.propertyData.map((entry) => ({
+      ...entry,
+      value: entry.value ?? {},
+    })),
+  }
+}
+
 function knownPropertyData(
   properties: LibraryProperty[],
   propertyData: LibraryDataItem['propertyData'],
@@ -332,6 +356,7 @@ function knownPropertyData(
   // client cannot interpret preserves its existing server value.
   return propertyData
     .filter((entry) => propertyIds.has(entry.propertyId))
+    .map((entry) => ({ ...entry, value: entry.value ?? {} }))
     .filter((entry) => !isPreviewOnlyValue(entry.value))
 }
 
@@ -377,6 +402,8 @@ function graphqlPropertyPayload(
 
 function restPropertyValue(property: LibraryProperty, value: LibraryPropertyDataValue): unknown {
   switch (property.typ) {
+    case 'Decimal': return { decimal: value.decimal ?? '' }
+    case 'Quantity': return { quantity: value.quantity === '' ? null : typeof value.quantity === 'string' ? JSON.parse(value.quantity) : value.quantity }
     case 'String':
       return value.string ?? ''
     case 'Id':
@@ -421,7 +448,7 @@ function restPropertyPayload(
   const propertyById = new Map(properties.map((property) => [property.id, property]))
   return propertyData.flatMap((entry) => {
     const property = propertyById.get(entry.propertyId)
-    if (!property) return []
+    if (!property || property.typ === 'Formula' || property.typ === 'Rollup') return []
     return [{ property_id: entry.propertyId, value: restPropertyValue(property, entry.value) }]
   })
 }
@@ -453,7 +480,7 @@ export async function addLibraryData(
         'invalid-response'
       )
     }
-    return payload.addData
+    return normalizeGraphqlData(payload.addData)
   } catch (error: unknown) {
     if (!shouldFallbackLibraryRequest(error, 'create')) throw error
   }
@@ -528,7 +555,7 @@ export async function updateLibraryData(
           'invalid-response'
         )
       }
-      return payload.updateData
+      return normalizeGraphqlData(payload.updateData)
     } catch (error: unknown) {
       if (!shouldFallbackLibraryRequest(error, 'update')) throw error
     }

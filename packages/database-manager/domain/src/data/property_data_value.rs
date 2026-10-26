@@ -1,4 +1,5 @@
 use super::*;
+use crate::{ComputedValue, QuantityValue, TypeDecimal, TypeQuantity};
 use std::fmt;
 use value_object::Location;
 
@@ -18,6 +19,10 @@ pub enum PropertyDataValue {
     /// A block document, stored as the editor's own JSON.
     RichText(serde_json::Value),
     Boolean(bool),
+    Decimal(String),
+    Quantity(QuantityValue),
+    Formula(ComputedValue),
+    Rollup(ComputedValue),
 }
 
 impl PropertyDataValue {
@@ -88,6 +93,24 @@ impl PropertyDataValue {
             PropertyDataValue::Image(_) => PropertyType::Image,
             PropertyDataValue::RichText(_) => PropertyType::RichText,
             PropertyDataValue::Boolean(_) => PropertyType::Boolean,
+            Self::Decimal(_) => {
+                PropertyType::Decimal(TypeDecimal::default())
+            }
+            Self::Quantity(_) => {
+                PropertyType::Quantity(TypeQuantity::default())
+            }
+            Self::Formula(_) => PropertyType::Formula(crate::TypeFormula {
+                expression: crate::FormulaExpr::Literal {
+                    value: "0".into(),
+                },
+                decimal: TypeDecimal::default(),
+            }),
+            Self::Rollup(_) => PropertyType::Rollup(crate::TypeRollup {
+                relation_property_id: "unresolved".into(),
+                target_property_id: "unresolved".into(),
+                function: crate::RollupFunction::Sum,
+                decimal: TypeDecimal::default(),
+            }),
         }
     }
 
@@ -137,6 +160,13 @@ impl PropertyDataValue {
             // Never empty, so a `false` survives the legacy "empty means
             // cleared" normalization instead of erasing itself on write.
             PropertyDataValue::Boolean(flag) => flag.to_string(),
+            Self::Decimal(value) => value.clone(),
+            Self::Quantity(value) => {
+                serde_json::to_string(value).expect("quantity JSON")
+            }
+            Self::Formula(value) | Self::Rollup(value) => {
+                serde_json::to_string(value).expect("computed JSON")
+            }
         }
     }
 
@@ -160,6 +190,23 @@ impl PropertyDataValue {
             PropertyType::Image => Self::parse_image(text),
             PropertyType::RichText => Self::parse_rich_text(text),
             PropertyType::Boolean => Self::parse_boolean(text),
+            PropertyType::Decimal(config) => {
+                Ok(Self::Decimal(config.normalize(text)?))
+            }
+            PropertyType::Quantity(config) => Ok(Self::Quantity(
+                config.normalize(
+                    &serde_json::from_str(text)
+                        .map_err(errors::Error::invalid)?,
+                )?,
+            )),
+            PropertyType::Formula(_) => Ok(Self::Formula(
+                serde_json::from_str(text)
+                    .map_err(errors::Error::invalid)?,
+            )),
+            PropertyType::Rollup(_) => Ok(Self::Rollup(
+                serde_json::from_str(text)
+                    .map_err(errors::Error::invalid)?,
+            )),
         }
     }
 

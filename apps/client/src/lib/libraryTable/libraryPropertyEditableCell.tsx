@@ -253,6 +253,11 @@ export function LibraryPropertyEditableCell({
       )
     }
 
+    if (property.typ === 'Quantity') {
+      let allowedUnits = ['g', 'kg']
+      try { allowedUnits = JSON.parse(property.meta?.json ?? '{}').allowed_units ?? allowedUnits } catch { /* legacy metadata */ }
+      return <EditableQuantity value={editText} units={allowedUnits} onCommit={handleCommitRaw} onCancel={() => setEditing(false)} />
+    }
     return (
       <EditableTextInput
         value={editText}
@@ -345,4 +350,15 @@ export function LibraryNameEditableCell({
       {item.name}
     </span>
   )
+}
+
+function EditableQuantity({ value, units, onCommit, onCancel }: { value: string; units: string[]; onCommit: (value: string) => void; onCancel: () => void }) {
+  const parts = value.trim().split(/\s+/)
+  const [amount, setAmount] = useState(parts[0] ?? '')
+  const [unit, setUnit] = useState(parts[1] ?? units[0])
+  return <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+    <input autoFocus aria-label={t('propertyType.decimal')} inputMode="decimal" className={editableFieldClassName} value={amount} onChange={(event) => setAmount(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') onCommit(`${amount} ${unit}`); if (event.key === 'Escape') onCancel() }} />
+    <select aria-label={t('numeric.unit')} className="rounded border bg-background" value={unit} onChange={(event) => setUnit(event.target.value)}>{units.map((id) => <option key={id}>{id}</option>)}</select>
+    <button type="button" aria-label={t('common.save')} onClick={() => onCommit(`${amount} ${unit}`)}><Check className="size-4" /></button>
+  </div>
 }

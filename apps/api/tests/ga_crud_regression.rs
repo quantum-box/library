@@ -1100,6 +1100,33 @@ async fn create_repo_forwards_general_users_caller_token_and_operator(
         string_at(&created_org, &["createOrganization", "id"])?;
     assert_ne!(operator_id, LIBRARY_TENANT_ID);
 
+    // An explicit tenant-A header must not authorize creation in tenant B.
+    // The normal no-header GraphQL lifecycle above remains supported.
+    let mismatched_scope = graphql_for_operator(
+        &client,
+        &server_url,
+        LIBRARY_TENANT_ID,
+        "mutation CreateRepo($input: CreateRepoInput!) {
+            createRepo(input: $input) { id username }
+        }",
+        json!({"input": {
+            "orgUsername": org,
+            "repoName": "Rejected cross-tenant repo",
+            "repoUsername": repo,
+            "userId": USER_ID,
+            "isPublic": false
+        }}),
+    )
+    .await
+    .unwrap_err();
+    assert!(mismatched_scope.to_string().contains("FORBIDDEN"));
+    assert!(!auth_state
+        .policy_checks
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|check| check.actions == ["library:CreateRepo"]));
+
     let created_repo = graphql_for_operator(
         &client,
         &server_url,
@@ -1959,4 +1986,183 @@ fn unique_suffix() -> String {
         chrono::Utc::now().timestamp_millis(),
         rand::random::<u32>()
     )
+}
+
+#[tokio::test]
+#[ignore = "requires isolated NUMERIC_TEST_DATABASE_URL and LIBRARY_DATABASE_URL"]
+async fn numeric_recipe_mcp_rest_graphql_round_trip() -> anyhow::Result<()>
+{
+    let admin: DatabaseUrl =
+        std::env::var("NUMERIC_TEST_DATABASE_URL")?.parse()?;
+    library_api::migrations::run_library_migrations(&admin).await?;
+    let (server, shutdown, _) = setup_test_server().await?;
+    let client = create_test_client();
+    let org = format!("numeric-{}", unique_suffix());
+    let created = mcp_call(
+        &client,
+        &server,
+        "create_org",
+        json!({"name":"Numeric test","username":org}),
+    )
+    .await?;
+    let org_id = created["organization"]["id"].as_str().unwrap();
+    for (repo, public) in [("lines", false), ("recipes", true)] {
+        mcp_call(&client,&server,"create_repo",json!({"org":org,"username":repo,"name":repo,"is_public":public,"skip_sample_data":true})).await?;
+    }
+    let target=graphql_for_operator(&client,&server,org_id,"query($org:String!){repo(orgUsername:$org,repoUsername:\"lines\"){databases}}",json!({"org":org})).await?;
+    let target_db = target["repo"]["databases"][0].as_str().unwrap();
+    async fn prop(
+        client: &Client,
+        server: &str,
+        org: &str,
+        repo: &str,
+        name: &str,
+        typ: &str,
+        meta: Value,
+    ) -> anyhow::Result<String> {
+        let p=mcp_call(client,server,"create_property",json!({"org":org,"repo":repo,"name":name,"property_type":typ,"meta":meta})).await?;
+        Ok(p["property"]["id"].as_str().unwrap().into())
+    }
+    let numeric = json!({"precision":28,"scale":12});
+    let cost = prop(
+        &client,
+        &server,
+        &org,
+        "lines",
+        "cost",
+        "decimal",
+        numeric.clone(),
+    )
+    .await?;
+    let quantity=prop(&client,&server,&org,"lines","amount","quantity",json!({"decimal":numeric,"allowed_units":["g","kg"],"default_unit":"g","unit_version":1})).await?;
+    let relation = prop(
+        &client,
+        &server,
+        &org,
+        "recipes",
+        "lines",
+        "relation",
+        json!({"database_id":target_db}),
+    )
+    .await?;
+    let servings = prop(
+        &client,
+        &server,
+        &org,
+        "recipes",
+        "servings",
+        "integer",
+        Value::Null,
+    )
+    .await?;
+    let total=prop(&client,&server,&org,"recipes","total_cost","rollup",json!({"relation_property_id":relation,"target_property_id":cost,"function":"sum","decimal":numeric})).await?;
+    let portion=prop(&client,&server,&org,"recipes","cost_per_serving","formula",json!({"expression":{"op":"divide","left":{"op":"property","id":total},"right":{"op":"property","id":servings}},"decimal":numeric})).await?;
+    let rate=prop(&client,&server,&org,"recipes","cost_rate","formula",json!({"expression":{"op":"multiply","left":{"op":"divide","left":{"op":"property","id":portion},"right":{"op":"literal","value":"1000"}},"right":{"op":"literal","value":"100"}},"decimal":numeric})).await?;
+    let mut ids = vec![];
+    for (price, amount, unit) in
+        [("150.5", "150", "g"), ("224.5", "1.5", "kg")]
+    {
+        let line=mcp_call(&client,&server,"create_data",json!({"org":org,"repo":"lines","name":"Ingredient","property_data":[{"property_id":cost,"value_type":"decimal","value":price},{"property_id":quantity,"value_type":"quantity","value":{"value":amount,"unit":unit}}]})).await?;
+        ids.push(line["data"]["id"].as_str().unwrap().to_string());
+    }
+    let created=mcp_call(&client,&server,"create_data",json!({"org":org,"repo":"recipes","name":"Recipe fixture","property_data":[{"property_id":relation,"value_type":"relation","value":ids},{"property_id":servings,"value_type":"integer","value":3}]})).await?;
+    let recipe = created["data"]["id"].as_str().unwrap().to_string();
+    let value = |data: &Value, id: &str| {
+        data["data"]["property_data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["property_id"] == id)
+            .unwrap()["value"]
+            .clone()
+    };
+    assert_eq!(
+        value(&created, &total),
+        json!({"status":"ready","value":"375"})
+    );
+    assert_eq!(
+        value(&created, &portion),
+        json!({"status":"ready","value":"125"})
+    );
+    assert_eq!(
+        value(&created, &rate),
+        json!({"status":"ready","value":"12.5"})
+    );
+    let rest = get_json(
+        &client,
+        &format!("{server}/v1beta/repos/{org}/lines/data/{}", ids[1]),
+        StatusCode::OK,
+    )
+    .await?;
+    assert!(rest["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["value"]["quantity"]
+            == json!({"value":"1.5","unit":"kg"})));
+    let gql=graphql_for_operator(&client,&server,org_id,"query($org:String!,$id:String!){data(orgUsername:$org,repoUsername:\"recipes\",dataId:$id){propertyData{propertyId value{... on FormulaValue {formula} ... on RollupValue {rollup}}}}}",json!({"org":org,"id":recipe})).await?;
+    assert!(gql.to_string().contains("12.5"));
+    mcp_call(&client,&server,"update_data",json!({"org":org,"repo":"lines","data_id":ids[0],"name":"Ingredient","property_data":[{"property_id":cost,"value_type":"decimal","value":"375.5"}]})).await?;
+    let updated = mcp_call(
+        &client,
+        &server,
+        "get_data",
+        json!({"org":org,"repo":"recipes","data_id":recipe}),
+    )
+    .await?;
+    assert_eq!(
+        value(&updated, &total),
+        json!({"status":"ready","value":"600"})
+    );
+    assert_eq!(
+        value(&updated, &portion),
+        json!({"status":"ready","value":"200"})
+    );
+    let anonymous: Value = client
+        .get(format!("{server}/v1beta/repos/{org}/recipes/data/{recipe}"))
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert!(anonymous["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["value"]["rollup"]
+            == json!({"status":"error","code":"access_denied"})));
+    mcp_call(&client,&server,"update_data",json!({"org":org,"repo":"recipes","data_id":recipe,"name":"Recipe fixture","property_data":[{"property_id":servings,"value_type":"integer","value":0}]})).await?;
+    let zero = mcp_call(
+        &client,
+        &server,
+        "get_data",
+        json!({"org":org,"repo":"recipes","data_id":recipe}),
+    )
+    .await?;
+    assert_eq!(
+        value(&zero, &portion),
+        json!({"status":"error","code":"division_by_zero"})
+    );
+    let denied=mcp_rpc(&client,&server,Some(TOKEN),"tools/call",json!({"name":"update_data","arguments":{"org":org,"repo":"recipes","data_id":recipe,"name":"Recipe fixture","property_data":[{"property_id":total,"value_type":"rollup","value":"999"}]}})).await?;
+    let denied: Value = denied.json().await?;
+    assert!(
+        denied.get("error").is_some()
+            || denied["result"]["isError"] == true
+    );
+    mcp_call(&client,&server,"update_data",json!({"org":org,"repo":"recipes","data_id":recipe,"name":"Recipe fixture","property_data":[{"property_id":relation,"value_type":"relation","value":[]}]})).await?;
+    let empty = mcp_call(
+        &client,
+        &server,
+        "get_data",
+        json!({"org":org,"repo":"recipes","data_id":recipe}),
+    )
+    .await?;
+    assert_eq!(value(&empty, &total), json!({"status":"null"}));
+    let invalid=mcp_rpc(&client,&server,Some(TOKEN),"tools/call",json!({"name":"update_data","arguments":{"org":org,"repo":"lines","data_id":ids[0],"name":"Ingredient","property_data":[{"property_id":quantity,"value_type":"quantity","value":{"value":"1","unit":"mL"}}]}})).await?;
+    let invalid: Value = invalid.json().await?;
+    assert!(
+        invalid.get("error").is_some()
+            || invalid["result"]["isError"] == true
+    );
+    shutdown.send(()).ok();
+    Ok(())
 }

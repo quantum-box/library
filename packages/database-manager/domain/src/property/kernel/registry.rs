@@ -51,6 +51,14 @@ impl KnownPropertyValue {
     }
 
     pub fn ensure_writable(&self) -> errors::Result<()> {
+        if matches!(
+            self.value,
+            PropertyDataValue::Formula(_) | PropertyDataValue::Rollup(_)
+        ) {
+            return Err(errors::Error::invalid(
+                "computed properties are read-only",
+            ));
+        }
         let Some(handler) =
             BUILTIN_PROPERTY_TYPE_REGISTRY.resolve(&self.type_ref)
         else {
@@ -88,7 +96,7 @@ pub(super) fn forge_known_property_value_for_test(
     }
 }
 
-static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 13] = [
+static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 17] = [
     BuiltinPropertyTypeHandler::new(PropertyKind::String),
     BuiltinPropertyTypeHandler::new(PropertyKind::Integer),
     BuiltinPropertyTypeHandler::new(PropertyKind::Html),
@@ -102,6 +110,10 @@ static BUILTIN_HANDLERS: [BuiltinPropertyTypeHandler; 13] = [
     BuiltinPropertyTypeHandler::new(PropertyKind::Image),
     BuiltinPropertyTypeHandler::new(PropertyKind::RichText),
     BuiltinPropertyTypeHandler::new(PropertyKind::Boolean),
+    BuiltinPropertyTypeHandler::new(PropertyKind::Decimal),
+    BuiltinPropertyTypeHandler::new(PropertyKind::Quantity),
+    BuiltinPropertyTypeHandler::new(PropertyKind::Formula),
+    BuiltinPropertyTypeHandler::new(PropertyKind::Rollup),
 ];
 
 /// The single compile-time registry for built-in Property Type handlers.

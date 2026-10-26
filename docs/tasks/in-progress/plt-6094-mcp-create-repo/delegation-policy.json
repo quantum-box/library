@@ -1,0 +1,16 @@
+{
+  "name": "library:DelegateBernardSquare",
+  "description": "Allow Library service to evaluate verified users only in the bernard-square operator tenant (PLT-6094)",
+  "tenantId": "tn_01j91h09tpj5ehwbwfwfxpak2b",
+  "isSystem": false,
+  "global": false,
+  "sharedWithDescendants": false,
+  "resourceScope": "trn:auth:operator:tn_01kshr165k3wwr8xyk0e6vy36c",
+  "actions": [
+    {
+      "actionFullName": "auth:EvaluatePoliciesForUserInTenant",
+      "effect": "allow"
+    }
+  ],
+  "actionPatterns": []
+}

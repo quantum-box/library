@@ -4,6 +4,7 @@
 
 | ドキュメント | 内容 |
 |---|---|
+| [`strategy-projection.md`](./strategy-projection.md) | Initiative・Projectのオンライン一覧、共有関係、Library補足の編集 |
 | [`app-platforms.md`](./app-platforms.md) | web / desktop / mobile の各シェルと、プラットフォームごとの差異 |
 | [`desktop-release.md`](./desktop-release.md) | desktop アプリの配布と自動更新（署名鍵の扱いを含む） |
 | [`ios-testflight.md`](./ios-testflight.md) | iOS ビルドの TestFlight 自動アップロード（App Store Connect API キーと署名） |
