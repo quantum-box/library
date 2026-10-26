@@ -1,3 +1,4 @@
+import { compareDecimal, compareQuantity } from '@/lib/numeric-property'
 import React, { Suspense } from 'react'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
@@ -324,6 +325,16 @@ export function DataViewComponent({
 				if (aVal == null) return 1
 				if (bVal == null) return -1
 
+                const property = properties.find(p => p.id === sortConfig.columnId)
+                if (property?.typ === PropertyType.Decimal || property?.typ === PropertyType.Quantity) {
+                    const text = (value: unknown) => {
+                        const v = value as { decimal?: string; quantity?: string }
+                        if (property.typ === PropertyType.Decimal) return v.decimal ?? ''
+                        try { const q = JSON.parse(v.quantity ?? '{}'); return `${q.value} ${q.unit}` } catch { return '' }
+                    }
+                    const comparison = property.typ === PropertyType.Decimal ? compareDecimal(text(aVal), text(bVal)) : compareQuantity(text(aVal), text(bVal))
+                    return sortConfig.direction === 'desc' ? -comparison : comparison
+                }
 				let comparison = 0
 				if (typeof aVal === 'string' && typeof bVal === 'string') {
 					comparison = aVal.localeCompare(bVal)

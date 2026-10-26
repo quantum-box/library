@@ -172,6 +172,49 @@ impl SearchIndex {
         }
 
         match sort {
+            SortOrder::Property { key, descending } => {
+                let property = self.property(&key).ok_or_else(|| {
+                    errors::Error::invalid("unknown sort property")
+                })?;
+                if !matches!(
+                    property.property_type(),
+                    PropertyType::Decimal(_)
+                        | PropertyType::Integer
+                        | PropertyType::Quantity(_)
+                ) {
+                    return Err(errors::Error::invalid(
+                        "property does not support numeric sorting",
+                    ));
+                }
+                let config = property.property_type().canonical_config();
+                let mut ordered = Vec::with_capacity(hits.len());
+                for hit in hits {
+                    let value =
+                        value_of(&hit.0.data, property.id()).cloned();
+                    if let Some(value) = &value {
+                        config.handler().validate_value(&config, value)?;
+                    }
+                    ordered.push((hit, value));
+                }
+                ordered.sort_by(|(a, av), (b, bv)| {
+                    let order = match (av, bv) {
+                        (Some(a), Some(b)) => config
+                            .handler()
+                            .compare(&config, a, b)
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (None, None) => std::cmp::Ordering::Equal,
+                        (None, _) => std::cmp::Ordering::Greater,
+                        (_, None) => std::cmp::Ordering::Less,
+                    };
+                    (if descending && av.is_some() && bv.is_some() {
+                        order.reverse()
+                    } else {
+                        order
+                    })
+                    .then_with(|| a.0.data.id().cmp(b.0.data.id()))
+                });
+                hits = ordered.into_iter().map(|(hit, _)| hit).collect();
+            }
             SortOrder::Distance => hits.sort_by(|(a, da), (b, db)| {
                 da.unwrap_or(f64::MAX)
                     .total_cmp(&db.unwrap_or(f64::MAX))
@@ -323,6 +366,35 @@ impl SearchIndex {
                     accepted,
                 })
             }
+            (PropertyType::Decimal(_) | PropertyType::Quantity(_), op) => {
+                let parse = |value: &str| {
+                    PropertyDataValue::new(value, property.property_type())
+                };
+                let (allowed, min, max) = match op {
+                    FilterOp::AnyOf(values) => (
+                        Some(
+                            values
+                                .iter()
+                                .map(|v| parse(v))
+                                .collect::<errors::Result<Vec<_>>>()?,
+                        ),
+                        None,
+                        None,
+                    ),
+                    FilterOp::AtLeast(value) => {
+                        (None, Some(parse(value)?), None)
+                    }
+                    FilterOp::AtMost(value) => {
+                        (None, None, Some(parse(value)?))
+                    }
+                };
+                Ok(Predicate::Numeric {
+                    property: Box::new(property.clone()),
+                    allowed,
+                    min,
+                    max,
+                })
+            }
             (PropertyType::Integer, op) => {
                 let parse = |value: &str| {
                     value.parse::<i64>().map_err(|_| {
@@ -438,6 +510,12 @@ impl SearchIndex {
 /// One compiled filter, checked against every candidate record.
 #[derive(Debug)]
 enum Predicate {
+    Numeric {
+        property: Box<Property>,
+        allowed: Option<Vec<PropertyDataValue>>,
+        min: Option<PropertyDataValue>,
+        max: Option<PropertyDataValue>,
+    },
     OptionIn {
         property_id: PropertyId,
         option_ids: HashSet<String>,
@@ -478,6 +556,31 @@ enum Predicate {
 impl Predicate {
     fn matches(&self, data: &Data) -> bool {
         match self {
+            Self::Numeric {
+                property,
+                allowed,
+                min,
+                max,
+            } => {
+                let Some(value) = value_of(data, property.id()) else {
+                    return false;
+                };
+                let config = property.property_type().canonical_config();
+                let compare = |other: &PropertyDataValue| {
+                    config.handler().compare(&config, value, other).ok()
+                };
+                allowed.as_ref().is_none_or(|values| {
+                    values.iter().any(|v| {
+                        compare(v) == Some(std::cmp::Ordering::Equal)
+                    })
+                }) && min.as_ref().is_none_or(|v| {
+                    compare(v)
+                        .is_some_and(|o| o != std::cmp::Ordering::Less)
+                }) && max.as_ref().is_none_or(|v| {
+                    compare(v)
+                        .is_some_and(|o| o != std::cmp::Ordering::Greater)
+                })
+            }
             Self::OptionIn {
                 property_id,
                 option_ids,
@@ -1159,5 +1262,89 @@ mod tests {
             q.location_property = Some("address".into());
         });
         assert!(fixture.index().search(&wrong, Visibility::All).is_err());
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    use database_manager::domain::{
+        DataId, DatabaseId, PropertyData, TypeDecimal,
+    };
+    use value_object::TenantId;
+    #[test]
+    fn decimal_search_orders_and_filters_numerically() {
+        let tenant = TenantId::default();
+        let database = DatabaseId::default();
+        let property = Property::new(
+            &PropertyId::default(),
+            &tenant,
+            &database,
+            "amount",
+            &PropertyType::Decimal(TypeDecimal::default()),
+            false,
+            0,
+        );
+        let row = |name: &str, value: &str| {
+            Data::new(
+                &DataId::default(),
+                &tenant,
+                &database,
+                name,
+                vec![PropertyData::new(&property, value.into()).unwrap()],
+                chrono::Utc::now(),
+                chrono::Utc::now(),
+            )
+            .unwrap()
+        };
+        let index = SearchIndex::build(
+            vec![row("ten", "10"), row("two", "2"), row("negative", "-1")],
+            vec![property],
+        );
+        let query = DataSearchQuery::parse(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &["amount>=2".into()],
+            None,
+            Some("property:amount"),
+        )
+        .unwrap();
+        let hits = index.search(&query, Visibility::All).unwrap();
+        assert_eq!(
+            hits.iter()
+                .map(|hit| hit.data.name().to_string())
+                .collect::<Vec<_>>(),
+            vec!["two", "ten"]
+        );
+        let query = DataSearchQuery::parse(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &["amount:2.0".into()],
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(index.search(&query, Visibility::All).unwrap().len(), 1);
+        let invalid = DataSearchQuery::parse(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &["amount>=NaN".into()],
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(index.search(&invalid, Visibility::All).is_err());
     }
 }

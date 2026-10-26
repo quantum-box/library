@@ -429,6 +429,12 @@ impl DecideRecordDeleteCommand {
 
 fn command_value(value: &PropertyValueCommand) -> serde_json::Value {
     match value {
+        PropertyValueCommand::Decimal(value) => {
+            serde_json::json!({"kind":"decimal", "value":value})
+        }
+        PropertyValueCommand::Quantity(value) => {
+            serde_json::json!({"kind":"quantity", "value":value})
+        }
         PropertyValueCommand::Clear => serde_json::json!({"kind": "clear"}),
         PropertyValueCommand::String(value) => {
             serde_json::json!({"kind": "string", "value": value})

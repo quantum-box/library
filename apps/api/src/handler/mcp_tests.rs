@@ -298,3 +298,42 @@ fn bearer_authentication_accepts_case_insensitive_scheme() {
     headers.insert(AUTHORIZATION, "bearer test-token".parse().unwrap());
     assert_eq!(bearer_token(&headers).as_deref(), Some("test-token"));
 }
+
+#[test]
+fn numeric_property_mcp_contracts() {
+    let decimal = property_type_from_value(
+        "decimal",
+        json!({"precision":28,"scale":12}),
+    )
+    .unwrap();
+    assert!(matches!(decimal, PropertyType::Decimal(_)));
+    let property = Property::new(
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        "cost",
+        &decimal,
+        false,
+        0,
+    );
+    assert_eq!(property_to_mcp(&property).meta.unwrap()["precision"], 28);
+    assert!(property_type_from_value(
+        "decimal",
+        json!({"precision":0,"scale":0})
+    )
+    .is_err());
+    assert!(property_data_value(json!(0.1), Some("decimal")).is_err());
+    assert!(
+        matches!(property_data_value(json!("0.1"),Some("decimal")).unwrap(),PropertyDataValueInputData::Decimal(value) if value=="0.1")
+    );
+    assert!(matches!(
+        property_data_value(
+            json!({"value":"1.5","unit":"kg"}),
+            Some("quantity")
+        )
+        .unwrap(),
+        PropertyDataValueInputData::Quantity(_)
+    ));
+    assert!(property_data_value(json!("125"), Some("formula")).is_err());
+    assert!(property_data_value(json!("125"), Some("rollup")).is_err());
+}

@@ -208,6 +208,12 @@ impl PropertySchema {
             false,
             property_num,
         );
+        let mut proposed = existing_definitions
+            .iter()
+            .filter_map(|definition| definition.to_property().ok())
+            .collect::<Vec<_>>();
+        proposed.push(property.clone());
+        super::validate_computed_schema(&proposed)?;
         let relation_definition = match property.property_type() {
             PropertyType::Relation(relation_type) => {
                 Some(RelationDefinition::legacy_default(

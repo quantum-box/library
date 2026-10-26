@@ -13,6 +13,9 @@ pub use definition::*;
 mod schema_mutation;
 pub use schema_mutation::*;
 
+pub mod numeric;
+pub use numeric::*;
+
 mod kernel;
 pub use kernel::*;
 
@@ -441,6 +444,43 @@ impl Property {
                 return Err(errors::invalid!(
                     "Id auto_generate is immutable after property creation."
                 ));
+            }
+            match (&self.property_type, property_type) {
+                (
+                    PropertyType::Decimal(current),
+                    PropertyType::Decimal(requested),
+                ) => {
+                    requested.validate()?;
+                    if requested.scale < current.scale
+                        || requested.precision - requested.scale
+                            < current.precision - current.scale
+                    {
+                        return Err(errors::Error::invalid(
+                            "narrowing decimal precision requires explicit migration",
+                        ));
+                    }
+                }
+                (
+                    PropertyType::Quantity(current),
+                    PropertyType::Quantity(requested),
+                ) => {
+                    requested.validate()?;
+                    if requested.unit_version != current.unit_version
+                        || current.allowed_units.iter().any(|unit| {
+                            !requested.allowed_units.contains(unit)
+                        })
+                        || requested.decimal.scale < current.decimal.scale
+                        || requested.decimal.precision
+                            - requested.decimal.scale
+                            < current.decimal.precision
+                                - current.decimal.scale
+                    {
+                        return Err(errors::Error::invalid(
+                            "narrowing quantity configuration requires explicit migration",
+                        ));
+                    }
+                }
+                _ => {}
             }
             match (&self.property_type, property_type) {
                 (

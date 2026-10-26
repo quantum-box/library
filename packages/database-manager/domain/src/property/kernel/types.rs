@@ -2,6 +2,7 @@ use crate::{
     DataId, DatabaseId, SelectItemId, TypeDate, TypeId, TypeLocation,
     TypeMultiSelect, TypeRelation, TypeSelect,
 };
+use crate::{TypeDecimal, TypeFormula, TypeQuantity, TypeRollup};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -195,10 +196,14 @@ pub enum PropertyKind {
     RichText,
     /// A two-state flag. Stored canonically as a JSON boolean.
     Boolean,
+    Decimal,
+    Quantity,
+    Formula,
+    Rollup,
 }
 
 impl PropertyKind {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 17] = [
         Self::String,
         Self::Integer,
         Self::Html,
@@ -212,6 +217,10 @@ impl PropertyKind {
         Self::Image,
         Self::RichText,
         Self::Boolean,
+        Self::Decimal,
+        Self::Quantity,
+        Self::Formula,
+        Self::Rollup,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -229,6 +238,10 @@ impl PropertyKind {
             Self::Image => "image",
             Self::RichText => "rich_text",
             Self::Boolean => "boolean",
+            Self::Decimal => "decimal",
+            Self::Quantity => "quantity",
+            Self::Formula => "formula",
+            Self::Rollup => "rollup",
         }
     }
 
@@ -259,6 +272,10 @@ pub enum PropertyConfig {
     Image,
     RichText,
     Boolean,
+    Decimal(TypeDecimal),
+    Quantity(TypeQuantity),
+    Formula(TypeFormula),
+    Rollup(TypeRollup),
 }
 
 impl PropertyConfig {
@@ -277,6 +294,10 @@ impl PropertyConfig {
             Self::Image => PropertyKind::Image,
             Self::RichText => PropertyKind::RichText,
             Self::Boolean => PropertyKind::Boolean,
+            Self::Decimal(_) => PropertyKind::Decimal,
+            Self::Quantity(_) => PropertyKind::Quantity,
+            Self::Formula(_) => PropertyKind::Formula,
+            Self::Rollup(_) => PropertyKind::Rollup,
         }
     }
 

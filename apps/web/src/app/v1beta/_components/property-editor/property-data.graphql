@@ -2,6 +2,10 @@ fragment PropertyDataForEditor on PropertyData {
   propertyId
   value {
     ...StringValueForEditor
+    ... on DecimalValue { decimal }
+    ... on QuantityValue { quantity }
+    ... on FormulaValue { formula }
+    ... on RollupValue { rollup }
     ...IntegerValueForEditor
     ...IdValueForEditor
     ...HtmlValueForEditor

@@ -480,6 +480,62 @@ impl RecordUnitOfWork for DataRepositoryImpl {
 
 #[async_trait::async_trait]
 impl DataRepository for DataRepositoryImpl {
+    async fn find_by_ids(
+        &self,
+        ids: &[DataId],
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Vec<Data>> {
+        if ids.len() > 256 {
+            return Err(errors::Error::invalid(
+                "at most 256 related records per request",
+            ));
+        }
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let fields=sqlx::query_as::<_, FieldRow>("SELECT * FROM fields WHERE tenant_id = ? AND object_id = ? ORDER BY field_num")
+            .bind(tenant_id.to_string()).bind(database_id.to_string()).fetch_all(self.db.pool().as_ref()).await?;
+        let mut query = sqlx::QueryBuilder::<sqlx::MySql>::new(
+            "SELECT * FROM data WHERE tenant_id = ",
+        );
+        query
+            .push_bind(tenant_id.to_string())
+            .push(" AND object_id = ")
+            .push_bind(database_id.to_string())
+            .push(" AND id IN (");
+        let mut separated = query.separated(",");
+        for id in ids {
+            separated.push_bind(id.to_string());
+        }
+        query.push(")");
+        let rows = query
+            .build_query_as::<DataRow>()
+            .fetch_all(self.db.pool().as_ref())
+            .await?;
+        let keys =
+            rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
+        let canonical = load_canonical_values_for_mode(
+            self.db.as_ref(),
+            tenant_id,
+            database_id,
+            &keys,
+            self.property_value_mode,
+        )
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                hydrate_data_row(
+                    row,
+                    &fields,
+                    &canonical,
+                    self.property_value_mode,
+                    self.property_definition_mode,
+                )
+            })
+            .collect()
+    }
+
     async fn find_by_id(
         &self,
         id: &DataId,

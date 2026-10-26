@@ -333,6 +333,10 @@ type DateValue {
 	date: String!
 }
 
+type DecimalValue {
+	decimal: String!
+}
+
 """
 Default role assigned to users within an operator.
 """
@@ -469,6 +473,10 @@ input ExtGithubRepoConfigInput {
 	Target branch (defaults to "main")
 	"""
 	branch: String
+}
+
+type FormulaValue {
+	formula: String!
 }
 
 """
@@ -1851,7 +1859,7 @@ input PropertyDataInputData {
 	value: PropertyDataValueInputData!
 }
 
-union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue | RichTextValue | BooleanValue
+union PropertyDataValue = StringValue | IntegerValue | HtmlValue | MarkdownValue | RelationValue | SelectValue | MultiSelectValue | IdValue | LocationValue | DateValue | ImageValue | RichTextValue | BooleanValue | DecimalValue | QuantityValue | FormulaValue | RollupValue
 
 input PropertyDataValueInputData @oneOf {
 	string: String
@@ -1872,6 +1880,8 @@ input PropertyDataValueInputData @oneOf {
 	"""
 	richText: String
 	boolean: Boolean
+	decimal: String
+	quantity: String
 }
 
 input PropertyInput {
@@ -1957,6 +1967,10 @@ enum PropertyType {
 	IMAGE
 	RICH_TEXT
 	BOOLEAN
+	DECIMAL
+	QUANTITY
+	FORMULA
+	ROLLUP
 }
 
 union PropertyTypeMeta = RelationType | SelectType | MultiSelectType | IdType | DateType | JsonType
@@ -1981,6 +1995,10 @@ type PublicApiKey {
 	only.
 	"""
 	role: ApiKeyRole
+}
+
+type QuantityValue {
+	quantity: String!
 }
 
 type Query {
@@ -2285,6 +2303,10 @@ type RichTextValue {
 	produces it stops at the cap rather than reading the whole body.
 	"""
 	preview(limit: Int! = 200): TextPreview!
+}
+
+type RollupValue {
+	rollup: String!
 }
 
 type SeedLibraryTenantPayload {

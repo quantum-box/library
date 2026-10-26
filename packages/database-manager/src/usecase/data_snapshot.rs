@@ -52,6 +52,17 @@ pub trait DataRevisionQuery: Debug + Send + Sync + 'static {
 /// Reads a whole Database for callers that derive their own view of it.
 #[async_trait::async_trait]
 pub trait DataSnapshotInputPort: Debug + Send + Sync + 'static {
+    async fn load_ids(
+        &self,
+        _tenant_id: &TenantId,
+        _database_id: &DatabaseId,
+        _ids: &[crate::domain::DataId],
+    ) -> errors::Result<Vec<Data>> {
+        Err(errors::Error::not_supported(
+            "batched record reads are unavailable",
+        ))
+    }
+
     /// The Database's current revision. One aggregate query; no record
     /// values are read.
     async fn revision(
@@ -92,6 +103,25 @@ impl DataSnapshot {
 
 #[async_trait::async_trait]
 impl DataSnapshotInputPort for DataSnapshot {
+    async fn load_ids(
+        &self,
+        tenant_id: &TenantId,
+        database_id: &DatabaseId,
+        ids: &[crate::domain::DataId],
+    ) -> errors::Result<Vec<Data>> {
+        if ids.len() > 256 {
+            return Err(errors::Error::invalid(
+                "at most 256 related records per request",
+            ));
+        }
+        DatabaseScope::new(tenant_id, database_id)
+            .require_database(self.database_repo.as_ref())
+            .await?;
+        self.data_repo
+            .find_by_ids(ids, database_id, tenant_id)
+            .await
+    }
+
     #[tracing::instrument(skip(self))]
     async fn revision(
         &self,

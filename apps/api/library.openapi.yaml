@@ -18,6 +18,8 @@ components:
           type:
           - boolean
           - 'null'
+        config:
+          description: Versioned kernel configuration for numeric and computed property types.
         date_format:
           description: Date display format for a Date property.
           type:
@@ -54,6 +56,46 @@ components:
       required:
       - new_username
       type: object
+    ComputedResult:
+      oneOf:
+      - properties:
+          status:
+            enum:
+            - ready
+            type: string
+          value:
+            type: string
+        required:
+        - value
+        - status
+        type: object
+      - properties:
+          status:
+            enum:
+            - 'null'
+            type: string
+        required:
+        - status
+        type: object
+      - properties:
+          status:
+            enum:
+            - pending
+            type: string
+        required:
+        - status
+        type: object
+      - properties:
+          code:
+            type: string
+          status:
+            enum:
+            - error
+            type: string
+        required:
+        - code
+        - status
+        type: object
     CreateIngredientCatalogRequest:
       properties:
         catalog_key:
@@ -989,6 +1031,30 @@ components:
         required:
         - boolean
         type: object
+      - properties:
+          decimal:
+            type: string
+        required:
+        - decimal
+        type: object
+      - properties:
+          quantity:
+            $ref: '#/components/schemas/QuantityValue'
+        required:
+        - quantity
+        type: object
+      - properties:
+          formula:
+            $ref: '#/components/schemas/ComputedResult'
+        required:
+        - formula
+        type: object
+      - properties:
+          rollup:
+            $ref: '#/components/schemas/ComputedResult'
+        required:
+        - rollup
+        type: object
       - description: |-
           A capped plain-text rendering of a block document.
 
@@ -1013,6 +1079,7 @@ components:
           type:
           - boolean
           - 'null'
+        config: {}
         database_id:
           description: Canonical target repository id of a `RELATION` property.
           type:
@@ -1127,6 +1194,16 @@ components:
           type: array
       required:
       - languages
+      type: object
+    QuantityValue:
+      properties:
+        unit:
+          type: string
+        value:
+          type: string
+      required:
+      - value
+      - unit
       type: object
     RepoResponse:
       properties:
@@ -1487,6 +1564,7 @@ components:
       type: object
     UpdatePropertyRequest:
       properties:
+        config: {}
         display_name:
           description: New human-readable label shown in the user interface.
           type:
@@ -1494,6 +1572,10 @@ components:
           - 'null'
         name:
           description: New stable key used by API clients to identify this Property.
+          type:
+          - string
+          - 'null'
+        property_type:
           type:
           - string
           - 'null'
@@ -1580,7 +1662,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.10
+  version: 1.11.13
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:

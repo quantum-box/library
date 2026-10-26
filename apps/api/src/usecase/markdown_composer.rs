@@ -35,6 +35,13 @@ fn property_value_to_yaml(
 ) -> YamlValue {
     use database_manager::domain::PropertyDataValue as V;
     match value {
+        Some(V::Decimal(value)) => YamlValue::String(value.clone()),
+        Some(V::Quantity(value)) => {
+            serde_yaml::to_value(value).unwrap_or(YamlValue::Null)
+        }
+        Some(V::Formula(value)) | Some(V::Rollup(value)) => {
+            serde_yaml::to_value(value).unwrap_or(YamlValue::Null)
+        }
         Some(V::String(s)) => YamlValue::String(s.clone()),
         Some(V::Integer(i)) => {
             serde_yaml::to_value(i).unwrap_or(YamlValue::Null)
@@ -227,6 +234,15 @@ fn build_frontmatter(
             continue;
         };
 
+        // Read-only results stay in the typed API payload. Omitting them from
+        // editable frontmatter lets get -> edit body -> update round-trip.
+        if matches!(
+            property.property_type(),
+            database_manager::domain::PropertyType::Formula(_)
+                | database_manager::domain::PropertyType::Rollup(_)
+        ) {
+            continue;
+        }
         let name = property.name().as_str();
         if is_content_property_name(name) {
             continue;
@@ -503,5 +519,43 @@ mod tests {
         let markdown = compose_markdown(&data, &fixture.properties);
 
         assert!(!markdown.contains("url:"));
+    }
+}
+
+#[cfg(test)]
+mod computed_export_tests {
+    use super::*;
+    use database_manager::domain::*;
+    #[test]
+    fn editable_frontmatter_omits_read_only_results() {
+        let property = Property::new(
+            &PropertyId::default(),
+            &Default::default(),
+            &DatabaseId::default(),
+            "computed_cost",
+            &PropertyType::Formula(TypeFormula::default()),
+            false,
+            0,
+        );
+        let value = PropertyData::from_computed(
+            &property,
+            PropertyDataValue::Formula(ComputedValue::Ready {
+                value: "125".into(),
+            }),
+        )
+        .unwrap();
+        let data = Data::new(
+            &DataId::default(),
+            property.tenant_id(),
+            property.database_id(),
+            "Recipe",
+            vec![value],
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        assert!(
+            !compose_markdown(&data, &[property]).contains("computed_cost")
+        );
     }
 }

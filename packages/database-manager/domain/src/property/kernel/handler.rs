@@ -55,11 +55,26 @@ impl BuiltinPropertyTypeHandler {
             PropertyKind::Location => StorageClass::Location,
             PropertyKind::Date => StorageClass::Date,
             PropertyKind::Boolean => StorageClass::Boolean,
+            PropertyKind::Decimal
+            | PropertyKind::Quantity
+            | PropertyKind::Formula
+            | PropertyKind::Rollup => StorageClass::Text,
         }
     }
 
     pub const fn index_capabilities(&self) -> IndexCapabilities {
         match self.kind {
+            PropertyKind::Decimal
+            | PropertyKind::Quantity
+            | PropertyKind::Formula
+            | PropertyKind::Rollup => IndexCapabilities {
+                exact: false,
+                range: false,
+                full_text: false,
+                sortable: false,
+                unique: false,
+                multi_value: false,
+            },
             PropertyKind::String => IndexCapabilities {
                 exact: true,
                 range: false,
@@ -142,6 +157,10 @@ impl BuiltinPropertyTypeHandler {
         }
 
         match config {
+            PropertyConfig::Decimal(config) => config.validate(),
+            PropertyConfig::Quantity(config) => config.validate(),
+            PropertyConfig::Formula(config) => config.validate(),
+            PropertyConfig::Rollup(config) => config.validate(),
             PropertyConfig::Select(config) => validate_select_items(config),
             PropertyConfig::MultiSelect(config) => {
                 validate_multi_select_items(config)
@@ -167,6 +186,22 @@ impl BuiltinPropertyTypeHandler {
         self.validate_config(config)?;
 
         match (config, value) {
+            (
+                PropertyConfig::Decimal(config),
+                PropertyDataValue::Decimal(value),
+            ) => config.parse(value).map(|_| ()),
+            (
+                PropertyConfig::Quantity(config),
+                PropertyDataValue::Quantity(value),
+            ) => config.normalize(value).map(|_| ()),
+            (
+                PropertyConfig::Formula(config),
+                PropertyDataValue::Formula(value),
+            ) => validate_computed(&config.decimal, value),
+            (
+                PropertyConfig::Rollup(config),
+                PropertyDataValue::Rollup(value),
+            ) => validate_computed(&config.decimal, value),
             (PropertyConfig::String, PropertyDataValue::String(_))
             | (PropertyConfig::Integer, PropertyDataValue::Integer(_))
             | (PropertyConfig::Boolean, PropertyDataValue::Boolean(_))
@@ -239,6 +274,10 @@ impl BuiltinPropertyTypeHandler {
             | PropertyConfig::Image
             | PropertyConfig::RichText
             | PropertyConfig::Boolean => Ok(Value::Null),
+            PropertyConfig::Decimal(value) => to_json(value),
+            PropertyConfig::Quantity(value) => to_json(value),
+            PropertyConfig::Formula(value) => to_json(value),
+            PropertyConfig::Rollup(value) => to_json(value),
             PropertyConfig::Relation(value) => to_json(value),
             PropertyConfig::Select(value) => to_json(value),
             PropertyConfig::MultiSelect(value) => to_json(value),
@@ -258,6 +297,25 @@ impl BuiltinPropertyTypeHandler {
         raw: Value,
     ) -> errors::Result<PropertyConfig> {
         let config = match self.kind {
+            PropertyKind::Decimal => {
+                PropertyConfig::Decimal(if raw.is_null() {
+                    Default::default()
+                } else {
+                    from_json(raw)?
+                })
+            }
+            PropertyKind::Quantity => {
+                PropertyConfig::Quantity(if raw.is_null() {
+                    Default::default()
+                } else {
+                    from_json(raw)?
+                })
+            }
+            PropertyKind::Formula => {
+                PropertyConfig::Formula(from_json(raw)?)
+            }
+            PropertyKind::Rollup => PropertyConfig::Rollup(from_json(raw)?),
+
             PropertyKind::String => {
                 require_empty_config(&raw)?;
                 PropertyConfig::String
@@ -314,6 +372,10 @@ impl BuiltinPropertyTypeHandler {
     ) -> errors::Result<Value> {
         self.validate_value(config, value)?;
         match value {
+            PropertyDataValue::Decimal(value) => to_json(value),
+            PropertyDataValue::Quantity(value) => to_json(value),
+            PropertyDataValue::Formula(value)
+            | PropertyDataValue::Rollup(value) => to_json(value),
             PropertyDataValue::String(value)
             | PropertyDataValue::Html(value)
             | PropertyDataValue::Markdown(value)
@@ -344,6 +406,19 @@ impl BuiltinPropertyTypeHandler {
     ) -> errors::Result<PropertyDataValue> {
         self.validate_config(config)?;
         let value = match self.kind {
+            PropertyKind::Decimal => {
+                PropertyDataValue::Decimal(from_json(raw)?)
+            }
+            PropertyKind::Quantity => {
+                PropertyDataValue::Quantity(from_json(raw)?)
+            }
+            PropertyKind::Formula => {
+                PropertyDataValue::Formula(from_json(raw)?)
+            }
+            PropertyKind::Rollup => {
+                PropertyDataValue::Rollup(from_json(raw)?)
+            }
+
             PropertyKind::String => {
                 PropertyDataValue::String(from_json(raw)?)
             }
@@ -394,6 +469,30 @@ impl BuiltinPropertyTypeHandler {
         self.validate_value(config, right)?;
 
         let ordering = match (left, right) {
+            (
+                PropertyDataValue::Decimal(left),
+                PropertyDataValue::Decimal(right),
+            ) => {
+                let PropertyConfig::Decimal(config) = config else {
+                    unreachable!()
+                };
+                config.parse(left)?.cmp(&config.parse(right)?)
+            }
+            (
+                PropertyDataValue::Quantity(left),
+                PropertyDataValue::Quantity(right),
+            ) => {
+                let PropertyConfig::Quantity(config) = config else {
+                    unreachable!()
+                };
+                config.compare(left, right)?
+            }
+            (PropertyDataValue::Formula(_), _)
+            | (PropertyDataValue::Rollup(_), _) => {
+                return Err(errors::Error::not_supported(
+                    "computed values are not indexed",
+                ));
+            }
             (
                 PropertyDataValue::String(left),
                 PropertyDataValue::String(right),
@@ -687,4 +786,14 @@ fn from_json<T: for<'de> Deserialize<'de>>(
     raw: Value,
 ) -> errors::Result<T> {
     serde_json::from_value(raw).map_err(errors::Error::invalid)
+}
+
+fn validate_computed(
+    config: &crate::TypeDecimal,
+    value: &crate::ComputedValue,
+) -> errors::Result<()> {
+    if let crate::ComputedValue::Ready { value } = value {
+        config.parse(value)?;
+    }
+    Ok(())
 }

@@ -397,6 +397,7 @@ async fn test_properties_api_all() -> anyhow::Result<()> {
         {
             // TODO: add English comment
             AddPropertyRequest {
+                config: None,
                 name: test_property_key.clone(),
                 display_name: Some(test_property_display_name.clone()),
                 property_type: format!("relation:{}", target_database_id),
@@ -404,6 +405,7 @@ async fn test_properties_api_all() -> anyhow::Result<()> {
             }
         } else {
             AddPropertyRequest {
+                config: None,
                 name: test_property_key.clone(),
                 display_name: Some(test_property_display_name.clone()),
                 property_type: property_type.to_string(),

@@ -31,6 +31,8 @@ export const normalizeValueForInput = (
 
   const input = value as Record<string, unknown>
 
+  if ('decimal' in input) return { decimal: String(input.decimal ?? '') }
+  if ('quantity' in input) return { quantity: String(input.quantity ?? '') }
   if ('string' in input) {
     return {
       string: typeof input.string === 'string' ? input.string : String(input.string ?? ''),
@@ -148,7 +150,7 @@ const convertCurrentPropertyData = (
     return item
   })
 
-  return normalized.map(item => ({
+  return normalized.filter(item => !(item.value && typeof item.value === 'object' && ('formula' in item.value || 'rollup' in item.value))).map(item => ({
     propertyId: item.propertyId,
     value: normalizeValueForInput(item.value, item.propertyId === propertyId ? optionId : undefined),
   }))

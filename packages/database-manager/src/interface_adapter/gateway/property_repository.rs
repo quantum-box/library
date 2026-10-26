@@ -343,6 +343,21 @@ impl PropertySchemaMutationPort for PropertyRepositoryImpl {
                 )));
             }
         }
+        let schema_rows = sqlx::query_as::<_, FieldRow>(
+            "SELECT id, tenant_id, object_id, field_name, field_display_name, datatype, datatype_meta, is_indexed, field_num, meta_json, type_key, type_version, type_config FROM fields WHERE tenant_id = ? AND object_id = ? FOR UPDATE"
+        ).bind(command.tenant_id().to_string()).bind(command.database_id().to_string())
+         .fetch_all(&mut *transaction).await?;
+        let mut proposed = Vec::new();
+        for row in schema_rows {
+            let definition = row.definition(self.definition_mode)?;
+            if definition.id() != command.property_id() {
+                if let Ok(property) = definition.to_property() {
+                    proposed.push(property);
+                }
+            }
+        }
+        proposed.push(updated.to_property()?);
+        crate::domain::validate_computed_schema(&proposed)?;
         let (property, type_key, type_version, type_config) =
             encoded_definition(&updated)?;
 

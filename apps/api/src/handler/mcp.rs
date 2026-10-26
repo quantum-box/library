@@ -2023,6 +2023,18 @@ fn property_data_value(
         }
     };
     match value_type.unwrap_or("string") {
+        "decimal" => {
+            if !value.is_string() && !value.is_null() {
+                return Err(invalid_tool_arg("decimal must be a string"));
+            }
+            Ok(PropertyDataValueInputData::Decimal(as_string(value)?))
+        }
+        "quantity" => {
+            Ok(PropertyDataValueInputData::Quantity(value.to_string()))
+        }
+        "formula" | "rollup" => {
+            Err(invalid_tool_arg("computed properties are read-only"))
+        }
         "integer" => {
             Ok(PropertyDataValueInputData::Integer(as_string(value)?))
         }
@@ -2168,6 +2180,10 @@ fn property_value_to_mcp(value: &PropertyDataValue) -> (String, Value) {
         PropertyDataValue::Image(v) => ("image", json!(v)),
         PropertyDataValue::RichText(v) => ("rich_text", v.clone()),
         PropertyDataValue::Boolean(v) => ("boolean", json!(v)),
+        PropertyDataValue::Decimal(v) => ("decimal", json!(v)),
+        PropertyDataValue::Quantity(v) => ("quantity", json!(v)),
+        PropertyDataValue::Formula(v) => ("formula", json!(v)),
+        PropertyDataValue::Rollup(v) => ("rollup", json!(v)),
     };
     (typ.to_string(), value)
 }
@@ -2177,7 +2193,14 @@ fn property_type_from_value(
     meta: Value,
 ) -> Result<PropertyType, Value> {
     let typ = typ.trim().replace('-', "_").to_ascii_uppercase();
-    PropertyType::from_meta(&typ, meta).map_err(tool_execution_error)
+    let property = PropertyType::from_meta(&typ, meta)
+        .map_err(tool_execution_error)?;
+    let config = property.canonical_config();
+    config
+        .handler()
+        .validate_config(&config)
+        .map_err(tool_execution_error)?;
+    Ok(property)
 }
 
 fn parse_optional<T>(value: Option<String>) -> Result<Option<T>, Value>
@@ -2209,7 +2232,11 @@ fn property_to_mcp(property: &Property) -> McpProperty {
         display_name: property.display_name().to_string(),
         property_type: property.property_type().to_string(),
         meta: match property.property_type() {
-            database_manager::domain::PropertyType::Date(_) => property
+            database_manager::domain::PropertyType::Date(_)
+            | database_manager::domain::PropertyType::Decimal(_)
+            | database_manager::domain::PropertyType::Quantity(_)
+            | database_manager::domain::PropertyType::Formula(_)
+            | database_manager::domain::PropertyType::Rollup(_) => property
                 .property_type()
                 .get_meta()
                 .ok()
@@ -3088,6 +3115,7 @@ fn data_write_schema<const N: usize>(required: [&str; N]) -> Value {
                                 "date",
                                 "image",
                                 "rich_text",
+                                "decimal", "quantity", "formula", "rollup",
                                 "boolean",
                                 "id",
                                 "location"
@@ -3138,6 +3166,7 @@ fn property_write_schema<const N: usize>(required: [&str; N]) -> Value {
                     "date",
                     "image",
                     "rich_text",
+                                "decimal", "quantity", "formula", "rollup",
                     "boolean"
                 ]
             },

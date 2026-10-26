@@ -250,6 +250,10 @@ pub enum PropertyType {
     Image,
     RichText,
     Boolean,
+    Decimal,
+    Quantity,
+    Formula,
+    Rollup,
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -322,6 +326,42 @@ impl From<database_manager::domain::Property> for Property {
                 database_manager::domain::PropertyType::Image => None,
                 database_manager::domain::PropertyType::RichText => None,
                 database_manager::domain::PropertyType::Boolean => None,
+                database_manager::domain::PropertyType::Decimal(_) => {
+                    Some(PropertyTypeMeta::Json(JsonType {
+                        json: value
+                            .property_type()
+                            .get_meta()
+                            .expect("validated config")
+                            .to_string(),
+                    }))
+                }
+                database_manager::domain::PropertyType::Quantity(_) => {
+                    Some(PropertyTypeMeta::Json(JsonType {
+                        json: value
+                            .property_type()
+                            .get_meta()
+                            .expect("validated config")
+                            .to_string(),
+                    }))
+                }
+                database_manager::domain::PropertyType::Formula(_) => {
+                    Some(PropertyTypeMeta::Json(JsonType {
+                        json: value
+                            .property_type()
+                            .get_meta()
+                            .expect("validated config")
+                            .to_string(),
+                    }))
+                }
+                database_manager::domain::PropertyType::Rollup(_) => {
+                    Some(PropertyTypeMeta::Json(JsonType {
+                        json: value
+                            .property_type()
+                            .get_meta()
+                            .expect("validated config")
+                            .to_string(),
+                    }))
+                }
             }
         };
 
@@ -367,6 +407,18 @@ impl From<database_manager::domain::PropertyType> for PropertyType {
             database_manager::domain::PropertyType::Image => Self::Image,
             database_manager::domain::PropertyType::RichText => {
                 Self::RichText
+            }
+            database_manager::domain::PropertyType::Decimal(_) => {
+                Self::Decimal
+            }
+            database_manager::domain::PropertyType::Quantity(_) => {
+                Self::Quantity
+            }
+            database_manager::domain::PropertyType::Formula(_) => {
+                Self::Formula
+            }
+            database_manager::domain::PropertyType::Rollup(_) => {
+                Self::Rollup
             }
             database_manager::domain::PropertyType::Boolean => {
                 Self::Boolean
@@ -469,6 +521,10 @@ pub enum PropertyDataValue {
     Image(ImageValue),
     RichText(RichTextValue),
     Boolean(BooleanValue),
+    Decimal(DecimalValue),
+    Quantity(QuantityValue),
+    Formula(FormulaValue),
+    Rollup(RollupValue),
 }
 
 #[derive(SimpleObject, Debug, Clone)]
@@ -624,6 +680,26 @@ pub struct ImageValue {
 }
 
 #[derive(SimpleObject, Debug, Clone)]
+pub struct DecimalValue {
+    pub decimal: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct QuantityValue {
+    pub quantity: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct FormulaValue {
+    pub formula: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
+pub struct RollupValue {
+    pub rollup: String,
+}
+
+#[derive(SimpleObject, Debug, Clone)]
 pub struct BooleanValue {
     pub boolean: bool,
 }
@@ -727,6 +803,27 @@ impl From<database_manager::domain::PropertyDataValue>
             database_manager::domain::PropertyDataValue::Image(url) => {
                 PropertyDataValue::Image(ImageValue {
                     url: url.to_string(),
+                })
+            }
+            database_manager::domain::PropertyDataValue::Decimal(value) => {
+                PropertyDataValue::Decimal(DecimalValue { decimal: value })
+            }
+            database_manager::domain::PropertyDataValue::Quantity(
+                value,
+            ) => PropertyDataValue::Quantity(QuantityValue {
+                quantity: serde_json::to_string(&value)
+                    .expect("numeric value"),
+            }),
+            database_manager::domain::PropertyDataValue::Formula(value) => {
+                PropertyDataValue::Formula(FormulaValue {
+                    formula: serde_json::to_string(&value)
+                        .expect("numeric value"),
+                })
+            }
+            database_manager::domain::PropertyDataValue::Rollup(value) => {
+                PropertyDataValue::Rollup(RollupValue {
+                    rollup: serde_json::to_string(&value)
+                        .expect("numeric value"),
                 })
             }
             database_manager::domain::PropertyDataValue::Boolean(flag) => {

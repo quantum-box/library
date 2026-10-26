@@ -172,7 +172,7 @@ fn invalid_filter(value: &str) -> errors::Error {
     ))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SortOrder {
     /// Nearest first. Requires `lat`/`lng`.
     Distance,
@@ -180,12 +180,30 @@ pub enum SortOrder {
     Name,
     /// Most recently updated first.
     Updated,
+    Property {
+        key: String,
+        descending: bool,
+    },
 }
 
 impl FromStr for SortOrder {
     type Err = errors::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if let Some(key) = value.strip_prefix("property:") {
+            let (key, descending) = key
+                .strip_suffix(":desc")
+                .map_or((key, false), |key| (key, true));
+            if key.is_empty() {
+                return Err(errors::Error::invalid(
+                    "sort property key is empty",
+                ));
+            }
+            return Ok(Self::Property {
+                key: key.into(),
+                descending,
+            });
+        }
         match value {
             "distance" => Ok(Self::Distance),
             "name" => Ok(Self::Name),
@@ -307,7 +325,7 @@ impl DataSearchQuery {
 
     /// The order results come back in when the caller names none.
     pub fn effective_sort(&self) -> SortOrder {
-        self.sort.unwrap_or(if self.near.is_some() {
+        self.sort.clone().unwrap_or(if self.near.is_some() {
             SortOrder::Distance
         } else {
             SortOrder::Name

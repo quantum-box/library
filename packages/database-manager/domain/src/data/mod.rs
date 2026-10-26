@@ -103,6 +103,14 @@ impl Data {
         Ok(new_entity)
     }
 
+    /// Overlay derived values without changing the persisted record revision.
+    pub fn with_derived_value(mut self, value: PropertyData) -> Self {
+        self.property_data
+            .retain(|pd| pd.property_id() != value.property_id());
+        self.property_data.push(value);
+        self
+    }
+
     pub fn get_property_data(
         &self,
         property_id: &PropertyId,
@@ -198,6 +206,23 @@ def_id!(DataId, "data_");
 
 #[async_trait::async_trait]
 pub trait DataRepository: Debug + Send + Sync + 'static {
+    async fn find_by_ids(
+        &self,
+        ids: &[DataId],
+        database_id: &DatabaseId,
+        tenant_id: &TenantId,
+    ) -> errors::Result<Vec<Data>> {
+        let mut records = Vec::new();
+        for id in ids {
+            if let Some(record) =
+                self.find_by_id(id, database_id, tenant_id).await?
+            {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    }
+
     async fn find_by_id(
         &self,
         id: &DataId,
