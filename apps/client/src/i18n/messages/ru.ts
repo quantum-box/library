@@ -161,6 +161,8 @@ export const ru: LocaleMessages = {
   'sidebar.openNavigation': 'Открыть навигацию',
   'sidebar.closeNavigation': 'Закрыть навигацию',
   'sidebar.collapse': 'Свернуть боковую панель',
+  'sidebar.pin': 'Закрепить боковую панель',
+  'sidebar.unpin': 'Открепить боковую панель',
   'sidebar.expand': 'Развернуть боковую панель',
   'sidebar.workspaceHome': 'Главная {workspace}',
   'sidebar.workspace.placeholder': 'Выберите рабочее пространство',

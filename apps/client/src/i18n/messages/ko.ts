@@ -158,6 +158,8 @@ export const ko: LocaleMessages = {
   'sidebar.openNavigation': '탐색 열기',
   'sidebar.closeNavigation': '탐색 닫기',
   'sidebar.collapse': '사이드바 접기',
+  'sidebar.pin': '사이드바 고정',
+  'sidebar.unpin': '사이드바 고정 해제',
   'sidebar.expand': '사이드바 펼치기',
   'sidebar.workspaceHome': '{workspace} 홈',
   'sidebar.workspace.placeholder': '워크스페이스 선택',

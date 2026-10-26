@@ -158,6 +158,8 @@ export const de: LocaleMessages = {
   'sidebar.openNavigation': 'Navigation öffnen',
   'sidebar.closeNavigation': 'Navigation schließen',
   'sidebar.collapse': 'Seitenleiste einklappen',
+  'sidebar.pin': 'Seitenleiste anheften',
+  'sidebar.unpin': 'Seitenleiste lösen',
   'sidebar.expand': 'Seitenleiste ausklappen',
   'sidebar.workspaceHome': 'Startseite von {workspace}',
   'sidebar.workspace.placeholder': 'Workspace wählen',
