@@ -70,6 +70,12 @@ sentry = { version = "0.32", features = [
     "panic",
     "debug-images",
     "reqwest",
+    # Gives sentry's reqwest transport a TLS backend in every package set.
+    # Production binaries already get reqwest's default-tls through feature
+    # unification; the rustls feature would also pull in webpki-roots 0.25,
+    # which still trusts the roots behind the compromised eMudhra
+    # intermediates.
+    "native-tls",
 ], default-features = false }
 sentry-tracing = "0.32"
 openssl = { version = "0.10", features = ["vendored"] }
