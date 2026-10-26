@@ -601,10 +601,23 @@ function graphqlResponse(query, variables) {
     }
   }
 
+  // Model GraphQL union selection: unrequested numeric fragments must not
+  // appear in mutation responses just because the fixture stores their values.
+  const mutationResult = (item) => {
+    const result = clone(item)
+    if (!result) return result
+    for (const entry of result.propertyData) {
+      for (const [field, type] of [['decimal', 'DecimalValue'], ['quantity', 'QuantityValue'], ['formula', 'FormulaValue'], ['rollup', 'RollupValue']]) {
+        if (entry.value && field in entry.value && !query.includes(`... on ${type}`)) entry.value = {}
+      }
+    }
+    return result
+  }
+
   if (query.includes('LibraryClientAddData')) {
     return {
       addData: repositoryExists(variables.input?.orgUsername, variables.input?.repoUsername)
-        ? clone(createData(variables.input))
+        ? mutationResult(createData(variables.input))
         : null,
     }
   }
@@ -612,7 +625,7 @@ function graphqlResponse(query, variables) {
   if (query.includes('LibraryClientUpdateData')) {
     return {
       updateData: repositoryExists(variables.input?.orgUsername, variables.input?.repoUsername)
-        ? clone(updateData(variables.input))
+        ? mutationResult(updateData(variables.input))
         : null,
     }
   }
