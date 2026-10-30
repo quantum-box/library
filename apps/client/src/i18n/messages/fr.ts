@@ -1080,6 +1080,8 @@ export const fr: LocaleMessages = {
   'menuBar.minimize': 'Réduire',
   'menuBar.zoom': 'Zoom',
   'menuBar.help': 'Aide',
+  'editor.imageUploadFailed': 'Échec du téléversement. Sélectionnez à nouveau l’image pour réessayer.',
+  'editor.insertImage': 'Insérer une image',
   'editor.noImageTarget': 'Ce corps n’a pas de dépôt où stocker les images',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': 'Document HTML rendu dans un aperçu isolé',

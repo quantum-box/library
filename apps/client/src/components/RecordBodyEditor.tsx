@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BlockNoteEditor,
+  FilePanelExtension,
   createExtension,
   YCursorExtension,
   YSyncExtension,
@@ -20,7 +21,7 @@ import {
   useEditorChange,
 } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
-import { CodeXml } from 'lucide-react'
+import { CodeXml, ImagePlus } from 'lucide-react'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
@@ -286,6 +287,7 @@ function liveStatusState(view: LiveBodyView): PhotonLiveState | null {
 function useBodyEditor(
   imageTarget: RecordBodyImageTarget | undefined,
   collaboration?: InitialCollaboration,
+  onUploadFailure?: (failed: boolean) => void,
 ) {
   const imageTargetRef = useRef(imageTarget)
   const [uploads] = useState(() => imageTarget !== undefined)
@@ -306,9 +308,15 @@ function useBodyEditor(
       : undefined,
     uploadFile: uploads
       ? async (file: File) => {
+        onUploadFailure?.(false)
         const target = imageTargetRef.current
-        if (!target) throw new Error(t('editor.noImageTarget'))
-        return uploadLibraryImage(target, file)
+        try {
+          if (!target) throw new Error(t('editor.noImageTarget'))
+          return await uploadLibraryImage(target, file)
+        } catch (error) {
+          onUploadFailure?.(true)
+          throw error
+        }
       }
       : undefined,
   }, [collaboration])
@@ -352,7 +360,8 @@ function BlockRecordBodyEditor({
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
   const onDraftChangeRef = useRef(onDraftChange)
-  const editor = useBodyEditor(imageTarget, collaboration)
+  const [uploadFailed, setUploadFailed] = useState(false)
+  const editor = useBodyEditor(imageTarget, collaboration, setUploadFailed)
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -558,6 +567,23 @@ function BlockRecordBodyEditor({
         live?.compositionEnded()
       }}
     >
+      {editable && (
+        <div className="mb-2 flex justify-end px-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              editor.focus()
+              const block = insertOrUpdateBlockForSlashMenu(editor, { type: 'image' })
+              editor.getExtension(FilePanelExtension)?.showMenu(block.id)
+            }}
+          >
+            <ImagePlus size={16} aria-hidden="true" />
+            {t('editor.insertImage')}
+          </button>
+        </div>
+      )}
       <BlockNoteView
         editor={editor}
         theme={theme}
@@ -579,6 +605,11 @@ function BlockRecordBodyEditor({
           }
         />
       </BlockNoteView>
+      {uploadFailed && (
+        <p role="alert" className="mt-2 px-2 text-sm text-destructive">
+          {t('editor.imageUploadFailed')}
+        </p>
+      )}
     </div>
   )
 }

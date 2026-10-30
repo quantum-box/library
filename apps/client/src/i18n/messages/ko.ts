@@ -1080,6 +1080,8 @@ export const ko: LocaleMessages = {
   'menuBar.minimize': '최소화',
   'menuBar.zoom': '확대/축소',
   'menuBar.help': '도움말',
+  'editor.imageUploadFailed': '이미지를 업로드하지 못했습니다. 이미지를 다시 선택해 주세요.',
+  'editor.insertImage': '이미지 삽입',
   'editor.noImageTarget': '이 본문에는 이미지를 저장할 리포지터리가 없습니다',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': '샌드박스 미리보기에서 렌더링되는 HTML 문서',

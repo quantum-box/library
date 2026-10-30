@@ -7,19 +7,15 @@
 //! link in the body never expires the way a presigned URL would.
 //!
 //! In production the object store is Tachyon storage (`/v1/storage/*`).
-//! Objects live in each organization's own tenant storage, keyed
-//! `{org_tenant}/library/images/{id}` by default. Preview deployments set
+//! New objects live in Library's tenant storage, partitioned by organization:
+//! `{platform_tenant}/library/images/{org_tenant}/{id}`. Organizations may be
+//! siblings of Library in the auth hierarchy, so their buckets cannot be
+//! accessed with Library's service credential. Preview deployments set
 //! `LIBRARY_TACHYON_IMAGE_PREFIX` to isolate both uploads and reads under
-//! `{org_tenant}/preview/library/images/{id}`. The service account's credential
-//! only verifies in the Library platform tenant, so requests act in that
-//! scope and name the organization through the storage API's `tenant_id`
-//! delegation field: Tachyon verifies the organization is a descendant of
-//! the platform, authorizes the action against
-//! `trn:storage:tenant:{org_tenant}`, and bills the platform — the only
-//! tenant here with a billing account. That delegation ships from
-//! tachyon-apps branch `cfeature/storage-platform-delegation` and must be
-//! deployed before this handler; without it Tachyon rejects the key as
-//! outside the acting tenant's scope.
+//! `{platform_tenant}/preview/library/images/{org_tenant}/{id}`. Requests use
+//! the service account's own storage scope. Library authorizes repository writes before storing
+//! bytes; the client cannot choose a storage tenant or key. Reads also try
+//! the historical organization bucket for previously stored images.
 //!
 //! Reading is deliberately unauthenticated. The browser fetches an `<img>`
 //! without the caller's bearer token, so the only credential an image URL can
@@ -94,11 +90,9 @@ pub trait ImageObjectStore: Send + Sync {
 
 /// Tachyon storage, spoken as the Library service account.
 ///
-/// The flow per object is presign → PUT → confirm; reads are one `get-url`
-/// call. Every request carries `x-operator-id: {platform_tenant}` — the
-/// only tenant the credential verifies in — plus a `tenant_id` body field
-/// naming the organization, which Tachyon's delegation turns into the
-/// tenant whose storage the key must live in (see module docs).
+/// The flow is presign → PUT → confirm; reads request a fresh GET URL.
+/// New requests act only in the Library tenant and do not delegate to an
+/// organization. Organization ids partition the key inside Library's bucket.
 pub struct TachyonImageStore {
     base_url: String,
     auth_token: String,
@@ -125,13 +119,18 @@ impl TachyonImageStore {
             auth_token,
             platform_tenant,
             key_prefix,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("image storage HTTP client"),
         }
     }
 
     fn object_key(&self, org_tenant: &str, image_id: &str) -> String {
         format!(
-            "{org_tenant}/{}/{image_id}",
+            "{}/{}/{org_tenant}/{image_id}",
+            self.platform_tenant,
             self.key_prefix.trim_matches('/')
         )
     }
@@ -194,7 +193,6 @@ impl ImageObjectStore for TachyonImageStore {
                     "method": "PUT",
                     "content_type": content_type,
                     "expires_in_secs": IMAGE_PUT_EXPIRES_SECS,
-                    "tenant_id": org_tenant,
                 }),
             )
             .await?;
@@ -225,7 +223,6 @@ impl ImageObjectStore for TachyonImageStore {
                 "/v1/storage/confirm",
                 serde_json::json!({
                     "storage_key": key,
-                    "tenant_id": org_tenant,
                 }),
             )
             .await?;
@@ -238,16 +235,36 @@ impl ImageObjectStore for TachyonImageStore {
         image_id: &str,
     ) -> errors::Result<Url> {
         let key = self.object_key(org_tenant, image_id);
-        let presign: StoragePresignResponse = self
+        let presign: errors::Result<StoragePresignResponse> = self
             .storage_call(
                 "/v1/storage/get-url",
                 serde_json::json!({
                     "storage_key": key,
                     "expires_in_secs": IMAGE_URL_EXPIRES_SECS,
-                    "tenant_id": org_tenant,
                 }),
             )
-            .await?;
+            .await;
+        let presign = match presign {
+            Ok(presign) => presign,
+            Err(errors::Error::NotFound { .. }) => {
+                // Existing documents keep their stable Library URL. Only a
+                // missing new object may fall back to the old bucket; auth
+                // and upstream failures must never select another scope.
+                self.storage_call::<StoragePresignResponse>(
+                    "/v1/storage/get-url",
+                    serde_json::json!({
+                        "storage_key": format!(
+                            "{org_tenant}/{}/{image_id}",
+                            self.key_prefix.trim_matches('/')
+                        ),
+                        "expires_in_secs": IMAGE_URL_EXPIRES_SECS,
+                        "tenant_id": org_tenant,
+                    }),
+                )
+                .await?
+            }
+            Err(error) => return Err(error),
+        };
         Url::parse(&presign.url).map_err(|e| {
             errors::Error::internal_server_error(format!(
                 "tachyon storage returned an unparsable URL: {e}"
@@ -729,13 +746,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tachyon_store_delegates_org_keys_under_platform_credentials() {
+    async fn tachyon_store_partitions_org_keys_in_platform_storage() {
         assert_tachyon_store_namespace("library/images").await;
     }
 
     #[tokio::test]
     async fn preview_images_use_isolated_keys_for_upload_and_download() {
         assert_tachyon_store_namespace("preview/library/images").await;
+    }
+
+    #[tokio::test]
+    async fn legacy_read_fallback_is_only_used_for_missing_objects() {
+        use axum::http::StatusCode;
+        for status in [StatusCode::NOT_FOUND, StatusCode::FORBIDDEN] {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            let seen = calls.clone();
+            let listener =
+                tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let app = axum::Router::new().route(
+                "/v1/storage/get-url",
+                axum::routing::post(move |Json(body): Json<serde_json::Value>| {
+                    let mut calls = seen.lock().unwrap();
+                    calls.push(body);
+                    let first = calls.len() == 1;
+                    async move {
+                        if first {
+                            (status, Json(serde_json::json!({})))
+                        } else {
+                            (StatusCode::OK, Json(serde_json::json!({
+                                "url": "https://legacy.example/image.png"
+                            })))
+                        }
+                    }
+                }),
+            );
+            let server =
+                tokio::spawn(
+                    async move { axum::serve(listener, app).await },
+                );
+            let store = TachyonImageStore::new(
+                format!("http://{addr}"),
+                "token".into(),
+                "tn_platform".into(),
+                "library/images".into(),
+            );
+            let result = store.presigned_get("tn_org", "image.png").await;
+            let calls = calls.lock().unwrap();
+            assert_eq!(
+                calls[0]["storage_key"],
+                "tn_platform/library/images/tn_org/image.png"
+            );
+            assert!(calls[0].get("tenant_id").is_none());
+            if status == StatusCode::NOT_FOUND {
+                assert_eq!(
+                    result.unwrap().as_str(),
+                    "https://legacy.example/image.png"
+                );
+                assert_eq!(calls.len(), 2);
+                assert_eq!(
+                    calls[1]["storage_key"],
+                    "tn_org/library/images/image.png"
+                );
+                assert_eq!(calls[1]["tenant_id"], "tn_org");
+            } else {
+                assert!(result.is_err());
+                assert_eq!(calls.len(), 1);
+            }
+            server.abort();
+        }
     }
 
     async fn assert_tachyon_store_namespace(key_prefix: &str) {
@@ -767,7 +846,7 @@ mod tests {
             .unwrap();
 
         let expected_key = format!(
-            "tn_01orgtenant/{key_prefix}/0123456789abcdef0123456789abcdef.png"
+            "tn_01platform/{key_prefix}/tn_01orgtenant/0123456789abcdef0123456789abcdef.png"
         );
         let seen = seen.lock().unwrap();
 
@@ -778,7 +857,7 @@ mod tests {
         assert_eq!(presign_body["key"], expected_key);
         assert_eq!(presign_body["method"], "PUT");
         assert_eq!(presign_body["content_type"], "image/png");
-        assert_eq!(presign_body["tenant_id"], "tn_01orgtenant");
+        assert!(presign_body.get("tenant_id").is_none());
 
         let (put_content_type, put_body) = seen.put.as_ref().unwrap();
         assert_eq!(put_content_type, "image/png");
@@ -786,14 +865,14 @@ mod tests {
 
         let confirm_body = seen.confirm.as_ref().unwrap();
         assert_eq!(confirm_body["storage_key"], expected_key);
-        assert_eq!(confirm_body["tenant_id"], "tn_01orgtenant");
+        assert!(confirm_body.get("tenant_id").is_none());
 
         let (get_bearer, get_operator, get_body) =
             seen.get_url.as_ref().unwrap();
         assert_eq!(get_bearer, "Bearer svc-token");
         assert_eq!(get_operator, "tn_01platform");
         assert_eq!(get_body["storage_key"], expected_key);
-        assert_eq!(get_body["tenant_id"], "tn_01orgtenant");
+        assert!(get_body.get("tenant_id").is_none());
 
         assert_eq!(url.as_str(), "http://signed.example/obj?sig=abc");
     }

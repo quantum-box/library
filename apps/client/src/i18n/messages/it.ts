@@ -1080,6 +1080,8 @@ export const it: LocaleMessages = {
   'menuBar.minimize': 'Riduci a icona',
   'menuBar.zoom': 'Zoom',
   'menuBar.help': 'Aiuto',
+  'editor.imageUploadFailed': 'Caricamento non riuscito. Seleziona di nuovo l’immagine per riprovare.',
+  'editor.insertImage': 'Inserisci immagine',
   'editor.noImageTarget': 'Questo corpo non ha un repository in cui salvare le immagini',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': 'Documento HTML reso in un’anteprima isolata',
