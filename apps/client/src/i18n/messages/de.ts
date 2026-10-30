@@ -1080,6 +1080,8 @@ export const de: LocaleMessages = {
   'menuBar.minimize': 'Im Dock ablegen',
   'menuBar.zoom': 'Zoomen',
   'menuBar.help': 'Hilfe',
+  'editor.imageUploadFailed': 'Das Bild konnte nicht hochgeladen werden. Wählen Sie es erneut aus.',
+  'editor.insertImage': 'Bild einfügen',
   'editor.noImageTarget': 'Dieser Inhalt hat kein Repository, in dem Bilder gespeichert werden könnten',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': 'HTML-Dokument in einer isolierten Vorschau dargestellt',

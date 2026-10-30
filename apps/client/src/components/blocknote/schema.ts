@@ -1,6 +1,7 @@
 import { BlockNoteSchema, createCodeBlockSpec } from '@blocknote/core'
 import { codeBlockOptions } from '@blocknote/code-block'
 import { htmlPreviewBlock } from './htmlPreviewBlock'
+import { createRecordImageBlockSpec } from './imageBlock'
 
 /**
  * The schema every record body editor mounts. One schema, not per-format
@@ -13,6 +14,7 @@ import { htmlPreviewBlock } from './htmlPreviewBlock'
  */
 export const recordBodySchema = BlockNoteSchema.create().extend({
   blockSpecs: {
+    image: createRecordImageBlockSpec(),
     htmlPreview: htmlPreviewBlock(),
     // The stock code block has no highlighting and no language picker.
     // This spec adds both and keeps the stored shape identical: a

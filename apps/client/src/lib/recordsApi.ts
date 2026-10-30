@@ -1359,7 +1359,7 @@ export async function uploadLibraryImage(
   const query = `?filename=${encodeURIComponent(file.name)}`
   const response = await fetch(
     `${configuredLibraryApiBaseUrl()}/v1beta/repos/${target.org}/${target.repo}/images${query}`,
-    { method: 'POST', headers, body: file },
+    { method: 'POST', headers, body: file, signal: AbortSignal.timeout(60_000) },
   )
   if (!response.ok) {
     throw new RecordApiError(`Library image upload failed: ${response.status}`, response.status)

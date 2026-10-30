@@ -1080,6 +1080,8 @@ export const ptBR: LocaleMessages = {
   'menuBar.minimize': 'Minimizar',
   'menuBar.zoom': 'Zoom',
   'menuBar.help': 'Ajuda',
+  'editor.imageUploadFailed': 'Falha ao enviar a imagem. Selecione-a novamente para tentar de novo.',
+  'editor.insertImage': 'Inserir imagem',
   'editor.noImageTarget': 'Este corpo não tem um repositório onde guardar imagens',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': 'Documento HTML renderizado em uma pré-visualização isolada',

@@ -1178,6 +1178,8 @@ export const en = {
   'menuBar.help': 'Help',
 
   // ---------------------------------------------------------------- editors
+  'editor.imageUploadFailed': 'Image upload failed. Choose the image again to retry.',
+  'editor.insertImage': 'Insert image',
   'editor.noImageTarget': 'This body has no repository to store images in',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': 'HTML document rendered in a sandboxed preview',

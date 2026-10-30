@@ -1080,6 +1080,8 @@ export const zhHant: LocaleMessages = {
   'menuBar.minimize': '縮到最小',
   'menuBar.zoom': '縮放',
   'menuBar.help': '輔助說明',
+  'editor.imageUploadFailed': '圖片上傳失敗。請重新選擇圖片後重試。',
+  'editor.insertImage': '插入圖片',
   'editor.noImageTarget': '此內文沒有可用來儲存圖片的儲存庫',
   'editor.htmlBlockTitle': 'HTML',
   'editor.htmlBlockSubtext': '在沙箱預覽中算繪的 HTML 文件',
