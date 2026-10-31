@@ -95,6 +95,7 @@ spec:
               wait "$HEARTBEAT_PID" 2>/dev/null || true;
               if [ "$BUILD_STATUS" -ne 0 ]; then exit "$BUILD_STATUS"; fi'
           # ADR-0049 provisions one isolated database and scoped user per PR.
+          # PLT-4534 draft Preview only; remove URL overrides before Ready.
           # Production keeps its existing databaseRef below. The migration
           # gate above applies the combined history to this one.
           provisionedDatabase:
@@ -153,6 +154,8 @@ spec:
             # a fresh PR unable to create or reuse its connection.
             - name: LIBRARY_GITHUB_OAUTH_BROKER_ENABLED
               value: "true"
+            - name: LIBRARY_API_BASE_URL
+              value: "https://pr400--library-api.txcloud.app"
             - name: LIBRARY_EXTERNAL_SYNC_OUTBOX_SCAN_AFTER
               value: "2026-09-11T00:00:00Z"
             - name: EXTERNAL_SYNC_SCANNER_TOKEN
@@ -334,6 +337,10 @@ spec:
         preview:
           build:
             command: npm run build:preview
+          envVars:
+            # PLT-4534 draft Preview only; remove before Ready.
+            - name: VITE_LIBRARY_API_BASE_URL
+              value: https://pr400--library-api.txcloud.app
       envVars:
         - name: VITE_LIBRARY_DEPLOYMENT_MODE
           value: cloud
