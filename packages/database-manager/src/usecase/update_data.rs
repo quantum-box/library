@@ -12,30 +12,36 @@ use crate::usecase::{
 };
 use value_object::RepositoryV1;
 
-pub(crate) fn validate_auto_generated_id_update(
+// ID values are set on creation. Updates may resend the current value, but
+// must never replace it (including a legacy external ID) or clear it.
+pub(crate) fn validate_id_update(
     property: &crate::domain::Property,
     data_id: &crate::domain::DataId,
     existing_value: Option<&PropertyData>,
     command: &crate::domain::PropertyValueCommand,
 ) -> errors::Result<()> {
-    if !matches!(
-        property.property_type(),
-        PropertyType::Id(type_id) if type_id.auto_generate
-    ) {
+    if !matches!(property.property_type(), PropertyType::Id(_)) {
         return Ok(());
     }
 
     let crate::domain::PropertyValueCommand::Id(value) = command else {
         return Err(errors::Error::business_logic(
-            "Auto-generated Id property is immutable",
+            "Id property is immutable",
         ));
     };
-    if value != data_id.as_str()
-        && existing_value.map(PropertyData::string_value).as_deref()
-            != Some(value)
-    {
+    let current = existing_value.map(PropertyData::string_value);
+    let unchanged = match current {
+        Some(current) => value == &current,
+        None => {
+            matches!(
+                property.property_type(),
+                PropertyType::Id(type_id) if type_id.auto_generate
+            ) && value == data_id.as_str()
+        }
+    };
+    if !unchanged {
         return Err(errors::Error::business_logic(
-            "Auto-generated Id property is immutable",
+            "Id property is immutable",
         ));
     }
 
@@ -117,7 +123,7 @@ impl UpdateDataInputPort for UpdateDataInteractorImpl {
                 )
                 .await?
                 .ok_or_else(DatabaseScope::not_found)?;
-            validate_auto_generated_id_update(
+            validate_id_update(
                 &property,
                 input.data_id,
                 data.get_property_data(property.id()),
@@ -170,11 +176,80 @@ mod tests {
     }
 
     #[test]
+    fn all_id_values_are_immutable() {
+        for auto_generate in [false, true] {
+            let property = Property::new(
+                &PropertyId::default(),
+                &TenantId::default(),
+                &DatabaseId::default(),
+                "id",
+                &PropertyType::Id(TypeId::new(auto_generate)),
+                false,
+                0,
+            );
+            let data_id = crate::domain::DataId::default();
+            let existing =
+                PropertyData::new(&property, "external-id".to_string())
+                    .expect("existing ID");
+            for value in [
+                "replacement".to_string(),
+                String::new(),
+                data_id.to_string(),
+            ] {
+                let error = validate_id_update(
+                    &property,
+                    &data_id,
+                    Some(&existing),
+                    &crate::domain::PropertyValueCommand::Id(value),
+                )
+                .expect_err("ID cannot be replaced or cleared");
+                assert!(error.is_bad_request());
+            }
+            validate_id_update(
+                &property,
+                &data_id,
+                Some(&existing),
+                &crate::domain::PropertyValueCommand::Id(
+                    "external-id".to_string(),
+                ),
+            )
+            .expect("unchanged ID is allowed");
+            assert!(validate_id_update(
+                &property,
+                &data_id,
+                Some(&existing),
+                &crate::domain::PropertyValueCommand::String(
+                    "replacement".to_string()
+                ),
+            )
+            .is_err());
+            assert!(validate_id_update(
+                &property,
+                &data_id,
+                Some(&existing),
+                &crate::domain::PropertyValueCommand::Clear,
+            )
+            .is_err());
+            if !auto_generate {
+                assert!(validate_id_update(
+                    &property,
+                    &data_id,
+                    None,
+                    &crate::domain::PropertyValueCommand::Id(
+                        data_id.to_string()
+                    ),
+                )
+                .is_err());
+            }
+        }
+    }
+
+    #[test]
     fn canonical_auto_generated_id_is_accepted_as_a_no_op() {
         let property = auto_generated_id_property();
         let data_id = crate::domain::DataId::default();
 
-        validate_auto_generated_id_update(
+        validate_id_update(
             &property,
             &data_id,
             None,
@@ -185,7 +260,7 @@ mod tests {
 
     #[test]
     fn auto_generated_id_cannot_be_changed() {
-        let error = validate_auto_generated_id_update(
+        let error = validate_id_update(
             &auto_generated_id_property(),
             &crate::domain::DataId::default(),
             None,
@@ -206,7 +281,7 @@ mod tests {
             PropertyData::new(&property, "legacy-id".to_string())
                 .expect("legacy value");
 
-        validate_auto_generated_id_update(
+        validate_id_update(
             &property,
             &crate::domain::DataId::default(),
             Some(&existing),
