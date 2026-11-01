@@ -2138,42 +2138,6 @@ impl DataRepositoryImpl {
         ))
     }
 
-    fn validate_auto_generated_id(
-        property: &Property,
-        record: &Data,
-        command: &PropertyValueCommand,
-    ) -> errors::Result<()> {
-        if !matches!(
-            property.property_type(),
-            PropertyType::Id(type_id) if type_id.auto_generate
-        ) {
-            return Ok(());
-        }
-        let PropertyValueCommand::Id(value) = command else {
-            return Err(errors::Error::business_logic(
-                "Auto-generated Id property is immutable",
-            ));
-        };
-        let Some(current) = record
-            .get_property_data(property.id())
-            .map(PropertyData::string_value)
-        else {
-            return Err(errors::Error::business_logic(
-                "Auto-generated Id property is immutable",
-            ));
-        };
-        // Some pre-policy rows contain an external legacy ID instead of the
-        // canonical DataId. Preserve that visible value until an explicit
-        // repair migration; this mutation boundary must never silently
-        // rewrite it merely because the requested value is the DataId.
-        if value != &current {
-            return Err(errors::Error::business_logic(
-                "Auto-generated Id property is immutable",
-            ));
-        }
-        Ok(())
-    }
-
     fn planned_create_change(
         property: Property,
         value_command: PropertyValueCommand,
@@ -2355,9 +2319,10 @@ impl DataRepositoryImpl {
                     }
                     value => value.clone(),
                 };
-                Self::validate_auto_generated_id(
+                crate::usecase::update_data::validate_id_update(
                     &property,
-                    current,
+                    current.id(),
+                    current.get_property_data(property.id()),
                     &value_command,
                 )?;
                 let data =
