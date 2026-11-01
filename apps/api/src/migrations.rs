@@ -18,21 +18,53 @@ const UPDATE_UNIQUE_CONSTRAINTS_CHECKSUM: &str = "ad8c3fffc2061424884916a14a1e11
 const PREVIEW_EMPTY_GATE_ENV: &str =
     "LIBRARY_PHOTON_LIVE_PREVIEW_REQUIRE_EMPTY";
 
-/// Resolves the production admin database URL from the runtime environment.
-///
-/// `PROD_DATABASE_URL` is used by the CLI migrate binary. Lambda and txcloud
-/// deployments typically expose the same value as `DATABASE_URL`.
+/// Resolves an explicitly supplied production migration credential.
+/// HTTP's DATABASE_URL is never a migration fallback.
 pub fn resolve_prod_database_url() -> errors::Result<DatabaseUrl> {
-    let raw = std::env::var("PROD_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
+    let raw = std::env::var("MIGRATOR_DATABASE_URL")
+        .or_else(|_| std::env::var("PROD_DATABASE_URL"))
         .map_err(|_| {
             errors::Error::bad_request(
-                "PROD_DATABASE_URL or DATABASE_URL must be set to run migrations",
+                "MIGRATOR_DATABASE_URL is required to run production migrations",
             )
         })?;
-    raw.parse::<DatabaseUrl>().map_err(|_| {
-        errors::Error::bad_request("Invalid production database URL")
-    })
+    production_migrator_url(&raw, None)
+}
+
+/// Bind the migration account to the runtime's cluster and gateway before
+/// any SQL is executed. Error messages deliberately omit the supplied URL.
+fn production_migrator_url(
+    raw: &str,
+    runtime: Option<&DatabaseUrl>,
+) -> errors::Result<DatabaseUrl> {
+    let migrator = raw.parse::<DatabaseUrl>().map_err(|_| {
+        errors::Error::bad_request("Invalid production migration URL")
+    })?;
+    let prefix = migrator.username().strip_suffix(".library_migrator");
+    if migrator.scheme() != "mysql"
+        || prefix.is_none_or(str::is_empty)
+        || migrator.password().is_empty()
+        || migrator
+            .database()
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+    {
+        return Err(errors::Error::bad_request(
+            "Dedicated library_migrator identity required",
+        ));
+    }
+    if let Some(runtime) = runtime {
+        let expected_runtime = format!("{}.library_api", prefix.unwrap());
+        if runtime.username() != &expected_runtime
+            || runtime.host() != migrator.host()
+            || runtime.port() != migrator.port()
+        {
+            return Err(errors::Error::bad_request(
+                "Library runtime and migration cluster binding mismatch",
+            ));
+        }
+    }
+    Ok(migrator)
 }
 
 /// Validates and applies migrations for the deployment being promoted.
@@ -99,7 +131,13 @@ pub async fn run_migration_gate(
             "{PREVIEW_EMPTY_GATE_ENV} requires TACHYON_ENV=preview"
         )))
     } else {
-        run_library_migrations(&database_url).await
+        let raw = std::env::var("MIGRATOR_DATABASE_URL").map_err(|_| {
+            errors::Error::bad_request(
+                "MIGRATOR_DATABASE_URL is required for the production gate",
+            )
+        })?;
+        let migrator = production_migrator_url(&raw, Some(&database_url))?;
+        run_library_migrations(&migrator).await
     };
 
     if let Err(error) = &result {
@@ -353,6 +391,26 @@ fn build_admin_dsn(database_url: &DatabaseUrl) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_migrator_is_distinct_and_bound_to_the_runtime_cluster() {
+        let runtime: DatabaseUrl =
+            "mysql://cluster.library_api:runtime@private.example:4000"
+                .parse()
+                .unwrap();
+        let good = "mysql://cluster.library_migrator:migration@private.example:4000";
+        assert!(production_migrator_url(good, Some(&runtime)).is_ok());
+        for bad in [
+            "mysql://cluster.library_api:runtime@private.example:4000",
+            "mysql://cluster.root:root@private.example:4000",
+            "mysql://other.library_migrator:migration@private.example:4000",
+            "mysql://cluster.library_migrator:migration@other.example:4000",
+            "mysql://cluster.library_migrator:migration@private.example:4001",
+            "mysql://cluster.library_migrator:migration@private.example:4000/unrelated",
+        ] {
+            assert!(production_migrator_url(bad, Some(&runtime)).is_err());
+        }
+    }
 
     #[test]
     fn only_a_preview_runtime_selects_the_combined_history() {
