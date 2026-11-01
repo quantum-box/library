@@ -272,7 +272,7 @@ export function clearedPropertyValue(
 }
 
 export function isInlineEditableProperty(property: LibraryProperty): boolean {
-  return ['Decimal', 'Quantity', 'String', 'Integer', 'Html', 'Markdown', 'Select', 'Date', 'MultiSelect', 'Id'].includes(
+  return ['Decimal', 'Quantity', 'String', 'Integer', 'Html', 'Markdown', 'Select', 'Date', 'MultiSelect'].includes(
     property.typ
   )
 }
