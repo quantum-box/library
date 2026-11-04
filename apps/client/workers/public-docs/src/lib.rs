@@ -154,6 +154,12 @@ fn visit(node: &Value, depth: usize) -> String {
             if let Some(s) = node["text"].as_str() {
                 return s.into();
             }
+            if node["type"] == "userMention" {
+                return node["props"]["name"]
+                    .as_str()
+                    .map(|name| format!("@{name}"))
+                    .unwrap_or_default();
+            }
             if node["type"] == "tableContent" {
                 return visit(&node["rows"], depth + 1);
             }

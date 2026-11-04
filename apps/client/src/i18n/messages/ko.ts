@@ -1080,6 +1080,7 @@ export const ko: LocaleMessages = {
   'menuBar.minimize': '최소화',
   'menuBar.zoom': '확대/축소',
   'menuBar.help': '도움말',
+  'editor.mentionsFailed': '멤버를 불러오지 못했습니다. @를 입력하여 다시 시도하세요.',
   'editor.imageUploadFailed': '이미지를 업로드하지 못했습니다. 이미지를 다시 선택해 주세요.',
   'editor.insertImage': '이미지 삽입',
   'editor.noImageTarget': '이 본문에는 이미지를 저장할 리포지터리가 없습니다',

@@ -1080,6 +1080,7 @@ export const de: LocaleMessages = {
   'menuBar.minimize': 'Im Dock ablegen',
   'menuBar.zoom': 'Zoomen',
   'menuBar.help': 'Hilfe',
+  'editor.mentionsFailed': 'Mitglieder konnten nicht geladen werden. Zum Wiederholen @ eingeben.',
   'editor.imageUploadFailed': 'Das Bild konnte nicht hochgeladen werden. Wählen Sie es erneut aus.',
   'editor.insertImage': 'Bild einfügen',
   'editor.noImageTarget': 'Dieser Inhalt hat kein Repository, in dem Bilder gespeichert werden könnten',

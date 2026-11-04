@@ -291,6 +291,12 @@ fn render_inline(content: Option<&Value>) -> String {
                     item.get("text").and_then(Value::as_str).unwrap_or("");
                 out.push_str(&styled(text, item.get("styles")));
             }
+            Some("userMention") => {
+                if let Some(name) = item["props"]["name"].as_str() {
+                    out.push('@');
+                    out.push_str(&escape_text(name));
+                }
+            }
             Some("link") => {
                 let href =
                     item.get("href").and_then(Value::as_str).unwrap_or("");

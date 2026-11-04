@@ -28,6 +28,7 @@ import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
 import { checkpointLiveBodyOutlivingPage } from '../lib/libraryTable/libraryDataCrud'
+import { fetchRepositoryMembers } from '../lib/repositorySettingsApi'
 import { uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
@@ -362,6 +363,36 @@ function BlockRecordBodyEditor({
   const onDraftChangeRef = useRef(onDraftChange)
   const [uploadFailed, setUploadFailed] = useState(false)
   const editor = useBodyEditor(imageTarget, collaboration, setUploadFailed)
+  const [mentionsFailed, setMentionsFailed] = useState(false)
+  const getMentionItems = useCallback(async (query: string) => {
+    if (!imageTarget) return []
+    try {
+      const members = await fetchRepositoryMembers({
+        orgUsername: imageTarget.org,
+        repoUsername: imageTarget.repo,
+        operatorId: imageTarget.operatorId,
+      })
+      setMentionsFailed(false)
+      const seen = new Set<string>()
+      return filterSuggestionItems(members.flatMap(({ userId, user }) => {
+        if (!user || seen.has(userId)) return []
+        seen.add(userId)
+        const name = user.name || user.email || userId
+        return [{
+          title: name,
+          subtext: user.email || undefined,
+          aliases: [user.email || '', userId],
+          onItemClick: () => editor.insertInlineContent([
+            { type: 'userMention', props: { userId, name } },
+            ' ',
+          ]),
+        }]
+      }), query)
+    } catch {
+      setMentionsFailed(true)
+      return []
+    }
+  }, [editor, imageTarget])
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -592,6 +623,9 @@ function BlockRecordBodyEditor({
         data-theming-css-variables-demo
         slashMenu={false}
       >
+        {editable && format === 'richText' && imageTarget && (
+          <SuggestionMenuController triggerCharacter="@" getItems={getMentionItems} />
+        )}
         <SuggestionMenuController
           triggerCharacter="/"
           getItems={async (query) =>
@@ -605,6 +639,11 @@ function BlockRecordBodyEditor({
           }
         />
       </BlockNoteView>
+      {mentionsFailed && (
+        <p role="alert" className="mt-2 px-2 text-sm text-destructive">
+          {t('editor.mentionsFailed')}
+        </p>
+      )}
       {uploadFailed && (
         <p role="alert" className="mt-2 px-2 text-sm text-destructive">
           {t('editor.imageUploadFailed')}

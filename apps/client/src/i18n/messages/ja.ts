@@ -1087,6 +1087,7 @@ export const ja: LocaleMessages = {
   'menuBar.minimize': 'しまう',
   'menuBar.zoom': 'ズーム',
   'menuBar.help': 'ヘルプ',
+  'editor.mentionsFailed': 'メンバーを取得できませんでした。@を入力して再試行してください。',
   'editor.imageUploadFailed': '画像をアップロードできませんでした。画像を選び直して再試行してください。',
   'editor.insertImage': '画像を挿入',
   'editor.noImageTarget': 'この本文には画像を保存するリポジトリがありません',

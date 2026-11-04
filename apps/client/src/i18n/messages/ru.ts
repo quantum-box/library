@@ -1101,6 +1101,7 @@ export const ru: LocaleMessages = {
   'menuBar.minimize': 'Убрать в Dock',
   'menuBar.zoom': 'Масштабировать',
   'menuBar.help': 'Справка',
+  'editor.mentionsFailed': 'Не удалось загрузить участников. Введите @, чтобы повторить.',
   'editor.imageUploadFailed': 'Не удалось загрузить изображение. Выберите его снова для повторной попытки.',
   'editor.insertImage': 'Вставить изображение',
   'editor.noImageTarget': 'У этого содержимого нет репозитория для хранения изображений',

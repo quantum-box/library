@@ -146,6 +146,8 @@ export function propertyCellText(
 }
 
 interface RichTextInline {
+  type?: string
+  props?: { name?: string }
   text?: unknown
   content?: unknown
 }
@@ -162,6 +164,7 @@ function collectRichTextInline(content: unknown, out: string[]) {
   }
   if (!Array.isArray(content)) return
   for (const item of content as RichTextInline[]) {
+    if (item?.type === 'userMention' && typeof item.props?.name === 'string') out.push(`@${item.props.name}`)
     if (typeof item?.text === 'string') out.push(item.text)
     collectRichTextInline(item?.content, out)
   }

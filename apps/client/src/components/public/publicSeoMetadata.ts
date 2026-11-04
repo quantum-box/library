@@ -26,6 +26,10 @@ export function publicBodyText(value: string, format: string): string {
         if (typeof node !== 'object') return ''
         const n = node as Record<string, unknown>
         if (typeof n.text === 'string') return n.text
+        if (n.type === 'userMention' && n.props && typeof n.props === 'object') {
+          const name = (n.props as Record<string, unknown>).name
+          return typeof name === 'string' ? `@${name}` : ''
+        }
         if (n.type === 'tableContent') return visit(n.rows, depth + 1)
         if (Array.isArray(n.cells))
           return (
