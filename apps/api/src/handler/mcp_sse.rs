@@ -33,6 +33,7 @@ use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::app::LibraryApp;
+use crate::handler::image::ImageObjectStore;
 use crate::handler::mcp::{
     dispatch_rpc, sse_requires_auth, unauthorized_response, JsonRpcRequest,
 };
@@ -143,6 +144,7 @@ pub async fn mcp_sse_messages_handler(
     headers: HeaderMap,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Extension(sdk): Extension<Arc<SdkAuthApp>>,
+    Extension(image_store): Extension<Arc<dyn ImageObjectStore>>,
     Json(request): Json<JsonRpcRequest>,
 ) -> Response {
     let (sender, session_authorization) = {
@@ -159,13 +161,20 @@ pub async fn mcp_sse_messages_handler(
     };
 
     let headers = merge_authorization(headers, session_authorization);
-    let response =
-        match dispatch_rpc(&headers, library_app, sdk, request).await {
-            Ok(Some(response)) => response,
-            // Notifications owe no answer, so nothing goes on the stream.
-            Ok(None) => return StatusCode::ACCEPTED.into_response(),
-            Err(challenge) => return challenge,
-        };
+    let response = match dispatch_rpc(
+        &headers,
+        library_app,
+        sdk,
+        image_store,
+        request,
+    )
+    .await
+    {
+        Ok(Some(response)) => response,
+        // Notifications owe no answer, so nothing goes on the stream.
+        Ok(None) => return StatusCode::ACCEPTED.into_response(),
+        Err(challenge) => return challenge,
+    };
 
     if sender.send(response).is_err() {
         // The receiving stream closed between the lookup above and now.

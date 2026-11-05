@@ -20,8 +20,9 @@ PLT-4345では、Claude Code / Codexから「所属先を探す → repository�
 | Property CRUD | `list_properties`, `get_property`, `create_property`, `update_property`, `delete_property` | 既存。Dataの入力にも欠けていた`id` / `location`を追加 |
 | Source CRUD | `list_sources`, `get_source`, `create_source`, `update_source`, `delete_source` | 既存。URL省略と明示nullが区別されず解除できなかった不具合を修正 |
 | 共有リンク | `create_share_link`, `list_share_links`, `revoke_share_link` | private Dataの外部閲覧用リンクを作成・一覧・失効。`list_share_links`は状態を変更しないread tool |
+| 本文画像 | `upload_image` | REST `POST /v1beta/repos/{org}/{repo}/images` と同じ保存処理。base64かdata URLで受け取り、本文Markdownに埋める`![](url)`を返す。repoへの書き込み権限が必要 |
 
-合計32 tools。匿名時にもorg discovery用の`get_me` / `list_orgs`を広告するが、実行には認証が必要。write toolsは認証済み接続のカタログに追加される。カタログへの表示は操作権限の付与ではない。
+合計33 tools。匿名時にもorg discovery用の`get_me` / `list_orgs`を広告するが、実行には認証が必要。write toolsは認証済み接続のカタログに追加される。カタログへの表示は操作権限の付与ではない。
 
 全toolは成功時のJSON形を`outputSchema`で広告する。返却値は構造化処理向けの`structuredContent`と、既存clientとの互換性を保つ同内容の`content[0].text`の両方に載せる。schema追加によってtoolの入力、認可、操作内容は変えない。
 

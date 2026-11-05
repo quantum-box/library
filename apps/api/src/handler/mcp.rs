@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::app::LibraryApp;
+use crate::handler::image::{self, ImageObjectStore};
 use crate::handler::library_executor_extractor::{
     CallerAuthApp, LibraryExecutor, LibraryExecutorKind,
 };
@@ -311,6 +312,18 @@ where
 }
 
 #[derive(Debug, Deserialize)]
+struct UploadImageArgs {
+    org: String,
+    repo: String,
+    /// Base64 image bytes, or a `data:image/...;base64,` URL.
+    data: String,
+    #[serde(default)]
+    content_type: Option<String>,
+    #[serde(default)]
+    filename: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct DeleteSourceArgs {
     org: String,
     repo: String,
@@ -489,15 +502,23 @@ struct McpOrganization {
     website: Option<String>,
 }
 
+/// Largest JSON-RPC request the MCP routes accept. `upload_image` carries a
+/// whole image as base64 (4 bytes per 3), plus a little JSON around it; the
+/// default 2 MB limit would refuse most screenshots.
+pub const MCP_MAX_REQUEST_BYTES: usize =
+    image::MAX_IMAGE_BYTES / 3 * 4 + 1024 * 1024;
+
 #[axum::debug_handler]
 pub async fn mcp_handler(
     headers: HeaderMap,
     Extension(library_app): Extension<Arc<LibraryApp>>,
     Extension(sdk): Extension<Arc<SdkAuthApp>>,
+    Extension(image_store): Extension<Arc<dyn ImageObjectStore>>,
     Json(request): Json<JsonRpcRequest>,
 ) -> Response {
     into_http_response(
-        dispatch_rpc(&headers, library_app, sdk, request).await,
+        dispatch_rpc(&headers, library_app, sdk, image_store, request)
+            .await,
     )
 }
 
@@ -522,6 +543,7 @@ pub(crate) async fn dispatch_rpc(
     headers: &HeaderMap,
     library_app: Arc<LibraryApp>,
     sdk: Arc<SdkAuthApp>,
+    image_store: Arc<dyn ImageObjectStore>,
     request: JsonRpcRequest,
 ) -> Result<Option<Value>, Response> {
     if should_challenge(headers, &request) {
@@ -560,7 +582,18 @@ pub(crate) async fn dispatch_rpc(
         .and_then(|executor| executor.original_token.clone());
     let response = crate::sdk_auth::caller_token_scope(
         caller_token,
-        handle_rpc(library_app, auth, request),
+        handle_rpc(
+            library_app,
+            McpImages {
+                store: image_store,
+                base_url: image::api_base_url(
+                    headers,
+                    std::env::var("LIBRARY_API_BASE_URL").ok(),
+                ),
+            },
+            auth,
+            request,
+        ),
     )
     .await;
     // Public tools can also address private resources. Let a client begin
@@ -585,8 +618,15 @@ pub(crate) fn unauthorized_response() -> Response {
     auth_challenge_response()
 }
 
+/// Where `upload_image` puts bytes, and the origin its URLs name.
+struct McpImages {
+    store: Arc<dyn ImageObjectStore>,
+    base_url: String,
+}
+
 async fn handle_rpc(
     library_app: Arc<LibraryApp>,
+    images: McpImages,
     auth: McpAuthContext,
     request: JsonRpcRequest,
 ) -> Value {
@@ -595,7 +635,9 @@ async fn handle_rpc(
         "initialize" => Ok(initialize_result()),
         "notifications/initialized" => Ok(json!({})),
         "tools/list" => Ok(scoped_tools_list(&auth)),
-        "tools/call" => call_tool(library_app, auth, request.params).await,
+        "tools/call" => {
+            call_tool(library_app, images, auth, request.params).await
+        }
         _ => Err(json_rpc_error(
             -32601,
             format!("Method not found: {}", request.method),
@@ -618,6 +660,7 @@ async fn handle_rpc(
 
 async fn call_tool(
     library_app: Arc<LibraryApp>,
+    images: McpImages,
     auth: McpAuthContext,
     params: Option<Value>,
 ) -> Result<Value, Value> {
@@ -789,6 +832,12 @@ async fn call_tool(
         "delete_source" => {
             let args: DeleteSourceArgs = parse_tool_args(params.arguments)?;
             let output = delete_source(library_app, auth, args).await?;
+            Ok(tool_text_result(output))
+        }
+        "upload_image" => {
+            let args: UploadImageArgs = parse_tool_args(params.arguments)?;
+            let output =
+                upload_image(library_app, images, auth, args).await?;
             Ok(tool_text_result(output))
         }
         name => {
@@ -1894,6 +1943,76 @@ async fn delete_source(
     Ok(json!({ "deleted": true }))
 }
 
+async fn upload_image(
+    library_app: Arc<LibraryApp>,
+    images: McpImages,
+    auth: McpAuthContext,
+    args: UploadImageArgs,
+) -> Result<Value, Value> {
+    let executor = require_executor(auth, "upload_image")?;
+    let (data_url_type, bytes) = decode_image_data(&args.data)?;
+    let declared_type = args
+        .content_type
+        .as_deref()
+        .or(data_url_type.as_deref())
+        .unwrap_or_default();
+    let library_org = resolve_library_org(&library_app, &args.org)
+        .await
+        .map_err(tool_execution_error)?;
+    let id = image::store_image(image::StoreImageInput {
+        library_app: &library_app,
+        image_store: images.store.as_ref(),
+        executor: &executor,
+        library_org: &library_org,
+        org: &args.org,
+        repo: &args.repo,
+        declared_type,
+        filename: args.filename.as_deref(),
+        bytes: bytes.into(),
+    })
+    .await
+    .map_err(tool_execution_error)?;
+
+    let url =
+        image::image_url(&images.base_url, &args.org, &args.repo, &id);
+    Ok(json!({
+        "id": id,
+        "url": url,
+        "markdown": format!("![]({url})"),
+    }))
+}
+
+/// Reads `upload_image`'s `data`: plain base64, or a `data:` URL whose
+/// media type is returned so the caller need not repeat it.
+fn decode_image_data(
+    data: &str,
+) -> Result<(Option<String>, Vec<u8>), Value> {
+    let (media_type, payload) = match data.strip_prefix("data:") {
+        Some(rest) => {
+            let (meta, payload) =
+                rest.split_once(',').ok_or_else(|| {
+                    invalid_tool_arg(
+                        "data URL has no comma before its payload",
+                    )
+                })?;
+            let media_type =
+                meta.strip_suffix(";base64").ok_or_else(|| {
+                    invalid_tool_arg("data URL must be base64-encoded")
+                })?;
+            (Some(media_type.to_string()), payload)
+        }
+        None => (None, data),
+    };
+    let compact: String = payload
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect();
+    let bytes = STANDARD.decode(compact.as_bytes()).map_err(|err| {
+        invalid_tool_arg(format!("data is not base64: {err}"))
+    })?;
+    Ok((media_type, bytes))
+}
+
 fn read_executor(auth: &McpAuthContext) -> LibraryExecutor {
     auth.executor.clone().unwrap_or_else(anonymous_executor)
 }
@@ -2620,6 +2739,21 @@ fn tools_list_result(is_authenticated: bool) -> Value {
                 "inputSchema": source_write_schema(["org", "repo", "source_id"])
             }),
             json!({
+                "name": "upload_image",
+                "description": "Store an image (PNG, JPEG, GIF, WebP or AVIF, up to 10 MiB) in a repository and get a URL to embed in a record body. Put the returned markdown, ![alt](url), in the Markdown body of create_data, update_data or upsert_data to show it as an image block; append #w=<pixels> to the url to set its width. Requires write access to the repository.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "org": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "data": { "type": "string", "description": "The image bytes as base64, or a data:image/...;base64, URL." },
+                        "content_type": { "type": "string", "description": "Image media type such as image/png. Optional when data is a data URL or filename has a known extension." },
+                        "filename": { "type": "string", "description": "Original file name, used to infer the format when content_type is absent." }
+                    },
+                    "required": ["org", "repo", "data"]
+                }
+            }),
+            json!({
                 "name": "delete_source",
                 "description": "Delete a repository source.",
                 "inputSchema": {
@@ -2765,6 +2899,14 @@ fn output_schema_for_tool(name: &str) -> Value {
                 "warnings": mcp_write_warnings_schema()
             }),
             &["data", "url"],
+        ),
+        "upload_image" => schema_object(
+            json!({
+                "id": { "type": "string" },
+                "url": { "type": "string" },
+                "markdown": { "type": "string" }
+            }),
+            &["id", "url", "markdown"],
         ),
         "delete_repo" | "delete_data" | "delete_source" => {
             deleted_output_schema()
@@ -3495,6 +3637,7 @@ fn requires_auth_tool(name: &str) -> bool {
             | "create_source"
             | "update_source"
             | "delete_source"
+            | "upload_image"
     )
 }
 
@@ -4278,7 +4421,7 @@ mod tests {
     }
 
     #[test]
-    fn authenticated_tools_list_describes_all_thirty_two_outputs() {
+    fn authenticated_tools_list_describes_all_thirty_three_outputs() {
         let expected = [
             "get_me",
             "list_orgs",
@@ -4312,6 +4455,7 @@ mod tests {
             "create_source",
             "update_source",
             "delete_source",
+            "upload_image",
         ];
         let result = tools_list_result(true);
         let tools = result["tools"].as_array().expect("tools list");
@@ -4531,6 +4675,14 @@ mod tests {
             ("create_source", json!({ "source": source.clone() })),
             ("update_source", json!({ "source": source.clone() })),
             ("delete_source", json!({ "deleted": true })),
+            (
+                "upload_image",
+                json!({
+                    "id": "0123456789abcdef0123456789abcdef.png",
+                    "url": "https://api.example.test/v1beta/repos/example/notes/images/0123456789abcdef0123456789abcdef.png",
+                    "markdown": "![](https://api.example.test/v1beta/repos/example/notes/images/0123456789abcdef0123456789abcdef.png)"
+                }),
+            ),
         ];
         let result = tools_list_result(true);
         let tools = result["tools"].as_array().expect("tools list");
@@ -4852,6 +5004,34 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} required"));
             assert!(!required.contains(&json!("name")), "{name}");
         }
+    }
+
+    #[test]
+    fn upload_image_reads_plain_base64_and_data_urls() {
+        let (media_type, bytes) =
+            decode_image_data("iVBO\nRw==").expect("plain base64");
+        assert_eq!(media_type, None);
+        assert_eq!(bytes, STANDARD.decode("iVBORw==").unwrap());
+
+        let (media_type, bytes) =
+            decode_image_data("data:image/webp;base64,UklGRg==")
+                .expect("data url");
+        assert_eq!(media_type.as_deref(), Some("image/webp"));
+        assert_eq!(bytes, b"RIFF");
+
+        assert!(decode_image_data("data:image/png,raw").is_err());
+        assert!(decode_image_data("not base64!").is_err());
+    }
+
+    #[test]
+    fn upload_image_is_a_write_tool_that_requires_auth() {
+        assert!(!is_read_tool("upload_image"));
+        assert!(requires_auth_tool("upload_image"));
+        assert!(!tools_list_result(false)["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .any(|tool| tool["name"] == "upload_image"));
     }
 
     #[test]
