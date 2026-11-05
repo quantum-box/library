@@ -277,11 +277,11 @@ fn collect_inline_text<S: TextSink>(content: Option<&Value>, sink: &mut S) {
             if sink.is_full() {
                 return;
             }
-            if item["type"] == "userMention" {
-                if let Some(name) = item["props"]["name"].as_str() {
-                    sink.push("@");
-                    sink.push(name);
-                }
+            if item["type"] == "userMention"
+                && let Some(name) = item["props"]["name"].as_str()
+            {
+                sink.push("@");
+                sink.push(name);
             }
             if let Some(text) = item.get("text").and_then(Value::as_str) {
                 sink.push(text);
