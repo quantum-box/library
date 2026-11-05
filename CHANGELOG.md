@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-05 - MCP から本文に画像を入れる
+
+- MCP に `upload_image` を追加した。画像を base64 か `data:image/...;base64,`
+  URL で受け取り、repo に保存して埋め込み用の `url` と `![](url)` を返す。
+  これまで MCP からは外部 URL を参照するしかなく、手元の画像を本文に入れる
+  手段がなかった。
+- 保存処理は REST の `POST /v1beta/repos/{org}/{repo}/images` と共有する。
+  形式（PNG / JPEG / GIF / WebP / AVIF）、10 MiB の上限、
+  `library:UpdateRepo` の権限確認は両者で同じ。
+- base64 は元の約 4/3 倍になるため、`/mcp` と `/messages` の
+  リクエスト上限を既定の 2 MB から約 15 MB に上げた。
+- Library プラグインを `0.7.0` にし、スキルに画像の入れ方を足した。
+
 ## 2026-09-18 - MCP の書き込みを frontmatter 付き Markdown で
 
 - `create_data` / `update_data` / `upsert_data` に `markdown` を追加した。

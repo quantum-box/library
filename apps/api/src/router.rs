@@ -709,7 +709,11 @@ pub async fn router(
             .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
             .route(
                 "/messages",
-                post(handler::mcp_sse::mcp_sse_messages_handler),
+                post(handler::mcp_sse::mcp_sse_messages_handler).layer(
+                    DefaultBodyLimit::max(
+                        handler::mcp::MCP_MAX_REQUEST_BYTES,
+                    ),
+                ),
             )
             .route(
                 "/mcp/messages",
@@ -781,7 +785,12 @@ pub async fn router(
             "/.well-known/openai-apps-challenge",
             get(handler::mcp::openai_apps_challenge),
         )
-        .route("/mcp", post(handler::mcp::mcp_handler))
+        .route(
+            "/mcp",
+            post(handler::mcp::mcp_handler).layer(DefaultBodyLimit::max(
+                handler::mcp::MCP_MAX_REQUEST_BYTES,
+            )),
+        )
         .route(
             "/mcp/oauth/register",
             post(handler::mcp::mcp_oauth_register),

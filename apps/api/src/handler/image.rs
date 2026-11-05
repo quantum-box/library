@@ -389,38 +389,92 @@ pub async fn upload_image(
     headers: HeaderMap,
     body: Bytes,
 ) -> errors::Result<Json<ImageResponse>> {
-    if body.is_empty() {
+    let declared_type = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let id = store_image(StoreImageInput {
+        library_app: &library_app,
+        image_store: image_store.as_ref(),
+        executor: &executor,
+        library_org: &library_org,
+        org: &org,
+        repo: &repo,
+        declared_type,
+        filename: query.filename.as_deref(),
+        bytes: body,
+    })
+    .await?;
+
+    let url = image_url(
+        &api_base_url(&headers, std::env::var("LIBRARY_API_BASE_URL").ok()),
+        &org,
+        &repo,
+        &id,
+    );
+    Ok(Json(ImageResponse { id, url }))
+}
+
+/// One image to store, from whichever transport carried it.
+pub(crate) struct StoreImageInput<'a> {
+    pub library_app: &'a LibraryApp,
+    pub image_store: &'a dyn ImageObjectStore,
+    pub executor: &'a LibraryExecutor,
+    pub library_org: &'a LibraryOrg,
+    pub org: &'a str,
+    pub repo: &'a str,
+    /// The content type the caller declared; may be empty.
+    pub declared_type: &'a str,
+    pub filename: Option<&'a str>,
+    pub bytes: Bytes,
+}
+
+/// Checks the caller may write to the repository, then stores the bytes
+/// under a freshly minted name and returns it. REST uploads and the MCP
+/// `upload_image` tool both go through here, so they cannot disagree on
+/// size limits, accepted formats or who may upload.
+pub(crate) async fn store_image(
+    input: StoreImageInput<'_>,
+) -> errors::Result<String> {
+    let StoreImageInput {
+        library_app,
+        image_store,
+        executor,
+        library_org,
+        org,
+        repo,
+        declared_type,
+        filename,
+        bytes,
+    } = input;
+    if bytes.is_empty() {
         return Err(errors::Error::bad_request("image body is empty"));
     }
-    if body.len() > MAX_IMAGE_BYTES {
+    if bytes.len() > MAX_IMAGE_BYTES {
         return Err(errors::Error::bad_request(format!(
             "image is larger than {MAX_IMAGE_BYTES} bytes"
         )));
     }
 
-    let declared_type = headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
     let (content_type, extension) =
-        resolve_image_type(declared_type, query.filename.as_deref())?;
+        resolve_image_type(declared_type, filename)?;
 
     // Existence and read access first, so a caller who cannot see the
     // repository learns nothing beyond "not found".
     let repo_output = library_app
         .view_repo
         .execute(&ViewRepoInputData {
-            executor: &executor,
-            multi_tenancy: &library_org,
-            organization_username: org.clone(),
-            repo_username: repo.clone(),
+            executor,
+            multi_tenancy: library_org,
+            organization_username: org.to_string(),
+            repo_username: repo.to_string(),
         })
         .await?;
     library_app
         .auth_app
         .check_policy(&CheckPolicyInput {
-            executor: &executor,
-            multi_tenancy: &library_org,
+            executor,
+            multi_tenancy: library_org,
             action: "library:UpdateRepo",
         })
         .await?;
@@ -432,14 +486,19 @@ pub async fn upload_image(
     let id =
         format!("{}.{extension}", hex_encode(rand::random::<[u8; 16]>()));
     image_store
-        .put(&org_tenant, &id, content_type, body)
+        .put(&org_tenant, &id, content_type, bytes)
         .await?;
+    Ok(id)
+}
 
-    let url = format!(
-        "{}/v1beta/repos/{org}/{repo}/images/{id}",
-        api_base_url(&headers, std::env::var("LIBRARY_API_BASE_URL").ok())
-    );
-    Ok(Json(ImageResponse { id, url }))
+/// The URL a document embeds for a stored image.
+pub(crate) fn image_url(
+    base: &str,
+    org: &str,
+    repo: &str,
+    id: &str,
+) -> String {
+    format!("{base}/v1beta/repos/{org}/{repo}/images/{id}")
 }
 
 #[utoipa::path(
@@ -481,7 +540,10 @@ pub async fn view_image(
 /// from every client. The proxy headers are what a load balancer rewrites;
 /// the environment variable wins because only it knows the public name when
 /// the API sits behind something that does not forward them.
-fn api_base_url(headers: &HeaderMap, configured: Option<String>) -> String {
+pub(crate) fn api_base_url(
+    headers: &HeaderMap,
+    configured: Option<String>,
+) -> String {
     if let Some(configured) = configured {
         let trimmed = configured.trim_end_matches('/');
         if !trimmed.is_empty() {
