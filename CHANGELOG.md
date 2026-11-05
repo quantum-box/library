@@ -9,7 +9,7 @@
 - 保存処理は REST の `POST /v1beta/repos/{org}/{repo}/images` と共有する。
   形式（PNG / JPEG / GIF / WebP / AVIF）、10 MiB の上限、
   `library:UpdateRepo` の権限確認は両者で同じ。
-- base64 は元の約 4/3 倍になるため、`/mcp` と `/messages` の
+- base64 は元の約 4/3 倍になるため、`/mcp` と SSE の `/messages`・`/mcp/messages` の
   リクエスト上限を既定の 2 MB から約 15 MB に上げた。
 - Library プラグインを `0.7.0` にし、スキルに画像の入れ方を足した。
 

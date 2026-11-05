@@ -709,16 +709,17 @@ pub async fn router(
             .route("/mcp/sse", get(handler::mcp_sse::mcp_sse_handler))
             .route(
                 "/messages",
-                post(handler::mcp_sse::mcp_sse_messages_handler).layer(
-                    DefaultBodyLimit::max(
-                        handler::mcp::MCP_MAX_REQUEST_BYTES,
-                    ),
-                ),
+                post(handler::mcp_sse::mcp_sse_messages_handler),
             )
             .route(
                 "/mcp/messages",
                 post(handler::mcp_sse::mcp_sse_messages_handler),
             )
+            // Every message route can carry an `upload_image` call, so the
+            // limit covers the router rather than one path.
+            .layer(DefaultBodyLimit::max(
+                handler::mcp::MCP_MAX_REQUEST_BYTES,
+            ))
     } else {
         tracing::info!(
             env = MCP_SSE_ENABLED_ENV,
