@@ -1080,6 +1080,7 @@ export const ptBR: LocaleMessages = {
   'menuBar.minimize': 'Minimizar',
   'menuBar.zoom': 'Zoom',
   'menuBar.help': 'Ajuda',
+  'editor.mentionsFailed': 'Não foi possível carregar os membros. Digite @ para tentar novamente.',
   'editor.imageUploadFailed': 'Falha ao enviar a imagem. Selecione-a novamente para tentar de novo.',
   'editor.insertImage': 'Inserir imagem',
   'editor.noImageTarget': 'Este corpo não tem um repositório onde guardar imagens',

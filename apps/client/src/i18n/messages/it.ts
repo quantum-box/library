@@ -1080,6 +1080,7 @@ export const it: LocaleMessages = {
   'menuBar.minimize': 'Riduci a icona',
   'menuBar.zoom': 'Zoom',
   'menuBar.help': 'Aiuto',
+  'editor.mentionsFailed': 'Impossibile caricare i membri. Digita @ per riprovare.',
   'editor.imageUploadFailed': 'Caricamento non riuscito. Seleziona di nuovo l’immagine per riprovare.',
   'editor.insertImage': 'Inserisci immagine',
   'editor.noImageTarget': 'Questo corpo non ha un repository in cui salvare le immagini',

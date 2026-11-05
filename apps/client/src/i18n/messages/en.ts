@@ -1178,6 +1178,7 @@ export const en = {
   'menuBar.help': 'Help',
 
   // ---------------------------------------------------------------- editors
+  'editor.mentionsFailed': 'Could not load members. Type @ to try again.',
   'editor.imageUploadFailed': 'Image upload failed. Choose the image again to retry.',
   'editor.insertImage': 'Insert image',
   'editor.noImageTarget': 'This body has no repository to store images in',

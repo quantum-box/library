@@ -1,5 +1,6 @@
 import { BlockNoteSchema, createCodeBlockSpec } from '@blocknote/core'
 import { codeBlockOptions } from '@blocknote/code-block'
+import { userMention } from './mention'
 import { htmlPreviewBlock } from './htmlPreviewBlock'
 import { createRecordImageBlockSpec } from './imageBlock'
 
@@ -13,6 +14,7 @@ import { createRecordImageBlockSpec } from './imageBlock'
  * against is the JSON this schema actually produces.
  */
 export const recordBodySchema = BlockNoteSchema.create().extend({
+  inlineContentSpecs: { userMention },
   blockSpecs: {
     image: createRecordImageBlockSpec(),
     htmlPreview: htmlPreviewBlock(),
