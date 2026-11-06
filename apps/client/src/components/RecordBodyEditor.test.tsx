@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     editor,
     getMentionItems: undefined as undefined | ((query: string) => Promise<Array<{ title: string; onItemClick: () => void }>>),
     fetchMembers: vi.fn(),
+    fetchOrgMembers: vi.fn(),
     onEditorChange: undefined as undefined | ((editorValue: typeof editor) => void),
   }
 })
@@ -35,6 +36,11 @@ vi.mock('@blocknote/react', async (importOriginal) => ({
   },
 }))
 
+vi.mock('../lib/recordsApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/recordsApi')>()),
+  fetchOrganizationMembers: (...args: unknown[]) => mocks.fetchOrgMembers(...args),
+}))
+
 vi.mock('../lib/repositorySettingsApi', () => ({
   fetchRepositoryMembers: (...args: unknown[]) => mocks.fetchMembers(...args),
 }))
@@ -46,6 +52,7 @@ vi.mock('@blocknote/shadcn', () => ({
 describe('RecordBodyEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.fetchOrgMembers.mockResolvedValue([])
     mocks.getMentionItems = undefined
     mocks.onEditorChange = undefined
     mocks.editor.prosemirrorView = undefined
@@ -67,6 +74,17 @@ describe('RecordBodyEditor', () => {
     expect(mocks.editor.insertInlineContent).toHaveBeenCalledWith([
       { type: 'userMention', props: { userId: 'u1', name: 'Alice' } }, ' ',
     ])
+  })
+
+  it('includes ordinary organization members and users without profiles', async () => {
+    mocks.fetchMembers.mockResolvedValue([{ userId: 'missing-profile', user: null }])
+    mocks.fetchOrgMembers.mockResolvedValue([{ id: 'org-user', name: '組織メンバー' }])
+    render(<RecordBodyEditor value="[]" format="richText" onCommit={vi.fn()}
+      imageTarget={{ org: 'acme', repo: 'notes', operatorId: 'tenant' }} />)
+    let items: Array<{ title: string }> = []
+    await act(async () => { items = await mocks.getMentionItems!('') })
+    expect(items.map((item) => item.title)).toEqual(['missing-profile', '組織メンバー'])
+    expect(mocks.fetchOrgMembers).toHaveBeenCalledWith('acme', 'tenant')
   })
 
   it('does not offer mentions in read-only bodies', () => {

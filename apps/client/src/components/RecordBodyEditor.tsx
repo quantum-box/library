@@ -28,8 +28,8 @@ import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
 import { checkpointLiveBodyOutlivingPage } from '../lib/libraryTable/libraryDataCrud'
-import { fetchRepositoryMembers } from '../lib/repositorySettingsApi'
-import { uploadLibraryImage } from '../lib/recordsApi'
+import { fetchRepositoryMembers, type RepositoryMember } from '../lib/repositorySettingsApi'
+import { fetchOrganizationMembers, uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
   withImageWidthFragments,
@@ -367,21 +367,29 @@ function BlockRecordBodyEditor({
   const getMentionItems = useCallback(async (query: string) => {
     if (!imageTarget) return []
     try {
-      const members = await fetchRepositoryMembers({
-        orgUsername: imageTarget.org,
-        repoUsername: imageTarget.repo,
-        operatorId: imageTarget.operatorId,
-      })
+      const results = await Promise.allSettled([
+        fetchRepositoryMembers({
+          orgUsername: imageTarget.org,
+          repoUsername: imageTarget.repo,
+          operatorId: imageTarget.operatorId,
+        }),
+        ...(imageTarget.operatorId
+          ? [fetchOrganizationMembers(imageTarget.org, imageTarget.operatorId)
+            .then((users) => users.map((user) => ({ userId: user.id, user })))]
+          : []),
+      ])
+      const members = results.flatMap<Pick<RepositoryMember, 'userId' | 'user'>>((result) => result.status === 'fulfilled' ? result.value : [])
+      if (results.every((result) => result.status === 'rejected')) throw new Error('Member lookup failed')
       setMentionsFailed(false)
       const seen = new Set<string>()
       return filterSuggestionItems(members.flatMap(({ userId, user }) => {
-        if (!user || seen.has(userId)) return []
+        if (seen.has(userId)) return []
         seen.add(userId)
-        const name = user.name || user.email || userId
+        const name = user?.name || user?.email || userId
         return [{
           title: name,
-          subtext: user.email || undefined,
-          aliases: [user.email || '', userId],
+          subtext: user?.email || undefined,
+          aliases: [user?.email || '', userId],
           onItemClick: () => editor.insertInlineContent([
             { type: 'userMention', props: { userId, name } },
             ' ',
