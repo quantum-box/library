@@ -28,7 +28,7 @@ import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
 import { checkpointLiveBodyOutlivingPage } from '../lib/libraryTable/libraryDataCrud'
-import { fetchRepositoryMembers } from '../lib/repositorySettingsApi'
+import { fetchRepositoryMembers, type RepositoryMember } from '../lib/repositorySettingsApi'
 import { fetchOrganizationMembers, uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
@@ -378,7 +378,7 @@ function BlockRecordBodyEditor({
             .then((users) => users.map((user) => ({ userId: user.id, user })))]
           : []),
       ])
-      const members = results.flatMap((result) => result.status === 'fulfilled' ? result.value : [])
+      const members = results.flatMap<Pick<RepositoryMember, 'userId' | 'user'>>((result) => result.status === 'fulfilled' ? result.value : [])
       if (results.every((result) => result.status === 'rejected')) throw new Error('Member lookup failed')
       setMentionsFailed(false)
       const seen = new Set<string>()
