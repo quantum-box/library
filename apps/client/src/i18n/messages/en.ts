@@ -1180,6 +1180,8 @@ export const en = {
   // ---------------------------------------------------------------- editors
   'editor.mentionsFailed': 'Could not load members. Type @ to try again.',
   'editor.imageUploadFailed': 'Image upload failed. Choose the image again to retry.',
+  'editor.diagramLoading': "Rendering diagram…",
+  'editor.diagramFailed': "Could not render diagram. Check the source or try again.",
   'editor.insertImage': 'Insert image',
   'editor.noImageTarget': 'This body has no repository to store images in',
   'editor.htmlBlockTitle': 'HTML',
