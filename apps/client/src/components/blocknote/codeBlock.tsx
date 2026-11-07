@@ -25,7 +25,11 @@ export function createDiagramCodeBlockSpec() {
       render: (function (block, editor) {
         const view = render.call(this, block, editor)
         if (this.renderType !== 'nodeView' || !diagramLanguage(block.props.language)) return view
+        // Code blocks use a horizontal flex layout by default. Keep the
+        // preview below the source and give large diagrams the full width.
+        if (view.dom instanceof HTMLElement) view.dom.style.flexDirection = 'column'
         const preview = document.createElement('div')
+        preview.style.width = '100%'
         preview.contentEditable = 'false'
         view.dom.appendChild(preview)
         const root = createRoot(preview)
