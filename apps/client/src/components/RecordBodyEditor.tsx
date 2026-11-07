@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BlockNoteEditor,
-  FilePanelExtension,
   createExtension,
   YCursorExtension,
   YSyncExtension,
@@ -21,7 +20,7 @@ import {
   useEditorChange,
 } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
-import { CodeXml, ImagePlus } from 'lucide-react'
+import { CodeXml } from 'lucide-react'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/shadcn/style.css'
 import { recordBodySchema } from './blocknote/schema'
@@ -606,23 +605,6 @@ function BlockRecordBodyEditor({
         live?.compositionEnded()
       }}
     >
-      {editable && (
-        <div className="mb-2 flex justify-end px-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              editor.focus()
-              const block = insertOrUpdateBlockForSlashMenu(editor, { type: 'image' })
-              editor.getExtension(FilePanelExtension)?.showMenu(block.id)
-            }}
-          >
-            <ImagePlus size={16} aria-hidden="true" />
-            {t('editor.insertImage')}
-          </button>
-        </div>
-      )}
       <BlockNoteView
         editor={editor}
         theme={theme}
