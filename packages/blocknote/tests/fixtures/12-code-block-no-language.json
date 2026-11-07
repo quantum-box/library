@@ -3,7 +3,8 @@
     "id": "block-1",
     "type": "codeBlock",
     "props": {
-      "language": "text"
+      "language": "text",
+      "codeTheme": "dark"
     },
     "content": [
       {
@@ -18,7 +19,8 @@
     "id": "block-2",
     "type": "codeBlock",
     "props": {
-      "language": "typescript"
+      "language": "typescript",
+      "codeTheme": "dark"
     },
     "content": [
       {

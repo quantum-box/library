@@ -678,3 +678,50 @@
   --accent: var(--bg-hover);
   --accent-hover: var(--bg-hover);
 }
+
+/* Code and preview backgrounds are independent, so hiding source leaves no
+   dark strip around a diagram. Both token palettes are supplied by Shiki. */
+.bn-block-content[data-content-type="codeBlock"][data-code-theme="dark"] {
+  background: #161616;
+  color: #e1e4e8;
+}
+.bn-block-content[data-content-type="codeBlock"][data-code-theme="light"] {
+  background: #f6f8fa;
+  color: #24292e;
+}
+.bn-block-content[data-code-theme="dark"] .shiki {
+  color: var(--shiki-dark, inherit);
+}
+.bn-block-content[data-code-theme="light"] .shiki {
+  color: var(--shiki-light, inherit);
+}
+.bn-block-content[data-content-type="codeBlock"] > div > select {
+  color: inherit;
+}
+.bn-block-content[data-content-type="codeBlock"].library-diagram-only {
+  background: transparent;
+  padding: 0;
+}
+.library-code-style-control {
+  position: absolute;
+  right: 12px;
+  top: 4px;
+  z-index: 1;
+  font-size: 0.8em;
+}
+.library-code-style-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.7;
+}
+.library-code-style-label select {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+}
+.library-code-style-label option {
+  background: white;
+  color: #24292e;
+}

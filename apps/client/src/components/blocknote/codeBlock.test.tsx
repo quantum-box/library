@@ -42,3 +42,26 @@ it('previews code blocks after changing language, updates source, and preserves 
     host.remove()
   }
 })
+
+it('saves the selected code style and restores it when the document is reopened', async () => {
+  const editor = BlockNoteEditor.create({
+    schema: recordBodySchema,
+    initialContent: [{ type: 'codeBlock', props: { language: 'javascript' }, content: 'const answer = 42' }],
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  try {
+    editor.mount(host)
+    await waitFor(() => expect(within(host).getByRole('combobox', { name: 'Code style' })).toHaveValue('dark'))
+    fireEvent.change(within(host).getByRole('combobox', { name: 'Code style' }), { target: { value: 'light' } })
+    await waitFor(() => expect(host.querySelector('[data-code-theme="light"]')).not.toBeNull())
+    const saved = JSON.stringify(editor.document)
+    expect(saved).toContain('"codeTheme":"light"')
+    editor.replaceBlocks(editor.document, JSON.parse(saved))
+    await waitFor(() => expect(within(host).getByRole('combobox', { name: 'Code style' })).toHaveValue('light'))
+    expect(host.querySelector('code')?.textContent).toBe('const answer = 42')
+  } finally {
+    await act(async () => { editor.unmount(); await Promise.resolve() })
+    host.remove()
+  }
+})
