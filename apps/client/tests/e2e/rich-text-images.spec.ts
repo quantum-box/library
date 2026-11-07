@@ -1,8 +1,18 @@
 import { expect, test } from './test-fixtures'
+import type { Locator, Page } from '@playwright/test'
 
 const api = 'http://127.0.0.1:50063'
 const route = '/quantum-box/photon-core/data/seed-data-201'
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
+
+async function openImageChooser(page: Page, editor: Locator) {
+  const body = editor.locator('[contenteditable="true"]').first()
+  await body.click()
+  await body.press('ControlOrMeta+End')
+  await body.press('Enter')
+  await body.pressSequentially('/image')
+  await page.getByRole('option', { name: /^Image/ }).click()
+}
 
 for (const method of ['upload', 'url'] as const) {
   test(`inserts a rich text image by ${method} and retains it after reload`, async ({ page }) => {
@@ -44,7 +54,8 @@ for (const method of ['upload', 'url'] as const) {
     await page.goto(route)
     const editor = page.locator('.record-body-blocknote')
     await expect(editor.locator('[contenteditable="true"]').first()).toContainText('Seed data')
-    await editor.getByRole('button', { name: 'Insert image', exact: true }).click()
+    await expect(editor.getByRole('button', { name: 'Insert image', exact: true })).toHaveCount(0)
+    await openImageChooser(page, editor)
     if (method === 'upload') {
       await page.locator('.bn-panel input[type="file"]').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: png })
     } else {
@@ -80,7 +91,7 @@ test('a failed upload restores the image chooser and can be retried', async ({ p
   })
   await page.goto('/quantum-box/photon-core/data/seed-data-201')
   const editor = page.locator('.record-body-blocknote')
-  await editor.getByRole('button', { name: 'Insert image', exact: true }).click()
+  await openImageChooser(page, editor)
   const upload = page.locator('.bn-panel input[type="file"]')
   const file = { name: 'retry.png', mimeType: 'image/png', buffer: png }
   await upload.setInputFiles(file)
