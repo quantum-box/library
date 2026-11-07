@@ -1082,6 +1082,8 @@ export const it: LocaleMessages = {
   'menuBar.help': 'Aiuto',
   'editor.mentionsFailed': 'Impossibile caricare i membri. Digita @ per riprovare.',
   'editor.imageUploadFailed': 'Caricamento non riuscito. Seleziona di nuovo l’immagine per riprovare.',
+  'editor.diagramLoading': "Creazione del diagramma…",
+  'editor.diagramFailed': "Impossibile creare il diagramma. Controlla il codice o riprova.",
   'editor.insertImage': 'Inserisci immagine',
   'editor.noImageTarget': 'Questo corpo non ha un repository in cui salvare le immagini',
   'editor.htmlBlockTitle': 'HTML',

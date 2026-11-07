@@ -1082,6 +1082,8 @@ export const ptBR: LocaleMessages = {
   'menuBar.help': 'Ajuda',
   'editor.mentionsFailed': 'Não foi possível carregar os membros. Digite @ para tentar novamente.',
   'editor.imageUploadFailed': 'Falha ao enviar a imagem. Selecione-a novamente para tentar de novo.',
+  'editor.diagramLoading': "Renderizando diagrama…",
+  'editor.diagramFailed': "Não foi possível renderizar o diagrama. Verifique o código ou tente novamente.",
   'editor.insertImage': 'Inserir imagem',
   'editor.noImageTarget': 'Este corpo não tem um repositório onde guardar imagens',
   'editor.htmlBlockTitle': 'HTML',

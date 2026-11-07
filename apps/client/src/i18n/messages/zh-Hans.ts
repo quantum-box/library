@@ -1082,6 +1082,8 @@ export const zhHans: LocaleMessages = {
   'menuBar.help': '帮助',
   'editor.mentionsFailed': '无法加载成员。输入 @ 重试。',
   'editor.imageUploadFailed': '图片上传失败。请重新选择图片后重试。',
+  'editor.diagramLoading': "正在渲染图表…",
+  'editor.diagramFailed': "无法渲染图表。请检查代码或重试。",
   'editor.insertImage': '插入图片',
   'editor.noImageTarget': '此正文没有可用于保存图片的仓库',
   'editor.htmlBlockTitle': 'HTML',
