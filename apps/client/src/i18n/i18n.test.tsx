@@ -221,3 +221,18 @@ describe('LanguageMenuSection', () => {
     expect(screen.getByTestId('language-option-zh-Hant')).toHaveTextContent('繁體中文')
   })
 })
+
+it('updates translations in an independent editor root when the app locale changes', async () => {
+  await loadCatalog('ja')
+  function SwitchLocale() {
+    const { setLocale } = useI18n()
+    return <button onClick={() => setLocale('ja')}>Switch independent root</button>
+  }
+  render(<I18nProvider initial="en"><SwitchLocale /></I18nProvider>)
+  // A separate render has no provider, matching vanilla BlockNote node views.
+  render(<CurrentLocale />)
+  expect(screen.getByTestId('greeting')).toHaveTextContent('Home')
+  fireEvent.click(screen.getByText('Switch independent root'))
+  expect(screen.getByTestId('locale')).toHaveTextContent('ja')
+  expect(screen.getByTestId('greeting')).toHaveTextContent('ホーム')
+})

@@ -5,7 +5,7 @@ import { diagramLanguage } from './diagramLanguage'
 
 const mocks = vi.hoisted(() => ({ render: vi.fn() }))
 vi.mock('mermaid', () => ({ default: { initialize: vi.fn(), render: mocks.render } }))
-vi.mock('../../i18n', () => ({ t: (key: string) => key }))
+vi.mock('../../i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('recognizes diagram fences and leaves other code alone', () => {

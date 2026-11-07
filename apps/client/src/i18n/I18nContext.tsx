@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react'
 import { appKitConfig } from '../app/kitConfig'
@@ -61,6 +62,26 @@ const I18nContext = createContext<I18nContextValue | null>(null)
  */
 let activeLocale: Locale = DEFAULT_LOCALE
 
+// BlockNote's vanilla node views mount independent React roots. Keep their
+// standalone useI18n() consumers reactive without creating another provider.
+const localeListeners = new Set<() => void>()
+let localeRevision = 0
+function announceLocale() {
+  localeRevision += 1
+  for (const listener of localeListeners) listener()
+}
+function updateActiveLocale(locale: Locale) {
+  if (activeLocale === locale) return
+  activeLocale = locale
+  announceLocale()
+}
+function subscribeLocale(listener: () => void) {
+  localeListeners.add(listener)
+  return () => { localeListeners.delete(listener) }
+}
+const ignoreLocaleSubscription = () => () => undefined
+const getLocaleRevision = () => localeRevision
+
 export function getActiveLocale(): Locale {
   return activeLocale
 }
@@ -100,7 +121,8 @@ export function initialLocale(): Locale {
 export async function preloadInitialLocale(): Promise<Locale> {
   const locale = initialLocale()
   await loadCatalog(locale)
-  activeLocale = locale
+  updateActiveLocale(locale)
+  announceLocale()
   return locale
 }
 
@@ -129,14 +151,17 @@ export function I18nProvider({
   // gap for a provider mounted with an explicit `initial` — tests and
   // Storybook — where nothing else has announced the locale.
   useEffect(() => {
-    activeLocale = locale
+    updateActiveLocale(locale)
   }, [locale])
 
   useEffect(() => {
     let cancelled = false
     if (isCatalogLoaded(locale)) return
     void loadCatalog(locale).then(() => {
-      if (!cancelled) setCatalogVersion((version) => version + 1)
+      if (!cancelled) {
+        setCatalogVersion((version) => version + 1)
+        announceLocale()
+      }
     })
     return () => {
       cancelled = true
@@ -151,7 +176,7 @@ export function I18nProvider({
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next)
     setIsExplicit(true)
-    activeLocale = next
+    updateActiveLocale(next)
     try {
       window.localStorage.setItem(STORAGE_KEY, next)
     } catch {
@@ -168,7 +193,7 @@ export function I18nProvider({
     const detected = detectLocale()
     setLocaleState(detected)
     setIsExplicit(false)
-    activeLocale = detected
+    updateActiveLocale(detected)
   }, [])
 
   const value = useMemo<I18nContextValue>(() => {
@@ -224,6 +249,7 @@ function standaloneValue(locale: Locale): I18nContextValue {
 
 export function useI18n(): I18nContextValue {
   const ctx = useContext(I18nContext)
+  useSyncExternalStore(ctx ? ignoreLocaleSubscription : subscribeLocale, getLocaleRevision, getLocaleRevision)
   return ctx ?? standaloneValue(activeLocale)
 }
 

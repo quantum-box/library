@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import DOMPurify from 'dompurify'
-import { t } from '../../i18n'
+import { useI18n } from '../../i18n'
 
 import { diagramLanguage } from './diagramLanguage'
 
@@ -9,6 +9,7 @@ import { diagramLanguage } from './diagramLanguage'
 let renderQueue = Promise.resolve()
 
 export function DiagramPreview({ language, source }: { language: string; source: string }) {
+  const { t } = useI18n()
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const kind = diagramLanguage(language)
   const [svg, setSvg] = useState('')
