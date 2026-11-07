@@ -1103,6 +1103,8 @@ export const ru: LocaleMessages = {
   'menuBar.help': 'Справка',
   'editor.mentionsFailed': 'Не удалось загрузить участников. Введите @, чтобы повторить.',
   'editor.imageUploadFailed': 'Не удалось загрузить изображение. Выберите его снова для повторной попытки.',
+  'editor.diagramOnly': "Только диаграмма",
+  'editor.diagramShowCode': "Показать код",
   'editor.diagramLoading': "Построение диаграммы…",
   'editor.diagramFailed': "Не удалось построить диаграмму. Проверьте код или повторите попытку.",
   'editor.insertImage': 'Вставить изображение',

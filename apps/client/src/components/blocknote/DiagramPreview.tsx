@@ -8,12 +8,21 @@ import { diagramLanguage } from './diagramLanguage'
 // and rendering together so concurrent blocks cannot change each other's theme.
 let renderQueue = Promise.resolve()
 
-export function DiagramPreview({ language, source }: { language: string; source: string }) {
+export function DiagramPreview({
+  language,
+  source,
+  onSourceVisibilityChange,
+}: {
+  language: string
+  source: string
+  onSourceVisibilityChange?: (visible: boolean) => void
+}) {
   const { t } = useI18n()
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const kind = diagramLanguage(language)
   const [svg, setSvg] = useState('')
   const [failed, setFailed] = useState(false)
+  const [sourceVisible, setSourceVisible] = useState(true)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -50,10 +59,30 @@ export function DiagramPreview({ language, source }: { language: string; source:
     return () => { window.clearTimeout(timer); controller.abort() }
   }, [id, kind, source])
 
-  if (!kind || !source.trim()) return null
-  return <div contentEditable={false} className="library-code-diagram overflow-auto rounded border border-border bg-white p-4 text-black">
-    {failed ? <p role="status">{t('editor.diagramFailed')}</p>
-      : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} />
-        : <p role="status">{t('editor.diagramLoading')}</p>}
-  </div>
+  if (!kind) return null
+  return (
+    <div contentEditable={false} className="library-code-diagram overflow-auto rounded border border-border bg-white p-4 text-black">
+      {onSourceVisibilityChange && (
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2"
+            aria-expanded={sourceVisible}
+            onClick={() => {
+              const visible = !sourceVisible
+              setSourceVisible(visible)
+              onSourceVisibilityChange(visible)
+            }}
+          >
+            {t(sourceVisible ? 'editor.diagramOnly' : 'editor.diagramShowCode')}
+          </button>
+        </div>
+      )}
+      {source.trim() && (
+        failed ? <p role="status">{t('editor.diagramFailed')}</p>
+          : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} />
+            : <p role="status">{t('editor.diagramLoading')}</p>
+      )}
+    </div>
+  )
 }

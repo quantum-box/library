@@ -28,6 +28,14 @@ export function createDiagramCodeBlockSpec() {
         // Code blocks use a horizontal flex layout by default. Keep the
         // preview below the source and give large diagrams the full width.
         if (view.dom instanceof HTMLElement) view.dom.style.flexDirection = 'column'
+        const sourceElements = Array.from(view.dom.childNodes).filter(
+          (node): node is HTMLElement => node instanceof HTMLElement,
+        )
+        const setSourceVisibility = (visible: boolean) => {
+          for (const element of sourceElements) {
+            element.style.display = visible ? '' : 'none'
+          }
+        }
         const preview = document.createElement('div')
         preview.style.width = '100%'
         preview.contentEditable = 'false'
@@ -37,7 +45,13 @@ export function createDiagramCodeBlockSpec() {
           const language = current.props.language
           const source = current.content.map((item) => item.text ?? '').join('')
           preview.hidden = !diagramLanguage(language)
-          root.render(<DiagramPreview language={language} source={source} />)
+          root.render(
+            <DiagramPreview
+              language={language}
+              source={source}
+              onSourceVisibilityChange={setSourceVisibility}
+            />,
+          )
         }
         update(block)
         const unsubscribe = editor.onChange(() => {
@@ -47,7 +61,8 @@ export function createDiagramCodeBlockSpec() {
         return {
           ...view,
           ignoreMutation: (mutation) => mutation.type !== 'selection'
-            && (mutation.target === preview || preview.contains(mutation.target)),
+            && (mutation.target === preview || preview.contains(mutation.target)
+              || (mutation.type === 'attributes' && sourceElements.includes(mutation.target as HTMLElement))),
           destroy: () => {
             unsubscribe()
             // Node views can be destroyed during a React commit.
