@@ -1082,6 +1082,8 @@ export const fr: LocaleMessages = {
   'menuBar.help': 'Aide',
   'editor.mentionsFailed': 'Impossible de charger les membres. Saisissez @ pour réessayer.',
   'editor.imageUploadFailed': 'Échec du téléversement. Sélectionnez à nouveau l’image pour réessayer.',
+  'editor.diagramOnly': "Diagramme seul",
+  'editor.diagramShowCode': "Afficher le code",
   'editor.diagramLoading': "Génération du diagramme…",
   'editor.diagramFailed': "Impossible de générer le diagramme. Vérifiez le code ou réessayez.",
   'editor.insertImage': 'Insérer une image',

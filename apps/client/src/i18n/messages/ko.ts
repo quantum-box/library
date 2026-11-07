@@ -1082,6 +1082,8 @@ export const ko: LocaleMessages = {
   'menuBar.help': '도움말',
   'editor.mentionsFailed': '멤버를 불러오지 못했습니다. @를 입력하여 다시 시도하세요.',
   'editor.imageUploadFailed': '이미지를 업로드하지 못했습니다. 이미지를 다시 선택해 주세요.',
+  'editor.diagramOnly': "다이어그램만 표시",
+  'editor.diagramShowCode': "코드 표시",
   'editor.diagramLoading': "다이어그램 렌더링 중…",
   'editor.diagramFailed': "다이어그램을 렌더링할 수 없습니다. 코드를 확인하거나 다시 시도하세요.",
   'editor.insertImage': '이미지 삽입',

@@ -1082,6 +1082,8 @@ export const zhHant: LocaleMessages = {
   'menuBar.help': '輔助說明',
   'editor.mentionsFailed': '無法載入成員。輸入 @ 重試。',
   'editor.imageUploadFailed': '圖片上傳失敗。請重新選擇圖片後重試。',
+  'editor.diagramOnly': "僅顯示圖表",
+  'editor.diagramShowCode': "顯示程式碼",
   'editor.diagramLoading': "正在繪製圖表…",
   'editor.diagramFailed': "無法繪製圖表。請檢查程式碼或重試。",
   'editor.insertImage': '插入圖片',

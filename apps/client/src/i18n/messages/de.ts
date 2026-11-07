@@ -1082,6 +1082,8 @@ export const de: LocaleMessages = {
   'menuBar.help': 'Hilfe',
   'editor.mentionsFailed': 'Mitglieder konnten nicht geladen werden. Zum Wiederholen @ eingeben.',
   'editor.imageUploadFailed': 'Das Bild konnte nicht hochgeladen werden. Wählen Sie es erneut aus.',
+  'editor.diagramOnly': "Nur Diagramm",
+  'editor.diagramShowCode': "Code anzeigen",
   'editor.diagramLoading': "Diagramm wird erstellt…",
   'editor.diagramFailed': "Diagramm konnte nicht erstellt werden. Bitte Quelltext prüfen oder erneut versuchen.",
   'editor.insertImage': 'Bild einfügen',
