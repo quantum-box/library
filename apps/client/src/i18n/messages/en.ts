@@ -1180,6 +1180,9 @@ export const en = {
   // ---------------------------------------------------------------- editors
   'editor.mentionsFailed': 'Could not load members. Type @ to try again.',
   'editor.imageUploadFailed': 'Image upload failed. Choose the image again to retry.',
+  'editor.codeStyle': "Code style",
+  'editor.codeStyleDark': "Dark",
+  'editor.codeStyleLight': "Light",
   'editor.diagramOnly': "Diagram only",
   'editor.diagramShowCode': "Show code",
   'editor.diagramLoading': "Rendering diagram…",

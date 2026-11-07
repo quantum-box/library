@@ -3,7 +3,8 @@
     "id": "block-1",
     "type": "codeBlock",
     "props": {
-      "language": "rust"
+      "language": "rust",
+      "codeTheme": "dark"
     },
     "content": [
       {

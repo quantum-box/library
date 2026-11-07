@@ -19,8 +19,7 @@ export const recordBodySchema = BlockNoteSchema.create().extend({
     image: createRecordImageBlockSpec(),
     htmlPreview: htmlPreviewBlock(),
     // Add highlighting, a language picker, and diagram previews while
-    // keeping the stored shape identical: a
-    // `codeBlock` with a `language` prop. The package's own default
+    // persisting each block's language and code theme. The package's own default
     // language is javascript, which would relabel every unlabelled code
     // fence; pinning it back to `text` keeps that document unchanged.
     codeBlock: createDiagramCodeBlockSpec(),
