@@ -259,6 +259,26 @@ fn route(path: &str) -> Option<Vec<String>> {
     }
     Some(parts)
 }
+/// App URLs share public metadata, while keeping their normal application shell.
+fn repository_route(path: &str) -> Option<Vec<String>> {
+    let path = path.trim_end_matches('/');
+    let parts: Vec<_> = path.strip_prefix('/')?.split('/').collect();
+    let public = match parts.as_slice() {
+        ["repositories", org, repo] => format!("/public/{org}/{repo}"),
+        [org, repo] => format!("/public/{org}/{repo}"),
+        [org, repo, "data"] => format!("/public/{org}/{repo}"),
+        [org, repo, "data", id] => format!("/public/{org}/{repo}/{id}"),
+        _ => return None,
+    };
+    if matches!(
+        parts[0],
+        "public" | "s" | "assets" | "organizations" | "databases"
+    ) {
+        return None;
+    }
+    route(&public)
+        .filter(|parts| parts.get(2).is_none_or(|id| id != "sitemap.xml"))
+}
 fn response(
     body: String,
     headers: Headers,
@@ -304,6 +324,7 @@ async fn render(
     env: &Env,
     url: &Url,
     parts: &[String],
+    public_document: bool,
 ) -> PublicResult<(String, &'static str)> {
     let org = &parts[0];
     let repo = &parts[1];
@@ -393,15 +414,22 @@ async fn render(
             None,
         )
     } else {
-        let listing: Listing =
-            read_json(&format!("{path}/data-list?page=1&page_size=100"))
-                .await?;
-        (site.clone(), profile.description.clone(), Some(listing))
+        let listing = if public_document {
+            Some(
+                read_json::<Listing>(&format!(
+                    "{path}/data-list?page=1&page_size=100"
+                ))
+                .await?,
+            )
+        } else {
+            None
+        };
+        (site.clone(), profile.description.clone(), listing)
     };
     let description = description_of(&text, &profile.description);
     let canonical = origin.clone() + &public_path(org, repo, id);
     let image = origin.clone() + SOCIAL_IMAGE_PATH;
-    let indexed = origin == PUBLIC_ORIGIN;
+    let indexed = public_document && origin == PUBLIC_ORIGIN;
     let seo_title = if id.is_some() {
         format!("{title} · {site}")
     } else {
@@ -506,7 +534,9 @@ async fn render(
                     Ok(())
                 }),
                 element!("#root", |el| {
-                    el.set_inner_content(&body, ContentType::Html);
+                    if public_document {
+                        el.set_inner_content(&body, ContentType::Html);
+                    }
                     Ok(())
                 }),
             ],
@@ -542,8 +572,27 @@ pub async fn fetch(
     }
     let parts = route(url.path());
     if parts.is_none() && !url.path().starts_with("/public/") {
+        if matches!(request.method(), Method::Get | Method::Head) {
+            if let Some(parts) = repository_route(url.path()) {
+                if let Ok((html, content_type)) =
+                    render(&env, &url, &parts, false).await
+                {
+                    let headers = Headers::new();
+                    headers.set("content-type", content_type)?;
+                    headers.set("cache-control", "no-store")?;
+                    headers.set("x-robots-tag", "noindex, nofollow")?;
+                    return response(html, headers, head, 200);
+                }
+            }
+        }
         let asset = env.service("ASSETS")?.fetch_request(request).await?;
-        return unindexed_html(asset);
+        let asset = unindexed_html(asset)?;
+        let headers = Headers::new();
+        for (key, value) in asset.headers().entries() {
+            headers.set(&key, &value)?;
+        }
+        headers.set("cache-control", "no-store")?;
+        return Ok(asset.with_headers(headers));
     }
     if parts.is_some()
         && !matches!(request.method(), Method::Get | Method::Head)
@@ -559,7 +608,7 @@ pub async fn fetch(
         headers.set("x-robots-tag", "noindex, nofollow")?;
     }
     let result = match parts {
-        Some(parts) => render(&env, &url, &parts).await,
+        Some(parts) => render(&env, &url, &parts, true).await,
         None => Err(404),
     };
     match result {

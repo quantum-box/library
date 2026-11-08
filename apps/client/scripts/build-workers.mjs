@@ -26,9 +26,8 @@ for (const name of names) {
     const worker = join(dist, '_worker.js')
     mkdirSync(worker, { recursive: true })
     cpSync(join(cwd, 'build'), worker, { recursive: true, filter: (source) => !source.includes('/.tmp') && !source.endsWith('/worker') })
-    // `/s/*` is here for the response header alone: share links carry no
-    // public content, but Pages would otherwise serve them straight from
-    // assets and the worker could never ask a crawler to skip them.
-    writeFileSync(join(dist, '_routes.json'), JSON.stringify({ version: 1, include: ['/public/*', '/robots.txt', '/s/*'], exclude: [] }))
+    // App repository URLs need anonymous public metadata too. Static assets
+    // bypass the worker; HTML routes keep their normal application shell.
+    writeFileSync(join(dist, '_routes.json'), JSON.stringify({ version: 1, include: ['/*'], exclude: ['/assets/*', '/apple-touch-icon.png', '/favicon-dark.png', '/favicon-light.png', '/favicon.ico', '/favicon.svg', '/icons.svg'] }))
   }
 }

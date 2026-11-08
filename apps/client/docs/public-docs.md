@@ -31,8 +31,8 @@ white article. Read-only bodies use their content height instead of the
 editor's `55vh` canvas. The user's app theme preference is unchanged.
 
 `npm run build:cloud` also builds a Pages advanced-mode `_worker.js/` module directory and
-`_routes.json`. Only `/public/*` and `/robots.txt` invoke this worker; other
-assets retain normal Pages serving. The worker uses the same build-time
+`_routes.json`. HTML routes invoke this worker; static assets such as `/assets/*` retain
+normal Pages serving. The worker uses the same build-time
 `VITE_LIBRARY_API_BASE_URL` as the client, including `build:preview` overrides.
 It needs the default Pages `ASSETS` binding and no API credentials or extra
 infrastructure bindings. Deploy the entire `dist` through a Pages Functions
@@ -145,3 +145,15 @@ Validation additions:
 - `npm run test:public-docs-worker` (default-metadata removal, `og:image`,
   share-link and app-shell `X-Robots-Tag`, no structured data on previews)
 - `npm run type-check`, `npm run type-check:public-docs`
+
+## Public metadata on application URLs
+
+The application routes `/:organization/:repository`,
+`/repositories/:organization/:repository`, `/:organization/:repository/data`
+and `/:organization/:repository/data/:dataId` also receive server-rendered
+Open Graph and Twitter metadata after an anonymous public-profile check.
+Repository cards use the repository name and description; article cards use
+the article title and body summary. Their canonical URLs point to the public
+reader. Application routes retain their app shell and `noindex` metadata.
+Private or unavailable repositories receive the default app shell, and these
+responses use `Cache-Control: no-store` so visibility changes are rechecked.
