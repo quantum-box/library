@@ -1,3 +1,4 @@
+import { clearServerMetadata } from './components/public/clearServerMetadata'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
@@ -12,6 +13,7 @@ import { I18nProvider, preloadInitialLocale } from './i18n'
 // Resolve the starting language before the first paint so the shell never
 // flashes English on its way to the user's locale.
 void preloadInitialLocale().then((locale) => {
+  clearServerMetadata(window.location.pathname)
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <I18nProvider initial={locale}>
