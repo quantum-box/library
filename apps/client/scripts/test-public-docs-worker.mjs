@@ -221,7 +221,8 @@ test('share links reach the worker and are unindexed without an API call', async
   // The header is only worth anything if Pages routes the path here at all;
   // everything outside `include` is served straight from the asset bucket.
   const routes = JSON.parse(await readFile(join(outDir, '_routes.json'), 'utf8'))
-  assert.deepEqual(routes.include, ['/public/*', '/robots.txt', '/s/*'])
+  assert.deepEqual(routes.include, ['/*'])
+  assert.ok(routes.exclude.includes('/assets/*'))
 
   const { fetch, calls } = await scenario(t)
   const response = await fetch('/s/shr_token')
@@ -279,3 +280,49 @@ test('nullable repository descriptions retain the public page and empty fallback
   assert.equal(response.status, 200)
   assert.match(await response.text(), /A useful public document\./)
 })
+
+for (const path of ['/acme/guide', '/acme/guide/', '/repositories/acme/guide', '/acme/guide/data']) {
+  test(`public repository metadata on app URL ${path}`, async (t) => {
+    const { fetch, calls } = await scenario(t, ready)
+    const response = await fetch(path, { headers: { Authorization: 'Bearer private-token', Cookie: 'secret=1' } })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow')
+    const html = await response.text()
+    assert.match(html, /property="og:title" content="Sample Guide"/)
+    assert.match(html, /property="og:description" content="A guide for readers"/)
+    assert.match(html, /property="og:url" content="https:\/\/planetlibrary.txcloud.app\/public\/acme\/guide"/)
+    assert.match(html, /<div id="root"><\/div>/)
+    assert.doesNotMatch(html, /data-app-default/)
+    assert.equal(calls.length, 1)
+    assert.doesNotMatch(JSON.stringify(calls[0].headers), /private-token|secret=1/)
+  })
+}
+
+test('public article metadata on the app data URL', async (t) => {
+  const { fetch } = await scenario(t, ready)
+  const response = await fetch('/acme/guide/data/intro?view=table')
+  assert.equal(response.status, 200)
+  const html = await response.text()
+  assert.match(html, /property="og:title" content="Introduction · Sample Guide"/)
+  assert.match(html, /property="og:description" content="A useful public document\."/)
+  assert.match(html, /<div id="root"><\/div>/)
+})
+
+for (const repository of [
+  { data: { ...profile, is_public: false } },
+  { status: 404, data: {} },
+  { status: 503, data: {} },
+]) {
+  test(`unavailable app repository preserves shell (${repository.status ?? 'private'})`, async (t) => {
+    const { fetch, calls } = await scenario(t, { [base]: repository })
+    const response = await fetch('/acme/guide/data/intro')
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow')
+    const html = await response.text()
+    assert.match(html, /data-app-default content="Library"/)
+    assert.doesNotMatch(html, /Sample Guide|Introduction|A useful public/)
+    assert.equal(calls.length, 1)
+  })
+}
