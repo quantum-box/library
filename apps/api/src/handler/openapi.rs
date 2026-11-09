@@ -34,6 +34,7 @@ use crate::handler::{
         search_repo,
         view_data,
         view_data_markdown,
+        workflow_document,
         view_data_list,
         list_docs,
         view_doc,
@@ -159,6 +160,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(search_repo))
         .routes(routes!(view_data))
         .routes(routes!(view_data_markdown))
+        .routes(routes!(workflow_document))
         .routes(routes!(view_data_list))
         .routes(routes!(view_data_parquet))
         .routes(routes!(add_data))

@@ -3573,6 +3573,15 @@ pub(crate) async fn verify_library_resource_token(
     Ok(config.verify(token).await?.subject)
 }
 
+pub(crate) async fn verify_workflow_context_token(
+    token: &str,
+) -> Result<(String, String), &'static str> {
+    oauth_resource::Config::for_workflow_context()?
+        .verify(token)
+        .await?
+        .workflow_identity()
+}
+
 async fn resolve_library_org(
     library_app: &LibraryApp,
     org_username: &str,
