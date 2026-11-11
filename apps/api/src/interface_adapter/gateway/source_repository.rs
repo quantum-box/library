@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     domain::repo::{RepoId, Source, SourceId, SourceRepository},
-    interface_adapter::gateway::row_parse::{
-        is_missing_table, parse_stored,
-    },
+    interface_adapter::gateway::row_parse::parse_stored,
 };
 use persistence;
 
@@ -73,48 +71,9 @@ impl SourceRepository for SourceRepositoryImpl {
                 tx.rollback()
                     .await
                     .map_err(errors::Error::internal_server_error)?;
-                if is_missing_table(&e) {
-                    // TODO: add English comment
-                    sqlx::query!(
-                        "CREATE TABLE IF NOT EXISTS sources (
-                            id VARCHAR(255) NOT NULL PRIMARY KEY,
-                            repo_id VARCHAR(255) NOT NULL,
-                            name VARCHAR(255) NOT NULL,
-                            url VARCHAR(255),
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            INDEX (repo_id)
-                        )"
-                    )
-                    .execute(self.db.pool().as_ref())
-                    .await
-                    .map_err(errors::Error::internal_server_error)?;
-
-                    // TODO: add English comment
-                    let mut tx =
-                        self.db.pool().begin().await.map_err(
-                            errors::Error::internal_server_error,
-                        )?;
-
-                    sqlx::query!(
-                        "INSERT INTO sources (id, repo_id, name, url)
-                         VALUES (?, ?, ?, ?)",
-                        entity.id().to_string(),
-                        entity.repo_id().to_string(),
-                        entity.name().to_string(),
-                        entity.url().as_ref().map(|u| u.to_string()),
-                    )
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(errors::Error::internal_server_error)?;
-
-                    tx.commit()
-                        .await
-                        .map_err(errors::Error::internal_server_error)?;
-                    Ok(())
-                } else {
-                    Err(errors::Error::internal_server_error(e))
-                }
+                // Table creation belongs to the deployment migration gate.
+                // A serving request must never need DDL privileges.
+                Err(errors::Error::internal_server_error(e))
             }
         }
     }

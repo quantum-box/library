@@ -715,6 +715,11 @@ pub async fn router(
                 "/mcp/messages",
                 post(handler::mcp_sse::mcp_sse_messages_handler),
             )
+            // Every message route can carry an `upload_image` call, so the
+            // limit covers the router rather than one path.
+            .layer(DefaultBodyLimit::max(
+                handler::mcp::MCP_MAX_REQUEST_BYTES,
+            ))
     } else {
         tracing::info!(
             env = MCP_SSE_ENABLED_ENV,
@@ -781,7 +786,12 @@ pub async fn router(
             "/.well-known/openai-apps-challenge",
             get(handler::mcp::openai_apps_challenge),
         )
-        .route("/mcp", post(handler::mcp::mcp_handler))
+        .route(
+            "/mcp",
+            post(handler::mcp::mcp_handler).layer(DefaultBodyLimit::max(
+                handler::mcp::MCP_MAX_REQUEST_BYTES,
+            )),
+        )
         .route(
             "/mcp/oauth/register",
             post(handler::mcp::mcp_oauth_register),

@@ -1662,7 +1662,7 @@ info:
     identifier: MIT
     name: MIT
   title: library-api
-  version: 1.11.13
+  version: 1.11.16
 openapi: 3.1.0
 paths:
   /auth/v1beta/sign-in:
@@ -3727,6 +3727,41 @@ paths:
         '404':
           description: Organization or repository not found
       summary: '`POST /v1beta/repos/:org/:repo/translations/run`'
+      tags: []
+  /v1beta/repos/{org}/{repo}/workflow-context/documents/{data_id}:
+    get:
+      operationId: workflow_document
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      - description: Repository username
+        in: path
+        name: repo
+        required: true
+        schema:
+          type: string
+      - description: Data ID
+        in: path
+        name: data_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            text/markdown:
+              schema:
+                type: string
+          description: Document Markdown
+        '401':
+          description: Workflow credential required
+        '403':
+          description: Document access denied
+      summary: Read a document using a short-lived Workflow context credential.
       tags: []
   /v1beta/share/{token}:
     get:

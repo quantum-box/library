@@ -22,7 +22,7 @@ use crate::domain::{
 };
 use crate::usecase::add_data::populate_auto_generated_ids;
 use crate::usecase::database_scope::DatabaseScope;
-use crate::usecase::update_data::validate_auto_generated_id_update;
+use crate::usecase::update_data::validate_id_update;
 use crate::usecase::{
     RelationTargetPolicy, RelationTargetValidationPort,
     UpsertDataInputData, UpsertDataInputPort, UpsertOutcome,
@@ -96,7 +96,7 @@ impl UpsertDataInteractorImpl {
                 )
                 .await?
                 .ok_or_else(DatabaseScope::not_found)?;
-            validate_auto_generated_id_update(
+            validate_id_update(
                 &property,
                 input.data_id,
                 data.get_property_data(property.id()),

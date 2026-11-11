@@ -78,6 +78,12 @@ pub fn render_inline(content: Option<&Value>) -> String {
                     item.get("text").and_then(Value::as_str).unwrap_or("");
                 out.push_str(&styled(text, item.get("styles")));
             }
+            Some("userMention") => {
+                if let Some(name) = item["props"]["name"].as_str() {
+                    out.push('@');
+                    out.push_str(&escape(name));
+                }
+            }
             Some("link") => {
                 let label = render_inline(item.get("content"));
                 let href =
@@ -270,6 +276,12 @@ fn collect_inline_text<S: TextSink>(content: Option<&Value>, sink: &mut S) {
         for item in items {
             if sink.is_full() {
                 return;
+            }
+            if item["type"] == "userMention"
+                && let Some(name) = item["props"]["name"].as_str()
+            {
+                sink.push("@");
+                sink.push(name);
             }
             if let Some(text) = item.get("text").and_then(Value::as_str) {
                 sink.push(text);

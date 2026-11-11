@@ -44,13 +44,28 @@ impl Scopes {
 #[derive(Debug, Deserialize)]
 struct Claims {
     sub: String,
+    aud: serde_json::Value,
     scope: String,
+    tenant_id: Option<String>,
+    client_id: Option<String>,
 }
 
 #[derive(Debug)]
 pub(super) struct VerifiedToken {
     pub subject: String,
     pub scopes: Scopes,
+    workflow_tenant: Option<String>,
+}
+
+impl VerifiedToken {
+    pub fn workflow_identity(
+        self,
+    ) -> Result<(String, String), &'static str> {
+        let tenant = self
+            .workflow_tenant
+            .ok_or("Expected a workflow action token")?;
+        Ok((self.subject, tenant))
+    }
 }
 
 /// Presence, including an empty value, selects strict external verification.
@@ -71,6 +86,20 @@ impl Config {
                 .map_err(|_| "Missing MCP OAuth JWKS URL")?,
             resource: super::mcp_resource_url(),
         };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn for_workflow_context() -> Result<Self, &'static str> {
+        let mut config = Self::from_env()?;
+        let resource = std::env::var("LIBRARY_WORKFLOW_CONTEXT_RESOURCE")
+            .map_err(|_| "Workflow context is not configured")?;
+        if resource == config.resource {
+            return Err(
+                "Workflow context needs a dedicated OAuth audience",
+            );
+        }
+        config.resource = resource;
         config.validate()?;
         Ok(config)
     }
@@ -180,6 +209,13 @@ fn verify_with_keys(
     let scopes = claims.scope.split_whitespace().collect::<Vec<_>>();
     Ok(VerifiedToken {
         subject: claims.sub,
+        workflow_tenant: claims.tenant_id.filter(|tenant| {
+            !tenant.is_empty()
+                && claims.aud.as_str() == Some(config.resource.as_str())
+                && claims.client_id.as_deref()
+                    == Some("aip-workflow-actions")
+                && scopes.as_slice() == ["workflow-action"]
+        }),
         scopes: Scopes {
             read: scopes.contains(&"mcp:read"),
             write: scopes.contains(&"mcp:write"),
@@ -193,6 +229,47 @@ mod tests {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use jsonwebtoken::{encode, EncodingKey, Header};
     use serde_json::{json, Value};
+
+    #[test]
+    fn workflow_context_requires_its_audience_scope_and_client() {
+        let fixture = Fixture::new();
+        let mut config = fixture.config.clone();
+        config.resource =
+            "https://library.example.test/workflow-context".into();
+        let mut claims = fixture.claims();
+        claims["aud"] = json!(config.resource);
+        claims["scope"] = json!("workflow-action");
+        claims["client_id"] = json!("aip-workflow-actions");
+        claims["tenant_id"] = json!("tn_01hjryxysgey07h5jz5wagqj0m");
+        let token = fixture.token(&claims);
+        assert!(verify_with_keys(&token, &fixture.config, &fixture.keys)
+            .is_err());
+        assert_eq!(
+            verify_with_keys(&token, &config, &fixture.keys)
+                .unwrap()
+                .workflow_identity()
+                .unwrap(),
+            ("us_test".into(), "tn_01hjryxysgey07h5jz5wagqj0m".into())
+        );
+        for (field, wrong) in [
+            ("aud", json!([config.resource, fixture.config.resource])),
+            ("scope", json!("mcp:read")),
+            ("scope", json!("workflow-action mcp:write")),
+            ("client_id", json!("other")),
+            ("tenant_id", Value::Null),
+        ] {
+            let mut claims = claims.clone();
+            claims[field] = wrong;
+            assert!(verify_with_keys(
+                &fixture.token(&claims),
+                &config,
+                &fixture.keys
+            )
+            .unwrap()
+            .workflow_identity()
+            .is_err());
+        }
+    }
 
     struct Fixture {
         encoding_key: EncodingKey,

@@ -9,12 +9,16 @@ const mocks = vi.hoisted(() => {
     tryParseMarkdownToBlocks: vi.fn((value: string) => [{ id: value || 'empty' }]),
     tryParseHTMLToBlocks: vi.fn((value: string) => [{ id: `html:${value}` }]),
     replaceBlocks: vi.fn(),
+    insertInlineContent: vi.fn(),
     blocksToMarkdownLossy: vi.fn(() => ''),
     blocksToHTMLLossy: vi.fn(() => ''),
     prosemirrorView: undefined as undefined | { composing: boolean },
   }
   return {
     editor,
+    getMentionItems: undefined as undefined | ((query: string) => Promise<Array<{ title: string; onItemClick: () => void }>>),
+    fetchMembers: vi.fn(),
+    fetchOrgMembers: vi.fn(),
     onEditorChange: undefined as undefined | ((editorValue: typeof editor) => void),
   }
 })
@@ -22,21 +26,81 @@ const mocks = vi.hoisted(() => {
 vi.mock('@blocknote/react', async (importOriginal) => ({
   // Partial: the schema module needs the real createReactBlockSpec.
   ...(await importOriginal<typeof import('@blocknote/react')>()),
+  SuggestionMenuController: (props: { triggerCharacter: string; getItems: typeof mocks.getMentionItems }) => {
+    if (props.triggerCharacter === '@') mocks.getMentionItems = props.getItems
+    return null
+  },
   useCreateBlockNote: () => mocks.editor,
   useEditorChange: (onChange: typeof mocks.onEditorChange) => {
     mocks.onEditorChange = onChange
   },
 }))
 
+vi.mock('../lib/recordsApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/recordsApi')>()),
+  fetchOrganizationMembers: (...args: unknown[]) => mocks.fetchOrgMembers(...args),
+}))
+
+vi.mock('../lib/repositorySettingsApi', () => ({
+  fetchRepositoryMembers: (...args: unknown[]) => mocks.fetchMembers(...args),
+}))
+
 vi.mock('@blocknote/shadcn', () => ({
-  BlockNoteView: () => <div data-testid="block-note-view" />,
+  BlockNoteView: ({ children }: { children: React.ReactNode }) => <div data-testid="block-note-view">{children}</div>,
 }))
 
 describe('RecordBodyEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.fetchOrgMembers.mockResolvedValue([])
+    mocks.getMentionItems = undefined
     mocks.onEditorChange = undefined
     mocks.editor.prosemirrorView = undefined
+  })
+
+  it('searches repository members and inserts a mention with a stable user ID', async () => {
+    mocks.fetchMembers.mockResolvedValue([
+      { userId: 'u1', user: { name: 'Alice', email: 'alice@example.com' } },
+      { userId: 'u1', user: { name: 'Alice' } },
+      { userId: 'u2', user: { name: 'Bob' } },
+    ])
+    render(<RecordBodyEditor value="[]" format="richText" onCommit={vi.fn()}
+      imageTarget={{ org: 'acme', repo: 'notes', operatorId: 'tenant' }} />)
+    let items: Awaited<ReturnType<NonNullable<typeof mocks.getMentionItems>>> = []
+    await act(async () => { items = await mocks.getMentionItems!('alice@example') })
+    expect(mocks.fetchMembers).toHaveBeenCalledWith({ orgUsername: 'acme', repoUsername: 'notes', operatorId: 'tenant' })
+    expect(items.map((item) => item.title)).toEqual(['Alice'])
+    items[0].onItemClick()
+    expect(mocks.editor.insertInlineContent).toHaveBeenCalledWith([
+      { type: 'userMention', props: { userId: 'u1', name: 'Alice' } }, ' ',
+    ])
+  })
+
+  it('includes ordinary organization members and users without profiles', async () => {
+    mocks.fetchMembers.mockResolvedValue([{ userId: 'missing-profile', user: null }])
+    mocks.fetchOrgMembers.mockResolvedValue([{ id: 'org-user', name: '組織メンバー' }])
+    render(<RecordBodyEditor value="[]" format="richText" onCommit={vi.fn()}
+      imageTarget={{ org: 'acme', repo: 'notes', operatorId: 'tenant' }} />)
+    let items: Array<{ title: string }> = []
+    await act(async () => { items = await mocks.getMentionItems!('') })
+    expect(items.map((item) => item.title)).toEqual(['missing-profile', '組織メンバー'])
+    expect(mocks.fetchOrgMembers).toHaveBeenCalledWith('acme', 'tenant')
+  })
+
+  it('does not offer mentions in read-only bodies', () => {
+    render(<RecordBodyEditor value="[]" format="richText" editable={false} onCommit={vi.fn()}
+      imageTarget={{ org: 'acme', repo: 'notes' }} />)
+    expect(mocks.getMentionItems).toBeUndefined()
+  })
+
+  it('shows a recoverable member lookup failure', async () => {
+    mocks.fetchMembers.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([])
+    const { queryByRole } = render(<RecordBodyEditor value="[]" format="richText" onCommit={vi.fn()}
+      imageTarget={{ org: 'acme', repo: 'notes' }} />)
+    await act(async () => { await mocks.getMentionItems!('') })
+    expect(queryByRole('alert')).toBeTruthy()
+    await act(async () => { await mocks.getMentionItems!('') })
+    expect(queryByRole('alert')).toBeNull()
   })
 
   it('flushes a pending edit when the editor unmounts before the debounce', async () => {

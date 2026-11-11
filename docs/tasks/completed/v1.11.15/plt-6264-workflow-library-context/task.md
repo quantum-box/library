@@ -1,0 +1,12 @@
+# Workflow用のLibrary文書読み取り
+
+PLT-6264のLibrary側。Fieldで選んだ業務資料を、Workflowが現在の利用者権限で再取得する経路を追加した。
+
+- 既存のViewDataによるリポジトリと文書の権限判定を使用する。Workflowのテナントが文書の組織と一致し、Rootで確認した利用者が署名済みの主体と一致した場合に限りMarkdownを返す。
+- 短時間のWorkflow専用トークンに発行元・専用audience・scope・client IDを確認する。通常のMCPトークンや複数audienceのトークンでは取得できない。Workflowトークンは既存のLibrary認証経路のaudienceと一致しない。
+- 応答は64 KiB以下、キャッシュ不可。通常の文書プレビューと同じMarkdownを使う。
+- Library API型検査、ハンドラの127テスト、OpenAPI生成が成功した。既存ignoreは2件。AIPとRootを通す実環境の照合は後続PRで扱う。
+
+## 接続設定
+
+Library APIにMCPと共通のRoot issuerとJWKSを設定し、LIBRARY_WORKFLOW_CONTEXT_RESOURCEに専用のHTTPS audienceを設定する。AIPのAIP_WORKFLOW_LIBRARY_URLのオリジンに /workflow-context を追加した値を使う。RootのOAuthリソースにも同じ値を登録し、workflow-actionを許可する。対象のLibrary組織には、Workflowと同じTachyonテナントを使う。設定は対象環境の接続作業で行う。

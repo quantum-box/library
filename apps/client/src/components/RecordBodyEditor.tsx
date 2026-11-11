@@ -27,7 +27,8 @@ import { recordBodySchema } from './blocknote/schema'
 import { HtmlArtifactEditor } from './HtmlArtifactEditor'
 import { isArtifactHtml } from '../lib/libraryTable/bodyProperty'
 import { checkpointLiveBodyOutlivingPage } from '../lib/libraryTable/libraryDataCrud'
-import { uploadLibraryImage } from '../lib/recordsApi'
+import { fetchRepositoryMembers, type RepositoryMember } from '../lib/repositorySettingsApi'
+import { fetchOrganizationMembers, uploadLibraryImage } from '../lib/recordsApi'
 import {
   takeImageWidthFragments,
   withImageWidthFragments,
@@ -286,6 +287,7 @@ function liveStatusState(view: LiveBodyView): PhotonLiveState | null {
 function useBodyEditor(
   imageTarget: RecordBodyImageTarget | undefined,
   collaboration?: InitialCollaboration,
+  onUploadFailure?: (failed: boolean) => void,
 ) {
   const imageTargetRef = useRef(imageTarget)
   const [uploads] = useState(() => imageTarget !== undefined)
@@ -306,9 +308,15 @@ function useBodyEditor(
       : undefined,
     uploadFile: uploads
       ? async (file: File) => {
+        onUploadFailure?.(false)
         const target = imageTargetRef.current
-        if (!target) throw new Error(t('editor.noImageTarget'))
-        return uploadLibraryImage(target, file)
+        try {
+          if (!target) throw new Error(t('editor.noImageTarget'))
+          return await uploadLibraryImage(target, file)
+        } catch (error) {
+          onUploadFailure?.(true)
+          throw error
+        }
       }
       : undefined,
   }, [collaboration])
@@ -352,7 +360,46 @@ function BlockRecordBodyEditor({
   const pendingValue = useRef<string | null>(null)
   const onCommitRef = useRef(onCommit)
   const onDraftChangeRef = useRef(onDraftChange)
-  const editor = useBodyEditor(imageTarget, collaboration)
+  const [uploadFailed, setUploadFailed] = useState(false)
+  const editor = useBodyEditor(imageTarget, collaboration, setUploadFailed)
+  const [mentionsFailed, setMentionsFailed] = useState(false)
+  const getMentionItems = useCallback(async (query: string) => {
+    if (!imageTarget) return []
+    try {
+      const results = await Promise.allSettled([
+        fetchRepositoryMembers({
+          orgUsername: imageTarget.org,
+          repoUsername: imageTarget.repo,
+          operatorId: imageTarget.operatorId,
+        }),
+        ...(imageTarget.operatorId
+          ? [fetchOrganizationMembers(imageTarget.org, imageTarget.operatorId)
+            .then((users) => users.map((user) => ({ userId: user.id, user })))]
+          : []),
+      ])
+      const members = results.flatMap<Pick<RepositoryMember, 'userId' | 'user'>>((result) => result.status === 'fulfilled' ? result.value : [])
+      if (results.every((result) => result.status === 'rejected')) throw new Error('Member lookup failed')
+      setMentionsFailed(false)
+      const seen = new Set<string>()
+      return filterSuggestionItems(members.flatMap(({ userId, user }) => {
+        if (seen.has(userId)) return []
+        seen.add(userId)
+        const name = user?.name || user?.email || userId
+        return [{
+          title: name,
+          subtext: user?.email || undefined,
+          aliases: [user?.email || '', userId],
+          onItemClick: () => editor.insertInlineContent([
+            { type: 'userMention', props: { userId, name } },
+            ' ',
+          ]),
+        }]
+      }), query)
+    } catch {
+      setMentionsFailed(true)
+      return []
+    }
+  }, [editor, imageTarget])
 
   useEffect(() => {
     onCommitRef.current = onCommit
@@ -566,6 +613,9 @@ function BlockRecordBodyEditor({
         data-theming-css-variables-demo
         slashMenu={false}
       >
+        {editable && format === 'richText' && imageTarget && (
+          <SuggestionMenuController triggerCharacter="@" getItems={getMentionItems} />
+        )}
         <SuggestionMenuController
           triggerCharacter="/"
           getItems={async (query) =>
@@ -579,6 +629,16 @@ function BlockRecordBodyEditor({
           }
         />
       </BlockNoteView>
+      {mentionsFailed && (
+        <p role="alert" className="mt-2 px-2 text-sm text-destructive">
+          {t('editor.mentionsFailed')}
+        </p>
+      )}
+      {uploadFailed && (
+        <p role="alert" className="mt-2 px-2 text-sm text-destructive">
+          {t('editor.imageUploadFailed')}
+        </p>
+      )}
     </div>
   )
 }

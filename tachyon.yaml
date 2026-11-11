@@ -61,6 +61,12 @@ spec:
       environments:
         production:
           envVars:
+            # Only the internal candidate migration event reads this account.
+            # HTTP pools continue to use the DML-only DATABASE_URL identity.
+            - name: MIGRATOR_DATABASE_URL
+              type: credential
+              valueFrom:
+                secret: library-api/MIGRATOR_DATABASE_URL
             # Compile against the committed .sqlx cache; the build has no
             # database to check queries against. Declared per environment
             # because an environment's envVars replace the app-level list.

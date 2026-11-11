@@ -24,6 +24,26 @@ const item: LibraryDataItem = {
 }
 
 describe('LibraryPropertyEditableCell', () => {
+  it.each(['single', 'double'] as const)('keeps Id values read-only with %s activation', (activation) => {
+    const onCommit = vi.fn()
+    render(
+      <LibraryPropertyEditableCell
+        item={{ ...item, propertyData: [{ propertyId: 'prop-id', value: { id: 'record-123' } }] }}
+        property={{ id: 'prop-id', name: 'id', typ: 'Id' }}
+        activation={activation}
+        onCommit={onCommit}
+      />,
+    )
+
+    const value = screen.getByText('record-123')
+    fireEvent.click(value)
+    fireEvent.doubleClick(value)
+    fireEvent.keyDown(value, { key: 'Enter' })
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('opens the editor on a single click where the surface asks for it', () => {
     render(
       <LibraryPropertyEditableCell

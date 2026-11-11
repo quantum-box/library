@@ -19,20 +19,27 @@ use database_manager::domain::{
 
 use axum::{
     extract::{Extension, Path as AxumPath, Query},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
     Json,
+};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
 };
 use persistence::Storage;
 use value_object::{InMemoryFile, MAX_PAGE_SIZE};
 
 use crate::app::LibraryApp;
-use crate::handler::library_executor_extractor::LibraryExecutor;
+use crate::handler::library_executor_extractor::{
+    LibraryExecutor, LibraryExecutorKind,
+};
 use crate::handler::types::{
     convert_property_value, AddDataRequest, DataPaginationQuery,
     DataResponse, PropertyDataValue as PropertyDataValueResponse,
     SearchDataQuery, UpdateDataRequest, UpsertDataRequest,
 };
+use crate::sdk_auth::SdkAuthApp;
 use crate::usecase::library_client_url::data_url;
 use crate::usecase::markdown_composer::compose_markdown_with_ui_url;
 use crate::usecase::LibraryOrg;
@@ -42,7 +49,7 @@ use crate::usecase::{
     ViewDataInputData, ViewDataListInputData,
 };
 use database_manager::usecase::UpsertOutcome;
-use tachyon_sdk::auth::ExecutorAction;
+use tachyon_sdk::auth::{ExecutorAction, MultiTenancyAction};
 
 use super::types::{
     DataListResponse, ParquetResponse, PropertyDataResponse,
@@ -155,23 +162,117 @@ pub async fn view_data_markdown(
     executor: LibraryExecutor,
     library_org: LibraryOrg,
 ) -> errors::Result<impl IntoResponse> {
-    let input = ViewDataInputData {
-        executor: &executor,
-        multi_tenancy: &library_org,
-        org_username: org.clone(),
-        repo_username: repo.clone(),
-        data_id: data_id.clone(),
-    };
-
-    let (data, properties) = library_app.view_data.execute(&input).await?;
-    let ui_url = data_url(&org, &repo, &data_id);
-    let markdown =
-        compose_markdown_with_ui_url(&data, &properties, Some(&ui_url));
-
+    let markdown = read_markdown(
+        &library_app,
+        &executor,
+        &library_org,
+        org,
+        repo,
+        data_id,
+    )
+    .await?;
     Ok((
         StatusCode::OK,
-        [("Content-Type", "text/markdown; charset=utf-8")],
+        [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
         markdown,
+    ))
+}
+
+/// Read a document using a short-lived Workflow context credential.
+#[utoipa::path(
+    get,
+    path = "/v1beta/repos/{org}/{repo}/workflow-context/documents/{data_id}",
+    params(
+        ("org" = String, Path, description = "Organization username"),
+        ("repo" = String, Path, description = "Repository username"),
+        ("data_id" = String, Path, description = "Data ID"),
+    ),
+    responses(
+        (status = 200, description = "Document Markdown", body = String, content_type = "text/markdown"),
+        (status = 401, description = "Workflow credential required"),
+        (status = 403, description = "Document access denied"),
+    ),
+)]
+#[axum::debug_handler]
+pub async fn workflow_document(
+    AxumPath((org, repo, data_id)): AxumPath<(String, String, String)>,
+    Extension(library_app): Extension<Arc<LibraryApp>>,
+    Extension(sdk): Extension<Arc<SdkAuthApp>>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    library_org: LibraryOrg,
+) -> errors::Result<impl IntoResponse> {
+    let token = bearer.token();
+    let (subject, tenant) =
+        super::mcp::verify_workflow_context_token(token)
+            .await
+            .map_err(|_| {
+                errors::Error::unauthenticated(
+                    "Library workflow credential required",
+                )
+            })?;
+    if library_org.get_operator_id()?.as_ref() != tenant.as_str() {
+        return Err(errors::Error::forbidden(
+            "Workflow tenant does not match the document organization",
+        ));
+    }
+    let user = sdk.verify_token(token).await?;
+    if user.id != subject {
+        return Err(errors::Error::forbidden(
+            "Workflow actor could not be verified",
+        ));
+    }
+    let executor = LibraryExecutor {
+        inner: LibraryExecutorKind::User(Box::new(user)),
+        original_token: Some(token.to_owned()),
+    };
+    let markdown = crate::sdk_auth::caller_token_scope(
+        Some(token.to_owned()),
+        read_markdown(
+            &library_app,
+            &executor,
+            &library_org,
+            org,
+            repo,
+            data_id,
+        ),
+    )
+    .await?;
+    if markdown.len() > 64 * 1024 {
+        return Err(errors::Error::bad_request(
+            "Document exceeds the Workflow context size limit",
+        ));
+    }
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/markdown; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        markdown,
+    ))
+}
+
+async fn read_markdown(
+    library_app: &LibraryApp,
+    executor: &LibraryExecutor,
+    library_org: &LibraryOrg,
+    org: String,
+    repo: String,
+    data_id: String,
+) -> errors::Result<String> {
+    let ui_url = data_url(&org, &repo, &data_id);
+    let input = ViewDataInputData {
+        executor,
+        multi_tenancy: library_org,
+        org_username: org,
+        repo_username: repo,
+        data_id,
+    };
+    let (data, properties) = library_app.view_data.execute(&input).await?;
+    Ok(compose_markdown_with_ui_url(
+        &data,
+        &properties,
+        Some(&ui_url),
     ))
 }
 
