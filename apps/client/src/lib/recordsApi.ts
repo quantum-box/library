@@ -363,6 +363,7 @@ interface LibrarySeedTenantResponse {
 export interface CreateLibraryRepositoryInput {
   orgUsername: string
   operatorId: string
+  platformTenantId?: string
   name: string
   username: string
   description?: string
@@ -907,13 +908,25 @@ interface LibraryRequestOptions {
   anonymous?: boolean
 }
 
+// Organization discovery supplies the platform that owns each operator.
+// Keep it available to repository views, which normally carry only operatorId.
+const operatorPlatforms = new Map<string, string>()
+
+function rememberOperatorPlatform(operatorId: string, platformId?: string) {
+  if (operatorId && platformId) operatorPlatforms.set(operatorId, platformId)
+}
+
+function platformForOperator(operatorId?: string): string {
+  return (operatorId && operatorPlatforms.get(operatorId)) || configuredPlatformId()
+}
+
 async function libraryRestHeaders(
   operatorId?: string,
   options?: LibraryRequestOptions
 ): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
-    'x-platform-id': configuredPlatformId(),
+    'x-platform-id': platformForOperator(operatorId),
     'x-operator-id': operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
   if (options?.anonymous) return headers
@@ -949,7 +962,7 @@ async function requestLibraryGraphQL<TData>(
 ): Promise<TData> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
-    'x-platform-id': configuredPlatformId(),
+    'x-platform-id': platformForOperator(options?.operatorId),
     'x-operator-id': options?.operatorId ?? import.meta.env.VITE_LIBRARY_OPERATOR_ID ?? configuredPlatformId(),
   }
   if (!options?.anonymous) {
@@ -1612,6 +1625,8 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
       isPersonalSpace: Boolean(personalSpaceId && organization.id === personalSpaceId),
     }))
 
+    organizations.forEach((organization) => rememberOperatorPlatform(organization.id, organization.platformTenantId))
+
     return Promise.all(
       organizations.map(async (organization) => {
         try {
@@ -1645,6 +1660,7 @@ export async function fetchLibraryOrganizations(): Promise<LibraryOrganization[]
             operatorName: operator?.operatorName ?? tenantId,
             platformTenantId: operator?.platformId ?? configuredPlatformId(),
           }
+          rememberOperatorPlatform(organization.id, organization.platformTenantId)
           return {
             ...organization,
             repos: reposFromRestForOrganization(restRepos, organization),
@@ -1714,6 +1730,7 @@ export async function importLibraryTenant(
 export async function createLibraryRepository(
   input: CreateLibraryRepositoryInput
 ): Promise<CreatedLibraryRepository> {
+  rememberOperatorPlatform(input.operatorId, input.platformTenantId)
   const payload = await requestLibraryGraphQL<LibraryCreateRepositoryResponse>(
     libraryCreateRepositoryMutation,
     {
@@ -2174,6 +2191,7 @@ async function hydrateOrganizationsFromRestRepositories(
         operatorName,
         platformTenantId: operator.platformId ?? organization.platformTenantId,
       }
+      rememberOperatorPlatform(nextOrganization.id, nextOrganization.platformTenantId)
       return {
         ...nextOrganization,
         repos: organization.repos.map((repo) => ({

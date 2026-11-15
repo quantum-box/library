@@ -362,6 +362,7 @@ export function DatabasesProvider({
     const created = await createLibraryRepository({
       orgUsername,
       operatorId: organization.id,
+      platformTenantId: organization.platformTenantId,
       name,
       username,
       description,

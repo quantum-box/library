@@ -767,6 +767,7 @@ describe('recordsApi', () => {
     await expect(createLibraryRepository({
       orgUsername: ' quantum-box ',
       operatorId: 'org-1',
+      platformTenantId: 'adopted-platform',
       name: ' Research Library ',
       username: ' research-library ',
       description: ' Research notes ',
@@ -782,6 +783,7 @@ describe('recordsApi', () => {
         headers: expect.objectContaining({
           Authorization: 'Bearer token',
           'x-operator-id': 'org-1',
+          'x-platform-id': 'adopted-platform',
         }),
         body: expect.stringContaining('LibraryClientCreateRepository'),
       }),
@@ -792,6 +794,36 @@ describe('recordsApi', () => {
         body: expect.stringContaining('"userId":"user-1"'),
       }),
     )
+  })
+
+  it('uses an adopted organization’s platform for repository discovery and viewing', async () => {
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_PLATFORM_ID', 'library-platform')
+    localStorage.setItem('library_auth', JSON.stringify({
+      accessToken: 'token', refreshToken: '', expiresAt: Math.floor(Date.now() / 1000 + 3600),
+      userId: 'user-1', email: 'test@example.com', username: 'test',
+    }))
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/v1beta/repos')) return Response.json([])
+      const body = String(init?.body ?? '')
+      if (body.includes('LibraryClientMeOrganizations')) return Response.json({ data: { me: {
+        id: 'user-1', organizations: [{ id: 'adopted-org', operatorName: 'adopted', platformTenantId: 'original-platform' }],
+      } } })
+      if (body.includes('LibraryClientOrganizationRepos')) return Response.json({ data: { organization: {
+        id: 'adopted-org', repos: [{ id: 'repo-adopted', username: 'docs', name: 'Docs' }],
+      } } })
+      return Response.json({ data: { repo: { id: 'repo-adopted', name: 'Docs', properties: [], dataList: { items: [] } } } })
+    }))
+
+    await fetchLibraryOrganizations()
+    await fetchLibraryRepoTableData({ org: 'adopted', repo: 'docs', operatorId: 'adopted-org' })
+    const scopedRequests = vi.mocked(fetch).mock.calls.filter(([, init]) =>
+      (init?.headers as Record<string, string>)?.['x-operator-id'] === 'adopted-org'
+    )
+    expect(scopedRequests).toHaveLength(2)
+    for (const [, init] of scopedRequests) {
+      expect(init?.headers).toMatchObject({ 'x-platform-id': 'original-platform' })
+    }
   })
 
   it('falls back to the REST repository list when organization GraphQL repos are empty', async () => {

@@ -498,6 +498,7 @@ describe('DatabasesProvider', () => {
     expect(mocks.createLibraryRepository).toHaveBeenCalledWith({
       orgUsername: 'acme',
       operatorId: 'org-1',
+      platformTenantId: 'tn_test',
       name: 'Research Library',
       username: 'research-library',
       description: 'Research notes',
