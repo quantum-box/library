@@ -134,6 +134,11 @@ static VERIFIED_USERS: Lazy<TtlCache<[u8; 32], User>> = Lazy::new(|| {
     TtlCache::new(verify_cache_ttl(), verify_cache_capacity())
 });
 
+/// Whether a tenant lives on a platform other than Library's, by tenant.
+/// See [`SdkAuthApp::is_on_other_platform`].
+static OPERATOR_ON_OTHER_PLATFORM: Lazy<TtlCache<TenantId, bool>> =
+    Lazy::new(|| TtlCache::new(Duration::from_secs(600), 4096));
+
 /// How long a verified token stays cached.
 ///
 /// `AUTH_VERIFY_CACHE_TTL_SECS` overrides it, and `0` disables the
@@ -1213,6 +1218,38 @@ impl SdkAuthApp {
             Ok(resp) => Ok(Some(operator_resp_from_rest(resp))),
             Err(e) if is_not_found(&e) => Ok(None),
             Err(e) => Err(e),
+        }
+    }
+
+    /// Whether the tenant `operator_id` lives on a platform other than
+    /// Library's, or `None` when tachyon-api cannot say.
+    ///
+    /// A tenant's platform never changes, so the answer is held for a
+    /// while: organization-scoped requests ask on every call.
+    pub async fn is_on_other_platform(
+        &self,
+        operator_id: &TenantId,
+    ) -> Option<bool> {
+        if let Some(other) = OPERATOR_ON_OTHER_PLATFORM.get(operator_id) {
+            return Some(other);
+        }
+        match self.get_operator(operator_id.as_str()).await {
+            Ok(Some(operator)) => {
+                let other = operator.platform_id
+                    != crate::domain::LIBRARY_TENANT.as_str();
+                OPERATOR_ON_OTHER_PLATFORM
+                    .insert(operator_id.clone(), other);
+                Some(other)
+            }
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(
+                    tenant_id = %operator_id,
+                    error = ?error,
+                    "Failed to read the platform of an organization's tenant"
+                );
+                None
+            }
         }
     }
 
