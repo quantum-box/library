@@ -179,6 +179,7 @@ jobs:
           NUMERIC_TEST_DATABASE_URL="${DEV_DATABASE_URL}" cargo test -p library-api --features integration_tests --test ga_crud_regression numeric_recipe_mcp_rest_graphql_round_trip -- --ignored --test-threads=1
 
   node:
+    # Playwright 1.59 cannot install browsers on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -298,6 +299,7 @@ jobs:
   # (tests/e2e/test-fixtures.ts), so tests are independent and can be spread
   # across shards; each shard runs its own fixture server and dev server.
   client-e2e:
+    # Playwright 1.59 cannot install browsers on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -338,6 +340,7 @@ jobs:
           retention-days: 7
 
   client-live-e2e:
+    # Playwright 1.59 cannot install browsers on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
