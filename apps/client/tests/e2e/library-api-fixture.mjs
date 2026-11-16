@@ -6,6 +6,7 @@ import * as Y from 'yjs'
 const host = '127.0.0.1'
 const port = Number(process.env.LIBRARY_E2E_API_PORT ?? 50063)
 const platformId = 'tn_01j702qf86pc2j35s0kv0gv3gy'
+const adoptedPlatformId = 'tn_01adoptedplatform0000000000'
 
 const repositoryTemplate = {
   id: 'repo-1',
@@ -279,6 +280,9 @@ function resetState() {
     nextPropertyNumber: 1,
     liveCheckpoints: [],
     dataWrites: [],
+    adoptedOrganizationEnabled: false,
+    adoptedRepositories: [{ id: 'repo-adopted', username: 'handbook', name: 'Adopted Handbook', description: 'Imported organization repository' }],
+    adoptedData: [{ id: 'adopted-data-1', name: 'Imported organization guide', createdAt: '2026-07-15T09:00:00.000Z', updatedAt: '2026-07-16T09:00:00.000Z', propertyData: [] }],
   }
   resetEngineState()
 }
@@ -290,6 +294,10 @@ function repositoryExists(org, repo) {
 }
 
 function readableRepository(org, repo) {
+  if (state.adoptedOrganizationEnabled && org === 'adopted') {
+    const repository = state.adoptedRepositories.find((entry) => entry.username === repo)
+    return repository ? { repository, properties: [], data: repo === 'handbook' ? state.adoptedData : [] } : null
+  }
   if (org !== 'quantum-box') return null
   if (repo === state.repository?.username) {
     return { repository: state.repository, properties: state.properties, data: state.data }
@@ -507,6 +515,7 @@ function graphqlResponse(query, variables) {
             operatorName: 'aurora',
             platformTenantId: platformId,
           },
+          ...(state.adoptedOrganizationEnabled ? [{ id: 'org-adopted', operatorName: 'adopted', platformTenantId: adoptedPlatformId }] : []),
         ],
       },
     }
@@ -524,6 +533,11 @@ function graphqlResponse(query, variables) {
 
   if (query.includes('LibraryClientCreateRepository')) {
     const input = variables.input ?? {}
+    if (state.adoptedOrganizationEnabled && input.orgUsername === 'adopted') {
+      const repository = { id: `repo-${Date.now()}`, username: input.repoUsername, name: input.repoName, description: input.description ?? null, isPublic: input.isPublic ?? false }
+      state.adoptedRepositories.push(repository)
+      return { createRepo: { ...publicRepository(repository), orgUsername: 'adopted', isPublic: repository.isPublic } }
+    }
     state.repository = {
       id: `repo-${Date.now()}`,
       username: input.repoUsername,
@@ -542,6 +556,9 @@ function graphqlResponse(query, variables) {
   }
 
   if (query.includes('LibraryClientOrganizationRepos')) {
+    if (state.adoptedOrganizationEnabled && variables.org === 'adopted') {
+      return { organization: { id: 'org-adopted', name: 'Adopted', username: 'adopted', repos: state.adoptedRepositories.map(publicRepository) } }
+    }
     return {
       organization: variables.org === 'quantum-box'
         ? {
@@ -745,6 +762,12 @@ const server = createServer(async (request, response) => {
       return
     }
 
+    if (request.method === 'POST' && url.pathname === '/__e2e/adopted-organization') {
+      state.adoptedOrganizationEnabled = true
+      sendJson(response, 200, { status: 'enabled' })
+      return
+    }
+
     if (request.method === 'GET' && url.pathname === '/__e2e/state') {
       sendJson(response, 200, state)
       return
@@ -780,6 +803,15 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'POST' && url.pathname === '/v1/graphql') {
       const { query = '', variables = {} } = await readJson(request)
+      const adoptedRequest = state.adoptedOrganizationEnabled && (
+        (query.includes('LibraryClientOrganizationRepos') && variables.org === 'adopted') ||
+        (query.includes('LibraryClientRepoData') && variables.org === 'adopted') ||
+        (query.includes('LibraryClientCreateRepository') && variables.input?.orgUsername === 'adopted')
+      )
+      if (adoptedRequest && (request.headers['x-operator-id'] !== 'org-adopted' || request.headers['x-platform-id'] !== adoptedPlatformId)) {
+        sendJson(response, 200, { data: null, errors: [{ message: 'Forbidden: Upstream authorization rejected', extensions: { code: 'FORBIDDEN' } }] })
+        return
+      }
       const data = graphqlResponse(query, variables)
       if (data === null) {
         sendJson(response, 400, { errors: [{ message: 'Unsupported E2E GraphQL operation' }] })
