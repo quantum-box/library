@@ -9,14 +9,19 @@ use crate::domain::LIBRARY_TENANT;
 
 /// LibraryOrg is a specialized implementation of MultiTenancyAction for library-api
 ///
-/// Unlike the general MultiTenancy struct, LibraryOrg has a fixed platform ID (LIBRARY_TENANT)
-/// and identifies tenants using organization usernames from URL paths.
+/// Unlike the general MultiTenancy struct, LibraryOrg identifies tenants
+/// using organization usernames from URL paths. Its platform is Library's
+/// own (LIBRARY_TENANT), except for an organization adopted from another
+/// platform, which carries no platform at all (see `on_other_platform`).
 #[derive(Debug, Clone, Default, new)]
 pub struct LibraryOrg {
     /// The organization username from the URL path, stored as operator_id
     operator: Option<OperatorId>,
     /// The original organization username string
     org_username: Option<String>,
+    /// The organization's tenant lives on a platform other than Library's.
+    #[new(default)]
+    other_platform: bool,
 }
 
 impl LibraryOrg {
@@ -32,6 +37,7 @@ impl LibraryOrg {
         Self {
             operator,
             org_username: Some(org_username),
+            other_platform: false,
         }
     }
 
@@ -43,6 +49,7 @@ impl LibraryOrg {
         Self {
             operator: Some(operator_id),
             org_username: Some(org_username),
+            other_platform: false,
         }
     }
 
@@ -50,11 +57,26 @@ impl LibraryOrg {
     pub fn org_username(&self) -> Option<&String> {
         self.org_username.as_ref()
     }
+
+    /// Mark the organization as adopted from another platform.
+    ///
+    /// An organization `seedLibraryTenant` adopted from tachyon keeps the
+    /// platform it already had (for example the Quantum Box tenant on the
+    /// TACHYON platform). tachyon-api rejects a request whose
+    /// `x-platform-id` is not the operator's own platform, so such an
+    /// organization must not claim Library's: it reports no platform and
+    /// tachyon-api resolves the scope from the operator alone.
+    pub fn on_other_platform(mut self) -> Self {
+        self.other_platform = true;
+        self
+    }
 }
 
 impl MultiTenancyAction for LibraryOrg {
     fn platform_id(&self) -> Option<PlatformId> {
-        // Library API always uses the fixed LIBRARY_TENANT
+        if self.other_platform {
+            return None;
+        }
         Some(LIBRARY_TENANT.clone())
     }
 
@@ -116,6 +138,19 @@ mod tests {
             library_org.get_operator_id().unwrap(),
             LIBRARY_TENANT.clone()
         );
+    }
+
+    #[test]
+    fn an_organization_on_another_platform_claims_no_platform() {
+        let operator: OperatorId =
+            "tn_01kxz0ytmhnab5vh53011cwctj".parse().unwrap();
+        let org = LibraryOrg::with_org_and_operator(
+            "quantumbox".to_string(),
+            operator.clone(),
+        )
+        .on_other_platform();
+        assert_eq!(org.platform_id(), None);
+        assert_eq!(org.get_operator_id().unwrap(), operator);
     }
 
     #[test]
