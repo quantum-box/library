@@ -848,6 +848,7 @@ export const zhHant: LocaleMessages = {
   'dataEditor.noBodyProperty': '要撰寫頁面內文，請先為此儲存庫新增一個格式化文字屬性。',
   'dataEditor.noProperties': '尚無屬性。',
   'dataEditor.liveOffline': '離線中 — 恢復連線後會同步你的編輯',
+  'dataEditor.liveOfflineShort': '離線',
   'dataEditor.liveConflict': '因為有衝突的變更，共同編輯已停止。編輯會照常儲存',
   'dataEditor.liveUnavailable': '共同編輯無法使用。編輯會照常儲存',
   'libraryTable.loadFailed': '無法載入儲存庫資料',

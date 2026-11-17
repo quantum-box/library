@@ -848,6 +848,7 @@ export const fr: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Ajoutez une propriété texte enrichi à ce dépôt pour commencer à rédiger le corps de la page.',
   'dataEditor.noProperties': 'Aucune propriété pour l’instant.',
   'dataEditor.liveOffline': 'Hors ligne — vos modifications seront synchronisées au retour de la connexion',
+  'dataEditor.liveOfflineShort': 'Hors ligne',
   'dataEditor.liveConflict': 'Édition partagée interrompue après une modification conflictuelle. Les modifications sont enregistrées normalement',
   'dataEditor.liveUnavailable': 'Édition partagée indisponible. Les modifications sont enregistrées normalement',
   'libraryTable.loadFailed': 'Impossible de charger les données du dépôt',

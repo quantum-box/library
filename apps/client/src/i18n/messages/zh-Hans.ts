@@ -848,6 +848,7 @@ export const zhHans: LocaleMessages = {
   'dataEditor.noBodyProperty': '要撰写页面正文，请先为该仓库添加一个富文本属性。',
   'dataEditor.noProperties': '暂无属性。',
   'dataEditor.liveOffline': '离线中 — 恢复连接后会同步你的编辑',
+  'dataEditor.liveOfflineShort': '离线',
   'dataEditor.liveConflict': '因存在冲突的更改，协同编辑已停止。编辑会照常保存',
   'dataEditor.liveUnavailable': '协同编辑不可用。编辑会照常保存',
   'libraryTable.loadFailed': '无法加载仓库数据',
