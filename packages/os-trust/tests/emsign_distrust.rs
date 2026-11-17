@@ -7,6 +7,11 @@
 //! does not return `/etc/ssl/certs` once `SSL_CERT_DIR` names another
 //! directory. `native-tls` 0.2.18 loads every directory the probe returns
 //! (`openssl.rs`, `TlsConnector::new`).
+//!
+//! `os_trust::install()` is a no-op outside Linux, so the test only runs
+//! on Linux.
+
+#![cfg(target_os = "linux")]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +20,7 @@ use std::sync::Mutex;
 use openssl::ssl::SslFiletype;
 use openssl::stack::Stack;
 use openssl::x509::store::{X509Lookup, X509Store, X509StoreBuilder};
+use openssl::x509::verify::X509VerifyParam;
 use openssl::x509::{X509StoreContext, X509};
 
 const EMSIGN_CHAIN: &[u8] = include_bytes!("fixtures/dv-g3b-emudhra.crt");
@@ -24,6 +30,12 @@ const AAA_ROOT: &[u8] =
     include_bytes!("fixtures/aaa-certificate-services.crt");
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// 2026-11-01T00:00:00Z. The leaf fixtures are valid from 2026-10-20 to
+/// 2027-05-03, so verification is pinned to a time inside that window.
+/// Otherwise the positive controls would start failing once the fixtures
+/// expire, even if the trust store behaves correctly.
+const FIXTURE_VERIFY_TIME: i64 = 1_793_491_200;
 
 #[test]
 fn emsign_roots_are_not_trusted_after_install() {
@@ -216,6 +228,9 @@ fn store_loaded_like_native_tls(
                 .unwrap_or_else(|err| panic!("add dir {name}: {err}"));
         }
     }
+    let mut param = X509VerifyParam::new().expect("verify param");
+    param.set_time(FIXTURE_VERIFY_TIME as _);
+    builder.set_param(&param).expect("set verify param");
     builder.build()
 }
 
