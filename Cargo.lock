@@ -3595,6 +3595,7 @@ dependencies = [
  "mockall 0.13.1",
  "once_cell",
  "openssl",
+ "os-trust",
  "outbound_sync",
  "parquet",
  "persistence",
@@ -4324,8 +4325,6 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 [[package]]
 name = "openssl-probe"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-src"
@@ -4484,6 +4483,19 @@ checksum = "4ed8acf08e98e744e5384c8bc63ceb0364e68a6854187221c18df61c4797690e"
 dependencies = [
  "dlv-list",
  "hashbrown 0.13.2",
+]
+
+[[package]]
+name = "os-trust"
+version = "0.1.1"
+dependencies = [
+ "base64 0.22.1",
+ "native-tls",
+ "openssl",
+ "openssl-probe 0.2.1",
+ "rustls-native-certs 0.8.3",
+ "sha2",
+ "webpki-root-certs",
 ]
 
 [[package]]
@@ -8388,6 +8400,15 @@ checksum = "ed63aea5ce73d0ff405984102c42de94fc55a6b75765d621c65262469b3c9b53"
 dependencies = [
  "ring 0.17.14",
  "untrusted 0.9.0",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "293198dcebfb821155b5092ab94b5a82ff180eddd7241df3bd6e66a4ffd1a585"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

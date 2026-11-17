@@ -40,8 +40,23 @@ fn lambda_log_filter(environment: &str) -> Vec<&'static str> {
         .collect()
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
+fn main() -> Result<(), Error> {
+    // PLT-6022: before config, tracing, Sentry and any HTTP client.
+    // provided.al2023 still trusts the compromised eMudhra (emSign) roots
+    // through its CA bundle and /etc/ssl/certs hash links, and native-tls
+    // caches the OpenSSL probe the first time a connector is built.
+    // `#[tokio::main]` would start the worker threads before this line,
+    // and install() mutates SSL_CERT_FILE / SSL_CERT_DIR, so it runs
+    // while the process is still single-threaded.
+    os_trust::install();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run())
+}
+
+async fn run() -> Result<(), Error> {
     let config = library_api::Config::parse();
     config.validate_for_server_startup()?;
     let property_value_mode = config.property_value_storage_mode.parse()?;

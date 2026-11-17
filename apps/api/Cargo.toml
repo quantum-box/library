@@ -22,6 +22,7 @@ util = { path = "../../packages/util" }
 errors = { path = "../../packages/errors", features = ["axum-extension", "graphql"] }
 ingredient_notation = { path = "../../packages/ingredient_notation" }
 telemetry = { path = "../../packages/telemetry", features = ["axum"] }
+os-trust = { path = "../../packages/os-trust" }
 csv_importer = { path = "../../packages/csv_importer" }
 
 github_provider = { path = "./packages/github_provider" }
