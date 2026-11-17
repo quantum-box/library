@@ -1,0 +1,21 @@
+[package]
+name = "os-trust"
+version = "0.1.1"
+edition = "2021"
+publish = false
+description = "Pin Linux TLS clients to a bundle that excludes the compromised eMudhra roots"
+
+# Ported from quantum-box/tachyon-apps platform/foundation/os-trust
+# (PR #13658, ADR-0170). Keep the two copies in sync.
+
+[dependencies]
+base64 = { workspace = true }
+sha2 = { workspace = true }
+webpki-root-certs = "1.0.11"
+
+[dev-dependencies]
+native-tls = "0.2"
+openssl = "0.10"
+openssl-probe = "0.2"
+rustls-native-certs = "0.8"
+sha2 = { workspace = true }

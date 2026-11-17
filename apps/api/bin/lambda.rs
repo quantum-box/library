@@ -42,6 +42,12 @@ fn lambda_log_filter(environment: &str) -> Vec<&'static str> {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // PLT-6022: before config, tracing, Sentry and any HTTP client.
+    // provided.al2023 still trusts the compromised eMudhra (emSign) roots
+    // through its CA bundle and /etc/ssl/certs hash links, and native-tls
+    // caches the OpenSSL probe the first time a connector is built.
+    os_trust::install();
+
     let config = library_api::Config::parse();
     config.validate_for_server_startup()?;
     let property_value_mode = config.property_value_storage_mode.parse()?;
