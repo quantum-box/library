@@ -242,9 +242,22 @@ function seedUpdate(body: string, seedFormat: PhotonLiveFormat): Uint8Array {
   }
 }
 
-/** A room that is not carrying the body, including one being reopened. */
+/**
+ * A room that is not carrying the body, including one being reopened.
+ *
+ * Once a room has carried the body, the next attempt is still the outage:
+ * `authorizeAndConnect` reports `authorizing` and then `connecting` before
+ * the room is ready again. Treating those as online would drop the app bar
+ * indicator while the handshake is still stalled. Only `connected` ends it.
+ * A room that has never connected is not offline — the first join is not news.
+ */
 function isLiveOffline(state: PhotonLiveState | null): boolean {
-  return state?.status === 'disconnected'
+  if (!state || state.status === 'connected') return false
+  if (state.status === 'disconnected') return true
+  if (!state.initialized) return false
+  return state.status === 'authorizing'
+    || state.status === 'connecting'
+    || state.status === 'initializing'
 }
 
 /**

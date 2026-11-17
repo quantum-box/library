@@ -305,6 +305,14 @@ describe('RecordBodyEditor with Photon Live', () => {
     expect(queryByTestId('data-editor-live-status')).toBeNull()
     expect(onLiveOfflineChange).toHaveBeenLastCalledWith(true)
 
+    // A new attempt authorizes and connects before the room is ready. That
+    // is still the outage: the indicator stays until the room is connected.
+    act(() => mocks.rooms[0].set({ status: 'authorizing' }))
+    act(() => mocks.rooms[0].set({ status: 'connecting' }))
+    act(() => mocks.rooms[0].set({ status: 'initializing' }))
+    expect(onLiveOfflineChange).toHaveBeenLastCalledWith(true)
+    expect(onLiveOfflineChange).not.toHaveBeenCalledWith(false)
+
     act(() => mocks.rooms[0].set({ status: 'connected', error: null }))
     expect(onLiveOfflineChange).toHaveBeenLastCalledWith(false)
   })
