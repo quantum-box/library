@@ -848,6 +848,7 @@ export const ko: LocaleMessages = {
   'dataEditor.noBodyProperty': '페이지 본문을 작성하려면 이 리포지터리에 리치 텍스트 속성을 추가하세요.',
   'dataEditor.noProperties': '아직 속성이 없습니다.',
   'dataEditor.liveOffline': '오프라인 — 편집 내용은 다시 연결되면 동기화됩니다',
+  'dataEditor.liveOfflineShort': '오프라인',
   'dataEditor.liveConflict': '충돌하는 변경으로 공동 편집이 중단되었습니다. 편집 내용은 평소대로 저장됩니다',
   'dataEditor.liveUnavailable': '공동 편집을 사용할 수 없습니다. 편집 내용은 평소대로 저장됩니다',
   'libraryTable.loadFailed': '리포지터리 데이터를 불러오지 못했습니다',

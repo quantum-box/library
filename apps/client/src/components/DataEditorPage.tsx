@@ -54,6 +54,7 @@ import { toFileAttachment } from '../lib/attachments/presentation'
 import type { FileAttachment } from './files/types'
 import { FileChip } from './files/FileChip'
 import { FilePreviewModal } from './files/FilePreviewModal'
+import { DataEditorOfflineIndicator } from './DataEditorOfflineIndicator'
 import { LibraryDeleteDataDialog } from './LibraryDeleteDataDialog'
 import { RecordBodyEditor } from './RecordBodyEditor'
 import { ShareLinkDialog } from './ShareLinkDialog'
@@ -246,6 +247,10 @@ function RecordPage({
   const [bodyKnown, setBodyKnown] = useState(() => cached?.complete ?? false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [liveOffline, setLiveOffline] = useState(false)
+  const handleLiveOfflineChange = useCallback((offline: boolean) => {
+    setLiveOffline(offline)
+  }, [])
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [canDeleteData, setCanDeleteData] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
@@ -631,6 +636,7 @@ function RecordPage({
     editable={confirmed}
     surface={artifact ? 'fill' : 'page'}
     imageTarget={{ org, repo, operatorId }}
+    onLiveOfflineChange={handleLiveOfflineChange}
     liveTarget={
     confirmed &&
     appKitConfig.dataLive.baseUrl &&
@@ -806,6 +812,7 @@ function RecordPage({
           {t('repository.tab.data')}
         </Badge>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <DataEditorOfflineIndicator offline={liveOffline} />
           <span
             className={`hidden items-center gap-1 text-xs sm:flex ${saveState === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}
             title={saveError ?? undefined}

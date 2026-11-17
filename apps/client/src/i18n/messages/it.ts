@@ -848,6 +848,7 @@ export const it: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Aggiungi una proprietà di testo formattato a questo repository per iniziare a scrivere il corpo della pagina.',
   'dataEditor.noProperties': 'Ancora nessuna proprietà.',
   'dataEditor.liveOffline': 'Offline — le tue modifiche verranno sincronizzate al ritorno della connessione',
+  'dataEditor.liveOfflineShort': 'Offline',
   'dataEditor.liveConflict': 'Modifica condivisa interrotta dopo una modifica in conflitto. Le modifiche vengono salvate normalmente',
   'dataEditor.liveUnavailable': 'Modifica condivisa non disponibile. Le modifiche vengono salvate normalmente',
   'libraryTable.loadFailed': 'Impossibile caricare i dati del repository',

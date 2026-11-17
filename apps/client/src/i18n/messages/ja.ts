@@ -855,6 +855,7 @@ export const ja: LocaleMessages = {
   'dataEditor.noBodyProperty': 'ページ本文を書くには、このリポジトリにリッチテキストのプロパティを追加してください。',
   'dataEditor.noProperties': 'プロパティはまだありません。',
   'dataEditor.liveOffline': 'オフライン中 — 編集内容は再接続時に同期されます',
+  'dataEditor.liveOfflineShort': 'オフライン',
   'dataEditor.liveConflict': '他の変更と競合したため共同編集を終了しました。編集は通常どおり保存されます',
   'dataEditor.liveUnavailable': '共同編集は利用できません。編集は通常どおり保存されます',
   'libraryTable.loadFailed': 'リポジトリのデータを読み込めませんでした',

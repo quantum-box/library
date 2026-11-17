@@ -930,6 +930,7 @@ export const en = {
   'dataEditor.noBodyProperty': 'Add a Rich text property to this repository to start writing a page body.',
   'dataEditor.noProperties': 'No properties yet.',
   'dataEditor.liveOffline': 'Offline — your edits sync when the connection returns',
+  'dataEditor.liveOfflineShort': 'Offline',
   'dataEditor.liveConflict': 'Shared editing stopped after a conflicting change. Edits are saved normally',
   'dataEditor.liveUnavailable': 'Shared editing is unavailable. Edits are saved normally',
 
