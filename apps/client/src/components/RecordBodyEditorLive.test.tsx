@@ -281,17 +281,31 @@ describe('RecordBodyEditor with Photon Live', () => {
     expect(queryByTestId('data-editor-live-status')).toBeNull()
   })
 
-  it('shows a reconnecting room as offline, not as unavailable', async () => {
-    const { getByTestId } = renderLive()
+  it('reports a reconnecting room as offline without a banner in the body', async () => {
+    const onLiveOfflineChange = vi.fn()
+    const { queryByTestId } = render(
+      <RecordBodyEditor
+        value="Original"
+        format="markdown"
+        onCommit={vi.fn(() => Promise.resolve(true))}
+        liveTarget={liveTarget}
+        onLiveOfflineChange={onLiveOfflineChange}
+      />,
+    )
     await act(async () => Promise.resolve())
     act(() => mocks.rooms[0].ready())
+    onLiveOfflineChange.mockClear()
+
     const { PhotonLiveError } = await import('../lib/photonLive')
     act(() => mocks.rooms[0].set({
       status: 'failed',
       error: new PhotonLiveError('timeout', 'timeout', undefined, true),
     }))
-    expect(getByTestId('data-editor-live-status').textContent).toBe(
-      'Offline — your edits sync when the connection returns',
-    )
+
+    expect(queryByTestId('data-editor-live-status')).toBeNull()
+    expect(onLiveOfflineChange).toHaveBeenLastCalledWith(true)
+
+    act(() => mocks.rooms[0].set({ status: 'connected', error: null }))
+    expect(onLiveOfflineChange).toHaveBeenLastCalledWith(false)
   })
 })

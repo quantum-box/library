@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Check, CloudOff, RefreshCw, TriangleAlert, WifiOff } from 'lucide-react'
+import { Check, CloudOff, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { PhotonLiveState } from '../lib/photonLive'
 
@@ -10,8 +10,9 @@ import type { PhotonLiveState } from '../lib/photonLive'
  * not a room ever answers, so connection progress is not news. Only two
  * things are worth a line here -- the ordinary save feedback any editor
  * owes the person typing, and the rare states where the room has stopped
- * carrying the body. Everything else renders nothing at all, taking no
- * layout above the document.
+ * carrying the body. A lost connection is not one of them: it is a compact
+ * indicator in the data screen app bar, so a blip cannot shove the article
+ * down. Everything else renders nothing at all.
  */
 export function PhotonLiveStatus({ state }: { state: PhotonLiveState | null }) {
   const { t } = useI18n()
@@ -35,9 +36,6 @@ export function PhotonLiveStatus({ state }: { state: PhotonLiveState | null }) {
     // it is simply no longer shared with anyone else on this record.
     message = t('dataEditor.liveUnavailable')
     icon = <CloudOff className="size-3.5" aria-hidden="true" />
-  } else if (state.status === 'disconnected') {
-    message = t('dataEditor.liveOffline')
-    icon = <WifiOff className="size-3.5" aria-hidden="true" />
   } else if (saving) {
     message = t('workflow.saving')
     icon = <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />

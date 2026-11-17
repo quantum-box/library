@@ -848,6 +848,7 @@ export const es: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Añade una propiedad de texto enriquecido a este repositorio para empezar a escribir el cuerpo de la página.',
   'dataEditor.noProperties': 'Todavía no hay propiedades.',
   'dataEditor.liveOffline': 'Sin conexión: tus cambios se sincronizarán al reconectar',
+  'dataEditor.liveOfflineShort': 'Sin conexión',
   'dataEditor.liveConflict': 'La edición colaborativa se detuvo por un cambio en conflicto. Los cambios se guardan con normalidad',
   'dataEditor.liveUnavailable': 'La edición colaborativa no está disponible. Los cambios se guardan con normalidad',
   'libraryTable.loadFailed': 'No se pudieron cargar los datos del repositorio',

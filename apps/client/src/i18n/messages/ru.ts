@@ -867,6 +867,7 @@ export const ru: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Чтобы писать содержимое страницы, добавьте в этот репозиторий свойство с форматированным текстом.',
   'dataEditor.noProperties': 'Свойств пока нет.',
   'dataEditor.liveOffline': 'Нет сети — правки синхронизируются после восстановления соединения',
+  'dataEditor.liveOfflineShort': 'Офлайн',
   'dataEditor.liveConflict': 'Совместное редактирование остановлено из-за конфликтующего изменения. Правки сохраняются как обычно',
   'dataEditor.liveUnavailable': 'Совместное редактирование недоступно. Правки сохраняются как обычно',
   'libraryTable.loadFailed': 'Не удалось загрузить данные репозитория',

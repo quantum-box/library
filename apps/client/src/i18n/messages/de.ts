@@ -848,6 +848,7 @@ export const de: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Füge diesem Repository eine Rich-Text-Eigenschaft hinzu, um den Seiteninhalt schreiben zu können.',
   'dataEditor.noProperties': 'Noch keine Eigenschaften.',
   'dataEditor.liveOffline': 'Offline – Ihre Änderungen werden synchronisiert, sobald die Verbindung zurück ist',
+  'dataEditor.liveOfflineShort': 'Offline',
   'dataEditor.liveConflict': 'Gemeinsame Bearbeitung nach einer widersprüchlichen Änderung beendet. Änderungen werden normal gespeichert',
   'dataEditor.liveUnavailable': 'Gemeinsame Bearbeitung nicht verfügbar. Änderungen werden normal gespeichert',
   'libraryTable.loadFailed': 'Repository-Daten konnten nicht geladen werden',

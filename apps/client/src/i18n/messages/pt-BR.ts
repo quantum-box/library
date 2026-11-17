@@ -848,6 +848,7 @@ export const ptBR: LocaleMessages = {
   'dataEditor.noBodyProperty': 'Adicione uma propriedade de texto rico a este repositório para começar a escrever o corpo da página.',
   'dataEditor.noProperties': 'Ainda não há propriedades.',
   'dataEditor.liveOffline': 'Offline — suas edições serão sincronizadas quando a conexão voltar',
+  'dataEditor.liveOfflineShort': 'Offline',
   'dataEditor.liveConflict': 'A edição compartilhada parou após uma alteração conflitante. As edições são salvas normalmente',
   'dataEditor.liveUnavailable': 'A edição compartilhada não está disponível. As edições são salvas normalmente',
   'libraryTable.loadFailed': 'Não foi possível carregar os dados do repositório',

@@ -102,6 +102,11 @@ export interface RecordBodyEditorProps {
   imageTarget?: RecordBodyImageTarget
   /** The record/property scope used by the opt-in Photon Live adapter. */
   liveTarget?: PhotonLiveRecordTarget
+  /**
+   * Whether Live has lost the room. The data screen app bar shows this;
+   * the editor does not, so a blip cannot shift the article.
+   */
+  onLiveOfflineChange?: (offline: boolean) => void
 }
 
 export function RecordBodyEditor(props: RecordBodyEditorProps) {
@@ -168,6 +173,16 @@ function PhotonLiveRecordBodyEditor(props: RecordBodyEditorProps & {
     }
   })
   const [view, setView] = useState<LiveBodyView>(() => session.getView())
+  const onLiveOfflineChange = props.onLiveOfflineChange
+  const liveOffline = isLiveOffline(liveStatusState(view))
+
+  useEffect(() => {
+    onLiveOfflineChange?.(liveOffline)
+  }, [liveOffline, onLiveOfflineChange])
+
+  useEffect(() => {
+    return () => onLiveOfflineChange?.(false)
+  }, [onLiveOfflineChange])
 
   useEffect(() => {
     session.setCommitRest(onCommit)
@@ -227,12 +242,18 @@ function seedUpdate(body: string, seedFormat: PhotonLiveFormat): Uint8Array {
   }
 }
 
+/** A room that is not carrying the body, including one being reopened. */
+function isLiveOffline(state: PhotonLiveState | null): boolean {
+  return state?.status === 'disconnected'
+}
+
 /**
  * What the status line should say for the session as a whole.
  *
  * Only the room carrying the body speaks for it. While a room is being
  * (re)opened the line reports the session itself: unsaved edits waiting for
- * a room, a room being reopened, a conflict left to the person.
+ * a room, a conflict left to the person. A lost room is reported as
+ * `disconnected` so the app bar can say so; the editor does not print it.
  */
 function liveStatusState(view: LiveBodyView): PhotonLiveState | null {
   const idle: PhotonLiveState = {
