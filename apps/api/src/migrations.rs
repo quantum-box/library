@@ -31,6 +31,23 @@ pub fn resolve_prod_database_url() -> errors::Result<DatabaseUrl> {
     production_migrator_url(&raw, None)
 }
 
+/// Each role has a primary and an alternate account (tachyon-apps
+/// `config/tidb-product-sql-identities.json`, site `library`). A password
+/// rotation moves the deploy to the idle account first, because TiDB keeps one
+/// password per account; both stay bound to one cluster prefix.
+const RUNTIME_ACCOUNTS: &[&str] = &["library_api", "lib_api_b"];
+const MIGRATOR_ACCOUNTS: &[&str] = &["library_migrator", "lib_mig_b"];
+
+/// Returns the non-empty cluster prefix when `username` is
+/// `<prefix>.<one of accounts>`.
+fn account_prefix<'a>(
+    username: &'a str,
+    accounts: &[&str],
+) -> Option<&'a str> {
+    let (prefix, name) = username.split_once('.')?;
+    (!prefix.is_empty() && accounts.contains(&name)).then_some(prefix)
+}
+
 /// Bind the migration account to the runtime's cluster and gateway before
 /// any SQL is executed. Error messages deliberately omit the supplied URL.
 fn production_migrator_url(
@@ -40,9 +57,9 @@ fn production_migrator_url(
     let migrator = raw.parse::<DatabaseUrl>().map_err(|_| {
         errors::Error::bad_request("Invalid production migration URL")
     })?;
-    let prefix = migrator.username().strip_suffix(".library_migrator");
+    let prefix = account_prefix(migrator.username(), MIGRATOR_ACCOUNTS);
     if migrator.scheme() != "mysql"
-        || prefix.is_none_or(str::is_empty)
+        || prefix.is_none()
         || migrator.password().is_empty()
         || migrator
             .database()
@@ -54,8 +71,7 @@ fn production_migrator_url(
         ));
     }
     if let Some(runtime) = runtime {
-        let expected_runtime = format!("{}.library_api", prefix.unwrap());
-        if runtime.username() != &expected_runtime
+        if account_prefix(runtime.username(), RUNTIME_ACCOUNTS) != prefix
             || runtime.host() != migrator.host()
             || runtime.port() != migrator.port()
         {
@@ -409,6 +425,52 @@ mod tests {
             "mysql://cluster.library_migrator:migration@private.example:4000/unrelated",
         ] {
             assert!(production_migrator_url(bad, Some(&runtime)).is_err());
+        }
+    }
+
+    #[test]
+    fn rotation_alternates_are_accepted_only_on_the_same_cluster() {
+        let migration = "mysql://cluster.library_migrator:migration@private.example:4000";
+        let alternate_migration =
+            "mysql://cluster.lib_mig_b:migration@private.example:4000";
+        for runtime in [
+            "mysql://cluster.library_api:runtime@private.example:4000",
+            "mysql://cluster.lib_api_b:runtime@private.example:4000",
+        ] {
+            let runtime: DatabaseUrl = runtime.parse().unwrap();
+            assert!(
+                production_migrator_url(migration, Some(&runtime)).is_ok()
+            );
+            assert!(production_migrator_url(
+                alternate_migration,
+                Some(&runtime)
+            )
+            .is_ok());
+        }
+        for (runtime, migrator) in [
+            // An alternate on another cluster prefix.
+            (
+                "mysql://other.lib_api_b:runtime@private.example:4000",
+                migration,
+            ),
+            // A temporary rotation name outside the policy.
+            (
+                "mysql://cluster.library_api_r1117:runtime@private.example:4000",
+                migration,
+            ),
+            // The runtime alternate cannot act as the migrator.
+            (
+                "mysql://cluster.library_api:runtime@private.example:4000",
+                "mysql://cluster.lib_api_b:migration@private.example:4000",
+            ),
+            // An empty prefix.
+            (
+                "mysql://.lib_api_b:runtime@private.example:4000",
+                "mysql://.lib_mig_b:migration@private.example:4000",
+            ),
+        ] {
+            let runtime: DatabaseUrl = runtime.parse().unwrap();
+            assert!(production_migrator_url(migrator, Some(&runtime)).is_err());
         }
     }
 
