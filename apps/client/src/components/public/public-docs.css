@@ -109,7 +109,7 @@
 .docs-sidebar {
   border-right: 1px solid var(--docs-line);
   background: #fafbfc;
-  padding: 30px 20px 24px 26px;
+  padding: 30px 10px 24px 14px;
   position: sticky;
   top: 76px;
   height: calc(100dvh - 76px);
@@ -149,15 +149,15 @@
 .docs-sidebar nav h2 {
   font-size: 11px;
   color: var(--docs-muted);
-  margin: 25px 10px 10px;
+  margin: 25px 8px 10px;
 }
 .docs-sidebar nav a {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 12px;
-  padding: 11px;
-  margin: 3px 0;
+  padding: 8px;
+  margin: 2px 0;
   border-radius: 6px;
   color: #606c80;
   line-height: 1.6;
@@ -169,8 +169,7 @@
   flex-shrink: 0;
 }
 .docs-sidebar nav a svg:last-child:not(:first-child) {
-  margin-left: auto;
-  opacity: 0;
+  display: none;
 }
 .docs-sidebar nav a:hover {
   background: #f0f3f8;
@@ -430,8 +429,8 @@
     grid-column: 2;
   }
   .docs-sidebar {
-    padding-left: 18px;
-    padding-right: 18px;
+    padding-left: 10px;
+    padding-right: 8px;
   }
 }
 @media (max-width: 720px) {
