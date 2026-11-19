@@ -110,6 +110,26 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         Ok(row.map(|r| r.try_into()).transpose()?)
     }
 
+    async fn record_home_platform(
+        &self,
+        org_id: &TenantId,
+        platform: &value_object::PlatformId,
+    ) -> errors::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE organizations SET home_platform_id = ?
+            WHERE platform_id = ? AND id = ? AND home_platform_id IS NULL
+            "#,
+        )
+        .bind(platform.to_string())
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .execute(self.db.pool().as_ref())
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        Ok(())
+    }
+
     async fn get_by_personal_owner_user_id(
         &self,
         user_id: &UserId,

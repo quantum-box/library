@@ -159,10 +159,13 @@ impl OrgScopes {
             .get_operator(org.id().as_str())
             .await?
             .ok_or_else(|| errors::Error::not_found("operator"))?;
-        let placed = org
-            .clone()
-            .place_on_home_platform(&operator.platform_id.parse()?)?;
-        self.organizations.update(&placed).await?;
+        let platform = operator.platform_id.parse()?;
+        let placed = org.clone().place_on_home_platform(&platform)?;
+        // Only the platform: saving the whole organization would overwrite
+        // a profile edit made since `org` was read.
+        self.organizations
+            .record_home_platform(placed.id(), &platform)
+            .await?;
         Ok(placed)
     }
 }
@@ -244,8 +247,23 @@ mod tests {
             self.0.lock().unwrap().push(org.clone());
             Ok(())
         }
-        async fn update(&self, org: &Organization) -> errors::Result<()> {
-            self.0.lock().unwrap().push(org.clone());
+        async fn update(&self, _: &Organization) -> errors::Result<()> {
+            panic!("recording a platform must not save the organization")
+        }
+        async fn record_home_platform(
+            &self,
+            org_id: &TenantId,
+            platform: &PlatformId,
+        ) -> errors::Result<()> {
+            self.0.lock().unwrap().push(Organization::reconstruct(
+                org_id,
+                &value_object::Text::new("recorded").unwrap(),
+                &"recorded".parse().unwrap(),
+                None,
+                None,
+                None,
+                Some(platform),
+            ));
             Ok(())
         }
         async fn get_by_id(

@@ -74,6 +74,23 @@ impl Organization {
         }
     }
 
+    /// The organization with a new name, description and website. Its
+    /// identity, owner and platform are kept, including an unrecorded
+    /// platform.
+    pub fn revise_profile(
+        self,
+        name: &Text,
+        description: Option<&LongText>,
+        website: Option<&Url>,
+    ) -> Self {
+        Self {
+            name: name.clone(),
+            description: description.cloned(),
+            website: website.cloned(),
+            ..self
+        }
+    }
+
     /// Record the platform of an organization stored before platforms were
     /// recorded. A tenant's platform never changes, so a recorded platform
     /// cannot be replaced by a different one.
@@ -126,6 +143,19 @@ pub trait OrganizationRepository: Debug + Send + Sync + 'static {
         let _ = user_id;
         Ok(None)
     }
+    /// Persist `place_on_home_platform` for an organization whose platform
+    /// is unrecorded, without touching any other field. A platform already
+    /// recorded is left as it is.
+    async fn record_home_platform(
+        &self,
+        org_id: &TenantId,
+        platform: &PlatformId,
+    ) -> errors::Result<()> {
+        let _ = (org_id, platform);
+        Err(errors::Error::internal_server_error(
+            "record_home_platform is not supported by this repository",
+        ))
+    }
     #[allow(dead_code)]
     async fn find_all(&self) -> errors::Result<Vec<Organization>>;
     #[allow(dead_code)]
@@ -159,6 +189,17 @@ mod tests {
             placed.place_on_home_platform(&LIBRARY_TENANT),
             Err(errors::Error::Conflict { .. })
         ));
+    }
+
+    #[test]
+    fn revising_the_profile_keeps_an_unrecorded_platform() {
+        let revised = org().revise_profile(
+            &Text::new("Bernard Square Kitchen").unwrap(),
+            None,
+            None,
+        );
+        assert_eq!(revised.home_platform(), &None);
+        assert_eq!(revised.name().to_string(), "Bernard Square Kitchen");
     }
 
     #[test]
