@@ -3,18 +3,27 @@
 use std::sync::Arc;
 
 use inbound_sync_domain::{
-    ProcessingStatus, WebhookEvent, WebhookEventId, WebhookEventRepository,
+    ProcessingStatus, WebhookEndpointRepository, WebhookEvent,
+    WebhookEventId, WebhookEventRepository,
 };
+use value_object::TenantId;
 
 /// Use case for retrying failed webhook events.
 pub struct RetryWebhookEvent {
     event_repo: Arc<dyn WebhookEventRepository>,
+    endpoint_repo: Arc<dyn WebhookEndpointRepository>,
 }
 
 impl RetryWebhookEvent {
     /// Create a new RetryWebhookEvent use case.
-    pub fn new(event_repo: Arc<dyn WebhookEventRepository>) -> Self {
-        Self { event_repo }
+    pub fn new(
+        event_repo: Arc<dyn WebhookEventRepository>,
+        endpoint_repo: Arc<dyn WebhookEndpointRepository>,
+    ) -> Self {
+        Self {
+            event_repo,
+            endpoint_repo,
+        }
     }
 
     /// Retry a failed webhook event.
@@ -23,6 +32,7 @@ impl RetryWebhookEvent {
     /// the event processor again.
     pub async fn execute(
         &self,
+        tenant_id: &TenantId,
         event_id: &WebhookEventId,
     ) -> errors::Result<WebhookEvent> {
         // Get the event
@@ -31,6 +41,18 @@ impl RetryWebhookEvent {
             .find_by_id(event_id)
             .await?
             .ok_or_else(|| errors::Error::not_found("Webhook event"))?;
+
+        // Events carry no tenant of their own; ownership comes from the
+        // endpoint that received them. Another tenant's event is reported as
+        // missing.
+        let owned = self
+            .endpoint_repo
+            .find_by_id(event.endpoint_id())
+            .await?
+            .is_some_and(|endpoint| endpoint.tenant_id() == tenant_id);
+        if !owned {
+            return Err(errors::Error::not_found("Webhook event"));
+        }
 
         // Check if event can be retried
         if *event.status() != ProcessingStatus::Failed {

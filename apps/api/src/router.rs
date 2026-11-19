@@ -449,6 +449,7 @@ pub async fn router(
     let retry_webhook_event =
         Arc::new(inbound_sync::usecase::RetryWebhookEvent::new(
             webhook_event_repo.clone(),
+            webhook_endpoint_repo.clone(),
         ));
 
     // API Pull processor registry

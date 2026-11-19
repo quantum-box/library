@@ -14,7 +14,7 @@ use integration_domain::{
     ExternalSyncBindingId, ExternalSyncBindingRepository,
     InboundChangeSetRepository, LibraryRepoId, OutboundDeliveryRepository,
 };
-use tachyon_sdk::auth::{AuthApp, CheckPolicyInput, MultiTenancyAction};
+use tachyon_sdk::auth::AuthApp;
 use value_object::TenantId;
 
 use super::types::{
@@ -69,17 +69,44 @@ async fn authorized_external_sync_tenant(
     ctx: &Context<'_>,
     state: &LibrarySyncQueryState,
 ) -> Result<TenantId> {
-    let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-    let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-    state
-        .auth
-        .check_policy(&CheckPolicyInput {
-            executor,
-            multi_tenancy,
-            action: "library:InboundSyncListConnections",
-        })
-        .await?;
-    Ok(multi_tenancy.get_operator_id()?)
+    super::authorize_sync_tenant(
+        ctx,
+        state.auth.as_ref(),
+        "library:InboundSyncListConnections",
+    )
+    .await
+}
+
+/// Reject a `tenantId` argument that names a tenant other than the
+/// authorized one. The argument is kept for client compatibility only.
+fn ensure_requested_tenant(
+    requested: &str,
+    authorized: &TenantId,
+) -> Result<()> {
+    let requested = requested
+        .parse::<TenantId>()
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+    if &requested != authorized {
+        return Err(errors::Error::forbidden(
+            "tenantId does not match the authorized tenant",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Whether the endpoint exists and belongs to `tenant`. Events and sync
+/// operations carry no tenant of their own; their endpoint decides.
+async fn endpoint_belongs_to(
+    state: &LibrarySyncQueryState,
+    tenant: &TenantId,
+    endpoint_id: &WebhookEndpointId,
+) -> Result<bool> {
+    Ok(state
+        .endpoint_repository
+        .find_by_id(endpoint_id)
+        .await?
+        .is_some_and(|endpoint| endpoint.tenant_id() == tenant))
 }
 
 #[Object]
@@ -211,12 +238,14 @@ impl LibrarySyncQuery {
         id: String,
     ) -> Result<Option<GqlWebhookEndpoint>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let endpoint_id = WebhookEndpointId::from(id);
 
         let endpoint =
             state.endpoint_repository.find_by_id(&endpoint_id).await?;
 
         Ok(endpoint
+            .filter(|e| e.tenant_id() == &tenant)
             .map(|e| GqlWebhookEndpoint::from_domain(e, &state.base_url)))
     }
 
@@ -229,9 +258,8 @@ impl LibrarySyncQuery {
         repository_id: Option<String>,
     ) -> Result<Vec<GqlWebhookEndpoint>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
-        let tenant = tenant_id
-            .parse::<TenantId>()
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
+        ensure_requested_tenant(&tenant_id, &tenant)?;
 
         let endpoints = if let Some(p) = provider {
             // Convert GqlProvider -> OAuthProvider -> Provider
@@ -272,7 +300,11 @@ impl LibrarySyncQuery {
         #[graphql(default = 0)] offset: u32,
     ) -> Result<Vec<GqlWebhookEvent>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let id = WebhookEndpointId::from(endpoint_id);
+        if !endpoint_belongs_to(state, &tenant, &id).await? {
+            return Ok(Vec::new());
+        }
 
         let events = state
             .event_repository
@@ -289,11 +321,20 @@ impl LibrarySyncQuery {
         id: String,
     ) -> Result<Option<GqlWebhookEvent>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let event_id = inbound_sync_domain::WebhookEventId::from(id);
 
-        let event = state.event_repository.find_by_id(&event_id).await?;
+        let Some(event) =
+            state.event_repository.find_by_id(&event_id).await?
+        else {
+            return Ok(None);
+        };
+        if !endpoint_belongs_to(state, &tenant, event.endpoint_id()).await?
+        {
+            return Ok(None);
+        }
 
-        Ok(event.map(Into::into))
+        Ok(Some(event.into()))
     }
 
     // =========================================================================
@@ -364,9 +405,8 @@ impl LibrarySyncQuery {
         active_only: Option<bool>,
     ) -> Result<Vec<GqlConnection>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
-        let tenant = tenant_id
-            .parse::<TenantId>()
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
+        ensure_requested_tenant(&tenant_id, &tenant)?;
 
         let connections = if active_only.unwrap_or(false) {
             state
@@ -387,6 +427,7 @@ impl LibrarySyncQuery {
         id: String,
     ) -> Result<Option<GqlConnection>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let connection_id = inbound_sync_domain::ConnectionId::new(id);
 
         let connection = state
@@ -394,7 +435,9 @@ impl LibrarySyncQuery {
             .find_by_id(&connection_id)
             .await?;
 
-        Ok(connection.map(Into::into))
+        Ok(connection
+            .filter(|c| c.tenant_id() == &tenant)
+            .map(Into::into))
     }
 
     /// Get a single sync operation by ID.
@@ -404,12 +447,21 @@ impl LibrarySyncQuery {
         id: String,
     ) -> Result<Option<super::types::GqlSyncOperation>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let operation_id = inbound_sync_domain::SyncOperationId::from(id);
 
-        let operation =
-            state.operation_repo.find_by_id(&operation_id).await?;
+        let Some(operation) =
+            state.operation_repo.find_by_id(&operation_id).await?
+        else {
+            return Ok(None);
+        };
+        if !endpoint_belongs_to(state, &tenant, operation.endpoint_id())
+            .await?
+        {
+            return Ok(None);
+        }
 
-        Ok(operation.map(super::types::GqlSyncOperation::from_domain))
+        Ok(Some(super::types::GqlSyncOperation::from_domain(operation)))
     }
 
     /// Get sync operations for an endpoint.
@@ -421,8 +473,12 @@ impl LibrarySyncQuery {
         offset: Option<i32>,
     ) -> Result<Vec<super::types::GqlSyncOperation>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
+        let tenant = authorized_external_sync_tenant(ctx, state).await?;
         let endpoint_id =
             inbound_sync_domain::WebhookEndpointId::from(endpoint_id);
+        if !endpoint_belongs_to(state, &tenant, &endpoint_id).await? {
+            return Ok(Vec::new());
+        }
 
         let operations = state
             .operation_repo

@@ -369,8 +369,7 @@ impl GqlWebhookEndpoint {
             repository_id: endpoint.repository_id().map(String::from),
             name: endpoint.name().clone(),
             provider: oauth_provider.into(),
-            config: serde_json::to_string(endpoint.config())
-                .unwrap_or_default(),
+            config: super::redacted_config_json(endpoint.config()),
             events: endpoint.events().clone(),
             mapping: endpoint
                 .mapping()
