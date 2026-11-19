@@ -62,21 +62,18 @@ where
                 .await?
                 .ok_or(errors::not_found!("organization is not found"))?;
 
-            let library_org = LibraryOrg::with_org_and_operator(
-                username,
-                org.id().clone(),
-            );
-            // Without the SDK, or when tachyon-api cannot say, the
-            // organization keeps Library's platform as before.
-            let sdk = parts.extensions.get::<Arc<SdkAuthApp>>().cloned();
-            match sdk {
-                Some(sdk)
-                    if sdk.is_on_other_platform(org.id()).await
-                        == Some(true) =>
-                {
-                    Ok(library_org.on_other_platform())
-                }
-                _ => Ok(library_org),
+            // Without the SDK the organization keeps Library's platform.
+            match parts.extensions.get::<Arc<SdkAuthApp>>().cloned() {
+                Some(sdk) => Ok(LibraryOrg::resolve(
+                    &sdk,
+                    username,
+                    org.id().clone(),
+                )
+                .await),
+                None => Ok(LibraryOrg::with_org_and_operator(
+                    username,
+                    org.id().clone(),
+                )),
             }
         } else {
             // If no organization username is found in the path, return a default LibraryOrg

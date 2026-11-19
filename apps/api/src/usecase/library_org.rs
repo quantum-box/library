@@ -70,6 +70,34 @@ impl LibraryOrg {
         self.other_platform = true;
         self
     }
+
+    /// The organization `org_username` of tenant `operator_id`, on the
+    /// platform tachyon-api reports for that tenant.
+    ///
+    /// Every scope Library builds for an organization must come from here,
+    /// or it claims Library's platform for an adopted organization and
+    /// tachyon-api rejects the request (403 "x-platform-id does not match
+    /// the operator's platform").
+    pub async fn resolve(
+        sdk: &crate::sdk_auth::SdkAuthApp,
+        org_username: String,
+        operator_id: OperatorId,
+    ) -> Self {
+        let on_other_platform =
+            sdk.is_on_other_platform(&operator_id).await;
+        Self::with_org_and_operator(org_username, operator_id)
+            .placed_on(on_other_platform)
+    }
+
+    /// Place the organization by tachyon-api's answer. When tachyon-api
+    /// cannot say, it keeps Library's platform as before.
+    fn placed_on(self, on_other_platform: Option<bool>) -> Self {
+        if on_other_platform == Some(true) {
+            self.on_other_platform()
+        } else {
+            self
+        }
+    }
 }
 
 impl MultiTenancyAction for LibraryOrg {
@@ -138,6 +166,26 @@ mod tests {
             library_org.get_operator_id().unwrap(),
             LIBRARY_TENANT.clone()
         );
+    }
+
+    #[test]
+    fn placement_follows_tachyon_and_defaults_to_library() {
+        let operator: OperatorId =
+            "tn_01kshr165k3wwr8xyk0e6vy36c".parse().unwrap();
+        let org = |answer| {
+            LibraryOrg::with_org_and_operator(
+                "bernard-square".to_string(),
+                operator.clone(),
+            )
+            .placed_on(answer)
+        };
+        assert_eq!(org(Some(true)).platform_id(), None);
+        assert_eq!(org(Some(true)).get_operator_id().unwrap(), operator);
+        assert_eq!(
+            org(Some(false)).platform_id(),
+            Some(LIBRARY_TENANT.clone())
+        );
+        assert_eq!(org(None).platform_id(), Some(LIBRARY_TENANT.clone()));
     }
 
     #[test]
