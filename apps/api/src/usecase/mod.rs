@@ -73,7 +73,7 @@ use value_object::Identifier;
 
 use crate::domain::{Organization, Repo};
 
-pub use library_org::LibraryOrg;
+pub use library_org::{LibraryOrg, OrgScopes};
 
 pub use add_data::*;
 pub use add_property::*;

@@ -3591,12 +3591,7 @@ async fn resolve_library_org(
         .get_by_username(&org_username.parse()?)
         .await?
         .ok_or_else(|| errors::Error::not_found("organization"))?;
-    Ok(LibraryOrg::resolve(
-        &library_app.sdk,
-        org_username.to_string(),
-        org.id().clone(),
-    )
-    .await)
+    Ok(library_app.org_scopes.scope_for(&org).await)
 }
 
 fn should_challenge(headers: &HeaderMap, request: &JsonRpcRequest) -> bool {

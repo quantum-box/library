@@ -317,11 +317,10 @@ impl ViewSharedDataInputPort for ShareLinks {
         // takes an executor only to scope the query. Nothing here is
         // reachable except through the row the token resolved to.
         let executor = inbound_sync::sdk::SystemExecutor;
-        let multi_tenancy =
-            crate::usecase::LibraryOrg::with_org_and_operator(
-                repo.org_username().to_string(),
-                repo.organization_id().clone(),
-            );
+        let multi_tenancy = crate::usecase::LibraryOrg::for_local_read(
+            repo.org_username().to_string(),
+            repo.organization_id().clone(),
+        );
 
         let properties = self
             .database

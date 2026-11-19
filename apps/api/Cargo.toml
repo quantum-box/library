@@ -18,6 +18,7 @@ integration_domain = { path = "../../packages/integration_domain" }
 
 persistence = { path = "../../packages/persistence" }
 value_object = { path = "../../packages/value_object", features = ["axum"] }
+verified_org_scope = { path = "../../packages/verified_org_scope" }
 util = { path = "../../packages/util" }
 errors = { path = "../../packages/errors", features = ["axum-extension", "graphql"] }
 ingredient_notation = { path = "../../packages/ingredient_notation" }

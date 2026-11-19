@@ -351,15 +351,44 @@ impl LibraryMutation {
             .map_err(|e| e.extend())?
             .ok_or_else(|| async_graphql::Error::new("Tenant not found"))?;
 
-        // Every upstream call about the tenant being imported must be
-        // scoped to that tenant: tachyon rejects a request whose
-        // operator scope differs from the tenant it asks about, and
-        // the request's own scope is whatever operator the client app
-        // happens to run under -- never the tenant being imported.
-        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-            Some(crate::domain::LIBRARY_TENANT.clone()),
-            Some(tenant_id.clone()),
-        );
+        let home_platform = operator
+            .platform_id
+            .parse::<value_object::PlatformId>()
+            .map_err(|e| errors::Error::from(e).extend())?;
+        let existing = library_app
+            .organization_repo
+            .get_by_id(&tenant_id)
+            .await
+            .map_err(|e| e.extend())?;
+        let seeded = existing.is_none();
+        let organization = match existing {
+            Some(org) => org
+                .place_on_home_platform(&home_platform)
+                .map_err(|e| e.extend())?,
+            None => crate::domain::Organization::adopt(
+                &tenant_id,
+                &Text::new(&operator.name)
+                    .map_err(|e| errors::Error::bad_request(e).extend())?,
+                &operator
+                    .operator_name
+                    .parse()
+                    .map_err(|e| errors::Error::bad_request(e).extend())?,
+                &home_platform,
+            ),
+        };
+
+        // Every upstream call about the tenant being imported is scoped to
+        // that tenant on its own platform: tachyon rejects an operator scope
+        // other than the tenant it asks about, and an x-platform-id other
+        // than that tenant's platform.
+        let tenant_scope =
+            usecase::LibraryOrg::for_organization(&organization)
+                .ok_or_else(|| {
+                    errors::Error::internal_server_error(
+                        "an imported organization has no recorded platform",
+                    )
+                    .extend()
+                })?;
 
         let users = AuthAppTrait::find_users_by_tenant(
             library_app.auth_app.as_ref(),
@@ -372,46 +401,16 @@ impl LibraryMutation {
         .await
         .map_err(|e| e.extend())?;
 
-        let existing = library_app
-            .organization_repo
-            .get_by_id(&tenant_id)
-            .await
-            .map_err(|e| e.extend())?;
-
-        let seeded = existing.is_none();
-        let organization = if let Some(org) = existing {
-            org
-        } else {
-            let organization = crate::domain::Organization::new(
-                &tenant_id,
-                &Text::new(&operator.name)
-                    .map_err(|e| errors::Error::bad_request(e).extend())?,
-                &operator
-                    .operator_name
-                    .parse()
-                    .map_err(|e| errors::Error::bad_request(e).extend())?,
-                None,
-                None,
-            );
-            library_app
-                .organization_repo
-                .insert(&organization)
-                .await
-                .map_err(|e| e.extend())?;
-            organization
-        };
-
         let policy_id = library_user_policy_id();
         let repo_owner_policy_id = library_repo_owner_policy_id();
         // Grant as the caller, who `ensure_tenant_seed_admin` has just
         // confirmed owns or manages this tenant and therefore holds
-        // `AdministratorAccess` in it. A system executor would fall back
-        // to the service account, which belongs to the Library platform
-        // tenant and is rejected in any per-organization scope -- every
-        // grant below would have been warned away and the seed would
-        // have reported success while attaching nothing.
+        // `AdministratorAccess` in it. Every grant must land before the
+        // organization is stored: an organization whose members hold no
+        // Library policy is unusable, and a failed grant is retried by
+        // importing again (grants are idempotent).
         for tenant_user in &users {
-            if let Err(err) = AuthAppTrait::attach_user_policy(
+            AuthAppTrait::attach_user_policy(
                 library_app.auth_app.as_ref(),
                 &tachyon_sdk::auth::AttachUserPolicyInput {
                     executor,
@@ -422,14 +421,7 @@ impl LibraryMutation {
                 },
             )
             .await
-            {
-                tracing::warn!(
-                    user = %tenant_user.id(),
-                    tenant = %tenant_id,
-                    error = ?err,
-                    "failed to attach library user policy during tenant seed"
-                );
-            }
+            .map_err(|e| e.extend())?;
 
             let owns_repos = member_owns_repos(
                 library_app.user_policy_mapping_repo.as_ref(),
@@ -439,7 +431,7 @@ impl LibraryMutation {
             .await;
 
             if owns_repos {
-                if let Err(err) = AuthAppTrait::attach_user_policy(
+                AuthAppTrait::attach_user_policy(
                     library_app.auth_app.as_ref(),
                     &tachyon_sdk::auth::AttachUserPolicyInput {
                         executor,
@@ -450,16 +442,16 @@ impl LibraryMutation {
                     },
                 )
                 .await
-                {
-                    tracing::warn!(
-                        user = %tenant_user.id(),
-                        tenant = %tenant_id,
-                        error = ?err,
-                        "failed to attach repo owner policy during tenant seed"
-                    );
-                }
+                .map_err(|e| e.extend())?;
             }
         }
+
+        if seeded {
+            library_app.organization_repo.insert(&organization).await
+        } else {
+            library_app.organization_repo.update(&organization).await
+        }
+        .map_err(|e| e.extend())?;
 
         Ok(SeedLibraryTenantPayload {
             organization: organization.into(),

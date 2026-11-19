@@ -29,23 +29,29 @@ pub struct OrganizationRow {
     description: Option<String>,
     website: Option<String>,
     personal_owner_user_id: Option<String>,
+    home_platform_id: Option<String>,
 }
 
 impl TryFrom<OrganizationRow> for Organization {
     type Error = errors::Error;
     fn try_from(value: OrganizationRow) -> Result<Self, Self::Error> {
-        let mut organization = Organization::new(
+        Ok(Organization::reconstruct(
             &value.id.parse()?,
             &value.name.parse()?,
             &value.username.parse()?,
             value.description.map(|d| d.parse()).transpose()?.as_ref(),
             value.website.map(|w| w.parse()).transpose()?.as_ref(),
-        );
-        if let Some(user_id) = value.personal_owner_user_id {
-            organization = organization
-                .with_personal_owner(&user_id.parse::<UserId>()?);
-        }
-        Ok(organization)
+            value
+                .personal_owner_user_id
+                .map(|id| id.parse::<UserId>())
+                .transpose()?
+                .as_ref(),
+            value
+                .home_platform_id
+                .map(|id| id.parse::<TenantId>())
+                .transpose()?
+                .as_ref(),
+        ))
     }
 }
 
@@ -70,7 +76,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     ) -> errors::Result<Option<Organization>> {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website, personal_owner_user_id
+            SELECT id, name, username, description, website, personal_owner_user_id, home_platform_id
             FROM organizations
             WHERE platform_id = ? AND id = ?
             "#,
@@ -90,7 +96,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     ) -> errors::Result<Option<Organization>> {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website, personal_owner_user_id
+            SELECT id, name, username, description, website, personal_owner_user_id, home_platform_id
             FROM organizations
             WHERE platform_id = ? AND username = ?
             "#,
@@ -110,7 +116,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     ) -> errors::Result<Option<Organization>> {
         let row = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website, personal_owner_user_id
+            SELECT id, name, username, description, website, personal_owner_user_id, home_platform_id
             FROM organizations
             WHERE platform_id = ? AND personal_owner_user_id = ?
             "#,
@@ -127,7 +133,7 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
     async fn find_all(&self) -> errors::Result<Vec<Organization>> {
         let orgs = sqlx::query_as::<_, OrganizationRow>(
             r#"
-            SELECT id, name, username, description, website, personal_owner_user_id
+            SELECT id, name, username, description, website, personal_owner_user_id, home_platform_id
             FROM organizations
             WHERE platform_id = ?
             "#,
@@ -161,12 +167,13 @@ impl OrganizationRepositoryImpl {
     async fn save(&self, entity: &Organization) -> errors::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO organizations (id, name, username, description, website, personal_owner_user_id, platform_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO organizations (id, name, username, description, website, personal_owner_user_id, platform_id, home_platform_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
                 description = VALUES(description),
-                website = VALUES(website)
+                website = VALUES(website),
+                home_platform_id = COALESCE(home_platform_id, VALUES(home_platform_id))
             "#,
         )
         .bind(entity.id().to_string())
@@ -176,6 +183,7 @@ impl OrganizationRepositoryImpl {
         .bind(entity.website().as_ref().map(|w| w.to_string()))
         .bind(entity.personal_owner_user_id().as_ref().map(|id| id.to_string()))
         .bind(LIBRARY_TENANT.to_string())
+        .bind(entity.home_platform().as_ref().map(|id| id.to_string()))
         .execute(self.db.pool().as_ref())
         .await
         .map_err(errors::Error::internal_server_error)?;
