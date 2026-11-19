@@ -920,11 +920,41 @@ async fn list_orgs(
     let page = OffsetPage::from_options(args.page, args.page_size)
         .map_err(invalid_tool_arg)?;
     let executor = require_executor(auth, "list_orgs")?;
-    let organizations = member_organizations(
+    let mut organizations = member_organizations(
         library_app.organization_repo.as_ref(),
         &executor,
     )
     .await?;
+    // A token issued for Library carries only its client's tenant. Look the
+    // caller's other memberships up as Library, and list those whose
+    // private repositories delegated evaluation lets the caller read.
+    if let LibraryExecutorKind::User(user) = &executor.inner {
+        let listed: BTreeSet<String> =
+            organizations.iter().map(|org| org.id.clone()).collect();
+        let others: Vec<value_object::TenantId> = library_app
+            .org_scopes
+            .service_sdk()
+            .memberships_as_service(user.id().as_ref())
+            .await
+            .map_err(tool_execution_error)?
+            .into_iter()
+            .filter(|tenant| !listed.contains(&tenant.to_string()))
+            .collect();
+        let reached =
+            crate::usecase::delegated_visibility::organizations_reached(
+                library_app.auth_app.as_ref(),
+                &library_app.org_scopes,
+                library_app.organization_repo.as_ref(),
+                &executor,
+                others,
+            )
+            .await
+            .map_err(tool_execution_error)?;
+        organizations.extend(reached.iter().map(organization_to_mcp));
+        organizations.sort_by(|a, b| {
+            a.username.cmp(&b.username).then_with(|| a.id.cmp(&b.id))
+        });
+    }
     let (organizations, paginator) = paginate(organizations, page);
     Ok(json!({ "organizations": organizations, "paginator": paginator }))
 }
@@ -952,7 +982,32 @@ async fn list_repos(
         })
         .await
         .map_err(tool_execution_error)?;
-    let repos = output.repos.iter().map(repo_to_mcp).collect();
+    let mut repos = output.repos;
+    // A token issued for Library carries no membership of this org, so the
+    // organization view showed public repositories only. Add the private
+    // ones a read of each would allow.
+    if executor.is_user()
+        && !executor.has_tenant_id(output.organization.id())
+    {
+        let all = library_app
+            .repo_repo
+            .find_all(output.organization.id())
+            .await
+            .map_err(tool_execution_error)?;
+        repos.extend(
+            crate::usecase::delegated_visibility::readable_private_repos(
+                library_app.auth_app.as_ref(),
+                &executor,
+                &library_org,
+                all,
+            )
+            .await
+            .map_err(tool_execution_error)?,
+        );
+        repos
+            .sort_by(|a, b| a.username().value().cmp(b.username().value()));
+    }
+    let repos = repos.iter().map(repo_to_mcp).collect();
     let (repos, paginator) = paginate(repos, page);
     Ok(json!({ "repos": repos, "paginator": paginator }))
 }

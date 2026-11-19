@@ -100,6 +100,9 @@ pub struct LibraryApp {
     pub auth_app: Arc<dyn AuthApp>,
     /// Builds organization scopes on their tachyon platform.
     pub org_scopes: Arc<usecase::OrgScopes>,
+    /// Every repository of an organization, for listings that decide
+    /// visibility themselves (`usecase::delegated_visibility`).
+    pub repo_repo: Arc<dyn RepoRepository>,
     pub invite_org_member: Arc<dyn usecase::InviteOrgMemberInputPort>,
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
@@ -734,6 +737,7 @@ impl LibraryApp {
             organization_repo,
             auth_app,
             org_scopes,
+            repo_repo: repo_repo.clone(),
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,

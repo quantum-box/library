@@ -122,6 +122,11 @@ pub struct OrgScopes {
 }
 
 impl OrgScopes {
+    /// The SDK the scopes are resolved with, authenticated as Library.
+    pub fn service_sdk(&self) -> &SdkAuthApp {
+        &self.sdk
+    }
+
     pub async fn scope_for(&self, org: &Organization) -> LibraryOrg {
         if let Some(scope) = LibraryOrg::for_organization(org) {
             return scope;

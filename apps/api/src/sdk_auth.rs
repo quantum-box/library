@@ -1647,6 +1647,30 @@ impl SdkAuthApp {
     }
 
     /// Get user by ID with tenant list via SDK.
+    /// The tenants `user_id` belongs to, as tachyon reports them to
+    /// Library's own credential. A token issued for Library carries only
+    /// its client's tenant (ADR-0104); this is the caller's full list, for
+    /// listings that then ask delegated evaluation about each tenant.
+    pub async fn memberships_as_service(
+        &self,
+        user_id: &str,
+    ) -> errors::Result<Vec<TenantId>> {
+        match tachyon_sdk::apis::auth_users_api::get_user(
+            &self.sdk_config_as_service(),
+            user_id,
+        )
+        .await
+        {
+            Ok(resp) => Ok(user_from_sdk_user_response(&resp)?.tenants),
+            Err(tachyon_sdk::apis::Error::ResponseError(resp))
+                if resp.status == reqwest::StatusCode::NOT_FOUND =>
+            {
+                Ok(Vec::new())
+            }
+            Err(e) => Err(sdk_api_err(e)),
+        }
+    }
+
     pub async fn get_user_by_id_full(
         &self,
         operator_id: &TenantId,
