@@ -332,6 +332,7 @@ export async function triggerSync(_input: {
 
 export async function retryWebhookEvent(_input: {
   eventId: string
+  operatorId?: string
 }): Promise<{ success: boolean; error?: string }> {
   const auth = getAuthContext()
   if (!auth) {
@@ -346,6 +347,7 @@ export async function retryWebhookEvent(_input: {
       },
       {
         accessToken: auth.accessToken,
+        operatorId: _input.operatorId,
       },
     )
 
@@ -361,6 +363,7 @@ export async function retryWebhookEvent(_input: {
 
 export async function sendTestWebhook(_input: {
   endpointId: string
+  operatorId?: string
   eventType?: string
   payload?: string
 }): Promise<{ success: boolean; eventId?: string; error?: string }> {
@@ -378,6 +381,7 @@ export async function sendTestWebhook(_input: {
       },
       {
         accessToken: auth.accessToken,
+        operatorId: _input.operatorId,
       },
     )
 

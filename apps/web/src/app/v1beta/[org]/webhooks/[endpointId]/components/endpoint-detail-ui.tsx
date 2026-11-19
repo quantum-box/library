@@ -150,7 +150,10 @@ export function EndpointDetailUI({
 	const handleRetry = (event: WebhookEvent) => {
 		startRetryTransition(() => {
 			void (async () => {
-				const result = await retryWebhookEvent({ eventId: event.id })
+				const result = await retryWebhookEvent({
+					eventId: event.id,
+					operatorId: endpoint.tenantId,
+				})
 				if (result.success) {
 					toast.success('Event retry started')
 				} else {
@@ -164,6 +167,7 @@ export function EndpointDetailUI({
 		const result = await sendTestWebhook({
 			endpointId: endpoint.id,
 			eventType,
+			operatorId: endpoint.tenantId,
 		})
 		if (result.success) {
 			toast.success(`Test webhook sent (ID: ${result.eventId})`)
