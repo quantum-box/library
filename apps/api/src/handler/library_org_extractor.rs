@@ -6,7 +6,7 @@ use axum::{
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::{app::LibraryApp, sdk_auth::SdkAuthApp, usecase::LibraryOrg};
+use crate::{app::LibraryApp, usecase::LibraryOrg};
 
 use super::extract_org_username;
 
@@ -62,19 +62,7 @@ where
                 .await?
                 .ok_or(errors::not_found!("organization is not found"))?;
 
-            // Without the SDK the organization keeps Library's platform.
-            match parts.extensions.get::<Arc<SdkAuthApp>>().cloned() {
-                Some(sdk) => Ok(LibraryOrg::resolve(
-                    &sdk,
-                    username,
-                    org.id().clone(),
-                )
-                .await),
-                None => Ok(LibraryOrg::with_org_and_operator(
-                    username,
-                    org.id().clone(),
-                )),
-            }
+            Ok(library_app.org_scopes.scope_for(&org).await)
         } else {
             // If no organization username is found in the path, return a default LibraryOrg
             Ok(LibraryOrg::default())

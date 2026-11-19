@@ -134,11 +134,6 @@ static VERIFIED_USERS: Lazy<TtlCache<[u8; 32], User>> = Lazy::new(|| {
     TtlCache::new(verify_cache_ttl(), verify_cache_capacity())
 });
 
-/// Whether a tenant lives on a platform other than Library's, by tenant.
-/// See [`SdkAuthApp::is_on_other_platform`].
-static OPERATOR_ON_OTHER_PLATFORM: Lazy<TtlCache<TenantId, bool>> =
-    Lazy::new(|| TtlCache::new(Duration::from_secs(600), 4096));
-
 /// How long a verified token stays cached.
 ///
 /// `AUTH_VERIFY_CACHE_TTL_SECS` overrides it, and `0` disables the
@@ -1221,38 +1216,6 @@ impl SdkAuthApp {
         }
     }
 
-    /// Whether the tenant `operator_id` lives on a platform other than
-    /// Library's, or `None` when tachyon-api cannot say.
-    ///
-    /// A tenant's platform never changes, so the answer is held for a
-    /// while: organization-scoped requests ask on every call.
-    pub async fn is_on_other_platform(
-        &self,
-        operator_id: &TenantId,
-    ) -> Option<bool> {
-        if let Some(other) = OPERATOR_ON_OTHER_PLATFORM.get(operator_id) {
-            return Some(other);
-        }
-        match self.get_operator(operator_id.as_str()).await {
-            Ok(Some(operator)) => {
-                let other = operator.platform_id
-                    != crate::domain::LIBRARY_TENANT.as_str();
-                OPERATOR_ON_OTHER_PLATFORM
-                    .insert(operator_id.clone(), other);
-                Some(other)
-            }
-            Ok(None) => None,
-            Err(error) => {
-                tracing::warn!(
-                    tenant_id = %operator_id,
-                    error = ?error,
-                    "Failed to read the platform of an organization's tenant"
-                );
-                None
-            }
-        }
-    }
-
     /// Create an operator via REST.
     pub async fn create_operator_rest(
         &self,
@@ -1886,6 +1849,31 @@ fn sdk_internal_err(msg: impl std::fmt::Display) -> errors::Error {
     ))
 }
 
+/// Record the scope a refused request carried. The public error says only
+/// "Upstream authorization rejected"; the platform and operator sent are what
+/// tell a missing grant from a scope on the wrong platform.
+fn observe_scope_rejection(
+    operation: &'static str,
+    error: SdkRequestError,
+    multi_tenancy: &dyn auth::MultiTenancyAction,
+) {
+    if error.status() != Some(reqwest::StatusCode::FORBIDDEN) {
+        return;
+    }
+    tracing::warn!(
+        operation,
+        platform_id = multi_tenancy
+            .platform_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        operator_id = multi_tenancy
+            .operator_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        "upstream refused the request's scope"
+    );
+}
+
 fn observe_sdk_request_failure(
     operation: &'static str,
     error: SdkRequestError,
@@ -2300,6 +2288,11 @@ impl AuthApp for SdkAuthApp {
             Self::rest_post_observed(&config, path, &req)
                 .await
                 .map_err(|failure| {
+                    observe_scope_rejection(
+                        "check_policy",
+                        failure.error,
+                        input.multi_tenancy,
+                    );
                     observe_sdk_request_failure(
                         "check_policy",
                         failure.error,

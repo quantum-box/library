@@ -1,0 +1,13 @@
+{
+  "version": "0.2026.11.02.8bf68ee",
+  "commit": "8bf68ee741df833ea5d0fe6a2255126fdea87e47",
+  "rust": "1.99.1",
+  "vstd": "0.0.0-2026-11-01-0251",
+  "solver": "Z3 version 4.16.0",
+  "assets": {
+    "arm64-macos": "3086974d1afebf8b9f6fee2939b626486a12248c0dab528b9262ea652b863326",
+    "x86-macos": "c43dc9bac0a35a7551ffd56c838abe6145b85867b50506200631eccf221acd2e",
+    "arm64-linux": "bc28850dd5efd1679a4cf4ffd3309921c3523c69fa4757079e5d12d4122d400d",
+    "x86-linux": "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c"
+  }
+}

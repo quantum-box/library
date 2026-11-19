@@ -4,7 +4,7 @@ use super::{
     UpdateOrganizationInputData, UpdateOrganizationInputPort,
     UpdateOrganizationOutputData,
 };
-use crate::domain::{Organization, OrganizationRepository};
+use crate::domain::OrganizationRepository;
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 use value_object::{FromStr, Identifier, LongText, Text};
 
@@ -52,10 +52,8 @@ impl UpdateOrganizationInputPort for UpdateOrganization {
             .await?
             .ok_or(errors::Error::not_found("organization is not found"))?;
 
-        let updated_org = Organization::new(
-            org.id(),
+        let updated_org = org.revise_profile(
             &Text::from_str(&input.name)?,
-            org.username(),
             input
                 .description
                 .as_ref()
