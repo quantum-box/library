@@ -21,6 +21,7 @@ use value_object::{Identifier, LongText, TenantId};
 
 async fn authorize_creation_in_destination(
     input: &CreateRepoInputData<'_>,
+    sdk: &SdkAuthApp,
     destination: &TenantId,
 ) -> errors::Result<super::LibraryOrg> {
     // GraphQL supports an omitted tenant header. Resolve that case from the
@@ -28,10 +29,12 @@ async fn authorize_creation_in_destination(
     if input.multi_tenancy.operator_id().is_some() {
         ensure_creation_tenant(input.multi_tenancy, destination)?;
     }
-    let scope = super::LibraryOrg::with_org_and_operator(
+    let scope = super::LibraryOrg::resolve(
+        sdk,
         input.org_username.clone(),
         destination.clone(),
-    );
+    )
+    .await;
     input
         .auth
         .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
@@ -169,8 +172,10 @@ impl CreateRepoInputPort for CreateRepo {
             None => {
                 let tenant_id = input.multi_tenancy.get_operator_id()?;
                 // Restoring a local organization row is a write too.
-                authorize_creation_in_destination(&input, &tenant_id)
-                    .await?;
+                authorize_creation_in_destination(
+                    &input, &self.sdk, &tenant_id,
+                )
+                .await?;
                 let operator = self
                     .sdk
                     .get_operator(tenant_id.as_str())
@@ -188,7 +193,8 @@ impl CreateRepoInputPort for CreateRepo {
             }
         };
         let scope =
-            authorize_creation_in_destination(&input, org.id()).await?;
+            authorize_creation_in_destination(&input, &self.sdk, org.id())
+                .await?;
         let input = CreateRepoInputData {
             multi_tenancy: &scope,
             ..input

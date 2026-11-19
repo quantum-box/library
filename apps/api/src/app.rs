@@ -98,6 +98,8 @@ pub struct LibraryApp {
     pub sign_in: Arc<dyn usecase::SignInInputPort>,
     pub organization_repo: Arc<dyn OrganizationRepository>,
     pub auth_app: Arc<dyn AuthApp>,
+    /// Places organizations on their tachyon platform (`LibraryOrg::resolve`).
+    pub sdk: Arc<SdkAuthApp>,
     pub invite_org_member: Arc<dyn usecase::InviteOrgMemberInputPort>,
     pub change_org_member_role:
         Arc<dyn usecase::ChangeOrgMemberRoleInputPort>,
@@ -170,6 +172,7 @@ impl LibraryApp {
 
         // auth trait object (SdkAuthApp implements AuthApp)
         let auth_app: Arc<dyn AuthApp> = sdk.clone();
+        let platform_sdk = sdk.clone();
 
         // SDK-backed repositories
         let user_policy_mapping_repo =
@@ -726,6 +729,7 @@ impl LibraryApp {
             sign_in,
             organization_repo,
             auth_app,
+            sdk: platform_sdk,
             invite_org_member,
             change_org_member_role,
             bulk_sync_ext_github,
