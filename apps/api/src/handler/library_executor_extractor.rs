@@ -82,6 +82,9 @@ where
             operator_id.map(|id| id.parse::<TenantId>()).transpose()?;
         let platform =
             platform_id.map(|id| id.parse::<TenantId>()).transpose()?;
+        let platform = organization_platform(parts, operator.as_ref())
+            .await?
+            .unwrap_or(platform);
 
         Ok(LibraryMultiTenancy(tachyon_sdk::auth::MultiTenancy::new(
             platform, operator,
@@ -92,6 +95,31 @@ where
             );
         })
     }
+}
+
+/// The platform of the organization the request's operator names, which
+/// replaces whatever `x-platform-id` the client sent: the client cannot know
+/// the platform of an organization adopted from tachyon, and tachyon-api
+/// rejects any other. `None` when the operator is not a Library
+/// organization, which leaves the header as sent.
+async fn organization_platform(
+    parts: &Parts,
+    operator: Option<&TenantId>,
+) -> errors::Result<Option<Option<TenantId>>> {
+    use tachyon_sdk::auth::MultiTenancyAction;
+    let (Some(operator), Some(app)) = (
+        operator,
+        parts
+            .extensions
+            .get::<Arc<crate::app::LibraryApp>>()
+            .cloned(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(org) = app.organization_repo.get_by_id(operator).await? else {
+        return Ok(None);
+    };
+    Ok(Some(app.org_scopes.scope_for(&org).await.platform_id()))
 }
 
 /// Executor resolved from the incoming request's

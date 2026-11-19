@@ -15,6 +15,7 @@ members = [
     "packages/csv_importer",
     "packages/ingredient_notation",
     "packages/os-trust",
+    "packages/verified_org_scope",
     "apps/api/packages/inbound_sync",
     "apps/api/packages/inbound_sync/domain",
     "apps/api/packages/outbound_sync",

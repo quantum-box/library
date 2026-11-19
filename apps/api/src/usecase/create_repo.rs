@@ -21,20 +21,15 @@ use value_object::{Identifier, LongText, TenantId};
 
 async fn authorize_creation_in_destination(
     input: &CreateRepoInputData<'_>,
-    sdk: &SdkAuthApp,
-    destination: &TenantId,
+    scope: super::LibraryOrg,
 ) -> errors::Result<super::LibraryOrg> {
     // GraphQL supports an omitted tenant header. Resolve that case from the
     // destination, but reject a conflicting explicit header before any writes.
     if input.multi_tenancy.operator_id().is_some() {
-        ensure_creation_tenant(input.multi_tenancy, destination)?;
+        let destination =
+            tachyon_sdk::auth::MultiTenancyAction::get_operator_id(&scope)?;
+        ensure_creation_tenant(input.multi_tenancy, &destination)?;
     }
-    let scope = super::LibraryOrg::resolve(
-        sdk,
-        input.org_username.clone(),
-        destination.clone(),
-    )
-    .await;
     input
         .auth
         .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
@@ -50,7 +45,10 @@ fn ensure_creation_tenant(
     scope: &dyn tachyon_sdk::auth::MultiTenancyAction,
     destination: &TenantId,
 ) -> errors::Result<()> {
-    if scope.get_operator_id()? != *destination {
+    if !verified_org_scope::creation_tenant_matches(
+        scope.get_operator_id()?.as_str().as_bytes(),
+        destination.as_str().as_bytes(),
+    ) {
         return Err(errors::Error::forbidden(
             "Repository destination does not match the authorization tenant",
         ));
@@ -68,9 +66,11 @@ async fn ensure_creator_owner_access(
 ) -> errors::Result<()> {
     ensure_creation_tenant(input.multi_tenancy, repo.organization_id())?;
     let resource_trn = format!("trn:library:repo:{}", repo.id());
-    if input.executor.is_user()
-        && input.executor.get_user_id()?.as_str() == input.user_id
-    {
+    if verified_org_scope::may_reuse_owner_access(
+        input.executor.is_user(),
+        input.executor.get_id().as_bytes(),
+        input.user_id.as_bytes(),
+    ) {
         match input
             .auth
             .check_policy_for_resource(
@@ -145,6 +145,19 @@ async fn restore_library_organization(
     Ok(organization)
 }
 
+fn ensure_username_available(
+    existing: &[Repo],
+    username: &Identifier,
+) -> errors::Result<()> {
+    if existing.iter().any(|repo| repo.username() == username) {
+        return Err(errors::Error::conflict(format!(
+            "repository {} already exists in this organization",
+            username.value()
+        )));
+    }
+    Ok(())
+}
+
 fn parse_optional_description(
     description: Option<&str>,
 ) -> errors::Result<Option<LongText>> {
@@ -171,9 +184,16 @@ impl CreateRepoInputPort for CreateRepo {
             Some(org) => org,
             None => {
                 let tenant_id = input.multi_tenancy.get_operator_id()?;
-                // Restoring a local organization row is a write too.
+                // Restoring a local organization row is a write too. Only an
+                // organization native to Library is restored, so the request
+                // is authorized on Library's platform and fails upstream for
+                // a tenant that lives elsewhere.
                 authorize_creation_in_destination(
-                    &input, &self.sdk, &tenant_id,
+                    &input,
+                    super::LibraryOrg::library_native(
+                        input.org_username.clone(),
+                        tenant_id.clone(),
+                    ),
                 )
                 .await?;
                 let operator = self
@@ -192,13 +212,25 @@ impl CreateRepoInputPort for CreateRepo {
                 .await?
             }
         };
+        let org_scope = super::OrgScopes::new(
+            self.sdk.clone(),
+            self.organization_repository.clone(),
+        )
+        .scope_for(&org)
+        .await;
         let scope =
-            authorize_creation_in_destination(&input, &self.sdk, org.id())
-                .await?;
+            authorize_creation_in_destination(&input, org_scope).await?;
         let input = CreateRepoInputData {
             multi_tenancy: &scope,
             ..input
         };
+        // Reject a taken username before any write. Saving would otherwise
+        // update the existing repository's row (the username is unique per
+        // organization) and leave this database without a repository.
+        ensure_username_available(
+            &self.repo_repository.find_all(org.id()).await?,
+            &input.repo_username.parse()?,
+        )?;
         let description =
             parse_optional_description(input.description.as_deref())?;
 
@@ -668,6 +700,34 @@ mod tests {
             );
             assert!(repository.0.lock().unwrap().is_none(), "{mismatch}");
         }
+    }
+
+    #[test]
+    fn a_taken_username_is_rejected_before_any_write() {
+        let tenant: TenantId =
+            "tn_01kshr165k3wwr8xyk0e6vy36c".parse().unwrap();
+        let existing = Repo::create(
+            &RepoId::default(),
+            &tenant,
+            &"bernard-square".parse().unwrap(),
+            &"knowledge".parse().unwrap(),
+            &"knowledge".parse().unwrap(),
+            &"us_01testcaller".parse().unwrap(),
+            false,
+            None,
+            vec![],
+            vec![],
+        );
+        let taken = ensure_username_available(
+            std::slice::from_ref(&existing),
+            &"knowledge".parse().unwrap(),
+        );
+        assert!(matches!(taken, Err(errors::Error::Conflict { .. })));
+        assert!(ensure_username_available(
+            &[existing],
+            &"recipes".parse().unwrap()
+        )
+        .is_ok());
     }
 
     #[test]
