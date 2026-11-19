@@ -16,6 +16,7 @@ mod create_pull_request;
 mod create_repo;
 mod create_source;
 pub mod data_search;
+pub mod delegated_visibility;
 mod delete_data;
 mod delete_property;
 mod delete_repo;
