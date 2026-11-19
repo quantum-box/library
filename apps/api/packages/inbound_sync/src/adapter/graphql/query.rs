@@ -77,22 +77,23 @@ async fn authorized_external_sync_tenant(
     .await
 }
 
-/// Reject a `tenantId` argument that names a tenant other than the
-/// authorized one. The argument is kept for client compatibility only.
-fn ensure_requested_tenant(
-    requested: &str,
-    authorized: &TenantId,
-) -> Result<()> {
-    let requested = requested
+/// Authorize in the tenant named by a `tenantId` argument. The header
+/// operator, when present, must name the same tenant.
+async fn authorized_tenant_argument(
+    ctx: &Context<'_>,
+    state: &LibrarySyncQueryState,
+    tenant_id: &str,
+) -> Result<TenantId> {
+    let requested = tenant_id
         .parse::<TenantId>()
         .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-    if &requested != authorized {
-        return Err(errors::Error::forbidden(
-            "tenantId does not match the authorized tenant",
-        )
-        .into());
-    }
-    Ok(())
+    super::authorize_sync_tenant_for(
+        ctx,
+        state.auth.as_ref(),
+        "library:InboundSyncListConnections",
+        Some(requested),
+    )
+    .await
 }
 
 /// Whether the endpoint exists and belongs to `tenant`. Events and sync
@@ -258,8 +259,8 @@ impl LibrarySyncQuery {
         repository_id: Option<String>,
     ) -> Result<Vec<GqlWebhookEndpoint>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
-        let tenant = authorized_external_sync_tenant(ctx, state).await?;
-        ensure_requested_tenant(&tenant_id, &tenant)?;
+        let tenant =
+            authorized_tenant_argument(ctx, state, &tenant_id).await?;
 
         let endpoints = if let Some(p) = provider {
             // Convert GqlProvider -> OAuthProvider -> Provider
@@ -405,8 +406,8 @@ impl LibrarySyncQuery {
         active_only: Option<bool>,
     ) -> Result<Vec<GqlConnection>> {
         let state = ctx.data::<LibrarySyncQueryState>()?;
-        let tenant = authorized_external_sync_tenant(ctx, state).await?;
-        ensure_requested_tenant(&tenant_id, &tenant)?;
+        let tenant =
+            authorized_tenant_argument(ctx, state, &tenant_id).await?;
 
         let connections = if active_only.unwrap_or(false) {
             state

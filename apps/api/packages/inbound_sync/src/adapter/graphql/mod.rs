@@ -28,17 +28,56 @@ pub(crate) async fn authorize_sync_tenant(
     auth: &dyn AuthApp,
     action: &'static str,
 ) -> Result<TenantId> {
+    authorize_sync_tenant_for(ctx, auth, action, None).await
+}
+
+/// Like [`authorize_sync_tenant`], for resolvers that also name the tenant
+/// in a `tenantId` argument.
+///
+/// GraphQL allows the `x-operator-id` header to be omitted; in that case the
+/// argument names the tenant to authorize in (as `createRepo` does with its
+/// destination). When both are present they must agree.
+pub(crate) async fn authorize_sync_tenant_for(
+    ctx: &Context<'_>,
+    auth: &dyn AuthApp,
+    action: &'static str,
+    requested: Option<TenantId>,
+) -> Result<TenantId> {
     let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
-    let multi_tenancy = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
-    let tenant = multi_tenancy.get_operator_id()?;
+    let header = ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+    let scope = authorization_scope(header, requested)?;
+    let tenant = scope.get_operator_id()?;
     ensure_tenant_member(executor, &tenant)?;
     auth.check_policy(&CheckPolicyInput {
         executor,
-        multi_tenancy,
+        multi_tenancy: &scope,
         action,
     })
     .await?;
     Ok(tenant)
+}
+
+fn authorization_scope(
+    header: &tachyon_sdk::auth::MultiTenancy,
+    requested: Option<TenantId>,
+) -> errors::Result<tachyon_sdk::auth::MultiTenancy> {
+    match (header.operator_id(), requested) {
+        (Some(operator), Some(requested)) if operator != requested => {
+            Err(errors::Error::forbidden(
+                "tenantId does not match the authorized tenant",
+            ))
+        }
+        (Some(_), _) => Ok(header.clone()),
+        (None, Some(requested)) => {
+            Ok(tachyon_sdk::auth::MultiTenancy::new(
+                header.platform_id(),
+                Some(requested),
+            ))
+        }
+        (None, None) => {
+            Err(errors::Error::business_logic("Operator ID is required"))
+        }
+    }
 }
 
 /// Membership-only guard for resolvers whose usecase performs its own policy
@@ -135,6 +174,34 @@ mod tests {
         executor.expect_is_none().return_const(false);
         executor.expect_has_tenant_id().return_const(true);
         ensure_tenant_member(&executor, &tenant()).unwrap();
+    }
+
+    fn other_tenant() -> TenantId {
+        "tn_01hjryxysgey07h5jz5wagqj0n".parse().unwrap()
+    }
+
+    #[test]
+    fn tenant_argument_is_used_when_the_header_has_no_operator() {
+        let header = tachyon_sdk::auth::MultiTenancy::new(None, None);
+        let scope = authorization_scope(&header, Some(tenant())).unwrap();
+        assert_eq!(scope.get_operator_id().unwrap(), tenant());
+    }
+
+    #[test]
+    fn tenant_argument_must_match_the_header_operator() {
+        let header =
+            tachyon_sdk::auth::MultiTenancy::new(None, Some(tenant()));
+        let err =
+            authorization_scope(&header, Some(other_tenant())).unwrap_err();
+        assert!(matches!(err, errors::Error::Forbidden { .. }), "{err:?}");
+        let scope = authorization_scope(&header, Some(tenant())).unwrap();
+        assert_eq!(scope.get_operator_id().unwrap(), tenant());
+    }
+
+    #[test]
+    fn missing_operator_and_argument_is_rejected() {
+        let header = tachyon_sdk::auth::MultiTenancy::new(None, None);
+        assert!(authorization_scope(&header, None).is_err());
     }
 
     #[test]
