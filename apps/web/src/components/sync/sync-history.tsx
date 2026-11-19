@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { CheckCircle, Clock, RefreshCw, XCircle } from 'lucide-react'
+import { useAuth } from '@/auth'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -35,6 +36,8 @@ const SyncOperationsQuery = graphql(`
 
 interface SyncHistoryProps {
 	endpointId: string
+	/** Tenant that owns the endpoint; sync history is only served to its members. */
+	operatorId: string
 	limit?: number
 }
 
@@ -83,12 +86,22 @@ const typeLabels: Record<string, string> = {
 	SCHEDULED_SYNC: 'Scheduled',
 }
 
-export function SyncHistory({ endpointId, limit = 20 }: SyncHistoryProps) {
+export function SyncHistory({
+	endpointId,
+	operatorId,
+	limit = 20,
+}: SyncHistoryProps) {
+	const { session } = useAuth()
+	const accessToken = session?.user?.accessToken
 	const [operations, setOperations] = useState<SyncOperation[]>([])
 	const [loading, setLoading] = useState(true)
 
 	useEffect(() => {
 		const fetchOperations = async () => {
+			if (!accessToken) {
+				setLoading(false)
+				return
+			}
 			try {
 				const result = await executeGraphQL<SyncOperationsResult>(
 					SyncOperationsQuery,
@@ -96,6 +109,7 @@ export function SyncHistory({ endpointId, limit = 20 }: SyncHistoryProps) {
 						endpointId,
 						limit,
 					},
+					{ operatorId, accessToken },
 				)
 
 				if (result?.syncOperations) {
@@ -119,7 +133,7 @@ export function SyncHistory({ endpointId, limit = 20 }: SyncHistoryProps) {
 		}, 2000)
 
 		return () => clearInterval(interval)
-	}, [endpointId, limit, operations])
+	}, [endpointId, operatorId, accessToken, limit, operations])
 
 	if (loading) {
 		return <div className='text-sm text-muted-foreground'>Loading...</div>

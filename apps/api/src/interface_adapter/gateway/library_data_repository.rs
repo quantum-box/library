@@ -75,6 +75,15 @@ impl LibraryDataRepositoryImpl {
             .get_by_id(endpoint.tenant_id(), &repo_id)
             .await?
             .ok_or_else(|| errors::Error::not_found("repository"))?;
+        // `get_by_id` does not filter by tenant, and the endpoint's
+        // repository id is caller-supplied at registration. Writes below run
+        // as the system executor, so refuse a repository owned by another
+        // organization instead of syncing into it.
+        if repo.organization_id() != endpoint.tenant_id() {
+            return Err(errors::Error::forbidden(
+                "Webhook endpoint repository belongs to another organization",
+            ));
+        }
         let database_id = repo
             .databases()
             .first()

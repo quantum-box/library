@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/auth'
 import { executeGraphQL, graphql } from '@/lib/graphql'
 import type {
 	DataForDataDetailFragment,
@@ -88,6 +89,8 @@ export function LinearSyncSection({
 }) {
 	const { org, repo } = useParams({ strict: false }) as { org: string; repo: string }
 	const navigate = useNavigate()
+	const { session } = useAuth()
+	const accessToken = session?.user?.accessToken
 	const [endpoint, setEndpoint] = useState<LinearEndpoint | null>(null)
 	const [isLoadingEndpoint, setIsLoadingEndpoint] = useState(false)
 	const [isPending, startTransition] = useTransition()
@@ -100,6 +103,12 @@ export function LinearSyncSection({
 	useEffect(() => {
 		if (!org || !repo) return
 		if (!extLinearProperty) return
+		// Webhook endpoints are only served to signed-in members of the
+		// owning organization.
+		if (!accessToken) {
+			setEndpoint(null)
+			return
+		}
 		setIsLoadingEndpoint(true)
 		Promise.all([
 			executeGraphQL(OrganizationQuery, { username: org }),
@@ -112,11 +121,15 @@ export function LinearSyncSection({
 					setEndpoint(null)
 					return
 				}
-				return executeGraphQL(WebhookEndpointsQuery, {
-					tenantId,
-					provider: 'LINEAR',
-					repositoryId: repoId,
-				}).then(endpointsResult => {
+				return executeGraphQL(
+					WebhookEndpointsQuery,
+					{
+						tenantId,
+						provider: 'LINEAR',
+						repositoryId: repoId,
+					},
+					{ operatorId: tenantId, accessToken },
+				).then(endpointsResult => {
 					const linearEndpoint = (endpointsResult?.webhookEndpoints as LinearEndpoint[] | undefined)?.[0] ?? null
 					setEndpoint(linearEndpoint)
 				})
@@ -125,7 +138,7 @@ export function LinearSyncSection({
 				setEndpoint(null)
 			})
 			.finally(() => setIsLoadingEndpoint(false))
-	}, [org, repo, extLinearProperty])
+	}, [org, repo, extLinearProperty, accessToken])
 	const extLinearValue = useMemo(() => {
 		if (!extLinearProperty || !data?.propertyData) return null
 		const propertyData = data.propertyData.find(
@@ -174,6 +187,7 @@ export function LinearSyncSection({
 				const result = await triggerSync({
 					endpointId: endpoint.id,
 					externalIds: [externalId],
+					operatorId: endpoint.tenantId,
 				})
 				if (result.error) {
 					toast.error(result.error)

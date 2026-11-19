@@ -354,7 +354,11 @@ impl UpdateWebhookEndpointInputPort for UpdateWebhookEndpoint {
                     "Webhook endpoint mapping updated"
                 );
             }
-            WebhookEndpointUpdate::Config(config) => {
+            WebhookEndpointUpdate::Config(mut config) => {
+                keep_stored_linear_secret(
+                    &mut config,
+                    endpoint.webhook_secret(),
+                );
                 if let ProviderConfig::Linear {
                     webhook_secret: Some(secret),
                     ..
@@ -489,6 +493,27 @@ fn registration_secret(
 }
 
 /// Generate a cryptographically secure random secret.
+/// The API never returns the stored Linear signing secret, so clients send
+/// it back empty when they save other settings. Keep the stored secret in
+/// that case instead of clearing it; a non-empty value still replaces it.
+fn keep_stored_linear_secret(
+    config: &mut ProviderConfig,
+    stored: Option<&str>,
+) {
+    if let (
+        ProviderConfig::Linear {
+            webhook_secret: incoming,
+            ..
+        },
+        Some(stored),
+    ) = (config, stored)
+    {
+        if incoming.as_deref().is_none_or(|s| s.trim().is_empty()) {
+            *incoming = Some(stored.to_string());
+        }
+    }
+}
+
 fn generate_secret() -> String {
     use rand::Rng;
     const CHARSET: &[u8] =
@@ -543,6 +568,39 @@ mod tests {
         assert!(!GitHubVerifier
             .verify(b"tampered", &signature, &stored_key, None)
             .unwrap());
+    }
+
+    fn linear(secret: Option<&str>) -> ProviderConfig {
+        ProviderConfig::Linear {
+            team_id: None,
+            project_id: None,
+            webhook_secret: secret.map(String::from),
+        }
+    }
+
+    fn linear_secret(config: &ProviderConfig) -> Option<&str> {
+        match config {
+            ProviderConfig::Linear { webhook_secret, .. } => {
+                webhook_secret.as_deref()
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn empty_linear_secret_keeps_the_stored_one() {
+        for incoming in [None, Some(""), Some("  ")] {
+            let mut config = linear(incoming);
+            keep_stored_linear_secret(&mut config, Some("stored"));
+            assert_eq!(linear_secret(&config), Some("stored"));
+        }
+    }
+
+    #[test]
+    fn new_linear_secret_replaces_the_stored_one() {
+        let mut config = linear(Some("rotated"));
+        keep_stored_linear_secret(&mut config, Some("stored"));
+        assert_eq!(linear_secret(&config), Some("rotated"));
     }
 
     #[test]

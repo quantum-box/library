@@ -69,11 +69,16 @@ impl OnDemandPull {
             })
             .await?;
 
-        // Get endpoint
+        // Get endpoint. The policy above is evaluated in the caller's
+        // operator tenant, so the endpoint must belong to that tenant;
+        // otherwise the caller could run another tenant's sync with that
+        // tenant's provider credentials.
+        let tenant_id = input.multi_tenancy.get_operator_id()?;
         let endpoint = self
             .endpoint_repo
             .find_by_id(&input.endpoint_id)
             .await?
+            .filter(|endpoint| endpoint.tenant_id() == &tenant_id)
             .ok_or_else(|| errors::Error::not_found("Webhook endpoint"))?;
 
         endpoint.provider().ensure_runtime_available()?;

@@ -728,7 +728,10 @@ export function LinearExtensionSettings({
 											<h3 className='text-sm font-medium'>
 												{t.v1beta.repoSettings.integrationsTab.syncHistory}
 											</h3>
-											<SyncHistory endpointId={endpoint.id} />
+											<SyncHistory
+												endpointId={endpoint.id}
+												operatorId={endpoint.tenantId}
+											/>
 										</div>
 									</div>
 								) : null}

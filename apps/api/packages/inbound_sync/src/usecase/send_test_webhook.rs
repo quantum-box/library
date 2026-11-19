@@ -6,6 +6,7 @@ use inbound_sync_domain::{
     Provider, WebhookEndpointId, WebhookEndpointRepository, WebhookEvent,
     WebhookEventRepository,
 };
+use value_object::TenantId;
 
 /// Use case for sending test webhooks.
 pub struct SendTestWebhook {
@@ -28,14 +29,17 @@ impl SendTestWebhook {
     /// Send a test webhook to an endpoint.
     pub async fn execute(
         &self,
+        tenant_id: &TenantId,
         endpoint_id: &WebhookEndpointId,
         event_type: &str,
     ) -> errors::Result<WebhookEvent> {
-        // Get the endpoint
+        // Get the endpoint. Another tenant's endpoint is reported as missing
+        // so callers cannot inject signature-valid events into it.
         let endpoint = self
             .endpoint_repo
             .find_by_id(endpoint_id)
             .await?
+            .filter(|endpoint| endpoint.tenant_id() == tenant_id)
             .ok_or_else(|| errors::Error::not_found("Webhook endpoint"))?;
 
         endpoint.provider().ensure_runtime_available()?;
