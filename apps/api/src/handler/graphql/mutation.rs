@@ -446,10 +446,16 @@ impl LibraryMutation {
             }
         }
 
+        // An existing organization only gains its platform: saving the
+        // snapshot read before the grants would overwrite a profile edit made
+        // meanwhile.
         if seeded {
             library_app.organization_repo.insert(&organization).await
         } else {
-            library_app.organization_repo.update(&organization).await
+            library_app
+                .organization_repo
+                .record_home_platform(&tenant_id, &home_platform)
+                .await
         }
         .map_err(|e| e.extend())?;
 
