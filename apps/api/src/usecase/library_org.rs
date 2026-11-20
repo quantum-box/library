@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use derive_new::new;
 use tachyon_sdk::auth::MultiTenancyAction;
-use value_object::{Identifier, OperatorId, PlatformId, TenantId};
+use value_object::{OperatorId, PlatformId, TenantId};
 
 use crate::domain::{Organization, OrganizationRepository, LIBRARY_TENANT};
 use crate::sdk_auth::SdkAuthApp;
@@ -200,6 +200,7 @@ impl MultiTenancyAction for LibraryOrg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use value_object::Identifier;
 
     #[test]
     fn test_library_org_platform_id() {
