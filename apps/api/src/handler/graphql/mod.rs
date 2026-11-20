@@ -47,6 +47,21 @@ pub(crate) fn log_graphql_operation_error(
 /// this is exactly the permission the caller needs there.
 pub(crate) const TENANT_SEED_ACTION: &str = "auth:AttachUserPolicy";
 
+/// The scope for asking tachyon about a tenant that may not be in
+/// Library yet: that tenant as the operator, and no `x-platform-id`.
+///
+/// The tenant usually sits under another platform (CourseBoard, for
+/// example), and tachyon rejects a request whose `x-platform-id` is not
+/// the operator's own platform with a 403. Sending the Library platform
+/// here made every such tenant read as "no permission to import" even
+/// for its administrators. Without the header, tachyon resolves the
+/// operator's own platform itself.
+pub(crate) fn tenant_own_scope(
+    tenant_id: &value_object::TenantId,
+) -> tachyon_sdk::auth::MultiTenancy {
+    tachyon_sdk::auth::MultiTenancy::new_operator(tenant_id.clone())
+}
+
 /// Whether the caller may import `tenant_id` into Library.
 ///
 /// Tachyon authorizes by policy, not by the `role` field on a user
@@ -60,10 +75,7 @@ pub(crate) async fn caller_can_seed_tenant(
     executor: &dyn tachyon_sdk::auth::ExecutorAction,
     tenant_id: &value_object::TenantId,
 ) -> errors::Result<bool> {
-    let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-        Some(crate::domain::LIBRARY_TENANT.clone()),
-        Some(tenant_id.clone()),
-    );
+    let tenant_scope = tenant_own_scope(tenant_id);
     let outcomes = auth_app
         .evaluate_policies_batch(
             &tachyon_sdk::auth::EvaluatePoliciesBatchInput {
@@ -98,10 +110,7 @@ pub(crate) async fn count_tenant_staff(
     executor: &dyn tachyon_sdk::auth::ExecutorAction,
     tenant_id: &value_object::TenantId,
 ) -> Option<i32> {
-    let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-        Some(crate::domain::LIBRARY_TENANT.clone()),
-        Some(tenant_id.clone()),
-    );
+    let tenant_scope = tenant_own_scope(tenant_id);
     match tachyon_sdk::auth::AuthApp::find_users_by_tenant(
         auth_app,
         &tachyon_sdk::auth::FindUsersByTenantInput {
@@ -218,7 +227,9 @@ pub async fn graphql_introspection(
 
 #[cfg(test)]
 mod tests {
-    use super::{count_tenant_staff, requests_mutation};
+    use super::{
+        caller_can_seed_tenant, count_tenant_staff, requests_mutation,
+    };
 
     #[test]
     fn a_document_with_a_mutation_is_a_mutation_request() {
@@ -235,7 +246,9 @@ mod tests {
         assert!(!requests_mutation("query Q { me { id } }"));
     }
     use chrono::Utc;
-    use tachyon_sdk::auth::{DefaultRole, MockAuthApp, User};
+    use tachyon_sdk::auth::{
+        DefaultRole, EvaluatePoliciesBatchOutcome, MockAuthApp, User,
+    };
     use value_object::{TenantId, UserId};
 
     /// The listing must run in the tenant's own operator scope: tachyon
@@ -249,6 +262,7 @@ mod tests {
             .expect_find_users_by_tenant()
             .withf(|input| {
                 input.multi_tenancy.operator_id() == Some(tenant())
+                    && input.multi_tenancy.platform_id().is_none()
             })
             .returning(|_| {
                 let users = vec![member("alice"), member("bob")];
@@ -293,6 +307,37 @@ mod tests {
             count_tenant_staff(&auth_app, &executor(), &tenant()).await,
             None
         );
+    }
+
+    /// The import check must ask about the tenant on its own platform.
+    /// Sending the Library platform as `x-platform-id` for a tenant under
+    /// another platform made tachyon answer 403, which read as "no
+    /// permission to import" for that tenant's administrators.
+    #[tokio::test]
+    async fn seed_check_asks_in_the_tenant_without_a_platform_header() {
+        let mut auth_app = MockAuthApp::new();
+        auth_app
+            .expect_evaluate_policies_batch()
+            .withf(|input| {
+                input.multi_tenancy.operator_id() == Some(tenant())
+                    && input.multi_tenancy.platform_id().is_none()
+            })
+            .returning(|input| {
+                let outcomes: Vec<_> = input
+                    .actions
+                    .iter()
+                    .map(|action| EvaluatePoliciesBatchOutcome {
+                        action: (*action).to_string(),
+                        allowed: true,
+                        error: None,
+                    })
+                    .collect();
+                Box::pin(async move { Ok(outcomes) })
+            });
+
+        assert!(caller_can_seed_tenant(&auth_app, &executor(), &tenant())
+            .await
+            .unwrap());
     }
 
     fn tenant() -> TenantId {

@@ -650,6 +650,91 @@ describe('recordsApi', () => {
     )
   })
 
+  it('loads the readable repositories when another one is refused', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_ACCESS_TOKEN', 'token-1')
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => {
+      const body = JSON.parse(String(init.body)) as { variables?: { repo?: string } }
+      if (!body.variables?.repo) {
+        return Response.json({
+          data: {
+            organization: {
+              id: 'org-1',
+              repos: [
+                { id: 'repo-open', username: 'open', name: 'Open' },
+                { id: 'repo-refused', username: 'refused', name: 'Refused' },
+              ],
+            },
+          },
+        })
+      }
+      if (body.variables.repo === 'refused') {
+        return Response.json({
+          data: null,
+          errors: [{ message: 'Forbidden: Upstream authorization rejected', extensions: { code: 'FORBIDDEN' } }],
+        })
+      }
+      return Response.json({
+        data: {
+          repo: {
+            id: 'repo-open',
+            name: 'Open',
+            dataList: {
+              items: [{
+                id: 'data-1',
+                name: 'Readable page',
+                createdAt: '2026-11-20T00:00:00.000Z',
+                updatedAt: '2026-11-20T00:00:00.000Z',
+                propertyData: [],
+              }],
+            },
+            properties: [],
+          },
+        },
+      })
+    }))
+    const cachedRefused = { ...toRecord({ id: 'cached-1', title: 'Cached refused page' } as ServerRecord) }
+    vi.mocked(photonEngine.listClientEngineRecords).mockImplementation(async (collection: string) =>
+      collection.includes('repo-refused')
+        ? [{ recordId: 'cached-1', value: cachedRefused }] as never
+        : []
+    )
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const records = await fetchServerRecords()
+
+    expect(records.map((record) => record.title)).toEqual(['Readable page', 'Cached refused page'])
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to load Library repository quantum-box/refused',
+      expect.anything()
+    )
+    vi.mocked(photonEngine.listClientEngineRecords).mockReset().mockResolvedValue([])
+    warn.mockRestore()
+  })
+
+  it('still fails when no repository can be read', async () => {
+    vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
+    vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')
+    vi.stubEnv('VITE_LIBRARY_ACCESS_TOKEN', 'token-1')
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => {
+      const body = JSON.parse(String(init.body)) as { variables?: { repo?: string } }
+      if (!body.variables?.repo) {
+        return Response.json({
+          data: { organization: { id: 'org-1', repos: [{ id: 'repo-refused', username: 'refused', name: 'Refused' }] } },
+        })
+      }
+      return Response.json({
+        data: null,
+        errors: [{ message: 'Forbidden: Upstream authorization rejected', extensions: { code: 'FORBIDDEN' } }],
+      })
+    }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await expect(fetchServerRecords()).rejects.toThrow('Forbidden: Upstream authorization rejected')
+    warn.mockRestore()
+  })
+
   it('fetches Library repositories for the sidebar from the GraphQL API', async () => {
     vi.stubEnv('VITE_LIBRARY_ORG', 'quantum-box')
     vi.stubEnv('VITE_LIBRARY_API_BASE_URL', 'https://library.example.test')

@@ -2644,7 +2644,11 @@ async function cachedLibraryRecords(): Promise<DatabaseRecord[]> {
 async function fetchRepositoryRecords(
   targets: readonly LibraryRepoTarget[]
 ): Promise<DatabaseRecord[]> {
-  const fetched = await Promise.all(
+  // One repository the caller cannot read must not take every other one down
+  // with it: an organization whose upstream scope is refused (a 403 for that
+  // repository alone) used to fail the whole home screen. Each repository
+  // settles on its own, and only when none can be read does the error stand.
+  const settled = await Promise.allSettled(
     targets.map(async (target) => {
       const table = await fetchAllLibraryRepoTableData(target)
       const records = table.items.map((item) =>
@@ -2667,6 +2671,23 @@ async function fetchRepositoryRecords(
     })
   )
 
+  const failures = settled.flatMap((result, index) =>
+    result.status === 'rejected' ? [{ target: targets[index], reason: result.reason }] : []
+  )
+  if (failures.length > 0 && failures.length === settled.length) throw failures[0].reason
+  const fetched = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+  // A repository that failed keeps what this device last read of it, so the
+  // reconcile that follows does not erase its rows from the screen.
+  const kept: DatabaseRecord[] = []
+  for (const { target, reason } of failures) {
+    console.warn(`Failed to load Library repository ${target.org}/${target.repo}`, reason)
+    if (!target.databaseId) continue
+    const cached = await listClientEngineRecords<DatabaseRecord>(
+      libraryRecordsCollection(target.databaseId)
+    )
+    kept.push(...cached.map((record) => record.value))
+  }
+
   const repositories = fetched
     .map((entry) => entry.repository)
     .filter((repository): repository is LibraryRecordsRepository => repository != null)
@@ -2678,7 +2699,7 @@ async function fetchRepositoryRecords(
   for (const entry of fetched) {
     if (entry.repository) await cacheLibraryRecords(entry.repository, entry.records)
   }
-  return fetched.flatMap((entry) => entry.records)
+  return [...fetched.flatMap((entry) => entry.records), ...kept]
 }
 
 export async function fetchServerRecords(): Promise<DatabaseRecord[]> {
