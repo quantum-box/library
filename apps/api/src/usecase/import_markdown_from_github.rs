@@ -115,6 +115,10 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 organization_username: input.org_username.clone(),
             })
             .await?;
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            org_output.organization.id(),
+        )?;
 
         // Find or create the repo
         let repo = org_output

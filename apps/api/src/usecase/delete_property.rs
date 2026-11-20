@@ -61,6 +61,11 @@ impl DeletePropertyInputPort for DeleteProperty {
             .ok_or(errors::not_found!(
                 "repo not found in delete property"
             ))?;
+
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
         // TODO: add English comment
         // let user = self
         //     .auth

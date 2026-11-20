@@ -66,6 +66,11 @@ impl UpdateRepoInputPort for UpdateRepo {
             })?
             .ok_or(errors::not_found!("repo"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // Check resource-based write permission
         // - pol_01libraryrepoowner has resource_pattern "trn:library:repo:*"
         // - pol_01libraryrepowriter has specific repo resource_scope

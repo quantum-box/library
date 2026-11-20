@@ -103,6 +103,11 @@ impl ChangeRepoUsernameInputPort for ChangeRepoUsername {
             .await?
             .ok_or(errors::Error::not_found("Repository not found"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // Check resource-based write permission before mutating anything.
         let resource_trn = format!("trn:library:repo:{}", repo.id());
         self.auth
@@ -138,7 +143,6 @@ mod tests {
         test_helper::{create_test_executor, create_test_multi_tenancy},
         MockAuthApp,
     };
-    use value_object::OperatorId;
     use value_object::TenantId;
     use value_object::Text;
 
@@ -205,7 +209,8 @@ mod tests {
 
     fn test_org(org_username: &str) -> Organization {
         Organization::new(
-            &TenantId::default(),
+            &TenantId::new(tachyon_sdk::auth::test_helper::TEST_TENANT_ID)
+                .unwrap(),
             &Text::new("Test Organization").unwrap(),
             &Identifier::from_str(org_username).unwrap(),
             None,
@@ -220,7 +225,8 @@ mod tests {
     ) -> Repo {
         Repo::new(
             repo_id,
-            &OperatorId::default(),
+            &TenantId::new(tachyon_sdk::auth::test_helper::TEST_TENANT_ID)
+                .unwrap(),
             &Identifier::from_str(org_username).unwrap(),
             &Text::new("test-repo").unwrap(),
             &Identifier::from_str(repo_username).unwrap(),

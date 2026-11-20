@@ -64,6 +64,11 @@ impl UpdateSourceInputPort for UpdateSource {
             .await?
             .ok_or(errors::Error::not_found("repo"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // The policy above is checked for the named organization, so the
         // source must belong to the named repository. Otherwise a caller
         // with UpdateSource in their own organization could rewrite another
@@ -99,7 +104,7 @@ mod tests {
         test_helper::{create_test_executor, create_test_multi_tenancy},
         MockAuthApp,
     };
-    use value_object::{Identifier, OperatorId, TenantId, Text};
+    use value_object::{Identifier, TenantId, Text};
 
     use super::*;
     use crate::domain::{Organization, Repo, RepoId, SourceId};
@@ -151,7 +156,10 @@ mod tests {
         let mut orgs = MockOrgs::new();
         orgs.expect_execute().returning(|_| {
             Ok(Some(Organization::new(
-                &TenantId::default(),
+                &TenantId::new(
+                    tachyon_sdk::auth::test_helper::TEST_TENANT_ID,
+                )
+                .unwrap(),
                 &Text::new("Attacker").unwrap(),
                 &Identifier::from_str(ORG).unwrap(),
                 None,
@@ -166,7 +174,10 @@ mod tests {
         repos.expect_execute().returning(move |_, _| {
             Ok(Some(Repo::new(
                 &repo_id,
-                &OperatorId::default(),
+                &TenantId::new(
+                    tachyon_sdk::auth::test_helper::TEST_TENANT_ID,
+                )
+                .unwrap(),
                 &Identifier::from_str(ORG).unwrap(),
                 &Text::new("Attacker repo").unwrap(),
                 &Identifier::from_str(REPO).unwrap(),

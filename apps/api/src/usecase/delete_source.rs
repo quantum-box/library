@@ -68,6 +68,11 @@ impl DeleteSourceInputPort for DeleteSource {
             .await?
             .ok_or(errors::not_found!("repo not found in delete source"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // The repository deletes by id alone, so the source must be shown
         // to belong to the named repository first. Otherwise a caller with
         // DeleteSource in their own organization could delete another

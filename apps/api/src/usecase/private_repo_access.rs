@@ -7,8 +7,10 @@ pub async fn authorize_private_repo_read(
     auth_app: &dyn AuthApp,
     executor: &dyn ExecutorAction,
     multi_tenancy: &dyn MultiTenancyAction,
+    organization_id: &value_object::TenantId,
     repo_id: &str,
 ) -> errors::Result<()> {
+    super::ensure_scope_targets_org(multi_tenancy, organization_id)?;
     let resource_trn = format!("trn:library:repo:{repo_id}");
 
     let resource_access = auth_app
@@ -94,6 +96,7 @@ mod tests {
             &auth,
             &executor,
             &multi_tenancy,
+            &multi_tenancy.get_operator_id().unwrap(),
             "rp_01test",
         )
         .await
@@ -120,6 +123,7 @@ mod tests {
             &auth,
             &executor,
             &multi_tenancy,
+            &multi_tenancy.get_operator_id().unwrap(),
             "rp_01test",
         )
         .await
@@ -142,6 +146,7 @@ mod tests {
             &auth,
             &executor,
             &multi_tenancy,
+            &multi_tenancy.get_operator_id().unwrap(),
             "rp_01test",
         )
         .await

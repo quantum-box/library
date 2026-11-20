@@ -64,6 +64,11 @@ impl UpdatePropertyInputPort for UpdateProperty {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         if let Some(typ) = input.property_type {
             super::computed_properties::authorize_definition(
                 &self.database,

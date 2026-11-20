@@ -52,6 +52,8 @@ impl UpdateOrganizationInputPort for UpdateOrganization {
             .await?
             .ok_or(errors::Error::not_found("organization is not found"))?;
 
+        super::ensure_scope_targets_org(input.multi_tenancy, org.id())?;
+
         let updated_org = org.revise_profile(
             &Text::from_str(&input.name)?,
             input
