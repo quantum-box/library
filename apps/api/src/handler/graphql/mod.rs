@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::library_executor_extractor::{
-    LibraryExecutor, LibraryMultiTenancy,
+    LibraryExecutor, LibraryMultiTenancy, ReadOnlyToken,
 };
 use crate::sdk_auth::SdkAuthApp;
 use async_graphql::{EmptySubscription, Schema};
@@ -153,11 +153,22 @@ pub async fn graphiql() -> impl axum::response::IntoResponse {
 /// user's policies.
 pub async fn graphql_handler(
     executor: LibraryExecutor,
+    // Extracted after `executor`, which inserts it for a read-only token.
+    read_only: Option<Extension<ReadOnlyToken>>,
     multi_tenancy: LibraryMultiTenancy,
     Extension(base_sdk): Extension<Arc<SdkAuthApp>>,
     schema: axum::Extension<AppSchema>,
     axum::Json(gql_req): axum::Json<async_graphql::Request>,
 ) -> impl IntoResponse {
+    if read_only.is_some() && requests_mutation(&gql_req.query) {
+        return axum::response::Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"errors":[{"message":"insufficient_scope: mutations need mcp:write"}]}"#,
+            ))
+            .unwrap();
+    }
     let caller_auth = executor.caller_auth_app(&base_sdk).ok();
     let auth_executor: tachyon_sdk::auth::Executor = executor.into();
 
@@ -186,6 +197,19 @@ pub async fn graphql_handler(
         .unwrap()
 }
 
+/// Whether the document defines a mutation. Any mutation counts, whatever
+/// operation name the request picks, and a document that does not parse
+/// counts too: a read-only token must never reach a mutation resolver.
+fn requests_mutation(query: &str) -> bool {
+    match async_graphql::parser::parse_query(query) {
+        Ok(document) => document.operations.iter().any(|(_, operation)| {
+            operation.node.ty
+                == async_graphql::parser::types::OperationType::Mutation
+        }),
+        Err(_) => true,
+    }
+}
+
 pub async fn graphql_introspection(
     Extension(schema): Extension<AppSchema>,
 ) -> String {
@@ -194,7 +218,22 @@ pub async fn graphql_introspection(
 
 #[cfg(test)]
 mod tests {
-    use super::count_tenant_staff;
+    use super::{count_tenant_staff, requests_mutation};
+
+    #[test]
+    fn a_document_with_a_mutation_is_a_mutation_request() {
+        assert!(requests_mutation("mutation { deleteRepo(input: {}) }"));
+        assert!(requests_mutation(
+            "query Q { me { id } } mutation M { deleteRepo(input: {}) }"
+        ));
+        assert!(requests_mutation("not graphql"));
+    }
+
+    #[test]
+    fn queries_are_not_mutation_requests() {
+        assert!(!requests_mutation("{ me { id } }"));
+        assert!(!requests_mutation("query Q { me { id } }"));
+    }
     use chrono::Utc;
     use tachyon_sdk::auth::{DefaultRole, MockAuthApp, User};
     use value_object::{TenantId, UserId};
