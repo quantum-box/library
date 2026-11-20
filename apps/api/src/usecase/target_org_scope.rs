@@ -31,12 +31,14 @@ pub(crate) fn authorization_scope_for_org(
                 "The organization does not match the authorization tenant",
             ))
         }
+        // The platform is carried over as it is, absence included. A
+        // scope without one is how an organization adopted from another
+        // platform is addressed (`LibraryOrg::for_organization`): tachyon
+        // resolves the platform from the operator. Filling in Library's
+        // platform there made every check on such an organization fail
+        // with 403 "Upstream authorization rejected".
         _ => Ok(MultiTenancy::new(
-            Some(
-                scope
-                    .platform_id()
-                    .unwrap_or_else(|| LIBRARY_TENANT.clone()),
-            ),
+            scope.platform_id(),
             Some(organization_id.clone()),
         )),
     }
@@ -84,7 +86,19 @@ mod tests {
         let scoped =
             authorization_scope_for_org(&scope, &tenant('b')).unwrap();
         assert_eq!(scoped.operator_id(), Some(tenant('b')));
-        assert_eq!(scoped.platform_id(), Some(LIBRARY_TENANT.clone()));
+        assert_eq!(scoped.platform_id(), None);
+    }
+
+    /// An organization adopted from another platform is addressed with no
+    /// platform, so tachyon resolves it from the operator. Library's
+    /// platform there is refused upstream.
+    #[test]
+    fn an_organization_on_another_platform_keeps_no_platform() {
+        let scope = MultiTenancy::new(None, Some(tenant('b')));
+        let scoped =
+            authorization_scope_for_org(&scope, &tenant('b')).unwrap();
+        assert_eq!(scoped.operator_id(), Some(tenant('b')));
+        assert_eq!(scoped.platform_id(), None);
     }
 
     #[test]
