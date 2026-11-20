@@ -62,13 +62,22 @@ impl DeleteSourceInputPort for DeleteSource {
         // TODO: add English comment
         let repo_username =
             input.repo_username.parse::<value_object::Identifier>()?;
-        let _repo = self
+        let repo = self
             .get_repo_by_username
             .execute(&org_username, &repo_username)
             .await?
             .ok_or(errors::not_found!("repo not found in delete source"))?;
 
-        // TODO: add English comment
+        // The repository deletes by id alone, so the source must be shown
+        // to belong to the named repository first. Otherwise a caller with
+        // DeleteSource in their own organization could delete another
+        // organization's source by id.
+        self.source_repository
+            .get_by_id(input.source_id)
+            .await?
+            .filter(|source| source.repo_id() == repo.id())
+            .ok_or_else(|| errors::Error::not_found("source"))?;
+
         self.source_repository.delete(input.source_id).await?;
 
         Ok(())
