@@ -68,6 +68,11 @@ impl CreateSourceInputPort for CreateSource {
             .await?
             .ok_or(errors::not_found!("repo not found in create source"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // TODO: add English comment
         let source =
             Source::create(repo.id(), input.name, input.url.clone());

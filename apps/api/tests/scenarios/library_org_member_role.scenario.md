@@ -10,7 +10,7 @@ config:
     Authorization: Bearer dummy-token
     Content-Type: application/json
     x-platform-id: tn_01j702qf86pc2j35s0kv0gv3gy
-    x-operator-id: tn_01hjryxysgey07h5jz5wagqj0m
+    x-operator-id: tn_01j702qf86pc2j35s0kv0gv3gy
     x-user-id: us_01ke1h5471vxsbscp8jd3bramn
   timeout: 30
   continue_on_failure: false

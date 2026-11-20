@@ -111,6 +111,11 @@ impl BulkSyncExtGithubInputPort for BulkSyncExtGithub {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // Check permission
         self.auth
             .check_policy(&CheckPolicyInput {

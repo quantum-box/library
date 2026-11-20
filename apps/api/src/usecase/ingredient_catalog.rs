@@ -250,6 +250,7 @@ impl CatalogLookup {
                 self.auth.as_ref(),
                 executor,
                 multi_tenancy,
+                catalog.tenant_id(),
                 repo_id.as_ref(),
             )
             .await?;

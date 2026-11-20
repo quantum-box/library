@@ -62,6 +62,11 @@ impl DeleteDataInputPort for DeleteData {
             .await?
             .ok_or(errors::not_found!("repo not found in delete data"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         self.database
             .delete_data_usecase()
             .execute(&database_manager::usecase::DeleteDataInputData {

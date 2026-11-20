@@ -271,6 +271,7 @@ async fn authorized_target(
             auth,
             executor,
             tenancy,
+            repo.organization_id(),
             repo.id().as_ref(),
         )
         .await
@@ -358,7 +359,7 @@ mod tests {
             }
             Ok(Some(crate::domain::Repo::new(
                 &crate::domain::RepoId::default(),
-                &Default::default(),
+                tenant,
                 &"org".parse().unwrap(),
                 &"target".parse().unwrap(),
                 &"target".parse().unwrap(),
@@ -372,7 +373,9 @@ mod tests {
     #[tokio::test]
     async fn rollup_authorization_fails_closed_for_missing_foreign_or_denied_targets(
     ) {
-        let tenant = TenantId::default();
+        let tenant =
+            TenantId::new(tachyon_sdk::auth::test_helper::TEST_TENANT_ID)
+                .unwrap();
         let database = domain::DatabaseId::default();
         let repos = Repos {
             visible: true,

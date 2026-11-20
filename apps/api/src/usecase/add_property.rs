@@ -64,6 +64,11 @@ impl AddPropertyInputPort for AddProperty {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
+        super::ensure_scope_targets_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
+
         // TODO: add English comment
         // let user = self
         //     .auth

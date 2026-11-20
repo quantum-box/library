@@ -95,6 +95,7 @@ impl ViewDataListInputPort for ViewDataList {
                 self.auth_app.as_ref(),
                 input.executor,
                 input.multi_tenancy,
+                repo.organization_id(),
                 repo.id().as_ref(),
             )
             .await?;
