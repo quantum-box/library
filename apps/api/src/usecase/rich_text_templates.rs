@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::sync::Arc;
+use value_object::TenantId;
 
 use async_trait::async_trait;
 use tachyon_sdk::auth::{
@@ -123,8 +124,8 @@ async fn resolve_repo(
     multi_tenancy: &dyn MultiTenancyAction,
     org_username: String,
     repo_username: String,
-) -> errors::Result<RepoId> {
-    Ok(view_repo
+) -> errors::Result<(RepoId, TenantId)> {
+    let repo = view_repo
         .execute(&ViewRepoInputData {
             executor,
             multi_tenancy,
@@ -132,21 +133,23 @@ async fn resolve_repo(
             repo_username,
         })
         .await?
-        .repo
-        .id()
-        .clone())
+        .repo;
+    Ok((repo.id().clone(), repo.organization_id().clone()))
 }
 
 async fn authorize_edit(
     auth_app: &dyn AuthApp,
     executor: &dyn ExecutorAction,
     multi_tenancy: &dyn MultiTenancyAction,
+    organization_id: &TenantId,
     repo_id: &RepoId,
 ) -> errors::Result<()> {
+    let scope =
+        super::authorization_scope_for_org(multi_tenancy, organization_id)?;
     auth_app
         .check_policy_for_resource(&CheckPolicyForResourceInput {
             executor,
-            multi_tenancy,
+            multi_tenancy: &scope,
             action: "library:UpdateRepo",
             resource_trn: &format!("trn:library:repo:{repo_id}"),
         })
@@ -180,7 +183,7 @@ impl ListRichTextTemplatesInputPort for ListRichTextTemplates {
         &self,
         input: &ListRichTextTemplatesInputData<'_>,
     ) -> errors::Result<Vec<RichTextTemplate>> {
-        let repo_id = resolve_repo(
+        let (repo_id, org_id) = resolve_repo(
             self.view_repo.as_ref(),
             input.executor,
             input.multi_tenancy,
@@ -192,6 +195,7 @@ impl ListRichTextTemplatesInputPort for ListRichTextTemplates {
             self.auth_app.as_ref(),
             input.executor,
             input.multi_tenancy,
+            &org_id,
             &repo_id,
         )
         .await?;
@@ -228,7 +232,7 @@ impl SaveRichTextTemplateInputPort for SaveRichTextTemplate {
     ) -> errors::Result<RichTextTemplate> {
         let (name, rich_text) =
             normalize_template(&input.name, &input.rich_text)?;
-        let repo_id = resolve_repo(
+        let (repo_id, org_id) = resolve_repo(
             self.view_repo.as_ref(),
             input.executor,
             input.multi_tenancy,
@@ -240,6 +244,7 @@ impl SaveRichTextTemplateInputPort for SaveRichTextTemplate {
             self.auth_app.as_ref(),
             input.executor,
             input.multi_tenancy,
+            &org_id,
             &repo_id,
         )
         .await?;
@@ -286,7 +291,7 @@ impl UpdateRichTextTemplateInputPort for UpdateRichTextTemplate {
     ) -> errors::Result<RichTextTemplate> {
         let (name, rich_text) =
             normalize_template(&input.name, &input.rich_text)?;
-        let repo_id = resolve_repo(
+        let (repo_id, org_id) = resolve_repo(
             self.view_repo.as_ref(),
             input.executor,
             input.multi_tenancy,
@@ -298,6 +303,7 @@ impl UpdateRichTextTemplateInputPort for UpdateRichTextTemplate {
             self.auth_app.as_ref(),
             input.executor,
             input.multi_tenancy,
+            &org_id,
             &repo_id,
         )
         .await?;
@@ -348,7 +354,7 @@ impl DeleteRichTextTemplateInputPort for DeleteRichTextTemplate {
         &self,
         input: &DeleteRichTextTemplateInputData<'_>,
     ) -> errors::Result<bool> {
-        let repo_id = resolve_repo(
+        let (repo_id, org_id) = resolve_repo(
             self.view_repo.as_ref(),
             input.executor,
             input.multi_tenancy,
@@ -360,6 +366,7 @@ impl DeleteRichTextTemplateInputPort for DeleteRichTextTemplate {
             self.auth_app.as_ref(),
             input.executor,
             input.multi_tenancy,
+            &org_id,
             &repo_id,
         )
         .await?;

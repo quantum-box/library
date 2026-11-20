@@ -38,21 +38,23 @@ impl UpdateOrganizationInputPort for UpdateOrganization {
         &self,
         input: &UpdateOrganizationInputData<'_>,
     ) -> errors::Result<UpdateOrganizationOutputData> {
-        self.auth_app
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:UpdateOrganization",
-            })
-            .await?;
-
         let org = self
             .get_organization_by_username
             .execute(&Identifier::from_str(&input.username)?)
             .await?
             .ok_or(errors::Error::not_found("organization is not found"))?;
 
-        super::ensure_scope_targets_org(input.multi_tenancy, org.id())?;
+        let scope = super::authorization_scope_for_org(
+            input.multi_tenancy,
+            org.id(),
+        )?;
+        self.auth_app
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:UpdateOrganization",
+            })
+            .await?;
 
         let updated_org = org.revise_profile(
             &Text::from_str(&input.name)?,

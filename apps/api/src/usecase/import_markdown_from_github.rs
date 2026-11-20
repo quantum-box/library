@@ -71,16 +71,6 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
         &self,
         input: ImportMarkdownFromGitHubInputData<'a>,
     ) -> errors::Result<ImportMarkdownResult> {
-        // Check permission
-        input
-            .auth
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:CreateData",
-            })
-            .await?;
-
         // Get GitHub OAuth token
         let token = input
             .auth
@@ -115,10 +105,18 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 organization_username: input.org_username.clone(),
             })
             .await?;
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             org_output.organization.id(),
         )?;
+        input
+            .auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:CreateData",
+            })
+            .await?;
 
         // Find or create the repo
         let repo = org_output

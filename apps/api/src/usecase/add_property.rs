@@ -39,14 +39,6 @@ impl AddPropertyInputPort for AddProperty {
         &self,
         input: AddPropertyInputData<'a>,
     ) -> errors::Result<Property> {
-        self.auth
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:DatabaseAddProperty",
-            })
-            .await?;
-
         let org = self
             .get_org_by_username
             .execute(&input.org_username.parse()?)
@@ -64,10 +56,17 @@ impl AddPropertyInputPort for AddProperty {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:DatabaseAddProperty",
+            })
+            .await?;
 
         // TODO: add English comment
         // let user = self

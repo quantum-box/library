@@ -102,7 +102,7 @@ impl AddDataInputPort for AddData {
             .await?
             .ok_or(errors::Error::not_found("repo"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
@@ -111,7 +111,7 @@ impl AddDataInputPort for AddData {
         self.auth_ctx
             .check_policy(&CheckPolicyInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:UpdateRepo",
             })
             .await?;

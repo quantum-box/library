@@ -23,6 +23,7 @@ use crate::usecase::{
 #[derive(Debug)]
 pub struct ChangeRepoMemberRole {
     auth_app: Arc<dyn AuthApp>,
+    repo_repo: Arc<dyn crate::domain::RepoRepository>,
     get_repo_members: Arc<dyn GetRepoMembersInputPort>,
 }
 
@@ -30,10 +31,12 @@ impl ChangeRepoMemberRole {
     /// Create a new ChangeRepoMemberRole usecase instance.
     pub fn new(
         auth_app: Arc<dyn AuthApp>,
+        repo_repo: Arc<dyn crate::domain::RepoRepository>,
         get_repo_members: Arc<dyn GetRepoMembersInputPort>,
     ) -> Self {
         Self {
             auth_app,
+            repo_repo,
             get_repo_members,
         }
     }
@@ -55,13 +58,28 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
         input: ChangeRepoMemberRoleInputData<'a>,
     ) -> errors::Result<()> {
         // Generate TRN format resource identifier
+        // Members of a repository are granted, listed and checked in the
+        // tenant of the organization that owns it, whatever tenant the
+        // request names (see `authorization_scope_for_org`).
+        let repo = self
+            .repo_repo
+            .get_by_id(
+                &crate::domain::LIBRARY_TENANT,
+                &input.repo_id.parse()?,
+            )
+            .await?
+            .ok_or(errors::Error::not_found("repo"))?;
+        let scope = super::authorization_scope_for_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
         let resource_trn = format!("trn:library:repo:{}", input.repo_id);
 
         // Permission check: Only repo owners can change member roles
         self.auth_app
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:ChangeRepoMemberRole",
                 resource_trn: &resource_trn,
             })
@@ -79,7 +97,7 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
             }
         };
 
-        let tenant_id = input.multi_tenancy.get_operator_id()?;
+        let tenant_id = repo.organization_id().clone();
         let user_id: tachyon_sdk::auth::UserId = input.user_id.parse()?;
 
         // Get current members to check constraints
@@ -87,7 +105,7 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
             .get_repo_members
             .execute(GetRepoMembersInputData {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 resource_trn: &resource_trn,
                 tenant_id: &tenant_id,
             })
@@ -124,7 +142,7 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
                 .detach_user_policy_with_scope(
                     &DetachUserPolicyWithScopeInput {
                         executor: input.executor,
-                        multi_tenancy: input.multi_tenancy,
+                        multi_tenancy: &scope,
                         user_id: &user_id,
                         policy_id: &tachyon_sdk::auth::PolicyId::new(
                             policy_id,
@@ -141,7 +159,7 @@ impl ChangeRepoMemberRoleInputPort for ChangeRepoMemberRole {
             .attach_user_policy_with_scope(
                 &AttachUserPolicyWithScopeInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     user_id: &user_id,
                     policy_id: &tachyon_sdk::auth::PolicyId::new(
                         new_policy_id,

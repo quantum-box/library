@@ -405,10 +405,14 @@ async fn load_live_scope(
     // reader a Live editing room.
     let caller_auth = executor.caller_auth_app(base_sdk)?.auth_app();
     let resource_trn = repo_resource_trn(repo_output.repo.id().as_ref());
+    let scope = crate::usecase::authorization_scope_for_org(
+        library_org,
+        repo_output.repo.organization_id(),
+    )?;
     caller_auth
         .check_policy_for_resource(&CheckPolicyForResourceInput {
             executor,
-            multi_tenancy: library_org,
+            multi_tenancy: &scope,
             action: UPDATE_REPO_ACTION,
             resource_trn: &resource_trn,
         })

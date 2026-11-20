@@ -335,16 +335,19 @@ impl LibraryApp {
         ));
         let invite_repo_member = Arc::new(usecase::InviteRepoMember::new(
             auth_app.clone(),
+            repo_repo.clone(),
             user_query.clone(),
             get_repo_members.clone(),
         ));
         let remove_repo_member = Arc::new(usecase::RemoveRepoMember::new(
             auth_app.clone(),
+            repo_repo.clone(),
             get_repo_members.clone(),
         ));
         let change_repo_member_role =
             Arc::new(usecase::ChangeRepoMemberRole::new(
                 auth_app.clone(),
+                repo_repo.clone(),
                 get_repo_members.clone(),
             ));
         let share_link_repo: Arc<dyn crate::domain::ShareLinkRepository> =

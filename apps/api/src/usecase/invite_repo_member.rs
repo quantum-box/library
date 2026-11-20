@@ -26,6 +26,7 @@ const OWNER_POLICY_ID: &str = "pol_01libraryrepoowner";
 #[derive(Debug)]
 pub struct InviteRepoMember {
     auth_app: Arc<dyn AuthApp>,
+    repo_repo: Arc<dyn crate::domain::RepoRepository>,
     user_query: Arc<dyn UserQuery>,
     get_repo_members: Arc<dyn GetRepoMembersInputPort>,
 }
@@ -34,11 +35,13 @@ impl InviteRepoMember {
     /// Create a new InviteRepoMember usecase instance.
     pub fn new(
         auth_app: Arc<dyn AuthApp>,
+        repo_repo: Arc<dyn crate::domain::RepoRepository>,
         user_query: Arc<dyn UserQuery>,
         get_repo_members: Arc<dyn GetRepoMembersInputPort>,
     ) -> Self {
         Self {
             auth_app,
+            repo_repo,
             user_query,
             get_repo_members,
         }
@@ -52,13 +55,28 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
         input: InviteRepoMemberInputData<'a>,
     ) -> errors::Result<()> {
         // Generate TRN format resource identifier
+        // Members of a repository are granted, listed and checked in the
+        // tenant of the organization that owns it, whatever tenant the
+        // request names (see `authorization_scope_for_org`).
+        let repo = self
+            .repo_repo
+            .get_by_id(
+                &crate::domain::LIBRARY_TENANT,
+                &input.repo_id.parse()?,
+            )
+            .await?
+            .ok_or(errors::Error::not_found("repo"))?;
+        let scope = super::authorization_scope_for_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
         let resource_trn = format!("trn:library:repo:{}", input.repo_id);
 
         // Permission check: Only repo owners can invite members
         self.auth_app
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:InviteRepoMember",
                 resource_trn: &resource_trn,
             })
@@ -85,7 +103,7 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
             }
         };
 
-        let tenant_id = input.multi_tenancy.get_operator_id()?;
+        let tenant_id = repo.organization_id().clone();
 
         // Safety check: Cannot add a new owner if one already exists
         // Repository must have exactly one owner
@@ -94,7 +112,7 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
                 .get_repo_members
                 .execute(GetRepoMembersInputData {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     resource_trn: &resource_trn,
                     tenant_id: &tenant_id,
                 })
@@ -116,7 +134,7 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
         self.auth_app
             .add_user_to_tenant(&AddUserToTenantInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 user_id: user.id(),
                 tenant_id: &tenant_id,
             })
@@ -127,7 +145,7 @@ impl InviteRepoMemberInputPort for InviteRepoMember {
             .attach_user_policy_with_scope(
                 &AttachUserPolicyWithScopeInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     user_id: user.id(),
                     policy_id: &tachyon_sdk::auth::PolicyId::new(policy_id),
                     tenant_id: &tenant_id,

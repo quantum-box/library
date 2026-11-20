@@ -44,14 +44,11 @@ where
 
         if let Some(username) = org_username {
             // Parse the username to OperatorAlias
-            let operator_alias =
-                match value_object::Identifier::from_str(&username) {
-                    Ok(alias) => alias,
-                    Err(_) => {
-                        // If the username is not a valid OperatorAlias, return a default LibraryOrg with the username
-                        return Ok(LibraryOrg::with_org(username));
-                    }
-                };
+            // The handler acts on the organization its own path extractor
+            // decodes. A segment that is not a plain organization username
+            // (a percent-encoded one, say) would be authorized as no
+            // organization at all, so it is refused rather than let through.
+            let operator_alias = parse_org_segment(&username)?;
 
             // Only the organization's id is needed here. `view_org` would
             // also load every repository the organization owns, and this
@@ -67,5 +64,46 @@ where
             // If no organization username is found in the path, return a default LibraryOrg
             Ok(LibraryOrg::default())
         }
+    }
+}
+
+/// Parse the raw organization segment of a request path.
+fn parse_org_segment(
+    segment: &str,
+) -> errors::Result<value_object::Identifier> {
+    if segment.contains('%') {
+        return Err(errors::Error::bad_request(
+            "The organization in the path must not be percent-encoded",
+        ));
+    }
+    value_object::Identifier::from_str(segment).map_err(|_| {
+        errors::Error::bad_request(
+            "The organization in the path is invalid",
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_org_segment;
+
+    #[test]
+    fn a_plain_organization_username_parses() {
+        assert_eq!(
+            parse_org_segment("victim-org").unwrap().to_string(),
+            "victim-org"
+        );
+    }
+
+    #[test]
+    fn a_percent_encoded_organization_is_refused() {
+        let err = parse_org_segment("victim%2Dorg").unwrap_err();
+        assert!(matches!(err, errors::Error::BadRequest { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn an_invalid_organization_is_refused() {
+        let err = parse_org_segment("not an org!").unwrap_err();
+        assert!(matches!(err, errors::Error::BadRequest { .. }), "{err:?}");
     }
 }

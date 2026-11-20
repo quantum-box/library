@@ -460,10 +460,14 @@ async fn authorize(
         ));
     }
     if write {
+        let scope = crate::usecase::authorization_scope_for_org(
+            org,
+            repo.organization_id(),
+        )?;
         app.auth_app
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor,
-                multi_tenancy: org,
+                multi_tenancy: &scope,
                 action: "library:UpdateRepo",
                 resource_trn: &format!("trn:library:repo:{}", repo.id()),
             })

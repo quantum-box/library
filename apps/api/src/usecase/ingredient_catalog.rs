@@ -262,14 +262,19 @@ impl CatalogLookup {
         &self,
         executor: &dyn ExecutorAction,
         multi_tenancy: &dyn MultiTenancyAction,
+        organization_id: &TenantId,
         repo_ids: &[RepoId],
     ) -> errors::Result<()> {
+        let scope = super::authorization_scope_for_org(
+            multi_tenancy,
+            organization_id,
+        )?;
         for repo_id in repo_ids {
             let resource_trn = format!("trn:library:repo:{repo_id}");
             self.auth
                 .check_policy_for_resource(&CheckPolicyForResourceInput {
                     executor,
-                    multi_tenancy,
+                    multi_tenancy: &scope,
                     action: "library:UpdateRepo",
                     resource_trn: &resource_trn,
                 })
@@ -349,7 +354,12 @@ impl CreateIngredientCatalogInputPort for CreateIngredientCatalog {
             value_repo.id().clone(),
         ];
         self.lookup
-            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
+            .authorize_write(
+                input.executor,
+                input.multi_tenancy,
+                &org_id,
+                &repo_ids,
+            )
             .await?;
 
         let catalog = IngredientCatalog::create(
@@ -622,7 +632,12 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
         let repo_ids: Vec<RepoId> =
             catalog.repo_ids().into_iter().cloned().collect();
         self.lookup
-            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
+            .authorize_write(
+                input.executor,
+                input.multi_tenancy,
+                catalog.tenant_id(),
+                &repo_ids,
+            )
             .await?;
         let tenant_id = catalog.tenant_id().clone();
 
@@ -668,7 +683,12 @@ impl PublishIngredientReleaseInputPort for PublishIngredientRelease {
             .catalog(&input.org_username, &input.catalog_key)
             .await?;
         self.lookup
-            .authorize_write(input.executor, input.multi_tenancy, &repo_ids)
+            .authorize_write(
+                input.executor,
+                input.multi_tenancy,
+                catalog.tenant_id(),
+                &repo_ids,
+            )
             .await?;
         let private_repo_mask = current_repos.iter().enumerate().fold(
             0u8,

@@ -73,10 +73,14 @@ impl ListApiKeysInputPort for ListApiKeys {
                 })
                 .await?;
         } else {
+            let scope = crate::usecase::authorization_scope_for_org(
+                input.multi_tenancy,
+                &tenant_id,
+            )?;
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     action: "library:ListApiKeys",
                 })
                 .await?;
@@ -140,14 +144,21 @@ impl ListApiKeysInputPort for ListApiKeys {
 
 #[cfg(test)]
 mod tests {
+    fn platform_header() -> tachyon_sdk::auth::MultiTenancy {
+        tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+        )
+    }
+
     use super::*;
     use crate::domain::Organization;
     use async_trait::async_trait;
     use mockall::mock;
     use std::str::FromStr;
     use tachyon_sdk::auth::{
-        test_helper::{create_test_executor, create_test_multi_tenancy},
-        MockAuthApp, PublicApiKeyId, PublicApiKeyValue, ServiceAccount,
+        test_helper::create_test_executor, MockAuthApp, PublicApiKeyId,
+        PublicApiKeyValue, ServiceAccount,
     };
     use value_object::Text;
 
@@ -226,7 +237,8 @@ mod tests {
         });
 
         let executor = create_test_executor();
-        let multi_tenancy = create_test_multi_tenancy();
+        // The v1 client names the platform tenant.
+        let multi_tenancy = platform_header();
         let listed = ListApiKeys::new(Arc::new(auth), Arc::new(get_org))
             .execute(&ListApiKeysInputData {
                 executor: &executor,
