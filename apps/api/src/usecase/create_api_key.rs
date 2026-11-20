@@ -96,10 +96,14 @@ impl CreateApiKeyInputPort for CreateApiKey {
                 })
                 .await?;
         } else {
+            let scope = crate::usecase::authorization_scope_for_org(
+                input.multi_tenancy,
+                &tenant_id,
+            )?;
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     action: "library:CreateApiKey",
                 })
                 .await?;
@@ -371,6 +375,13 @@ impl CreateApiKey {
 
 #[cfg(test)]
 mod tests {
+    fn platform_header() -> tachyon_sdk::auth::MultiTenancy {
+        tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+        )
+    }
+
     use super::*;
     use crate::domain::{
         Organization, LIBRARY_API_KEY_ACCOUNTS_POLICY_ID,
@@ -381,8 +392,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Mutex;
     use tachyon_sdk::auth::{
-        test_helper::create_test_multi_tenancy, MockAuthApp,
-        PublicApiKeyId, PublicApiKeyValue,
+        MockAuthApp, PublicApiKeyId, PublicApiKeyValue,
     };
     use value_object::{TenantId, Text};
 
@@ -605,10 +615,6 @@ mod tests {
         ))
     }
 
-    /// The tenant the request names, which the v1 web client sets to the
-    /// Library platform rather than to the organization.
-    const CALLER_TENANT: &str = "tn_01hjryxysgey07h5jz5wagqj0m";
-
     fn org_tenant() -> TenantId {
         TenantId::new("tn_01organization00000000000").unwrap()
     }
@@ -635,7 +641,8 @@ mod tests {
                 None,
             )))
         });
-        let multi_tenancy = create_test_multi_tenancy();
+        // The v1 client names the platform tenant.
+        let multi_tenancy = platform_header();
         CreateApiKey::new(Arc::new(auth), Arc::new(get_org))
             .execute(&CreateApiKeyInputData {
                 executor: &executor,
@@ -661,7 +668,7 @@ mod tests {
                 // Only the first check reads the caller's own scope;
                 // everything about the role is decided in the
                 // organization's tenant, whatever operator was named.
-                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:CreateApiKey@{}", org_tenant()),
                 format!("policy:library:ManageRepoPolicy@{}", org_tenant()),
                 // The caller gets what granting the account needs.
                 format!(
@@ -693,7 +700,7 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
-                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:CreateApiKey@{}", org_tenant()),
                 // Nothing is granted for a key that carries nothing.
                 "sa:None".to_string(),
                 "key:sa_01key".to_string(),
@@ -827,7 +834,7 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
-                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:CreateApiKey@{}", org_tenant()),
                 "sa:None".to_string(),
                 "find-sa:default".to_string(),
                 "key:sa_01default".to_string(),
@@ -862,7 +869,7 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             [
-                format!("policy:library:CreateApiKey@{CALLER_TENANT}"),
+                format!("policy:library:CreateApiKey@{}", org_tenant()),
                 format!("policy:library:ManageRepoPolicy@{}", org_tenant())
             ]
         );

@@ -3,6 +3,17 @@ use tachyon_sdk::auth::{
     MultiTenancyAction,
 };
 
+/// Authorize reading a private repository of `organization_id`.
+///
+/// The checks run in the organization's own tenant (see
+/// [`super::authorization_scope_for_org`]): a repository grant there, or
+/// the organization-wide `library:ViewPrivateRepo`. Repository grants
+/// made through the v1 client were attached in Library's platform tenant
+/// with the repository as resource scope, so a caller that names the
+/// platform tenant may also pass with `library:ViewRepo` on this
+/// repository there. `LibraryUserPolicy`, which everyone holds in the
+/// platform tenant, does not carry `library:ViewRepo`, so only such a
+/// repository grant satisfies it.
 pub async fn authorize_private_repo_read(
     auth_app: &dyn AuthApp,
     executor: &dyn ExecutorAction,
@@ -10,38 +21,56 @@ pub async fn authorize_private_repo_read(
     organization_id: &value_object::TenantId,
     repo_id: &str,
 ) -> errors::Result<()> {
-    super::ensure_scope_targets_org(multi_tenancy, organization_id)?;
+    let org_scope =
+        super::authorization_scope_for_org(multi_tenancy, organization_id)?;
     let resource_trn = format!("trn:library:repo:{repo_id}");
 
     let resource_access = auth_app
         .check_policy_for_resource(&CheckPolicyForResourceInput {
             executor,
-            multi_tenancy,
+            multi_tenancy: &org_scope,
             action: "library:ViewRepo",
             resource_trn: &resource_trn,
         })
         .await;
-
-    if resource_access.is_err() {
-        auth_app
-            .check_policy(&CheckPolicyInput {
-                executor,
-                multi_tenancy,
-                action: "library:ViewPrivateRepo",
-            })
-            .await?;
+    if resource_access.is_ok() {
+        return Ok(());
     }
 
-    Ok(())
+    let org_wide = auth_app
+        .check_policy(&CheckPolicyInput {
+            executor,
+            multi_tenancy: &org_scope,
+            action: "library:ViewPrivateRepo",
+        })
+        .await;
+    match org_wide {
+        Ok(()) => Ok(()),
+        Err(error)
+            if super::header_names_platform_tenant(multi_tenancy) =>
+        {
+            auth_app
+                .check_policy_for_resource(&CheckPolicyForResourceInput {
+                    executor,
+                    multi_tenancy,
+                    action: "library:ViewRepo",
+                    resource_trn: &resource_trn,
+                })
+                .await
+                .map_err(|_| error)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::LIBRARY_TENANT;
     use std::sync::{Arc, Mutex};
     use tachyon_sdk::auth::{
         test_helper::{create_test_executor, create_test_multi_tenancy},
-        MockAuthApp,
+        MockAuthApp, MultiTenancy,
     };
 
     fn mock_auth(
@@ -49,16 +78,34 @@ mod tests {
         deny_resource: bool,
         deny_org_wide: bool,
     ) -> MockAuthApp {
+        mock_auth_with_platform_grant(
+            calls,
+            deny_resource,
+            deny_org_wide,
+            false,
+        )
+    }
+
+    /// `platform_grant`: a repository grant exists in the platform tenant.
+    fn mock_auth_with_platform_grant(
+        calls: Arc<Mutex<Vec<String>>>,
+        deny_resource: bool,
+        deny_org_wide: bool,
+        platform_grant: bool,
+    ) -> MockAuthApp {
         let mut auth = MockAuthApp::new();
         auth.expect_check_policy_for_resource().returning({
             let calls = calls.clone();
             move |input| {
+                let operator = input.multi_tenancy.operator_id();
                 calls.lock().unwrap().push(format!(
                     "resource:{}:{}",
                     input.action, input.resource_trn
                 ));
+                let platform_grant = platform_grant
+                    && operator.as_ref() == Some(&*LIBRARY_TENANT);
                 Box::pin(async move {
-                    if deny_resource {
+                    if deny_resource && !platform_grant {
                         Err(errors::Error::forbidden("denied"))
                     } else {
                         Ok(())
@@ -159,5 +206,114 @@ mod tests {
                 "policy:library:ViewPrivateRepo"
             ]
         );
+    }
+
+    fn platform_header() -> MultiTenancy {
+        MultiTenancy::new(
+            Some(LIBRARY_TENANT.clone()),
+            Some(LIBRARY_TENANT.clone()),
+        )
+    }
+
+    fn org() -> value_object::TenantId {
+        "tn_01hjryxysgey07h5jz5wagqj0b".parse().unwrap()
+    }
+
+    #[tokio::test]
+    async fn platform_header_is_checked_in_the_organization_tenant() {
+        let operators = Arc::new(Mutex::new(Vec::new()));
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy_for_resource().returning({
+            let operators = operators.clone();
+            move |input| {
+                operators
+                    .lock()
+                    .unwrap()
+                    .push(input.multi_tenancy.operator_id());
+                Box::pin(async { Err(errors::Error::forbidden("denied")) })
+            }
+        });
+        auth.expect_check_policy().returning({
+            let operators = operators.clone();
+            move |input| {
+                operators
+                    .lock()
+                    .unwrap()
+                    .push(input.multi_tenancy.operator_id());
+                // The platform tenant would allow anyone.
+                let allowed = input.multi_tenancy.operator_id().as_ref()
+                    == Some(&*LIBRARY_TENANT);
+                Box::pin(async move {
+                    if allowed {
+                        Ok(())
+                    } else {
+                        Err(errors::Error::forbidden("denied"))
+                    }
+                })
+            }
+        });
+
+        let error = authorize_private_repo_read(
+            &auth,
+            &create_test_executor(),
+            &platform_header(),
+            &org(),
+            "rp_01test",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, errors::Error::Forbidden { .. }));
+        assert_eq!(
+            operators.lock().unwrap().as_slice(),
+            &[Some(org()), Some(org()), Some(LIBRARY_TENANT.clone()),],
+            "ViewRepo and ViewPrivateRepo in the organization, then only \
+             the repository grant in the platform tenant"
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_header_passes_with_a_repository_grant_there() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth =
+            mock_auth_with_platform_grant(calls.clone(), true, true, true);
+
+        authorize_private_repo_read(
+            &auth,
+            &create_test_executor(),
+            &platform_header(),
+            &org(),
+            "rp_01test",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[
+                "resource:library:ViewRepo:trn:library:repo:rp_01test",
+                "policy:library:ViewPrivateRepo",
+                "resource:library:ViewRepo:trn:library:repo:rp_01test",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn organization_header_has_no_platform_fallback() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth =
+            mock_auth_with_platform_grant(calls.clone(), true, true, true);
+
+        authorize_private_repo_read(
+            &auth,
+            &create_test_executor(),
+            &MultiTenancy::new(None, Some(org())),
+            &org(),
+            "rp_01test",
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(calls.lock().unwrap().len(), 2);
     }
 }

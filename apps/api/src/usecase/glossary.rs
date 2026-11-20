@@ -222,10 +222,14 @@ impl SetGlossaryInputPort for SetGlossary {
             .await?
             .repo;
 
+        let scope = crate::usecase::authorization_scope_for_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
         self.auth_app
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:UpdateRepo",
                 resource_trn: &format!("trn:library:repo:{}", repo.id()),
             })

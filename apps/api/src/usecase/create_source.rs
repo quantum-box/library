@@ -40,15 +40,6 @@ impl CreateSourceInputPort for CreateSource {
         input: CreateSourceInputData<'a>,
     ) -> errors::Result<Source> {
         // TODO: add English comment
-        self.auth
-            .check_policy(&tachyon_sdk::auth::CheckPolicyInput::<'a> {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:CreateSource",
-            })
-            .await?;
-
-        // TODO: add English comment
         let org_username =
             input.org_username.parse::<value_object::Identifier>()?;
         let _org = self
@@ -68,10 +59,17 @@ impl CreateSourceInputPort for CreateSource {
             .await?
             .ok_or(errors::not_found!("repo not found in create source"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:CreateSource",
+            })
+            .await?;
 
         // TODO: add English comment
         let source =

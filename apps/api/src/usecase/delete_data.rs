@@ -41,14 +41,6 @@ impl DeleteDataInputPort for DeleteData {
         &self,
         input: DeleteDataInputData<'a>,
     ) -> errors::Result<()> {
-        self.auth_app
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: DELETE_DATA_ACTION,
-            })
-            .await?;
-
         let org = self
             .get_org_by_username
             .execute(&input.org_username.parse()?)
@@ -62,10 +54,17 @@ impl DeleteDataInputPort for DeleteData {
             .await?
             .ok_or(errors::not_found!("repo not found in delete data"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth_app
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: DELETE_DATA_ACTION,
+            })
+            .await?;
 
         self.database
             .delete_data_usecase()

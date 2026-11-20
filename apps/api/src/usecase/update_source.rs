@@ -39,15 +39,6 @@ impl UpdateSourceInputPort for UpdateSource {
         &self,
         input: UpdateSourceInputData<'a>,
     ) -> errors::Result<Source> {
-        // TODO: add English comment
-        self.auth
-            .check_policy(&tachyon_sdk::auth::CheckPolicyInput::<'a> {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:UpdateSource",
-            })
-            .await?;
-
         let org_username =
             input.org_username.parse::<value_object::Identifier>()?;
         let _org = self
@@ -64,10 +55,17 @@ impl UpdateSourceInputPort for UpdateSource {
             .await?
             .ok_or(errors::Error::not_found("repo"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&tachyon_sdk::auth::CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:UpdateSource",
+            })
+            .await?;
 
         // The policy above is checked for the named organization, so the
         // source must belong to the named repository. Otherwise a caller

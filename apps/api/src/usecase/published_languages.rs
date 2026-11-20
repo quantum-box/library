@@ -188,10 +188,14 @@ impl SetPublishedLanguagesInputPort for SetPublishedLanguages {
         // Publishing a language is a repo setting, so it reuses the
         // repo-update permission rather than introducing an action that
         // would have to be granted separately in Tachyon.
+        let scope = crate::usecase::authorization_scope_for_org(
+            input.multi_tenancy,
+            repo.organization_id(),
+        )?;
         self.auth_app
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:UpdateRepo",
                 resource_trn: &format!("trn:library:repo:{}", repo.id()),
             })

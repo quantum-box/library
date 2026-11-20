@@ -158,10 +158,14 @@ impl ShareLinks {
             .ok_or(errors::not_found!("repo not found"))?;
 
         let resource_trn = format!("trn:library:repo:{}", repo.id());
+        let scope = crate::usecase::authorization_scope_for_org(
+            target.multi_tenancy,
+            repo.organization_id(),
+        )?;
         self.auth
             .check_policy_for_resource(&CheckPolicyForResourceInput {
                 executor: target.executor,
-                multi_tenancy: target.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:UpdateRepo",
                 resource_trn: &resource_trn,
             })

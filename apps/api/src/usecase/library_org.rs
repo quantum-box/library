@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use derive_new::new;
@@ -29,15 +28,11 @@ pub struct LibraryOrg {
 impl LibraryOrg {
     /// Create a new LibraryOrg with the given organization username
     pub fn with_org(org_username: String) -> Self {
-        // Try to convert the username to an OperatorAlias
-        // For simplicity, we'll just create a new TenantId (which is the same as OperatorId)
-        let operator = match Identifier::from_str(&org_username) {
-            Ok(_) => Some(TenantId::default()),
-            Err(_) => None,
-        };
-
+        // Only the username is known here, not the organization's tenant.
+        // Without an operator, the use cases authorize the action in the
+        // tenant of the organization they resolve from the username.
         Self {
-            operator,
+            operator: None,
             org_username: Some(org_username),
             other_platform: false,
         }
@@ -218,10 +213,11 @@ mod tests {
         let library_org = LibraryOrg::default();
         assert_eq!(library_org.operator_id(), None);
 
-        // With org should have an operator ID
+        // A username alone names no tenant, so there is no operator to
+        // invent: the use case resolves the organization's own tenant.
         let org_username = "test-org".to_string();
         let library_org = LibraryOrg::with_org(org_username);
-        assert!(library_org.operator_id().is_some());
+        assert_eq!(library_org.operator_id(), None);
     }
 
     #[test]
@@ -233,11 +229,10 @@ mod tests {
             LIBRARY_TENANT.clone()
         );
 
-        // With org returns the operator ID
+        // With only a username it falls back the same way
         let org_username = "test-org".to_string();
         let library_org = LibraryOrg::with_org(org_username);
-        assert!(library_org.get_operator_id().is_ok());
-        assert_ne!(
+        assert_eq!(
             library_org.get_operator_id().unwrap(),
             LIBRARY_TENANT.clone()
         );
@@ -517,6 +512,6 @@ mod tests {
         let org_username = "test-org".to_string();
         let library_org = LibraryOrg::with_org(org_username.clone());
         assert_eq!(library_org.org_username(), Some(&org_username));
-        assert!(library_org.operator.is_some());
+        assert!(library_org.operator.is_none());
     }
 }

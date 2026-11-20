@@ -64,12 +64,16 @@ impl ChangeOrgMemberRoleInputPort for ChangeOrgMemberRole {
         &self,
         input: ChangeOrgMemberRoleInputData<'a>,
     ) -> errors::Result<ChangeOrgMemberRoleOutputData> {
-        // Policy check
+        // Policy check, in the organization's own tenant
+        let scope = crate::usecase::authorization_scope_for_org(
+            input.multi_tenancy,
+            input.tenant_id,
+        )?;
         AuthApp::check_policy(
             self.sdk.as_ref(),
             &CheckPolicyInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:ChangeOrgMemberRole",
             },
         )

@@ -39,14 +39,6 @@ impl DeletePropertyInputPort for DeleteProperty {
         &self,
         input: DeletePropertyInputData<'a>,
     ) -> errors::Result<domain::Property> {
-        self.auth
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:DatabaseDeleteProperty",
-            })
-            .await?;
-
         let org = self
             .get_org_by_username
             .execute(&input.org_username.parse()?)
@@ -62,10 +54,17 @@ impl DeletePropertyInputPort for DeleteProperty {
                 "repo not found in delete property"
             ))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:DatabaseDeleteProperty",
+            })
+            .await?;
         // TODO: add English comment
         // let user = self
         //     .auth

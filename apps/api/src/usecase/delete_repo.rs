@@ -37,14 +37,6 @@ impl DeleteRepoInputPort for DeleteRepo {
         &self,
         input: DeleteRepoInputData<'a>,
     ) -> errors::Result<()> {
-        self.auth
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:DeleteRepo",
-            })
-            .await?;
-
         // let user = self
         //     .auth
         //     .authentication()
@@ -62,10 +54,17 @@ impl DeleteRepoInputPort for DeleteRepo {
             .await?
             .ok_or(errors::Error::not_found("repo"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:DeleteRepo",
+            })
+            .await?;
 
         // repo.can_delete(user.id())?;
 
@@ -127,15 +126,26 @@ mod tests {
         "tn_01hjryxysgey07h5jz5wagqj0b".parse().unwrap()
     }
 
-    /// Delete the victim org's repository with the policy check run in
-    /// `header`, which allows every action. Returns the result and the
-    /// tenants a repository was deleted in.
+    /// Delete the victim org's repository, sending `header` as the
+    /// authorization tenant. The policy check passes only when it is
+    /// evaluated in `allowed_in`. Returns the result and the tenants a
+    /// repository was deleted in.
     async fn delete_victim_repo(
         header: TenantId,
+        allowed_in: TenantId,
     ) -> (errors::Result<()>, Vec<TenantId>) {
         let mut auth = MockAuthApp::new();
-        auth.expect_check_policy()
-            .returning(|_| Box::pin(async { Ok(()) }));
+        auth.expect_check_policy().returning(move |input| {
+            let allowed = input.multi_tenancy.operator_id().as_ref()
+                == Some(&allowed_in);
+            Box::pin(async move {
+                if allowed {
+                    Ok(())
+                } else {
+                    Err(errors::Error::permission_denied("denied"))
+                }
+            })
+        });
         let mut orgs = MockOrgs::new();
         orgs.expect_execute().returning(|_| {
             Ok(Some(Organization::new(
@@ -190,7 +200,8 @@ mod tests {
     #[tokio::test]
     async fn a_policy_in_the_callers_own_org_cannot_delete_another_orgs_repo(
     ) {
-        let (result, deleted) = delete_victim_repo(caller_org()).await;
+        let (result, deleted) =
+            delete_victim_repo(caller_org(), caller_org()).await;
         assert!(
             matches!(result, Err(errors::Error::Forbidden { .. })),
             "{result:?}"
@@ -200,16 +211,31 @@ mod tests {
 
     #[tokio::test]
     async fn the_target_org_tenant_deletes_its_repo() {
-        let (result, deleted) = delete_victim_repo(victim_org()).await;
+        let (result, deleted) =
+            delete_victim_repo(victim_org(), victim_org()).await;
         result.unwrap();
         assert_eq!(deleted, vec![victim_org()]);
     }
 
     #[tokio::test]
-    async fn the_platform_tenant_keeps_working_for_the_v1_client() {
+    async fn the_platform_tenant_header_is_checked_in_the_target_org() {
         let (result, deleted) =
-            delete_victim_repo(LIBRARY_TENANT.clone()).await;
+            delete_victim_repo(LIBRARY_TENANT.clone(), victim_org()).await;
         result.unwrap();
         assert_eq!(deleted, vec![victim_org()]);
+    }
+
+    #[tokio::test]
+    async fn a_policy_in_the_platform_tenant_cannot_delete_an_orgs_repo() {
+        let (result, deleted) = delete_victim_repo(
+            LIBRARY_TENANT.clone(),
+            LIBRARY_TENANT.clone(),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(errors::Error::Forbidden { .. })),
+            "{result:?}"
+        );
+        assert!(deleted.is_empty(), "{deleted:?}");
     }
 }

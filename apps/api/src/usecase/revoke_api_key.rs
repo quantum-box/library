@@ -78,10 +78,14 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
                 })
                 .await?;
         } else {
+            let scope = crate::usecase::authorization_scope_for_org(
+                input.multi_tenancy,
+                &tenant_id,
+            )?;
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     action: "library:RevokeApiKey",
                 })
                 .await?;
@@ -267,6 +271,13 @@ impl RevokeApiKeyInputPort for RevokeApiKey {
 
 #[cfg(test)]
 mod tests {
+    fn platform_header() -> tachyon_sdk::auth::MultiTenancy {
+        tachyon_sdk::auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+        )
+    }
+
     use super::*;
     use crate::domain::{Organization, LIBRARY_API_KEY_ISSUER_POLICY_ID};
     use crate::usecase::GetOrganizationByUsernameQuery;
@@ -275,8 +286,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Mutex;
     use tachyon_sdk::auth::{
-        test_helper::create_test_multi_tenancy, MockAuthApp, PublicApiKey,
-        PublicApiKeyValue, ServiceAccount,
+        MockAuthApp, PublicApiKey, PublicApiKeyValue, ServiceAccount,
     };
     use value_object::Text;
 
@@ -475,7 +485,8 @@ mod tests {
         org_query
             .expect_execute()
             .returning(|_| Ok(Some(org(&TenantId::default()))));
-        let multi_tenancy = create_test_multi_tenancy();
+        // The v1 client names the platform tenant.
+        let multi_tenancy = platform_header();
         RevokeApiKey::new(Arc::new(auth), Arc::new(org_query))
             .execute(&RevokeApiKeyInputData {
                 executor: &executor,

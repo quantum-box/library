@@ -39,14 +39,6 @@ impl UpdatePropertyInputPort for UpdateProperty {
         &self,
         input: UpdatePropertyInputData<'a>,
     ) -> errors::Result<Property> {
-        self.auth
-            .check_policy(&CheckPolicyInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                action: "library:DatabaseUpdateProperty",
-            })
-            .await?;
-
         let org = self
             .get_org_by_username
             .execute(&input.org_username.parse()?)
@@ -64,10 +56,17 @@ impl UpdatePropertyInputPort for UpdateProperty {
             })?
             .ok_or(errors::Error::not_found("repo"))?;
 
-        super::ensure_scope_targets_org(
+        let scope = super::authorization_scope_for_org(
             input.multi_tenancy,
             repo.organization_id(),
         )?;
+        self.auth
+            .check_policy(&CheckPolicyInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                action: "library:DatabaseUpdateProperty",
+            })
+            .await?;
 
         if let Some(typ) = input.property_type {
             super::computed_properties::authorize_definition(

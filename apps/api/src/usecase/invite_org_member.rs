@@ -62,12 +62,16 @@ impl InviteOrgMemberInputPort for InviteOrgMember {
         &self,
         input: InviteOrgMemberInputData<'a>,
     ) -> errors::Result<InviteOrgMemberOutputData> {
-        // Policy check
+        // Policy check, in the organization's own tenant
+        let scope = crate::usecase::authorization_scope_for_org(
+            input.multi_tenancy,
+            input.tenant_id,
+        )?;
         AuthApp::check_policy(
             self.sdk.as_ref(),
             &CheckPolicyInput {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                multi_tenancy: &scope,
                 action: "library:InviteOrgMember",
             },
         )

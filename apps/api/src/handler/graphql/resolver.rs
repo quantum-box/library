@@ -1436,11 +1436,19 @@ impl Repo {
         let app = ctx.data::<Arc<LibraryApp>>()?;
 
         let resource_trn = format!("trn:library:repo:{}", self.id);
-        let tenant_id = multi_tenancy.operator_id().ok_or_else(|| {
-            async_graphql::Error::new(
-                "Operator ID required for member list",
-            )
-        })?;
+        // Members are granted in the tenant of the organization that owns
+        // the repository, so that is where they are listed.
+        let tenant_id = value_object::TenantId::new(&self.organization_id)
+            .map_err(|e| {
+                async_graphql::Error::new(format!(
+                    "Invalid organization_id: {e}"
+                ))
+            })?;
+        let scope = crate::usecase::authorization_scope_for_org(
+            multi_tenancy,
+            &tenant_id,
+        )
+        .map_err(|e| e.extend())?;
 
         // Use request-scoped AuthApp for the same reason as
         // policies() above.
@@ -1461,7 +1469,7 @@ impl Repo {
         let member_infos = get_repo_members
             .execute(usecase::GetRepoMembersInputData {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &scope,
                 resource_trn: &resource_trn,
                 tenant_id: &tenant_id,
             })

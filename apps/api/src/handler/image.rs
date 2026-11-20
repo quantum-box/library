@@ -470,11 +470,15 @@ pub(crate) async fn store_image(
             repo_username: repo.to_string(),
         })
         .await?;
+    let scope = crate::usecase::authorization_scope_for_org(
+        library_org,
+        repo_output.repo.organization_id(),
+    )?;
     library_app
         .auth_app
         .check_policy(&CheckPolicyInput {
             executor,
-            multi_tenancy: library_org,
+            multi_tenancy: &scope,
             action: "library:UpdateRepo",
         })
         .await?;

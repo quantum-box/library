@@ -121,7 +121,9 @@ pub use search_repo::*;
 pub use share_link::*;
 pub use sign_in::*;
 pub use sync_data_to_github::*;
-pub(crate) use target_org_scope::ensure_scope_targets_org;
+pub(crate) use target_org_scope::{
+    authorization_scope_for_org, header_names_platform_tenant,
+};
 pub use update_data::*;
 pub use update_global_id_mapping::*;
 pub use update_organization::*;

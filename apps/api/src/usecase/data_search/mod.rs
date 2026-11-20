@@ -139,10 +139,14 @@ impl DataSearchInputPort for DataSearch {
                     "include_unpublished requires signing in as an editor",
                 ));
             }
+            let scope = crate::usecase::authorization_scope_for_org(
+                input.multi_tenancy,
+                repo.organization_id(),
+            )?;
             self.auth_app
                 .check_policy(&CheckPolicyInput {
                     executor: input.executor,
-                    multi_tenancy: input.multi_tenancy,
+                    multi_tenancy: &scope,
                     action: "library:UpdateRepo",
                 })
                 .await?;
