@@ -26,7 +26,7 @@ pub(super) struct Config {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Scopes {
+pub(crate) struct Scopes {
     pub read: bool,
     pub write: bool,
 }
