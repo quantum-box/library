@@ -294,11 +294,9 @@ mod tests {
                 Box::pin(async move { Ok(outcomes) })
             });
 
-        assert!(
-            caller_can_seed_tenant(&auth_app, &executor(), &tenant())
-                .await
-                .unwrap()
-        );
+        assert!(caller_can_seed_tenant(&auth_app, &executor(), &tenant())
+            .await
+            .unwrap());
     }
 
     fn tenant() -> TenantId {
