@@ -11,10 +11,12 @@ let renderQueue = Promise.resolve()
 export function DiagramPreview({
   language,
   source,
+  defaultSourceVisible = true,
   onSourceVisibilityChange,
 }: {
   language: string
   source: string
+  defaultSourceVisible?: boolean
   onSourceVisibilityChange?: (visible: boolean) => void
 }) {
   const { t } = useI18n()
@@ -22,7 +24,7 @@ export function DiagramPreview({
   const kind = diagramLanguage(language)
   const [svg, setSvg] = useState('')
   const [failed, setFailed] = useState(false)
-  const [sourceVisible, setSourceVisible] = useState(true)
+  const [sourceVisible, setSourceVisible] = useState(defaultSourceVisible)
 
   useEffect(() => {
     const controller = new AbortController()
