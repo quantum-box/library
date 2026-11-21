@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 outbound_sync_domain = { path = "domain" }
 errors = { path = "../../../../packages/errors" }
+github_provider = { path = "../github_provider" }
 integration_domain = { path = "../../../../packages/integration_domain" }
 value_object = { path = "../../../../packages/value_object" }
 tachyon-sdk = { path = "../../../../sdk/rust", features = ["auth"] }
@@ -24,7 +25,6 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 base64 = "0.22"
 similar = "2"
-urlencoding = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

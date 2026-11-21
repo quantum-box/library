@@ -30,40 +30,21 @@ use value_object::TenantId;
 use super::event_processor::{GitHubClient, PullRequestFile};
 use super::payload::glob_match;
 use crate::sdk::OAuthTokenProvider;
+use github_provider::api_url;
 
-const GITHUB_API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = "inbound-sync/0.1.0";
 
-/// Build the `https://api.github.com/repos/{owner}/{repo}/...` URL for a
-/// request.
-///
-/// Every value that ends up in the URL comes from outside: the repository and
-/// branch from endpoint settings, file paths from push payloads, pull request
-/// file lists and repository trees. Formatting them into a string lets the
-/// URL parser read `%2e%2e` (or a literal `..`) as a parent segment and
-/// normalise it away, so a file path could leave `/repos/{repo}/contents/`
-/// and make the tenant's token read any repository it can see; a `?` or `#`
-/// would cut off the `ref`. Each piece is therefore checked and then added
-/// as its own percent-encoded segment or query pair.
-fn repo_url(
-    repo: &str,
-    tail: &[&str],
-    extra: &[&str],
-) -> errors::Result<reqwest::Url> {
-    let (owner, name) = split_repository(repo)?;
-    let mut url = reqwest::Url::parse(GITHUB_API_BASE)
-        .expect("GitHub API base URL is valid");
-    url.path_segments_mut()
-        .expect("GitHub API base URL can have a path")
-        .pop_if_empty()
-        .extend(["repos", owner, name])
-        .extend(tail)
-        .extend(extra);
-    Ok(url)
-}
+// Every value in these URLs (repository and branch from endpoint settings,
+// file paths from push payloads, pull request file lists and repository
+// trees) is validated and added as its own percent-encoded segment or query
+// pair by `github_provider::api_url`, so a path such as `docs/%2e%2e/...`
+// cannot leave `/repos/{repo}/contents/` and make the tenant's token read
+// another repository.
 
 fn commits_url(repo: &str, branch: &str) -> errors::Result<reqwest::Url> {
-    repo_url(repo, &["commits"], &ref_segments(branch)?)
+    let mut tail = vec!["commits"];
+    tail.extend(api_url::ref_segments(branch)?);
+    api_url::full_name_url(repo, &tail)
 }
 
 fn contents_url(
@@ -71,11 +52,10 @@ fn contents_url(
     path: &str,
     branch: &str,
 ) -> errors::Result<reqwest::Url> {
-    validate_ref(branch)?;
-    let mut url =
-        repo_url(repo, &["contents"], &file_path_segments(path)?)?;
-    url.query_pairs_mut().append_pair("ref", branch);
-    Ok(url)
+    // An empty path would name the repository root, never a file.
+    api_url::file_path_segments(path)?;
+    let (owner, name) = api_url::split_repository(repo)?;
+    api_url::contents_url(owner, name, path, Some(branch))
 }
 
 fn pr_files_url(
@@ -83,119 +63,25 @@ fn pr_files_url(
     pr_number: u64,
 ) -> errors::Result<reqwest::Url> {
     let number = pr_number.to_string();
-    let mut url = repo_url(repo, &["pulls", &number, "files"], &[])?;
+    let mut url =
+        api_url::full_name_url(repo, &["pulls", &number, "files"])?;
     url.query_pairs_mut().append_pair("per_page", "100");
     Ok(url)
 }
 
 fn tree_url(repo: &str, branch: &str) -> errors::Result<reqwest::Url> {
-    let mut url =
-        repo_url(repo, &["git", "trees"], &ref_segments(branch)?)?;
+    let mut tail = vec!["git", "trees"];
+    tail.extend(api_url::ref_segments(branch)?);
+    let mut url = api_url::full_name_url(repo, &tail)?;
     url.query_pairs_mut().append_pair("recursive", "1");
     Ok(url)
-}
-
-/// Split `owner/repo`, accepting only the characters GitHub allows in
-/// account and repository names.
-fn split_repository(repo: &str) -> errors::Result<(&str, &str)> {
-    let invalid = || {
-        errors::Error::invalid(format!(
-            "Invalid GitHub repository name: {repo:?}"
-        ))
-    };
-    let (owner, name) = repo.split_once('/').ok_or_else(invalid)?;
-    for part in [owner, name] {
-        if part.is_empty()
-            || part == "."
-            || part == ".."
-            || !part.bytes().all(|b| {
-                b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')
-            })
-        {
-            return Err(invalid());
-        }
-    }
-    Ok((owner, name))
-}
-
-/// Check a branch or ref name against git's ref-name rules, plus `%` and `#`
-/// so that the name cannot be read as an encoded or cut-off URL part.
-fn validate_ref(name: &str) -> errors::Result<()> {
-    let invalid = || {
-        errors::Error::invalid(format!("Invalid GitHub ref name: {name:?}"))
-    };
-    if name.is_empty()
-        || name.contains("..")
-        || name.contains("@{")
-        || name.ends_with('.')
-        || name.ends_with(".lock")
-        || name.chars().any(|c| {
-            c.is_control()
-                || matches!(
-                    c,
-                    ' ' | '~'
-                        | '^'
-                        | ':'
-                        | '?'
-                        | '*'
-                        | '['
-                        | '\\'
-                        | '%'
-                        | '#'
-                )
-        })
-    {
-        return Err(invalid());
-    }
-    if name
-        .split('/')
-        .any(|segment| segment.is_empty() || segment.starts_with('.'))
-    {
-        return Err(invalid());
-    }
-    Ok(())
-}
-
-fn ref_segments(name: &str) -> errors::Result<Vec<&str>> {
-    validate_ref(name)?;
-    Ok(name.split('/').collect())
-}
-
-/// Split a repository file path into URL segments, refusing any segment that
-/// is, or percent-decodes to, an empty, `.` or `..` segment, and any segment
-/// with `\`, `?` or `#`.
-fn file_path_segments(path: &str) -> errors::Result<Vec<&str>> {
-    let invalid = || {
-        errors::Error::invalid(format!("Unsafe GitHub file path: {path:?}"))
-    };
-    let segments: Vec<&str> = path.split('/').collect();
-    for segment in &segments {
-        if !is_safe_path_segment(segment) {
-            return Err(invalid());
-        }
-        let decoded =
-            urlencoding::decode(segment).map_err(|_| invalid())?;
-        if !is_safe_path_segment(&decoded) || decoded.contains('/') {
-            return Err(invalid());
-        }
-    }
-    Ok(segments)
-}
-
-fn is_safe_path_segment(segment: &str) -> bool {
-    !segment.is_empty()
-        && segment != "."
-        && segment != ".."
-        && !segment
-            .chars()
-            .any(|c| c.is_control() || matches!(c, '\\' | '?' | '#'))
 }
 
 /// Whether a repository file path can be fetched through the contents API.
 ///
 /// Paths that fail this are never fetched; callers skip them.
 pub(crate) fn is_fetchable_file_path(path: &str) -> bool {
-    file_path_segments(path).is_ok()
+    api_url::is_fetchable_file_path(path)
 }
 
 /// Rate limiting configuration

@@ -53,7 +53,6 @@ const GITHUB_TOKEN_URL: &str =
     "https://github.com/login/oauth/access_token";
 const GITHUB_USER_URL: &str = "https://api.github.com/user";
 const GITHUB_USER_REPOS_URL: &str = "https://api.github.com/user/repos";
-const GITHUB_REPOS_URL: &str = "https://api.github.com/repos";
 
 /// Default OAuth scopes for GitHub.
 ///
@@ -482,16 +481,12 @@ impl GitHub {
     ) -> errors::Result<GitHubDirectoryListing> {
         let client = reqwest::Client::new();
 
-        let path = path.trim_start_matches('/');
-        let mut url =
-            format!("{GITHUB_REPOS_URL}/{owner}/{repo}/contents/{path}");
-
-        if let Some(ref_name) = ref_name {
-            url = format!("{url}?ref={ref_name}");
-        }
+        let path = path.trim_start_matches('/').trim_end_matches('/');
+        let url =
+            crate::api_url::contents_url(owner, repo, path, ref_name)?;
 
         let response = client
-            .get(&url)
+            .get(url)
             .header("Authorization", format!("Bearer {access_token}"))
             .header("User-Agent", "library-api")
             .header("Accept", "application/vnd.github.v3+json")
@@ -573,15 +568,11 @@ impl GitHub {
         let client = reqwest::Client::new();
 
         let path = path.trim_start_matches('/');
-        let mut url =
-            format!("{GITHUB_REPOS_URL}/{owner}/{repo}/contents/{path}");
-
-        if let Some(ref_name) = ref_name {
-            url = format!("{url}?ref={ref_name}");
-        }
+        let url =
+            crate::api_url::contents_url(owner, repo, path, ref_name)?;
 
         let response = client
-            .get(&url)
+            .get(url)
             .header("Authorization", format!("Bearer {access_token}"))
             .header("User-Agent", "library-api")
             .header("Accept", "application/vnd.github.v3+json")

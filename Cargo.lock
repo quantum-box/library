@@ -3234,6 +3234,7 @@ dependencies = [
  "derive-getters 0.5.0",
  "derive-new 0.7.0",
  "errors",
+ "github_provider",
  "hex",
  "hmac",
  "inbound_sync_domain",
@@ -4530,6 +4531,7 @@ dependencies = [
  "chrono",
  "derive-getters 0.4.0",
  "errors",
+ "github_provider",
  "integration_domain",
  "outbound_sync_domain",
  "reqwest 0.12.28",
@@ -4541,7 +4543,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "urlencoding",
  "value_object",
 ]
 

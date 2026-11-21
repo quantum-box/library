@@ -13,7 +13,8 @@ use outbound_sync_domain::{
     SyncResult, SyncTarget,
 };
 
-const GITHUB_API_BASE: &str = "https://api.github.com";
+use github_provider::api_url;
+
 const USER_AGENT: &str = "database-sync/0.1.0";
 
 /// Rate limiting configuration
@@ -106,9 +107,16 @@ impl GitHubSyncProvider {
         }
     }
 
-    /// Build the API URL for contents
-    fn contents_url(&self, repo: &str, path: &str) -> String {
-        format!("{GITHUB_API_BASE}/repos/{repo}/contents/{path}")
+    /// Build the API URL for contents, with each segment validated and
+    /// percent-encoded (see `github_provider::api_url`).
+    fn contents_url(
+        &self,
+        repo: &str,
+        path: &str,
+        ref_name: Option<&str>,
+    ) -> errors::Result<String> {
+        let (owner, name) = api_url::split_repository(repo)?;
+        Ok(api_url::contents_url(owner, name, path, ref_name)?.into())
     }
 
     /// Build request headers
@@ -395,12 +403,11 @@ impl SyncProvider for GitHubSyncProvider {
             )
         })?;
 
-        let mut url = self.contents_url(&target.container, path);
-
-        // Add branch/ref if specified
-        if let Some(ref branch) = target.version {
-            url.push_str(&format!("?ref={branch}"));
-        }
+        let url = self.contents_url(
+            &target.container,
+            path,
+            target.version.as_deref(),
+        )?;
 
         tracing::debug!(url = %url, "Fetching file from GitHub");
 
@@ -482,11 +489,12 @@ impl SyncProvider for GitHubSyncProvider {
             payload.metadata.expected_revision.as_deref()
         {
             let branch = target.version.as_deref().unwrap_or("main");
-            let url = format!(
-                "{GITHUB_API_BASE}/repos/{}/git/ref/heads/{}",
-                target.container,
-                urlencoding::encode(branch),
-            );
+            api_url::validate_ref(branch)?;
+            let url: String = api_url::full_name_url(
+                &target.container,
+                &["git", "ref", "heads", branch],
+            )?
+            .into();
             let response = self.get_with_retry(&url, auth).await?;
             if !response.status().is_success() {
                 return Err(errors::Error::provider_error(
@@ -510,7 +518,7 @@ impl SyncProvider for GitHubSyncProvider {
             }
         }
 
-        let url = self.contents_url(&target.container, path);
+        let url = self.contents_url(&target.container, path, None)?;
 
         // Prepare message
         let message = payload
@@ -596,7 +604,7 @@ impl SyncProvider for GitHubSyncProvider {
             .await?
             .ok_or_else(|| errors::Error::not_found("File not found"))?;
 
-        let url = self.contents_url(&target.container, path);
+        let url = self.contents_url(&target.container, path, None)?;
 
         let request = GitHubDeleteRequest {
             message: format!("Delete {path}"),
@@ -651,10 +659,42 @@ mod tests {
     #[test]
     fn test_contents_url() {
         let provider = GitHubSyncProvider::new();
-        let url = provider.contents_url("owner/repo", "path/to/file.md");
+        let url = provider
+            .contents_url("owner/repo", "path/to/file.md", None)
+            .unwrap();
         assert_eq!(
             url,
             "https://api.github.com/repos/owner/repo/contents/path/to/file.md"
         );
+        let url = provider
+            .contents_url("owner/repo", "a b.md", Some("feature/x"))
+            .unwrap();
+        assert_eq!(
+            url,
+            "https://api.github.com/repos/owner/repo/contents/a%20b.md?ref=feature%2Fx"
+        );
+    }
+
+    #[test]
+    fn contents_url_cannot_leave_the_repository() {
+        let provider = GitHubSyncProvider::new();
+        for (repo, path, branch) in [
+            (
+                "owner/repo",
+                "docs/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/repos/x/y/contents/z.md",
+                None,
+            ),
+            ("owner/repo", "docs/../z.md", None),
+            ("owner/repo", "x.env?a=.md", None),
+            ("owner/repo", "a.md", Some("main?x=1")),
+            ("owner/repo", "a.md", Some("../x")),
+            ("owner/..", "a.md", None),
+            ("owner/repo/x", "a.md", None),
+        ] {
+            assert!(
+                provider.contents_url(repo, path, branch).is_err(),
+                "{repo} {path} {branch:?}"
+            );
+        }
     }
 }
