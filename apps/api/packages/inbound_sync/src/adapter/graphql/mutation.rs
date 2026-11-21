@@ -592,6 +592,11 @@ impl LibrarySyncMutation {
     }
 
     /// Replace a GitHub endpoint signing key. Returned only by this mutation.
+    ///
+    /// Requires `library:ManageRepoPolicy` on top of the endpoint update
+    /// permission (see `ROTATE_GITHUB_SECRET_POLICY`): the key lets its
+    /// holder sign events the endpoint acts on with the tenant's GitHub
+    /// token.
     async fn rotate_github_webhook_secret(
         &self,
         ctx: &Context<'_>,

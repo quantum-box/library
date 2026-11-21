@@ -35,8 +35,6 @@ pub struct ReceiveWebhookInput {
 pub struct ReceiveWebhookOutput {
     /// Created event ID
     pub event_id: WebhookEventId,
-    /// Whether signature was valid
-    pub signature_valid: bool,
 }
 
 /// Receive webhook use case.
@@ -136,6 +134,21 @@ impl ReceiveWebhook {
             secret,
             input.webhook_url.as_deref(),
         )?;
+        // Every endpoint has a key (the provider-wide secret, the endpoint's
+        // own secret, or its generated signing key), so an unverified
+        // request is never one a configured provider sent. Refuse it
+        // without storing anything: an unsigned row could never be
+        // processed, and keeping it would let anyone who knows the endpoint
+        // id fill the event table.
+        if !signature_valid {
+            tracing::warn!(
+                endpoint_id = %input.endpoint_id,
+                provider = %input.provider,
+                signature_present = !input.signature.is_empty(),
+                "Webhook rejected: signature did not verify"
+            );
+            return Err(invalid_signature());
+        }
 
         // 5. Parse payload as JSON
         let payload: serde_json::Value =
@@ -164,14 +177,13 @@ impl ReceiveWebhook {
                 event_type,
                 payload,
                 input.headers,
-                signature_valid,
+                true,
             );
             event.mark_skipped("Event type not in configured events list");
             self.event_repository.save(&event).await?;
 
             return Ok(ReceiveWebhookOutput {
                 event_id: event.id().clone(),
-                signature_valid,
             });
         }
 
@@ -182,30 +194,24 @@ impl ReceiveWebhook {
             event_type.clone(),
             payload,
             input.headers,
-            signature_valid,
+            true,
         );
 
         let event_id = event.id().clone();
         self.event_repository.save(&event).await?;
 
-        if signature_valid {
-            if let Some(dispatcher) = &self.dispatcher {
-                dispatcher.dispatch(&event_id).await?;
-            }
+        if let Some(dispatcher) = &self.dispatcher {
+            dispatcher.dispatch(&event_id).await?;
         }
 
         tracing::info!(
             endpoint_id = %input.endpoint_id,
             event_id = %event_id,
             event_type = %event_type,
-            signature_valid = signature_valid,
             "Webhook event queued for processing"
         );
 
-        Ok(ReceiveWebhookOutput {
-            event_id,
-            signature_valid,
-        })
+        Ok(ReceiveWebhookOutput { event_id })
     }
 }
 
@@ -278,6 +284,11 @@ pub(crate) fn extract_event_type(
     }
 }
 
+/// Error returned for a webhook whose signature is missing or wrong.
+pub(crate) fn invalid_signature() -> errors::Error {
+    errors::Error::unauthorized("Webhook signature is missing or invalid")
+}
+
 pub(crate) fn resolve_webhook_secret<'a>(
     endpoint: &'a WebhookEndpoint,
     provider_secrets: &'a WebhookSecretStore,
@@ -291,6 +302,189 @@ pub(crate) fn resolve_webhook_secret<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hmac::{Hmac, Mac};
+    use inbound_sync_domain::{
+        ProcessingStats, ProcessingStatus, ProviderConfig,
+    };
+    use std::sync::Mutex;
+    use value_object::TenantId;
+
+    const KEY: &str = "endpoint-signing-key";
+
+    #[derive(Debug)]
+    struct OneEndpoint(WebhookEndpoint);
+
+    #[async_trait::async_trait]
+    impl WebhookEndpointRepository for OneEndpoint {
+        async fn save(&self, _: &WebhookEndpoint) -> errors::Result<()> {
+            unreachable!()
+        }
+        async fn find_by_id(
+            &self,
+            id: &WebhookEndpointId,
+        ) -> errors::Result<Option<WebhookEndpoint>> {
+            Ok((self.0.id() == id).then(|| self.0.clone()))
+        }
+        async fn find_by_tenant(
+            &self,
+            _: &TenantId,
+        ) -> errors::Result<Vec<WebhookEndpoint>> {
+            unreachable!()
+        }
+        async fn find_by_tenant_and_provider(
+            &self,
+            _: &TenantId,
+            _: Provider,
+        ) -> errors::Result<Vec<WebhookEndpoint>> {
+            unreachable!()
+        }
+        async fn delete(
+            &self,
+            _: &WebhookEndpointId,
+        ) -> errors::Result<()> {
+            unreachable!()
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct SavedEvents(Mutex<Vec<WebhookEvent>>);
+
+    #[async_trait::async_trait]
+    impl WebhookEventRepository for SavedEvents {
+        async fn save(&self, event: &WebhookEvent) -> errors::Result<()> {
+            self.0.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+        async fn find_by_id(
+            &self,
+            _: &WebhookEventId,
+        ) -> errors::Result<Option<WebhookEvent>> {
+            unreachable!()
+        }
+        async fn find_by_endpoint(
+            &self,
+            _: &WebhookEndpointId,
+            _: u32,
+            _: u32,
+        ) -> errors::Result<Vec<WebhookEvent>> {
+            unreachable!()
+        }
+        async fn find_pending_events(
+            &self,
+            _: u32,
+        ) -> errors::Result<Vec<WebhookEvent>> {
+            unreachable!()
+        }
+        async fn find_by_status(
+            &self,
+            _: &WebhookEndpointId,
+            _: ProcessingStatus,
+            _: u32,
+        ) -> errors::Result<Vec<WebhookEvent>> {
+            unreachable!()
+        }
+        async fn update_status(
+            &self,
+            _: &WebhookEventId,
+            _: ProcessingStatus,
+            _: Option<String>,
+            _: Option<ProcessingStats>,
+        ) -> errors::Result<()> {
+            unreachable!()
+        }
+        async fn delete_older_than(
+            &self,
+            _: chrono::DateTime<chrono::Utc>,
+        ) -> errors::Result<u64> {
+            unreachable!()
+        }
+    }
+
+    fn generic_endpoint() -> WebhookEndpoint {
+        WebhookEndpoint::create(
+            "tn_01hjryxysgey07h5jz5wagqj0m".parse().unwrap(),
+            "generic",
+            Provider::Generic,
+            ProviderConfig::Generic {
+                signature_header: "x-webhook-signature".into(),
+                signature_algorithm: "hmac-sha256".into(),
+            },
+            vec![],
+            KEY,
+        )
+    }
+
+    fn sign(payload: &[u8]) -> String {
+        let mut mac =
+            Hmac::<sha2::Sha256>::new_from_slice(KEY.as_bytes()).unwrap();
+        mac.update(payload);
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    async fn receive(
+        signature: String,
+    ) -> (errors::Result<ReceiveWebhookOutput>, Vec<WebhookEvent>) {
+        let endpoint = generic_endpoint();
+        let endpoint_id = endpoint.id().clone();
+        let events = Arc::new(SavedEvents::default());
+        let usecase = ReceiveWebhook::new(
+            Arc::new(OneEndpoint(endpoint)),
+            events.clone(),
+            Arc::new(WebhookVerifierRegistry::new()),
+            Arc::new(WebhookSecretStore::new()),
+        );
+        let payload = br#"{"event":"item.updated"}"#.to_vec();
+        let signature = if signature == "valid" {
+            sign(&payload)
+        } else {
+            signature
+        };
+        let result = usecase
+            .execute(ReceiveWebhookInput {
+                endpoint_id,
+                provider: Provider::Generic,
+                payload,
+                signature,
+                event_type: None,
+                headers: None,
+                webhook_url: None,
+            })
+            .await;
+        let saved = events.0.lock().unwrap().clone();
+        (result, saved)
+    }
+
+    #[tokio::test]
+    async fn missing_signature_is_refused_and_not_stored() {
+        let (result, saved) = receive(String::new()).await;
+        let err = result.err().expect("unsigned webhook must be refused");
+        assert!(
+            matches!(err, errors::Error::Unauthorized { .. }),
+            "{err:?}"
+        );
+        assert!(saved.is_empty(), "unsigned payload was stored");
+    }
+
+    #[tokio::test]
+    async fn wrong_signature_is_refused_and_not_stored() {
+        let (result, saved) =
+            receive(format!("sha256={}", "0".repeat(64))).await;
+        let err = result.err().expect("forged webhook must be refused");
+        assert!(
+            matches!(err, errors::Error::Unauthorized { .. }),
+            "{err:?}"
+        );
+        assert!(saved.is_empty(), "forged payload was stored");
+    }
+
+    #[tokio::test]
+    async fn signed_webhook_is_queued() {
+        let (result, saved) = receive("valid".into()).await;
+        let output = result.unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id(), &output.event_id);
+        assert!(*saved[0].signature_valid());
+    }
 
     #[test]
     fn test_extract_event_type_github() {

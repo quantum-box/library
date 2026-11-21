@@ -13,6 +13,50 @@ use crate::usecase::EventProcessor;
 
 use super::payload::{ChangeType, PullRequestEvent, PushEvent};
 
+/// Most files one push or merged pull request may fetch from GitHub.
+///
+/// Each file is a contents request made with the tenant's token (retried on
+/// rate limits), and one signed push can list thousands of paths. Files past
+/// the limit are counted as skipped; a full scan of the binding picks them
+/// up.
+pub(crate) const MAX_FILES_PER_EVENT: usize = 500;
+
+/// Drop files that cannot be fetched safely and cap the rest at
+/// [`MAX_FILES_PER_EVENT`], counting everything dropped as skipped.
+fn limit_files<T>(
+    files: Vec<T>,
+    stats: &mut ProcessingStats,
+    path: impl Fn(&T) -> &str,
+) -> Vec<T> {
+    let mut files: Vec<T> = files
+        .into_iter()
+        .filter(|file| {
+            let safe = super::client::is_fetchable_file_path(path(file));
+            if !safe {
+                tracing::warn!(
+                    path = %path(file),
+                    "Skipping changed file whose path cannot be fetched safely"
+                );
+                stats.skipped += 1;
+            }
+            safe
+        })
+        .collect();
+    if files.len() > MAX_FILES_PER_EVENT {
+        let dropped = files.len() - MAX_FILES_PER_EVENT;
+        tracing::warn!(
+            file_count = files.len(),
+            limit = MAX_FILES_PER_EVENT,
+            skipped = dropped,
+            "Event changes more files than are processed per event; \
+             the rest are skipped until the binding is rescanned"
+        );
+        stats.skipped += u32::try_from(dropped).unwrap_or(u32::MAX);
+        files.truncate(MAX_FILES_PER_EVENT);
+    }
+    files
+}
+
 /// GitHub event processor.
 ///
 /// Handles GitHub webhook events, particularly push events, by:
@@ -106,6 +150,9 @@ impl GitHubEventProcessor {
         } else {
             changed_files
         };
+
+        let files_to_process =
+            limit_files(files_to_process, &mut stats, |f| &f.path);
 
         tracing::info!(
             file_count = files_to_process.len(),
@@ -433,6 +480,9 @@ impl GitHubEventProcessor {
         } else {
             changed_files
         };
+
+        let files_to_process =
+            limit_files(files_to_process, &mut stats, |f| &f.filename);
 
         tracing::info!(
             file_count = files_to_process.len(),
@@ -788,6 +838,41 @@ pub trait GitHubDataHandler: Send + Sync + std::fmt::Debug {
         endpoint: &WebhookEndpoint,
         data_id: &str,
     ) -> errors::Result<()>;
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::{limit_files, MAX_FILES_PER_EVENT};
+    use inbound_sync_domain::ProcessingStats;
+
+    #[test]
+    fn unsafe_paths_are_skipped_before_any_fetch() {
+        let mut stats = ProcessingStats::default();
+        let files = vec![
+            "docs/a.md".to_string(),
+            "docs/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/repos/x/y/contents/z.md"
+                .to_string(),
+            "x.env?a=.md".to_string(),
+        ];
+        let kept = limit_files(files, &mut stats, |f| f.as_str());
+        assert_eq!(kept, ["docs/a.md"]);
+        assert_eq!(stats.skipped, 2);
+    }
+
+    #[test]
+    fn files_past_the_per_event_limit_are_skipped() {
+        let mut stats = ProcessingStats::default();
+        let files: Vec<String> = (0..MAX_FILES_PER_EVENT + 7)
+            .map(|i| format!("docs/{i}.md"))
+            .collect();
+        let kept = limit_files(files, &mut stats, |f| f.as_str());
+        assert_eq!(kept.len(), MAX_FILES_PER_EVENT);
+        assert_eq!(
+            kept.last().unwrap(),
+            &format!("docs/{}.md", MAX_FILES_PER_EVENT - 1)
+        );
+        assert_eq!(stats.skipped, 7);
+    }
 }
 
 #[cfg(test)]

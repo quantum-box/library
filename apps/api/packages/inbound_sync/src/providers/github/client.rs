@@ -34,6 +34,170 @@ use crate::sdk::OAuthTokenProvider;
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = "inbound-sync/0.1.0";
 
+/// Build the `https://api.github.com/repos/{owner}/{repo}/...` URL for a
+/// request.
+///
+/// Every value that ends up in the URL comes from outside: the repository and
+/// branch from endpoint settings, file paths from push payloads, pull request
+/// file lists and repository trees. Formatting them into a string lets the
+/// URL parser read `%2e%2e` (or a literal `..`) as a parent segment and
+/// normalise it away, so a file path could leave `/repos/{repo}/contents/`
+/// and make the tenant's token read any repository it can see; a `?` or `#`
+/// would cut off the `ref`. Each piece is therefore checked and then added
+/// as its own percent-encoded segment or query pair.
+fn repo_url(
+    repo: &str,
+    tail: &[&str],
+    extra: &[&str],
+) -> errors::Result<reqwest::Url> {
+    let (owner, name) = split_repository(repo)?;
+    let mut url = reqwest::Url::parse(GITHUB_API_BASE)
+        .expect("GitHub API base URL is valid");
+    url.path_segments_mut()
+        .expect("GitHub API base URL can have a path")
+        .pop_if_empty()
+        .extend(["repos", owner, name])
+        .extend(tail)
+        .extend(extra);
+    Ok(url)
+}
+
+fn commits_url(repo: &str, branch: &str) -> errors::Result<reqwest::Url> {
+    repo_url(repo, &["commits"], &ref_segments(branch)?)
+}
+
+fn contents_url(
+    repo: &str,
+    path: &str,
+    branch: &str,
+) -> errors::Result<reqwest::Url> {
+    validate_ref(branch)?;
+    let mut url =
+        repo_url(repo, &["contents"], &file_path_segments(path)?)?;
+    url.query_pairs_mut().append_pair("ref", branch);
+    Ok(url)
+}
+
+fn pr_files_url(
+    repo: &str,
+    pr_number: u64,
+) -> errors::Result<reqwest::Url> {
+    let number = pr_number.to_string();
+    let mut url = repo_url(repo, &["pulls", &number, "files"], &[])?;
+    url.query_pairs_mut().append_pair("per_page", "100");
+    Ok(url)
+}
+
+fn tree_url(repo: &str, branch: &str) -> errors::Result<reqwest::Url> {
+    let mut url =
+        repo_url(repo, &["git", "trees"], &ref_segments(branch)?)?;
+    url.query_pairs_mut().append_pair("recursive", "1");
+    Ok(url)
+}
+
+/// Split `owner/repo`, accepting only the characters GitHub allows in
+/// account and repository names.
+fn split_repository(repo: &str) -> errors::Result<(&str, &str)> {
+    let invalid = || {
+        errors::Error::invalid(format!(
+            "Invalid GitHub repository name: {repo:?}"
+        ))
+    };
+    let (owner, name) = repo.split_once('/').ok_or_else(invalid)?;
+    for part in [owner, name] {
+        if part.is_empty()
+            || part == "."
+            || part == ".."
+            || !part.bytes().all(|b| {
+                b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')
+            })
+        {
+            return Err(invalid());
+        }
+    }
+    Ok((owner, name))
+}
+
+/// Check a branch or ref name against git's ref-name rules, plus `%` and `#`
+/// so that the name cannot be read as an encoded or cut-off URL part.
+fn validate_ref(name: &str) -> errors::Result<()> {
+    let invalid = || {
+        errors::Error::invalid(format!("Invalid GitHub ref name: {name:?}"))
+    };
+    if name.is_empty()
+        || name.contains("..")
+        || name.contains("@{")
+        || name.ends_with('.')
+        || name.ends_with(".lock")
+        || name.chars().any(|c| {
+            c.is_control()
+                || matches!(
+                    c,
+                    ' ' | '~'
+                        | '^'
+                        | ':'
+                        | '?'
+                        | '*'
+                        | '['
+                        | '\\'
+                        | '%'
+                        | '#'
+                )
+        })
+    {
+        return Err(invalid());
+    }
+    if name
+        .split('/')
+        .any(|segment| segment.is_empty() || segment.starts_with('.'))
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+fn ref_segments(name: &str) -> errors::Result<Vec<&str>> {
+    validate_ref(name)?;
+    Ok(name.split('/').collect())
+}
+
+/// Split a repository file path into URL segments, refusing any segment that
+/// is, or percent-decodes to, an empty, `.` or `..` segment, and any segment
+/// with `\`, `?` or `#`.
+fn file_path_segments(path: &str) -> errors::Result<Vec<&str>> {
+    let invalid = || {
+        errors::Error::invalid(format!("Unsafe GitHub file path: {path:?}"))
+    };
+    let segments: Vec<&str> = path.split('/').collect();
+    for segment in &segments {
+        if !is_safe_path_segment(segment) {
+            return Err(invalid());
+        }
+        let decoded =
+            urlencoding::decode(segment).map_err(|_| invalid())?;
+        if !is_safe_path_segment(&decoded) || decoded.contains('/') {
+            return Err(invalid());
+        }
+    }
+    Ok(segments)
+}
+
+fn is_safe_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && !segment
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '\\' | '?' | '#'))
+}
+
+/// Whether a repository file path can be fetched through the contents API.
+///
+/// Paths that fail this are never fetched; callers skip them.
+pub(crate) fn is_fetchable_file_path(path: &str) -> bool {
+    file_path_segments(path).is_ok()
+}
+
 /// Rate limiting configuration
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_MS: u64 = 1000;
@@ -265,9 +429,8 @@ impl GitHubClient for GitHubApiClient {
         repo: &str,
         branch: &str,
     ) -> errors::Result<String> {
-        let url =
-            format!("{GITHUB_API_BASE}/repos/{repo}/commits/{branch}");
-        parse_branch_head(self.get_with_retry(&url).await?).await
+        let url = commits_url(repo, branch)?;
+        parse_branch_head(self.get_with_retry(url.as_str()).await?).await
     }
 
     async fn get_file_content(
@@ -277,13 +440,11 @@ impl GitHubClient for GitHubApiClient {
         path: &str,
         branch: &str,
     ) -> errors::Result<String> {
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/contents/{path}?ref={branch}"
-        );
+        let url = contents_url(repo, path, branch)?;
 
         tracing::debug!(url = %url, "Fetching file from GitHub");
 
-        let response = self.get_with_retry(&url).await?;
+        let response = self.get_with_retry(url.as_str()).await?;
         let status = response.status();
 
         if status == reqwest::StatusCode::NOT_FOUND {
@@ -338,13 +499,11 @@ impl GitHubClient for GitHubApiClient {
         repo: &str,
         pr_number: u64,
     ) -> errors::Result<Vec<PullRequestFile>> {
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}/files?per_page=100"
-        );
+        let url = pr_files_url(repo, pr_number)?;
 
         tracing::debug!(url = %url, "Fetching PR files from GitHub");
 
-        let response = self.get_with_retry(&url).await?;
+        let response = self.get_with_retry(url.as_str()).await?;
         let status = response.status();
 
         if status == reqwest::StatusCode::NOT_FOUND {
@@ -396,13 +555,11 @@ impl GitHubClient for GitHubApiClient {
         use super::event_processor::RepositoryContent;
 
         // Get repository tree (recursive)
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/git/trees/{branch}?recursive=1"
-        );
+        let url = tree_url(repo, branch)?;
 
         tracing::debug!(url = %url, "Fetching repository tree");
 
-        let response = self.get_with_retry(&url).await?;
+        let response = self.get_with_retry(url.as_str()).await?;
 
         #[derive(Deserialize)]
         struct TreeResponse {
@@ -447,6 +604,13 @@ impl GitHubClient for GitHubApiClient {
                 if !glob_match(pattern, &item.path) {
                     continue;
                 }
+            }
+            if !is_fetchable_file_path(&item.path) {
+                tracing::warn!(
+                    path = %item.path,
+                    "Skipping repository file whose path cannot be fetched safely"
+                );
+                continue;
             }
 
             match self
@@ -537,12 +701,11 @@ impl GitHubClient for OAuthGitHubClient {
         repo: &str,
         branch: &str,
     ) -> errors::Result<String> {
+        let url = commits_url(repo, branch)?;
         let token = self.get_access_token(tenant_id).await?;
-        let url =
-            format!("{GITHUB_API_BASE}/repos/{repo}/commits/{branch}");
         let response = GitHubApiClient::get_with_retry_token(
             &self.client,
-            &url,
+            url.as_str(),
             &token,
         )
         .await?;
@@ -556,10 +719,8 @@ impl GitHubClient for OAuthGitHubClient {
         path: &str,
         branch: &str,
     ) -> errors::Result<String> {
+        let url = contents_url(repo, path, branch)?;
         let access_token = self.get_access_token(tenant_id).await?;
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/contents/{path}?ref={branch}"
-        );
 
         tracing::debug!(
             url = %url,
@@ -569,7 +730,7 @@ impl GitHubClient for OAuthGitHubClient {
 
         let response = GitHubApiClient::get_with_retry_token(
             &self.client,
-            &url,
+            url.as_str(),
             &access_token,
         )
         .await?;
@@ -626,10 +787,8 @@ impl GitHubClient for OAuthGitHubClient {
         repo: &str,
         pr_number: u64,
     ) -> errors::Result<Vec<PullRequestFile>> {
+        let url = pr_files_url(repo, pr_number)?;
         let access_token = self.get_access_token(tenant_id).await?;
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}/files?per_page=100"
-        );
 
         tracing::debug!(
             url = %url,
@@ -639,7 +798,7 @@ impl GitHubClient for OAuthGitHubClient {
 
         let response = GitHubApiClient::get_with_retry_token(
             &self.client,
-            &url,
+            url.as_str(),
             &access_token,
         )
         .await?;
@@ -699,13 +858,11 @@ impl GitHubClient for OAuthGitHubClient {
             errors::Error::unauthorized("No GitHub access token available")
         })?;
 
-        let url = format!(
-            "{GITHUB_API_BASE}/repos/{repo}/git/trees/{branch}?recursive=1"
-        );
+        let url = tree_url(repo, branch)?;
 
         let response = GitHubApiClient::get_with_retry_token(
             &self.client,
-            &url,
+            url.as_str(),
             &access_token.access_token,
         )
         .await?;
@@ -754,6 +911,13 @@ impl GitHubClient for OAuthGitHubClient {
                     continue;
                 }
             }
+            if !is_fetchable_file_path(&item.path) {
+                tracing::warn!(
+                    path = %item.path,
+                    "Skipping repository file whose path cannot be fetched safely"
+                );
+                continue;
+            }
 
             match self
                 .get_file_content(tenant_id, repo, &item.path, branch)
@@ -783,6 +947,102 @@ mod tests {
     fn test_client_creation() {
         let client = GitHubApiClient::new("test_token".to_string());
         assert!(!client.access_token.is_empty());
+    }
+
+    /// The path a pushed file named with encoded parent segments would have
+    /// sent the tenant's token to before: `/repos/x/y/contents/z.md`.
+    const TRAVERSAL: &str =
+        "docs/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/repos/x/y/contents/z.md";
+
+    fn rejected(result: errors::Result<reqwest::Url>) -> bool {
+        matches!(result, Err(errors::Error::BadRequest { .. }))
+    }
+
+    #[test]
+    fn contents_url_encodes_each_segment_and_the_ref() {
+        let url = contents_url(
+            "octo-org/docs.site",
+            "guides/a b/ü.md",
+            "feature/x",
+        )
+        .unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://api.github.com/repos/octo-org/docs.site/contents/\
+             guides/a%20b/%C3%BC.md?ref=feature%2Fx"
+        );
+    }
+
+    #[test]
+    fn encoded_parent_segments_cannot_leave_the_repository() {
+        assert!(rejected(contents_url("o/r", TRAVERSAL, "main")));
+        for path in [
+            "docs/../secret.md",
+            "docs/./a.md",
+            "docs//a.md",
+            "/a.md",
+            "docs/",
+            "docs/.%2e/a.md",
+            "docs/%2E%2E/a.md",
+            "docs/%2e/a.md",
+            "docs/a%2fb.md",
+            "docs/a%5c..md",
+            "docs\\..\\a.md",
+            "x.env?a=.md",
+            "a.md#frag",
+        ] {
+            assert!(rejected(contents_url("o/r", path, "main")), "{path}");
+            assert!(!is_fetchable_file_path(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_percent_in_a_name_stays_literal() {
+        // `%41` is not a dot segment, so it is fetchable, but it must reach
+        // GitHub as the literal name, not be decoded on the way.
+        let url = contents_url("o/r", "docs/100%41.md", "main").unwrap();
+        assert_eq!(url.path(), "/repos/o/r/contents/docs/100%2541.md");
+        assert_eq!(url.query(), Some("ref=main"));
+    }
+
+    #[test]
+    fn repository_and_ref_are_validated() {
+        for repo in [
+            "o", "o/r/x", "/r", "o/", "../r", "o/..", "o/%2e%2e", "o/r?x",
+            "o r/x",
+        ] {
+            assert!(rejected(contents_url(repo, "a.md", "main")), "{repo}");
+            assert!(rejected(commits_url(repo, "main")), "{repo}");
+            assert!(rejected(tree_url(repo, "main")), "{repo}");
+            assert!(rejected(pr_files_url(repo, 1)), "{repo}");
+        }
+        for branch in [
+            "", "../x", "a/../b", "a//b", ".hidden", "a?b", "a#b", "a%2e",
+            "a b", "x.lock", "a\\b",
+        ] {
+            assert!(
+                rejected(contents_url("o/r", "a.md", branch)),
+                "{branch}"
+            );
+            assert!(rejected(commits_url("o/r", branch)), "{branch}");
+            assert!(rejected(tree_url("o/r", branch)), "{branch}");
+        }
+    }
+
+    #[test]
+    fn other_urls_keep_their_shape() {
+        assert_eq!(
+            commits_url("o/r", "release/1.0").unwrap().as_str(),
+            "https://api.github.com/repos/o/r/commits/release/1.0"
+        );
+        assert_eq!(
+            tree_url("o/r", "main").unwrap().as_str(),
+            "https://api.github.com/repos/o/r/git/trees/main?recursive=1"
+        );
+        assert_eq!(
+            pr_files_url("o/r", 42).unwrap().as_str(),
+            "https://api.github.com/repos/o/r/pulls/42/files?per_page=100"
+        );
     }
 
     #[test]

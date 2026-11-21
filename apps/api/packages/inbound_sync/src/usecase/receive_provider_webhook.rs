@@ -141,6 +141,7 @@ impl ReceiveProviderWebhook {
             .unwrap_or_else(|| "unknown".to_string());
 
         let mut event_ids = Vec::new();
+        let mut rejected = false;
 
         for endpoint in endpoints {
             if *endpoint.status() == EndpointStatus::Disabled {
@@ -156,6 +157,12 @@ impl ReceiveProviderWebhook {
                 secret,
                 input.webhook_url.as_deref(),
             )?;
+            // Store nothing the sender could not sign for this endpoint;
+            // see `ReceiveWebhook` for why every endpoint has a key.
+            if !signature_valid {
+                rejected = true;
+                continue;
+            }
 
             let mut event = WebhookEvent::create(
                 endpoint.id().clone(),
@@ -163,7 +170,7 @@ impl ReceiveProviderWebhook {
                 event_type.clone(),
                 payload.clone(),
                 input.headers.clone(),
-                signature_valid,
+                true,
             );
 
             let should_process = endpoint.should_process_event(&event_type);
@@ -175,12 +182,20 @@ impl ReceiveProviderWebhook {
 
             let event_id = event.id().clone();
             self.event_repository.save(&event).await?;
-            if signature_valid && should_process {
+            if should_process {
                 if let Some(dispatcher) = &self.dispatcher {
                     dispatcher.dispatch(&event_id).await?;
                 }
             }
             event_ids.push(event_id);
+        }
+
+        if event_ids.is_empty() && rejected {
+            tracing::warn!(
+                provider = %input.provider,
+                "Provider webhook rejected: signature did not verify for any endpoint"
+            );
+            return Err(super::receive_webhook::invalid_signature());
         }
 
         Ok(ReceiveProviderWebhookOutput { event_ids })

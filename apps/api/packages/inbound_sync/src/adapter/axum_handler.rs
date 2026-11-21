@@ -346,22 +346,14 @@ async fn handle_webhook(
     };
 
     match state.receive_webhook.execute(input).await {
-        Ok(output) => {
-            let status = if output.signature_valid {
-                "queued"
-            } else {
-                "queued_unverified"
-            };
-
-            (
-                StatusCode::OK,
-                Json(WebhookResponse {
-                    event_id: output.event_id.to_string(),
-                    status: status.to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(output) => (
+            StatusCode::OK,
+            Json(WebhookResponse {
+                event_id: output.event_id.to_string(),
+                status: "queued".to_string(),
+            }),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "Failed to receive webhook");
 
@@ -382,7 +374,9 @@ async fn handle_webhook(
 fn webhook_error_status(
     error: &errors::Error,
 ) -> (StatusCode, &'static str) {
-    if error.is_not_found() {
+    if matches!(error, errors::Error::Unauthorized { .. }) {
+        (StatusCode::UNAUTHORIZED, "invalid_signature")
+    } else if error.is_not_found() {
         (StatusCode::NOT_FOUND, "endpoint_not_found")
     } else if error.is_forbidden() {
         (StatusCode::FORBIDDEN, "forbidden")
@@ -425,6 +419,15 @@ mod tests {
         let json = headers_to_json(&headers);
         assert!(json.get("content-type").is_some());
         assert!(json.get("x-hub-signature-256").is_some());
+    }
+
+    #[test]
+    fn unverified_webhook_is_answered_401() {
+        let error = crate::usecase::invalid_signature();
+        assert_eq!(
+            webhook_error_status(&error),
+            (StatusCode::UNAUTHORIZED, "invalid_signature")
+        );
     }
 
     #[test]
