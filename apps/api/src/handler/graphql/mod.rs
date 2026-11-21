@@ -12,6 +12,7 @@ use axum::Extension;
 use inbound_sync::adapter::{LibrarySyncMutation, LibrarySyncQuery};
 
 pub mod input;
+pub mod limits;
 pub mod model;
 mod mutation;
 mod resolver;
