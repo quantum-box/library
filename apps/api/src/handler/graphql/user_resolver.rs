@@ -7,13 +7,46 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use value_object::UserId;
 
+impl User {
+    /// Whether the request is made by the user this object describes.
+    ///
+    /// A `User` is also returned for other people: the members of an
+    /// organization, of a repository, the holders of its policies. Their
+    /// tenant list is every tenant they belong to (tachyon does not
+    /// narrow it to the one being listed), so it, and what is derived from
+    /// it, would tell a co-member which other organizations they are in.
+    fn is_caller(&self, ctx: &Context<'_>) -> bool {
+        match ctx.data::<tachyon_sdk::auth::Executor>() {
+            Ok(executor) => {
+                use tachyon_sdk::auth::ExecutorAction;
+                !executor.is_none() && executor.get_id() == self.id
+            }
+            Err(_) => false,
+        }
+    }
+}
+
 #[async_graphql::ComplexObject]
 impl User {
-    /// Resolve the Library space owned by this account, if it has been created.
+    /// The tenants this user belongs to. Empty unless the user is the
+    /// caller.
+    async fn tenant_id_list(&self, ctx: &Context<'_>) -> Vec<String> {
+        if self.is_caller(ctx) {
+            self.tenant_id_list.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Resolve the Library space owned by this account, if it has been
+    /// created. Null unless the user is the caller.
     async fn personal_space(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Option<PersonalSpace>> {
+        if !self.is_caller(ctx) {
+            return Ok(None);
+        }
         let organization_repo =
             ctx.data::<Arc<dyn OrganizationRepository>>()?;
         let user_id = UserId::new(&self.id).map_err(|error| {
@@ -26,12 +59,16 @@ impl User {
         Ok(organization.map(Into::into))
     }
 
-    /// Resolve operator organizations accessible to this user
+    /// Resolve operator organizations accessible to this user. Empty
+    /// unless the user is the caller.
     #[tracing::instrument(name = "organizations_by_user", skip_all)]
     async fn organizations(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Vec<Operator>> {
+        if !self.is_caller(ctx) {
+            return Ok(Vec::new());
+        }
         let sdk = ctx.data::<Arc<SdkAuthApp>>()?;
         let organization_repo =
             ctx.data::<Arc<dyn OrganizationRepository>>()?;
@@ -333,6 +370,107 @@ mod tests {
         tenant_id_list: &[&str],
         organizations: SeededOrganizations,
     ) -> async_graphql::Response {
+        execute_user_query(
+            request_platform_id,
+            tenant_id_list,
+            organizations,
+            caller(USER_ID),
+            "query {
+                me {
+                    organizations {
+                        id
+                        operatorName
+                        platformTenantId
+                    }
+                }
+            }",
+        )
+        .await
+    }
+
+    fn caller(user_id: &str) -> tachyon_sdk::auth::Executor {
+        let now = Utc::now();
+        tachyon_sdk::auth::Executor::User(Box::new(
+            tachyon_sdk::auth::User {
+                id: user_id.parse().unwrap(),
+                username: "caller".to_string(),
+                tenants: Vec::new(),
+                email: None,
+                name: None,
+                email_verified: None,
+                image: None,
+                role: tachyon_sdk::auth::DefaultRole::General,
+                metadata: None,
+                created_at: now,
+                updated_at: now,
+            },
+        ))
+    }
+
+    const PRIVATE_FIELDS_QUERY: &str = "query {
+        me {
+            tenantIdList
+            organizations { id }
+            personalSpace { id }
+        }
+    }";
+
+    /// The same `User` type describes other members of an organization
+    /// or a repository. Their tenant list names every organization they
+    /// belong to, so it is withheld from anyone but themselves.
+    #[tokio::test]
+    async fn another_users_tenants_organizations_and_space_are_withheld() {
+        for executor in [
+            caller("us_01hs2yepy5hw4rz8pdq2wywnwa"),
+            tachyon_sdk::auth::Executor::None,
+        ] {
+            let response = execute_user_query(
+                Some(LIBRARY_PLATFORM_ID),
+                &[PLATFORM_ID, IMPORTED_TENANT_ID],
+                SeededOrganizations::with(&[IMPORTED_TENANT_ID]),
+                executor,
+                PRIVATE_FIELDS_QUERY,
+            )
+            .await;
+
+            assert!(response.errors.is_empty(), "{:?}", response.errors);
+            let data = response.data.into_json().unwrap();
+            assert_eq!(data["me"]["tenantIdList"], json!([]));
+            assert_eq!(data["me"]["organizations"], json!([]));
+            assert_eq!(data["me"]["personalSpace"], json!(null));
+        }
+    }
+
+    #[tokio::test]
+    async fn the_callers_own_tenants_are_returned() {
+        let response = execute_user_query(
+            Some(LIBRARY_PLATFORM_ID),
+            &[PLATFORM_ID, IMPORTED_TENANT_ID],
+            SeededOrganizations::with(&[IMPORTED_TENANT_ID]),
+            caller(USER_ID),
+            PRIVATE_FIELDS_QUERY,
+        )
+        .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        let data = response.data.into_json().unwrap();
+        assert_eq!(
+            data["me"]["tenantIdList"],
+            json!([PLATFORM_ID, IMPORTED_TENANT_ID])
+        );
+        assert_eq!(
+            data["me"]["organizations"].as_array().unwrap().len(),
+            2
+        );
+    }
+
+    async fn execute_user_query(
+        request_platform_id: Option<&str>,
+        tenant_id_list: &[&str],
+        organizations: SeededOrganizations,
+        executor: tachyon_sdk::auth::Executor,
+        query: &str,
+    ) -> async_graphql::Response {
         let auth_url = spawn_fake_auth_server().await;
         let sdk_platform_id =
             LIBRARY_PLATFORM_ID.parse::<TenantId>().unwrap();
@@ -355,26 +493,14 @@ mod tests {
         )
         .data(sdk)
         .data(organization_repo)
-        .data(tachyon_sdk::auth::Executor::None)
+        .data(executor)
         .data(tachyon_sdk::auth::MultiTenancy::new(
             request_platform_id.clone(),
             request_platform_id,
         ))
         .finish();
 
-        schema
-            .execute(Request::new(
-                "query {
-                    me {
-                        organizations {
-                            id
-                            operatorName
-                            platformTenantId
-                        }
-                    }
-                }",
-            ))
-            .await
+        schema.execute(Request::new(query)).await
     }
 
     async fn spawn_fake_auth_server() -> String {

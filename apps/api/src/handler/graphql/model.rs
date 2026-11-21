@@ -102,6 +102,9 @@ pub struct User {
     pub email_verified: Option<DateTime<Utc>>,
     pub image: Option<String>,
     pub role: auth_domain::DefaultRole,
+    /// Every tenant the user belongs to. Exposed only to the user
+    /// themself, through the `tenantIdList` resolver.
+    #[graphql(skip)]
     pub tenant_id_list: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

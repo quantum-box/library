@@ -1,6 +1,6 @@
 ---
 name: 組織メンバーのロール変更とリポジトリアクセス権限が正しく動作する
-description: 'changeOrgMemberRole mutationでオーナー昇格/降格時にロールが正しく更新され、
+description: 'changeOrgMemberRole mutationでオーナー昇格/降格時に組織テナントのrepoOwnerポリシーが付与・剥奪され、
 
   OWNERは全リポジトリにアクセスできるが、GENERALは権限なしでアクセスできないことを検証する
 
@@ -18,33 +18,9 @@ config:
 
 # 組織メンバーのロール変更とリポジトリアクセス権限が正しく動作する
 
-changeOrgMemberRole mutationでオーナー昇格/降格時にロールが正しく更新され、
+changeOrgMemberRole mutationでオーナー昇格/降格時に組織テナントのrepoOwnerポリシーが付与・剥奪され、
 OWNERは全リポジトリにアクセスできるが、GENERALは権限なしでアクセスできないことを検証する
 
-
-## テスト開始時にOWNERロールであることを確認する
-
-```yaml scenario
-steps:
-- id: ensure_owner_role
-  name: テスト開始時にOWNERロールであることを確認する
-  request:
-    method: POST
-    url: /v1/graphql
-    headers:
-      x-user-id: us_01hs2yepy5hw4rz8pdq2wywnwt
-    body:
-      query: "mutation ChangeRole($input: ChangeOrgMemberRoleInput!) {\n  changeOrgMemberRole(input: $input) {\n    id\n    role\n  }\n}\n"
-      variables:
-        input:
-          tenantId: tn_01hjryxysgey07h5jz5wagqj0m
-          userId: us_01ke1h5471vxsbscp8jd3bramn
-          newRole: OWNER
-  expect:
-    status: 200
-    contains:
-    - '"role":"OWNER"'
-```
 
 ## テスト用組織を作成する
 
@@ -100,6 +76,29 @@ steps:
     - '"isPublic":false'
 ```
 
+## 対象ユーザーをOWNERとして組織に招待する（repoOwnerポリシーが組織テナントに付与される）
+
+```yaml scenario
+steps:
+- id: invite_target_as_owner
+  name: 対象ユーザーをOWNERとして組織に招待する（repoOwnerポリシーが組織テナントに付与される）
+  request:
+    method: POST
+    url: /v1/graphql
+    headers:
+      x-user-id: us_01hs2yepy5hw4rz8pdq2wywnwt
+    body:
+      query: "mutation Invite($tenantId: String!, $invitee: IdOrEmail!) {\n  inviteUser(tenantId: $tenantId, invitee: $invitee, role: OWNER) {\n    id\n    role\n  }\n}\n"
+      variables:
+        tenantId: {{steps.create_org.outputs.createOrganization.id}}
+        invitee:
+          id: us_01ke1h5471vxsbscp8jd3bramn
+  expect:
+    status: 200
+    contains:
+    - '"role":"OWNER"'
+```
+
 ## OWNERはリポジトリを更新できる
 
 ```yaml scenario
@@ -139,7 +138,7 @@ steps:
       query: "mutation ChangeRole($input: ChangeOrgMemberRoleInput!) {\n  changeOrgMemberRole(input: $input) {\n    id\n    role\n  }\n}\n"
       variables:
         input:
-          tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+          tenantId: {{steps.create_org.outputs.createOrganization.id}}
           userId: us_01ke1h5471vxsbscp8jd3bramn
           newRole: GENERAL
   expect:
@@ -186,7 +185,7 @@ steps:
       query: "mutation ChangeRole($input: ChangeOrgMemberRoleInput!) {\n  changeOrgMemberRole(input: $input) {\n    id\n    role\n  }\n}\n"
       variables:
         input:
-          tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+          tenantId: {{steps.create_org.outputs.createOrganization.id}}
           userId: us_01ke1h5471vxsbscp8jd3bramn
           newRole: OWNER
   expect:
@@ -234,7 +233,7 @@ steps:
       query: "mutation ChangeRole($input: ChangeOrgMemberRoleInput!) {\n  changeOrgMemberRole(input: $input) {\n    id\n    role\n  }\n}\n"
       variables:
         input:
-          tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+          tenantId: {{steps.create_org.outputs.createOrganization.id}}
           userId: us_01ke1h5471vxsbscp8jd3bramn
           newRole: GENERAL
   expect:
@@ -331,7 +330,7 @@ steps:
       query: "mutation ChangeRole($input: ChangeOrgMemberRoleInput!) {\n  changeOrgMemberRole(input: $input) {\n    id\n    role\n  }\n}\n"
       variables:
         input:
-          tenantId: tn_01hjryxysgey07h5jz5wagqj0m
+          tenantId: {{steps.create_org.outputs.createOrganization.id}}
           userId: us_01ke1h5471vxsbscp8jd3bramn
           newRole: INVALID_ROLE
   expect:
