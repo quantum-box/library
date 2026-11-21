@@ -12,7 +12,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse},
 };
-use pulldown_cmark::{Options, Parser};
+use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
@@ -214,7 +214,7 @@ pub async fn list_docs(
         STYLE = DOCS_STYLE,
     );
 
-    Ok(docs_response(html, &lang, &language))
+    Ok(docs_response(html, &lang, &language, &headers))
 }
 
 /// `GET /docs/:org/:repo/:data_id`
@@ -342,7 +342,7 @@ pub async fn view_doc(
         STYLE = DOCS_STYLE,
     );
 
-    Ok(docs_response(html, &lang, &language))
+    Ok(docs_response(html, &lang, &language, &headers))
 }
 
 /// `GET /docs/:org/:repo/:data_id/md`
@@ -419,6 +419,9 @@ pub async fn view_doc_markdown(
                 "X-Library-Translation",
                 language.translation_state().to_string(),
             ),
+            // Stops a browser from rendering the raw Markdown, which may
+            // contain HTML, as a page on this origin.
+            ("X-Content-Type-Options", "nosniff".to_string()),
         ],
         markdown,
     ))
@@ -450,6 +453,11 @@ const DOCS_REPO_CACHE_CAPACITY: usize = 512;
 struct DocsRepoContext {
     organization_id: value_object::TenantId,
     published: Vec<LanguageTag>,
+    /// Decides only whether the page may be cached publicly. A stale
+    /// value is safe either way: a repo made private still fails the
+    /// anonymous visibility check, and one made public is merely served
+    /// uncached until the entry expires.
+    is_public: bool,
 }
 
 static DOCS_REPO_CONTEXT: once_cell::sync::Lazy<
@@ -477,6 +485,9 @@ fn docs_repo_cache_ttl() -> std::time::Duration {
 struct DocLanguage {
     /// Everything the repo publishes, for the switcher and `hreflang`.
     published: Vec<LanguageTag>,
+    /// Whether the repo is public, which decides how the page may be
+    /// cached.
+    repo_is_public: bool,
     choice: LanguageChoice,
     /// Property definition id -> translated heading.
     property_names: std::collections::HashMap<String, String>,
@@ -524,6 +535,7 @@ async fn resolve_doc_language(
                 .repo;
             let context = DocsRepoContext {
                 organization_id: repo_entity.organization_id().clone(),
+                is_public: !repo_entity.is_private(),
                 published: library_app
                     .published_language_repo
                     .find_by_repo(repo_entity.id())
@@ -534,6 +546,7 @@ async fn resolve_doc_language(
         }
     };
     let published = context.published;
+    let repo_is_public = context.is_public;
 
     let choice = resolve_requested_language(requested, &published);
 
@@ -562,6 +575,7 @@ async fn resolve_doc_language(
 
     Ok(DocLanguage {
         published,
+        repo_is_public,
         choice,
         property_names,
         record_names,
@@ -694,7 +708,46 @@ fn language_bar(path: &str, language: &DocLanguage) -> String {
     bar
 }
 
-/// Wraps a rendered docs page with the headers a public, cacheable,
+/// Policy for every rendered docs page.
+///
+/// The pages load nothing but their own inline `<style>` and the images a
+/// document embeds (uploaded images on this origin, or any https URL).
+/// No script is ever expected, so none is allowed: if sanitizing the
+/// Markdown misses something, the browser still refuses to run it.
+const DOCS_CONTENT_SECURITY_POLICY: &str = "default-src 'none'; \
+     img-src 'self' https:; \
+     style-src 'unsafe-inline'; \
+     base-uri 'none'; \
+     form-action 'none'; \
+     frame-ancestors 'none'";
+
+/// Caching for a page anyone may read and a CDN may share.
+const PUBLIC_DOCS_CACHE_CONTROL: &str =
+    "public, max-age=300, stale-while-revalidate=86400";
+
+/// Caching for a page that depended on who asked for it.
+const PRIVATE_DOCS_CACHE_CONTROL: &str = "private, no-store";
+
+/// The `Cache-Control` value for a docs page.
+///
+/// Only an anonymous read of a public repo may be shared. A request that
+/// carried credentials may have been answered from a private repo or
+/// with permissions an anonymous reader lacks, and no shared cache should
+/// ever be in a position to hand that page to someone else.
+fn docs_cache_control(
+    request_headers: &axum::http::HeaderMap,
+    repo_is_public: bool,
+) -> &'static str {
+    let has_credentials =
+        request_headers.contains_key(axum::http::header::AUTHORIZATION);
+    if repo_is_public && !has_credentials {
+        PUBLIC_DOCS_CACHE_CONTROL
+    } else {
+        PRIVATE_DOCS_CACHE_CONTROL
+    }
+}
+
+/// Wraps a rendered docs page with the headers a cacheable,
 /// possibly-translated page needs.
 ///
 /// `Vary: Accept-Language` is deliberately not set. The header only ever
@@ -704,9 +757,11 @@ fn docs_response(
     html: String,
     lang: &str,
     language: &DocLanguage,
+    request_headers: &axum::http::HeaderMap,
 ) -> axum::response::Response {
     use axum::http::header::{
-        HeaderValue, CACHE_CONTROL, CONTENT_LANGUAGE, ETAG,
+        HeaderValue, CACHE_CONTROL, CONTENT_LANGUAGE,
+        CONTENT_SECURITY_POLICY, ETAG, X_CONTENT_TYPE_OPTIONS,
     };
 
     // A strong validator over the rendered bytes. Conditional GET is not
@@ -725,9 +780,18 @@ fn docs_response(
     }
     headers.insert(
         CACHE_CONTROL,
-        HeaderValue::from_static(
-            "public, max-age=300, stale-while-revalidate=86400",
-        ),
+        HeaderValue::from_static(docs_cache_control(
+            request_headers,
+            language.repo_is_public,
+        )),
+    );
+    headers.insert(
+        CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(DOCS_CONTENT_SECURITY_POLICY),
+    );
+    headers.insert(
+        X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
     );
     // `state` is one of a fixed set of ASCII literals, so this cannot
     // fail; the fallible form avoids a panic path regardless.
@@ -758,15 +822,72 @@ fn document_lang(text: &str) -> String {
 }
 
 /// Convert Markdown to HTML using pulldown-cmark with common extensions.
+///
+/// The Markdown is written by anyone who can edit the repo and read by
+/// anyone who can view it, often anonymously, so the output is treated
+/// as untrusted: raw HTML is shown as text rather than passed through,
+/// and a link or image whose scheme could run script is neutralised.
 fn markdown_to_html(md: &str) -> String {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS;
-    let parser = Parser::new_ext(md, options);
+    let parser = Parser::new_ext(md, options).map(|event| match event {
+        Event::Html(raw) | Event::InlineHtml(raw) => Event::Text(raw),
+        Event::Start(Tag::Link {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Link {
+            link_type,
+            dest_url: safe_url(dest_url, &["http", "https", "mailto"]),
+            title,
+            id,
+        }),
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Image {
+            link_type,
+            dest_url: safe_url(dest_url, &["http", "https"]),
+            title,
+            id,
+        }),
+        other => other,
+    });
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, parser);
     html
+}
+
+/// `url` when it is relative or uses one of `allowed_schemes`, otherwise
+/// an inert `#`.
+///
+/// Browsers ignore ASCII tabs and newlines anywhere in a URL and leading
+/// control characters and spaces, so `java\tscript:` is still
+/// `javascript:`. The scheme is read the same way before it is judged.
+fn safe_url<'a>(url: CowStr<'a>, allowed_schemes: &[&str]) -> CowStr<'a> {
+    let normalized: String = url
+        .trim_start_matches(|c: char| c <= ' ')
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let scheme_end = normalized.find([':', '/', '?', '#']);
+    match scheme_end {
+        Some(index) if normalized[index..].starts_with(':') => {
+            let scheme = normalized[..index].to_ascii_lowercase();
+            if allowed_schemes.contains(&scheme.as_str()) {
+                url
+            } else {
+                CowStr::Borrowed("#")
+            }
+        }
+        // No scheme: a relative reference, which stays on this origin.
+        _ => url,
+    }
 }
 
 /// Strip YAML frontmatter (delimited by `---`) from a Markdown string.
@@ -1004,6 +1125,167 @@ mod tests {
                 "`{lang}` must be safe to inline into the template"
             );
         }
+    }
+
+    #[test]
+    fn markdown_raw_html_is_rendered_as_text() {
+        let html = markdown_to_html(
+            "<script>alert(1)</script>\n\nHi <img src=x onerror=\"alert(1)\"> there",
+        );
+        assert!(!html.contains("<script"), "{html}");
+        assert!(!html.contains("<img"), "{html}");
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+        assert!(html.contains("&lt;img src=x"), "{html}");
+    }
+
+    #[test]
+    fn markdown_links_that_could_run_script_are_neutralised() {
+        for md in [
+            "[x](javascript:alert(1))",
+            "[x](JavaScript:alert(1))",
+            "[x](javascript&#58;alert(1))",
+            "[x](<java\tscript:alert(1)>)",
+            "[x](vbscript:msgbox)",
+            "[x](data:text/html,hello)",
+            "<javascript:alert(1)>",
+            "[x][r]\n\n[r]: javascript:alert(1)",
+        ] {
+            let html = markdown_to_html(md);
+            assert!(
+                html.contains(r##"href="#""##)
+                    && !html.contains("alert(1)\"")
+                    && !html.contains("href=\"javascript")
+                    && !html.contains("href=\"data"),
+                "{md} rendered as {html}"
+            );
+        }
+    }
+
+    #[test]
+    fn markdown_images_that_could_run_script_are_neutralised() {
+        for md in
+            ["![x](javascript:alert(1))", "![i](mailto:x@example.com)"]
+        {
+            let html = markdown_to_html(md);
+            assert!(
+                html.contains(r##"src="#""##),
+                "{md} rendered as {html}"
+            );
+        }
+    }
+
+    #[test]
+    fn markdown_keeps_ordinary_links_and_images() {
+        let html = markdown_to_html(
+            "[a](https://example.com/a) [b](/docs/org/repo/1) \
+             [c](mailto:x@example.com) [d](#top) [e](page?x=a:b) \
+             ![i](https://example.com/i.png) ![j](/v1beta/repos/o/r/images/1)",
+        );
+        for expected in [
+            r#"href="https://example.com/a""#,
+            r#"href="/docs/org/repo/1""#,
+            r#"href="mailto:x@example.com""#,
+            r##"href="#top""##,
+            r#"href="page?x=a:b""#,
+            r#"src="https://example.com/i.png""#,
+            r#"src="/v1beta/repos/o/r/images/1""#,
+        ] {
+            assert!(
+                html.contains(expected),
+                "{expected} missing in {html}"
+            );
+        }
+    }
+
+    fn source_language(repo_is_public: bool) -> DocLanguage {
+        DocLanguage {
+            published: Vec::new(),
+            repo_is_public,
+            choice: LanguageChoice::Source,
+            property_names: Default::default(),
+            record_names: Default::default(),
+        }
+    }
+
+    fn bearer_headers() -> axum::http::HeaderMap {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer pk_test".parse().unwrap(),
+        );
+        headers
+    }
+
+    fn cache_control_of(response: &axum::response::Response) -> &str {
+        response
+            .headers()
+            .get(axum::http::header::CACHE_CONTROL)
+            .unwrap()
+            .to_str()
+            .unwrap()
+    }
+
+    #[test]
+    fn an_anonymous_public_page_may_be_cached_publicly() {
+        let response = docs_response(
+            String::new(),
+            "en",
+            &source_language(true),
+            &axum::http::HeaderMap::new(),
+        );
+        assert_eq!(cache_control_of(&response), PUBLIC_DOCS_CACHE_CONTROL);
+    }
+
+    #[test]
+    fn a_page_read_with_credentials_is_never_shared() {
+        let response = docs_response(
+            String::new(),
+            "en",
+            &source_language(true),
+            &bearer_headers(),
+        );
+        assert_eq!(cache_control_of(&response), "private, no-store");
+    }
+
+    #[test]
+    fn a_private_repo_page_is_never_shared() {
+        for headers in [axum::http::HeaderMap::new(), bearer_headers()] {
+            let response = docs_response(
+                String::new(),
+                "en",
+                &source_language(false),
+                &headers,
+            );
+            assert_eq!(cache_control_of(&response), "private, no-store");
+        }
+    }
+
+    #[test]
+    fn docs_pages_forbid_script_framing_and_sniffing() {
+        let response = docs_response(
+            String::new(),
+            "en",
+            &source_language(true),
+            &axum::http::HeaderMap::new(),
+        );
+        let headers = response.headers();
+        let csp = headers
+            .get(axum::http::header::CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            csp,
+            "default-src 'none'; img-src 'self' https:; \
+             style-src 'unsafe-inline'; base-uri 'none'; \
+             form-action 'none'; frame-ancestors 'none'"
+        );
+        assert_eq!(
+            headers
+                .get(axum::http::header::X_CONTENT_TYPE_OPTIONS)
+                .unwrap(),
+            "nosniff"
+        );
     }
 
     #[test]
