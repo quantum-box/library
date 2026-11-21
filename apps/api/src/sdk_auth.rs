@@ -1202,6 +1202,49 @@ impl SdkAuthApp {
         Ok(operators.into_iter().map(operator_resp_from_rest).collect())
     }
 
+    /// The service account Library's own credential authenticates as.
+    ///
+    /// Asked once per process: the credential does not change while the
+    /// process runs.
+    pub async fn own_service_account_id(&self) -> errors::Result<String> {
+        if let Some(id) = OWN_SERVICE_ACCOUNT.get() {
+            return Ok(id.clone());
+        }
+        let caller: SdkCallerResp = Self::rest_get(
+            &self.sdk_config_as_service(),
+            "/v1/auth/caller",
+        )
+        .await?;
+        if caller.executor.kind != "service_account"
+            || caller.executor.id.is_empty()
+        {
+            return Err(sdk_internal_err(format!(
+                "Library's credential resolves to a {} rather than a service account",
+                caller.executor.kind
+            )));
+        }
+        Ok(OWN_SERVICE_ACCOUNT
+            .get_or_init(|| caller.executor.id.clone())
+            .clone())
+    }
+
+    /// Record, as the caller and for the tenant `multi_tenancy` names,
+    /// consent to Library's service account evaluating policies for the
+    /// tenant's users (tachyon ADR-0177). Idempotent.
+    pub async fn grant_delegation_consent(
+        &self,
+        executor: &dyn tachyon_sdk::auth::ExecutorAction,
+        multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
+    ) -> errors::Result<()> {
+        let service_account_id = self.own_service_account_id().await?;
+        Self::rest_post_no_content(
+            &self.sdk_config_with_context(executor, multi_tenancy),
+            "/v1/auth/delegation-consents",
+            &serde_json::json!({ "serviceAccountId": service_account_id }),
+        )
+        .await
+    }
+
     /// Get a single operator by ID.
     pub async fn get_operator(
         &self,
@@ -1692,6 +1735,22 @@ impl SdkAuthApp {
 }
 
 // ---- REST response types for endpoints not in SDK ----
+
+/// See [`SdkAuthApp::own_service_account_id`].
+static OWN_SERVICE_ACCOUNT: once_cell::sync::OnceCell<String> =
+    once_cell::sync::OnceCell::new();
+
+#[derive(Debug, Deserialize)]
+struct SdkCallerResp {
+    executor: SdkCallerExecutor,
+}
+
+#[derive(Debug, Deserialize)]
+struct SdkCallerExecutor {
+    kind: String,
+    #[serde(default)]
+    id: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -5492,6 +5551,138 @@ mod caller_token_scope_tests {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             vec!["tn_01reportedbyverify".to_string()],
+        );
+    }
+}
+
+#[cfg(test)]
+mod delegation_consent_tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct Admin;
+
+    impl tachyon_sdk::auth::ExecutorAction for Admin {
+        fn get_id(&self) -> &str {
+            "us_01testadmin"
+        }
+        fn has_tenant_id(&self, _: &TenantId) -> bool {
+            true
+        }
+        fn is_system_user(&self) -> bool {
+            false
+        }
+        fn is_user(&self) -> bool {
+            true
+        }
+        fn is_service_account(&self) -> bool {
+            false
+        }
+        fn is_none(&self) -> bool {
+            false
+        }
+    }
+
+    /// One mock tachyon-api whose `/v1/auth/caller` answers `kind`.
+    async fn tachyon(
+        kind: &'static str,
+    ) -> (String, Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = seen.clone();
+        let app = axum::Router::new().fallback(axum::routing::any(
+            move |method: axum::http::Method,
+                  uri: axum::http::Uri,
+                  headers: axum::http::HeaderMap,
+                  body: String| {
+                let captured = captured.clone();
+                async move {
+                    let header = |name: &str| {
+                        headers
+                            .get(name)
+                            .map(|v| v.to_str().unwrap().to_string())
+                    };
+                    captured.lock().unwrap().push(serde_json::json!({
+                        "method": method.as_str(),
+                        "path": uri.path(),
+                        "authorization": header("authorization"),
+                        "operator": header("x-operator-id"),
+                        "body": body,
+                    }));
+                    if uri.path() == "/v1/auth/caller" {
+                        return (
+                            axum::http::StatusCode::OK,
+                            serde_json::json!({
+                                "executor": {"kind": kind, "id": "sa_01kr0ggcbt50j4bjryhgs9ewqs", "tenantIds": []},
+                                "platformId": null,
+                                "operatorId": null,
+                            })
+                            .to_string(),
+                        );
+                    }
+                    (axum::http::StatusCode::NO_CONTENT, String::new())
+                }
+            },
+        ));
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(
+            async move { axum::serve(listener, app).await.unwrap() },
+        );
+        (format!("http://{address}"), seen)
+    }
+
+    #[tokio::test]
+    async fn the_admin_consents_to_librarys_own_service_account() {
+        let tenant: TenantId =
+            "tn_01kshr165k3wwr8xyk0e6vy36c".parse().unwrap();
+        let scope =
+            tachyon_sdk::auth::MultiTenancy::new(None, Some(tenant));
+
+        // A credential that is not a service account is refused, and no
+        // consent is sent.
+        let (base, seen) = tachyon("user").await;
+        let sdk = SdkAuthApp::new(
+            base,
+            &crate::domain::LIBRARY_TENANT,
+            "service-token",
+        )
+        .with_caller_token("admin-token");
+        assert!(sdk
+            .grant_delegation_consent(&Admin, &scope)
+            .await
+            .is_err());
+        assert_eq!(seen.lock().unwrap().len(), 1);
+
+        let (base, seen) = tachyon("service_account").await;
+        let sdk = SdkAuthApp::new(
+            base,
+            &crate::domain::LIBRARY_TENANT,
+            "service-token",
+        )
+        .with_caller_token("admin-token");
+        caller_token_scope(
+            Some("admin-token".to_string()),
+            sdk.grant_delegation_consent(&Admin, &scope),
+        )
+        .await
+        .unwrap();
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        // Library's own identity, asked with its own credential.
+        assert_eq!(seen[0]["path"], "/v1/auth/caller");
+        assert_eq!(seen[0]["authorization"], "Bearer service-token");
+        // The consent, given by the admin, for the imported tenant.
+        assert_eq!(seen[1]["method"], "POST");
+        assert_eq!(seen[1]["path"], "/v1/auth/delegation-consents");
+        assert_eq!(seen[1]["authorization"], "Bearer admin-token");
+        assert_eq!(seen[1]["operator"], "tn_01kshr165k3wwr8xyk0e6vy36c");
+        let body: serde_json::Value =
+            serde_json::from_str(seen[1]["body"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(
+            body["serviceAccountId"],
+            "sa_01kr0ggcbt50j4bjryhgs9ewqs"
         );
     }
 }
