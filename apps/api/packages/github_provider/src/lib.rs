@@ -23,6 +23,7 @@
 //! let token = github.exchange_token("code_from_callback").await?;
 //! ```
 
+pub mod api_url;
 mod oauth;
 
 pub use oauth::*;

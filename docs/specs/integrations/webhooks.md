@@ -21,13 +21,13 @@
 
 ### 3.1 `POST /webhooks/:provider/:endpoint_id`
 
-1. 成功時は `status=queued` または `status=queued_unverified`。
+1. 成功時は `status=queued`。署名がない、または検証に失敗したリクエストは保存せず `401 invalid_signature` を返す。
 2. 本体:
 
 ```json
 {
   "event_id": "<string>",
-  "status": "queued|queued_unverified"
+  "status": "queued"
 }
 ```
 
@@ -61,9 +61,9 @@
 
 ## 5. セキュリティ
 
-1. signature がない場合はログを出し、`status=queued_unverified` を返す可能性がある。
+1. signature がない、または一致しない場合はログを出し、イベントを保存せずに `401 invalid_signature` を返す。すべての endpoint は署名鍵（provider 共通の secret、endpoint 固有の secret、または生成した署名鍵）を持つため、未検証のまま受理する provider はない。
 2. `provider.signature_header()` の仕様に依存するため、provider ごとにヘッダ名を事前確認する必要がある。
-3. 署名検証が失敗してもイベント受理が発生するケースがあるので、後段処理で拒否・隔離する設計が必要。
+3. 後段の処理でも `signature_valid=false` のイベントは失敗扱いにする（受信時に弾くため通常は発生しない）。
 
 ## 6. 監査・運用
 

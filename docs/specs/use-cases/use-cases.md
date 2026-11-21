@@ -98,7 +98,7 @@ CMS運用担当: [cms-user-guide.md](/Users/takanorifukuyama/git/github.com/quan
 
 1. `is_public` と認可（tenant）を先に固定し、公開ルートを先に検証する。
 2. `200`/`201` の揺れや GraphQL の `errors` を監視設計へ組み込む。
-3. 署名検証失敗時の `queued_unverified`（Webhook）前提で監査要件を決める。
+3. 署名検証失敗時は `401 invalid_signature` で拒否され保存されない（Webhook）前提で監査要件を決める。
 4. 大規模データ移行時は `data-list` 件数差分を必須チェックする。
 
 ## 9. ペルソナ別ユースケース

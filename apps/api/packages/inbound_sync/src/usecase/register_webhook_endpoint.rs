@@ -269,6 +269,22 @@ pub trait UpdateWebhookEndpointInputPort:
     ) -> errors::Result<UpdateWebhookEndpointOutputData>;
 }
 
+/// Extra permission for rotating a GitHub endpoint key.
+///
+/// The rotated key is the HMAC key GitHub signs with, and the mutation hands
+/// it back so it can be pasted into a hook set up by hand. Whoever holds it
+/// can sign push events that the endpoint then fetches with the tenant's
+/// GitHub token and writes into the bound repository, so the action every
+/// member has (`InboundSyncUpdateWebhookEndpoint`) is not enough. This is the
+/// owner check the API already uses for handing out repository access
+/// (API keys with a role, repository policy changes).
+///
+/// The key is still returned rather than pushed to GitHub server-side: the
+/// endpoint is not tied to a binding, and the hook broker that could update
+/// the hook is not enabled in every deployment, so a hook configured by hand
+/// has no other way to receive the new key.
+pub const ROTATE_GITHUB_SECRET_POLICY: &str = "library:ManageRepoPolicy";
+
 /// Update webhook endpoint use case.
 #[derive(Debug, Clone, new)]
 pub struct UpdateWebhookEndpoint {
@@ -295,6 +311,16 @@ impl UpdateWebhookEndpointInputPort for UpdateWebhookEndpoint {
                 action: self.policy(),
             })
             .await?;
+        if matches!(input.update, WebhookEndpointUpdate::RotateGitHubSecret)
+        {
+            self.auth
+                .check_policy(&CheckPolicyInput {
+                    executor: input.executor,
+                    multi_tenancy: input.multi_tenancy,
+                    action: ROTATE_GITHUB_SECRET_POLICY,
+                })
+                .await?;
+        }
 
         // 2. Find endpoint
         let mut endpoint = self
@@ -601,6 +627,120 @@ mod tests {
         let mut config = linear(Some("rotated"));
         keep_stored_linear_secret(&mut config, Some("stored"));
         assert_eq!(linear_secret(&config), Some("rotated"));
+    }
+
+    mockall::mock! {
+        #[derive(Debug)]
+        Endpoints {}
+        #[async_trait::async_trait]
+        impl WebhookEndpointRepository for Endpoints {
+            async fn save(
+                &self,
+                endpoint: &WebhookEndpoint,
+            ) -> errors::Result<()>;
+            async fn find_by_id(
+                &self,
+                id: &WebhookEndpointId,
+            ) -> errors::Result<Option<WebhookEndpoint>>;
+            async fn find_by_tenant(
+                &self,
+                tenant_id: &value_object::TenantId,
+            ) -> errors::Result<Vec<WebhookEndpoint>>;
+            async fn find_by_tenant_and_provider(
+                &self,
+                tenant_id: &value_object::TenantId,
+                provider: Provider,
+            ) -> errors::Result<Vec<WebhookEndpoint>>;
+            async fn delete(
+                &self,
+                id: &WebhookEndpointId,
+            ) -> errors::Result<()>;
+        }
+    }
+
+    /// Auth that grants what every member has and refuses the owner check.
+    fn member_auth() -> Arc<tachyon_sdk::auth::MockAuthApp> {
+        let mut auth = tachyon_sdk::auth::MockAuthApp::new();
+        auth.expect_check_policy().returning(|input| {
+            let refused = input.action == ROTATE_GITHUB_SECRET_POLICY;
+            Box::pin(async move {
+                if refused {
+                    Err(errors::Error::forbidden("not an owner"))
+                } else {
+                    Ok(())
+                }
+            })
+        });
+        Arc::new(auth)
+    }
+
+    #[tokio::test]
+    async fn member_without_owner_permission_cannot_rotate_github_key() {
+        use tachyon_sdk::auth::test_helper::{
+            create_test_executor, create_test_multi_tenancy,
+        };
+        // No repository expectations: touching the endpoint would panic,
+        // so the refusal has to happen before the key is read or replaced.
+        let usecase = UpdateWebhookEndpoint::new(
+            member_auth(),
+            Arc::new(MockEndpoints::new()),
+        );
+        let executor = create_test_executor();
+        let multi_tenancy = create_test_multi_tenancy();
+        let err = usecase
+            .execute(UpdateWebhookEndpointInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                endpoint_id: WebhookEndpointId::from(
+                    "whe_test".to_string(),
+                ),
+                update: WebhookEndpointUpdate::RotateGitHubSecret,
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, errors::Error::Forbidden { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn member_can_still_change_other_endpoint_settings() {
+        use tachyon_sdk::auth::test_helper::{
+            create_test_executor, create_test_multi_tenancy,
+        };
+        let executor = create_test_executor();
+        let multi_tenancy = create_test_multi_tenancy();
+        let tenant = multi_tenancy.get_operator_id().unwrap();
+        let endpoint = WebhookEndpoint::create(
+            tenant,
+            "github",
+            Provider::Github,
+            ProviderConfig::Github {
+                repository: "o/r".into(),
+                branch: "main".into(),
+                path_pattern: None,
+            },
+            vec!["push".into()],
+            "key",
+        );
+        let mut endpoints = MockEndpoints::new();
+        endpoints
+            .expect_find_by_id()
+            .returning(move |_| Ok(Some(endpoint.clone())));
+        endpoints.expect_save().returning(|_| Ok(()));
+        let usecase =
+            UpdateWebhookEndpoint::new(member_auth(), Arc::new(endpoints));
+        usecase
+            .execute(UpdateWebhookEndpointInputData {
+                executor: &executor,
+                multi_tenancy: &multi_tenancy,
+                endpoint_id: WebhookEndpointId::from(
+                    "whe_test".to_string(),
+                ),
+                update: WebhookEndpointUpdate::Status(
+                    EndpointStatus::Paused,
+                ),
+            })
+            .await
+            .unwrap();
     }
 
     #[test]

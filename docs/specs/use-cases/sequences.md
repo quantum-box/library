@@ -108,7 +108,7 @@ sequenceDiagram
   participant Queue as Retry Queue
   Source->>Callback: POST /webhooks/events
   Callback->>API: verify signature
-  API-->>Callback: ok / queued_unverified
+  API-->>Callback: ok / 401 invalid_signature
   alt success
     Callback->>Callback: idempotency check
     Callback->>Queue: enqueue apply job

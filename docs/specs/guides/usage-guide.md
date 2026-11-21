@@ -178,8 +178,8 @@
   - 処理は `receive_provider_webhook` 経路
 - `POST /webhooks/:provider/:endpoint_id`
   - response: `WebhookResponse{event_id,status}`
-  - status: `queued` または `queued_unverified`
-  - signature未検出時は `queued_unverified` で運用上注意
+  - status: `queued`
+  - signature未検出・不一致時は保存せず `401 invalid_signature`
   - 異常: invalid_provider=400, endpoint_not_found=404, forbidden/bad_request 等
 
 ### 4.9 WebSocketコラボ

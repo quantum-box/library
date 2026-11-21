@@ -34,7 +34,7 @@
 ## 4. Webhook運用
 
 1. 受信確認はまず `200` と `event_id` の有無。
-2. provider 署名ヘッダを付与しない環境では `queued_unverified` になる場合があるため、送信元監査を優先。
+2. provider 署名ヘッダを付与しない、または鍵が一致しない送信は `401 invalid_signature` で拒否され、保存されない。
 3. 再配信時は `event_id` の重複や `status` で二重実行を抑制する。
 4. 失敗時は `error` コード（`endpoint_not_found` / `forbidden` / `bad_request`）で切り分ける。
 

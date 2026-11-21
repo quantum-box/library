@@ -61,27 +61,59 @@ impl PushEvent {
             .collect()
     }
 
-    /// Get all changed files (added, modified, removed).
+    /// Get all changed files (added, modified, removed), one entry per
+    /// path.
+    ///
+    /// A push lists each commit's changes separately, so a path touched by
+    /// several commits would otherwise appear several times and use up the
+    /// per-event file budget more than once. Commits are replayed in order
+    /// and each path keeps the change that describes its state after the
+    /// whole push: removed if its last change removed it, added if it did
+    /// not exist before the push, modified otherwise. Paths keep the order
+    /// in which they first appear.
     pub fn all_changed_files(&self) -> Vec<ChangedFile> {
-        let mut files = Vec::new();
+        let mut files: Vec<ChangedFile> = Vec::new();
+        let mut index: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        // Whether the path was absent before the push (its first change in
+        // the push added it).
+        let mut created: Vec<bool> = Vec::new();
 
-        for file in self.added_files() {
-            files.push(ChangedFile {
-                path: file.to_string(),
-                change_type: ChangeType::Added,
-            });
-        }
-        for file in self.modified_files() {
-            files.push(ChangedFile {
-                path: file.to_string(),
-                change_type: ChangeType::Modified,
-            });
-        }
-        for file in self.removed_files() {
-            files.push(ChangedFile {
-                path: file.to_string(),
-                change_type: ChangeType::Removed,
-            });
+        for commit in &self.commits {
+            let changes =
+                commit
+                    .added
+                    .iter()
+                    .map(|path| (path.as_str(), ChangeType::Added))
+                    .chain(
+                        commit.modified.iter().map(|path| {
+                            (path.as_str(), ChangeType::Modified)
+                        }),
+                    )
+                    .chain(
+                        commit.removed.iter().map(|path| {
+                            (path.as_str(), ChangeType::Removed)
+                        }),
+                    );
+            for (path, change) in changes {
+                match index.get(path) {
+                    None => {
+                        index.insert(path, files.len());
+                        created.push(change == ChangeType::Added);
+                        files.push(ChangedFile {
+                            path: path.to_string(),
+                            change_type: change,
+                        });
+                    }
+                    Some(&i) => {
+                        files[i].change_type = match change {
+                            ChangeType::Removed => ChangeType::Removed,
+                            _ if created[i] => ChangeType::Added,
+                            _ => ChangeType::Modified,
+                        };
+                    }
+                }
+            }
         }
 
         files
@@ -477,5 +509,108 @@ mod tests {
         };
 
         assert_eq!(event.branch(), Some("main"));
+    }
+
+    fn push_with(
+        commits: Vec<(Vec<&str>, Vec<&str>, Vec<&str>)>,
+    ) -> PushEvent {
+        let strings = |paths: Vec<&str>| {
+            paths.into_iter().map(String::from).collect()
+        };
+        let author = CommitAuthor {
+            name: "user".to_string(),
+            email: "user@example.com".to_string(),
+            username: None,
+        };
+        let commits = commits
+            .into_iter()
+            .enumerate()
+            .map(|(i, (added, modified, removed))| Commit {
+                id: format!("c{i}"),
+                tree_id: format!("t{i}"),
+                message: String::new(),
+                timestamp: String::new(),
+                url: String::new(),
+                author: author.clone(),
+                committer: author.clone(),
+                added: strings(added),
+                modified: strings(modified),
+                removed: strings(removed),
+            })
+            .collect();
+        PushEvent {
+            git_ref: "refs/heads/main".to_string(),
+            before: "abc".to_string(),
+            after: "def".to_string(),
+            repository: Repository {
+                id: 1,
+                name: "repo".to_string(),
+                full_name: "owner/repo".to_string(),
+                default_branch: "main".to_string(),
+                html_url: "https://github.com/owner/repo".to_string(),
+                clone_url: "https://github.com/owner/repo.git".to_string(),
+                private: false,
+                owner: Owner {
+                    login: "owner".to_string(),
+                    id: 1,
+                    owner_type: "User".to_string(),
+                },
+            },
+            pusher: Pusher {
+                name: "user".to_string(),
+                email: "user@example.com".to_string(),
+            },
+            commits,
+            head_commit: None,
+            forced: false,
+            deleted: false,
+            created: false,
+        }
+    }
+
+    fn changes(push: &PushEvent) -> Vec<(String, ChangeType)> {
+        push.all_changed_files()
+            .into_iter()
+            .map(|file| (file.path, file.change_type))
+            .collect()
+    }
+
+    /// Ten commits editing the same 50 files must not crowd out a file
+    /// changed once: each path counts once against the per-event budget.
+    #[test]
+    fn a_path_changed_in_many_commits_is_listed_once() {
+        let same: Vec<String> =
+            (0..50).map(|i| format!("docs/{i}.md")).collect();
+        let same: Vec<&str> = same.iter().map(String::as_str).collect();
+        let mut commits: Vec<_> =
+            (0..10).map(|_| (vec![], same.clone(), vec![])).collect();
+        commits.push((vec![], vec!["docs/other.md"], vec![]));
+
+        let files = changes(&push_with(commits));
+
+        assert_eq!(files.len(), 51);
+        assert_eq!(
+            files.last(),
+            Some(&("docs/other.md".to_string(), ChangeType::Modified))
+        );
+    }
+
+    #[test]
+    fn each_path_keeps_its_state_after_the_whole_push() {
+        let files = changes(&push_with(vec![
+            (vec!["new.md", "gone.md"], vec!["kept.md"], vec!["back.md"]),
+            (vec!["back.md"], vec!["new.md"], vec!["gone.md", "kept.md"]),
+            (vec![], vec!["back.md"], vec![]),
+        ]));
+
+        assert_eq!(
+            files,
+            vec![
+                ("new.md".to_string(), ChangeType::Added),
+                ("gone.md".to_string(), ChangeType::Removed),
+                ("kept.md".to_string(), ChangeType::Removed),
+                ("back.md".to_string(), ChangeType::Modified),
+            ]
+        );
     }
 }
