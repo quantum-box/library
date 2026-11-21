@@ -843,8 +843,10 @@ pub struct ExchangeOAuthCodeInput {
     pub integration_id: String,
     /// Authorization code from OAuth callback
     pub code: String,
-    /// State parameter for CSRF verification
-    pub state: Option<String>,
+    /// The state `initOauth` returned. Required: it is bound to the caller
+    /// and tenant that started the authorization and expires after 10
+    /// minutes.
+    pub state: String,
     /// Redirect URI used in authorization
     pub redirect_uri: String,
 }
@@ -856,8 +858,9 @@ pub struct InitOAuthInput {
     pub integration_id: String,
     /// Optional redirect URI (defaults to backend callback URL if not provided)
     pub redirect_uri: Option<String>,
-    /// Optional custom state for CSRF protection (will be generated if not provided).
-    /// Frontend can encode additional data (e.g., tenant_id, integration_id) in this field.
+    /// Optional frontend value carried inside the returned state. The
+    /// state itself is always minted by the server, bound to the caller,
+    /// the tenant and the provider.
     pub state: Option<String>,
 }
 

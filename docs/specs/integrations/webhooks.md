@@ -71,8 +71,7 @@
 2. 外部送信元のリトライ時は event_id が重複しやすい前提なので、ユースケース側で重複判定を行う。
 3. ユーザー公開向けの障害検知はまず provider 側リトライカウンタ、次に本体 `webhook_events` 取得で判断する。
 
-## 7. 未接続のOAuth callback（実装差分）
+## 7. OAuth callback
 
-1. `inbound_sync` 配下に `GET /v1beta/:tenant_id/integrations/callback` と `GET /v1beta/:tenant_id/integrations/:integration_id/callback` が定義されているアダプタは存在する。
-2. ただし現行 `apps/api/src/router.rs` の `merge` 経路に反映していないため、現時点では直接のエンドユーザー経路としては公開されていない。
-3. 実装参照: [/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/oauth_callback_handler.rs](/Users/takanorifukuyama/git/github.com/quantum-box/library/apps/api/packages/inbound_sync/src/adapter/oauth_callback_handler.rs)
+1. 未接続のまま残っていた REST callback アダプタ（`GET /v1beta/:tenant_id/integrations/callback` など、tenant をパスから取り認証なしで code を交換するもの）は削除した。
+2. code の交換は GraphQL `exchangeOauthCode` だけが行う。`initOauth` がサーバー側で発行した state（呼び出しユーザー・tenant・provider・10 分の有効期限に束縛し、client secret で署名）を必須とし、別ユーザー・別 tenant・期限切れの state は拒否する。

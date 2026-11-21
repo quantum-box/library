@@ -407,10 +407,7 @@ impl LibraryQuery {
                 return false;
             }
         };
-        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-            Some(crate::domain::LIBRARY_TENANT.clone()),
-            Some(organization.id().clone()),
-        );
+        let tenant_scope = org_scope(&organization);
 
         match app
             .view_repo
@@ -1209,6 +1206,27 @@ impl LibraryQuery {
     }
 }
 
+/// The scope for asking tachyon about an organization, on the platform
+/// the organization actually sits on.
+///
+/// An organization imported from another platform (CourseBoard, for
+/// example) must not claim Library's platform: tachyon answers 403
+/// "x-platform-id does not match the operator's platform". An
+/// organization with no recorded platform keeps the Library scope it
+/// had before.
+fn org_scope(
+    organization: &crate::domain::Organization,
+) -> usecase::LibraryOrg {
+    usecase::LibraryOrg::for_organization(organization).unwrap_or_else(
+        || {
+            usecase::LibraryOrg::library_native(
+                organization.username().to_string(),
+                organization.id().clone(),
+            )
+        },
+    )
+}
+
 #[ComplexObject]
 impl Organization {
     #[tracing::instrument(skip(ctx))]
@@ -1222,14 +1240,24 @@ impl Organization {
         let tenant_id: value_object::TenantId =
             value_object::TenantId::new(&self.id)
                 .map_err(|e| e.extend())?;
-        // List the members in the organization's own operator scope:
-        // tachyon rejects a user listing whose scope differs from the
-        // tenant it asks about, and the request may run under another
-        // operator (for example the platform tenant).
-        let tenant_scope = tachyon_sdk::auth::MultiTenancy::new(
-            Some(crate::domain::LIBRARY_TENANT.clone()),
-            Some(tenant_id.clone()),
-        );
+        // List the members in the organization's own scope: tachyon
+        // rejects a user listing whose operator differs from the tenant it
+        // asks about, and an x-platform-id other than that tenant's
+        // platform. The request may run under another operator (for
+        // example the platform tenant).
+        let app = ctx.data::<Arc<LibraryApp>>()?;
+        let organization = app
+            .organization_repo
+            .get_by_id(&tenant_id)
+            .await
+            .map_err(|e| e.extend())?;
+        let tenant_scope = match &organization {
+            Some(organization) => org_scope(organization),
+            None => usecase::LibraryOrg::library_native(
+                self.username.clone(),
+                tenant_id.clone(),
+            ),
+        };
         let users = tachyon_sdk::auth::AuthApp::find_users_by_tenant(
             auth_app.as_ref(),
             &tachyon_sdk::auth::FindUsersByTenantInput {
@@ -1339,7 +1367,8 @@ impl Repo {
 
     /// Get policies for this repository
     ///
-    /// Returns resource-based policies scoped to this repository.
+    /// Returns resource-based policies scoped to this repository. A
+    /// private repository's are listed only to those who may read it.
     ///
     /// For authenticated requests the handler injects a
     /// request-scoped `AuthApp` carrying the caller's JWT,
@@ -1382,6 +1411,17 @@ impl Repo {
                     .cloned()
                     .expect("SdkAuthApp must be in context")
             });
+
+        crate::usecase::authorize_repo_policy_listing(
+            auth_app.as_ref(),
+            executor,
+            multi_tenancy,
+            &tenant_id,
+            &self.id,
+            self.is_public,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let get_repo_policies = crate::usecase::GetRepoPolicies::new(
             app.user_policy_mapping_repo.clone(),
@@ -1427,7 +1467,9 @@ impl Repo {
     /// Get members who have access to this repository
     ///
     /// Returns users with resource-based policies scoped to this repository,
-    /// including org owners who have implicit owner access.
+    /// including org owners who have implicit owner access. Listed only to
+    /// a member of the organization or a holder of a grant on the
+    /// repository.
     #[tracing::instrument(name = "library_repo_members", skip(self, ctx))]
     async fn members(&self, ctx: &Context<'_>) -> Result<Vec<RepoMember>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
@@ -1460,6 +1502,16 @@ impl Repo {
                     .cloned()
                     .expect("SdkAuthApp must be in context")
             });
+
+        crate::usecase::authorize_repo_member_listing(
+            auth_app.as_ref(),
+            executor,
+            multi_tenancy,
+            &tenant_id,
+            &self.id,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let get_repo_members = crate::usecase::GetRepoMembers::new(
             app.user_policy_mapping_repo.clone(),
@@ -1579,5 +1631,56 @@ mod tenant_seed_candidate_tests {
             !impl_source.contains("DefaultRole::Owner"),
             "import permission must not be decided by the user role field"
         );
+    }
+}
+
+#[cfg(test)]
+mod org_scope_tests {
+    use super::org_scope;
+    use crate::domain::{Organization, LIBRARY_TENANT};
+    use tachyon_sdk::auth::MultiTenancyAction;
+    use value_object::{PlatformId, TenantId};
+
+    fn tenant() -> TenantId {
+        "tn_01kshr165k3wwr8xyk0e6vy36c".parse().unwrap()
+    }
+
+    /// An organization imported from another platform must not send
+    /// Library's platform: tachyon answers 403 for a mismatched
+    /// x-platform-id, which hid the members of such organizations and
+    /// denied their repositories.
+    #[test]
+    fn an_imported_organization_is_asked_about_on_its_own_platform() {
+        let other: PlatformId =
+            "tn_01hjryxysgey07h5jz5wagqj0m".parse().unwrap();
+        let adopted = Organization::adopt(
+            &tenant(),
+            &value_object::Text::new("courseboard").unwrap(),
+            &"courseboard".parse().unwrap(),
+            &other,
+        );
+
+        let scope = org_scope(&adopted);
+        assert_eq!(scope.platform_id(), None);
+        assert_eq!(scope.get_operator_id().unwrap(), tenant());
+    }
+
+    /// An organization with no recorded platform keeps the Library
+    /// scope it had before.
+    #[test]
+    fn an_unrecorded_organization_keeps_the_library_scope() {
+        let unrecorded = Organization::reconstruct(
+            &tenant(),
+            &value_object::Text::new("old").unwrap(),
+            &"old".parse().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let scope = org_scope(&unrecorded);
+        assert_eq!(scope.platform_id(), Some(LIBRARY_TENANT.clone()));
+        assert_eq!(scope.get_operator_id().unwrap(), tenant());
     }
 }

@@ -55,15 +55,16 @@ impl SdkAuthApp {
         executor: &dyn auth::ExecutorAction,
         tenancy: &dyn auth::MultiTenancyAction,
     ) -> errors::Result<Configuration> {
-        // Preserve the caller; never use SystemUser to bypass consumer policies.
-        let bearer = if executor.is_user() || executor.is_service_account()
-        {
-            request_caller_token()
-                .unwrap_or_else(|| self.auth_token.clone())
-        } else {
-            self.auth_token.clone()
-        };
-        self.github_broker_tenant(&tenancy.get_operator_id()?, &bearer)
+        // Preserve the caller; never use SystemUser to bypass consumer
+        // policies. An anonymous caller has no credential to send, and
+        // the broker's GitHub connection belongs to a signed-in caller.
+        let tenant = github_token_tenant(executor, tenancy)?;
+        let bearer = self.context_bearer(executor).ok_or_else(|| {
+            errors::Error::unauthorized(
+                "An authenticated caller is required",
+            )
+        })?;
+        self.github_broker_tenant(&tenant, &bearer)
     }
 
     pub async fn start_github_oauth(
@@ -171,6 +172,43 @@ impl SdkAuthApp {
             expires_at: token.expires_at,
         }))
     }
+}
+
+/// The tenant whose GitHub connection a call for `executor` reads or
+/// writes.
+///
+/// GitHub tokens are stored per tenant, not per user. Library's platform
+/// tenant is the tenant every signed-in user can act in, so a token kept
+/// there was one connection shared by all of them: any user could read,
+/// replace or delete whoever connected last. A connection therefore
+/// belongs to an organization (a personal space is one too) that the
+/// caller is a member of, named by `x-operator-id`, and an anonymous
+/// caller has none.
+pub(crate) fn github_token_tenant(
+    executor: &dyn auth::ExecutorAction,
+    tenancy: &dyn auth::MultiTenancyAction,
+) -> errors::Result<TenantId> {
+    if executor.is_none() {
+        return Err(errors::Error::unauthorized(
+            "Sign in to use a GitHub connection",
+        ));
+    }
+    let tenant = tenancy.get_operator_id().map_err(|_| {
+        errors::Error::bad_request(
+            "A GitHub connection belongs to an organization: send its tenant as x-operator-id",
+        )
+    })?;
+    if tenant == *crate::domain::LIBRARY_TENANT {
+        return Err(errors::Error::forbidden(
+            "A GitHub connection belongs to an organization, not to Library's platform tenant: send the organization's tenant as x-operator-id",
+        ));
+    }
+    if !executor.has_tenant_id(&tenant) {
+        return Err(errors::Error::forbidden(
+            "The caller does not belong to the requested tenant",
+        ));
+    }
+    Ok(tenant)
 }
 
 fn require_enabled() -> errors::Result<()> {

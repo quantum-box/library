@@ -300,7 +300,8 @@ impl BulkSyncExtGithubInputPort for BulkSyncExtGithub {
                     .sync_data
                     .execute(&SyncDataInputData {
                         executor: input.executor,
-                        multi_tenancy: input.multi_tenancy,
+                        // The organization's GitHub connection.
+                        multi_tenancy: &scope,
                         data_id: data.id().to_string(),
                         provider: "github".to_string(),
                         target,

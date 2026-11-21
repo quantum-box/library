@@ -165,6 +165,19 @@ spec:
               type: credential
               valueFrom:
                 secret: library-api/EXTERNAL_SYNC_SCANNER_TOKEN
+            # The app-level list below does not reach Preview, so without
+            # these the legacy /mcp/oauth/* server stayed live here. Same
+            # Tachyon issuer and JWKS as production. The resource is pinned
+            # to production's canonical one because Preview sets no
+            # LIBRARY_API_BASE_URL: the derived localhost resource is not
+            # HTTPS, and an invalid configuration makes every MCP bearer
+            # anonymous.
+            - name: MCP_AUTHORIZATION_SERVERS
+              value: "https://api.n1.tachy.one"
+            - name: MCP_OAUTH_JWKS_URL
+              value: "https://api.n1.tachy.one/oauth2/jwks"
+            - name: MCP_RESOURCE_URL
+              value: "https://library-api.txcloud.app/mcp"
       envVars:
         - name: DATABASE_URL
           type: credential

@@ -1152,11 +1152,14 @@ export type Mutation = {
   /**
    * [LIBRARY-API] Invite a user to an organization with library-specific policy setup
    *
-   * This wraps auth's InviteUser and additionally:
-   * - Attaches LibraryUserPolicy to the invited user
-   * - If the invited user becomes org owner, attaches repo owner policy
+   * This wraps auth's InviteUser and grants with the invitation:
+   * - LibraryUserPolicy in the organization's tenant
+   * - the repo owner policy, if the invited user becomes an org owner
+   *
+   * Returns null when the email has no account yet: an invitation was
+   * sent, and the policies are granted when it is accepted.
    */
-  inviteUser: User;
+  inviteUser?: Maybe<User>;
   /**
    * Reconcile GitHub's repository hook for an existing sync binding.
    * Safe to retry after a lost response or a previous provider failure.
@@ -2883,7 +2886,7 @@ export type InviteUserMutationVariables = Exact<{
 }>;
 
 
-export type InviteUserMutation = { __typename?: 'Mutation', inviteUser: { __typename?: 'User', id: string, email?: string | null, name?: string | null } };
+export type InviteUserMutation = { __typename?: 'Mutation', inviteUser?: { __typename?: 'User', id: string, email?: string | null, name?: string | null } | null };
 
 export type GitHubAuthUrlMutationVariables = Exact<{
   state: Scalars['String']['input'];

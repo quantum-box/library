@@ -29,6 +29,7 @@ use tachyon_sdk::auth::UserQuery;
 
 mod github_oauth;
 pub use github_oauth::github_oauth_broker_enabled;
+pub(crate) use github_oauth::github_token_tenant;
 
 /// Budgets for GET requests to tachyon-api.
 ///
@@ -799,22 +800,22 @@ impl SdkAuthApp {
     /// `ENVIRONMENT=development|test`, so in production every context
     /// call used to resolve to this service account no matter which
     /// user was acting.
+    ///
+    /// An anonymous executor sends no credential at all, and tachyon-api
+    /// answers 401. Lending it the process credential made every
+    /// anonymous request run upstream as Library's service account in the
+    /// platform tenant. Work that really is Library's own uses
+    /// [`sdk_config_as_service`](Self::sdk_config_as_service) or a system
+    /// executor, never an absent caller.
     fn sdk_config_with_context(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        // `get_user_id` is not the test here: it succeeds for a system
-        // executor too, whose id is the literal "system".
-        let bearer = if executor.is_user() || executor.is_service_account()
-        {
-            request_caller_token()
-                .unwrap_or_else(|| self.auth_token.clone())
-        } else {
-            self.auth_token.clone()
-        };
-        insert_bearer(&mut headers, &bearer);
+        if let Some(bearer) = self.context_bearer(executor) {
+            insert_bearer(&mut headers, &bearer);
+        }
         Self::insert_tenant_headers(&mut headers, multi_tenancy);
 
         if let Ok(user_id) = executor.get_user_id() {
@@ -824,6 +825,27 @@ impl SdkAuthApp {
         }
 
         self.configuration(headers)
+    }
+
+    /// The credential a call made for `executor` carries: the caller's own
+    /// for a user or an API key, the process credential for a system
+    /// executor, and none for an anonymous one.
+    fn context_bearer(
+        &self,
+        executor: &dyn tachyon_sdk::auth::ExecutorAction,
+    ) -> Option<String> {
+        // `get_user_id` is not the test here: it succeeds for a system
+        // executor too, whose id is the literal "system".
+        if executor.is_user() || executor.is_service_account() {
+            Some(
+                request_caller_token()
+                    .unwrap_or_else(|| self.auth_token.clone()),
+            )
+        } else if executor.is_none() {
+            None
+        } else {
+            Some(self.auth_token.clone())
+        }
     }
 
     /// `x-operator-id`, plus `x-platform-id` when it differs.
@@ -1102,22 +1124,6 @@ impl SdkAuthApp {
         })
     }
 
-    /// Make a PUT request with a JSON body.
-    async fn rest_put<B: Serialize, T: serde::de::DeserializeOwned>(
-        config: &Configuration,
-        path: &str,
-        body: &B,
-    ) -> errors::Result<T> {
-        let resp = config
-            .client
-            .put(format!("{}{}", config.base_path, path))
-            .json(body)
-            .send_with(config)
-            .await
-            .map_err(|error| SdkRequestError::transport(&error))?;
-        handle_rest_response(resp).await.map_err(Into::into)
-    }
-
     /// Make a DELETE request.
     async fn rest_delete(
         config: &Configuration,
@@ -1243,12 +1249,18 @@ impl SdkAuthApp {
     }
 
     /// Invite a user to a tenant via REST.
+    ///
+    /// `policyIds` are granted in `tenant_id` by tachyon itself: at once
+    /// for a user who already exists, and on acceptance for an email
+    /// that has no account yet. That is the only way to give a pending
+    /// invitee anything, since there is no user to attach a policy to
+    /// until they sign up.
     pub async fn invite_user_rest(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
         req: &InviteUserReq,
-    ) -> errors::Result<User> {
+    ) -> errors::Result<InviteUserOutcome> {
         let config = self.sdk_config_with_context(executor, multi_tenancy);
         let body = serde_json::json!({
             "tenantId": req.tenant_id,
@@ -1256,35 +1268,14 @@ impl SdkAuthApp {
             "inviteeId": req.invitee_id,
             "inviteeEmail": req.invitee_email,
             "notifyUser": req.notify_user,
+            "policyIds": req.policy_ids,
         });
 
-        let resp: RestUserResponse =
+        let resp: RestInviteUserResponse =
             Self::rest_post(&config, "/v1/auth/users/invite", &body)
                 .await?;
 
-        user_from_rest_user_response(&resp)
-    }
-
-    /// Update a user's role in a specific tenant via REST.
-    pub async fn update_user_role(
-        &self,
-        executor: &dyn tachyon_sdk::auth::ExecutorAction,
-        multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
-        user_id: &str,
-        tenant_id: &TenantId,
-        role: &str,
-    ) -> errors::Result<User> {
-        let config = self.sdk_config_with_context(executor, multi_tenancy);
-        let body = serde_json::json!({
-            "tenantId": tenant_id.as_str(),
-            "role": role,
-        });
-
-        let path = format!("/v1/auth/users/{}/role", user_id);
-        let resp: RestUserResponse =
-            Self::rest_put(&config, &path, &body).await?;
-
-        user_from_rest_user_response(&resp)
+        invite_outcome_from_rest(resp)
     }
 
     /// Get an operator by alias within a platform.
@@ -1726,6 +1717,43 @@ struct RestUserResponse {
     tenants: Vec<String>,
 }
 
+/// `POST /v1/auth/users/invite` answers with a wrapper, not a user:
+/// `user` is absent when an email without an account was invited.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestInviteUserResponse {
+    #[serde(default)]
+    invitation_sent: bool,
+    email: Option<String>,
+    user: Option<RestUserResponse>,
+}
+
+/// What an invitation did upstream.
+#[derive(Debug, Clone)]
+pub enum InviteUserOutcome {
+    /// An existing account was given access to the tenant.
+    TenantAccessGranted(Box<User>),
+    /// No account had the email, so an invitation was recorded and sent;
+    /// the invitee joins when they first sign in.
+    InvitationSent { email: Option<String> },
+}
+
+fn invite_outcome_from_rest(
+    resp: RestInviteUserResponse,
+) -> errors::Result<InviteUserOutcome> {
+    match resp.user {
+        Some(user) => Ok(InviteUserOutcome::TenantAccessGranted(Box::new(
+            user_from_rest_user_response(&user)?,
+        ))),
+        None if resp.invitation_sent => {
+            Ok(InviteUserOutcome::InvitationSent { email: resp.email })
+        }
+        None => Err(sdk_internal_err(
+            "invite response carried neither a user nor a sent invitation",
+        )),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct BootstrapResponse {
     user: BootstrapUser,
@@ -1829,6 +1857,8 @@ pub struct InviteUserReq {
     pub invitee_id: Option<String>,
     pub invitee_email: Option<String>,
     pub notify_user: Option<bool>,
+    /// Policies tachyon grants in `tenant_id` with the invitation.
+    pub policy_ids: Vec<String>,
 }
 
 // ---- OAuth bootstrap types (IaC-specific) ----
@@ -2503,6 +2533,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::GetOAuthTokenByProviderInput<'a>,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         if input.provider == "github" && github_oauth_broker_enabled() {
             return self
                 .authorized_github_broker_token(
@@ -2538,6 +2574,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::SaveOAuthTokenInput<'a>,
     ) -> errors::Result<()> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         let config = self
             .sdk_config_with_context(input.executor, input.multi_tenancy);
         let body = serde_json::json!({
@@ -2560,6 +2602,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::DeleteOAuthTokenInput<'a>,
     ) -> errors::Result<()> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         if input.provider == "github" && github_oauth_broker_enabled() {
             let config = self.github_broker_context(
                 input.executor,
@@ -3453,6 +3501,56 @@ mod tests {
     use tracing_subscriber::prelude::*;
 
     const TEST_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
+
+    /// tachyon answers an invitation with a wrapper around the user.
+    /// Reading the body as a bare user failed every invitation after
+    /// tachyon had already granted access.
+    #[test]
+    fn an_invite_response_for_an_existing_user_carries_the_user() {
+        let resp: RestInviteUserResponse =
+            serde_json::from_value(serde_json::json!({
+                "invitationSent": false,
+                "email": "member@example.com",
+                "user": {
+                    "id": "us_01ke1h5471vxsbscp8jd3bramn",
+                    "email": "member@example.com",
+                    "name": null,
+                    "role": "GENERAL",
+                    "tenants": [TEST_TENANT_ID],
+                },
+                "deprecatedInviteIdPath": true,
+            }))
+            .unwrap();
+
+        match invite_outcome_from_rest(resp).unwrap() {
+            InviteUserOutcome::TenantAccessGranted(user) => {
+                assert_eq!(
+                    user.id().to_string(),
+                    "us_01ke1h5471vxsbscp8jd3bramn"
+                );
+                assert_eq!(user.tenants().len(), 1);
+            }
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_invite_response_for_a_new_email_has_no_user() {
+        let resp: RestInviteUserResponse =
+            serde_json::from_value(serde_json::json!({
+                "invitationSent": true,
+                "email": "new@example.com",
+                "user": null,
+                "deprecatedInviteIdPath": false,
+            }))
+            .unwrap();
+
+        assert!(matches!(
+            invite_outcome_from_rest(resp).unwrap(),
+            InviteUserOutcome::InvitationSent { email: Some(email) }
+                if email == "new@example.com"
+        ));
+    }
 
     fn public_error_class(error: &errors::Error) -> &'static str {
         match error {
@@ -4727,6 +4825,75 @@ mod caller_token_scope_tests {
             Some("Bearer caller-jwt".to_string()),
             "API-key policies must not be evaluated using the service's fallback credential",
         );
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_an_anonymous_caller_send_no_credential() {
+        // Lending an anonymous request the process credential ran it
+        // upstream as Library's service account in the platform tenant.
+        // Without a credential tachyon-api answers 401, as it does for
+        // any anonymous request.
+        assert_eq!(
+            authorization_for_check_policy(&auth::Executor::None).await,
+            None,
+        );
+    }
+
+    #[test]
+    fn github_connections_need_a_member_of_an_organization_tenant() {
+        let org: TenantId =
+            "tn_01hy91qw3362djx6z9jerr34v4".parse().unwrap();
+        let in_org = auth::MultiTenancy::new(None, Some(org.clone()));
+        let in_platform = auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+        );
+
+        assert_eq!(
+            github_token_tenant(&UserExecutor, &in_org).unwrap(),
+            org
+        );
+        // One slot shared by every Library user.
+        assert!(matches!(
+            github_token_tenant(&UserExecutor, &in_platform),
+            Err(errors::Error::Forbidden { .. })
+        ));
+        assert!(matches!(
+            github_token_tenant(&auth::Executor::None, &in_org),
+            Err(errors::Error::Unauthorized { .. })
+        ));
+        assert!(github_token_tenant(
+            &UserExecutor,
+            &auth::MultiTenancy::new(None, None)
+        )
+        .is_err());
+
+        #[derive(Debug)]
+        struct Outsider;
+        impl auth::ExecutorAction for Outsider {
+            fn get_id(&self) -> &str {
+                "us_01testoutsider"
+            }
+            fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+                false
+            }
+            fn is_system_user(&self) -> bool {
+                false
+            }
+            fn is_user(&self) -> bool {
+                true
+            }
+            fn is_service_account(&self) -> bool {
+                false
+            }
+            fn is_none(&self) -> bool {
+                false
+            }
+        }
+        assert!(matches!(
+            github_token_tenant(&Outsider, &in_org),
+            Err(errors::Error::Forbidden { .. })
+        ));
     }
 
     /// An unsigned JWT with `claims`; only the payload matters to the

@@ -3797,8 +3797,11 @@ pub async fn protected_resource_metadata() -> Response {
                     .into_response();
             }
         }
-    } else {
+    } else if legacy_oauth_server_enabled() {
         (mcp_resource_url(), vec![mcp_oauth_issuer()])
+    } else {
+        // Never point clients at the retired legacy server.
+        (mcp_resource_url(), Vec::new())
     };
     Json(json!({
         "resource": resource,
@@ -3808,6 +3811,19 @@ pub async fn protected_resource_metadata() -> Response {
         "resource_name": "Library MCP"
     }))
     .into_response()
+}
+
+/// Whether Library's own `/mcp/oauth/*` authorization server answers.
+///
+/// It accepts any self-registered redirect URI and hands the client the
+/// user's raw Cognito access token, so it is retired unless a deployment
+/// asks for it with `LIBRARY_LEGACY_MCP_OAUTH_SERVER=true` (local
+/// development). It used to answer wherever `MCP_AUTHORIZATION_SERVERS` was
+/// merely forgotten, which is how it stayed live on Preview.
+fn legacy_oauth_server_enabled() -> bool {
+    !oauth_resource::enabled()
+        && std::env::var("LIBRARY_LEGACY_MCP_OAUTH_SERVER")
+            .is_ok_and(|value| value == "true")
 }
 
 fn retired_oauth_response() -> Response {
@@ -3822,7 +3838,7 @@ fn retired_oauth_response() -> Response {
 }
 
 pub async fn mcp_oauth_authorization_server_metadata() -> Response {
-    if oauth_resource::enabled() {
+    if !legacy_oauth_server_enabled() {
         return retired_oauth_response();
     }
     let issuer = mcp_oauth_issuer();
@@ -3845,7 +3861,7 @@ pub async fn mcp_oauth_authorization_server_metadata() -> Response {
 pub async fn mcp_oauth_register(
     Json(request): Json<McpOAuthClientRegistrationRequest>,
 ) -> Response {
-    if oauth_resource::enabled() {
+    if !legacy_oauth_server_enabled() {
         return retired_oauth_response();
     }
     if request.redirect_uris.is_empty() {
@@ -3907,7 +3923,7 @@ pub async fn mcp_oauth_register(
 pub async fn mcp_oauth_authorize(
     Query(query): Query<McpOAuthAuthorizeQuery>,
 ) -> Response {
-    if oauth_resource::enabled() {
+    if !legacy_oauth_server_enabled() {
         return retired_oauth_response();
     }
     if let Err(message) = validate_authorize_request(&query).await {
@@ -3921,7 +3937,7 @@ pub async fn mcp_oauth_authorize(
 pub async fn mcp_oauth_authorize_submit(
     Form(form): Form<McpOAuthAuthorizeForm>,
 ) -> Response {
-    if oauth_resource::enabled() {
+    if !legacy_oauth_server_enabled() {
         return retired_oauth_response();
     }
     let query = McpOAuthAuthorizeQuery {
@@ -3986,7 +4002,7 @@ pub async fn mcp_oauth_authorize_submit(
 pub async fn mcp_oauth_token(
     Form(request): Form<McpOAuthTokenRequest>,
 ) -> Response {
-    if oauth_resource::enabled() {
+    if !legacy_oauth_server_enabled() {
         return retired_oauth_response();
     }
     if request.grant_type != "authorization_code" {

@@ -256,6 +256,7 @@ export function OrganizationPageUi({
 												<div className='flex gap-2'>
 													<GitHubImportDialog
 														org={org}
+														tenantId={tenantId}
 														existingRepos={organization.repos}
 													/>
 													{hasLinearConnection && (
@@ -334,6 +335,7 @@ export function OrganizationPageUi({
 													{!isViewOnly && (
 														<GitHubImportDialog
 															org={org}
+															tenantId={tenantId}
 															existingRepos={organization.repos}
 														/>
 													)}
@@ -542,7 +544,7 @@ export function OrganizationPageUi({
 													onMemberRoleChanged={onMemberRoleChanged}
 												/>
 
-												<GitHubSettings org={org} />
+												<GitHubSettings org={org} tenantId={tenantId} />
 
 												<Card>
 													<CardHeader>
