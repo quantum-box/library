@@ -32,8 +32,21 @@ declare module '@duckdb/duckdb-wasm' {
 		) => Promise<void>
 	}
 
-	export const getJsDelivrBundles: () => unknown
-	export const selectBundle: (bundles: unknown) => Promise<{
+	export interface DuckDBBundle {
+		mainModule: string
+		mainWorker: string | null
+	}
+
+	export interface DuckDBBundles {
+		mvp: DuckDBBundle
+		eh?: DuckDBBundle
+	}
+
+	export const getJsDelivrBundles: () => {
+		mvp: DuckDBBundle
+		eh: DuckDBBundle
+	}
+	export const selectBundle: (bundles: DuckDBBundles) => Promise<{
 		mainWorker: string
 		mainModule: string
 		pthreadWorker: string | null
