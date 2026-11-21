@@ -624,11 +624,11 @@ pub async fn router(
     let parquet_storage = build_parquet_storage().await?;
     let image_store = build_image_store().await?;
 
-    let schema: graphql::AppSchema = Schema::build(
+    let schema: graphql::AppSchema = graphql::limits::apply(Schema::build(
         graphql::Query::default(),
         graphql::Mutation::default(),
         EmptySubscription,
-    )
+    ))
     .data(sdk.clone())
     .data(oauth_bootstrap.clone())
     .data(auth_app_trait.clone())
@@ -804,7 +804,12 @@ pub async fn router(
         )
         .route("/mcp/oauth/token", post(handler::mcp::mcp_oauth_token))
         .route("/v1/graphql", get(graphql::graphiql))
-        .route("/v1/graphql", post(graphql::graphql_handler))
+        .route(
+            "/v1/graphql",
+            post(graphql::graphql_handler).layer(DefaultBodyLimit::max(
+                graphql::limits::MAX_REQUEST_BYTES,
+            )),
+        )
         .route(
             "/v1/graphql/introspection",
             get(graphql::graphql_introspection),
