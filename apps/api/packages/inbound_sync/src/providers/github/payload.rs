@@ -80,22 +80,21 @@ impl PushEvent {
         let mut created: Vec<bool> = Vec::new();
 
         for commit in &self.commits {
-            let changes = commit
-                .added
-                .iter()
-                .map(|path| (path.as_str(), ChangeType::Added))
-                .chain(
-                    commit
-                        .modified
-                        .iter()
-                        .map(|path| (path.as_str(), ChangeType::Modified)),
-                )
-                .chain(
-                    commit
-                        .removed
-                        .iter()
-                        .map(|path| (path.as_str(), ChangeType::Removed)),
-                );
+            let changes =
+                commit
+                    .added
+                    .iter()
+                    .map(|path| (path.as_str(), ChangeType::Added))
+                    .chain(
+                        commit.modified.iter().map(|path| {
+                            (path.as_str(), ChangeType::Modified)
+                        }),
+                    )
+                    .chain(
+                        commit.removed.iter().map(|path| {
+                            (path.as_str(), ChangeType::Removed)
+                        }),
+                    );
             for (path, change) in changes {
                 match index.get(path) {
                     None => {
@@ -512,9 +511,12 @@ mod tests {
         assert_eq!(event.branch(), Some("main"));
     }
 
-    fn push_with(commits: Vec<(Vec<&str>, Vec<&str>, Vec<&str>)>) -> PushEvent {
-        let strings =
-            |paths: Vec<&str>| paths.into_iter().map(String::from).collect();
+    fn push_with(
+        commits: Vec<(Vec<&str>, Vec<&str>, Vec<&str>)>,
+    ) -> PushEvent {
+        let strings = |paths: Vec<&str>| {
+            paths.into_iter().map(String::from).collect()
+        };
         let author = CommitAuthor {
             name: "user".to_string(),
             email: "user@example.com".to_string(),
@@ -577,7 +579,8 @@ mod tests {
     /// changed once: each path counts once against the per-event budget.
     #[test]
     fn a_path_changed_in_many_commits_is_listed_once() {
-        let same: Vec<String> = (0..50).map(|i| format!("docs/{i}.md")).collect();
+        let same: Vec<String> =
+            (0..50).map(|i| format!("docs/{i}.md")).collect();
         let same: Vec<&str> = same.iter().map(String::as_str).collect();
         let mut commits: Vec<_> =
             (0..10).map(|_| (vec![], same.clone(), vec![])).collect();
