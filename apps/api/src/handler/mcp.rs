@@ -51,6 +51,7 @@ use database_manager::domain::{
 use value_object::{LongText, OffsetPage, OffsetPaginator, Text, Url};
 
 mod oauth_resource;
+pub(crate) use oauth_resource::Scopes as OAuthScopes;
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile"];
@@ -3616,16 +3617,18 @@ async fn resolve_auth_context(
 /// Verify a resource-bound OAuth token (see
 /// [`crate::sdk_auth::is_resource_bound_token`]) against Library's own
 /// resource: issuer, signature, expiry and `aud` = Library. Returns the
-/// subject. Without external OAuth configured Library names no resource,
-/// so every such token is refused rather than trusted by default.
+/// subject and the scopes the user consented to. Without external OAuth
+/// configured Library names no resource, so every such token is refused
+/// rather than trusted by default.
 pub(crate) async fn verify_library_resource_token(
     token: &str,
-) -> Result<String, &'static str> {
+) -> Result<(String, OAuthScopes), &'static str> {
     if !oauth_resource::enabled() {
         return Err("resource-bound tokens need external OAuth configured");
     }
     let config = oauth_resource::Config::from_env()?;
-    Ok(config.verify(token).await?.subject)
+    let verified = config.verify(token).await?;
+    Ok((verified.subject, verified.scopes))
 }
 
 pub(crate) async fn verify_workflow_context_token(

@@ -122,6 +122,51 @@ async fn organization_platform(
     Ok(Some(app.org_scopes.scope_for(&org).await.platform_id()))
 }
 
+/// Request extension set when the caller's OAuth token was consented for
+/// reading only (`mcp:read` without `mcp:write`). The GraphQL handler
+/// refuses mutations for such a request; every other route has already
+/// been held to safe methods by the executor extractor.
+#[derive(Clone, Copy, Debug)]
+pub struct ReadOnlyToken;
+
+/// What a Library-audience OAuth token may do on this request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TokenAccess {
+    /// `mcp:write` was granted, or `mcp:read` on a read-only request.
+    Allowed,
+    /// `mcp:read` only, on the GraphQL endpoint: queries run, mutations
+    /// are refused by the handler.
+    ReadOnlyGraphql,
+    /// `mcp:read` only, on a REST route with an unsafe method.
+    Rejected,
+    /// Neither scope: the token grants nothing.
+    Anonymous,
+}
+
+/// The MCP endpoint is not the only way in: the same Library-audience
+/// token is accepted by REST and GraphQL, so the consent the user gave
+/// (read only, or read and write) has to hold there too.
+fn token_access(
+    scopes: crate::handler::mcp::OAuthScopes,
+    method: &axum::http::Method,
+    path: &str,
+) -> TokenAccess {
+    if scopes.write {
+        return TokenAccess::Allowed;
+    }
+    if !scopes.read {
+        return TokenAccess::Anonymous;
+    }
+    if path == "/v1/graphql" {
+        return TokenAccess::ReadOnlyGraphql;
+    }
+    if method.is_safe() {
+        TokenAccess::Allowed
+    } else {
+        TokenAccess::Rejected
+    }
+}
+
 /// Executor resolved from the incoming request's
 /// Authorization header. Optionally carries the original
 /// Bearer token so it can be forwarded to tachyon-api for
@@ -459,16 +504,40 @@ where
                 // name Library, or a token issued for another service
                 // could be replayed here.
                 if crate::sdk_auth::is_resource_bound_token(&token) {
-                    let bound_to_library =
+                    let scopes =
                         crate::handler::mcp::verify_library_resource_token(
                             &token,
                         )
                         .await
-                        .is_ok_and(|subject| user.id == subject);
-                    if !bound_to_library {
+                        .ok()
+                        .filter(|(subject, _)| user.id == *subject)
+                        .map(|(_, scopes)| scopes);
+                    let access = match scopes {
+                        Some(scopes) => token_access(
+                            scopes,
+                            &parts.method,
+                            parts.uri.path(),
+                        ),
+                        None => TokenAccess::Anonymous,
+                    };
+                    match access {
+                        TokenAccess::Allowed => {}
+                        TokenAccess::ReadOnlyGraphql => {
+                            parts.extensions.insert(ReadOnlyToken);
+                        }
+                        TokenAccess::Rejected => {
+                            return Err(errors::Error::forbidden(
+                                "insufficient_scope: this request needs \
+                                 mcp:write",
+                            ));
+                        }
+                        TokenAccess::Anonymous => {}
+                    }
+                    if access == TokenAccess::Anonymous {
                         tracing::warn!(
-                            "resource-bound token not issued for Library; \
-                             treating request as unauthenticated"
+                            "resource-bound token not issued for Library, or \
+                             without an mcp scope; treating request as \
+                             unauthenticated"
                         );
                         let executor = LibraryExecutor {
                             inner: LibraryExecutorKind::None,
@@ -507,5 +576,69 @@ where
                 Ok(executor)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod token_access_tests {
+    use super::{token_access, TokenAccess};
+    use crate::handler::mcp::OAuthScopes;
+    use axum::http::Method;
+
+    const READ: OAuthScopes = OAuthScopes {
+        read: true,
+        write: false,
+    };
+
+    #[test]
+    fn a_write_scope_allows_every_request() {
+        let scopes = OAuthScopes {
+            read: true,
+            write: true,
+        };
+        assert_eq!(
+            token_access(scopes, &Method::DELETE, "/v1/repos/x"),
+            TokenAccess::Allowed
+        );
+        assert_eq!(
+            token_access(scopes, &Method::POST, "/v1/graphql"),
+            TokenAccess::Allowed
+        );
+    }
+
+    #[test]
+    fn a_read_scope_refuses_unsafe_rest_methods() {
+        for method in
+            [Method::POST, Method::PUT, Method::PATCH, Method::DELETE]
+        {
+            assert_eq!(
+                token_access(READ, &method, "/v1beta/repos/org/repo/data"),
+                TokenAccess::Rejected
+            );
+        }
+        assert_eq!(
+            token_access(READ, &Method::GET, "/v1beta/repos/org/repo/data"),
+            TokenAccess::Allowed
+        );
+    }
+
+    #[test]
+    fn a_read_scope_leaves_graphql_to_the_handler() {
+        assert_eq!(
+            token_access(READ, &Method::POST, "/v1/graphql"),
+            TokenAccess::ReadOnlyGraphql
+        );
+    }
+
+    #[test]
+    fn no_mcp_scope_grants_nothing() {
+        let scopes = OAuthScopes {
+            read: false,
+            write: false,
+        };
+        assert_eq!(
+            token_access(scopes, &Method::GET, "/v1/graphql"),
+            TokenAccess::Anonymous
+        );
     }
 }
