@@ -23,12 +23,15 @@ it('previews code blocks after changing language, updates source, and preserves 
     await waitFor(() => expect(host.querySelector('svg text')?.textContent).toBe('graph TD; A-->B'))
     const documentBeforeToggle = JSON.stringify(editor.document)
     const source = host.querySelector('pre')!
-    fireEvent.click(within(host).getByRole('button', { name: 'Diagram only' }))
+    // Existing diagrams open with their source hidden.
     expect(source).not.toBeVisible()
     expect(host.querySelector('svg')).toBeVisible()
-    expect(JSON.stringify(editor.document)).toBe(documentBeforeToggle)
     fireEvent.click(within(host).getByRole('button', { name: 'Show code' }))
     expect(source).toBeVisible()
+    expect(JSON.stringify(editor.document)).toBe(documentBeforeToggle)
+    fireEvent.click(within(host).getByRole('button', { name: 'Diagram only' }))
+    expect(source).not.toBeVisible()
+    fireEvent.click(within(host).getByRole('button', { name: 'Show code' }))
     editor.updateBlock(editor.document[0], { content: 'graph TD; B-->C' })
     await waitFor(() => expect(host.querySelector('svg text')?.textContent).toBe('graph TD; B-->C'))
     const html = editor.blocksToHTMLLossy(editor.document)

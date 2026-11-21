@@ -98,6 +98,10 @@ export function createDiagramCodeBlockSpec() {
           element.style.display = visible ? '' : 'none'
         }
       }
+      // Readers want the diagram, not its source. An empty block keeps the
+      // source visible, otherwise there would be nowhere to type.
+      const sourceVisibleByDefault = !block.content.some((item) => 'text' in item && item.text.trim())
+      setSourceVisibility(sourceVisibleByDefault)
       const preview = document.createElement('div')
       preview.style.width = '100%'
       preview.contentEditable = 'false'
@@ -111,6 +115,7 @@ export function createDiagramCodeBlockSpec() {
           <DiagramPreview
             language={language}
             source={source}
+            defaultSourceVisible={sourceVisibleByDefault}
             onSourceVisibilityChange={setSourceVisibility}
           />,
         )
