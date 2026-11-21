@@ -1,10 +1,17 @@
 //! Invite a user to an organization with library-specific
 //! policy setup.
 //!
-//! This usecase wraps auth's InviteUser and additionally:
-//! - Attaches LibraryUserPolicy to the invited user
-//! - If the invited user becomes org owner, attaches repo
-//!   owner policy
+//! This usecase wraps auth's InviteUser. The Library policies the
+//! invitee needs in the organization's tenant ride along with the
+//! invitation (`policyIds`), so tachyon grants them itself: at once for
+//! an existing account, and on acceptance for an email that has no
+//! account yet, which Library has no user to attach anything to.
+//!
+//! - LibraryUserPolicy, always.
+//! - The repo owner policy, when the invitee is to be an owner.
+//!
+//! An existing account additionally gets LibraryUserPolicy in Library's
+//! platform tenant, as sign-in does.
 
 use std::sync::Arc;
 
@@ -21,7 +28,7 @@ use crate::domain::{
     library_repo_owner_policy_id, library_user_policy_id, OrgRole,
     LIBRARY_TENANT,
 };
-use crate::sdk_auth::{InviteUserReq, SdkAuthApp};
+use crate::sdk_auth::{InviteUserOutcome, InviteUserReq, SdkAuthApp};
 
 /// Input data for inviting a user to an organization
 #[derive(Debug)]
@@ -39,7 +46,9 @@ pub struct InviteOrgMemberInputData<'a> {
 /// Output data for inviting a user to an organization
 #[derive(Debug)]
 pub struct InviteOrgMemberOutputData {
-    pub user: User,
+    /// The member, or `None` when the email had no account and an
+    /// invitation was sent instead.
+    pub user: Option<User>,
 }
 
 #[async_trait]
@@ -55,6 +64,16 @@ pub struct InviteOrgMember {
     sdk: Arc<SdkAuthApp>,
 }
 
+/// The policies granted in the organization's tenant with an invitation
+/// as `role`.
+fn invitation_policy_ids(role: OrgRole) -> Vec<String> {
+    let mut policy_ids = vec![library_user_policy_id().to_string()];
+    if role == OrgRole::Owner {
+        policy_ids.push(library_repo_owner_policy_id().to_string());
+    }
+    policy_ids
+}
+
 #[async_trait]
 impl InviteOrgMemberInputPort for InviteOrgMember {
     #[tracing::instrument(name = "InviteOrgMember::execute", skip(self))]
@@ -62,7 +81,9 @@ impl InviteOrgMemberInputPort for InviteOrgMember {
         &self,
         input: InviteOrgMemberInputData<'a>,
     ) -> errors::Result<InviteOrgMemberOutputData> {
-        // Policy check, in the organization's own tenant
+        // Policy check, in the organization's own tenant. The invitation
+        // is sent from there too: tachyon grants `policyIds` in the
+        // tenant the request is scoped to.
         let scope = crate::usecase::authorization_scope_for_org(
             input.multi_tenancy,
             input.tenant_id,
@@ -77,154 +98,112 @@ impl InviteOrgMemberInputPort for InviteOrgMember {
         )
         .await?;
 
-        // Build invite request
         let (invitee_id, invitee_email) = match &input.invitee {
             value_object::IdOrEmail::Id(id) => (Some(id.to_string()), None),
             value_object::IdOrEmail::Email(email) => {
                 (None, Some(email.to_string()))
             }
         };
+        let role = input.role.unwrap_or(OrgRole::General);
 
-        // 1. Call invite_user via REST
-        let user = self
+        let outcome = self
             .sdk
             .invite_user_rest(
                 input.executor,
-                input.multi_tenancy,
+                &scope,
                 &InviteUserReq {
                     platform_id: input.platform_id.map(|p| p.to_string()),
                     tenant_id: input.tenant_id.to_string(),
                     invitee_id,
                     invitee_email,
                     notify_user: input.notify_user,
+                    policy_ids: invitation_policy_ids(role),
                 },
             )
             .await?;
 
-        // 2. If role is specified, update user's role
-        if let Some(role) = input.role {
-            let auth_role: DefaultRole = role.into();
-            let auth_role_str = auth_role.to_string();
-            let tenant_id = TenantId::new(input.tenant_id.as_ref())?;
-            self.sdk
-                .update_user_role(
-                    input.executor,
-                    input.multi_tenancy,
-                    user.id().as_ref(),
-                    &tenant_id,
-                    &auth_role_str,
-                )
-                .await?;
+        let mut user = match outcome {
+            InviteUserOutcome::TenantAccessGranted(user) => *user,
+            InviteUserOutcome::InvitationSent { email } => {
+                info!(
+                    tenant = %input.tenant_id,
+                    email = ?email,
+                    role = ?role,
+                    "sent an organization invitation to an email without an account"
+                );
+                return Ok(InviteOrgMemberOutputData { user: None });
+            }
+        };
 
-            info!(
-                user = %user.id(),
-                tenant = %input.tenant_id,
-                role = ?role,
-                "updated user role during org member invite"
-            );
-        }
-
-        // 3. Attach LibraryUserPolicy
-        let tenant_id = TenantId::new(input.tenant_id.as_ref())?;
-        self.attach_library_policy(
-            input.executor,
-            input.multi_tenancy,
-            &user,
-            &tenant_id,
-        )
-        .await?;
-
-        // 4. If user is org owner, attach repo owner policy
-        let final_role = input.role.unwrap_or(OrgRole::General);
-        if final_role == OrgRole::Owner {
-            self.attach_repo_owner_policy(
-                input.executor,
-                input.multi_tenancy,
-                &user,
-                &tenant_id,
-            )
+        self.attach_platform_library_policy(input.executor, &user)
             .await?;
-        }
 
-        Ok(InviteOrgMemberOutputData { user })
+        info!(
+            user = %user.id(),
+            tenant = %input.tenant_id,
+            role = ?role,
+            "invited organization member"
+        );
+
+        // The label is tachyon's and is not changed; the role that was
+        // applied is what the policies now say.
+        if input.role.is_some() {
+            user.role = DefaultRole::from(role);
+        }
+        Ok(InviteOrgMemberOutputData { user: Some(user) })
     }
 }
 
 impl InviteOrgMember {
-    /// Attach LibraryUserPolicy to the user.
-    async fn attach_library_policy(
+    /// Attach LibraryUserPolicy in Library's platform tenant, where
+    /// sign-in attaches it too. tachyon grants in the tenant the request
+    /// is scoped to, so the scope names the platform tenant.
+    async fn attach_platform_library_policy(
         &self,
         executor: &dyn ExecutorAction,
-        multi_tenancy: &dyn MultiTenancyAction,
         user: &User,
-        tenant_id: &TenantId,
     ) -> errors::Result<()> {
-        let policy_id = library_user_policy_id();
-
-        // Attach to platform scope
-        let platform_tenant = LIBRARY_TENANT.clone();
+        let platform_tenant = TenantId::new(LIBRARY_TENANT.as_ref())?;
+        let platform_scope = tachyon_sdk::auth::MultiTenancy::new(
+            Some(platform_tenant.clone()),
+            Some(platform_tenant.clone()),
+        );
         AuthApp::attach_user_policy(
             self.sdk.as_ref(),
             &tachyon_sdk::auth::AttachUserPolicyInput {
                 executor,
-                multi_tenancy,
+                multi_tenancy: &platform_scope,
                 user_id: user.id(),
-                policy_id: &policy_id,
+                policy_id: &library_user_policy_id(),
                 tenant_id: &platform_tenant,
             },
         )
-        .await?;
+        .await
+    }
+}
 
-        // Attach to tenant scope
-        AuthApp::attach_user_policy(
-            self.sdk.as_ref(),
-            &tachyon_sdk::auth::AttachUserPolicyInput {
-                executor,
-                multi_tenancy,
-                user_id: user.id(),
-                policy_id: &policy_id,
-                tenant_id,
-            },
-        )
-        .await?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        info!(
-            user = %user.id(),
-            tenant = %tenant_id,
-            "attached library policy during org member invite"
+    #[test]
+    fn an_owner_invitation_carries_the_repo_owner_policy() {
+        assert_eq!(
+            invitation_policy_ids(OrgRole::Owner),
+            vec![
+                library_user_policy_id().to_string(),
+                library_repo_owner_policy_id().to_string(),
+            ]
         );
-
-        Ok(())
     }
 
-    /// Attach repo owner policy for full repository access.
-    async fn attach_repo_owner_policy(
-        &self,
-        executor: &dyn ExecutorAction,
-        multi_tenancy: &dyn MultiTenancyAction,
-        user: &User,
-        tenant_id: &TenantId,
-    ) -> errors::Result<()> {
-        let policy_id = library_repo_owner_policy_id();
-
-        AuthApp::attach_user_policy(
-            self.sdk.as_ref(),
-            &tachyon_sdk::auth::AttachUserPolicyInput {
-                executor,
-                multi_tenancy,
-                user_id: user.id(),
-                policy_id: &policy_id,
-                tenant_id,
-            },
-        )
-        .await?;
-
-        info!(
-            user = %user.id(),
-            tenant = %tenant_id,
-            "attached repo owner policy for org owner"
-        );
-
-        Ok(())
+    #[test]
+    fn other_invitations_carry_only_the_library_user_policy() {
+        for role in [OrgRole::Manager, OrgRole::General] {
+            assert_eq!(
+                invitation_policy_ids(role),
+                vec![library_user_policy_id().to_string()]
+            );
+        }
     }
 }

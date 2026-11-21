@@ -1367,7 +1367,8 @@ impl Repo {
 
     /// Get policies for this repository
     ///
-    /// Returns resource-based policies scoped to this repository.
+    /// Returns resource-based policies scoped to this repository. A
+    /// private repository's are listed only to those who may read it.
     ///
     /// For authenticated requests the handler injects a
     /// request-scoped `AuthApp` carrying the caller's JWT,
@@ -1410,6 +1411,17 @@ impl Repo {
                     .cloned()
                     .expect("SdkAuthApp must be in context")
             });
+
+        crate::usecase::authorize_repo_policy_listing(
+            auth_app.as_ref(),
+            executor,
+            multi_tenancy,
+            &tenant_id,
+            &self.id,
+            self.is_public,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let get_repo_policies = crate::usecase::GetRepoPolicies::new(
             app.user_policy_mapping_repo.clone(),
@@ -1455,7 +1467,9 @@ impl Repo {
     /// Get members who have access to this repository
     ///
     /// Returns users with resource-based policies scoped to this repository,
-    /// including org owners who have implicit owner access.
+    /// including org owners who have implicit owner access. Listed only to
+    /// a member of the organization or a holder of a grant on the
+    /// repository.
     #[tracing::instrument(name = "library_repo_members", skip(self, ctx))]
     async fn members(&self, ctx: &Context<'_>) -> Result<Vec<RepoMember>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
@@ -1488,6 +1502,16 @@ impl Repo {
                     .cloned()
                     .expect("SdkAuthApp must be in context")
             });
+
+        crate::usecase::authorize_repo_member_listing(
+            auth_app.as_ref(),
+            executor,
+            multi_tenancy,
+            &tenant_id,
+            &self.id,
+        )
+        .await
+        .map_err(|e| e.extend())?;
 
         let get_repo_members = crate::usecase::GetRepoMembers::new(
             app.user_policy_mapping_repo.clone(),

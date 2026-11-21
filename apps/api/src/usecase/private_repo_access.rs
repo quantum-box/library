@@ -63,6 +63,193 @@ pub async fn authorize_private_repo_read(
     }
 }
 
+/// Authorize listing the members of a repository (`Repo.members`).
+///
+/// The listing is the repository settings' view of who holds which
+/// grant, with when it was given, so it is for the people inside: a
+/// member of the organization or a holder of a grant on the repository,
+/// which is exactly who may read it as if it were private. Being public
+/// lets anyone read the repository's content, not who administers it.
+pub async fn authorize_repo_member_listing(
+    auth_app: &dyn AuthApp,
+    executor: &dyn ExecutorAction,
+    multi_tenancy: &dyn MultiTenancyAction,
+    organization_id: &value_object::TenantId,
+    repo_id: &str,
+) -> errors::Result<()> {
+    if executor.is_none() {
+        return Err(errors::Error::forbidden(
+            "Listing repository members needs a signed-in caller",
+        ));
+    }
+    authorize_private_repo_read(
+        auth_app,
+        executor,
+        multi_tenancy,
+        organization_id,
+        repo_id,
+    )
+    .await
+}
+
+/// Authorize listing the policies held on a repository
+/// (`Repo.policies`).
+///
+/// A public repository shows who works on it (the repository page
+/// lists them, as contributors), so its policies stay readable by
+/// anyone. A private repository's are readable by whoever may read the
+/// repository itself.
+pub async fn authorize_repo_policy_listing(
+    auth_app: &dyn AuthApp,
+    executor: &dyn ExecutorAction,
+    multi_tenancy: &dyn MultiTenancyAction,
+    organization_id: &value_object::TenantId,
+    repo_id: &str,
+    is_public: bool,
+) -> errors::Result<()> {
+    if is_public {
+        return Ok(());
+    }
+    if executor.is_none() {
+        return Err(errors::Error::forbidden(
+            "A private repository's policies need a signed-in caller",
+        ));
+    }
+    authorize_private_repo_read(
+        auth_app,
+        executor,
+        multi_tenancy,
+        organization_id,
+        repo_id,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod listing_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tachyon_sdk::auth::{
+        test_helper::{create_test_executor, create_test_multi_tenancy},
+        Executor, MockAuthApp,
+    };
+
+    fn denying_auth(calls: Arc<Mutex<Vec<String>>>) -> MockAuthApp {
+        let mut auth = MockAuthApp::new();
+        auth.expect_check_policy_for_resource().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls.lock().unwrap().push(format!(
+                    "resource:{}:{}",
+                    input.action,
+                    input
+                        .multi_tenancy
+                        .operator_id()
+                        .map(|t| t.to_string())
+                        .unwrap_or_default()
+                ));
+                Box::pin(async { Err(errors::Error::forbidden("denied")) })
+            }
+        });
+        auth.expect_check_policy().returning({
+            let calls = calls.clone();
+            move |input| {
+                calls
+                    .lock()
+                    .unwrap()
+                    .push(format!("policy:{}", input.action));
+                Box::pin(async { Err(errors::Error::forbidden("denied")) })
+            }
+        });
+        auth
+    }
+
+    fn org() -> value_object::TenantId {
+        create_test_multi_tenancy().get_operator_id().unwrap()
+    }
+
+    #[tokio::test]
+    async fn members_of_a_repo_are_not_listed_to_an_outsider() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth = denying_auth(calls.clone());
+        let multi_tenancy = create_test_multi_tenancy();
+
+        let error = authorize_repo_member_listing(
+            &auth,
+            &create_test_executor(),
+            &multi_tenancy,
+            &org(),
+            "rp_01test",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, errors::Error::Forbidden { .. }));
+        assert_eq!(
+            calls.lock().unwrap()[0],
+            format!("resource:library:ViewRepo:{}", org())
+        );
+    }
+
+    #[tokio::test]
+    async fn members_are_not_listed_anonymously() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth = denying_auth(calls.clone());
+
+        let error = authorize_repo_member_listing(
+            &auth,
+            &Executor::None,
+            &create_test_multi_tenancy(),
+            &org(),
+            "rp_01test",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, errors::Error::Forbidden { .. }));
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_public_repos_policies_stay_readable() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let auth = denying_auth(calls.clone());
+
+        authorize_repo_policy_listing(
+            &auth,
+            &Executor::None,
+            &create_test_multi_tenancy(),
+            &org(),
+            "rp_01test",
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_private_repos_policies_need_read_access() {
+        for executor in [Executor::None, create_test_executor()] {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            let auth = denying_auth(calls.clone());
+
+            let error = authorize_repo_policy_listing(
+                &auth,
+                &executor,
+                &create_test_multi_tenancy(),
+                &org(),
+                "rp_01test",
+                false,
+            )
+            .await
+            .unwrap_err();
+
+            assert!(matches!(error, errors::Error::Forbidden { .. }));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

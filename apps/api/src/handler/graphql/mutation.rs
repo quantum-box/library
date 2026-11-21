@@ -514,9 +514,12 @@ impl LibraryMutation {
 
     /// [LIBRARY-API] Invite a user to an organization with library-specific policy setup
     ///
-    /// This wraps auth's InviteUser and additionally:
-    /// - Attaches LibraryUserPolicy to the invited user
-    /// - If the invited user becomes org owner, attaches repo owner policy
+    /// This wraps auth's InviteUser and grants with the invitation:
+    /// - LibraryUserPolicy in the organization's tenant
+    /// - the repo owner policy, if the invited user becomes an org owner
+    ///
+    /// Returns null when the email has no account yet: an invitation was
+    /// sent, and the policies are granted when it is accepted.
     #[tracing::instrument(skip(self, ctx))]
     async fn invite_user(
         &self,
@@ -526,7 +529,7 @@ impl LibraryMutation {
         invitee: input::IdOrEmail,
         notify_user: Option<bool>,
         role: Option<crate::domain::OrgRole>,
-    ) -> Result<User> {
+    ) -> Result<Option<User>> {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
@@ -558,14 +561,16 @@ impl LibraryMutation {
                 e.extend()
             })?;
 
-        Ok(output.user.into())
+        Ok(output.user.map(Into::into))
     }
 
     /// [LIBRARY-API] Change a user's role in an organization
     ///
-    /// Updates the user's DefaultRole and manages library-specific policies:
-    /// - If upgrading to Owner, attaches repo owner policy for full repo access
-    /// - If downgrading from Owner, detaches repo owner policy
+    /// The role is carried by Library's policies in the organization's
+    /// tenant (tachyon no longer lets the role label be set):
+    /// - Owner: attaches the repo owner policy for full repo access
+    /// - Manager / General: detaches the repo owner and API key policies,
+    ///   whatever role the member held before
     #[tracing::instrument(skip(self, ctx))]
     async fn change_org_member_role(
         &self,
