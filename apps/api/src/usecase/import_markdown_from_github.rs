@@ -71,21 +71,6 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
         &self,
         input: ImportMarkdownFromGitHubInputData<'a>,
     ) -> errors::Result<ImportMarkdownResult> {
-        // Get GitHub OAuth token
-        let token = input
-            .auth
-            .get_oauth_token_by_provider(&GetOAuthTokenByProviderInput {
-                executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
-                provider: "github",
-            })
-            .await?
-            .ok_or_else(|| {
-                errors::Error::unauthorized(
-                    "GitHub is not connected. Please connect your GitHub account first.",
-                )
-            })?;
-
         // Parse owner/repo format
         let parts: Vec<&str> = input.github_repo.split('/').collect();
         if parts.len() != 2 {
@@ -117,6 +102,22 @@ impl ImportMarkdownFromGitHubInputPort for ImportMarkdownFromGitHub {
                 action: "library:CreateData",
             })
             .await?;
+
+        // The GitHub connection used is the destination organization's,
+        // whichever tenant the request header named.
+        let token = input
+            .auth
+            .get_oauth_token_by_provider(&GetOAuthTokenByProviderInput {
+                executor: input.executor,
+                multi_tenancy: &scope,
+                provider: "github",
+            })
+            .await?
+            .ok_or_else(|| {
+                errors::Error::unauthorized(
+                    "GitHub is not connected. Please connect your GitHub account first.",
+                )
+            })?;
 
         // Find or create the repo
         let repo = org_output

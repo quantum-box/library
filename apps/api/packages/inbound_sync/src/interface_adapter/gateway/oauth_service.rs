@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use hmac::{Hmac, Mac};
 use inbound_sync_domain::{
     ExchangeOAuthCodeInput, InitOAuthInput, InitOAuthOutput,
     OAuthClientCredentials, OAuthCredentialsSource, OAuthProvider,
@@ -11,8 +13,113 @@ use inbound_sync_domain::{
     StoredOAuthToken,
 };
 use reqwest::Url;
+use sha2::Sha256;
 use ulid::Ulid;
 use value_object::TenantId;
+
+/// How long an authorization may take between `init_authorization` and
+/// `exchange_code`.
+const OAUTH_STATE_TTL_SECS: i64 = 600;
+
+/// Version of the states `mint_oauth_state` signs.
+const OAUTH_STATE_VERSION: i64 = 1;
+
+/// Who an authorization was started by, for which tenant and provider.
+#[derive(Debug, Clone, Copy)]
+struct OAuthStateBinding<'a> {
+    tenant_id: &'a TenantId,
+    provider: OAuthProvider,
+    user_id: &'a str,
+}
+
+fn oauth_state_mac(secret: &str) -> errors::Result<Hmac<Sha256>> {
+    if secret.is_empty() {
+        return Err(errors::Error::internal_server_error(
+            "OAuth client secret is not configured",
+        ));
+    }
+    Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|e| errors::Error::internal_server_error(e.to_string()))
+}
+
+/// Mint the `state` of an authorization for `binding`, signed with the
+/// provider's client secret: `{base64url payload}.{hex hmac}`.
+///
+/// The state used to be whatever the caller sent, or a random value that
+/// was never stored, and `exchange_code` never read it, so it protected
+/// nothing: anyone's authorization code could be attached to a tenant.
+/// It now names the user and tenant that started the authorization and
+/// expires, and `exchange_code` accepts it only for them. Nothing records
+/// that a state was used, as there is no store shared across instances for
+/// it; the binding and the expiry are what protect the exchange, and the
+/// provider accepts each code once.
+fn mint_oauth_state(
+    binding: OAuthStateBinding<'_>,
+    client_state: Option<&str>,
+    secret: &str,
+    now: i64,
+) -> errors::Result<String> {
+    if binding.user_id.is_empty() {
+        return Err(errors::Error::unauthorized(
+            "Authentication is required to connect an integration",
+        ));
+    }
+    let payload = serde_json::json!({
+        "v": OAUTH_STATE_VERSION,
+        "tenantId": binding.tenant_id.as_str(),
+        "provider": format!("{:?}", binding.provider),
+        "userId": binding.user_id,
+        "expiresAt": now + OAUTH_STATE_TTL_SECS,
+        "nonce": Ulid::new().to_string(),
+        "client": client_state,
+    });
+    let encoded =
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).map_err(
+            |e| errors::Error::internal_server_error(e.to_string()),
+        )?);
+    let mut mac = oauth_state_mac(secret)?;
+    mac.update(encoded.as_bytes());
+    Ok(format!(
+        "{encoded}.{}",
+        hex::encode(mac.finalize().into_bytes())
+    ))
+}
+
+/// Accept `state` only if `mint_oauth_state` signed it for `binding` and
+/// it has not expired.
+fn verify_oauth_state(
+    state: &str,
+    binding: OAuthStateBinding<'_>,
+    secret: &str,
+    now: i64,
+) -> errors::Result<()> {
+    let invalid =
+        || errors::Error::bad_request("Invalid or expired OAuth state");
+    let (encoded, signature) =
+        state.rsplit_once('.').ok_or_else(invalid)?;
+    let signature = hex::decode(signature).map_err(|_| invalid())?;
+    let mut mac = oauth_state_mac(secret)?;
+    mac.update(encoded.as_bytes());
+    mac.verify_slice(&signature).map_err(|_| invalid())?;
+    let payload: serde_json::Value = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .ok_or_else(invalid)?;
+    let provider = format!("{:?}", binding.provider);
+    if binding.user_id.is_empty()
+        || payload["v"].as_i64() != Some(OAUTH_STATE_VERSION)
+        || payload["tenantId"].as_str() != Some(binding.tenant_id.as_str())
+        || payload["provider"].as_str() != Some(provider.as_str())
+        || payload["userId"].as_str() != Some(binding.user_id)
+        || !payload["expiresAt"].as_i64().is_some_and(|expiry| {
+            expiry > now && expiry <= now + OAUTH_STATE_TTL_SECS
+        })
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
 
 /// HTTP-based OAuth service implementation.
 #[derive(Debug)]
@@ -192,10 +299,18 @@ impl OAuthService for HttpOAuthService {
                 ))
             })?;
 
-        // Generate state for CSRF protection
-        let state = input
-            .state
-            .unwrap_or_else(|| Ulid::new().to_string().to_lowercase());
+        // The state is minted here and bound to the caller, never taken
+        // from the request.
+        let state = mint_oauth_state(
+            OAuthStateBinding {
+                tenant_id: &input.tenant_id,
+                provider: input.provider,
+                user_id: &input.user_id,
+            },
+            input.state.as_deref(),
+            &credentials.client_secret,
+            chrono::Utc::now().timestamp(),
+        )?;
 
         // Build authorization URL.
         // NOTE: redirect_uri must be registered in the OAuth provider's
@@ -262,6 +377,19 @@ impl OAuthService for HttpOAuthService {
                     input.provider
                 ))
             })?;
+
+        // Only the user who started this authorization, for this tenant,
+        // may finish it; otherwise anyone's code could be attached here.
+        verify_oauth_state(
+            &input.state,
+            OAuthStateBinding {
+                tenant_id: &input.tenant_id,
+                provider: input.provider,
+                user_id: &input.user_id,
+            },
+            &credentials.client_secret,
+            chrono::Utc::now().timestamp(),
+        )?;
 
         // Use credentials' redirect_uri so it matches the one used
         // during authorization (required by GitHub OAuth).
@@ -501,5 +629,92 @@ mod tests {
             .await
             .unwrap();
         assert!(found.is_none());
+    }
+
+    const SECRET: &str = "client-secret";
+    const NOW: i64 = 1_000;
+
+    fn binding(tenant_id: &TenantId) -> OAuthStateBinding<'_> {
+        OAuthStateBinding {
+            tenant_id,
+            provider: OAuthProvider::Linear,
+            user_id: "us_alice",
+        }
+    }
+
+    #[test]
+    fn a_minted_state_is_accepted_only_for_its_binding() {
+        let tenant = test_tenant_id();
+        let other: TenantId =
+            "tn_01hjryxysgey07h5jz5wagqj0n".parse().unwrap();
+        let state =
+            mint_oauth_state(binding(&tenant), Some("ui"), SECRET, NOW)
+                .unwrap();
+
+        assert!(verify_oauth_state(&state, binding(&tenant), SECRET, NOW)
+            .is_ok());
+        for wrong in [
+            binding(&other),
+            OAuthStateBinding {
+                user_id: "us_mallory",
+                ..binding(&tenant)
+            },
+            OAuthStateBinding {
+                provider: OAuthProvider::Github,
+                ..binding(&tenant)
+            },
+        ] {
+            assert!(verify_oauth_state(&state, wrong, SECRET, NOW).is_err());
+        }
+        assert!(verify_oauth_state(
+            &state,
+            binding(&tenant),
+            SECRET,
+            NOW + OAUTH_STATE_TTL_SECS
+        )
+        .is_err());
+        assert!(verify_oauth_state(
+            &state,
+            binding(&tenant),
+            "other-secret",
+            NOW
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn caller_supplied_or_unsigned_states_are_refused() {
+        let tenant = test_tenant_id();
+        let forged = URL_SAFE_NO_PAD.encode(
+            serde_json::json!({
+                "v": OAUTH_STATE_VERSION, "tenantId": tenant.as_str(),
+                "provider": "Linear", "userId": "us_alice",
+                "expiresAt": NOW + 60,
+            })
+            .to_string(),
+        );
+        for state in [
+            forged.clone(),
+            format!("{forged}.00"),
+            "01jstate".to_string(),
+            String::new(),
+        ] {
+            assert!(
+                verify_oauth_state(&state, binding(&tenant), SECRET, NOW)
+                    .is_err(),
+                "{state}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_state_is_not_minted_without_a_user_or_a_secret() {
+        let tenant = test_tenant_id();
+        let anonymous = OAuthStateBinding {
+            user_id: "",
+            ..binding(&tenant)
+        };
+        assert!(mint_oauth_state(anonymous, None, SECRET, NOW).is_err());
+        assert!(mint_oauth_state(binding(&tenant), None, "", NOW).is_err());
     }
 }

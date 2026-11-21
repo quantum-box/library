@@ -90,6 +90,19 @@ pub struct ProvisionedGitHubWebhookOutput {
     pub last_response_status: Option<String>,
 }
 
+/// The signed-in caller an OAuth authorization is bound to.
+/// `authorize_external_sync_change` has already refused anonymous callers.
+fn authorizing_user_id(ctx: &Context<'_>) -> Result<String> {
+    use tachyon_sdk::auth::ExecutorAction;
+    let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+    if executor.is_none() || executor.is_system_user() {
+        return Err(async_graphql::Error::new(
+            "Authentication is required to connect an integration",
+        ));
+    }
+    Ok(executor.get_id().to_string())
+}
+
 async fn authorize_external_sync_change(
     ctx: &Context<'_>,
     state: &LibrarySyncMutationState,
@@ -1073,12 +1086,15 @@ impl LibrarySyncMutation {
             ));
         }
 
+        let user_id = authorizing_user_id(ctx)?;
         let domain_input = DomainInitInput {
             tenant_id: tenant,
             provider: integration.provider(),
             base_url: state.base_url.clone(),
             redirect_uri: input.redirect_uri,
-            state: input.state, // Use provided state or generate if None
+            // Carried inside the server-minted state, never used as it.
+            state: input.state,
+            user_id,
         };
 
         let output = oauth.init_authorization(domain_input).await?;
@@ -1129,6 +1145,7 @@ impl LibrarySyncMutation {
             code: input.code,
             state: input.state,
             redirect_uri: input.redirect_uri,
+            user_id: authorizing_user_id(ctx)?,
         };
 
         let stored_token = oauth.exchange_code(domain_input).await?;

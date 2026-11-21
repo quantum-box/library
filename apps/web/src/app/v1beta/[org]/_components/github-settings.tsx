@@ -47,7 +47,14 @@ type GitHubConnection = {
 	connectedAt?: string | null
 } | null
 
-export function GitHubSettings({ org }: { org: string }) {
+export function GitHubSettings({
+	org,
+	tenantId,
+}: {
+	org: string
+	/** Tenant of the organization the GitHub connection belongs to. */
+	tenantId: string
+}) {
 	const { t, locale } = useTranslation()
 	const pathname = useRouterState({ select: (s) => s.location.pathname })
 	const searchParams = useRouterState({ select: (s) => new URLSearchParams(s.location.search) })
@@ -61,11 +68,11 @@ export function GitHubSettings({ org }: { org: string }) {
 
 	// Load initial connection status
 	useEffect(() => {
-		getGitHubConnection()
+		getGitHubConnection(tenantId)
 			.then(setConnection)
 			.catch(() => setConnection(null))
 			.finally(() => setIsLoading(false))
-	}, [])
+	}, [tenantId])
 
 	// Handle OAuth callback - check for code in URL when redirected back
 	useEffect(() => {
@@ -121,11 +128,15 @@ export function GitHubSettings({ org }: { org: string }) {
 			void (async () => {
 				try {
 					// Use empty state if not provided (direct callback case)
-					const result = await exchangeGitHubToken(code, stateParam || '')
+					const result = await exchangeGitHubToken(
+						tenantId,
+						code,
+						stateParam || '',
+					)
 					if (result.connected) {
 						setSuccess(t.v1beta.githubSettings.successConnected)
 						// Refresh connection status
-						const newConnection = await getGitHubConnection()
+						const newConnection = await getGitHubConnection(tenantId)
 						setConnection(newConnection)
 					} else {
 						setError(t.v1beta.githubSettings.failedConnect)
@@ -139,7 +150,7 @@ export function GitHubSettings({ org }: { org: string }) {
 				}
 			})()
 		})
-	}, [searchParams, pathname, t])
+	}, [searchParams, pathname, t, tenantId])
 
 	const handleConnect = () => {
 		setError(null)
@@ -154,7 +165,7 @@ export function GitHubSettings({ org }: { org: string }) {
 					// Encode return URL and nonce in state (will redirect back to settings tab)
 					const returnUrl = `${window.location.origin}/v1beta/${org}?tab=settings`
 					const state = btoa(JSON.stringify({ returnUrl, nonce }))
-					const result = await getGitHubAuthUrl(state)
+					const result = await getGitHubAuthUrl(tenantId, state)
 					window.location.href = result.url
 				} catch (err) {
 					setError(
@@ -173,11 +184,11 @@ export function GitHubSettings({ org }: { org: string }) {
 		startTransition(() => {
 			void (async () => {
 				try {
-					const result = await disconnectGitHub()
+					const result = await disconnectGitHub(tenantId)
 					if (result) {
 						setSuccess(t.v1beta.githubSettings.accountDisconnected)
 						// Refresh connection status
-						const newConnection = await getGitHubConnection()
+						const newConnection = await getGitHubConnection(tenantId)
 						setConnection(newConnection)
 					} else {
 						setError(t.v1beta.githubSettings.failedDisconnect)

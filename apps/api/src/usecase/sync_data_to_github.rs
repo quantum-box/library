@@ -150,7 +150,9 @@ impl SyncDataToGithubInputPort for SyncDataToGithub {
             .sync_data
             .execute(&SyncDataInputData {
                 executor: input.executor,
-                multi_tenancy: input.multi_tenancy,
+                // The organization's GitHub connection, never one kept
+                // under the tenant the request header happened to name.
+                multi_tenancy: &scope,
                 data_id: data.id().to_string(),
                 provider: "github".to_string(),
                 target,

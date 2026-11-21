@@ -22,7 +22,6 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tachyon_sdk::auth::{
     AuthApp as AuthAppTrait, DefaultRole, ExecutorAction,
-    MultiTenancyAction,
 };
 use value_object::{
     IdOrEmail as ValueIdOrEmail, OperatorId, PlatformId, TenantId, Text,
@@ -73,24 +72,107 @@ fn verify_oauth_state(
     Ok(state.to_string())
 }
 
-// The shared GitHub callback proxy reads a base64 JSON returnUrl. Keep the
-// signed payload inside that envelope instead of appending a non-base64 suffix.
-fn wrap_github_oauth_state(
-    original: &str,
-    signed: &str,
-) -> errors::Result<String> {
-    let payload = decode_github_oauth_state(original)?;
-    let return_url = payload["returnUrl"].as_str().ok_or_else(|| {
-        errors::Error::bad_request("Missing OAuth return URL")
-    })?;
-    let url = url::Url::parse(return_url).map_err(|_| {
-        errors::Error::bad_request("Invalid OAuth return URL")
-    })?;
-    if !matches!(url.scheme(), "https" | "http")
-        || !url.username().is_empty()
-        || url.password().is_some()
+/// How long a GitHub authorization started by `githubAuthUrl` may take to
+/// come back to `githubExchangeToken`.
+const GITHUB_OAUTH_STATE_TTL_SECS: i64 = 600;
+
+/// Version of the states `mint_github_oauth_state` signs. States signed
+/// before they were bound to a caller carry none and are refused.
+const GITHUB_OAUTH_STATE_VERSION: i64 = 2;
+
+/// Hosts of the Library web a GitHub authorization may return to.
+///
+/// The same list the shared Tachyon callback proxy enforces
+/// (`GITHUB_OAUTH_PROXY_RETURN_HOSTS` in tachyon-apps
+/// `packages/integration/src/adapter/axum/callback_handler.rs`). The proxy
+/// forwards the GitHub `code` to this URL, so Library checks it too
+/// rather than relying on the proxy alone.
+const GITHUB_OAUTH_RETURN_HOSTS: &[&str] = &[
+    "planet-library.txcloud.app",
+    "planet-library.pages.dev",
+    "library.n1.tachy.one",
+];
+
+/// Whether a GitHub authorization may return to `return_url`: HTTPS, no
+/// credentials, no port, an allowed host. A development build may also
+/// return to a local web server.
+fn is_allowed_github_oauth_return_url(return_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(return_url) else {
+        return false;
+    };
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    let host = url.host_str();
+    if url.scheme() == "https"
+        && url.port().is_none()
+        && host
+            .is_some_and(|host| GITHUB_OAUTH_RETURN_HOSTS.contains(&host))
     {
-        return Err(errors::Error::bad_request("Invalid OAuth return URL"));
+        return true;
+    }
+    cfg!(debug_assertions)
+        && matches!(url.scheme(), "http" | "https")
+        && host.is_some_and(|host| {
+            matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+        })
+}
+
+/// Who a GitHub authorization was started by, and for which tenant's
+/// connection.
+#[derive(Debug, Clone, Copy)]
+struct GitHubOAuthBinding<'a> {
+    user_id: &'a str,
+    tenant_id: &'a str,
+}
+
+/// Mint the `state` of a GitHub authorization for `binding`.
+///
+/// The caller's state is read only for what the web page needs back: the
+/// return URL and the nonce it keeps in sessionStorage. What decides
+/// whether the callback is accepted — who started it, for which tenant,
+/// until when — is set here and signed, so this is no longer an oracle that
+/// signs whatever it is handed.
+///
+/// The result is `{base64 payload}.{hmac}`, which the v1 page decodes to
+/// find its nonce. With `proxy_compatible` it is wrapped in the base64 JSON
+/// envelope the shared callback proxy reads its `returnUrl` from.
+fn mint_github_oauth_state(
+    client_state: &str,
+    binding: GitHubOAuthBinding<'_>,
+    secret: &str,
+    now: i64,
+    proxy_compatible: bool,
+) -> errors::Result<String> {
+    let client = decode_github_oauth_state(client_state)?;
+    let return_url = client["returnUrl"].as_str();
+    if proxy_compatible && return_url.is_none() {
+        return Err(errors::Error::bad_request("Missing OAuth return URL"));
+    }
+    if return_url
+        .is_some_and(|url| !is_allowed_github_oauth_return_url(url))
+    {
+        return Err(errors::Error::bad_request(
+            "OAuth return URL is not an allowed destination",
+        ));
+    }
+    let payload = serde_json::json!({
+        "v": GITHUB_OAUTH_STATE_VERSION,
+        "returnUrl": return_url,
+        "nonce": client["nonce"].as_str(),
+        "userId": binding.user_id,
+        "tenantId": binding.tenant_id,
+        "expiresAt": now + GITHUB_OAUTH_STATE_TTL_SECS,
+        "sid": hex::encode(rand::random::<[u8; 16]>()),
+    });
+    let encoded = base64::engine::general_purpose::STANDARD.encode(
+        serde_json::to_vec(&payload).map_err(|_| {
+            errors::Error::bad_request("Invalid OAuth state")
+        })?,
+    );
+    let signed = sign_oauth_state(&encoded, secret)?;
+    if !proxy_compatible {
+        return Ok(signed);
     }
     Ok(base64::engine::general_purpose::STANDARD.encode(
         serde_json::to_vec(&serde_json::json!({"returnUrl": return_url, "signedState": signed}))
@@ -110,29 +192,44 @@ fn decode_github_oauth_state(
         .map_err(|_| errors::Error::bad_request("Invalid OAuth state"))
 }
 
+/// Accept a GitHub callback only for the authorization `binding` started,
+/// within its lifetime.
+///
+/// Nothing records that a state was used: Library keeps no store shared
+/// across its instances for it. A replay gains nothing, though: the state
+/// is bound to the caller and tenant that started it, and GitHub accepts
+/// each code once.
 fn verify_github_oauth_callback(
     state: &str,
     secret: &str,
-    operator: &str,
+    binding: GitHubOAuthBinding<'_>,
     now: i64,
 ) -> errors::Result<()> {
-    if state.contains('.') {
-        // Existing v1 clients still send the original signed format.
-        verify_oauth_state(state, secret)?;
-        return Ok(());
-    }
-    let envelope = decode_github_oauth_state(state)?;
-    let signed = envelope["signedState"].as_str().ok_or_else(|| {
-        errors::Error::bad_request("Missing signed OAuth state")
-    })?;
-    let original = verify_oauth_state(signed, secret)?;
-    let payload = decode_github_oauth_state(&original)?;
-    if payload["returnUrl"].as_str().is_none()
-        || payload["returnUrl"] != envelope["returnUrl"]
-        || payload["operatorId"].as_str() != Some(operator)
-        || !payload["expiresAt"]
-            .as_i64()
-            .is_some_and(|expiry| expiry > now && expiry <= now + 900)
+    let (signed, envelope_return_url) = if state.contains('.') {
+        (state.to_string(), None)
+    } else {
+        let envelope = decode_github_oauth_state(state)?;
+        let signed = envelope["signedState"].as_str().ok_or_else(|| {
+            errors::Error::bad_request("Missing signed OAuth state")
+        })?;
+        (signed.to_string(), Some(envelope["returnUrl"].clone()))
+    };
+    let encoded = verify_oauth_state(&signed, secret)?;
+    let payload = decode_github_oauth_state(&encoded)?;
+    let return_url_allowed = match payload["returnUrl"].as_str() {
+        Some(url) => is_allowed_github_oauth_return_url(url),
+        None => envelope_return_url.is_none(),
+    };
+    if payload["v"].as_i64() != Some(GITHUB_OAUTH_STATE_VERSION)
+        || payload["userId"].as_str() != Some(binding.user_id)
+        || payload["tenantId"].as_str() != Some(binding.tenant_id)
+        || !payload["sid"].as_str().is_some_and(|sid| !sid.is_empty())
+        || !payload["expiresAt"].as_i64().is_some_and(|expiry| {
+            expiry > now && expiry <= now + GITHUB_OAUTH_STATE_TTL_SECS
+        })
+        || !return_url_allowed
+        || envelope_return_url
+            .is_some_and(|return_url| return_url != payload["returnUrl"])
     {
         return Err(errors::Error::bad_request(
             "Expired or mismatched OAuth state",
@@ -1484,16 +1581,26 @@ impl LibraryMutation {
 
     /// [LIBRARY-API] Get GitHub OAuth authorization URL
     ///
-    /// Signs the state parameter with HMAC-SHA256 for CSRF protection.
-    /// The signed state will be validated in github_exchange_token.
+    /// Mints the state on the server, bound to the signed-in caller, the
+    /// organization tenant named by `x-operator-id` and a 10-minute expiry,
+    /// and signs it with HMAC-SHA256. github_exchange_token accepts it only
+    /// for that caller and tenant.
     #[tracing::instrument(name = "github_auth_url", skip(self, ctx, state))]
     async fn github_auth_url(
         &self,
         ctx: &async_graphql::Context<'_>,
-        #[graphql(desc = "State parameter containing encoded return URL")]
+        #[graphql(
+            desc = "Base64 JSON with the page's returnUrl and nonce; the server adds the binding"
+        )]
         state: String,
         #[graphql(default = false)] proxy_compatible: bool,
     ) -> Result<GitHubAuthUrl> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let tenant =
+            crate::sdk_auth::github_token_tenant(executor, multi_tenancy)
+                .map_err(|e| e.extend())?;
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
         let oauth_bootstrap =
             ctx.data::<Arc<crate::oauth_bootstrap::OAuthBootstrap>>()?;
@@ -1507,19 +1614,17 @@ impl LibraryMutation {
                 e.extend()
             })?;
 
-        // Sign the state for CSRF protection
-        let signed_state =
-            sign_oauth_state(&state, &secret).map_err(|e| {
-                tracing::error!("Failed to sign OAuth state: {:?}", e);
-                e.extend()
-            })?;
-
-        let signed_state = if proxy_compatible {
-            wrap_github_oauth_state(&state, &signed_state)
-                .map_err(|e| e.extend())?
-        } else {
-            signed_state
-        };
+        let signed_state = mint_github_oauth_state(
+            &state,
+            GitHubOAuthBinding {
+                user_id: executor.get_id(),
+                tenant_id: tenant.as_str(),
+            },
+            &secret,
+            chrono::Utc::now().timestamp(),
+            proxy_compatible,
+        )
+        .map_err(|e| e.extend())?;
         let url = github
             .authorization_url(
                 &github_provider::DEFAULT_SCOPES,
@@ -1558,6 +1663,9 @@ impl LibraryMutation {
         let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
         let multi_tenancy =
             ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        let tenant =
+            crate::sdk_auth::github_token_tenant(executor, multi_tenancy)
+                .map_err(|e| e.extend())?;
         let auth_app = ctx.data::<Arc<dyn tachyon_sdk::auth::AuthApp>>()?;
         let github = ctx.data::<Arc<github_provider::GitHub>>()?;
         let oauth_bootstrap =
@@ -1572,11 +1680,16 @@ impl LibraryMutation {
                 e.extend()
             })?;
 
-        // Verify OAuth state signature for CSRF protection
+        // The state must be one githubAuthUrl minted for this caller and
+        // tenant, so a callback started by someone else cannot connect
+        // their GitHub account here.
         verify_github_oauth_callback(
             &state,
             &secret,
-            multi_tenancy.get_operator_id()?.as_ref(),
+            GitHubOAuthBinding {
+                user_id: executor.get_id(),
+                tenant_id: tenant.as_str(),
+            },
             chrono::Utc::now().timestamp(),
         )
         .map_err(|e| {
@@ -3240,92 +3353,226 @@ mod select_option_input_tests {
 mod github_oauth_state_tests {
     use super::*;
 
-    fn proxy_state() -> String {
-        let payload = base64::engine::general_purpose::STANDARD.encode(
-            serde_json::json!({
-                "returnUrl": "https://preview.example.test/org/repo/settings?github_sync=callback",
-                "operatorId": "tn_test", "nonce": "test-nonce", "expiresAt": 1500
-            }).to_string(),
-        );
-        wrap_github_oauth_state(
-            &payload,
-            &sign_oauth_state(&payload, "test-secret").unwrap(),
+    const SECRET: &str = "test-secret";
+    const NOW: i64 = 1_000;
+    const RETURN_URL: &str =
+        "https://planet-library.txcloud.app/v1beta/acme?tab=settings";
+
+    fn alice() -> GitHubOAuthBinding<'static> {
+        GitHubOAuthBinding {
+            user_id: "us_alice",
+            tenant_id: "tn_acme",
+        }
+    }
+
+    fn client_state(return_url: &str) -> String {
+        base64::engine::general_purpose::STANDARD.encode(
+            serde_json::json!({"returnUrl": return_url, "nonce": "page-nonce"})
+                .to_string(),
+        )
+    }
+
+    fn minted(proxy_compatible: bool) -> String {
+        mint_github_oauth_state(
+            &client_state(RETURN_URL),
+            alice(),
+            SECRET,
+            NOW,
+            proxy_compatible,
         )
         .unwrap()
     }
 
-    #[test]
-    fn github_oauth_proxy_state_is_base64_json_and_signed() {
-        let state = proxy_state();
-        let decoded = decode_github_oauth_state(&state).unwrap();
-        assert!(decoded["returnUrl"]
+    /// What the v1 settings page reads back: everything before the last
+    /// `.` is base64 JSON carrying the nonce it stored.
+    fn page_nonce(state: &str) -> String {
+        let (encoded, _) = state.rsplit_once('.').unwrap();
+        decode_github_oauth_state(encoded).unwrap()["nonce"]
             .as_str()
             .unwrap()
-            .starts_with("https://preview.example.test/"));
+            .to_string()
+    }
+
+    #[test]
+    fn a_minted_state_is_accepted_for_the_caller_and_tenant_that_started_it(
+    ) {
+        for proxy_compatible in [false, true] {
+            let state = minted(proxy_compatible);
+            assert!(verify_github_oauth_callback(
+                &state,
+                SECRET,
+                alice(),
+                NOW
+            )
+            .is_ok());
+            assert!(verify_github_oauth_callback(
+                &state,
+                SECRET,
+                alice(),
+                NOW + GITHUB_OAUTH_STATE_TTL_SECS - 1
+            )
+            .is_ok());
+        }
+    }
+
+    #[test]
+    fn the_page_still_finds_its_nonce() {
+        assert_eq!(page_nonce(&minted(false)), "page-nonce");
+    }
+
+    #[test]
+    fn the_proxy_envelope_is_base64_json_with_the_return_url() {
+        let envelope = decode_github_oauth_state(&minted(true)).unwrap();
+        assert_eq!(envelope["returnUrl"], RETURN_URL);
+        assert_eq!(
+            page_nonce(envelope["signedState"].as_str().unwrap()),
+            "page-nonce"
+        );
+    }
+
+    #[test]
+    fn a_state_is_refused_for_another_caller_or_tenant() {
+        for proxy_compatible in [false, true] {
+            let state = minted(proxy_compatible);
+            for binding in [
+                GitHubOAuthBinding {
+                    user_id: "us_mallory",
+                    tenant_id: "tn_acme",
+                },
+                GitHubOAuthBinding {
+                    user_id: "us_alice",
+                    tenant_id: "tn_other",
+                },
+            ] {
+                assert!(verify_github_oauth_callback(
+                    &state, SECRET, binding, NOW
+                )
+                .is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn a_state_is_refused_once_expired_or_with_another_secret() {
+        let state = minted(false);
         assert!(verify_github_oauth_callback(
             &state,
-            "test-secret",
-            "tn_test",
-            1000
+            SECRET,
+            alice(),
+            NOW + GITHUB_OAUTH_STATE_TTL_SECS
         )
-        .is_ok());
+        .is_err());
         assert!(verify_github_oauth_callback(
             &state,
             "wrong-secret",
-            "tn_test",
-            1000
+            alice(),
+            NOW
         )
         .is_err());
     }
 
     #[test]
-    fn github_oauth_proxy_rejects_other_tenant_expiry_and_modified_redirect(
-    ) {
-        let state = proxy_state();
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_other",
-            1000
-        )
-        .is_err());
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_test",
-            1500
-        )
-        .is_err());
-        let mut envelope = decode_github_oauth_state(&state).unwrap();
+    fn a_modified_proxy_redirect_is_refused() {
+        let mut envelope =
+            decode_github_oauth_state(&minted(true)).unwrap();
         envelope["returnUrl"] =
-            serde_json::json!("https://other.example.test");
+            serde_json::json!("https://library.n1.tachy.one/elsewhere");
         let changed = base64::engine::general_purpose::STANDARD
             .encode(envelope.to_string());
         assert!(verify_github_oauth_callback(
             &changed,
-            "test-secret",
-            "tn_test",
-            1000
+            SECRET,
+            alice(),
+            NOW
+        )
+        .is_err());
+    }
+
+    /// The endpoint used to sign whatever it was given, so a signature
+    /// over a caller's own payload proved nothing. Only a payload minted
+    /// with a binding passes now.
+    #[test]
+    fn a_caller_signed_payload_is_refused() {
+        let forged = base64::engine::general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "returnUrl": RETURN_URL, "userId": "us_alice",
+                "tenantId": "tn_acme", "expiresAt": NOW + 60,
+            })
+            .to_string(),
+        );
+        let state = sign_oauth_state(&forged, SECRET).unwrap();
+        assert!(verify_github_oauth_callback(&state, SECRET, alice(), NOW)
+            .is_err());
+        let legacy = sign_oauth_state("legacy-payload", SECRET).unwrap();
+        assert!(verify_github_oauth_callback(
+            &legacy,
+            SECRET,
+            alice(),
+            NOW
+        )
+        .is_err());
+        assert!(verify_github_oauth_callback(
+            "untrusted",
+            SECRET,
+            alice(),
+            NOW
         )
         .is_err());
     }
 
     #[test]
-    fn github_oauth_keeps_legacy_signed_state_support() {
-        let state =
-            sign_oauth_state("legacy-payload", "test-secret").unwrap();
-        assert!(verify_github_oauth_callback(
-            &state,
-            "test-secret",
-            "tn_test",
-            1000
-        )
-        .is_ok());
-        assert!(verify_github_oauth_callback(
-            "untrusted",
-            "test-secret",
-            "tn_test",
-            1000
+    fn only_library_web_hosts_are_allowed_return_urls() {
+        for allowed in [
+            "https://planet-library.txcloud.app/v1beta/acme",
+            "https://planet-library.pages.dev/x",
+            "https://library.n1.tachy.one/x?y=1",
+        ] {
+            assert!(
+                is_allowed_github_oauth_return_url(allowed),
+                "{allowed}"
+            );
+        }
+        for refused in [
+            "https://attacker.example/x",
+            "http://planet-library.txcloud.app/x",
+            "https://planet-library.txcloud.app:8443/x",
+            "https://user:pw@planet-library.txcloud.app/x",
+            "https://planet-library.txcloud.app.attacker.example/x",
+            "javascript:alert(1)",
+            "not a url",
+        ] {
+            assert!(
+                !is_allowed_github_oauth_return_url(refused),
+                "{refused}"
+            );
+        }
+        // Test builds are debug builds, where a local web server is fine.
+        assert!(is_allowed_github_oauth_return_url(
+            "http://localhost:5010/v1beta/acme"
+        ));
+    }
+
+    #[test]
+    fn minting_refuses_a_return_url_outside_the_allowlist() {
+        for proxy_compatible in [false, true] {
+            assert!(mint_github_oauth_state(
+                &client_state("https://attacker.example/steal"),
+                alice(),
+                SECRET,
+                NOW,
+                proxy_compatible,
+            )
+            .is_err());
+        }
+        // The proxy cannot route a state without a return URL.
+        let no_return = base64::engine::general_purpose::STANDARD
+            .encode(serde_json::json!({"nonce": "n"}).to_string());
+        assert!(mint_github_oauth_state(
+            &no_return,
+            alice(),
+            SECRET,
+            NOW,
+            true
         )
         .is_err());
     }

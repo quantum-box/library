@@ -98,7 +98,10 @@ type GitHubImportResult = {
   } | null
 }
 
-export async function listGitHubRepositories(): Promise<{
+// A GitHub connection belongs to an organization; the API refuses the
+// platform tenant for it. `operatorId` is the organization's tenant.
+
+export async function listGitHubRepositories(operatorId: string): Promise<{
   repositories: Array<{
     id: string
     fullName: string
@@ -122,6 +125,7 @@ export async function listGitHubRepositories(): Promise<{
       {},
       {
         accessToken: auth.accessToken,
+        operatorId,
       },
     )
 
@@ -136,7 +140,7 @@ export async function listGitHubRepositories(): Promise<{
   }
 }
 
-export async function listDirectoryContents(_input: {
+export async function listDirectoryContents(operatorId: string, _input: {
   githubRepo: string
   path: string
 }): Promise<{ files: GitHubFileInfo[]; error?: string }> {
@@ -157,6 +161,7 @@ export async function listDirectoryContents(_input: {
       },
       {
         accessToken: auth.accessToken,
+        operatorId,
       },
     )
 
@@ -177,7 +182,7 @@ export async function listDirectoryContents(_input: {
   }
 }
 
-export async function analyzeFrontmatter(_input: {
+export async function analyzeFrontmatter(operatorId: string, _input: {
   githubRepo: string
   paths: string[]
 }): Promise<{
@@ -202,6 +207,7 @@ export async function analyzeFrontmatter(_input: {
       },
       {
         accessToken: auth.accessToken,
+        operatorId,
       },
     )
 
@@ -220,7 +226,7 @@ export async function analyzeFrontmatter(_input: {
   }
 }
 
-export async function importMarkdownFromGitHub(_input: {
+export async function importMarkdownFromGitHub(operatorId: string, _input: {
   orgUsername: string
   repoUsername: string
   repoName: string
@@ -267,6 +273,7 @@ export async function importMarkdownFromGitHub(_input: {
       },
       {
         accessToken: auth.accessToken,
+        operatorId,
       },
     )
 
