@@ -1,3 +1,32 @@
+# Cloudflare Pages merges the headers of every rule a path matches, so the
+# security headers under /* also reach /assets/* and /*.html alongside their
+# Cache-Control.
+#
+# The CSP ships as Report-Only first: violations are logged in the browser
+# console without blocking anything. Switch the header name to
+# Content-Security-Policy (and add upgrade-insecure-requests, which
+# Report-Only ignores) once a release has run clean.
+#
+# Where each source comes from:
+#   script-src 'wasm-unsafe-eval'  DuckDB compiles its .wasm in the worker
+#   worker-src 'self'              DuckDB workers are bundled into /assets
+#   library-api.txcloud.app        VITE_BACKEND_API_URL (REST, GraphQL, wss collab)
+#   *.amazonaws.com                Cognito (cognito-idp.ap-northeast-1) and the
+#                                  S3 presigned URL the Parquet view downloads
+#   *.auth.ap-northeast-1.amazoncognito.com  Hosted UI token / userInfo calls
+#   kroki.io                       PlantUML rendering (VITE_KROKI_BASE_URL default)
+#   cdn.jsdelivr.net               DuckDB .wasm (connect only; too large for Pages)
+#   img-src https: blob: data:     user image URLs, avatars, Kroki output
+#   style-src 'unsafe-inline'      sonner / BlockNote / Mermaid inject <style>
+# Not listed: Google Maps (disabled while VITE_GOOGLE_MAPS_API_KEY is unset)
+# and PR-preview API hosts; add them here if either is turned on.
+/*
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://library-api.txcloud.app wss://library-api.txcloud.app https://*.amazonaws.com https://*.auth.ap-northeast-1.amazoncognito.com https://kroki.io https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' https:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  X-Frame-Options: DENY
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 

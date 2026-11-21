@@ -1124,22 +1124,6 @@ impl SdkAuthApp {
         })
     }
 
-    /// Make a PUT request with a JSON body.
-    async fn rest_put<B: Serialize, T: serde::de::DeserializeOwned>(
-        config: &Configuration,
-        path: &str,
-        body: &B,
-    ) -> errors::Result<T> {
-        let resp = config
-            .client
-            .put(format!("{}{}", config.base_path, path))
-            .json(body)
-            .send_with(config)
-            .await
-            .map_err(|error| SdkRequestError::transport(&error))?;
-        handle_rest_response(resp).await.map_err(Into::into)
-    }
-
     /// Make a DELETE request.
     async fn rest_delete(
         config: &Configuration,
@@ -1265,12 +1249,18 @@ impl SdkAuthApp {
     }
 
     /// Invite a user to a tenant via REST.
+    ///
+    /// `policyIds` are granted in `tenant_id` by tachyon itself: at once
+    /// for a user who already exists, and on acceptance for an email
+    /// that has no account yet. That is the only way to give a pending
+    /// invitee anything, since there is no user to attach a policy to
+    /// until they sign up.
     pub async fn invite_user_rest(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
         req: &InviteUserReq,
-    ) -> errors::Result<User> {
+    ) -> errors::Result<InviteUserOutcome> {
         let config = self.sdk_config_with_context(executor, multi_tenancy);
         let body = serde_json::json!({
             "tenantId": req.tenant_id,
@@ -1278,35 +1268,14 @@ impl SdkAuthApp {
             "inviteeId": req.invitee_id,
             "inviteeEmail": req.invitee_email,
             "notifyUser": req.notify_user,
+            "policyIds": req.policy_ids,
         });
 
-        let resp: RestUserResponse =
+        let resp: RestInviteUserResponse =
             Self::rest_post(&config, "/v1/auth/users/invite", &body)
                 .await?;
 
-        user_from_rest_user_response(&resp)
-    }
-
-    /// Update a user's role in a specific tenant via REST.
-    pub async fn update_user_role(
-        &self,
-        executor: &dyn tachyon_sdk::auth::ExecutorAction,
-        multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
-        user_id: &str,
-        tenant_id: &TenantId,
-        role: &str,
-    ) -> errors::Result<User> {
-        let config = self.sdk_config_with_context(executor, multi_tenancy);
-        let body = serde_json::json!({
-            "tenantId": tenant_id.as_str(),
-            "role": role,
-        });
-
-        let path = format!("/v1/auth/users/{}/role", user_id);
-        let resp: RestUserResponse =
-            Self::rest_put(&config, &path, &body).await?;
-
-        user_from_rest_user_response(&resp)
+        invite_outcome_from_rest(resp)
     }
 
     /// Get an operator by alias within a platform.
@@ -1748,6 +1717,43 @@ struct RestUserResponse {
     tenants: Vec<String>,
 }
 
+/// `POST /v1/auth/users/invite` answers with a wrapper, not a user:
+/// `user` is absent when an email without an account was invited.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestInviteUserResponse {
+    #[serde(default)]
+    invitation_sent: bool,
+    email: Option<String>,
+    user: Option<RestUserResponse>,
+}
+
+/// What an invitation did upstream.
+#[derive(Debug, Clone)]
+pub enum InviteUserOutcome {
+    /// An existing account was given access to the tenant.
+    TenantAccessGranted(Box<User>),
+    /// No account had the email, so an invitation was recorded and sent;
+    /// the invitee joins when they first sign in.
+    InvitationSent { email: Option<String> },
+}
+
+fn invite_outcome_from_rest(
+    resp: RestInviteUserResponse,
+) -> errors::Result<InviteUserOutcome> {
+    match resp.user {
+        Some(user) => Ok(InviteUserOutcome::TenantAccessGranted(Box::new(
+            user_from_rest_user_response(&user)?,
+        ))),
+        None if resp.invitation_sent => {
+            Ok(InviteUserOutcome::InvitationSent { email: resp.email })
+        }
+        None => Err(sdk_internal_err(
+            "invite response carried neither a user nor a sent invitation",
+        )),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct BootstrapResponse {
     user: BootstrapUser,
@@ -1851,6 +1857,8 @@ pub struct InviteUserReq {
     pub invitee_id: Option<String>,
     pub invitee_email: Option<String>,
     pub notify_user: Option<bool>,
+    /// Policies tachyon grants in `tenant_id` with the invitation.
+    pub policy_ids: Vec<String>,
 }
 
 // ---- OAuth bootstrap types (IaC-specific) ----
@@ -3493,6 +3501,56 @@ mod tests {
     use tracing_subscriber::prelude::*;
 
     const TEST_TENANT_ID: &str = "tn_01j702qf86pc2j35s0kv0gv3gy";
+
+    /// tachyon answers an invitation with a wrapper around the user.
+    /// Reading the body as a bare user failed every invitation after
+    /// tachyon had already granted access.
+    #[test]
+    fn an_invite_response_for_an_existing_user_carries_the_user() {
+        let resp: RestInviteUserResponse =
+            serde_json::from_value(serde_json::json!({
+                "invitationSent": false,
+                "email": "member@example.com",
+                "user": {
+                    "id": "us_01ke1h5471vxsbscp8jd3bramn",
+                    "email": "member@example.com",
+                    "name": null,
+                    "role": "GENERAL",
+                    "tenants": [TEST_TENANT_ID],
+                },
+                "deprecatedInviteIdPath": true,
+            }))
+            .unwrap();
+
+        match invite_outcome_from_rest(resp).unwrap() {
+            InviteUserOutcome::TenantAccessGranted(user) => {
+                assert_eq!(
+                    user.id().to_string(),
+                    "us_01ke1h5471vxsbscp8jd3bramn"
+                );
+                assert_eq!(user.tenants().len(), 1);
+            }
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_invite_response_for_a_new_email_has_no_user() {
+        let resp: RestInviteUserResponse =
+            serde_json::from_value(serde_json::json!({
+                "invitationSent": true,
+                "email": "new@example.com",
+                "user": null,
+                "deprecatedInviteIdPath": false,
+            }))
+            .unwrap();
+
+        assert!(matches!(
+            invite_outcome_from_rest(resp).unwrap(),
+            InviteUserOutcome::InvitationSent { email: Some(email) }
+                if email == "new@example.com"
+        ));
+    }
 
     fn public_error_class(error: &errors::Error) -> &'static str {
         match error {

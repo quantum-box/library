@@ -1449,17 +1449,22 @@ type Mutation {
 	"""
 	[LIBRARY-API] Invite a user to an organization with library-specific policy setup
 	
-	This wraps auth's InviteUser and additionally:
-	- Attaches LibraryUserPolicy to the invited user
-	- If the invited user becomes org owner, attaches repo owner policy
+	This wraps auth's InviteUser and grants with the invitation:
+	- LibraryUserPolicy in the organization's tenant
+	- the repo owner policy, if the invited user becomes an org owner
+	
+	Returns null when the email has no account yet: an invitation was
+	sent, and the policies are granted when it is accepted.
 	"""
-	inviteUser(platformId: String, tenantId: String!, invitee: IdOrEmail!, notifyUser: Boolean, role: OrgRole): User!
+	inviteUser(platformId: String, tenantId: String!, invitee: IdOrEmail!, notifyUser: Boolean, role: OrgRole): User
 	"""
 	[LIBRARY-API] Change a user's role in an organization
 	
-	Updates the user's DefaultRole and manages library-specific policies:
-	- If upgrading to Owner, attaches repo owner policy for full repo access
-	- If downgrading from Owner, detaches repo owner policy
+	The role is carried by Library's policies in the organization's
+	tenant (tachyon no longer lets the role label be set):
+	- Owner: attaches the repo owner policy for full repo access
+	- Manager / General: detaches the repo owner and API key policies,
+	whatever role the member held before
 	"""
 	changeOrgMemberRole(input: ChangeOrgMemberRoleInput!): User!
 	"""
@@ -2185,7 +2190,8 @@ type Repo {
 	"""
 	Get policies for this repository
 	
-	Returns resource-based policies scoped to this repository.
+	Returns resource-based policies scoped to this repository. A
+	private repository's are listed only to those who may read it.
 	
 	For authenticated requests the handler injects a
 	request-scoped `AuthApp` carrying the caller's JWT,
@@ -2198,7 +2204,9 @@ type Repo {
 	Get members who have access to this repository
 	
 	Returns users with resource-based policies scoped to this repository,
-	including org owners who have implicit owner access.
+	including org owners who have implicit owner access. Listed only to
+	a member of the organization or a holder of a grant on the
+	repository.
 	"""
 	members: [RepoMember!]!
 }
@@ -2606,15 +2614,21 @@ type User {
 	emailVerified: DateTime
 	image: String
 	role: DefaultRole!
-	tenantIdList: [String!]!
 	createdAt: DateTime!
 	updatedAt: DateTime!
 	"""
-	Resolve the Library space owned by this account, if it has been created.
+	The tenants this user belongs to. Empty unless the user is the
+	caller.
+	"""
+	tenantIdList: [String!]!
+	"""
+	Resolve the Library space owned by this account, if it has been
+	created. Null unless the user is the caller.
 	"""
 	personalSpace: PersonalSpace
 	"""
-	Resolve operator organizations accessible to this user
+	Resolve operator organizations accessible to this user. Empty
+	unless the user is the caller.
 	"""
 	organizations: [Operator!]!
 }
