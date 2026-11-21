@@ -82,7 +82,8 @@ WWW-Authenticate: Bearer resource_metadata="https://{host}/.well-known/oauth-pro
 | `MCP_AUTH_REQUIRED` | `true` / `1` の場合、`initialize` / `tools/list` を含む MCP endpoint 全体で認証を要求する |
 | `MCP_RESOURCE_URL` | protected resource metadata の `resource`。未指定時は `{LIBRARY_API_BASE_URL}/mcp` |
 | `MCP_RESOURCE_METADATA_URL` | `WWW-Authenticate` に載せる metadata URL。未指定時は `{LIBRARY_API_BASE_URL}/.well-known/oauth-protected-resource` |
-| `MCP_AUTHORIZATION_SERVER` | 設定するとTachyon OAuth検証を有効化する。信頼するHTTPS issuerを一つ指定。未設定時は従来のLibrary OAuth facade |
+| `MCP_AUTHORIZATION_SERVER` | 設定するとTachyon OAuth検証を有効化する。信頼するHTTPS issuerを一つ指定。未設定時、従来のLibrary OAuth facade は `LIBRARY_LEGACY_MCP_OAUTH_SERVER=true` のときだけ動き、それ以外は410を返す |
+| `LIBRARY_LEGACY_MCP_OAUTH_SERVER` | `true` のときだけ従来の `/mcp/oauth/*` facade を有効にする（ローカル開発用）。外部モード中は無視する。既定 off |
 | `MCP_AUTHORIZATION_SERVERS` | 上記の別名（優先）。現在は一つのissuerのみ対応。複数・空値は認証を拒否する |
 | `MCP_OAUTH_JWKS_URL` | 外部モードで必須。信頼するTachyon discoveryの `jwks_uri` を管理者が確認して指定するHTTPS URL |
 | `MCP_SCOPES_SUPPORTED` | 旧モードのscopes。外部モードは `openid,profile,email,mcp:read,mcp:write` を固定で案内する |
