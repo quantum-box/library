@@ -285,8 +285,13 @@ pub struct InitOAuthInput {
     pub base_url: String,
     /// Optional explicit redirect URI (overrides base_url if provided)
     pub redirect_uri: Option<String>,
-    /// Optional state for CSRF protection (will be generated if not provided)
+    /// Optional client value carried inside the state, for the frontend's
+    /// own use. The state itself is always minted by the service and bound
+    /// to `tenant_id` and `user_id`.
     pub state: Option<String>,
+    /// The signed-in user starting the authorization. Only this user can
+    /// complete it.
+    pub user_id: String,
 }
 
 /// Output for OAuth authorization initialization.
@@ -307,10 +312,13 @@ pub struct ExchangeOAuthCodeInput {
     pub provider: OAuthProvider,
     /// Authorization code from callback
     pub code: String,
-    /// State parameter for verification
-    pub state: Option<String>,
+    /// The state `init_authorization` returned. It must have been minted
+    /// for this tenant, provider and user, and not have expired.
+    pub state: String,
     /// Redirect URI used in the authorization request
     pub redirect_uri: String,
+    /// The signed-in user completing the authorization.
+    pub user_id: String,
 }
 
 /// Service for OAuth operations.

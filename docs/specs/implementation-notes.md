@@ -21,7 +21,7 @@
 ## 3) OAuth / OAuth callback の実装差
 
 1. GraphQL 側には `init_oauth` / `exchange_oauth_code` など OAuth 全体フローがある。
-2. `inbound_sync` には `oauth_callback_handler.rs`（OAuth callback 受け口）実装があるが、現行ルータでは REST の webhook ルートほど明示的に露出しない構成になっているため、経路検証は実装ファイル基準で確認する必要がある。
+2. 未接続だった REST の OAuth callback 受け口（`oauth_callback_handler.rs`）は削除した。`exchange_oauth_code` は `init_oauth` が発行した state（ユーザー・tenant・provider・有効期限に束縛）を必須で検証する。
 3. `init_oauth` は state をサイン/検証する実装を有しており、`OAUTH_STATE_SECRET` または `GITHUB_CLIENT_SECRET` をフォールバック取得。
 
 ## 4) 認証・テナンシーの実装上の注意
