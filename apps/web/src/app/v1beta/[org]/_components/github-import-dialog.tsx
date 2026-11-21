@@ -47,6 +47,8 @@ import {
 
 interface GitHubImportDialogProps {
 	org: string
+	/** Tenant of the organization whose GitHub connection is used. */
+	tenantId: string
 	existingRepos?: Array<{ username: string }>
 	onImportComplete?: () => void
 }
@@ -55,6 +57,7 @@ type ImportStep = 'select-repo' | 'select-files' | 'configure' | 'importing'
 
 export function GitHubImportDialog({
 	org,
+	tenantId,
 	existingRepos = [],
 	onImportComplete,
 }: GitHubImportDialogProps) {
@@ -100,7 +103,7 @@ export function GitHubImportDialog({
 	useEffect(() => {
 		if (open && repositories.length === 0) {
 			setReposLoading(true)
-			listGitHubRepositories()
+			listGitHubRepositories(tenantId)
 				.then(result => {
 					if (result.error) {
 						toast.error(result.error)
@@ -110,7 +113,7 @@ export function GitHubImportDialog({
 				})
 				.finally(() => setReposLoading(false))
 		}
-	}, [open, repositories.length])
+	}, [open, repositories.length, tenantId])
 
 	// Load directory contents when path or repo changes
 	const loadDirectoryContents = useCallback(
@@ -118,7 +121,7 @@ export function GitHubImportDialog({
 			if (!selectedRepo) return
 
 			setDirLoading(true)
-			const result = await listDirectoryContents({
+			const result = await listDirectoryContents(tenantId, {
 				githubRepo: selectedRepo.fullName,
 				path,
 			})
@@ -130,7 +133,7 @@ export function GitHubImportDialog({
 				setFiles(result.files)
 			}
 		},
-		[selectedRepo],
+		[selectedRepo, tenantId],
 	)
 
 	useEffect(() => {
@@ -143,7 +146,7 @@ export function GitHubImportDialog({
 	useEffect(() => {
 		if (step === 'configure' && selectedRepo && selectedFiles.length > 0) {
 			setAnalysisLoading(true)
-			analyzeFrontmatter({
+			analyzeFrontmatter(tenantId, {
 				githubRepo: selectedRepo.fullName,
 				paths: selectedFiles,
 			})
@@ -166,7 +169,7 @@ export function GitHubImportDialog({
 				})
 				.finally(() => setAnalysisLoading(false))
 		}
-	}, [step, selectedRepo, selectedFiles])
+	}, [step, selectedRepo, selectedFiles, tenantId])
 
 	const handleSelectRepo = (repo: GitHubRepository) => {
 		setSelectedRepo(repo)
@@ -216,7 +219,7 @@ export function GitHubImportDialog({
 
 		startTransition(() => {
 			void (async () => {
-				const result = await importMarkdownFromGitHub({
+				const result = await importMarkdownFromGitHub(tenantId, {
 				orgUsername: org,
 				repoUsername: repoUsername,
 				repoName: repoUsername,

@@ -29,6 +29,7 @@ use tachyon_sdk::auth::UserQuery;
 
 mod github_oauth;
 pub use github_oauth::github_oauth_broker_enabled;
+pub(crate) use github_oauth::github_token_tenant;
 
 /// Budgets for GET requests to tachyon-api.
 ///
@@ -799,22 +800,22 @@ impl SdkAuthApp {
     /// `ENVIRONMENT=development|test`, so in production every context
     /// call used to resolve to this service account no matter which
     /// user was acting.
+    ///
+    /// An anonymous executor sends no credential at all, and tachyon-api
+    /// answers 401. Lending it the process credential made every
+    /// anonymous request run upstream as Library's service account in the
+    /// platform tenant. Work that really is Library's own uses
+    /// [`sdk_config_as_service`](Self::sdk_config_as_service) or a system
+    /// executor, never an absent caller.
     fn sdk_config_with_context(
         &self,
         executor: &dyn tachyon_sdk::auth::ExecutorAction,
         multi_tenancy: &dyn tachyon_sdk::auth::MultiTenancyAction,
     ) -> Configuration {
         let mut headers = reqwest::header::HeaderMap::new();
-        // `get_user_id` is not the test here: it succeeds for a system
-        // executor too, whose id is the literal "system".
-        let bearer = if executor.is_user() || executor.is_service_account()
-        {
-            request_caller_token()
-                .unwrap_or_else(|| self.auth_token.clone())
-        } else {
-            self.auth_token.clone()
-        };
-        insert_bearer(&mut headers, &bearer);
+        if let Some(bearer) = self.context_bearer(executor) {
+            insert_bearer(&mut headers, &bearer);
+        }
         Self::insert_tenant_headers(&mut headers, multi_tenancy);
 
         if let Ok(user_id) = executor.get_user_id() {
@@ -824,6 +825,27 @@ impl SdkAuthApp {
         }
 
         self.configuration(headers)
+    }
+
+    /// The credential a call made for `executor` carries: the caller's own
+    /// for a user or an API key, the process credential for a system
+    /// executor, and none for an anonymous one.
+    fn context_bearer(
+        &self,
+        executor: &dyn tachyon_sdk::auth::ExecutorAction,
+    ) -> Option<String> {
+        // `get_user_id` is not the test here: it succeeds for a system
+        // executor too, whose id is the literal "system".
+        if executor.is_user() || executor.is_service_account() {
+            Some(
+                request_caller_token()
+                    .unwrap_or_else(|| self.auth_token.clone()),
+            )
+        } else if executor.is_none() {
+            None
+        } else {
+            Some(self.auth_token.clone())
+        }
     }
 
     /// `x-operator-id`, plus `x-platform-id` when it differs.
@@ -2503,6 +2525,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::GetOAuthTokenByProviderInput<'a>,
     ) -> errors::Result<Option<auth::OAuthTokenDetail>> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         if input.provider == "github" && github_oauth_broker_enabled() {
             return self
                 .authorized_github_broker_token(
@@ -2538,6 +2566,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::SaveOAuthTokenInput<'a>,
     ) -> errors::Result<()> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         let config = self
             .sdk_config_with_context(input.executor, input.multi_tenancy);
         let body = serde_json::json!({
@@ -2560,6 +2594,12 @@ impl AuthApp for SdkAuthApp {
         &self,
         input: &auth::DeleteOAuthTokenInput<'a>,
     ) -> errors::Result<()> {
+        if input.provider == "github" {
+            github_oauth::github_token_tenant(
+                input.executor,
+                input.multi_tenancy,
+            )?;
+        }
         if input.provider == "github" && github_oauth_broker_enabled() {
             let config = self.github_broker_context(
                 input.executor,
@@ -4727,6 +4767,75 @@ mod caller_token_scope_tests {
             Some("Bearer caller-jwt".to_string()),
             "API-key policies must not be evaluated using the service's fallback credential",
         );
+    }
+
+    #[tokio::test]
+    async fn context_calls_for_an_anonymous_caller_send_no_credential() {
+        // Lending an anonymous request the process credential ran it
+        // upstream as Library's service account in the platform tenant.
+        // Without a credential tachyon-api answers 401, as it does for
+        // any anonymous request.
+        assert_eq!(
+            authorization_for_check_policy(&auth::Executor::None).await,
+            None,
+        );
+    }
+
+    #[test]
+    fn github_connections_need_a_member_of_an_organization_tenant() {
+        let org: TenantId =
+            "tn_01hy91qw3362djx6z9jerr34v4".parse().unwrap();
+        let in_org = auth::MultiTenancy::new(None, Some(org.clone()));
+        let in_platform = auth::MultiTenancy::new(
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+            Some(crate::domain::LIBRARY_TENANT.clone()),
+        );
+
+        assert_eq!(
+            github_token_tenant(&UserExecutor, &in_org).unwrap(),
+            org
+        );
+        // One slot shared by every Library user.
+        assert!(matches!(
+            github_token_tenant(&UserExecutor, &in_platform),
+            Err(errors::Error::Forbidden { .. })
+        ));
+        assert!(matches!(
+            github_token_tenant(&auth::Executor::None, &in_org),
+            Err(errors::Error::Unauthorized { .. })
+        ));
+        assert!(github_token_tenant(
+            &UserExecutor,
+            &auth::MultiTenancy::new(None, None)
+        )
+        .is_err());
+
+        #[derive(Debug)]
+        struct Outsider;
+        impl auth::ExecutorAction for Outsider {
+            fn get_id(&self) -> &str {
+                "us_01testoutsider"
+            }
+            fn has_tenant_id(&self, _tenant_id: &TenantId) -> bool {
+                false
+            }
+            fn is_system_user(&self) -> bool {
+                false
+            }
+            fn is_user(&self) -> bool {
+                true
+            }
+            fn is_service_account(&self) -> bool {
+                false
+            }
+            fn is_none(&self) -> bool {
+                false
+            }
+        }
+        assert!(matches!(
+            github_token_tenant(&Outsider, &in_org),
+            Err(errors::Error::Forbidden { .. })
+        ));
     }
 
     /// An unsigned JWT with `claims`; only the payload matters to the
