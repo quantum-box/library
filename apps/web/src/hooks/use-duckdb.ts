@@ -10,6 +10,8 @@ import type {
 import { useSession } from '@/auth'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as duckdb from '@duckdb/duckdb-wasm'
+import ehWorkerUrl from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url'
+import mvpWorkerUrl from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url'
 import { baseURL, platformId } from '@/lib/apiClient'
 
 export type DuckDBStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -157,22 +159,25 @@ export function useDuckDBFilteredData({
 
 			try {
 				const duckdb = await import('@duckdb/duckdb-wasm')
-				const bundles = duckdb.getJsDelivrBundles()
-				const bundle = await duckdb.selectBundle(bundles)
+				// The worker scripts are served from this origin so that
+				// script-src never has to trust a public CDN. The .wasm files
+				// (34-39 MB) stay on jsDelivr: they exceed Cloudflare Pages'
+				// 25 MiB per-file limit, and fetching them only needs
+				// connect-src. getJsDelivrBundles() pins them to the installed
+				// package version, which keeps them in step with the workers.
+				const cdn = duckdb.getJsDelivrBundles()
+				const bundle = await duckdb.selectBundle({
+					mvp: { mainModule: cdn.mvp.mainModule, mainWorker: mvpWorkerUrl },
+					eh: { mainModule: cdn.eh.mainModule, mainWorker: ehWorkerUrl },
+				})
 				if (!bundle.mainWorker) {
 					throw new Error('DuckDB worker bundle is missing')
 				}
-				const workerUrl = URL.createObjectURL(
-					new Blob([`importScripts("${bundle.mainWorker}");`], {
-						type: 'text/javascript',
-					}),
-				)
-				const worker = new Worker(workerUrl)
+				const worker = new Worker(bundle.mainWorker)
 				const logger = new duckdb.ConsoleLogger('error')
 				const db = new duckdb.AsyncDuckDB(logger, worker)
 				await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
 				const conn = await db.connect()
-				URL.revokeObjectURL(workerUrl)
 
 				if (cancelled) {
 					await conn.close()
