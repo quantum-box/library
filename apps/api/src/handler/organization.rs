@@ -11,8 +11,8 @@ use crate::handler::types::{
     UpdateOrganizationRequest,
 };
 use crate::usecase::{
-    CreateOrganizationInputData, LibraryOrg, UpdateOrganizationInputData,
-    ViewOrgInputData,
+    CreateOrganizationInputData, DeleteOrganizationInputData, LibraryOrg,
+    UpdateOrganizationInputData, ViewOrgInputData,
 };
 use crate::{app::LibraryApp, LIBRARY_TENANT};
 use tachyon_sdk::auth::MultiTenancy;
@@ -162,4 +162,35 @@ pub async fn update_organization(
         repos: vec![],
     };
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1beta/orgs/{org}",
+    params(
+        ("org" = String, Path, description = "Organization username")
+    ),
+    responses(
+        (status = 204, description = "Organization deleted. The tachyon tenant behind it is left for tachyon to remove."),
+        (status = 400, description = "Personal space cannot be deleted"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Organization not found")
+    )
+)]
+#[axum::debug_handler]
+pub async fn delete_organization(
+    executor: LibraryExecutor,
+    library_org: LibraryOrg,
+    AxumPath(org): AxumPath<String>,
+    Extension(library_app): Extension<Arc<LibraryApp>>,
+) -> errors::Result<axum::http::StatusCode> {
+    library_app
+        .delete_organization
+        .execute(&DeleteOrganizationInputData {
+            executor: &executor,
+            multi_tenancy: &library_org,
+            username: org,
+        })
+        .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }

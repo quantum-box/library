@@ -52,6 +52,10 @@ spec:
       description: Update library organization
       resource_pattern: trn:library:org:*
     - context: library
+      name: DeleteOrganization
+      description: Delete library organization (Library data only; the tachyon tenant is removed by tachyon)
+      resource_pattern: trn:library:org:*
+    - context: library
       name: ChangeOrgMemberRole
       description: Change organization member role (OWNER/MANAGER/GENERAL)
       resource_pattern: trn:library:org:*

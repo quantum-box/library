@@ -26,6 +26,7 @@ use crate::handler::{
         view_organization,
         create_organization,
         update_organization,
+        delete_organization,
         view_repo,
         create_repo,
         update_repo,
@@ -151,7 +152,7 @@ pub fn create_openapi_router() -> OpenApiRouter<()> {
         .routes(routes!(update_property))
         .routes(routes!(view_organization))
         .routes(routes!(create_organization))
-        .routes(routes!(update_organization))
+        .routes(routes!(update_organization, delete_organization))
         .routes(routes!(view_repo))
         .routes(routes!(create_repo))
         .routes(routes!(update_repo))

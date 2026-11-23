@@ -18,6 +18,7 @@ mod create_source;
 pub mod data_search;
 pub mod delegated_visibility;
 mod delete_data;
+mod delete_organization;
 mod delete_property;
 mod delete_repo;
 mod delete_source;
@@ -93,6 +94,7 @@ pub use create_organization::*;
 pub use create_repo::*;
 pub use create_source::*;
 pub use delete_data::*;
+pub use delete_organization::*;
 pub use delete_property::*;
 pub use delete_repo::*;
 pub use delete_source::*;
@@ -142,6 +144,20 @@ pub struct UpdateOrganizationInputData<'a> {
     pub name: String,
     pub description: Option<String>,
     pub website: Option<String>,
+}
+
+pub struct DeleteOrganizationInputData<'a> {
+    pub executor: &'a dyn tachyon_sdk::auth::ExecutorAction,
+    pub multi_tenancy: &'a dyn tachyon_sdk::auth::MultiTenancyAction,
+    pub username: String,
+}
+
+#[async_trait::async_trait]
+pub trait DeleteOrganizationInputPort: Debug + Send + Sync {
+    async fn execute(
+        &self,
+        input: &DeleteOrganizationInputData<'_>,
+    ) -> errors::Result<()>;
 }
 
 pub struct UpdateOrganizationOutputData {

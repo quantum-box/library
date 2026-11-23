@@ -1131,6 +1131,28 @@ impl LibraryMutation {
             .into())
     }
 
+    /// Deletes a Library organization and its repositories. The tachyon
+    /// tenant behind it is not touched; tachyon removes it on its side.
+    #[tracing::instrument(name = "delete_organization", skip(self, ctx))]
+    async fn delete_organization(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        username: String,
+    ) -> Result<bool> {
+        let executor = ctx.data::<tachyon_sdk::auth::Executor>()?;
+        let multi_tenancy =
+            ctx.data::<tachyon_sdk::auth::MultiTenancy>()?;
+        ctx.data::<Arc<LibraryApp>>()?
+            .delete_organization
+            .execute(&usecase::DeleteOrganizationInputData {
+                executor,
+                multi_tenancy,
+                username,
+            })
+            .await?;
+        Ok(true)
+    }
+
     /// TODO: add English documentation
     #[tracing::instrument(name = "create_organization", skip(self, ctx))]
     async fn create_organization(
