@@ -1513,6 +1513,11 @@ type Mutation {
 	"""
 	updateOrganization(input: UpdateOrganizationInput!): Organization!
 	"""
+	Deletes a Library organization and its repositories. The tachyon
+	tenant behind it is not touched; tachyon removes it on its side.
+	"""
+	deleteOrganization(username: String!): Boolean!
+	"""
 	TODO: add English documentation
 	"""
 	createOrganization(input: CreateOrganizationInput!): Organization!

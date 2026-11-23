@@ -88,6 +88,25 @@ impl RepoRepository for RepoRepositoryImpl {
             .await
             .map_err(errors::Error::internal_server_error)?;
 
+        // Lock the owning organization row for the rest of the
+        // transaction. Organization deletion takes the same lock before
+        // it removes the organization's repos, so a repo is either saved
+        // before the deletion (and removed with it) or rejected here
+        // because its organization is gone; it is never left orphaned.
+        let org_exists = sqlx::query(
+            "SELECT id FROM organizations WHERE platform_id = ? AND id = ? FOR UPDATE",
+        )
+        .bind(crate::domain::LIBRARY_TENANT.to_string())
+        .bind(entity.organization_id().to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        if org_exists.is_none() {
+            return Err(errors::Error::not_found(
+                "organization is not found",
+            ));
+        }
+
         sqlx::query!(
             "INSERT INTO repos (id, org_id, org_username, username, name, description, is_public, platform_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE org_id = VALUES(org_id), org_username = VALUES(org_username), username = VALUES(username), name = VALUES(name), description = VALUES(description), is_public = VALUES(is_public), platform_id = VALUES(platform_id)",
             entity.id().to_string(),

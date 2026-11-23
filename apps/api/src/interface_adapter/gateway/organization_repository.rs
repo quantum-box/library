@@ -66,8 +66,51 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         self.save(entity).await
     }
 
+    /// Updates the profile of an existing organization only. Unlike
+    /// `save`, it never inserts: if the organization was deleted in the
+    /// meantime (see `delete`, which takes the same row lock), the update
+    /// fails with not_found instead of recreating it.
     async fn update(&self, entity: &Organization) -> errors::Result<()> {
-        self.save(entity).await
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
+        let exists = sqlx::query(
+            r#"SELECT id FROM organizations WHERE platform_id = ? AND id = ? FOR UPDATE"#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(entity.id().to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        if exists.is_none() {
+            return Err(errors::Error::not_found(
+                "organization is not found",
+            ));
+        }
+        sqlx::query(
+            r#"
+            UPDATE organizations
+            SET name = ?, description = ?, website = ?,
+                home_platform_id = COALESCE(home_platform_id, ?)
+            WHERE platform_id = ? AND id = ?
+            "#,
+        )
+        .bind(entity.name().to_string())
+        .bind(entity.description().as_ref().map(|d| d.to_string()))
+        .bind(entity.website().as_ref().map(|w| w.to_string()))
+        .bind(entity.home_platform().as_ref().map(|id| id.to_string()))
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(entity.id().to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        tx.commit()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
+        Ok(())
     }
 
     async fn get_by_id(
@@ -170,15 +213,45 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         Ok(result)
     }
 
+    /// Deletes the organization together with its repos in one
+    /// transaction. The organization row is locked first; `RepoRepository::save`
+    /// takes the same lock, so a repo created concurrently either lands
+    /// before this deletion (and is removed here) or fails because the
+    /// organization is gone.
     async fn delete(&self, org_id: &TenantId) -> errors::Result<()> {
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
+        sqlx::query(
+            r#"SELECT id FROM organizations WHERE platform_id = ? AND id = ? FOR UPDATE"#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        sqlx::query(
+            r#"DELETE FROM repos WHERE platform_id = ? AND org_id = ?"#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
         sqlx::query(
             r#"DELETE FROM organizations WHERE platform_id = ? AND id = ?"#,
         )
         .bind(LIBRARY_TENANT.to_string())
         .bind(org_id.to_string())
-        .execute(self.db.pool().as_ref())
+        .execute(&mut *tx)
         .await
         .map_err(errors::Error::internal_server_error)?;
+        tx.commit()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
         Ok(())
     }
 }

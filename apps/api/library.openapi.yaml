@@ -1964,6 +1964,25 @@ paths:
           description: Organization already exists
       tags: []
   /v1beta/orgs/{org}:
+    delete:
+      operationId: delete_organization
+      parameters:
+      - description: Organization username
+        in: path
+        name: org
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Organization deleted. The tachyon tenant behind it is left for tachyon to remove.
+        '400':
+          description: Personal space cannot be deleted
+        '403':
+          description: Forbidden
+        '404':
+          description: Organization not found
+      tags: []
     get:
       operationId: view_organization
       parameters:

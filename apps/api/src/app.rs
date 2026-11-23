@@ -18,6 +18,7 @@ pub struct LibraryApp {
     pub get_organization_by_username:
         Arc<dyn usecase::GetOrganizationByUsernameQuery>,
     pub update_organization: Arc<dyn usecase::UpdateOrganizationInputPort>,
+    pub delete_organization: Arc<dyn usecase::DeleteOrganizationInputPort>,
     pub create_organization: Arc<dyn usecase::CreateOrganizationInputPort>,
     pub create_repo: Arc<dyn usecase::CreateRepoInputPort>,
     pub update_repo: Arc<dyn usecase::UpdateRepoInputPort>,
@@ -448,6 +449,11 @@ impl LibraryApp {
             organization_repo.clone(),
             auth_app.clone(),
         );
+        let delete_organization = usecase::DeleteOrganization::new(
+            get_organization_by_username.clone(),
+            organization_repo.clone(),
+            auth_app.clone(),
+        );
         let create_organization = usecase::CreateOrganization::new(
             organization_repo.clone(),
             auth_app.clone(),
@@ -682,6 +688,7 @@ impl LibraryApp {
             view_org,
             get_organization_by_username,
             update_organization,
+            delete_organization,
             create_organization,
             create_repo,
             update_repo,
