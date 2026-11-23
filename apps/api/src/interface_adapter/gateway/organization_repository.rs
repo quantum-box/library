@@ -170,15 +170,45 @@ impl OrganizationRepository for OrganizationRepositoryImpl {
         Ok(result)
     }
 
+    /// Deletes the organization together with its repos in one
+    /// transaction. The organization row is locked first; `RepoRepository::save`
+    /// takes the same lock, so a repo created concurrently either lands
+    /// before this deletion (and is removed here) or fails because the
+    /// organization is gone.
     async fn delete(&self, org_id: &TenantId) -> errors::Result<()> {
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
+        sqlx::query(
+            r#"SELECT id FROM organizations WHERE platform_id = ? AND id = ? FOR UPDATE"#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
+        sqlx::query(
+            r#"DELETE FROM repos WHERE platform_id = ? AND org_id = ?"#,
+        )
+        .bind(LIBRARY_TENANT.to_string())
+        .bind(org_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(errors::Error::internal_server_error)?;
         sqlx::query(
             r#"DELETE FROM organizations WHERE platform_id = ? AND id = ?"#,
         )
         .bind(LIBRARY_TENANT.to_string())
         .bind(org_id.to_string())
-        .execute(self.db.pool().as_ref())
+        .execute(&mut *tx)
         .await
         .map_err(errors::Error::internal_server_error)?;
+        tx.commit()
+            .await
+            .map_err(errors::Error::internal_server_error)?;
         Ok(())
     }
 }

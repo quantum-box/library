@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{DeleteOrganizationInputData, DeleteOrganizationInputPort};
-use crate::domain::{OrganizationRepository, RepoRepository};
+use crate::domain::OrganizationRepository;
 use tachyon_sdk::auth::{AuthApp, CheckPolicyInput};
 use value_object::{FromStr, Identifier};
 
@@ -15,7 +15,6 @@ pub struct DeleteOrganization {
     get_organization_by_username:
         Arc<dyn super::GetOrganizationByUsernameQuery>,
     organization_repository: Arc<dyn OrganizationRepository>,
-    repo_repository: Arc<dyn RepoRepository>,
     auth_app: Arc<dyn AuthApp>,
 }
 
@@ -25,13 +24,11 @@ impl DeleteOrganization {
             dyn super::GetOrganizationByUsernameQuery,
         >,
         organization_repository: Arc<dyn OrganizationRepository>,
-        repo_repository: Arc<dyn RepoRepository>,
         auth_app: Arc<dyn AuthApp>,
     ) -> Arc<Self> {
         Arc::new(Self {
             get_organization_by_username,
             organization_repository,
-            repo_repository,
             auth_app,
         })
     }
@@ -71,9 +68,7 @@ impl DeleteOrganizationInputPort for DeleteOrganization {
             ));
         }
 
-        for repo in self.repo_repository.find_all(org.id()).await? {
-            self.repo_repository.delete(org.id(), repo.id()).await?;
-        }
+        // Removes the organization's repos in the same transaction.
         self.organization_repository.delete(org.id()).await?;
         Ok(())
     }
@@ -91,7 +86,7 @@ mod tests {
     use value_object::{Identifier, TenantId, Text, UserId};
 
     use super::*;
-    use crate::domain::{Organization, Repo, RepoId};
+    use crate::domain::Organization;
     use crate::usecase::GetOrganizationByUsernameQuery;
 
     mock! {
@@ -117,18 +112,6 @@ mod tests {
         }
     }
 
-    mock! {
-        #[derive(Debug)]
-        RepoStore {}
-        #[async_trait::async_trait]
-        impl RepoRepository for RepoStore {
-            async fn save(&self, entity: &Repo) -> errors::Result<()>;
-            async fn get_by_id(&self, tenant_id: &TenantId, id: &RepoId) -> errors::Result<Option<Repo>>;
-            async fn find_all(&self, org_id: &TenantId) -> errors::Result<Vec<Repo>>;
-            async fn delete(&self, tenant_id: &TenantId, id: &RepoId) -> errors::Result<()>;
-        }
-    }
-
     fn org_id() -> TenantId {
         "tn_01hjryxysgey07h5jz5wagqj0a".parse().unwrap()
     }
@@ -148,26 +131,11 @@ mod tests {
         }
     }
 
-    fn repo() -> Repo {
-        Repo::new(
-            &RepoId::default(),
-            &org_id(),
-            &Identifier::from_str("some-org").unwrap(),
-            &Text::new("Repo").unwrap(),
-            &Identifier::from_str("some-repo").unwrap(),
-            false,
-            None,
-            vec![],
-            vec![],
-        )
-    }
-
-    /// Returns the result, the number of repos deleted and whether the
-    /// org row was deleted.
+    /// Returns the result and whether the org (with its repos) was deleted.
     async fn run(
         personal: bool,
         allowed: bool,
-    ) -> (errors::Result<()>, usize, bool) {
+    ) -> (errors::Result<()>, bool) {
         let mut auth = MockAuthApp::new();
         auth.expect_check_policy().returning(move |input| {
             assert_eq!(input.action, "library:DeleteOrganization");
@@ -192,20 +160,9 @@ mod tests {
             *flag.lock().unwrap() = true;
             Ok(())
         });
-        let repos_deleted = Arc::new(Mutex::new(0));
-        let count = repos_deleted.clone();
-        let mut repo_store = MockRepoStore::new();
-        repo_store
-            .expect_find_all()
-            .returning(|_| Ok(vec![repo(), repo()]));
-        repo_store.expect_delete().returning(move |_, _| {
-            *count.lock().unwrap() += 1;
-            Ok(())
-        });
         let usecase = DeleteOrganization::new(
             Arc::new(orgs),
             Arc::new(org_store),
-            Arc::new(repo_store),
             Arc::new(auth),
         );
         let executor = create_test_executor();
@@ -217,32 +174,28 @@ mod tests {
                 username: "some-org".into(),
             })
             .await;
-        let repos = *repos_deleted.lock().unwrap();
         let org = *org_deleted.lock().unwrap();
-        (result, repos, org)
+        (result, org)
     }
 
     #[tokio::test]
-    async fn deletes_the_org_and_its_repos_without_touching_the_tenant() {
-        let (result, repos, org) = run(false, true).await;
+    async fn deletes_the_org_without_touching_the_tenant() {
+        let (result, org) = run(false, true).await;
         result.unwrap();
-        assert_eq!(repos, 2);
         assert!(org);
     }
 
     #[tokio::test]
     async fn denied_policy_deletes_nothing() {
-        let (result, repos, org) = run(false, false).await;
+        let (result, org) = run(false, false).await;
         assert!(result.is_err());
-        assert_eq!(repos, 0);
         assert!(!org);
     }
 
     #[tokio::test]
     async fn a_personal_space_is_not_deleted() {
-        let (result, repos, org) = run(true, true).await;
+        let (result, org) = run(true, true).await;
         assert!(result.is_err());
-        assert_eq!(repos, 0);
         assert!(!org);
     }
 }

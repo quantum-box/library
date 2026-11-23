@@ -452,7 +452,6 @@ impl LibraryApp {
         let delete_organization = usecase::DeleteOrganization::new(
             get_organization_by_username.clone(),
             organization_repo.clone(),
-            repo_repo.clone(),
             auth_app.clone(),
         );
         let create_organization = usecase::CreateOrganization::new(
