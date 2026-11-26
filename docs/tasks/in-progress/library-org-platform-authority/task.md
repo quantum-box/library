@@ -10,7 +10,7 @@
 | 2 | client が送る `x-platform-id` | GraphQL でそのまま上流へ | `x-operator-id` が Library の組織を指すときは、組織の platform で上書き |
 | 3 | `x-operator-id` と作成先の照合 | 食い違えば書き込み前に拒否 | 同じ（Verus で証明） |
 | 4 | 取り込み時の policy 付与失敗 | warn して組織を作る | 取り込みを失敗させ、組織を保存しない |
-| 5 | 委任 grant の自動付与 | 手作業 | **保留**（下記） |
+| 5 | 委任 grant の自動付与 | 手作業 | 取り込み時に、取り込む admin が Library の service account へ委任を同意する（tachyon ADR-0177、D4-a） |
 
 - B1: 未記録の組織は初回利用時に記録する（自動 backfill）。全行が埋まったら、確定できない場合を拒否に切り替え、列を `NOT NULL` にする
 - C1: Verus を導入（`packages/verified_org_scope`）
@@ -23,7 +23,14 @@
 - `seedLibraryTenant`: tenant scope を組織の platform から作る（従来は Library 固定で、取り込み組織の `/v1/auth/users` が 403 だった）。policy 付与は失敗で中断し、組織の保存は最後
 - 上流 403 のとき、送った platform と operator を `upstream refused the request's scope` として記録
 
-## 保留: 委任 grant の自動付与（D4）
+## D4: 委任の同意（D4-a、2026-11-19 確認済み）
+
+`seedLibraryTenant` は、policy 付与のあとで `POST /v1/auth/delegation-consents` を取り込む admin として呼び、
+Library の service account（`GET /v1/auth/caller` をサービス資格情報で引いて得る）への同意を記録する。
+失敗したら取り込みを失敗させる。tachyon 側は quantum-box/tachyon-apps#14108。**tachyon のデプロイ後に
+この変更をデプロイする**（先に出すと同意 API が無く、取り込みが失敗する）。
+
+経緯（A1 が成立しなかった理由）:
 
 tachyon の `authorize_evaluation_tenant`（`packages/auth/src/usecase/delegated_user_subject.rs`）は、
 委任 grant を呼び出し元サービスアカウントの acting tenant（Library platform tenant）で評価する。
@@ -44,5 +51,6 @@ python3 scripts/verus/verify.py --all --self-test --mutations
 
 - [ ] 本番で `SELECT COUNT(*) FROM library.organizations WHERE home_platform_id IS NULL` が 0 になったら、B1 のフォールバックを拒否に切り替え、列を `NOT NULL` にする
 - [ ] client の `platformForOperator` / `operatorPlatforms`（`apps/client/src/lib/recordsApi.ts`）を削除する（server が上書きするので動作には影響しない）
-- [ ] D4 の方式決定
+- [ ] 組織の取り込みをやめる操作ができたら、同意を撤回する（`DELETE /v1/auth/delegation-consents/{id}`）
+- [ ] 既存の取り込み組織（quantumbox、bernard-square ほか）は、取り込み直すと同意が付く。手作業の grant（`library:DelegateBernardSquare` など）は同意の確認後に外せる
 - [ ] 失敗した作成で残った database_manager の行の掃除（範囲外の「部分作成のロールバック」）

@@ -543,6 +543,15 @@ impl LibraryMutation {
             }
         }
 
+        // The tenant consents to Library's service account evaluating its
+        // users' policies, so Library can authorize them without a grant
+        // registered by hand in Library's own tenant (tachyon ADR-0177).
+        // Like the grants above, it must land before the organization is
+        // stored, and importing again retries it.
+        sdk.grant_delegation_consent(executor, &tenant_scope)
+            .await
+            .map_err(|e| e.extend())?;
+
         // An existing organization only gains its platform: saving the
         // snapshot read before the grants would overwrite a profile edit made
         // meanwhile.
