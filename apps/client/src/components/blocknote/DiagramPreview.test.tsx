@@ -98,3 +98,26 @@ it('waits to render until the diagram is near the viewport', async () => {
   act(() => reveal([{ isIntersecting: true }]))
   await waitFor(() => expect(container.querySelector('svg text')?.textContent).toBe('Visible'))
 })
+
+it('gives each preview its own element ids for the same diagram', async () => {
+  mocks.render.mockImplementation(async (id: string) => ({ svg: `<svg id="${id}"><style>#${id} .node{}</style><text>Twice</text></svg>` }))
+  const first = render(<DiagramPreview language="mermaid" source="graph TD; Twin" />)
+  await waitFor(() => expect(first.container.querySelector('svg text')?.textContent).toBe('Twice'))
+  const second = render(<DiagramPreview language="mermaid" source="graph TD; Twin" />)
+  const ids = [first, second].map((view) => view.container.querySelector('svg')?.id)
+  expect(ids[0]).toMatch(/^library-diagram-/)
+  expect(ids[1]).toMatch(/^library-diagram-/)
+  expect(ids[0]).not.toBe(ids[1])
+  expect(second.container.querySelector('style')?.textContent).toContain(`#${ids[1]} `)
+  expect(mocks.render).toHaveBeenCalledTimes(1)
+})
+
+it('does not count loading Mermaid itself against the render timeout', async () => {
+  vi.useFakeTimers()
+  let finish: (value: { svg: string }) => void = () => {}
+  mocks.render.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+  const { container } = render(<DiagramPreview language="mermaid" source="graph TD; Late" />)
+  await act(() => vi.advanceTimersByTimeAsync(DIAGRAM_RENDER_TIMEOUT_MS - 1000))
+  await act(async () => { finish({ svg: '<svg><text>Late</text></svg>' }) })
+  expect(container.querySelector('svg text')?.textContent).toBe('Late')
+})

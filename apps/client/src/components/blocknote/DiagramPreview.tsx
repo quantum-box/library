@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useI18n } from '../../i18n'
 
 import { diagramLanguage } from './diagramLanguage'
-import { cachedDiagram, isAbortError, renderDiagram } from './diagramRenderer'
+import { cachedDiagram, isAbortError, renderDiagram, withDiagramId } from './diagramRenderer'
 
 /** Start rendering a little before a diagram scrolls into view. */
 const NEAR_VIEWPORT = '600px 0px'
@@ -25,13 +25,16 @@ export function DiagramPreview({
   const container = useRef<HTMLDivElement>(null)
   // The last diagram this preview rendered, kept on screen while an edit
   // renders its replacement.
-  const [shown, setShown] = useState('')
-  const [failedSource, setFailedSource] = useState<string | null>(null)
+  const [shown, setShown] = useState<{ kind: string; svg: string } | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  // Mermaid scopes styles and arrowhead markers by element id; this one is
+  // unique to the preview even when the same diagram is on the page twice.
+  const diagramId = `library-diagram-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   // A rebuilt block shows what it showed before at once, without a
   // "loading" flash or a layout jump.
   const cached = kind && source.trim() ? cachedDiagram(kind, source) : undefined
-  const svg = cached ?? shown
-  const failed = cached === undefined && failedSource === source
+  const svg = cached ?? (shown && shown.kind === kind ? shown.svg : '')
+  const failed = cached === undefined && failedKey === `${kind}\n${source}`
   const [sourceVisible, setSourceVisible] = useState(defaultSourceVisible)
   const [nearViewport, setNearViewport] = useState(() => typeof IntersectionObserver === 'undefined')
   // The source this preview was mounted with renders without the edit debounce.
@@ -50,7 +53,8 @@ export function DiagramPreview({
     }, { rootMargin: NEAR_VIEWPORT })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [nearViewport])
+    // `kind` decides whether the container exists at all.
+  }, [kind, nearViewport])
 
   useEffect(() => {
     if (!kind || !source.trim() || !nearViewport) return
@@ -58,11 +62,11 @@ export function DiagramPreview({
     const controller = new AbortController()
     const render = () => {
       renderDiagram(kind, source, controller.signal).then(
-        (result) => { if (!controller.signal.aborted) setShown(result) },
+        (result) => { if (!controller.signal.aborted) setShown({ kind, svg: result }) },
         (error: unknown) => {
           if (controller.signal.aborted || isAbortError(error)) return
-          setShown('')
-          setFailedSource(source)
+          setShown(null)
+          setFailedKey(`${kind}\n${source}`)
         },
       )
     }
@@ -96,7 +100,7 @@ export function DiagramPreview({
       )}
       {source.trim() && (
         failed ? <p role="status">{t('editor.diagramFailed')}</p>
-          : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} />
+          : svg ? <div dangerouslySetInnerHTML={{ __html: withDiagramId(svg, diagramId) }} />
             : <p role="status">{t('editor.diagramLoading')}</p>
       )}
     </div>

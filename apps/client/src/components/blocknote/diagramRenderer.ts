@@ -18,6 +18,13 @@ export type DiagramKind = 'mermaid' | 'plantuml'
 const CACHE_LIMIT = 64
 /** A render that has not settled by then is reported as failed. */
 export const DIAGRAM_RENDER_TIMEOUT_MS = 20_000
+/**
+ * Stands for the diagram's element id in a cached SVG. Mermaid scopes its
+ * styles and arrowhead markers by that id, and the same SVG can be on the
+ * page more than once (identical blocks, or a node view and its rebuild), so
+ * each preview puts its own id in with `withDiagramId`.
+ */
+const ID_PLACEHOLDER = 'library-diagram-__id__'
 
 const cache = new Map<string, string>()
 const inflight = new Map<string, Job>()
@@ -26,7 +33,6 @@ interface Job {
   promise: Promise<string>
   /** Previews still waiting for this result. */
   waiters: number
-  started: boolean
 }
 
 // Mermaid has global configuration and a shared rendering queue. Keep
@@ -50,12 +56,19 @@ export function cachedDiagram(kind: DiagramKind, source: string): string | undef
   return svg
 }
 
+/** Give a rendered diagram the element id of the preview showing it. */
+export function withDiagramId(svg: string, id: string) {
+  return svg.split(ID_PLACEHOLDER).join(id)
+}
+
 /**
  * Render a diagram to sanitized SVG.
  *
  * `signal` only withdraws this caller. The render itself is abandoned only
  * when nobody is waiting for it before it starts; once started it finishes
  * and is cached, because the block that asked is usually about to come back.
+ * A render that outlives the timeout is reported as failed to its callers,
+ * but its result is still cached when it eventually arrives.
  */
 export function renderDiagram(kind: DiagramKind, source: string, signal: AbortSignal): Promise<string> {
   const cached = cachedDiagram(kind, source)
@@ -63,30 +76,26 @@ export function renderDiagram(kind: DiagramKind, source: string, signal: AbortSi
   const key = keyOf(kind, source)
   let job = inflight.get(key)
   if (!job) {
-    const created: Job = { promise: Promise.resolve(''), waiters: 0, started: false }
+    const created: Job = { promise: Promise.resolve(''), waiters: 0 }
+    let timedOut: (error: Error) => void = () => {}
+    const timeout = new Promise<never>((_, reject) => { timedOut = reject })
+    const startTimer = () => setTimeout(() => timedOut(new Error('Diagram render timed out')), DIAGRAM_RENDER_TIMEOUT_MS)
     const run = async () => {
       // Let input, scrolling and painting in between two diagrams. This also
       // lets the caller register before the waiter count is read.
       await yieldToMain()
       if (created.waiters === 0) throw abortError()
-      created.started = true
-      const raw = await withTimeout(kind === 'mermaid' ? renderMermaid(source) : renderPlantUml(source))
-      return DOMPurify.sanitize(raw, { USE_PROFILES: { svg: true, svgFilters: true } })
+      const raw = kind === 'mermaid' ? await renderMermaid(source, startTimer) : await renderPlantUml(source)
+      const svg = DOMPurify.sanitize(raw, { USE_PROFILES: { svg: true, svgFilters: true } })
+      remember(key, svg)
+      return svg
     }
-    const queued = kind === 'mermaid'
-      ? (mermaidQueue = mermaidQueue.then(run, run))
-      : run()
-    created.promise = (queued as Promise<string>).then(
-      (svg) => {
-        inflight.delete(key)
-        remember(key, svg)
-        return svg
-      },
-      (error: unknown) => {
-        inflight.delete(key)
-        throw error
-      },
-    )
+    const work = kind === 'mermaid' ? mermaidQueue.then(run) : run()
+    created.promise = Promise.race([work, timeout]).finally(() => inflight.delete(key))
+    // Move on once this render settles or times out. Mermaid serializes
+    // renders internally as well, so waiting for a stuck one here would only
+    // keep every later diagram from ever starting its own timeout.
+    if (kind === 'mermaid') mermaidQueue = created.promise.catch(() => {})
     // Nobody may be listening by the time it settles.
     created.promise.catch(() => {})
     inflight.set(key, created)
@@ -115,13 +124,21 @@ function waitFor(job: Job, signal: AbortSignal): Promise<string> {
   })
 }
 
-async function renderMermaid(source: string): Promise<string> {
+async function renderMermaid(source: string, startTimer: () => ReturnType<typeof setTimeout>): Promise<string> {
+  // Loading the chunk can be slow on a phone network; only the render
+  // itself counts against the timeout.
   const mermaid = (await import('mermaid')).default
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, htmlLabels: false })
   // A fresh id per render. Mermaid removes any element that already carries
   // the id it is given, which would delete a diagram already on the page.
   renderCount += 1
-  return (await mermaid.render(`library-diagram-${renderCount}`, source)).svg
+  const id = `library-diagram-r${renderCount}`
+  const timer = startTimer()
+  try {
+    return (await mermaid.render(id, source)).svg.split(id).join(ID_PLACEHOLDER)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function renderPlantUml(source: string): Promise<string> {
@@ -147,16 +164,6 @@ function remember(key: string, svg: string) {
     if (oldest === undefined) break
     cache.delete(oldest)
   }
-}
-
-function withTimeout<T>(work: Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Diagram render timed out')), DIAGRAM_RENDER_TIMEOUT_MS)
-    work.then(
-      (value) => { clearTimeout(timer); resolve(value) },
-      (error: unknown) => { clearTimeout(timer); reject(error) },
-    )
-  })
 }
 
 function yieldToMain() {
