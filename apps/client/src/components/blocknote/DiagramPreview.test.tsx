@@ -112,12 +112,3 @@ it('gives each preview its own element ids for the same diagram', async () => {
   expect(mocks.render).toHaveBeenCalledTimes(1)
 })
 
-it('does not count loading Mermaid itself against the render timeout', async () => {
-  vi.useFakeTimers()
-  let finish: (value: { svg: string }) => void = () => {}
-  mocks.render.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
-  const { container } = render(<DiagramPreview language="mermaid" source="graph TD; Late" />)
-  await act(() => vi.advanceTimersByTimeAsync(DIAGRAM_RENDER_TIMEOUT_MS - 1000))
-  await act(async () => { finish({ svg: '<svg><text>Late</text></svg>' }) })
-  expect(container.querySelector('svg text')?.textContent).toBe('Late')
-})

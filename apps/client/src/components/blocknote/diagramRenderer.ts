@@ -85,6 +85,9 @@ export function renderDiagram(kind: DiagramKind, source: string, signal: AbortSi
       // lets the caller register before the waiter count is read.
       await yieldToMain()
       if (created.waiters === 0) throw abortError()
+      // An earlier job for this source may have timed out and finished since.
+      const late = cache.get(key)
+      if (late !== undefined) return late
       const raw = kind === 'mermaid' ? await renderMermaid(source, startTimer) : await renderPlantUml(source)
       const svg = DOMPurify.sanitize(raw, { USE_PROFILES: { svg: true, svgFilters: true } })
       remember(key, svg)
